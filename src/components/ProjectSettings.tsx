@@ -7,8 +7,9 @@
 // click here loses work that cannot be recovered.
 // ─────────────────────────────────────────────────────────────
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/auth";
+import { supabase } from "@/lib/supabase-client";
 import { makeFormatting } from "@/lib/format";
 import type { ProjectRow } from "@/lib/types";
 
@@ -21,6 +22,8 @@ const LOCALES = [
   { locale: "en-SG", currency: "SGD", label: "Singapore — S$" },
   { locale: "de-DE", currency: "EUR", label: "Germany — €, 123.456" },
 ];
+
+type MemberRow = { id: string; email: string | null; token: string; joined_at: string | null };
 
 export default function ProjectSettings({
   project,
@@ -40,6 +43,38 @@ export default function ProjectSettings({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [seats, setSeats] = useState<MemberRow[]>([]);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  async function loadSeats() {
+    const { data } = await supabase
+      .from("project_members")
+      .select("id, email, token, joined_at")
+      .eq("project_id", project.id)
+      .order("created_at");
+    setSeats(data ?? []);
+  }
+  useEffect(() => {
+    loadSeats();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id]);
+
+  async function addSeat() {
+    await supabase.from("project_members").insert({ project_id: project.id });
+    loadSeats();
+  }
+
+  async function removeSeat(id: string) {
+    await supabase.from("project_members").delete().eq("id", id);
+    loadSeats();
+  }
+
+  function copyLink(seat: MemberRow) {
+    const url = `${window.location.origin}/join/${seat.token}`;
+    navigator.clipboard?.writeText(url).catch(() => {});
+    setCopied(seat.id);
+    setTimeout(() => setCopied((c) => (c === seat.id ? null : c)), 1500);
+  }
 
   const preview = makeFormatting(locale, currency);
   const canDelete = confirm.trim().toLowerCase() === project.name.trim().toLowerCase();
@@ -154,6 +189,56 @@ export default function ProjectSettings({
           >
             {busy ? "Saving…" : "Save changes"}
           </button>
+
+
+          <div className="border-t border-slate-800 pt-4">
+            <div className="text-sm font-semibold text-slate-100">People</div>
+            <div className="mt-1 text-[11px] text-slate-400">
+              Share a link and whoever opens it can use this app — see the
+              sections, add rows, update them. They cannot change how the app
+              is built, read your conversation with the assistant, or delete
+              anything.
+            </div>
+
+            {seats.length > 0 && (
+              <ul className="mt-2.5 space-y-1.5">
+                {seats.map((seat) => (
+                  <li
+                    key={seat.id}
+                    className="flex items-center gap-2 rounded-lg bg-slate-800/60 px-2.5 py-1.5"
+                  >
+                    <span className="min-w-0 flex-1 truncate text-xs text-slate-200">
+                      {seat.email ?? (
+                        <span className="text-slate-500">Link not opened yet</span>
+                      )}
+                    </span>
+                    {!seat.joined_at && (
+                      <button
+                        onClick={() => copyLink(seat)}
+                        className="shrink-0 rounded-md border border-slate-600 px-2 py-0.5 text-[11px] text-slate-300 transition-colors hover:border-blue-400 hover:text-blue-300"
+                      >
+                        {copied === seat.id ? "Copied" : "Copy link"}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => removeSeat(seat.id)}
+                      aria-label="Remove"
+                      className="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] text-slate-500 transition-colors hover:text-rose-400"
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <button
+              onClick={addSeat}
+              className="mt-2.5 w-full rounded-lg border border-slate-600 px-3 py-2 text-xs font-medium text-slate-200 transition-colors hover:border-blue-400 hover:text-blue-300"
+            >
+              + Add someone
+            </button>
+          </div>
 
           <div className="border-t border-slate-800 pt-4">
             {!confirmingDelete ? (

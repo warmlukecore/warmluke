@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
@@ -8,6 +8,13 @@ import { takePendingPrompt } from "@/lib/auth";
 
 export default function Login() {
   const router = useRouter();
+  // An invite link lands here when signed out; it has to survive the
+  // detour, or the invited person arrives at a dashboard with nothing
+  // in it and no way back to the app they were sent to.
+  const [next, setNext] = useState<string | null>(null);
+  useEffect(() => {
+    setNext(new URLSearchParams(window.location.search).get("next"));
+  }, []);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +30,9 @@ export default function Login() {
       setError(error.message);
       return;
     }
-    if (takePendingPrompt()) {
+    if (next?.startsWith("/")) {
+      router.replace(next);
+    } else if (takePendingPrompt()) {
       router.replace("/dashboard?build=1");
     } else {
       router.replace("/dashboard");
@@ -85,7 +94,10 @@ export default function Login() {
 
           <p className="mt-4 text-center text-xs text-slate-500">
             No account?{" "}
-            <Link href="/signup" className="text-blue-400 hover:underline">
+            <Link
+              href={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"}
+              className="text-blue-400 hover:underline"
+            >
               Start free
             </Link>
           </p>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
@@ -8,6 +8,13 @@ import { takePendingPrompt } from "@/lib/auth";
 
 export default function Signup() {
   const router = useRouter();
+  // An invite link lands here when signed out; it has to survive the
+  // detour, or the invited person arrives at a dashboard with nothing
+  // in it and no way back to the app they were sent to.
+  const [next, setNext] = useState<string | null>(null);
+  useEffect(() => {
+    setNext(new URLSearchParams(window.location.search).get("next"));
+  }, []);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +31,9 @@ export default function Signup() {
       return;
     }
     // Autoconfirm is on: the session exists immediately.
-    if (takePendingPrompt()) {
+    if (next?.startsWith("/")) {
+      router.replace(next);
+    } else if (takePendingPrompt()) {
       router.replace("/dashboard?build=1");
     } else {
       router.replace("/dashboard");
@@ -87,7 +96,10 @@ export default function Signup() {
 
           <p className="mt-4 text-center text-xs text-slate-500">
             Already have an account?{" "}
-            <Link href="/login" className="text-blue-400 hover:underline">
+            <Link
+              href={next ? `/login?next=${encodeURIComponent(next)}` : "/login"}
+              className="text-blue-400 hover:underline"
+            >
               Sign in
             </Link>
           </p>

@@ -218,7 +218,6 @@ export const NOT_SUPPORTED: Array<{ id: string; label: string }> = [
   { id: "messaging", label: "sending email, SMS or WhatsApp" },
   { id: "files", label: "photos, files or attachments" },
   { id: "external_sync", label: "syncing with another system or website" },
-  { id: "multi_user", label: "extra staff logins — a project is used by its owner alone" },
   // Badge colours come from the value itself, so every vocabulary gets
   // stable distinct colours without a lookup table. The trade is that
   // a specific colour cannot be chosen.

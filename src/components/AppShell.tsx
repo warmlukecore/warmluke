@@ -70,6 +70,11 @@ export default function AppShell({
 }) {
   const router = useRouter();
   const [project, setProject] = useState<ProjectRow | null>(null);
+  // Staff are let in by the database, not by this component — but the
+  // owner's tools would still render for them and then fail on save.
+  // Showing a button that cannot work is its own kind of lying.
+  const [userId, setUserId] = useState<string | null>(null);
+  const isOwner = !!project && !!userId && project.owner_id === userId;
   const [modules, setModules] = useState<ModuleRow[]>([]);
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
   const [schema, setSchema] = useState<UiSchemaRow | null>(null);
@@ -366,6 +371,10 @@ export default function AppShell({
 
   // Locale and currency live on the project, so money renders as the
   // owner's country writes it rather than as the code's default.
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setUserId(data.session?.user.id ?? null));
+  }, []);
+
   useEffect(() => {
     supabase
       .from("projects")
@@ -839,7 +848,7 @@ export default function AppShell({
               <div className="max-w-[8rem] truncate text-[11px] text-slate-500">{ownerEmail}</div>
             </div>
           </button>
-          {project && (
+          {project && isOwner && (
             <button
               onClick={() => setSettingsOpen(true)}
               aria-label="Project settings"
@@ -856,6 +865,7 @@ export default function AppShell({
             <span className="text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
               Sections
             </span>
+            {isOwner && (
             <button
               onClick={() => setNewSectionParent("")}
               aria-label="New section"
@@ -864,6 +874,7 @@ export default function AppShell({
             >
               +
             </button>
+            )}
           </div>
           {loading && <div className="px-2 py-1 text-sm text-slate-500">Loading…</div>}
           {topLevel.map((m) => {
@@ -920,6 +931,8 @@ export default function AppShell({
                     <Icon name={m.icon} />
                     <span className="truncate">{m.nav_label}</span>
                   </button>
+                  {isOwner && (
+                  <>
                   <button
                     onClick={() => setNewSectionParent(m.id)}
                     aria-label={`Add a section inside ${m.nav_label}`}
@@ -936,6 +949,8 @@ export default function AppShell({
                   >
                     ⋯
                   </button>
+                  </>
+                  )}
                 </div>
 
                 {isOpen &&
@@ -1006,7 +1021,9 @@ export default function AppShell({
         </nav>
 
         <div className="border-t border-slate-800 px-5 py-3 text-[11px] leading-relaxed text-slate-500">
-          Everything here was generated from your prompts — nothing hardcoded.
+          {isOwner
+            ? "Everything here was generated from your prompts — nothing hardcoded."
+            : `Shared with you by the owner of ${project?.name ?? "this app"}.`}
         </div>
 
         <div
@@ -1039,6 +1056,7 @@ export default function AppShell({
             )}
           </div>
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+            {isOwner && (
             <button
               onClick={() => setRulesOpen(true)}
               title="Rules"
@@ -1046,7 +1064,8 @@ export default function AppShell({
             >
               ⚡<span className="ml-1 hidden sm:inline">Rules</span>
             </button>
-          {selectedModule && (
+            )}
+          {selectedModule && isOwner && (
             <button
               onClick={() => setHistoryOpen(true)}
               title="Version history"
@@ -1055,12 +1074,14 @@ export default function AppShell({
               🕘<span className="ml-1 hidden sm:inline">History</span>
             </button>
           )}
+            {isOwner && (
             <button
               onClick={() => setChatOpen(true)}
               className="rounded-lg bg-gradient-to-br from-violet-500 to-blue-500 px-2.5 py-1.5 text-sm font-medium text-white shadow-sm lg:hidden"
             >
               ✦<span className="ml-1 hidden sm:inline">Assistant</span>
             </button>
+            )}
           </div>
         </header>
 
@@ -1113,7 +1134,9 @@ export default function AppShell({
                 {selectedModule?.nav_label ?? "No section selected"}
               </div>
               <p className="mt-2 text-sm text-slate-500">
-                Pick a section from the menu, or ask the assistant to build one.
+                {isOwner
+                  ? "Pick a section from the menu, or ask the assistant to build one."
+                  : "Pick a section from the menu."}
               </p>
             </div>
           )}
@@ -1121,6 +1144,7 @@ export default function AppShell({
       </main>
 
       {/* ── Assistant + history ── */}
+      {isOwner && (
       <ChatPanel
         width={chat.width}
         dragging={chat.dragging}
@@ -1145,6 +1169,7 @@ export default function AppShell({
         onBuild={buildApproved}
         onDiscard={discardPlan}
       />
+      )}
       {newSectionParent !== undefined && (
         <NewSection
           projectId={projectId}
