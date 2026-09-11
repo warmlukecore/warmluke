@@ -123,10 +123,7 @@ const noScanner = parseReply(
           changeType: "NEW_MODULE",
           targetModuleId: null,
           newModule: { name: "order-items", nav_label: "Order Items", icon: "package" },
-          newSchema: {
-            columns: columns.map((c) => (c.type === "barcode" ? { ...c, type: "text" } : c)),
-            features: {},
-          },
+          newSchema: { columns, features: {} },
           explanation: "Every product in an order.",
         },
       ],
@@ -144,38 +141,6 @@ if (!noScanner.ok) {
   check("no invented scan step is added either", !steps.some((s) => /refused on screen/.test(s)));
   check("the real steps still survive", steps.some((s) => /Order aata hai/.test(s)));
 }
-
-console.log("\na barcode column without a scanner is refused");
-const plansOnly = (features, cols) =>
-  parseReply(
-    JSON.stringify({
-      type: "plans",
-      plans: [
-        {
-          changeType: "NEW_MODULE",
-          targetModuleId: null,
-          newModule: { name: "order-items", nav_label: "Order Items", icon: "package" },
-          newSchema: { columns: cols, features },
-          explanation: "Every product in an order.",
-        },
-      ],
-    }),
-    [],
-    null,
-    null
-  );
-
-const withBarcode = [...columns];
-const scanner = { scanMode: { lookupField: "barcode", action: { label: "Verify", set: { item_status: { const: "Verified" } } } } };
-const textOnly = columns.map((c) => (c.type === "barcode" ? { ...c, type: "text" } : c));
-
-check(
-  "barcode column, no scan bar anywhere",
-  plansOnly({}, withBarcode).ok === false &&
-    plansOnly({}, withBarcode).errors.some((e) => /typed as barcode but nothing scans/.test(e))
-);
-check("barcode column with a scan bar is fine", plansOnly(scanner, withBarcode).ok === true);
-check("no barcode column, no scan bar is fine", plansOnly({}, textOnly).ok === true);
 
 console.log(fails.length === 0 ? "\nall gates hold" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

@@ -94,12 +94,14 @@ const SCENARIOS = [
       const scans = b.plans
         .map((p) => p.newSchema?.features?.scanMode)
         .filter(Boolean);
-      // Either use the scanner they told us they own, or say plainly
-      // that this design does not. Silently designing around it hands
-      // back the manual process they came here to replace.
+      // They named three faults and own a scanner. A design with no
+      // verification step solves none of it, which is allowed — saying
+      // so is not. Silence here hands back the manual process they came
+      // to replace and lets them approve it thinking it was solved.
       if (scans.length === 0) {
-        const said = (b.unmet ?? []).some((u) => /scan/i.test(u));
-        return said ? null : "their scanner goes unused and unmet never says so";
+        return (b.unmet ?? []).length > 0
+          ? null
+          : "nothing verifies a pack and unmet never says what was left unsolved";
       }
       for (const sm of scans) {
         for (const [field, v] of Object.entries(sm.action?.set ?? {})) {

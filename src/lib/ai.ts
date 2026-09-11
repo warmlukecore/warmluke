@@ -1136,23 +1136,6 @@ function parsePlans(
     else errors.push(...res.errors);
   }
 
-  // A "barcode" column means a scanner reads it. Shipping one with no
-  // scan bar anywhere leaves the owner a column they can only fill by
-  // typing the thing they bought a scanner to avoid typing — and the
-  // design is silent about it, so they find out after they agreed.
-  // Batch-wide rather than per-section, because a products catalogue may
-  // legitimately hold the codes that a different section scans.
-  const barcodeFields = plans.flatMap((p) =>
-    (p.newSchema?.columns ?? []).filter((c) => c.type === "barcode").map((c) => c.field)
-  );
-  const anyScan =
-    plans.some((p) => p.newSchema?.features?.scanMode) || !!currentFeatures?.scanMode;
-  if (barcodeFields.length > 0 && !anyScan) {
-    errors.push(
-      `${barcodeFields.map((f) => `"${f}"`).join(", ")} ${barcodeFields.length > 1 ? "are" : "is"} typed as barcode but nothing scans. Either set type "text" ${barcodeFields.length > 1 ? "on them" : "on it"} and say in blueprint.unmet that their scanner goes unused, or add "scanMode" to that section's features with lookupField pointing at ${barcodeFields.length > 1 ? "one of them" : "it"}.`
-    );
-  }
-
   // All or nothing. A batch is one coordinated build: quietly keeping the
   // plans that happened to validate would hand the owner half a feature
   // and no indication that the rest went missing.
@@ -1256,4 +1239,61 @@ export async function callAnthropicChat(
     .join("");
   if (!text) throw new Error("Anthropic returned an empty response.");
   return text;
+}
+
+// ── The gap pass ────────────────────────────────────────────────
+//
+// Grammar is finite and gates cover it. Judgment is not: "they told us
+// they own a barcode scanner and this design never scans" is not a rule
+// anyone can write once, because the next owner names a label printer,
+// a weighbridge, a shift roster. So instead of a rule per case, one
+// check per request.
+//
+// This is the single place asking the model to grade itself works. The
+// job is different (spotting a gap, not designing), the context is
+// fresh (no stake in what was built), and a wrong answer is cheap — it
+// lands in `unmet`, which the owner reads, so a false gap costs them one
+// puzzled line. The failure it replaces is silent: a scanner quietly
+// designed around, and nobody ever told.
+//
+// It is shown what the engine WILL BUILD, phrased by describePlan —
+// never the assistant's own summary of it. Grading the promise instead
+// of the build is how a design that says "scan to verify" and ships no
+// scanner passes review.
+
+const GAP_SYSTEM = `You read a business owner's own words and a list of what a system will actually do for them, and you name what they asked for that is missing.
+
+Rules:
+- Reply with JSON only: {"unmet": ["...", "..."]}. No prose.
+- Each entry is the OWNER'S OWN WORDS for the thing that is missing — a quote of what they said, not your explanation of it.
+- Equipment they told you they own (a scanner, a label printer, a weighing machine) that nothing in the build uses IS missing. They mentioned it because it was part of the answer.
+- A problem they stated that nothing detects IS missing. Showing information is not detecting: a list of bookings does not catch a clash, and a quantity field does not catch a short pack.
+- Do NOT list things they never asked for. Do NOT suggest improvements. Do NOT repeat something the build already covers.
+- Nothing missing is a normal answer: {"unmet": []}.
+- At most 4 entries, the most important first.`;
+
+export async function findGaps(
+  ownerWords: string,
+  builtDescription: string,
+  signal?: AbortSignal
+): Promise<string[]> {
+  try {
+    const raw = await callAnthropicChat(
+      GAP_SYSTEM,
+      [
+        {
+          role: "user",
+          content: `THE OWNER SAID:\n${ownerWords}\n\nWHAT WILL ACTUALLY BE BUILT:\n${builtDescription}`,
+        },
+      ],
+      signal
+    );
+    const obj = JSON.parse(stripFences(raw)) as unknown;
+    if (!isPlainObject(obj)) return [];
+    return asStringArray(obj.unmet, 4);
+  } catch {
+    // A design the owner can still read and approve beats no design at
+    // all, so a failed or slow gap pass never takes the blueprint with it.
+    return [];
+  }
 }

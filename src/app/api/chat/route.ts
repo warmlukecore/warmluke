@@ -5,9 +5,11 @@ import {
   buildSystemPrompt,
   buildUserMessage,
   callAnthropicChat,
+  findGaps,
   parseReply,
   type ChatTurn,
 } from "@/lib/ai";
+import { describePlan } from "@/lib/describe";
 import type {
   AssistantReply,
   FeatureSchema,
@@ -272,6 +274,26 @@ export async function POST(req: Request) {
         },
         { status: 200 }
       );
+    }
+
+    // Gates cover the grammar; this covers the judgment. Run only on a
+    // blueprint, because that is the one moment the owner is being asked
+    // to approve something, and the only place saying "this does not do
+    // X" still changes the outcome.
+    if (parsed.reply.type === "blueprint") {
+      const built = parsed.reply.blueprint.plans
+        .map((pl) => {
+          const d = describePlan(pl, moduleList, currentSchema?.columns);
+          return [d.title, ...d.lines].join("\n  ");
+        })
+        .join("\n");
+      const gaps = await findGaps(message.trim(), built, req.signal);
+      const existing = parsed.reply.blueprint.unmet ?? [];
+      const seen = new Set(existing.map((u) => u.toLowerCase().trim()));
+      parsed.reply.blueprint.unmet = [
+        ...existing,
+        ...gaps.filter((g) => !seen.has(g.toLowerCase().trim())),
+      ].slice(0, 6);
     }
 
     if (isNewConversation) {
