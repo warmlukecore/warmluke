@@ -205,7 +205,7 @@ CHOOSING THE VIEW — this is a real design decision, make it deliberately:
 WRITING FOR THE OWNER:
 - "summary" describes what THEY told you, in their words. Never claim an outcome ("this will stop double-bookings", "saves you hours") — you cannot know that, and the design may not deliver it.
 - Never describe a feature in prose. The interface renders every section, field, button and rule from the plans themselves, so a sentence about them can only ever contradict the thing.
-- "workflow" is their real-world process — people and steps as they happen in the world. Never say what the software shows, syncs, or who can see it: "appears on the calendar for everyone to see" is a claim about the platform, and a false one, because a project is used by its owner alone.
+- "workflow" is their real-world process — people and steps as they happen in the world. Leave the scan step out of THIS LIST — the interface writes it itself from the scan bar in your plans, so yours is dropped. That applies to this list only: if they own a scanner, still build scanMode. Never say what the software shows, syncs, or who can see it: "appears on the calendar for everyone to see" is a claim about the platform, and a false one, because a project is used by its owner alone.
 - If anything the owner told you lands in the NOT POSSIBLE list — several people using it, messaging a customer, taking payment, photos — it MUST appear in "unmet" in their own words. Designing around it silently is the worst thing you can do: they will believe it is handled.
 
 HARD RULES:
@@ -215,12 +215,14 @@ HARD RULES:
 - CHOOSE THE COLUMN TYPE THAT MATCHES THE THING. A customer's number is "phone", not text — the owner taps it to call. An address for their website is "url". A repair note is "longtext". "Paid?" is "boolean". A commission is "percent". Falling back to "text" throws away what the interface could do with it.
 - Every row also has an "id" that no schema lists. A rule that creates a linked row sets the link field to { "field": "id" } — the id of the row that fired it.
 - "link" is how two sections stay ONE thing. A return that points at its order, an order that points at its customer: the row stores the other row's id, so nothing is retyped and nothing drifts. It needs "linkTo" naming that section — a uuid, or "#slug" for one created in the same batch. Whenever a new section repeats fields that already exist in another (an order number, a customer name), that is a link, not a copy.
+- A scan is ONE event. If scanMode writes a number field, build it from that field's own current value — { "op": "+", "args": [{ "field": "qty_packed" }, { "const": 1 }] } — and decide the status from that count. Setting a number to another field or a flat value records a quantity nobody counted, so a short pack leaves a perfect record and the mistake is lost for good.
 - "barcode" is ONLY for a code an actual barcode scanner reads. A reference number, order number or SKU that people type is "text". Marking something barcode invites a scanning workflow the owner never asked for.
 - UI_CHANGE only references fields that exist in the module's current schema (in CONTEXT).
 - NEW_MODULE demo rows: EXACT field names, matching types.
 - Labels and demo data must use the owner's own vocabulary, not generic business-speak.
 - NEVER describe what this platform can or cannot do, and never propose a workaround for something in the NOT POSSIBLE list. You do not get to characterise the engine — the interface does that, from its own record of what exists.
 - The owner's stated PROBLEM is the test. If your plans do not actually address it, that goes in "unmet" too. Showing information is not the same as catching a mistake: a calendar makes bookings visible, it does not detect a clash. If they said they only find out later, they need a rule that tells them — build one with count_matching, or say plainly that this design does not.
+- If the owner names equipment they already own — a scanner, a label printer, a weighing machine — the design either uses it or blueprint.unmet says plainly that it does not. They mentioned it because it is part of the answer; quietly designing around it hands them back the manual process they came to replace.
 - If the owner asked for something this design does not do, put THEIR OWN WORDS for it in blueprint.unmet — a quote of the request, not an explanation. Wrong: "Scan mode can only match one row, so you'll see a filtered list and tap one". Right: "one barcode shared across colour and size variants".
 - Never put something in unmet that you could have built. If you can build it and chose not to, it is a section with "essential": false and a "why" — the owner decides.
 - Always include "explanation" on every plan: one short sentence a non-technical person understands.`;
@@ -346,7 +348,7 @@ function validateView(view: unknown, columns: SchemaColumn[] | null, errors: str
  * the module's current schema for FEATURE_UPDATE, or the plan's own new
  * columns for a NEW_MODULE that ships with features inline.
  */
-function validateFeatures(
+export function validateFeatures(
   features: unknown,
   columns: SchemaColumn[] | null,
   errors: string[],
@@ -438,6 +440,18 @@ function validateFeatures(
     } else {
       for (const [k, v] of Object.entries(f.scanMode.action.set)) {
         if (!hasField(k)) err(errors, `scanMode sets unknown field "${k}".`);
+        // One scan is one event, so a number it writes has to be built
+        // from that number's own current value. `qty_packed = qty_ordered`
+        // records a complete pack after a single beep: a short pack then
+        // leaves a spotless record, and the mis-pack the owner asked us
+        // to catch is the one thing nobody can ever find again.
+        const col = columns?.find((c) => c.field === k);
+        if (col?.type === "number" && !referencesField(v, k)) {
+          err(
+            errors,
+            `Scanning writes "${k}" without counting it — a scan can only add to "${k}", not declare what it already is. Use {"op":"+","args":[{"field":"${k}"},{"const":1}]} and decide the status from that.`
+          );
+        }
         validateExpr(v, hasField, errors, "client");
         rejectClockDerivedWrites(v, `scanMode writing "${k}"`, errors);
       }
@@ -548,6 +562,16 @@ function validateExpr(
  *
  * Prompt wording did not hold, so this is enforced.
  */
+/**
+ * Does this expression read `name` anywhere inside it?
+ */
+function referencesField(v: unknown, name: string): boolean {
+  if (!isPlainObject(v)) return false;
+  if (typeof v.field === "string") return v.field === name;
+  if (Array.isArray(v.args)) return v.args.some((a) => referencesField(a, name));
+  return false;
+}
+
 function rejectClockDerivedWrites(node: unknown, where: string, errors: string[]): void {
   if (!isPlainObject(node)) return;
   if (node.op === "days_since") {
@@ -1018,6 +1042,30 @@ function parseBlueprint(
       who: typeof w.who === "string" ? w.who : "",
     }));
 
+  // Steps are the owner's real-world process, and the model writes them
+  // as prose. Left alone it also narrates the software, and gets it
+  // wrong: one blueprint promised that scanning the wrong product would
+  // do "nothing on screen" when the scanner in fact refuses it out loud.
+  // An owner told to expect silence stops looking — at exactly the
+  // moment the whole system exists for. So the scan step is stated by
+  // the engine that implements it, and the model's version is dropped.
+  const scans = plans
+    .map((p) => p.newSchema?.features?.scanMode)
+    .filter((sm): sm is NonNullable<typeof sm> => !!sm);
+  // Dropped whether or not a scanner exists. With one, the model gets
+  // its behaviour wrong; without one it describes a scanner that was
+  // never built at all, which is the worse of the two — the owner buys
+  // into a check that will never run.
+  const kept = workflow.filter((w) => !/\bscan/i.test(w.step));
+  for (const sm of scans) {
+    kept.push({
+      step: `Scan a ${sm.lookupField} — a code that is not in this list is refused on screen, and if two rows share a code it asks which one before changing anything. A match applies "${sm.action?.label ?? "the scan action"}".`,
+      who: "Whoever is scanning",
+    });
+  }
+  workflow.length = 0;
+  workflow.push(...kept);
+
   return {
     ok: true,
     reply: {
@@ -1086,6 +1134,23 @@ function parsePlans(
     );
     if (res.ok && res.plan) plans.push(res.plan);
     else errors.push(...res.errors);
+  }
+
+  // A "barcode" column means a scanner reads it. Shipping one with no
+  // scan bar anywhere leaves the owner a column they can only fill by
+  // typing the thing they bought a scanner to avoid typing — and the
+  // design is silent about it, so they find out after they agreed.
+  // Batch-wide rather than per-section, because a products catalogue may
+  // legitimately hold the codes that a different section scans.
+  const barcodeFields = plans.flatMap((p) =>
+    (p.newSchema?.columns ?? []).filter((c) => c.type === "barcode").map((c) => c.field)
+  );
+  const anyScan =
+    plans.some((p) => p.newSchema?.features?.scanMode) || !!currentFeatures?.scanMode;
+  if (barcodeFields.length > 0 && !anyScan) {
+    errors.push(
+      `${barcodeFields.map((f) => `"${f}"`).join(", ")} ${barcodeFields.length > 1 ? "are" : "is"} typed as barcode but nothing scans. Either set type "text" ${barcodeFields.length > 1 ? "on them" : "on it"} and say in blueprint.unmet that their scanner goes unused, or add "scanMode" to that section's features with lookupField pointing at ${barcodeFields.length > 1 ? "one of them" : "it"}.`
+    );
   }
 
   // All or nothing. A batch is one coordinated build: quietly keeping the

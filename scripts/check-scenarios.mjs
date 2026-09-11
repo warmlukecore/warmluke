@@ -81,6 +81,41 @@ const SCENARIOS = [
     },
   },
   {
+    name: "packing",
+    problem:
+      "Mere packer galat product bhej rahe hain. Customer complain karta hai tab pata chalta hai",
+    answers:
+      "Barcode scanner hai, SKU likha hota hai. Orders website se aate hain. Sirf main khud pack karta hoon. Similar dikhne wale products mix ho jate hain, size ya colour galat chala jata hai, quantity kam ya zyada pack hoti hai",
+    // The owner named three faults; the third is the one a design can
+    // silently drop. A scan that assigns the ordered quantity instead of
+    // counting records a perfect pack every time, so the short pack they
+    // asked us to catch becomes the one thing nobody can ever find.
+    expect: (b) => {
+      const scans = b.plans
+        .map((p) => p.newSchema?.features?.scanMode)
+        .filter(Boolean);
+      // Either use the scanner they told us they own, or say plainly
+      // that this design does not. Silently designing around it hands
+      // back the manual process they came here to replace.
+      if (scans.length === 0) {
+        const said = (b.unmet ?? []).some((u) => /scan/i.test(u));
+        return said ? null : "their scanner goes unused and unmet never says so";
+      }
+      for (const sm of scans) {
+        for (const [field, v] of Object.entries(sm.action?.set ?? {})) {
+          if (!/qty|quantity|count/i.test(field)) continue;
+          if (!JSON.stringify(v).includes(`"${field}"`))
+            return `scanning sets ${field} without counting it — a short pack would still look complete`;
+        }
+      }
+      const scanSteps = (b.workflow ?? []).filter((w) => /\bscan/i.test(w.step));
+      if (scanSteps.length === 0) return "no scan step in the flow at all";
+      if (!scanSteps.every((w) => /refused on screen/.test(w.step)))
+        return "the flow describes scanning in the model's own words instead of the engine's";
+      return null;
+    },
+  },
+  {
     name: "double-booking",
     problem: "Two people book the same slot and I only find out on the day",
     answers:
