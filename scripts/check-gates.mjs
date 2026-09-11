@@ -7,7 +7,7 @@
 //
 //   node scripts/check-gates.mjs
 
-import { validateFeatures, parseReply } from "../src/lib/ai.ts";
+import { isTransient, validateFeatures, parseReply } from "../src/lib/ai.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -202,6 +202,25 @@ check(
   overdueRule.ok === true
 );
 if (!overdueRule.ok) console.log("     ", overdueRule.errors.join(" | "));
+
+console.log("\nonly a transient failure is worth retrying");
+// Retrying a rejected request or a bad key only delays the error the
+// caller has to see; retrying a busy server is the whole point.
+const transient = [
+  "Gemini API error 503: model is currently experiencing high load",
+  "Gemini API error 429: quota exceeded",
+  "Gemini API error 500: internal",
+  "fetch failed: timeout",
+  "Service temporarily overloaded",
+];
+const permanent = [
+  "Gemini API error 400: invalid argument",
+  "Gemini API error 401: API key not valid",
+  "Gemini API error 404: model not found",
+  "GEMINI_API_KEY is not set.",
+];
+check("busy, rate-limited and broken all retry", transient.every((m) => isTransient(new Error(m))));
+check("rejected, unauthorised and missing do not", permanent.every((m) => !isTransient(new Error(m))));
 
 console.log(fails.length === 0 ? "\nall gates hold" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

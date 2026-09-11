@@ -1229,7 +1229,31 @@ export async function callAnthropicChat(
   // The provider comes from the model id rather than a second setting.
   // One name to change when the Anthropic balance runs out, and no way
   // to end up pointed at a model the configured key cannot serve.
-  if (model.startsWith("gemini")) return callGemini(model, system, turns, signal);
+  if (model.startsWith("gemini")) {
+    // Gemini answered three of three scenarios with no repairs at all,
+    // and 503'd on the fourth. The quality is there; the availability is
+    // not, and a design half-written when Google is busy is worse than a
+    // slower one. Retry once, then pay for Anthropic rather than fail.
+    try {
+      return await callGemini(model, system, turns, signal);
+    } catch (e) {
+      if (!isTransient(e) || signal?.aborted) throw e;
+      await new Promise((r) => setTimeout(r, 2000));
+      try {
+        return await callGemini(model, system, turns, signal);
+      } catch (again) {
+        if (!isTransient(again) || signal?.aborted) throw again;
+        if (!process.env.ANTHROPIC_API_KEY) throw again;
+        // Falls through to Anthropic below, on the fallback model.
+        return callAnthropicChat(
+          system,
+          turns,
+          signal,
+          process.env.ANTHROPIC_FALLBACK_MODEL || "claude-sonnet-4-5"
+        );
+      }
+    }
+  }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -1332,6 +1356,16 @@ export async function findGaps(
   }
 }
 
+
+/**
+ * Busy, rate-limited or briefly broken — worth trying again. A rejected
+ * request or a bad key is not, and retrying one only delays the error
+ * the caller needs to see.
+ */
+export function isTransient(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  return /\b(429|500|502|503|504)\b/.test(msg) || /overload|unavailable|high load|timeout/i.test(msg);
+}
 
 /**
  * Gemini as the fallback when the Anthropic balance is out.
