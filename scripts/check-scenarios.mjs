@@ -406,6 +406,7 @@ for (const s of SCENARIOS) {
       ? s.expectFirst(first.reply)
       : `no reply at all: ${JSON.stringify(first).slice(0, 120)}`;
     console.log(problem ? `FAIL — ${problem}` : `ok (repairs: ${first.repairs ?? 0})`);
+    results.push({ name: s.name, ok: !problem, why: problem, repairs: first.repairs ?? 0 });
     if (problem) failed++;
     continue;
   }
@@ -456,12 +457,18 @@ if (!only) {
   try {
     commit = execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim();
   } catch {}
+  // Read the previous run BEFORE writing this one, or the comparison is
+  // against the line just appended and every run reports "+0, same as
+  // last time" — a regression detector that can never detect one.
+  const prev = await previousRun();
+
   mkdirSync(new URL("../evals/", import.meta.url), { recursive: true });
   appendFileSync(
     new URL("../evals/history.jsonl", import.meta.url),
     JSON.stringify({
       at: new Date().toISOString(),
       commit,
+      model: process.env.ABO_EVAL_MODEL ?? "default",
       passed: results.filter((r) => r.ok).length,
       total: results.length,
       repairs: results.reduce((n, r) => n + r.repairs, 0),
@@ -469,7 +476,6 @@ if (!only) {
     }) + "\n"
   );
 
-  const prev = await previousRun();
   if (prev) {
     const now = results.filter((r) => r.ok).length;
     const delta = now - prev.passed;
@@ -477,10 +483,13 @@ if (!only) {
     const wasFail = new Set((prev.failures ?? []).map((f) => f.name));
     const fixed = [...wasFail].filter((n) => !nowFail.has(n));
     const broke = [...nowFail].filter((n) => !wasFail.has(n));
+    const nowModel = process.env.ABO_EVAL_MODEL ?? "default";
     console.log(
-      `\n${now}/${results.length} vs ${prev.passed}/${prev.total} at ${prev.commit} ` +
-        `(${delta >= 0 ? "+" : ""}${delta})`
+      `\n${now}/${results.length} [${nowModel}] vs ${prev.passed}/${prev.total} ` +
+        `[${prev.model ?? "?"}] at ${prev.commit} (${delta >= 0 ? "+" : ""}${delta})`
     );
+    if ((prev.model ?? "default") !== nowModel)
+      console.log("  different models — this is a comparison of providers, not of changes");
     if (fixed.length) console.log(`  fixed:  ${fixed.join(", ")}`);
     if (broke.length) console.log(`  BROKE:  ${broke.join(", ")}`);
     if (!fixed.length && !broke.length) console.log("  same scenarios as last run");

@@ -240,7 +240,12 @@ export function buildSystemPrompt(
   projectName: string,
   locale = "en-IN",
   currency = "INR"
-): string {
+  // Two blocks, not one string. The contract is ~6,500 tokens and never
+  // varies; the project name and section list do. Joined together the
+  // whole thing is a different prefix for every project, so a cache
+  // marker on it hits nothing and pays the 25% write premium on every
+  // single call — the opposite of the intent.
+): [string, string] {
   // Rendered as a tree so the assistant sees which sections sit inside
   // which, and can put a new one in the right place.
   const line = (m: ModuleRow, indent: string) =>
@@ -255,12 +260,13 @@ export function buildSystemPrompt(
           })
           .join("\n")
       : "(none yet — this is a brand-new, empty project)";
-  return `${replyContract()}
-
-PROJECT: "${projectName}"
+  return [
+    replyContract(),
+    `PROJECT: "${projectName}"
 LOCALE: ${locale} · CURRENCY: ${currency} — demo amounts must be realistic for this currency and market, and labels should read naturally to someone there.
 CURRENT SECTIONS (use these ids for targetModuleId; sort_order = sidebar position; indented ones sit inside the section above them):
-${list}`;
+${list}`,
+  ];
 }
 
 export function buildUserMessage(
@@ -1207,7 +1213,8 @@ export interface ChatTurn {
  * is what lets the assistant ask, then remember, then design.
  */
 export async function callAnthropicChat(
-  system: string,
+  /** One block, or [constant, variable] — only the first is cached. */
+  system: string | [string, string],
   turns: ChatTurn[],
   /** Aborts when the browser disconnects, so a cancelled turn stops the
    *  model call instead of running on and being saved to the thread. */
@@ -1217,11 +1224,17 @@ export async function callAnthropicChat(
    *  rate for it doubled the bill for every blueprint. */
   modelOverride?: string
 ): Promise<string> {
+  const model = modelOverride || process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5";
+
+  // The provider comes from the model id rather than a second setting.
+  // One name to change when the Anthropic balance runs out, and no way
+  // to end up pointed at a model the configured key cannot serve.
+  if (model.startsWith("gemini")) return callGemini(model, system, turns, signal);
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error("ANTHROPIC_API_KEY is not set — add it to .env.local.");
   }
-  const model = modelOverride || process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5";
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -1239,7 +1252,9 @@ export async function callAnthropicChat(
       // twenty-scenario eval cost more than the bugs it finds — which
       // meant the measurements could not be afforded, which meant fixes
       // went back to being guesses.
-      system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+      system: (Array.isArray(system) ? system : [system]).map((text, i) =>
+        i === 0 ? { type: "text", text, cache_control: { type: "ephemeral" } } : { type: "text", text }
+      ),
       messages: turns,
     }),
     signal,
@@ -1315,4 +1330,60 @@ export async function findGaps(
     // all, so a failed or slow gap pass never takes the blueprint with it.
     return [];
   }
+}
+
+
+/**
+ * Gemini as the fallback when the Anthropic balance is out.
+ *
+ * A different wire shape, not a different contract: same system text,
+ * same turns, same JSON expected back. Chosen over the free routers
+ * because those either refuse service or answer a request for JSON with
+ * a paragraph of reasoning, and nothing downstream can parse that.
+ *
+ * Which model produced a reply is never inferred. An eval that silently
+ * mixed providers would report a number for neither.
+ */
+async function callGemini(
+  model: string,
+  system: string | [string, string],
+  turns: ChatTurn[],
+  signal?: AbortSignal
+): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error(`ANTHROPIC_MODEL is "${model}" but GEMINI_API_KEY is not set.`);
+  }
+  const systemText = (Array.isArray(system) ? system : [system]).join("\n\n");
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: systemText }] },
+        contents: turns.map((t) => ({
+          role: t.role === "assistant" ? "model" : "user",
+          parts: [{ text: t.content }],
+        })),
+        generationConfig: { maxOutputTokens: 6000, responseMimeType: "application/json" },
+      }),
+      signal,
+    }
+  );
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Gemini API error ${res.status}: ${body.slice(0, 300)}`);
+  }
+
+  const data = (await res.json()) as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  };
+  const text = (data.candidates?.[0]?.content?.parts ?? [])
+    .map((p) => p.text ?? "")
+    .join("");
+  if (!text) throw new Error("Gemini returned an empty response.");
+  return text;
 }
