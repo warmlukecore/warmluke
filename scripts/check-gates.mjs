@@ -142,5 +142,66 @@ if (!noScanner.ok) {
   check("the real steps still survive", steps.some((s) => /Order aata hai/.test(s)));
 }
 
+console.log("\nevery gate that recommends a way out has one that opens");
+// Twice in one afternoon a gate refused something and left the model
+// nowhere to go: three repairs spent, and the owner handed an error
+// where a design belonged. A rejection is only finished when the shape
+// it recommends is known to validate.
+const tools = [
+  { field: "tool_name", label: "Tool", type: "text" },
+  { field: "date_taken", label: "Date Taken", type: "date" },
+  { field: "status", label: "Status", type: "badge", options: ["Out", "Returned", "Overdue"] },
+];
+const toolsModule = {
+  id: "11111111-1111-1111-1111-111111111111",
+  name: "tools",
+  nav_label: "Tools",
+  icon: "wrench",
+  sort_order: 0,
+  project_id: "p",
+  parent_id: null,
+};
+const overdueRule = parseReply(
+  JSON.stringify({
+    type: "plans",
+    plans: [
+      {
+        changeType: "AUTOMATION_ADD",
+        targetModuleId: toolsModule.id,
+        newModule: null,
+        newSchema: null,
+        explanation: "Flag a tool nobody brought back.",
+        automation: {
+          name: "Flag overdue tools",
+          definition: {
+            trigger: {
+              type: "schedule",
+              every: "daily",
+              when: {
+                op: "and",
+                args: [
+                  { op: ">", args: [{ op: "days_since", args: [{ field: "date_taken" }] }, { const: 7 }] },
+                  { op: "=", args: [{ field: "status" }, { const: "Out" }] },
+                ],
+              },
+            },
+            actions: [
+              { type: "set_fields", target: { self: true }, set: { status: { const: "Overdue" } } },
+            ],
+          },
+        },
+      },
+    ],
+  }),
+  [toolsModule],
+  { columns: tools },
+  null
+);
+check(
+  "the schedule shape the clock-write rejection recommends validates",
+  overdueRule.ok === true
+);
+if (!overdueRule.ok) console.log("     ", overdueRule.errors.join(" | "));
+
 console.log(fails.length === 0 ? "\nall gates hold" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

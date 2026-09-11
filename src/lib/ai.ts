@@ -171,6 +171,14 @@ HOW TO CHOOSE changeType:
 
   NEVER STORE A VALUE THAT DEPENDS ON TODAY'S DATE. A rule runs when a row is written, so a field holding "days old" is correct for one day and then rots — the row sits untouched and still says 3 while three months pass, which is exactly the blindness the owner asked you to fix. Put today-dependent maths where it is READ, not where it is stored: a stat's "value" or "where", or a row action's guard, all evaluate fresh every time the page opens. Storing is right only for values derived from OTHER ROWS (a clash flag), because those genuinely change only on a write.
 
+  A COMPLETE SCHEDULE RULE, because the parts above are worth nothing until they are assembled. This is the whole shape — the date maths lives in "when", and "set" writes a plain word. Copy this arrangement whenever the owner finds out too late:
+    { "name": "Flag overdue tools",
+      "definition": {
+        "trigger": { "type": "schedule", "every": "daily",
+                     "when": { "op": "and", "args": [ { "op": ">", "args": [ { "op": "days_since", "args": [ { "field": "date_taken" } ] }, { "const": 7 } ] }, { "op": "=", "args": [ { "field": "status" }, { "const": "Out" } ] } ] } },
+        "actions": [ { "type": "set_fields", "target": { "self": true }, "set": { "status": { "const": "Overdue" } } } ] } }
+  Note where days_since sits. In "when" it is re-evaluated every day and stays true; moved into "set" it freezes the day it ran and the row lies from then on.
+
   "I ONLY FIND OUT LATER" IS ALWAYS A SCHEDULE RULE. Whenever the owner describes noticing something too late — they forget to follow up, they realise months afterwards, they only spot it when someone complains — a view does not fix that, because a view still has to be looked at. The answer is a rule on a schedule whose "when" does the date maths and whose action writes a plain status word. Ask yourself, for every problem: does this need to be NOTICED without anyone looking? If yes, it is a schedule rule, and leaving it out means the design does not solve what they told you.
 
   A RULE ONLY TOUCHES THE ROWS ITS ACTIONS NAME. set_fields on self writes to the row being saved and nothing else, so a clash rule flags the row just entered — NOT the earlier booking it collides with. Never write "marks both", "flags both bookings" or similar in summary or workflow: it does not happen, and the owner will trust it.
