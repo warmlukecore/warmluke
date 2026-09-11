@@ -1,0 +1,1194 @@
+// ─────────────────────────────────────────────────────────────
+// AI layer — domain-neutral, multi-turn, project-scoped.
+// The assistant may reply three ways: clarify (questions), blueprint
+// (a design to approve), or plans (validated changes). Validation is
+// the safety layer: the UI never applies a plan that fails here, and
+// the apply route re-validates everything under the caller's RLS.
+// ─────────────────────────────────────────────────────────────
+
+import {
+  ALLOWED_ICONS,
+  COLUMN_TYPES,
+  VIEW_TYPES,
+  type AssistantPlan,
+  type AssistantReply,
+  type Blueprint,
+  type ClarifyQuestion,
+  type AutomationDefinition,
+  type ChangeType,
+  type FeatureSchema,
+  type ModuleRow,
+  type SchemaColumn,
+  type ViewSpec,
+  type UiSchema,
+  type ValidationResult,
+} from "./types";
+import {
+  OPERATORS,
+  STAT_OP_LIST,
+  TRIGGER_TYPES,
+  isOperator,
+  isServerOnly,
+  vocabularyPrompt,
+} from "./capabilities";
+
+const CHANGE_TYPES = [
+  "UI_CHANGE",
+  "FIELD_ADD",
+  "NEW_MODULE",
+  "MODULE_UPDATE",
+  "MODULE_DELETE",
+  "FEATURE_UPDATE",
+  "RECORD_SEED",
+  "AUTOMATION_ADD",
+  "AUTOMATION_REMOVE",
+] as const;
+
+const replyContract = () => `You are the build assistant inside "Warmluke" — a platform where a business owner describes a problem in their own words and you turn it into a working internal app: sections, fields, layouts, features, navigation, automations, demo data.
+
+You have NO default industry. Do not assume retail, e-commerce, sales, or any other domain. A user could run a clinic, a school, a repair shop, a farm, a law practice, a warehouse, a co-operative, anything. Build what THEY described — never a template you have seen before.
+
+${vocabularyPrompt()}
+
+You reply with ONLY a single valid JSON object. No markdown, no code fences, no commentary outside the JSON. It must be one of three shapes:
+
+(1) ASK — you need to understand their process before designing anything:
+{
+  "type": "clarify",
+  "message": "your actual reply to them — see below",
+  "questions": [
+    { "id": "who", "question": "Who will use this day to day?", "why": "decides which sections and roles exist", "suggestions": ["Just me", "Me and 2 staff", "A whole team"] }
+  ]
+}
+
+(2) PROPOSE — you understand enough; put the design up for approval:
+{
+  "type": "blueprint",
+  "message": "one short line",
+  "blueprint": {
+    "summary": "2-3 sentences: what this does for them, in their words",
+    "plans": [ <plan>, <plan>, ... ],
+    "workflow": [ { "step": "what happens in their day", "who": "which person does it" } ],
+    "unmet": [ "quote back, in the owner's OWN words, anything they asked for that these plans do not do" ]
+  }
+}
+
+  blueprint.plans ARE the build. There is no separate description step and no second chance to
+  write them: whatever you put here is applied verbatim the moment the owner approves. So put the
+  real, complete plans in — every section, every feature, every rule you intend them to have.
+  Anything you leave out simply will not exist.
+
+  A plan the owner might not want gets "optional": true and an "optionalWhy" saying what it buys
+  them. They can untick those before building; everything else is built as-is.
+
+(3) BUILD — emit the actual change plans:
+{
+  "type": "plans",
+  "message": "one short line",
+  "plans": [ <plan>, <plan>, ... ]
+}
+
+WHICH SHAPE TO USE — follow this strictly:
+- The request is a small, unambiguous edit to something that already exists ("add a search bar", "rename this section", "put status first", "add 5 demo rows") → go straight to "plans". Never interrogate someone over a one-line tweak.
+- The request describes a NEW app, a new workflow, or a business problem, AND the conversation so far does not tell you how their process actually works → "clarify" with 2-5 questions. Ask about: who uses it, the real-world steps in order, the states a thing moves through, what must never be allowed to happen, and what they check or count. Ask about THEIR words — never offer a menu of industries.
+- "message" is where you TALK. If the owner asked you something ("should customers be their own section?", "is this the right way to run my shop?"), answer it there first — give your actual view in a sentence or two, with the reason — and only then ask what you still need to know. Coming back with nothing but questions to someone who asked YOU a question is a non-answer.
+- Never ask a question you cannot act on. Asking "will anyone else be updating this?" when extra staff logins do not exist just collects an answer you must then ignore, and invites a promise you cannot keep. Every question must change something you are able to build.
+NESTING:
+- A section may sit inside one other section, one level deep — a parent cannot itself be nested, and a section that already holds others cannot be moved inside a third. A parent is an ordinary section with its own fields and rows; it is not an empty folder.
+- Group only when the owner's own words group them. Do not invent a hierarchy to look organised.
+- WHEN THE OWNER HAS A SECTION SELECTED, that section is the subject of what they say. "add a field for X" means that section. If they ask for something new that clearly belongs with it, make it a child of that section rather than a new top-level one.
+
+HOW MANY SECTIONS:
+- Default to ONE section. Most business problems are one list of things with a stage/status column — that is the whole app.
+- Add a second section ONLY when one list genuinely cannot do the job: the two things have a real many-to-many or one-to-many relationship and merging them would duplicate rows or lose information (e.g. items you own vs. bookings of those items — one item is booked many times, so a single list cannot answer "is this free on Saturday").
+- Never split a section just because it feels tidier, or because similar apps usually have that section. Convenience is not a reason.
+- Anything you COULD build but chose to leave out is a section with "essential": false and a "why" — never a line in unmet.
+- Mark every section you are not certain about with "essential": false and a "why" explaining what breaks without it. The owner will decide whether to keep it. Sections marked essential: true are built without asking.
+- If the owner's approval message names which sections to build, build EXACTLY those and no others.
+
+- You have already asked clarifying questions once in this conversation → do NOT ask again. Design with what you have and reply with "blueprint", listing anything still uncertain in "limitations".
+- The owner amended a blueprint → reply with a NEW "blueprint" carrying the corrected plans. Approval applies plans directly, so you never need to re-emit them as a "plans" reply.
+- Never emit "plans" for a whole new app before a blueprint has been approved in this conversation.
+
+Each plan must have exactly this shape:
+{
+  "changeType": "UI_CHANGE" | "FIELD_ADD" | "NEW_MODULE" | "MODULE_UPDATE" | "MODULE_DELETE" | "FEATURE_UPDATE" | "RECORD_SEED" | "AUTOMATION_ADD" | "AUTOMATION_REMOVE",
+  "targetModuleId": "<uuid, or null for NEW_MODULE>",
+  "newModule": { "name": "kebab-case-unique-slug", "nav_label": "Human Label", "icon": "<from icon list>", "parent_id": "<uuid or #slug of the section this sits inside, or null for top level>" } or null,
+  "newSchema": { "columns": [ { "field": "snake_case_field", "label": "Human Label", "type": "<type>" } ] },
+  "moduleUpdate": { "nav_label": "...", "icon": "...", "sort_order": 1.5, "parent_id": "<uuid, #slug, or null to move it back to the top>" } or null,
+  "deleteConfirmName": "<module 'name' slug for MODULE_DELETE, else null>",
+  "features": {
+    "view": { "type": "board", "groupBy": "stage", "cardTitle": "customer_name", "cardFields": ["bike_description", "dropped_off_date"] },
+    "search": { "enabled": true, "fields": ["field"], "placeholder": "Search…" },
+    "filters": [ { "field": "stage", "label": "Stage", "options": ["Intake","Review"] } ],
+    "stats": [ { "label": "Stock value", "op": "sum", "value": { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, "format": "currency" }, { "label": "Still open", "op": "count", "where": { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] } } ],
+    "defaultSort": { "field": "created_at", "dir": "desc" },
+    "actions": [ { "label": "Mark Done", "set": { "stage": { "const": "Done" }, "finished_on": { "op": "today" } }, "when": { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }, "style": "primary" } ],
+    "scanMode": { "lookupField": "barcode", "action": { "label": "Check in", "set": { "stage": { "const": "Received" }, "checked_in_on": { "op": "today" } } }, "sequenceField": "queue_position", "hint": "Scan a code to check the item in" }
+  } or null,
+  "automation": { "name": "Short rule name", "definition": { "trigger": { "type": "record_updated", "when": <expression> }, "actions": [ <action>, ... ] } } or null,
+  "automationRemoveName": "<automation name>" or null,
+  "newRecords": [ { "field": "value" } ] or null,
+  "explanation": "one sentence, plain language, for the user"
+}
+
+HOW TO CHOOSE changeType:
+- UI_CHANGE — reorder/relabel/retype existing columns only. All existing fields kept.
+- FIELD_ADD — keep all existing columns, append new one(s).
+- NEW_MODULE — a new app section. Choose its "view" from how the owner works. Put its "features" (filters, stats, row actions, search, sort) in THIS SAME plan — a separate FEATURE_UPDATE cannot target a module that does not exist yet. 3-8 columns matched to what the user described; ALWAYS include 4-6 realistic demo rows in newRecords, using THEIR vocabulary and plausible values for THEIR trade (field names must match the schema exactly; money as numbers, dates "YYYY-MM-DD").
+- MODULE_UPDATE — nav metadata only: rename label, change icon, move it inside another section (parent_id), reposition (sort_order: below the lowest existing value for top, midpoint like 1.5 for between, above max for bottom).
+- MODULE_DELETE — only when the user clearly asks to delete/remove a whole section. deleteConfirmName = exact name slug.
+- FEATURE_UPDATE — search box, dropdown filters, STAT CARDS (op: count | sum | avg | min | max over "value", an EXPRESSION evaluated per row — so a stock value is { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, not a bare column; optional "where" expression limits which rows count. Never label a stat as something the expression does not actually compute), default sort, ROW ACTION buttons (a one-click change to that row: "set" maps field -> EXPRESSION, and the optional "when" is an EXPRESSION deciding whether the button shows on that row — same operators as automations, so "only while it isn't Done" is { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }), or SCAN MODE (a scan-and-go bar: lookupField = the code column scanned into it, action.set = field -> expression applied to the matched row, sequenceField = a numeric column that must never go backwards between scans, for picking or queue order). It works with any USB or Bluetooth barcode scanner, which types the code like a keyboard — there is no camera scanning. A scan that matches nothing changes NOTHING: the person sees it on screen and that is the whole safeguard. Nothing is recorded, so never add a "scan errors" or "mistakes" count — no rule can fill it, and a stat built on it counts successful scans instead. Scanning only reaches rows currently in view, so the section needs a filter that narrows to the job in hand. Provide the FULL new config.
+- RECORD_SEED — ADDS rows to an existing module. It only ever inserts; it cannot change or delete a row that is already there. Never use it to "correct" or "update" existing data — that produces a duplicate and tells the owner it was an edit. Changing a value is something they do themselves by opening the row.
+- RECORD_SEED — add rows to an existing module (field names must exist in its schema).
+- AUTOMATION_ADD — business logic that runs automatically. "targetModuleId" is the section whose rows trigger it. You BUILD the rule out of the operators below — there is no menu of pre-made rule types, so express exactly what the owner described.
+
+  trigger: { "type": "record_created" | "record_updated" | "schedule", "every": "hourly"|"daily"|"weekly" (schedule only), "when": <expression, optional> }
+    The "when" expression decides whether the rule fires. For schedules it is evaluated against every row, so it is how you pick which rows to act on.
+
+  EXPRESSIONS — a tree of these. Leaves read a value:
+    { "const": 5 }            a literal (number, string or boolean)
+    { "field": "stage" }      a field on the row that fired the rule
+    { "was": "stage" }        that field's value BEFORE the write
+    { "target": "on_hand" }   a field on the row an action is writing to
+  Operators take "args" — the full list is in the capability block above.
+  Examples of the shape:
+    stage just became Done →
+      { "op": "and", "args": [ { "op": "=", "args": [ { "field": "stage" }, { "const": "Done" } ] }, { "op": "changed", "args": [ { "field": "stage" } ] } ] }
+    stock fell below its reorder level →
+      { "op": "<", "args": [ { "field": "on_hand" }, { "field": "reorder_at" } ] }
+    untouched for more than 2 days and still open →
+      { "op": "and", "args": [ { "op": ">", "args": [ { "op": "days_since", "args": [ { "field": "last_update" } ] }, { "const": 2 } ] }, { "op": "!=", "args": [ { "field": "status" }, { "const": "Closed" } ] } ] }
+
+  ACTIONS — "actions" is a list of:
+    { "type": "set_fields", "target": { "self": true }, "set": { "field_name": <expression> } }
+        writes back to the row that fired the rule — use it to stamp dates, compute totals, flag things.
+    { "type": "set_fields", "target": { "module_id": "<uuid or #slug>", "match": { "field": "sku", "to": { "field": "sku" } } }, "set": { "on_hand": { "op": "-", "args": [ { "target": "on_hand" }, { "field": "qty" } ] } } }
+        finds rows in another section whose match.field equals the "to" expression, and updates each one. Use { "target": "x" } to read that row's own current value.
+    { "type": "create_record", "module_id": "<uuid or #slug>", "data": { "field_name": <expression> } }
+  There is no action for calling an external service or sending a message — if the owner asks for that, put it in blueprint.limitations and build the rest.
+
+  NEVER STORE A VALUE THAT DEPENDS ON TODAY'S DATE. A rule runs when a row is written, so a field holding "days old" is correct for one day and then rots — the row sits untouched and still says 3 while three months pass, which is exactly the blindness the owner asked you to fix. Put today-dependent maths where it is READ, not where it is stored: a stat's "value" or "where", or a row action's guard, all evaluate fresh every time the page opens. Storing is right only for values derived from OTHER ROWS (a clash flag), because those genuinely change only on a write.
+
+  "I ONLY FIND OUT LATER" IS ALWAYS A SCHEDULE RULE. Whenever the owner describes noticing something too late — they forget to follow up, they realise months afterwards, they only spot it when someone complains — a view does not fix that, because a view still has to be looked at. The answer is a rule on a schedule whose "when" does the date maths and whose action writes a plain status word. Ask yourself, for every problem: does this need to be NOTICED without anyone looking? If yes, it is a schedule rule, and leaving it out means the design does not solve what they told you.
+
+  A RULE ONLY TOUCHES THE ROWS ITS ACTIONS NAME. set_fields on self writes to the row being saved and nothing else, so a clash rule flags the row just entered — NOT the earlier booking it collides with. Never write "marks both", "flags both bookings" or similar in summary or workflow: it does not happen, and the owner will trust it.
+
+  A FLAG MUST BE ABLE TO CLEAR ITSELF. Setting a field only when something is true leaves it set forever once the condition passes — a clash flag stays on after the clash is resolved. Instead run the rule on every write (no "when"), and set the field to an "if": { "op": "if", "args": [ <test>, { "const": "Yes" }, { "const": "No" } ] }.
+
+  CATCHING DUPLICATES AND CLASHES: count_matching is how a rule sees the rest of the section. Two appointments in one slot, a repeated SKU, the same customer entered twice — trigger record_created AND a second rule on record_updated, both with NO "when", each setting the flag on self to { "op": "if", "args": [ { "op": ">", "args": [ { "op": "count_matching", "args": [ { "field": "appointment_date" }, { "field": "appointment_time" } ] }, { "const": 0 } ] }, { "const": "Yes" }, { "const": "No" } ] } — so moving an appointment out of a clash clears its flag. Add the flag field in the same plan. It marks the clash the moment it is saved; it does not refuse the save, so never describe it as preventing or blocking.
+
+  "IS EVERY CHILD DONE?" — count_matching with a condition answers it, and it is how a parent moves on when its last child finishes: on the child, count siblings sharing the parent key that are NOT yet done; zero means this was the last one, so set the parent. Without the condition you are only counting siblings, which is never zero for a parent with more than one child.
+
+  Every "field"/"was" name must exist in the triggering section's columns. Write the rule the owner actually described — do not simplify it into something easier.
+
+- AUTOMATION_REMOVE — disable an existing automation by name (automationRemoveName).
+
+WHEN BUILDING AN APPROVED BLUEPRINT:
+- Emit the NEW_MODULE plans first, one per section, in the order the workflow actually happens — the thing that comes first in their real process comes first in the sidebar. Each carries its own features inline.
+- Then RECORD_SEED for any EXISTING module that needs demo data, then FEATURE_UPDATE plans for existing modules only.
+- Rules from the blueprint become AUTOMATION_ADD plans, emitted AFTER the NEW_MODULE plans that create the sections they touch.
+- REFERRING TO A SECTION YOU ARE CREATING IN THIS SAME BATCH: you do not know its uuid yet, so write "#its-kebab-case-name" instead — e.g. "targetModuleId": "#orders", or "module_id": "#stock" inside an automation action. Use a real uuid only for sections that already exist.
+- Up to 6 plans. Build only the sections in the approved blueprint — nothing extra.
+
+CHOOSING THE VIEW — this is a real design decision, make it deliberately:
+- "board" — the thing moves through stages and the owner's question is "what's at each stage right now?". groupBy must be a badge/dropdown column. This is the right answer for almost any repair / job / order / application / ticket workflow.
+- "calendar" — the thing is tied to a day and the owner's question is "what's happening on X?" or "is X free?". dateField must be a date column. Right for bookings, appointments, deliveries, shifts.
+- "cards" — a catalogue the owner browses rather than scans: things with a name, a price or a status, few fields. Right for products, equipment, properties, menu items.
+- "list" — a simple queue or checklist, one line each, read top to bottom.
+- "table" — many columns that need comparing side by side, or numbers the owner scans down a column. Choose it because the data really is tabular, NEVER because it is the safe default.
+- Pick from how the owner described their day, not from what the section is called. If they said "I want to see what's at each stage", that is a board even if the section is called Orders.
+- If none of these five genuinely fit what they need to see, say so in blueprint.limitations and pick the closest one — do not pretend.
+- Every field a view references (groupBy, dateField, titleField, …) must exist in that same plan's columns, with the right type.
+
+WRITING FOR THE OWNER:
+- "summary" describes what THEY told you, in their words. Never claim an outcome ("this will stop double-bookings", "saves you hours") — you cannot know that, and the design may not deliver it.
+- Never describe a feature in prose. The interface renders every section, field, button and rule from the plans themselves, so a sentence about them can only ever contradict the thing.
+- "workflow" is their real-world process — people and steps as they happen in the world. Never say what the software shows, syncs, or who can see it: "appears on the calendar for everyone to see" is a claim about the platform, and a false one, because a project is used by its owner alone.
+- If anything the owner told you lands in the NOT POSSIBLE list — several people using it, messaging a customer, taking payment, photos — it MUST appear in "unmet" in their own words. Designing around it silently is the worst thing you can do: they will believe it is handled.
+
+HARD RULES:
+- Column types, views, operators, actions and aggregations: ONLY those in the capability block above. Never invent one.
+- "icon" must be from this list ONLY: ${ALLOWED_ICONS.join(", ")}. Pick the closest fit; "table" is the neutral fallback.
+- field names: lowercase snake_case, unique within a schema.
+- CHOOSE THE COLUMN TYPE THAT MATCHES THE THING. A customer's number is "phone", not text — the owner taps it to call. An address for their website is "url". A repair note is "longtext". "Paid?" is "boolean". A commission is "percent". Falling back to "text" throws away what the interface could do with it.
+- Every row also has an "id" that no schema lists. A rule that creates a linked row sets the link field to { "field": "id" } — the id of the row that fired it.
+- "link" is how two sections stay ONE thing. A return that points at its order, an order that points at its customer: the row stores the other row's id, so nothing is retyped and nothing drifts. It needs "linkTo" naming that section — a uuid, or "#slug" for one created in the same batch. Whenever a new section repeats fields that already exist in another (an order number, a customer name), that is a link, not a copy.
+- "barcode" is ONLY for a code an actual barcode scanner reads. A reference number, order number or SKU that people type is "text". Marking something barcode invites a scanning workflow the owner never asked for.
+- UI_CHANGE only references fields that exist in the module's current schema (in CONTEXT).
+- NEW_MODULE demo rows: EXACT field names, matching types.
+- Labels and demo data must use the owner's own vocabulary, not generic business-speak.
+- NEVER describe what this platform can or cannot do, and never propose a workaround for something in the NOT POSSIBLE list. You do not get to characterise the engine — the interface does that, from its own record of what exists.
+- The owner's stated PROBLEM is the test. If your plans do not actually address it, that goes in "unmet" too. Showing information is not the same as catching a mistake: a calendar makes bookings visible, it does not detect a clash. If they said they only find out later, they need a rule that tells them — build one with count_matching, or say plainly that this design does not.
+- If the owner asked for something this design does not do, put THEIR OWN WORDS for it in blueprint.unmet — a quote of the request, not an explanation. Wrong: "Scan mode can only match one row, so you'll see a filtered list and tap one". Right: "one barcode shared across colour and size variants".
+- Never put something in unmet that you could have built. If you can build it and chose not to, it is a section with "essential": false and a "why" — the owner decides.
+- Always include "explanation" on every plan: one short sentence a non-technical person understands.`;
+
+export function buildSystemPrompt(
+  modules: ModuleRow[],
+  projectName: string,
+  locale = "en-IN",
+  currency = "INR"
+): string {
+  // Rendered as a tree so the assistant sees which sections sit inside
+  // which, and can put a new one in the right place.
+  const line = (m: ModuleRow, indent: string) =>
+    `${indent}- id: ${m.id} | name: ${m.name} | label: "${m.nav_label}" | icon: ${m.icon} | sort_order: ${m.sort_order}`;
+  const tops = modules.filter((m) => !m.parent_id);
+  const list =
+    modules.length > 0
+      ? tops
+          .map((m) => {
+            const kids = modules.filter((k) => k.parent_id === m.id);
+            return [line(m, ""), ...kids.map((k) => line(k, "    "))].join("\n");
+          })
+          .join("\n")
+      : "(none yet — this is a brand-new, empty project)";
+  return `${replyContract()}
+
+PROJECT: "${projectName}"
+LOCALE: ${locale} · CURRENCY: ${currency} — demo amounts must be realistic for this currency and market, and labels should read naturally to someone there.
+CURRENT SECTIONS (use these ids for targetModuleId; sort_order = sidebar position; indented ones sit inside the section above them):
+${list}`;
+}
+
+export function buildUserMessage(
+  userRequest: string,
+  targetModuleId: string | null,
+  currentSchema: UiSchema | null,
+  currentFeatures: FeatureSchema | null
+): string {
+  const schemaCtx = currentSchema
+    ? JSON.stringify(currentSchema)
+    : "null (no module selected)";
+  const featuresCtx = currentFeatures
+    ? JSON.stringify(currentFeatures)
+    : "null (no features configured)";
+  return `CONTEXT — schema of the module the user is looking at:
+${schemaCtx}
+
+CONTEXT — current features (search/filters/stats/sort) of that module:
+${featuresCtx}
+
+USER REQUEST:
+${userRequest}`;
+}
+
+// ── Validation ───────────────────────────────────────────────
+
+/**
+ * Every row has an id even though no schema lists it, and a link
+ * column stores exactly that. Expressions may read it by name.
+ */
+const RESERVED_FIELDS = new Set(["id"]);
+
+function err(errors: string[], msg: string) {
+  errors.push(msg);
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/** A view is only renderable if the fields it points at actually exist. */
+function validateView(view: unknown, columns: SchemaColumn[] | null, errors: string[]): void {
+  if (!isPlainObject(view)) {
+    err(errors, "features.view must be an object.");
+    return;
+  }
+  const v = view as ViewSpec;
+  if (!(VIEW_TYPES as readonly string[]).includes(v.type)) {
+    err(errors, `View type "${v.type}" must be one of: ${VIEW_TYPES.join(", ")}.`);
+    return;
+  }
+  const col = (name: string) => columns?.find((c) => c.field === name) ?? null;
+  // With no column list to check against (an edit to an unknown schema) the
+  // field references are accepted; the renderer degrades to a table if they
+  // turn out to be wrong.
+  const need = (name: unknown, label: string, types?: SchemaColumn["type"][]) => {
+    if (typeof name !== "string" || !name.trim()) {
+      err(errors, `View "${v.type}" needs ${label}.`);
+      return;
+    }
+    if (!columns) return;
+    const c = col(name);
+    if (!c) {
+      err(errors, `View ${label} "${name}" doesn't exist in the module schema.`);
+      return;
+    }
+    if (types && !types.includes(c.type)) {
+      err(errors, `View ${label} "${name}" is a ${c.type} column — it must be ${types.join(" or ")}.`);
+    }
+  };
+
+  switch (v.type) {
+    case "board":
+      need(v.groupBy, "groupBy", ["badge", "dropdown", "text"]);
+      need(v.cardTitle, "cardTitle");
+      break;
+    case "calendar":
+      need(v.dateField, "dateField", ["date"]);
+      need(v.titleField, "titleField");
+      if (v.colorBy) need(v.colorBy, "colorBy", ["badge", "dropdown", "text"]);
+      break;
+    case "cards":
+      need(v.titleField, "titleField");
+      break;
+    case "list":
+      need(v.titleField, "titleField");
+      break;
+  }
+}
+
+/**
+ * Features are validated against whichever column set they will live on:
+ * the module's current schema for FEATURE_UPDATE, or the plan's own new
+ * columns for a NEW_MODULE that ships with features inline.
+ */
+function validateFeatures(
+  features: unknown,
+  columns: SchemaColumn[] | null,
+  errors: string[],
+  /** Columns earlier plans in the same batch will have added by now. */
+  pendingFields?: Set<string>
+): void {
+  if (!isPlainObject(features)) {
+    err(errors, "features must be an object.");
+    return;
+  }
+  const f = features as FeatureSchema;
+  const hasField = (name: string) =>
+    RESERVED_FIELDS.has(name) ||
+    !columns ||
+    columns.some((c) => c.field === name) ||
+    !!pendingFields?.has(name);
+
+  if (f.search && typeof f.search.enabled !== "boolean") {
+    err(errors, "features.search.enabled must be true or false.");
+  }
+  if (f.filters !== undefined && f.filters !== null) {
+    if (!Array.isArray(f.filters)) {
+      err(errors, "features.filters must be an array or null.");
+    } else {
+      const seen = new Set<string>();
+      for (const fl of f.filters) {
+        if (!fl || typeof fl.field !== "string") {
+          err(errors, "Each filter needs a field.");
+          continue;
+        }
+        if (seen.has(fl.field)) err(errors, `Duplicate filter for field "${fl.field}".`);
+        seen.add(fl.field);
+        if (!hasField(fl.field)) {
+          err(errors, `Filter field "${fl.field}" doesn't exist in the module schema.`);
+        }
+        if (!Array.isArray(fl.options) || fl.options.length < 2 || fl.options.length > 15) {
+          err(errors, `Filter "${fl.field}" needs 2-15 options.`);
+        }
+      }
+    }
+  }
+  if (f.stats !== undefined && f.stats !== null) {
+    if (!Array.isArray(f.stats)) {
+      err(errors, "features.stats must be an array or null.");
+    } else {
+      for (const st of f.stats) {
+        if (!st || typeof st.label !== "string") {
+          err(errors, "Each stat needs a label.");
+          continue;
+        }
+        if (!(STAT_OP_LIST as string[]).includes(st.op)) {
+          err(errors, `Stat "${st.label}" has op "${st.op}" — must be one of: ${STAT_OP_LIST.join(", ")}.`);
+        }
+        if (st.op !== "count") {
+          if (st.value !== undefined) {
+            validateExpr(st.value, hasField, errors, "client");
+          } else if (typeof st.field === "string") {
+            if (!hasField(st.field)) {
+              err(errors, `Stat "${st.label}" uses unknown field "${st.field}".`);
+            }
+          } else {
+            err(errors, `Stat "${st.label}" needs a value expression for ${st.op}.`);
+          }
+        }
+        if (st.where !== undefined) validateExpr(st.where, hasField, errors, "client");
+      }
+    }
+  }
+  if (f.view !== undefined) validateView(f.view, columns, errors);
+
+  if (f.defaultSort && !hasField(f.defaultSort.field)) {
+    err(errors, `defaultSort field "${f.defaultSort.field}" doesn't exist in the module schema.`);
+  }
+  for (const a of f.actions ?? []) {
+    if (!a || typeof a.label !== "string" || !isPlainObject(a.set)) {
+      err(errors, "Each row action needs a label and a set object.");
+      continue;
+    }
+    for (const [k, v] of Object.entries(a.set)) {
+      if (!hasField(k)) err(errors, `Row action "${a.label}" sets unknown field "${k}".`);
+      validateExpr(v, hasField, errors, "client");
+      rejectClockDerivedWrites(v, `Row action "${a.label}" writing "${k}"`, errors);
+    }
+    if (a.when !== undefined) validateExpr(a.when, hasField, errors, "client");
+  }
+  if (f.scanMode) {
+    if (!isPlainObject(f.scanMode.action) || !isPlainObject(f.scanMode.action.set)) {
+      err(errors, "scanMode needs an action with a set object.");
+    } else {
+      for (const [k, v] of Object.entries(f.scanMode.action.set)) {
+        if (!hasField(k)) err(errors, `scanMode sets unknown field "${k}".`);
+        validateExpr(v, hasField, errors, "client");
+        rejectClockDerivedWrites(v, `scanMode writing "${k}"`, errors);
+      }
+    }
+    if (!hasField(f.scanMode.lookupField)) {
+      err(errors, `scanMode.lookupField "${f.scanMode.lookupField}" doesn't exist in the module schema.`);
+    }
+    if (f.scanMode.sequenceField && !hasField(f.scanMode.sequenceField)) {
+      err(errors, `scanMode.sequenceField "${f.scanMode.sequenceField}" doesn't exist in the module schema.`);
+    }
+  }
+}
+
+/**
+ * Walks an expression tree. Field references are checked against the
+ * schema of the section that fires the rule, so a typo is caught here
+ * rather than silently evaluating to blank inside Postgres.
+ */
+function validateExpr(
+  node: unknown,
+  ownHas: (f: string) => boolean,
+  errors: string[],
+  /**
+   * "client" contexts (button guards, stat values, scan actions) are
+   * evaluated in the browser against a single row, so an operator that
+   * needs the rest of the section cannot work there. Rejecting it here
+   * stops a guard that would silently never fire.
+   */
+  where: "server" | "client" = "server",
+  depth = 0
+): void {
+  if (depth > 8) {
+    err(errors, "An automation expression is nested too deeply.");
+    return;
+  }
+  if (!isPlainObject(node)) {
+    err(errors, "Every part of an automation rule must be an object.");
+    return;
+  }
+
+  if ("const" in node) return;
+  for (const leaf of ["field", "was", "target"] as const) {
+    if (leaf in node) {
+      const f = node[leaf];
+      if (typeof f !== "string" || !f.trim()) {
+        err(errors, `An expression has an empty "${leaf}" reference.`);
+      } else if (leaf !== "target" && !ownHas(f)) {
+        // "target" points at another section's row, whose schema is not
+        // loaded here; the engine tolerates a miss by reading blank.
+        err(errors, `Rule references "${f}", which doesn't exist in this section.`);
+      }
+      return;
+    }
+  }
+
+  const op = node.op;
+  if (!isOperator(op)) {
+    err(errors, `Unknown operator "${String(op)}" in an automation rule.`);
+    return;
+  }
+  const args = Array.isArray(node.args) ? node.args : [];
+  if (where === "client" && isServerOnly(op)) {
+    err(
+      errors,
+      `"${op}" only works inside an automation — a button, stat or scan action sees one row at a time.`
+    );
+    return;
+  }
+  const [min, max] = OPERATORS[op].arity;
+  if (args.length < min || args.length > max) {
+    err(
+      errors,
+      `Operator "${op}" takes ${min === max ? min : `${min}-${max}`} argument(s), got ${args.length}.`
+    );
+    return;
+  }
+  if (op === "changed" && !(isPlainObject(args[0]) && "field" in args[0])) {
+    err(errors, '"changed" must be given a field, e.g. { "field": "stage" }.');
+  }
+  if (op === "count_matching") {
+    // Field leaves say which rows count as siblings; operator args test
+    // each sibling. Without at least one field leaf it would sweep the
+    // whole section, which is never what anyone means.
+    if (!args.some((a) => isPlainObject(a) && "field" in a)) {
+      err(
+        errors,
+        '"count_matching" needs at least one field to match siblings on, e.g. { "field": "order_id" }.'
+      );
+    }
+    for (const a of args) {
+      if (!isPlainObject(a) || ("field" in a) === ("op" in a)) {
+        err(
+          errors,
+          '"count_matching" args are either a field leaf ({ "field": "x" }) or a condition ({ "op": ... }).'
+        );
+      }
+    }
+  }
+  for (const a of args) validateExpr(a, ownHas, errors, where, depth + 1);
+}
+
+/**
+ * A stored field is written once and then sits there. A value counted
+ * FROM today ("days since dispatch") is right on the day it is written
+ * and wrong every day after, silently — which is the exact blindness
+ * these apps get built to fix. Stamping today's date is fine: that
+ * records when something happened and never changes.
+ *
+ * Prompt wording did not hold, so this is enforced.
+ */
+function rejectClockDerivedWrites(node: unknown, where: string, errors: string[]): void {
+  if (!isPlainObject(node)) return;
+  if (node.op === "days_since") {
+    err(
+      errors,
+      // The rejection reaches the model through the repair loop, so it
+      // has to name the shape that IS right. Saying only "don't" made
+      // the assistant drop the feature instead of reshaping it.
+      `${where} stores a value counted from today, which goes stale the next day. Two ways to do this properly, pick the one that matches the intent: (1) to SHOW it, move the maths to where it is read — a stat's value or "where", or a button's guard, all recompute every time; (2) to be TOLD about it without looking, add a rule with trigger { "type": "schedule", "every": "daily" } whose "when" does the date maths and whose action writes a plain status word. Do not simply drop the feature.`
+    );
+    return;
+  }
+  for (const a of Array.isArray(node.args) ? node.args : []) {
+    rejectClockDerivedWrites(a, where, errors);
+  }
+}
+
+/**
+ * Automations are executed by a Postgres trigger, so a bad definition
+ * fails silently at write time rather than here. Everything it will
+ * dereference is checked up front: the module ids must belong to this
+ * project, and the fields must exist on the schemas they point at.
+ */
+function validateAutomation(
+  plan: AssistantPlan,
+  modules: ModuleRow[],
+  currentSchema: UiSchema | null,
+  errors: string[],
+  pending: (ref: unknown) => boolean = () => false,
+  pendingFields?: Set<string>
+): void {
+  const auto = plan.automation;
+  if (!auto || typeof auto.name !== "string" || !auto.name.trim()) {
+    err(errors, "AUTOMATION_ADD needs an automation with a name.");
+    return;
+  }
+  const def = auto.definition;
+  if (!isPlainObject(def)) {
+    err(errors, "The automation has no definition.");
+    return;
+  }
+
+  const trigger = (def as AutomationDefinition).trigger;
+  if (!isPlainObject(trigger)) {
+    err(errors, "The automation has no trigger.");
+    return;
+  }
+  if (!(TRIGGER_TYPES as string[]).includes(trigger.type)) {
+    err(errors, `Trigger type "${trigger.type}" must be one of: ${TRIGGER_TYPES.join(", ")}.`);
+  }
+  if (trigger.type === "schedule" && !["hourly", "daily", "weekly"].includes(trigger.every ?? "")) {
+    err(errors, "A schedule trigger needs every: hourly, daily or weekly.");
+  }
+
+  // Fields of the section this rule hangs off.
+  const ownFields = currentSchema ? new Set(currentSchema.columns.map((c) => c.field)) : null;
+  const ownHas = (f: string) =>
+    RESERVED_FIELDS.has(f) || !ownFields || ownFields.has(f) || !!pendingFields?.has(f);
+
+  if (trigger.when !== undefined) validateExpr(trigger.when, ownHas, errors);
+
+  const actions = (def as AutomationDefinition).actions;
+  if (!Array.isArray(actions) || actions.length === 0) {
+    err(errors, "The automation has no actions — it would do nothing.");
+    return;
+  }
+
+  const moduleOk = (id: unknown) =>
+    modules.some((m) => m.id === id) || pending(id);
+
+  for (const a of actions) {
+    if (!isPlainObject(a)) {
+      err(errors, "Each automation action must be an object.");
+      continue;
+    }
+
+    if (a.type === "webhook") {
+      // Delivery isn't built yet; the engine only logs these. Rejecting
+      // here keeps the assistant from promising an integration that
+      // silently never happens.
+      err(
+        errors,
+        "Calling an external service isn't supported yet — say so in limitations instead of adding a webhook action."
+      );
+      continue;
+    }
+
+    if (a.type === "set_fields") {
+      const target = a.target;
+      if (!isPlainObject(target)) {
+        err(errors, "A set_fields action needs a target.");
+        continue;
+      }
+      if (!("self" in target)) {
+        if (!moduleOk(target.module_id)) {
+          err(errors, "A rule writes to a section that isn't in this project.");
+          continue;
+        }
+        if (!isPlainObject(target.match) || typeof target.match.field !== "string") {
+          err(errors, "A rule that writes to another section needs a match field.");
+        } else {
+          validateExpr(target.match.to, ownHas, errors);
+        }
+      }
+      if (!isPlainObject(a.set) || Object.keys(a.set).length === 0) {
+        err(errors, "A set_fields action must set at least one field.");
+        continue;
+      }
+      for (const [f, v] of Object.entries(a.set)) {
+        validateExpr(v, ownHas, errors);
+        rejectClockDerivedWrites(v, `The rule's write to "${f}"`, errors);
+      }
+      continue;
+    }
+
+    if (a.type === "create_record") {
+      if (!moduleOk(a.module_id)) {
+        err(errors, "A rule creates a row in a section that isn't in this project.");
+        continue;
+      }
+      if (!isPlainObject(a.data) || Object.keys(a.data).length === 0) {
+        err(errors, "A create_record action needs a data object.");
+        continue;
+      }
+      for (const v of Object.values(a.data)) validateExpr(v, ownHas, errors);
+      continue;
+    }
+
+    err(
+      errors,
+      `Action type "${String((a as { type?: unknown }).type)}" must be set_fields or create_record.`
+    );
+  }
+}
+
+/** Validates one plan; returns filled plan or the errors found. */
+export function validatePlan(
+  plan: AssistantPlan,
+  modules: ModuleRow[],
+  currentSchema: UiSchema | null,
+  currentFeatures: FeatureSchema | null,
+  /**
+   * Slugs of modules being created by earlier plans in the same batch.
+   * A "#slug" reference to one of these is legal here even though the
+   * module does not exist yet — the apply route resolves it to a real
+   * id once that earlier plan has run.
+   */
+  pendingSlugs?: Set<string>,
+  /**
+   * Fields that earlier plans in this batch add to the module this plan
+   * targets. A rule may legitimately reference a column a FIELD_ADD plan
+   * one step earlier is about to create.
+   */
+  pendingFields?: Set<string>
+): ValidationResult & { plan?: AssistantPlan } {
+  const errors: string[] = [];
+
+  // One definition of "this field exists" for the whole plan: the module's
+  // current columns plus anything an earlier plan in this batch adds. Every
+  // check below uses it, so a later plan can build on an earlier one.
+  const knownField = (f: string): boolean =>
+    RESERVED_FIELDS.has(f) ||
+    !currentSchema ||
+    currentSchema.columns.some((c) => c.field === f) ||
+    !!pendingFields?.has(f);
+
+  const pending = (ref: unknown): boolean =>
+    typeof ref === "string" &&
+    ref.startsWith("#") &&
+    !!pendingSlugs?.has(ref.slice(1).trim().toLowerCase());
+
+  if (!CHANGE_TYPES.includes(plan?.changeType)) {
+    err(errors, `"changeType" must be one of ${CHANGE_TYPES.join(", ")}.`);
+    return { ok: false, errors };
+  }
+
+  if (typeof plan.explanation !== "string" || plan.explanation.trim().length < 5) {
+    err(errors, "Missing a readable explanation.");
+  }
+
+  const columns = plan.newSchema?.columns ?? null;
+  if (columns !== null) {
+    if (!Array.isArray(columns) || columns.length === 0) {
+      err(errors, "newSchema.columns is present but empty.");
+    } else {
+      const seen = new Set<string>();
+      for (const c of columns) {
+        if (!c || typeof c.field !== "string" || !c.field.trim()) {
+          err(errors, "A column is missing its field name.");
+          continue;
+        }
+        if (seen.has(c.field)) err(errors, `Duplicate column field: "${c.field}".`);
+        seen.add(c.field);
+        if (!COLUMN_TYPES.includes(c.type)) {
+          err(errors, `Column "${c.field}" has type "${c.type}" — must be one of: ${COLUMN_TYPES.join(", ")}.`);
+        }
+        if (typeof c.label !== "string" || !c.label.trim()) {
+          err(errors, `Column "${c.field}" is missing a label.`);
+        }
+        if (c.type === "link") {
+          const to = c.linkTo;
+          if (!to) {
+            err(errors, `Link column "${c.field}" must name the section it points at, in "linkTo".`);
+          } else if (!modules.some((m) => m.id === to) && !pending(to)) {
+            err(errors, `Link column "${c.field}" points at a section that isn't in this project.`);
+          }
+        } else if (c.linkTo) {
+          err(errors, `"linkTo" only applies to a link column, not "${c.field}" (${c.type}).`);
+        }
+      }
+    }
+  }
+
+  if (plan.changeType === "NEW_MODULE") {
+    const name = plan.newModule?.name?.trim().toLowerCase();
+    if (!name) {
+      err(errors, "newModule.name is required for a new module.");
+    } else {
+      if (modules.some((m) => m.name === name)) {
+        err(errors, `A module named "${name}" already exists.`);
+      }
+      if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) {
+        err(errors, `newModule.name "${name}" must be kebab-case.`);
+      }
+    }
+    if (!plan.newModule?.nav_label?.trim()) {
+      err(errors, "newModule.nav_label is required.");
+    }
+    if (plan.newModule?.icon && !(ALLOWED_ICONS as readonly string[]).includes(plan.newModule.icon)) {
+      err(errors, `Icon "${plan.newModule.icon}" is not allowed.`);
+    }
+    // A parent that doesn't exist would fail only at apply time, after
+    // the owner had approved a design that cannot be built.
+    const parentRef = plan.newModule?.parent_id;
+    if (parentRef != null && !modules.some((m) => m.id === parentRef) && !pending(parentRef)) {
+      err(errors, "The section this would sit inside doesn't exist in this project.");
+    }
+    if (parentRef != null && modules.find((m) => m.id === parentRef)?.parent_id) {
+      err(errors, "Sections nest one level only — that section is already inside another.");
+    }
+
+    // A brand-new module ships its features inline: a separate
+    // FEATURE_UPDATE in the same batch could not target it, because the
+    // module does not exist until this plan is applied.
+    if (plan.features) {
+      validateFeatures(plan.features, columns, errors);
+    }
+    plan.targetModuleId = null;
+  } else {
+    const target = modules.find((m) => m.id === plan.targetModuleId);
+    if (!target && !pending(plan.targetModuleId)) {
+      err(errors, "The request targets a module that doesn't exist in this project.");
+    }
+
+    if (plan.changeType === "UI_CHANGE") {
+      if (!currentSchema) {
+        err(errors, "No current schema found for this module.");
+      } else if (columns) {
+        const existing = new Set(currentSchema.columns.map((c) => c.field));
+        const incoming = new Set(columns.map((c) => c.field));
+        for (const c of columns) {
+          if (!knownField(c.field)) {
+            err(errors, `UI_CHANGE can only reference existing fields — "${c.field}" doesn't exist yet. Use FIELD_ADD to add it.`);
+          }
+        }
+        // One mistake, one message. Listing eight dropped columns
+        // separately floods the repair loop with near-identical lines
+        // and still never says what to do instead — the assistant
+        // repeated the same plan three times and gave up.
+        const dropped = [...existing].filter((f) => !incoming.has(f));
+        if (dropped.length > 0) {
+          err(
+            errors,
+            `UI_CHANGE keeps every column that already exists — it only reorders, relabels or retypes them. This one leaves out: ${dropped.join(", ")}. If you meant to ADD columns, use FIELD_ADD, which keeps the existing ones and appends yours. If this is really a different thing, make it a NEW_MODULE. Removing a column is not something this platform can do — say so in "unmet".`
+          );
+        }
+        // Same columns, same order, same labels and types = nothing to
+        // apply. This is how a request the engine cannot serve (a badge
+        // colour, say) got dressed up as a change: it validated, it
+        // applied, and the owner was told it worked.
+        const same =
+          columns.length === currentSchema.columns.length &&
+          columns.every((c, i) => {
+            const cur = currentSchema.columns[i];
+            return cur && cur.field === c.field && cur.label === c.label && cur.type === c.type;
+          });
+        if (same) {
+          err(
+            errors,
+            "This UI_CHANGE leaves every column exactly as it is, so applying it would do nothing. Either make a real change, or tell the owner in \"unmet\" that this isn't something the platform can do."
+          );
+        }
+      } else {
+        err(errors, "newSchema is required for UI_CHANGE.");
+      }
+    }
+
+    if (plan.changeType === "FIELD_ADD") {
+      if (!currentSchema) {
+        err(errors, "No current schema found for this module.");
+      } else if (columns) {
+        const existingFields = currentSchema.columns.map((c) => c.field);
+        const incomingFields = columns.map((c) => c.field);
+        for (let i = 0; i < existingFields.length; i++) {
+          if (incomingFields[i] !== existingFields[i]) {
+            err(errors, `FIELD_ADD must keep existing column "${existingFields[i]}" at position ${i + 1}.`);
+            break;
+          }
+        }
+        const added = incomingFields.filter((f) => !existingFields.includes(f));
+        if (added.length === 0) err(errors, "FIELD_ADD didn't add any new column.");
+      } else {
+        err(errors, "newSchema is required for FIELD_ADD.");
+      }
+    }
+
+    if (plan.changeType === "MODULE_UPDATE") {
+      if (!plan.moduleUpdate || Object.keys(plan.moduleUpdate).length === 0) {
+        err(errors, "moduleUpdate is required for MODULE_UPDATE.");
+      }
+      if (plan.moduleUpdate?.icon && !(ALLOWED_ICONS as readonly string[]).includes(plan.moduleUpdate.icon)) {
+        err(errors, `Icon "${plan.moduleUpdate.icon}" is not allowed.`);
+      }
+      if (plan.moduleUpdate?.sort_order !== undefined && typeof plan.moduleUpdate.sort_order !== "number") {
+        err(errors, "sort_order must be a number.");
+      }
+      const newParent = plan.moduleUpdate?.parent_id;
+      if (newParent != null) {
+        if (newParent === plan.targetModuleId) {
+          err(errors, "A section can't sit inside itself.");
+        } else if (!modules.some((m) => m.id === newParent) && !pending(newParent)) {
+          err(errors, "The section it would move into doesn't exist in this project.");
+        } else if (modules.find((m) => m.id === newParent)?.parent_id) {
+          err(errors, "Sections nest one level only — that section is already inside another.");
+        } else if (modules.some((m) => m.parent_id === plan.targetModuleId)) {
+          err(errors, "This section has sections inside it, so it can't be moved into another.");
+        }
+      }
+    }
+
+    if (plan.changeType === "MODULE_DELETE") {
+      if (!plan.deleteConfirmName || plan.deleteConfirmName !== target?.name) {
+        err(errors, "Deletion is not confirmed: deleteConfirmName must exactly match the module's name slug.");
+      }
+    }
+
+    if (plan.changeType === "FEATURE_UPDATE") {
+      validateFeatures(plan.features, currentSchema?.columns ?? null, errors, pendingFields);
+    }
+
+    if (plan.changeType === "AUTOMATION_ADD") {
+      validateAutomation(plan, modules, currentSchema, errors, pending, pendingFields);
+    }
+
+    if (plan.changeType === "AUTOMATION_REMOVE" && !plan.automationRemoveName?.trim()) {
+      err(errors, "AUTOMATION_REMOVE needs automationRemoveName.");
+    }
+
+    if (plan.changeType === "RECORD_SEED") {
+      if (!Array.isArray(plan.newRecords) || plan.newRecords.length === 0) {
+        err(errors, "newRecords must be a non-empty array for RECORD_SEED.");
+      } else if (currentSchema) {
+        const validFields = new Set(currentSchema.columns.map((c) => c.field));
+        for (const rec of plan.newRecords) {
+          if (!isPlainObject(rec)) {
+            err(errors, "Each record must be an object of field -> value.");
+            break;
+          }
+          for (const k of Object.keys(rec)) {
+            if (!validFields.has(k)) {
+              err(errors, `Record field "${k}" doesn't exist in the module schema.`);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return { ok: errors.length === 0, errors, plan: errors.length === 0 ? plan : undefined };
+}
+
+// ── Reply parsing ────────────────────────────────────────────
+
+export type ParsedReply =
+  | { ok: true; reply: AssistantReply }
+  | { ok: false; errors: string[] };
+
+function stripFences(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```\s*$/, "");
+}
+
+function asStringArray(v: unknown, max: number): string[] {
+  if (!Array.isArray(v)) return [];
+  return v.filter((x): x is string => typeof x === "string" && x.trim().length > 0).slice(0, max);
+}
+
+function parseClarify(obj: Record<string, unknown>): ParsedReply {
+  const rawQuestions = Array.isArray(obj.questions) ? obj.questions : [];
+  const questions: ClarifyQuestion[] = [];
+  for (const [i, q] of rawQuestions.slice(0, 6).entries()) {
+    if (!isPlainObject(q) || typeof q.question !== "string" || !q.question.trim()) continue;
+    questions.push({
+      id: typeof q.id === "string" && q.id.trim() ? q.id : `q${i + 1}`,
+      question: q.question.trim(),
+      why: typeof q.why === "string" ? q.why : undefined,
+      suggestions: asStringArray(q.suggestions, 5),
+    });
+  }
+  if (questions.length === 0) {
+    return { ok: false, errors: ["The assistant asked for more detail but sent no questions."] };
+  }
+  return {
+    ok: true,
+    reply: {
+      type: "clarify",
+      message:
+        typeof obj.message === "string" && obj.message.trim()
+          ? obj.message.trim()
+          : "A few quick questions so I build this around how you actually work:",
+      questions,
+    },
+  };
+}
+
+function parseBlueprint(
+  obj: Record<string, unknown>,
+  modules: ModuleRow[],
+  currentSchema: UiSchema | null,
+  currentFeatures: FeatureSchema | null
+): ParsedReply {
+  const bp = obj.blueprint;
+  if (!isPlainObject(bp)) {
+    return { ok: false, errors: ["The assistant proposed a design but sent no blueprint."] };
+  }
+  if (typeof bp.summary !== "string" || bp.summary.trim().length < 10) {
+    return { ok: false, errors: ["The blueprint is missing a readable summary."] };
+  }
+
+  // The blueprint's plans are the real thing, so they get the real
+  // checks. A design that could not be built cannot be shown.
+  const planResult = parsePlans(
+    { plans: bp.plans },
+    modules,
+    currentSchema,
+    currentFeatures
+  );
+  if (!planResult.ok) return planResult;
+  const plans = (planResult.reply as { type: "plans"; plans: AssistantPlan[] }).plans;
+
+  for (const p of plans) {
+    if (p.optional && typeof p.optionalWhy !== "string") {
+      return {
+        ok: false,
+        errors: ["An optional part of the design has no reason attached — say why it might be worth having."],
+      };
+    }
+  }
+
+  const workflow = (Array.isArray(bp.workflow) ? bp.workflow : [])
+    .filter(isPlainObject)
+    .filter((w) => typeof w.step === "string" && w.step.trim())
+    .slice(0, 12)
+    .map((w) => ({
+      step: (w.step as string).trim(),
+      who: typeof w.who === "string" ? w.who : "",
+    }));
+
+  return {
+    ok: true,
+    reply: {
+      type: "blueprint",
+      message:
+        typeof obj.message === "string" && obj.message.trim()
+          ? obj.message.trim()
+          : "Here's what I'd build — check it before I create anything:",
+      blueprint: {
+        summary: bp.summary.trim(),
+        plans,
+        workflow,
+        unmet: asStringArray(bp.unmet, 6),
+      },
+    },
+  };
+}
+
+function parsePlans(
+  obj: Record<string, unknown>,
+  modules: ModuleRow[],
+  currentSchema: UiSchema | null,
+  currentFeatures: FeatureSchema | null
+): ParsedReply {
+  const raw = Array.isArray(obj.plans) ? obj.plans.slice(0, 6) : [];
+  if (raw.length === 0) {
+    return { ok: false, errors: ["The assistant returned no plans. Try rephrasing your request."] };
+  }
+
+  // Every module this batch will create, so plans later in the batch may
+  // legally reference them by "#slug" before they exist.
+  const pendingSlugs = new Set(
+    raw
+      .map((p) => (p as AssistantPlan)?.newModule?.name?.trim().toLowerCase())
+      .filter((n): n is string => !!n)
+  );
+
+  // Columns each plan in this batch will add, keyed by the module it
+  // targets, so a later plan may reference them before they exist.
+  const batchFields = new Map<string, Set<string>>();
+  for (const p of raw as AssistantPlan[]) {
+    const key = p?.newModule?.name?.trim().toLowerCase() ?? p?.targetModuleId;
+    if (!key) continue;
+    const set = batchFields.get(key) ?? new Set<string>();
+    for (const c of p?.newSchema?.columns ?? []) {
+      if (typeof c?.field === "string") set.add(c.field);
+    }
+    batchFields.set(key, set);
+  }
+  const fieldsFor = (p: AssistantPlan): Set<string> | undefined => {
+    const ref = p.targetModuleId ?? "";
+    return batchFields.get(ref.startsWith("#") ? ref.slice(1).toLowerCase() : ref);
+  };
+
+  const plans: AssistantPlan[] = [];
+  const errors: string[] = [];
+  for (const p of raw) {
+    const plan = p as AssistantPlan;
+    const res = validatePlan(
+      plan,
+      modules,
+      currentSchema,
+      currentFeatures,
+      pendingSlugs,
+      fieldsFor(plan)
+    );
+    if (res.ok && res.plan) plans.push(res.plan);
+    else errors.push(...res.errors);
+  }
+
+  // All or nothing. A batch is one coordinated build: quietly keeping the
+  // plans that happened to validate would hand the owner half a feature
+  // and no indication that the rest went missing.
+  if (errors.length > 0) return { ok: false, errors };
+
+  return {
+    ok: true,
+    reply: {
+      type: "plans",
+      message: typeof obj.message === "string" ? obj.message : undefined,
+      plans,
+    },
+  };
+}
+
+/**
+ * Parses the assistant's reply envelope: clarify (questions), blueprint
+ * (design for approval), or plans (validated changes). Anything that
+ * fails here never reaches the UI, let alone the database.
+ */
+export function parseReply(
+  raw: string,
+  modules: ModuleRow[],
+  currentSchema: UiSchema | null,
+  currentFeatures: FeatureSchema | null
+): ParsedReply {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stripFences(raw));
+  } catch {
+    return { ok: false, errors: ["The assistant returned invalid JSON. Try rephrasing your request."] };
+  }
+  if (!isPlainObject(parsed)) {
+    return { ok: false, errors: ["The assistant's reply wasn't a JSON object."] };
+  }
+
+  // Tolerate a bare { plans: [...] } reply with no envelope type.
+  const type = typeof parsed.type === "string" ? parsed.type : Array.isArray(parsed.plans) ? "plans" : null;
+
+  switch (type) {
+    case "clarify":
+      return parseClarify(parsed);
+    case "blueprint":
+      return parseBlueprint(parsed, modules, currentSchema, currentFeatures);
+    case "plans":
+      return parsePlans(parsed, modules, currentSchema, currentFeatures);
+    default:
+      return { ok: false, errors: ['The assistant\'s reply had no recognised "type".'] };
+  }
+}
+
+// ── Anthropic call ───────────────────────────────────────────
+
+export interface ChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+/**
+ * Sends the whole conversation, not just the latest turn — that history
+ * is what lets the assistant ask, then remember, then design.
+ */
+export async function callAnthropicChat(
+  system: string,
+  turns: ChatTurn[],
+  /** Aborts when the browser disconnects, so a cancelled turn stops the
+   *  model call instead of running on and being saved to the thread. */
+  signal?: AbortSignal
+): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error("ANTHROPIC_API_KEY is not set — add it to .env.local.");
+  }
+  const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5";
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 6000,
+      system,
+      messages: turns,
+    }),
+    signal,
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Anthropic API error ${res.status}: ${body.slice(0, 300)}`);
+  }
+
+  const data = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
+  const text = (data.content ?? [])
+    .filter((b) => b.type === "text")
+    .map((b) => b.text ?? "")
+    .join("");
+  if (!text) throw new Error("Anthropic returned an empty response.");
+  return text;
+}

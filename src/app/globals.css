@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background-color: #eef2f7;
+  color: #0f172a;
+  font-family: var(--font-sans);
+}
+
+/* Slim scrollbars for panels */
+.thin-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.thin-scroll-dark::-webkit-scrollbar {
+  width: 6px;
+}
+.thin-scroll-dark::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 9999px;
+}
+.thin-scroll-dark::-webkit-scrollbar-track {
+  background: transparent;
+}

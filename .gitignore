@@ -1,0 +1,11 @@
+node_modules/
+.next/
+out/
+.env*.local
+.env
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store
+
+# Claude Code local permissions — personal, not the project
+.claude/settings.local.json
