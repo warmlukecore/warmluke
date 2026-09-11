@@ -9,3 +9,7 @@ next-env.d.ts
 
 # Claude Code local permissions — personal, not the project
 .claude/settings.local.json
+
+# Eval history is a record of runs, not source. It grows every run and
+# merging two people's copies means nothing.
+evals/

@@ -1203,13 +1203,17 @@ export async function callAnthropicChat(
   turns: ChatTurn[],
   /** Aborts when the browser disconnects, so a cancelled turn stops the
    *  model call instead of running on and being saved to the thread. */
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  /** Overrides the design model. Reading two texts and naming what is
+   *  missing is not the job designing the app is, and paying the design
+   *  rate for it doubled the bill for every blueprint. */
+  modelOverride?: string
 ): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error("ANTHROPIC_API_KEY is not set — add it to .env.local.");
   }
-  const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5";
+  const model = modelOverride || process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5";
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -1221,7 +1225,13 @@ export async function callAnthropicChat(
     body: JSON.stringify({
       model,
       max_tokens: 6000,
-      system,
+      // The contract is ~6,500 tokens and byte-identical on every call,
+      // including all three repair attempts of the same turn. Sent fresh
+      // each time it is the bulk of the bill, and it is what made a
+      // twenty-scenario eval cost more than the bugs it finds — which
+      // meant the measurements could not be afforded, which meant fixes
+      // went back to being guesses.
+      system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
       messages: turns,
     }),
     signal,
@@ -1286,7 +1296,8 @@ export async function findGaps(
           content: `THE OWNER SAID:\n${ownerWords}\n\nWHAT WILL ACTUALLY BE BUILT:\n${builtDescription}`,
         },
       ],
-      signal
+      signal,
+      process.env.ANTHROPIC_GAP_MODEL || "claude-haiku-4-5-20251001"
     );
     const obj = JSON.parse(stripFences(raw)) as unknown;
     if (!isPlainObject(obj)) return [];

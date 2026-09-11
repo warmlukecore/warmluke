@@ -229,6 +229,11 @@ export async function POST(req: Request) {
     let raw = "";
     let parsed = null as ReturnType<typeof parseReply> | null;
     let repairs = 0;
+    // Which gate fired, not just how often something did. Guessing at
+    // that is how an afternoon goes into the wrong fix: the repair count
+    // alone cannot tell a malformed shape from a design that missed the
+    // point, and those want opposite remedies.
+    const repairErrors: string[] = [];
 
     for (let attempt = 0; attempt <= MAX_REPAIR_ATTEMPTS; attempt++) {
       raw = await callAnthropicChat(system, [...history, ...attemptTurns], req.signal);
@@ -252,6 +257,7 @@ export async function POST(req: Request) {
       if (parsed.ok) break;
 
       repairs = attempt + 1;
+      repairErrors.push(...parsed.errors);
       if (attempt === MAX_REPAIR_ATTEMPTS) break;
       attemptTurns.push(
         { role: "assistant", content: raw },
@@ -306,7 +312,7 @@ export async function POST(req: Request) {
       convId = created.id as string;
     }
 
-    await persistTurn(client, convId!, userTurn, message.trim(), raw, parsed.reply);
+    await persistTurn(client, convId!, userTurn, message.trim(), raw, parsed.reply, repairErrors);
     await client.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
 
     return NextResponse.json({ conversationId: convId, reply: parsed.reply, repairs });
@@ -323,7 +329,9 @@ async function persistTurn(
   /** What the owner actually typed, kept for replay and for the UI. */
   said: string,
   assistantRaw: string,
-  reply: AssistantReply
+  reply: AssistantReply,
+  /** Every validator message the model had to fix on the way here. */
+  repairErrors: string[]
 ) {
   // Both rows go in one insert, so the default now() gives them the
   // SAME created_at and "order by created_at" is a coin flip — the
@@ -341,7 +349,7 @@ async function persistTurn(
       conversation_id: conversationId,
       role: "assistant",
       content: assistantRaw,
-      payload: reply,
+      payload: repairErrors.length > 0 ? { ...reply, repairErrors } : reply,
       created_at: new Date(t + 1).toISOString(),
     },
   ]);
