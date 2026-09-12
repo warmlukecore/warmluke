@@ -13,3 +13,5 @@ next-env.d.ts
 # Eval history is a record of runs, not source. It grows every run and
 # merging two people's copies means nothing.
 evals/
+.vercel
+.env*
