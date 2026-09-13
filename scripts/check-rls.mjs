@@ -121,6 +121,29 @@ try {
   check("staff cannot delete the project",
     (await S(`projects?id=eq.${proj.id}`, { method: "DELETE" })).json?.length === 0);
 
+  console.log("\ncommerce data is locked to its store the same way");
+  const store = (await O("stores", { method: "POST", body: JSON.stringify({ project_id: proj.id, shop_domain: `rls-${stamp}.myshopify.com`, timezone: "Asia/Kolkata", currency: "INR" }) })).json[0];
+  const cust = (await O("customers", { method: "POST", body: JSON.stringify({ store_id: store.id, external_id: `c${stamp}`, name: "Aman K", phone: "9999900000" }) })).json[0];
+  const ord = (await O("orders", { method: "POST", body: JSON.stringify({ store_id: store.id, external_id: `o${stamp}`, order_number: "#1847", customer_id: cust.id, total: 2340, currency: "INR", tags: ["cod"] }) })).json[0];
+
+  check("the owner's store saved", !!store?.id);
+  check("staff can read the orders", (await S(`orders?id=eq.${ord.id}`)).json.length === 1);
+  check("staff can read the customers", (await S(`customers?id=eq.${cust.id}`)).json.length === 1);
+  check("staff cannot change an order",
+    (await S(`orders?id=eq.${ord.id}`, { method: "PATCH", body: JSON.stringify({ total: 1 }) })).json?.length === 0);
+  check("staff cannot connect or alter a store",
+    (await S(`stores?id=eq.${store.id}`, { method: "PATCH", body: JSON.stringify({ shop_domain: "hijacked.myshopify.com" }) })).json?.length === 0);
+  check("staff cannot read the access token",
+    !(await S(`stores?id=eq.${store.id}&select=access_token`, { method: "PATCH", body: JSON.stringify({ access_token: "stolen" }) })).ok ||
+      (await O(`stores?id=eq.${store.id}&select=access_token`)).json[0]?.access_token == null);
+
+  console.log("\nanother merchant's commerce is invisible");
+  check("outsider sees no store", (await X(`stores?id=eq.${store.id}`)).json.length === 0);
+  check("outsider sees no orders", (await X(`orders?id=eq.${ord.id}`)).json.length === 0);
+  check("outsider sees no customers", (await X(`customers?id=eq.${cust.id}`)).json.length === 0);
+  check("outsider cannot insert into someone else's store",
+    !(await X("orders", { method: "POST", body: JSON.stringify({ store_id: store.id, external_id: "x", total: 1 }) })).ok);
+
   console.log("\nan outsider is still shut out");
   check("outsider sees no project", (await X(`projects?id=eq.${proj.id}`)).json.length === 0);
   check("outsider sees no rows", (await X(`records?id=eq.${rec.id}`)).json.length === 0);
