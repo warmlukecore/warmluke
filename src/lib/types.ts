@@ -184,6 +184,24 @@ export interface ProjectRow {
   created_at: string;
 }
 
+/** A commerce account connected to a project — one store per project. */
+export interface StoreRow {
+  id: string;
+  project_id: string;
+  provider: string;
+  shop_domain: string;
+  /** The store's own calendar. Every "yesterday" is asked in this zone. */
+  timezone: string;
+  currency: string;
+  country: string | null;
+  connected_at: string | null;
+  /** Null until an import has actually run — which is not the same as connected. */
+  last_synced_at: string | null;
+  history_from: string | null;
+  status: "pending" | "connected" | "disconnected";
+  created_at: string;
+}
+
 export interface ModuleRow {
   id: string;
   project_id: string;

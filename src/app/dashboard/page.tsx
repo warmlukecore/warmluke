@@ -11,7 +11,52 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase-client";
 import { useUser, signOut, takePendingPrompt } from "@/lib/auth";
 import ProjectSettings from "@/components/ProjectSettings";
-import type { ProjectRow } from "@/lib/types";
+import ConnectShopify from "@/components/ConnectShopify";
+import type { ProjectRow, StoreRow } from "@/lib/types";
+
+/**
+ * What the store is actually doing, not what we hope it is.
+ *
+ * Connected and synced are different things, and saying "synced" before
+ * an import has run would be the app telling the owner their data is
+ * there when it is not. A pending row that has sat too long is a failed
+ * connection, and says so rather than spinning forever.
+ */
+function ShopifyStatus({ store }: { store: StoreRow }) {
+  if (store.status === "pending") {
+    return (
+      <div className="text-xs text-amber-400">
+        Waiting for Shopify — <span className="text-slate-500">reopen to try again</span>
+      </div>
+    );
+  }
+  const synced = store.last_synced_at
+    ? `Synced ${new Date(store.last_synced_at).toLocaleDateString()}`
+    : "Not imported yet";
+  return (
+    <div className="space-y-0.5">
+      <div className="flex items-center gap-1.5 text-xs text-slate-300">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+        <span className="truncate">{store.shop_domain}</span>
+      </div>
+      <div className="text-[11px] text-slate-500">
+        {synced} · {store.timezone}
+      </div>
+    </div>
+  );
+}
+
+/** The callback's reason codes, in the owner's terms. */
+const CONNECT_FAILURE: Record<string, string> = {
+  not_configured: "Shopify isn't set up on this deployment yet.",
+  invalid_callback: "That link didn't come from Shopify — start the connection again.",
+  invalid_shop_domain: "That store address wasn't valid.",
+  incomplete: "Shopify sent us back without finishing. Try again.",
+  expired: "The connection took too long. Start again.",
+  token_exchange_failed: "Shopify refused to complete the connection.",
+  shop_context_failed: "Connected, but the store details couldn't be read.",
+  save_failed: "Connected, but saving it failed. Try again.",
+};
 
 function DashboardInner() {
   const { user, loading } = useUser();
@@ -22,6 +67,16 @@ function DashboardInner() {
   const [creating, setCreating] = useState(false);
   const [handoffStarted, setHandoffStarted] = useState(false);
   const [settingsFor, setSettingsFor] = useState<ProjectRow | null>(null);
+  // One query for every store the caller can see, keyed by project.
+  // Asking per card would be twenty requests to draw one screen.
+  const [stores, setStores] = useState<Record<string, StoreRow>>({});
+  const [connecting, setConnecting] = useState<string | null>(null);
+  const storeOf = (projectId: string) => stores[projectId];
+  const connectFailure =
+    searchParams.get("shopify") === "failed"
+      ? (CONNECT_FAILURE[searchParams.get("reason") ?? ""] ??
+        "The store couldn't be connected. Try again.")
+      : null;
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -38,6 +93,11 @@ function DashboardInner() {
       setProjects((data ?? []) as ProjectRow[]);
     }
     setProjectsLoading(false);
+
+    const { data: storeRows } = await supabase.from("stores").select("*");
+    setStores(
+      Object.fromEntries(((storeRows ?? []) as StoreRow[]).map((st) => [st.project_id, st]))
+    );
   }, []);
 
   useEffect(() => {
@@ -135,6 +195,12 @@ function DashboardInner() {
           </button>
         </div>
 
+        {connectFailure && (
+          <div className="mt-6 rounded-xl border border-rose-900/60 bg-rose-950/40 px-4 py-3 text-sm text-rose-200">
+            {connectFailure}
+          </div>
+        )}
+
         {projectsLoading ? (
           <div className="mt-10 text-sm text-slate-500">Loading projects…</div>
         ) : projects.length === 0 ? (
@@ -178,6 +244,20 @@ function DashboardInner() {
                     Open builder →
                   </div>
                 </Link>
+                <div className="border-t border-slate-800 px-5 py-3">
+                  {storeOf(p.id) ? (
+                    <ShopifyStatus store={storeOf(p.id)!} />
+                  ) : connecting === p.id ? (
+                    <ConnectShopify projectId={p.id} onCancel={() => setConnecting(null)} />
+                  ) : (
+                    <button
+                      onClick={() => setConnecting(p.id)}
+                      className="text-xs font-medium text-slate-400 transition-colors hover:text-blue-400"
+                    >
+                      ⚡ Connect Shopify
+                    </button>
+                  )}
+                </div>
                 <button
                   onClick={() => setSettingsFor(p)}
                   aria-label={`Settings for ${p.name}`}
