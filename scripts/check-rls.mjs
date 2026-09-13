@@ -137,6 +137,50 @@ try {
     !(await S(`stores?id=eq.${store.id}&select=access_token`, { method: "PATCH", body: JSON.stringify({ access_token: "stolen" }) })).ok ||
       (await O(`stores?id=eq.${store.id}&select=access_token`)).json[0]?.access_token == null);
 
+  console.log("\na Shopify connection can only be completed once");
+  const rpc = (token, state) =>
+    fetch(`${URL_}/rest/v1/rpc/abo_shopify_connect`, {
+      method: "POST",
+      headers: { apikey: ANON, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        p_state: state, p_token: "shpat_test", p_timezone: "Asia/Kolkata",
+        p_currency: "INR", p_country: "IN",
+      }),
+    }).then((r) => r.json());
+
+  const pending = (await O("stores", {
+    method: "POST",
+    body: JSON.stringify({
+      project_id: proj.id, shop_domain: `pend-${stamp}.myshopify.com`, status: "pending",
+      oauth_state: `state-${stamp}`,
+      oauth_state_expires_at: new Date(Date.now() + 600000).toISOString(),
+    }),
+  })).json[0];
+  check("a pending store was created", !!pending?.id);
+  check("an unknown state connects nothing", (await rpc(owner.jwt, "made-up-state")) === null);
+  check("the real state completes the connection", (await rpc(owner.jwt, `state-${stamp}`)) === proj.id);
+  check("the same state cannot be used twice", (await rpc(owner.jwt, `state-${stamp}`)) === null);
+  check("the store is now connected",
+    (await O(`stores?id=eq.${pending.id}&select=status,timezone,oauth_state`)).json[0]?.status === "connected");
+  check("the store kept its own timezone",
+    (await O(`stores?id=eq.${pending.id}&select=timezone`)).json[0]?.timezone === "Asia/Kolkata");
+  check("the nonce was spent",
+    (await O(`stores?id=eq.${pending.id}&select=oauth_state`)).json[0]?.oauth_state === null);
+
+  const stale = (await O("stores", {
+    method: "POST",
+    body: JSON.stringify({
+      project_id: proj.id, shop_domain: `stale-${stamp}.myshopify.com`, status: "pending",
+      oauth_state: `expired-${stamp}`,
+      oauth_state_expires_at: new Date(Date.now() - 1000).toISOString(),
+    }),
+  })).json[0];
+  check("an expired state connects nothing", (await rpc(owner.jwt, `expired-${stamp}`)) === null);
+  check("the expired store stays pending",
+    (await O(`stores?id=eq.${stale.id}&select=status`)).json[0]?.status === "pending");
+  check("a stranger cannot complete someone else's connection",
+    (await rpc(outsider.jwt, `expired-${stamp}`)) === null);
+
   console.log("\nanother merchant's commerce is invisible");
   check("outsider sees no store", (await X(`stores?id=eq.${store.id}`)).json.length === 0);
   check("outsider sees no orders", (await X(`orders?id=eq.${ord.id}`)).json.length === 0);
