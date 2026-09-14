@@ -118,19 +118,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "message and projectId are required" }, { status: 400 });
     }
 
-    // Whose assistant this account runs on. Refused here rather than
-    // only hidden in the UI: a hidden button costs nothing to bypass,
-    // and every turn past it is a model call somebody pays for.
-    const { data: settings } = await client.rpc("abo_my_settings");
-    if (settings?.[0]?.assistant === "theirs") {
-      return NextResponse.json(
-        {
-          error:
-            "This account uses its own AI. Connect Claude or ChatGPT to warmluke.vercel.app/api/mcp instead.",
-        },
-        { status: 403 }
-      );
-    }
+    // An account can run on its own AI — the panel says so and points
+    // at the MCP endpoint. It used to be refused here as well, which
+    // meant the one kind of account that talks to Claude could never
+    // have anything built, including the requests Claude sends over.
+    //
+    // Two things had been given one name: who the merchant talks to,
+    // and who pays for the model. This is the first. Spend is already
+    // bounded by MAX_TURNS_PER_HOUR above, and a real budget deserves
+    // its own name rather than riding on this one.
 
     // RLS ensures this only returns the caller's own project.
     const { data: project, error: projErr } = await client

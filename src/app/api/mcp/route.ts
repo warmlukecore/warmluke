@@ -67,6 +67,26 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "propose_change",
+    description:
+      "Ask for something to be built or changed in the merchant's Warmluke app — a new section, a rule, a fix. Describe the problem in their own words; the design is made in Warmluke and shown to them for approval, so nothing changes until they say yes. Use this instead of claiming a change was made.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        request: {
+          type: "string",
+          description:
+            "What the merchant wants, in plain words. Say the problem and how they work, not a database design.",
+        },
+        project_id: {
+          type: "string",
+          description: "Which app, when they have more than one. Optional.",
+        },
+      },
+      required: ["request"],
+    },
+  },
 ] as const;
 
 const ok = (id: RpcRequest["id"], result: Json) => NextResponse.json({ jsonrpc: "2.0", id, result });
@@ -174,6 +194,53 @@ export async function POST(req: Request) {
 
     if (name === "store_overview") {
       return ok(id, text(await storeOverview(db, store.id)));
+    }
+
+    if (name === "propose_change") {
+      const request = String(args.request ?? "").trim();
+      if (!request) {
+        return ok(id, text({ error: "Say what they want built." }));
+      }
+      // Which app. A merchant with one project should not be asked;
+      // a merchant with several must not have one picked for them.
+      const { data: projects } = await db.from("projects").select("id, name");
+      const list = projects ?? [];
+      const wantedProject = (args.project_id as string | undefined)?.trim();
+      const project = wantedProject
+        ? list.find((p) => p.id === wantedProject)
+        : list.length === 1
+          ? list[0]
+          : null;
+      if (!project) {
+        return ok(
+          id,
+          text({
+            error: list.length
+              ? "Which app is this for? Pass project_id."
+              : "This account has no app yet.",
+            projects: list.map((p) => ({ id: p.id, name: p.name })),
+          })
+        );
+      }
+
+      const { data: requestId, error: err } = await db.rpc("abo_mcp_propose", {
+        p_project: project.id,
+        p_request: request,
+      });
+      if (err) return ok(id, text({ error: err.message }));
+
+      const origin = new URL(req.url).origin;
+      return ok(
+        id,
+        text({
+          // Said plainly so the model reports it plainly: nothing has
+          // been built, and the merchant has to look.
+          status: "waiting for the merchant",
+          note: "Nothing has changed yet. Warmluke will design this and show them a plan to approve.",
+          request_id: requestId,
+          open: `${origin}/app/${project.id}`,
+        })
+      );
     }
 
     if (name === "search_orders") {

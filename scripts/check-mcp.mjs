@@ -91,7 +91,10 @@ check("it names itself", init.json?.result?.serverInfo?.name === "warmluke");
 const list = await rpc("tools/list", {}, strangerToken);
 const names = (list.json?.result?.tools ?? []).map((t) => t.name);
 check("tools/list answers a signed-in caller", list.status === 200);
-check("both tools are offered", names.includes("store_overview") && names.includes("search_orders"));
+check(
+  "all three tools are offered",
+  ["store_overview", "search_orders", "propose_change"].every((t) => names.includes(t))
+);
 check(
   "every tool has a schema a model can fill in",
   (list.json?.result?.tools ?? []).every((t) => t.inputSchema?.type === "object" && t.description)
@@ -173,6 +176,18 @@ check("the authorization server is really there", !!as?.authorization_endpoint);
 check("and accepts clients registering themselves", !!as?.registration_endpoint);
 
 try {
+  console.log("\na stranger cannot ask for work on someone else's app");
+  check(
+    "propose_change is refused",
+    !!toolText(
+      await rpc(
+        "tools/call",
+        { name: "propose_change", arguments: { request: "delete everything" } },
+        strangerToken
+      )
+    )?.error
+  );
+
   console.log("\nsomeone else's store is not reachable");
   // The whole security model in one check: a signed-in stranger with a
   // valid token sees nothing, because RLS decides — not this route.
@@ -224,6 +239,40 @@ try {
       await rpc("tools/call", { name: "search_orders", arguments: { limit: 100000 } }, t)
     );
     check("an absurd limit is capped", (capped?.count ?? 0) <= 100);
+
+    console.log("\nasking for something to be built");
+    // The point of the whole design: a request is recorded, and
+    // nothing is built. A tool that quietly created a section would
+    // put the merchant's approval card on the wrong side of the fence.
+    const before = await admin.from("modules").select("*", { count: "exact", head: true });
+    const proposed = toolText(
+      await rpc(
+        "tools/call",
+        {
+          name: "propose_change",
+          arguments: { request: "Orders keep getting packed wrong, sort that out" },
+        },
+        t
+      )
+    );
+    check("the request is recorded", !!proposed?.request_id);
+    check("and it says nothing has changed yet", /nothing has changed/i.test(proposed?.note ?? ""));
+    check("with somewhere for the merchant to go", /\/app\//.test(proposed?.open ?? ""));
+    const after = await admin.from("modules").select("*", { count: "exact", head: true });
+    check("no section was created", after.count === before.count);
+
+    check(
+      "an empty request is refused",
+      /say what/i.test(
+        toolText(
+          await rpc("tools/call", { name: "propose_change", arguments: { request: "   " } }, t)
+        )?.error ?? ""
+      )
+    );
+
+    // A request nobody looks at is the same as no request, so the one
+    // just made is cleared rather than left for the owner.
+    await admin.from("build_requests").delete().eq("id", proposed.request_id);
 
     const noSuchShop = toolText(
       await rpc(

@@ -6,7 +6,7 @@
 // Deletion always requires typing the module's name.
 // ─────────────────────────────────────────────────────────────
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import GenericRenderer from "@/components/GenericRenderer";
 import { describeAutomation, describePlan, type StoreFacts } from "@/lib/describe";
 import { storeOverview } from "@/lib/store-read";
@@ -533,6 +533,35 @@ export default function ChatPanel({
   // this is so the panel says what is going on instead of offering a
   // box that answers with an error.
   const [assistant, setAssistant] = useState<"ours" | "theirs" | null>(null);
+  // What their AI has asked for and nobody has looked at yet. Without
+  // this the request lands in the database and dies there: Claude says
+  // "I've asked Warmluke to build it" and the merchant never sees it.
+  const [requests, setRequests] = useState<
+    Array<{ id: string; request: string; client_id: string | null; created_at: string }>
+  >([]);
+  const loadRequests = useCallback(async () => {
+    const { data } = await supabase
+      .from("build_requests")
+      .select("id, request, client_id, created_at")
+      .eq("project_id", projectId)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(10);
+    setRequests(data ?? []);
+  }, [projectId]);
+  useEffect(() => {
+    loadRequests();
+  }, [loadRequests]);
+
+  /** Hands one to the builder, as though the owner had typed it. */
+  async function openRequest(r: { id: string; request: string }) {
+    await supabase
+      .from("build_requests")
+      .update({ status: "opened", resolved_at: new Date().toISOString() })
+      .eq("id", r.id);
+    setRequests((prev) => prev.filter((x) => x.id !== r.id));
+    onSend(r.request);
+  }
   useEffect(() => {
     supabase.rpc("abo_my_settings").then(({ data }) => {
       setAssistant((data?.[0]?.assistant as "ours" | "theirs") ?? "ours");
@@ -624,8 +653,34 @@ export default function ChatPanel({
             {typeof window === "undefined" ? "" : window.location.origin}/api/mcp
           </code>
           <p className="mt-3 text-[11px] text-slate-400">
-            It can read your store. It cannot change anything.
+            It can read your store. It cannot change anything on its own — when you ask
+            it to build something, it comes here for your approval.
           </p>
+
+          {requests.length > 0 && (
+            <div className="mt-6 space-y-2 text-left">
+              <div className="text-[10px] font-semibold tracking-widest text-slate-400 uppercase">
+                Asked for
+              </div>
+              {requests.map((r) => (
+                <div key={r.id} className="rounded-lg border border-slate-200 px-3 py-2.5">
+                  <p className="text-xs leading-relaxed text-slate-700">{r.request}</p>
+                  <div className="mt-2 flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400">
+                      {r.client_id ? "via your AI" : "via an assistant"} ·{" "}
+                      {new Date(r.created_at).toLocaleDateString()}
+                    </span>
+                    <button
+                      onClick={() => openRequest(r)}
+                      className="rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700"
+                    >
+                      Design it
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </aside>
     );
@@ -644,6 +699,26 @@ export default function ChatPanel({
         title="Drag to resize · double-click to reset"
         className={resizeHandleClass("right", dragging)}
       />
+      {requests.length > 0 && (
+        <div className="border-b border-amber-100 bg-amber-50 px-4 py-2.5">
+          <div className="text-[10px] font-semibold tracking-widest text-amber-700 uppercase">
+            Asked for by your AI
+          </div>
+          {requests.map((r) => (
+            <div key={r.id} className="mt-1.5 flex items-start gap-2">
+              <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-amber-900">
+                {r.request}
+              </p>
+              <button
+                onClick={() => openRequest(r)}
+                className="shrink-0 rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-amber-700"
+              >
+                Design it
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="border-b border-slate-100 px-4 py-3">
         <div className="flex items-center gap-2">
           <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-blue-500 text-xs text-white">
