@@ -119,6 +119,10 @@ function DashboardInner() {
   // inert instead of accepting a second click on the same row.
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
   const [storeError, setStoreError] = useState<string | null>(null);
+  // Whether to show the way into the accounts screen. The screen itself
+  // refuses non-administrators; this only decides whether the door is
+  // visible, so a wrong answer here is cosmetic.
+  const [isSuperadmin, setIsSuperadmin] = useState(false);
   const storeOf = (projectId: string) => stores[projectId];
 
   /** Reconnecting is the connect form again, with the address filled in. */
@@ -189,6 +193,13 @@ function DashboardInner() {
     if (user) loadProjects();
   }, [user, loadProjects]);
 
+  useEffect(() => {
+    if (!user) return;
+    supabase.rpc("abo_my_settings").then(({ data }) => {
+      setIsSuperadmin(!!data?.[0]?.is_superadmin);
+    });
+  }, [user]);
+
   async function createProject(name?: string): Promise<string | null> {
     setCreating(true);
     const { data, error } = await supabase
@@ -253,6 +264,16 @@ function DashboardInner() {
           <span className="font-display text-base font-semibold">Warmluke</span>
         </Link>
         <div className="flex items-center gap-3 text-sm">
+          {/* An administrator had no way to reach their own screen but
+              to know the URL, which is not a product. */}
+          {isSuperadmin && (
+            <Link
+              href="/admin"
+              className="rounded-lg border border-slate-800 px-3 py-1.5 text-slate-300 transition-colors hover:bg-slate-900"
+            >
+              Accounts
+            </Link>
+          )}
           <span className="text-slate-400">{user.email}</span>
           <button
             onClick={handleSignOut}
