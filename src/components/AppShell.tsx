@@ -85,6 +85,7 @@ export default function AppShell({
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
   const [schema, setSchema] = useState<UiSchemaRow | null>(null);
   const [records, setRecords] = useState<RecordRow[]>([]);
+  const [loadedSource, setLoadedSource] = useState<string | null>(null);
   const [recordTotal, setRecordTotal] = useState(0);
   const [linkOptions, setLinkOptions] = useState<LinkOptions>({});
   const [schemaHistory, setSchemaHistory] = useState<UiSchemaRow[]>([]);
@@ -258,7 +259,11 @@ export default function AppShell({
 
   const loadModuleData = useCallback(
     async (moduleId: string, limit = RECORD_PAGE) => {
-      const [schemaRes, recordsRes, historyRes] = await Promise.all([
+      // The module is fetched rather than looked up in state: a section
+      // created a moment ago is selected before the list has reloaded,
+      // and a stale closure there means source_table reads as undefined
+      // and the section renders as empty.
+      const [schemaRes, recordsRes, historyRes, modRes] = await Promise.all([
         supabase
           .from("ui_schemas")
           .select("*")
@@ -276,6 +281,7 @@ export default function AppShell({
           .select("*")
           .eq("module_id", moduleId)
           .order("version", { ascending: false }),
+        supabase.from("modules").select("source_table").eq("id", moduleId).maybeSingle(),
       ]);
       if (schemaRes.error || recordsRes.error || historyRes.error) {
         setLoadError(
@@ -293,13 +299,16 @@ export default function AppShell({
       // A section pointed at the store shows the store's rows. The
       // records query above still ran and found nothing, which is
       // correct — a store-backed section has no records of its own.
-      const mod = modules.find((m) => m.id === moduleId);
-      if (isStoreTable(mod?.source_table) && storeId) {
+      const sourceTable = modRes.data?.source_table as string | null | undefined;
+      // Kept so read-only and currency follow the section that actually
+      // loaded, not whatever the module list happens to hold.
+      setLoadedSource(sourceTable ?? null);
+      if (isStoreTable(sourceTable) && storeId) {
         try {
           const { rows, total } = await readStoreRows(
             supabase,
             storeId,
-            mod!.source_table as StoreTable,
+            sourceTable as StoreTable,
             limit
           );
           setRecords(rows as unknown as RecordRow[]);
@@ -313,7 +322,7 @@ export default function AppShell({
       }
       setSchemaHistory(historyRes.data as UiSchemaRow[]);
     },
-    [modules, storeId]
+    [storeId]
   );
 
   /**
@@ -847,7 +856,7 @@ export default function AppShell({
   }, [bootstrapped, loading]);
 
   const isEmpty = !loading && modules.length === 0;
-  const storeBacked = isStoreTable(selectedModule?.source_table);
+  const storeBacked = isStoreTable(loadedSource);
 
   return (
     <FormatProvider locale={project?.locale} currency={project?.currency}>
