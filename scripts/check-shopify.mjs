@@ -9,9 +9,11 @@
 
 import { createHmac } from "node:crypto";
 import {
+  EXTENDED_ORDER_HISTORY_SCOPE,
   SHOPIFY_SCOPES,
   authorizeUrl,
   normalizeShopDomain,
+  scopesFor,
   verifyCallbackHmac,
 } from "../src/lib/shopify.ts";
 
@@ -55,6 +57,16 @@ check("it carries the state back", url.searchParams.get("state") === "abc-123");
 check("every scope is a read", SHOPIFY_SCOPES.every((s) => s.startsWith("read_")));
 check("no write scope is requested", !url.searchParams.get("scope")?.includes("write_"));
 check("a bad shop cannot build a URL", refuses(() => authorizeUrl({ shop: "evil.com", clientId: "x", redirectUri: "y", state: "z" })));
+
+console.log("\nthe scope Shopify has to approve stays out until it has");
+// Asking for an unapproved scope fails the whole authorization, not
+// just that one scope — so a store that would otherwise connect
+// perfectly well cannot connect at all.
+check("it is absent by default", !scopesFor({}).includes(EXTENDED_ORDER_HISTORY_SCOPE));
+check("it is absent when the flag is off", !scopesFor({ SHOPIFY_READ_ALL_ORDERS: "false" }).includes(EXTENDED_ORDER_HISTORY_SCOPE));
+check("it appears once the flag is on", scopesFor({ SHOPIFY_READ_ALL_ORDERS: "true" }).includes(EXTENDED_ORDER_HISTORY_SCOPE));
+check("the other scopes are unaffected", SHOPIFY_SCOPES.every((sc) => scopesFor({}).includes(sc)));
+check("the authorize URL never carries it by default", !url.searchParams.get("scope")?.includes(EXTENDED_ORDER_HISTORY_SCOPE));
 
 console.log("\na callback has to be signed by Shopify");
 const SECRET = "shpss_test_secret";

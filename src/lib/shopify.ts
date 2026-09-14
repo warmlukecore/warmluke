@@ -14,14 +14,28 @@ import { createHmac, timingSafeEqual, randomUUID } from "node:crypto";
 /** Read-only. The assistant reads a store; it never writes to Shopify. */
 export const SHOPIFY_SCOPES = [
   "read_orders",
-  "read_all_orders",
   "read_products",
   "read_customers",
   "read_inventory",
   "read_locations",
 ] as const;
 
-export const SHOPIFY_API_VERSION = "2025-07";
+/**
+ * Orders older than Shopify's default window, which needs Shopify's
+ * approval on the app before it can be asked for at all — requesting it
+ * unapproved fails the whole authorization, not just that one scope. Set
+ * the flag once the grant comes through.
+ */
+export const EXTENDED_ORDER_HISTORY_SCOPE = "read_all_orders";
+
+export function scopesFor(env = process.env): string[] {
+  return env.SHOPIFY_READ_ALL_ORDERS === "true"
+    ? [...SHOPIFY_SCOPES, EXTENDED_ORDER_HISTORY_SCOPE]
+    : [...SHOPIFY_SCOPES];
+}
+
+// Kept in step with the version set on the app in Shopify.
+export const SHOPIFY_API_VERSION = "2026-07";
 
 // Anchored, and it must start with a letter or digit. A loose test like
 // /myshopify.com/ matches "evil.com?x=.myshopify.com" and sends the
@@ -99,7 +113,7 @@ export function authorizeUrl(opts: {
 }): string {
   const u = new URL(`https://${normalizeShopDomain(opts.shop)}/admin/oauth/authorize`);
   u.searchParams.set("client_id", opts.clientId);
-  u.searchParams.set("scope", SHOPIFY_SCOPES.join(","));
+  u.searchParams.set("scope", scopesFor().join(","));
   u.searchParams.set("redirect_uri", opts.redirectUri);
   u.searchParams.set("state", opts.state);
   return u.toString();
