@@ -17,8 +17,17 @@ export const runtime = "nodejs";
  * different conversation about consent.
  */
 
-const PROTOCOL_VERSION = "2025-06-18";
-const SUPPORTED = new Set([PROTOCOL_VERSION, "2025-03-26", "2024-11-05"]);
+/**
+ * The newest revision this server has been written against. Every
+ * revision since 2024-11-05 leaves the four methods used here
+ * unchanged, which is why a newer client is welcome rather than
+ * refused.
+ */
+const LATEST_KNOWN = "2025-11-25";
+const KNOWN = new Set([LATEST_KNOWN, "2025-06-18", "2025-03-26", "2024-11-05"]);
+
+/** A revision is a date. Anything else is a client with a bug. */
+const VERSION_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
 
 type Json = Record<string, unknown>;
 type RpcRequest = { jsonrpc: "2.0"; id?: string | number | null; method: string; params?: Json };
@@ -78,9 +87,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Bad origin." }, { status: 403 });
   }
 
+  // Only a malformed version is refused, not an unfamiliar one. The
+  // spec negotiates in the initialize body, so on the first request
+  // there is nothing negotiated to check against — and rejecting every
+  // revision newer than a hardcoded list locks out each new client as
+  // it ships. That is exactly what happened: Claude sends 2025-11-25
+  // and got a 400 before it could say hello.
   const version = req.headers.get("mcp-protocol-version");
-  if (version && !SUPPORTED.has(version)) {
-    return NextResponse.json({ error: `Unsupported MCP version ${version}.` }, { status: 400 });
+  if (version && !VERSION_SHAPE.test(version)) {
+    return NextResponse.json({ error: `"${version}" is not an MCP version.` }, { status: 400 });
   }
 
   let body: RpcRequest;
@@ -98,8 +113,11 @@ export async function POST(req: Request) {
   const { id, method, params = {} } = body;
 
   if (method === "initialize") {
+    // Negotiation proper: speak the client's revision when it is one we
+    // were written against, otherwise name ours and let it decide.
+    const asked = (params as { protocolVersion?: string }).protocolVersion;
     return ok(id, {
-      protocolVersion: PROTOCOL_VERSION,
+      protocolVersion: asked && KNOWN.has(asked) ? asked : LATEST_KNOWN,
       capabilities: { tools: {} },
       serverInfo: { name: "warmluke", version: "0.1.0" },
       instructions:

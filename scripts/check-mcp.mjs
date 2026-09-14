@@ -75,12 +75,29 @@ const notif = await fetch(MCP, {
 check("a notification is accepted with 202 and no body", notif.status === 202);
 check("GET is refused with 405, not a broken stream", (await fetch(MCP)).status === 405);
 
-const badVersion = await fetch(MCP, {
-  method: "POST",
-  headers: { "Content-Type": "application/json", "MCP-Protocol-Version": "1999-01-01" },
-  body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
+// The one that cost a real connection: Claude sends a revision newer
+// than anything this server was written against, and a hardcoded list
+// of "supported" versions turned that into a 400 before it could say
+// hello. A newer revision has to be welcome.
+const ping = (v) =>
+  fetch(MCP, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "MCP-Protocol-Version": v },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
+  });
+check("a newer protocol revision still connects", (await ping("2026-06-18")).status === 200);
+check("so does one from before", (await ping("2024-11-05")).status === 200);
+check("something that is not a version is refused", (await ping("banana")).status === 400);
+
+const negotiated = await rpc("initialize", {
+  protocolVersion: "2025-06-18",
+  capabilities: {},
+  clientInfo: { name: "check", version: "0" },
 });
-check("an unsupported protocol version is refused with 400", badVersion.status === 400);
+check(
+  "a known revision is echoed back, not overridden",
+  negotiated.json?.result?.protocolVersion === "2025-06-18"
+);
 
 const badOrigin = await fetch(MCP, {
   method: "POST",
