@@ -25,6 +25,21 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
+const admin = createClient(
+  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
+  env.ADAPTIVE_OS_SERVICE_ROLE_KEY
+);
+const client = createClient(
+  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
+  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
+);
+const stamp = Date.now();
+const email = `mcp_${stamp}@example.com`;
+const password = `pw_${stamp}_aA1!`;
+const { data: made } = await admin.auth.admin.createUser({ email, password, email_confirm: true });
+const { data: sess } = await client.auth.signInWithPassword({ email, password });
+const strangerToken = sess.session.access_token;
+
 let n = 0;
 const rpc = (method, params, token) =>
   fetch(MCP, {
@@ -46,20 +61,36 @@ const toolText = (res) => {
   }
 };
 
-console.log("the handshake a client does before anything else");
+console.log("nothing here works without signing in");
+// A client that can initialize unauthenticated concludes the server is
+// open and never offers OAuth at all. Claude did exactly that.
+for (const m of ["initialize", "tools/list", "ping"]) {
+  const r = await fetch(MCP, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: m, params: {} }),
+  });
+  check(`${m} is refused with 401`, r.status === 401);
+  check(
+    `${m} points at the resource metadata`,
+    /resource_metadata="https?:\/\//.test(r.headers.get("www-authenticate") ?? "")
+  );
+}
+
+console.log("\nthe handshake a client does before anything else");
 const init = await rpc("initialize", {
   protocolVersion: "2025-06-18",
   capabilities: {},
   clientInfo: { name: "check", version: "0" },
-});
+}, strangerToken);
 check("initialize answers", init.status === 200 && !!init.json?.result);
 check("it names a protocol version", !!init.json?.result?.protocolVersion);
 check("it declares tools", !!init.json?.result?.capabilities?.tools);
 check("it names itself", init.json?.result?.serverInfo?.name === "warmluke");
 
-const list = await rpc("tools/list", {});
+const list = await rpc("tools/list", {}, strangerToken);
 const names = (list.json?.result?.tools ?? []).map((t) => t.name);
-check("tools/list works without signing in", list.status === 200);
+check("tools/list answers a signed-in caller", list.status === 200);
 check("both tools are offered", names.includes("store_overview") && names.includes("search_orders"));
 check(
   "every tool has a schema a model can fill in",
@@ -69,7 +100,7 @@ check(
 console.log("\nthings a client will send that are not requests");
 const notif = await fetch(MCP, {
   method: "POST",
-  headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+  headers: { "Content-Type": "application/json", Authorization: `Bearer ${strangerToken}` },
   body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
 });
 check("a notification is accepted with 202 and no body", notif.status === 202);
@@ -82,7 +113,11 @@ check("GET is refused with 405, not a broken stream", (await fetch(MCP)).status 
 const ping = (v) =>
   fetch(MCP, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "MCP-Protocol-Version": v },
+    headers: {
+      "Content-Type": "application/json",
+      "MCP-Protocol-Version": v,
+      Authorization: `Bearer ${strangerToken}`,
+    },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
   });
 check("a newer protocol revision still connects", (await ping("2026-06-18")).status === 200);
@@ -93,7 +128,7 @@ const negotiated = await rpc("initialize", {
   protocolVersion: "2025-06-18",
   capabilities: {},
   clientInfo: { name: "check", version: "0" },
-});
+}, strangerToken);
 check(
   "a known revision is echoed back, not overridden",
   negotiated.json?.result?.protocolVersion === "2025-06-18"
@@ -101,25 +136,25 @@ check(
 
 const badOrigin = await fetch(MCP, {
   method: "POST",
-  headers: { "Content-Type": "application/json", Origin: "https://evil.example" },
+  headers: {
+    "Content-Type": "application/json",
+    Origin: "https://evil.example",
+    Authorization: `Bearer ${strangerToken}`,
+  },
   body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
 });
 check("a request from another origin is refused", badOrigin.status === 403);
 
-const unknown = await rpc("does/not/exist", {});
+const unknown = await rpc("does/not/exist", {}, strangerToken);
 check("an unknown method is a JSON-RPC error, not a crash", unknown.json?.error?.code === -32601);
 
-console.log("\ncalling a tool without signing in");
-const anonRes = await fetch(MCP, {
-  method: "POST",
-  headers: { "Content-Type": "application/json", Accept: "application/json" },
-  body: JSON.stringify({ jsonrpc: "2.0", id: 99, method: "tools/call", params: { name: "store_overview", arguments: {} } }),
-});
-check("is refused with 401", anonRes.status === 401);
-// Without this pointer a client knows it is unauthorised and nothing
-// else — it cannot find the sign-in it is supposed to offer.
-const challenge = anonRes.headers.get("www-authenticate") ?? "";
-check("and points at the resource metadata", /resource_metadata="https?:\/\//.test(challenge));
+const challenge = (
+  await fetch(MCP, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+  })
+).headers.get("www-authenticate") ?? "";
 
 console.log("\nthe discovery a client reads after that 401");
 const metaUrl = challenge.match(/resource_metadata="([^"]+)"/)?.[1];
@@ -136,22 +171,6 @@ check("the authorization server is really there", !!as?.authorization_endpoint);
 // Without dynamic registration a client cannot connect at all: nobody
 // is going to hand ChatGPT a client id by hand.
 check("and accepts clients registering themselves", !!as?.registration_endpoint);
-
-// ── As real accounts ────────────────────────────────────────────
-const admin = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.ADAPTIVE_OS_SERVICE_ROLE_KEY
-);
-const stamp = Date.now();
-const email = `mcp_${stamp}@example.com`;
-const password = `pw_${stamp}_aA1!`;
-const { data: made } = await admin.auth.admin.createUser({ email, password, email_confirm: true });
-const client = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
-);
-const { data: sess } = await client.auth.signInWithPassword({ email, password });
-const strangerToken = sess.session.access_token;
 
 try {
   console.log("\nsomeone else's store is not reachable");

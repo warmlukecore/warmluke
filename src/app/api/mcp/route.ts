@@ -98,6 +98,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `"${version}" is not an MCP version.` }, { status: 400 });
   }
 
+  // The whole endpoint is protected, not just the tools. Letting
+  // initialize and tools/list through unauthenticated seemed friendlier
+  // — a client could see what this server is before asking anyone to
+  // sign in — but a real client reads that as "no sign-in needed" and
+  // connects as an open server. Claude said exactly that.
+  const auth = await getUserClient(req);
+  if (!auth) {
+    const meta = `${new URL(req.url).origin}/.well-known/oauth-protected-resource`;
+    return NextResponse.json(
+      { jsonrpc: "2.0", id: null, error: { code: -32001, message: "Sign in to use this server." } },
+      {
+        status: 401,
+        headers: { "WWW-Authenticate": `Bearer resource_metadata="${meta}"` },
+      }
+    );
+  }
+  const db = auth.client;
+
   let body: RpcRequest;
   try {
     body = (await req.json()) as RpcRequest;
@@ -131,26 +149,6 @@ export async function POST(req: Request) {
   if (method !== "tools/call") {
     return rpcError(id, -32601, `No method "${method}".`);
   }
-
-  // Checked here rather than at the top: initialize and tools/list tell
-  // a client what this server is, which it needs before it can ask the
-  // merchant to sign in.
-  const auth = await getUserClient(req);
-  if (!auth) {
-    const meta = `${new URL(req.url).origin}/.well-known/oauth-protected-resource`;
-    return NextResponse.json(
-      { jsonrpc: "2.0", id, error: { code: -32001, message: "Not signed in." } },
-      {
-        // A 401 is what makes a client offer to sign in rather than
-        // report the tool as broken, and resource_metadata is how it
-        // finds out where to sign in. Without the pointer the client
-        // knows it is unauthorised and nothing else.
-        status: 401,
-        headers: { "WWW-Authenticate": `Bearer resource_metadata="${meta}"` },
-      }
-    );
-  }
-  const db = auth.client;
 
   const { name, arguments: args = {} } = params as { name?: string; arguments?: Json };
 
