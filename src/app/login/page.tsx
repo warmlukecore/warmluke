@@ -68,7 +68,17 @@ export default function Login() {
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-400">Password</label>
+              {/* Beside the field, not buried at the bottom: this is
+                  looked for at the moment the password fails. */}
+              <div className="flex items-baseline justify-between">
+                <label className="text-xs font-medium text-slate-400">Password</label>
+                <Link
+                  href="/forgot"
+                  className="text-[11px] text-slate-500 transition-colors hover:text-blue-400"
+                >
+                  Forgotten?
+                </Link>
+              </div>
               <input
                 type="password"
                 required
