@@ -78,7 +78,7 @@ export async function countOf(shop: string, token: string, resource: Resource): 
 const BULK_QUERIES: Record<Resource, string> = {
   products: `{ products { edges { node {
     id title handle status tags updatedAt
-    variants { edges { node { id title sku barcode price updatedAt } } }
+    variants { edges { node { id title sku barcode price updatedAt inventoryItem { id } } } }
   } } } }`,
   customers: `{ customers { edges { node {
     id displayName email phone numberOfOrders tags updatedAt
@@ -101,7 +101,7 @@ const BULK_QUERIES: Record<Resource, string> = {
     id
     inventoryItem { id inventoryLevels { edges { node {
       quantities(names: ["available"]) { quantity }
-      location { name }
+      location { id name }
     } } } }
   } } } }`,
 };

@@ -5,11 +5,11 @@ import { ShopifyError, normalizeShopDomain, verifyWebhookHmac } from "@/lib/shop
 export const runtime = "nodejs";
 
 /**
- * POST /api/shopify/webhooks — the three compliance topics.
+ * POST /api/shopify/webhooks — everything Shopify tells us about.
  *
- * One endpoint for all three because the topic is a header, and three
- * routes differing by one switch would be three places to forget to
- * verify a signature.
+ * One endpoint for every topic, because the topic is a header, and a
+ * route per topic would be a dozen places to forget to verify a
+ * signature.
  *
  * Order matters the same way it does in the callback: the body is read
  * as raw text and its signature checked before anything in it is parsed
@@ -40,6 +40,7 @@ export async function POST(req: Request) {
   let body: {
     shop_domain?: string;
     customer?: { id?: number | string };
+    id?: number | string;
     [k: string]: unknown;
   };
   try {
@@ -60,53 +61,31 @@ export async function POST(req: Request) {
     );
   }
 
-  const customer = body.customer?.id != null ? String(body.customer.id) : null;
-
   const anon = createClient(
     process.env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY!
   );
 
-  const call = async (fn: string, args: Record<string, unknown>) => {
-    const { error } = await anon.rpc(fn, args);
-    // A 500 makes Shopify retry. Silently returning 200 on a failed
-    // erasure would leave the data here and nobody looking for it.
-    if (error) throw new Error(error.message);
-  };
+  // One call, and the signature travels with it. The database checks
+  // it again before writing anything, because this route is not the
+  // only way to reach those functions — PostgREST is, and the anon key
+  // is public. A check that lives only here protects only the people
+  // who choose to come through here.
+  const { error } = await anon.rpc("abo_shopify_webhook", {
+    p_topic: topic,
+    p_shop: shop,
+    p_raw: raw,
+    p_hmac: req.headers.get("x-shopify-hmac-sha256"),
+  });
 
-  try {
-    switch (topic) {
-      case "customers/data_request":
-        await call("abo_shopify_data_request", {
-          p_shop: shop,
-          p_customer: customer,
-          p_payload: body,
-        });
-        break;
-      case "customers/redact":
-        await call("abo_shopify_customer_redact", { p_shop: shop, p_customer: customer });
-        break;
-      case "shop/redact":
-        await call("abo_shopify_shop_redact", { p_shop: shop });
-        break;
-      // Both topics carry the whole order, so both are the same write.
-      // An update that arrived before the create — Shopify does not
-      // promise order — still lands the order, because the write is an
-      // upsert rather than an edit of something assumed to exist.
-      case "orders/create":
-      case "orders/updated":
-      case "orders/cancelled":
-      case "orders/paid":
-      case "orders/fulfilled":
-        await call("abo_shopify_upsert_order", { p_shop: shop, p_order: body });
-        break;
-      default:
-        // Signed, so it really is Shopify — just a topic we never asked
-        // for. Accept it; retrying it forever would help nobody.
-        return NextResponse.json({ ok: true, ignored: topic });
-    }
-  } catch {
-    return NextResponse.json({ error: "handler_failed" }, { status: 500 });
+  if (error) {
+    // A 500 makes Shopify retry, which is right for a write that
+    // failed and wrong for one it will never accept.
+    const refused = /did not come from Shopify|Unsigned/.test(error.message);
+    return NextResponse.json(
+      { error: refused ? "invalid_webhook" : "handler_failed" },
+      { status: refused ? 401 : 500 }
+    );
   }
 
   return NextResponse.json({ ok: true });

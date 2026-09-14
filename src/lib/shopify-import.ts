@@ -222,7 +222,7 @@ query($n: Int!, $after: String) {
     nodes {
       id title handle status tags updatedAt
       variants(first: 100) {
-        nodes { id title sku barcode price updatedAt }
+        nodes { id title sku barcode price updatedAt inventoryItem { id } }
       }
     }
   }
@@ -230,7 +230,15 @@ query($n: Int!, $after: String) {
 
 export type GqlProduct = {
   id: string; title: string; handle: string; status: string; tags: string[]; updatedAt: string;
-  variants: { nodes: Array<{ id: string; title: string; sku: string | null; barcode: string | null; price: string; updatedAt: string }> };
+  variants: {
+    nodes: Array<{
+      id: string; title: string; sku: string | null; barcode: string | null;
+      price: string; updatedAt: string;
+      // Carried so a stock webhook, which names the item and not the
+      // variant, can find the row it belongs to.
+      inventoryItem?: { id: string } | null;
+    }>;
+  };
 };
 
 async function importProducts(
@@ -274,7 +282,9 @@ export async function saveProducts(
     p.variants.nodes.map((v) => ({
       store_id: storeId, product_id: byExternal.get(p.id) ?? null, external_id: v.id,
       title: v.title, sku: v.sku, barcode: v.barcode,
-      price: v.price ? Number(v.price) : null, updated_at: v.updatedAt,
+      price: v.price ? Number(v.price) : null,
+      inventory_item_id: v.inventoryItem?.id ?? null,
+      updated_at: v.updatedAt,
     }))
   );
   if (variants.length > 0) {
@@ -471,7 +481,7 @@ query($n: Int!, $after: String) {
       id
       inventoryItem {
         inventoryLevels(first: 10) {
-          nodes { quantities(names: ["available"]) { quantity } location { name } }
+          nodes { quantities(names: ["available"]) { quantity } location { id name } }
         }
       }
     }
@@ -480,7 +490,11 @@ query($n: Int!, $after: String) {
 
 export type GqlStock = {
   id: string;
-  inventoryItem: { inventoryLevels: { nodes: Array<{ quantities: Array<{ quantity: number }>; location: { name: string } }> } } | null;
+  inventoryItem: {
+    inventoryLevels: {
+      nodes: Array<{ quantities: Array<{ quantity: number }>; location: { id?: string; name: string } }>;
+    };
+  } | null;
 };
 
 async function importInventory(
@@ -507,6 +521,7 @@ export async function saveInventory(
   const levels = nodes.flatMap((v) =>
     (v.inventoryItem?.inventoryLevels.nodes ?? []).map((l) => ({
       store_id: storeId, variant_id: variantId.get(v.id) ?? null,
+      location_id: l.location?.id ?? null,
       location_name: l.location?.name ?? "",
       available: l.quantities?.[0]?.quantity ?? 0,
       updated_at: new Date().toISOString(),
