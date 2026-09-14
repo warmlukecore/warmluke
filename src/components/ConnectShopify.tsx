@@ -65,6 +65,19 @@ export default function ConnectShopify({
         className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
       />
       {error && <div className="text-[11px] leading-relaxed text-rose-400">{error}</div>}
+      {/* Shown before the button, not after: an agreement a merchant
+          only meets once they have already left for Shopify is not one. */}
+      <p className="text-[11px] leading-relaxed text-slate-500">
+        Connecting agrees to our{" "}
+        <a href="/terms" target="_blank" className="underline hover:text-slate-300">
+          terms
+        </a>{" "}
+        and{" "}
+        <a href="/privacy" target="_blank" className="underline hover:text-slate-300">
+          privacy policy
+        </a>
+        . We read your store; we never write to it.
+      </p>
       <div className="flex gap-1.5">
         <button
           onClick={connect}
