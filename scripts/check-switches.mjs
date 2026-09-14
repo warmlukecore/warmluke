@@ -113,8 +113,16 @@ try {
   await set(true, true);
   check("both answer", (await mcp()).status === 200 && (await chat()).status !== 403);
 } finally {
+  // A check that leaves a real account switched off is worse than no
+  // check: the next person to open the app sees a product that looks
+  // broken. So the restore is verified, not assumed — this already
+  // happened once.
   await set(was.chat_enabled, was.mcp_enabled);
-  console.log("\nthe account is back as it was");
+  const after = (await db.rpc("abo_my_settings")).data?.[0];
+  check(
+    "the account is back as it was",
+    after?.chat_enabled === was.chat_enabled && after?.mcp_enabled === was.mcp_enabled
+  );
 }
 
 console.log(fails.length === 0 ? "\nthe switches switch" : `\n${fails.length} FAILED`);

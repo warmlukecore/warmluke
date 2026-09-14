@@ -687,52 +687,6 @@ export default function ChatPanel({
         title="Drag to resize · double-click to reset"
         className={resizeHandleClass("right", dragging)}
       />
-      {requests.length > 0 && (
-        <div className="border-b border-amber-100 bg-amber-50 px-4 py-2.5">
-          <div className="text-[10px] font-semibold tracking-widest text-amber-700 uppercase">
-            Asked for by your AI
-          </div>
-          {requests.map((r) => (
-            <div key={r.id} className="mt-2">
-              <p className="text-[11px] leading-relaxed font-medium text-amber-900">{r.request}</p>
-              {/* The design their AI already read out, shown here word
-                  for word. Approving this builds exactly it — there is
-                  no second model turn that could produce something
-                  else, and no model call at all. */}
-              {r.summary && (
-                <pre className="mt-1.5 max-h-40 overflow-y-auto rounded-lg bg-white/70 px-2.5 py-2 text-[10px] leading-relaxed whitespace-pre-wrap text-amber-900">
-                  {r.summary}
-                </pre>
-              )}
-              <div className="mt-1.5 flex items-center gap-1.5">
-                {r.plans?.length ? (
-                  <button
-                    onClick={() => buildRequest(r)}
-                    disabled={busy}
-                    className="rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-amber-700 disabled:opacity-40"
-                  >
-                    Build it
-                  </button>
-                ) : null}
-                {features.chat && (
-                  <button
-                    onClick={() => openRequest(r)}
-                    className="rounded-lg border border-amber-300 px-2 py-1 text-[10px] font-medium text-amber-800 hover:bg-amber-100"
-                  >
-                    {r.plans?.length ? "Change it first" : "Design it"}
-                  </button>
-                )}
-                <button
-                  onClick={() => dismissRequest(r.id)}
-                  className="ml-auto text-[10px] text-amber-700 hover:underline"
-                >
-                  Dismiss
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
       <div className="border-b border-slate-100 px-4 py-3">
         <div className="flex items-center gap-2">
           <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-blue-500 text-xs text-white">
@@ -799,6 +753,62 @@ export default function ChatPanel({
         ref={listRef}
         className="flex-1 space-y-3 overflow-y-auto px-4 py-4 thin-scroll"
       >
+        {/* What their own AI asked for, read in the conversation it
+            belongs to. As a banner above the header it pushed the
+            whole panel down and a long design covered the chat
+            entirely — the one place it must not be is on top of the
+            thing it is asking about. */}
+        {requests.length > 0 && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+          <div className="text-[10px] font-semibold tracking-widest text-amber-700 uppercase">
+            Asked for by your AI
+          </div>
+          {requests.map((r) => (
+            <div key={r.id} className="mt-2">
+              <p className="text-[11px] leading-relaxed font-medium text-amber-900">{r.request}</p>
+              {/* The design their AI already read out, shown here word
+                  for word. Approving this builds exactly it — there is
+                  no second model turn that could produce something
+                  else, and no model call at all. */}
+              {/* Read in full, in the panel's own type. Behind a
+                  scroll box it cut off at the height of the box —
+                  and what sits at the bottom of a design is "not
+                  covered by this", the part they most need to see
+                  before saying yes. */}
+              {r.summary && (
+                <div className="mt-1.5 rounded-lg bg-white/70 px-2.5 py-2 text-[11px] leading-relaxed whitespace-pre-wrap text-amber-900">
+                  {r.summary}
+                </div>
+              )}
+              <div className="mt-1.5 flex items-center gap-1.5">
+                {r.plans?.length ? (
+                  <button
+                    onClick={() => buildRequest(r)}
+                    disabled={busy}
+                    className="rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-amber-700 disabled:opacity-40"
+                  >
+                    Build it
+                  </button>
+                ) : null}
+                {features.chat && (
+                  <button
+                    onClick={() => openRequest(r)}
+                    className="rounded-lg border border-amber-300 px-2 py-1 text-[10px] font-medium text-amber-800 hover:bg-amber-100"
+                  >
+                    {r.plans?.length ? "Change it first" : "Design it"}
+                  </button>
+                )}
+                <button
+                  onClick={() => dismissRequest(r.id)}
+                  className="ml-auto text-[10px] text-amber-700 hover:underline"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          ))}
+          </div>
+        )}
         {messages.length === 0 && (
           <div className="space-y-3">
             <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
