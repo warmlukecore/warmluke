@@ -93,9 +93,32 @@ const unknown = await rpc("does/not/exist", {});
 check("an unknown method is a JSON-RPC error, not a crash", unknown.json?.error?.code === -32601);
 
 console.log("\ncalling a tool without signing in");
-const anon = await rpc("tools/call", { name: "store_overview", arguments: {} });
-check("is refused with 401", anon.status === 401);
-check("and says how to authenticate", anon.json?.error?.code === -32001);
+const anonRes = await fetch(MCP, {
+  method: "POST",
+  headers: { "Content-Type": "application/json", Accept: "application/json" },
+  body: JSON.stringify({ jsonrpc: "2.0", id: 99, method: "tools/call", params: { name: "store_overview", arguments: {} } }),
+});
+check("is refused with 401", anonRes.status === 401);
+// Without this pointer a client knows it is unauthorised and nothing
+// else — it cannot find the sign-in it is supposed to offer.
+const challenge = anonRes.headers.get("www-authenticate") ?? "";
+check("and points at the resource metadata", /resource_metadata="https?:\/\//.test(challenge));
+
+console.log("\nthe discovery a client reads after that 401");
+const metaUrl = challenge.match(/resource_metadata="([^"]+)"/)?.[1];
+const meta = await fetch(metaUrl).then((r) => r.json());
+check("it names this endpoint as the resource", meta.resource === MCP);
+check("and names an authorization server", Array.isArray(meta.authorization_servers) && meta.authorization_servers.length > 0);
+// Clients differ on whether they append the resource path.
+const withPath = await fetch(`${APP}/.well-known/oauth-protected-resource/api/mcp`);
+check("the path-suffixed form resolves too", withPath.status === 200);
+
+const asUrl = `${meta.authorization_servers[0]}/.well-known/oauth-authorization-server`;
+const as = await fetch(asUrl).then((r) => r.json()).catch(() => null);
+check("the authorization server is really there", !!as?.authorization_endpoint);
+// Without dynamic registration a client cannot connect at all: nobody
+// is going to hand ChatGPT a client id by hand.
+check("and accepts clients registering themselves", !!as?.registration_endpoint);
 
 // ── As real accounts ────────────────────────────────────────────
 const admin = createClient(

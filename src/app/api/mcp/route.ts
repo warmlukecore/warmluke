@@ -119,11 +119,17 @@ export async function POST(req: Request) {
   // merchant to sign in.
   const auth = await getUserClient(req);
   if (!auth) {
+    const meta = `${new URL(req.url).origin}/.well-known/oauth-protected-resource`;
     return NextResponse.json(
       { jsonrpc: "2.0", id, error: { code: -32001, message: "Not signed in." } },
-      // A 401 is what makes a client offer to authenticate rather than
-      // report the tool as broken.
-      { status: 401, headers: { "WWW-Authenticate": 'Bearer realm="warmluke"' } }
+      {
+        // A 401 is what makes a client offer to sign in rather than
+        // report the tool as broken, and resource_metadata is how it
+        // finds out where to sign in. Without the pointer the client
+        // knows it is unauthorised and nothing else.
+        status: 401,
+        headers: { "WWW-Authenticate": `Bearer resource_metadata="${meta}"` },
+      }
     );
   }
   const db = auth.client;
