@@ -691,6 +691,39 @@ export default function ChatPanel({
   /** The endpoint their own AI connects to. */
   const mcpUrl = typeof window === "undefined" ? "" : `${window.location.origin}/api/mcp`;
 
+  // Assistants that are connected right now. Connecting was a
+  // one-way door: the token an AI holds lasts ninety days, so a
+  // laptop left behind meant ninety days of access with nothing on
+  // any screen to stop it.
+  const [clients, setClients] = useState<
+    Array<{
+      client_id: string;
+      name: string;
+      granted_at: string;
+      sessions: number;
+      last_call: string | null;
+      calls_24h: number;
+    }>
+  >([]);
+  const [revoking, setRevoking] = useState<string | null>(null);
+  const loadClients = useCallback(async () => {
+    const { data } = await supabase.rpc("abo_oauth_clients");
+    setClients(data ?? []);
+  }, []);
+  useEffect(() => {
+    if (features.mcp) loadClients();
+  }, [features.mcp, loadClients]);
+
+  async function revoke(client: { client_id: string; name: string }) {
+    // Worth a pause: the assistant stops working mid-sentence, and
+    // reconnecting means going through consent again.
+    if (!confirm(`Disconnect ${client.name}? It will lose access immediately.`)) return;
+    setRevoking(client.client_id);
+    await supabase.rpc("abo_oauth_revoke", { p_client: client.client_id });
+    setRevoking(null);
+    loadClients();
+  }
+
   return (
     <aside
       style={{ ["--chat-w" as string]: `${width}px` }}
@@ -1263,6 +1296,36 @@ export default function ChatPanel({
           <code className="mt-2 block rounded-lg bg-slate-50 px-2.5 py-1.5 text-[10px] break-all text-slate-600">
             {mcpUrl}
           </code>
+
+          {clients.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              <div className="text-[10px] font-semibold tracking-widest text-slate-400 uppercase">
+                Connected
+              </div>
+              {clients.map((c) => (
+                <div
+                  key={c.client_id}
+                  className="flex items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[11px] font-medium text-slate-700">{c.name}</div>
+                    <div className="text-[10px] text-slate-400">
+                      {c.last_call
+                        ? `Last used ${new Date(c.last_call).toLocaleString()} · ${c.calls_24h} today`
+                        : "Connected, not used yet"}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => revoke(c)}
+                    disabled={revoking === c.client_id}
+                    className="shrink-0 text-[10px] font-medium text-rose-600 hover:underline disabled:opacity-40"
+                  >
+                    {revoking === c.client_id ? "…" : "Disconnect"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </details>
       )}
 
