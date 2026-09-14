@@ -19,6 +19,11 @@ const env = Object.fromEntries(
 
 const db = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
 
+// The importer renews an expiring token, and reads the app credentials
+// from process.env the way a route does. Without this the renewal is
+// skipped and the run fails an hour after connecting.
+Object.assign(process.env, env);
+
 const { data: store } = await db
   .from("stores")
   .select("id, shop_domain, access_token, refresh_token, token_expires_at")

@@ -33,7 +33,15 @@ export async function POST(req: Request) {
   }
 
   const topic = req.headers.get("x-shopify-topic") ?? "";
-  let body: { shop_domain?: string; customer?: { id?: number | string } };
+  // Only the fields this route reads are named; the rest of an order
+  // payload is passed through to the database untouched, because
+  // picking it apart here would be a second place to keep in step with
+  // Shopify's shape.
+  let body: {
+    shop_domain?: string;
+    customer?: { id?: number | string };
+    [k: string]: unknown;
+  };
   try {
     body = JSON.parse(raw);
   } catch {
@@ -80,6 +88,17 @@ export async function POST(req: Request) {
         break;
       case "shop/redact":
         await call("abo_shopify_shop_redact", { p_shop: shop });
+        break;
+      // Both topics carry the whole order, so both are the same write.
+      // An update that arrived before the create — Shopify does not
+      // promise order — still lands the order, because the write is an
+      // upsert rather than an edit of something assumed to exist.
+      case "orders/create":
+      case "orders/updated":
+      case "orders/cancelled":
+      case "orders/paid":
+      case "orders/fulfilled":
+        await call("abo_shopify_upsert_order", { p_shop: shop, p_order: body });
         break;
       default:
         // Signed, so it really is Shopify — just a topic we never asked

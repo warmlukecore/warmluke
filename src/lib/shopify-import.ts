@@ -49,7 +49,17 @@ export async function ensureFreshToken(
 ): Promise<string> {
   if (!tokenNeedsRefresh(store.token_expires_at)) return store.access_token;
 
-  if (!store.refresh_token || !env.SHOPIFY_CLIENT_ID || !env.SHOPIFY_CLIENT_SECRET) {
+  // Two different problems that used to give the same answer. Only one
+  // of them is the merchant's to fix, and telling them to reconnect a
+  // store whose grant is fine — because this process simply has no app
+  // credentials — sends them to do work that cannot help.
+  if (!env.SHOPIFY_CLIENT_ID || !env.SHOPIFY_CLIENT_SECRET) {
+    throw new ShopifyError(
+      "not_configured",
+      "Shopify isn't configured here, so the access token can't be renewed."
+    );
+  }
+  if (!store.refresh_token) {
     throw new ShopifyError(
       "reconnect_required",
       "Shopify's access to this store has expired. Connect the store again."
