@@ -529,6 +529,15 @@ export default function ChatPanel({
   // ponytail: one extra round of head-counts on open; fold into a
   // shared fetch if the app screen ever gets a third reader of them.
   const [storeFacts, setStoreFacts] = useState<StoreFacts | null>(null);
+  // Whose assistant this account runs on. The route refuses either way;
+  // this is so the panel says what is going on instead of offering a
+  // box that answers with an error.
+  const [assistant, setAssistant] = useState<"ours" | "theirs" | null>(null);
+  useEffect(() => {
+    supabase.rpc("abo_my_settings").then(({ data }) => {
+      setAssistant((data?.[0]?.assistant as "ours" | "theirs") ?? "ours");
+    });
+  }, []);
   useEffect(() => {
     let gone = false;
     (async () => {
@@ -584,6 +593,42 @@ export default function ChatPanel({
     } finally {
       setApplyingPlanId(null);
     }
+  }
+
+  // This account brings its own AI. The panel says how to connect it
+  // rather than offering a box that answers with a refusal — the route
+  // refuses either way, so an input here would only waste a click.
+  if (assistant === "theirs") {
+    return (
+      <aside
+        style={{ ["--chat-w" as string]: `${width}px` }}
+        className={`fixed inset-y-0 right-0 z-40 flex w-full max-w-[420px] shrink-0 flex-col border-l border-slate-200 bg-white lg:static lg:w-[var(--chat-w)] lg:max-w-none lg:translate-x-0 ${
+          dragging ? "" : "transition-transform duration-200"
+        } ${open ? "translate-x-0" : "translate-x-full"}`}
+      >
+        <div
+          onPointerDown={onResizeStart}
+          onDoubleClick={onResizeReset}
+          title="Drag to resize · double-click to reset"
+          className={resizeHandleClass("right", dragging)}
+        />
+        <div className="flex flex-1 flex-col justify-center px-6 text-center">
+          <div className="font-display text-base font-semibold text-slate-800">
+            Use this store in Claude or ChatGPT
+          </div>
+          <p className="mt-2 text-sm leading-relaxed text-slate-500">
+            This account runs on your own AI. Add Warmluke as a connector and ask it
+            about your orders, customers and stock from there.
+          </p>
+          <code className="mt-4 block rounded-lg bg-slate-50 px-3 py-2 text-[11px] break-all text-slate-600">
+            {typeof window === "undefined" ? "" : window.location.origin}/api/mcp
+          </code>
+          <p className="mt-3 text-[11px] text-slate-400">
+            It can read your store. It cannot change anything.
+          </p>
+        </div>
+      </aside>
+    );
   }
 
   return (

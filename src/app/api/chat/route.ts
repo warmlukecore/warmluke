@@ -118,6 +118,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "message and projectId are required" }, { status: 400 });
     }
 
+    // Whose assistant this account runs on. Refused here rather than
+    // only hidden in the UI: a hidden button costs nothing to bypass,
+    // and every turn past it is a model call somebody pays for.
+    const { data: settings } = await client.rpc("abo_my_settings");
+    if (settings?.[0]?.assistant === "theirs") {
+      return NextResponse.json(
+        {
+          error:
+            "This account uses its own AI. Connect Claude or ChatGPT to warmluke.vercel.app/api/mcp instead.",
+        },
+        { status: 403 }
+      );
+    }
+
     // RLS ensures this only returns the caller's own project.
     const { data: project, error: projErr } = await client
       .from("projects")
