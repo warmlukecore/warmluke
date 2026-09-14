@@ -7,6 +7,7 @@ import {
   normalizeShopDomain,
   verifyCallbackHmac,
 } from "@/lib/shopify";
+import { subscribeWebhooks } from "@/lib/shopify-webhooks";
 
 export const runtime = "nodejs";
 
@@ -67,6 +68,24 @@ export async function GET(req: Request) {
     });
     if (error) return back("save_failed");
     if (!projectId) return back("expired");
+
+    // Ask Shopify to tell us when anything changes. Done here because
+    // this is the one moment a token exists and nobody has to
+    // remember anything — a topic somebody forgets to click is a
+    // merchant whose stock quietly stops updating.
+    //
+    // Never fatal: the store is connected and the importer works
+    // without any of this. A failure here means slower updates, not a
+    // broken connection, and failing the callback over it would undo
+    // a connection that succeeded.
+    const result = await subscribeWebhooks(
+      shop,
+      access_token,
+      `${url.origin}/api/shopify/webhooks`
+    );
+    if (result.failed.length > 0) {
+      console.error("shopify webhooks not subscribed:", result.failed.join(" | "));
+    }
 
     return NextResponse.redirect(`${url.origin}/app/${projectId}?shopify=connected`);
   } catch (e) {
