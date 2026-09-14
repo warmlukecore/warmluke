@@ -101,15 +101,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "message and projectId are required" }, { status: 400 });
     }
 
-    // An account can run on its own AI — the panel says so and points
-    // at the MCP endpoint. It used to be refused here as well, which
-    // meant the one kind of account that talks to Claude could never
-    // have anything built, including the requests Claude sends over.
-    //
-    // Two things had been given one name: who the merchant talks to,
-    // and who pays for the model. This is the first. Spend is already
-    // bounded by MAX_TURNS_PER_HOUR above, and a real budget deserves
-    // its own name rather than riding on this one.
+    // Warmluke's own assistant can be switched off for an account —
+    // it is the one that spends our model budget. Checked here, not
+    // only in the panel: a switch enforced by hidden UI is not a
+    // switch. Their own AI is a separate switch and is unaffected;
+    // so is approving a design that has already been made.
+    const { data: chatOn } = await client.rpc("abo_feature", { p_name: "chat" });
+    if (chatOn === false) {
+      return NextResponse.json(
+        {
+          error:
+            "Warmluke's assistant is turned off for this account. Your own AI can still design and build — or ask us to turn it back on.",
+        },
+        { status: 403 }
+      );
+    }
 
     // RLS ensures this only returns the caller's own project.
     const { data: project, error: projErr } = await client

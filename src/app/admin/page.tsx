@@ -1,7 +1,7 @@
 "use client";
 
 // ─────────────────────────────────────────────────────────────
-// Every account, and which assistant it uses.
+// Every account, and which assistants it may use.
 //
 // Nothing here reaches past row-level security. The list and the
 // switch are security definer functions that check the caller is an
@@ -23,7 +23,8 @@ import { useUser } from "@/lib/auth";
 type Account = {
   user_id: string;
   email: string;
-  assistant: "ours" | "theirs";
+  chat_enabled: boolean;
+  mcp_enabled: boolean;
   is_superadmin: boolean;
   projects: number;
   stores: number;
@@ -56,12 +57,16 @@ export default function Admin() {
     if (user) load();
   }, [user, load]);
 
-  async function setAssistant(row: Account, assistant: "ours" | "theirs") {
+  // One switch at a time. They are independent — an account can have
+  // both, either, or neither — so a single call setting the pair would
+  // let a stale row overwrite the switch nobody touched.
+  async function setFeature(row: Account, feature: "chat" | "mcp", on: boolean) {
     setBusy(row.user_id);
     setError(null);
-    const { error: err } = await supabase.rpc("abo_admin_set_assistant", {
+    const { error: err } = await supabase.rpc("abo_admin_set_feature", {
       p_user: row.user_id,
-      p_assistant: assistant,
+      p_feature: feature,
+      p_on: on,
     });
     setBusy(null);
     if (err) {
@@ -87,7 +92,7 @@ export default function Admin() {
         <div>
           <h1 className="font-display text-2xl font-bold tracking-tight">Accounts</h1>
           <p className="mt-1 text-sm text-slate-400">
-            Who is using Warmluke, and whose assistant they run on.
+            Who is using Warmluke, and which assistants are switched on for them.
           </p>
         </div>
         <Link
@@ -115,7 +120,8 @@ export default function Admin() {
                   <th className="px-4 py-2.5 font-medium">Account</th>
                   <th className="px-4 py-2.5 font-medium">Projects</th>
                   <th className="px-4 py-2.5 font-medium">Stores</th>
-                  <th className="px-4 py-2.5 font-medium">Assistant</th>
+                  <th className="px-4 py-2.5 font-medium">Warmluke AI</th>
+                  <th className="px-4 py-2.5 font-medium">Their own AI</th>
                 </tr>
               </thead>
               <tbody>
@@ -136,24 +142,24 @@ export default function Admin() {
                     </td>
                     <td className="px-4 py-3 text-slate-400">{r.projects}</td>
                     <td className="px-4 py-3 text-slate-400">{r.stores}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-1">
-                        {(["ours", "theirs"] as const).map((value) => (
+                    {(["chat", "mcp"] as const).map((feature) => {
+                      const on = feature === "chat" ? r.chat_enabled : r.mcp_enabled;
+                      return (
+                        <td key={feature} className="px-4 py-3">
                           <button
-                            key={value}
-                            onClick={() => setAssistant(r, value)}
-                            disabled={busy === r.user_id || r.assistant === value}
-                            className={`rounded-lg px-2.5 py-1 text-xs transition-colors ${
-                              r.assistant === value
-                                ? "bg-blue-600 text-white"
-                                : "border border-slate-700 text-slate-400 hover:bg-slate-800 disabled:opacity-40"
+                            onClick={() => setFeature(r, feature, !on)}
+                            disabled={busy === r.user_id}
+                            className={`rounded-lg px-2.5 py-1 text-xs transition-colors disabled:opacity-40 ${
+                              on
+                                ? "bg-blue-600 text-white hover:bg-blue-700"
+                                : "border border-slate-700 text-slate-500 hover:bg-slate-800"
                             }`}
                           >
-                            {value === "ours" ? "Ours" : "Their own AI"}
+                            {on ? "On" : "Off"}
                           </button>
-                        ))}
-                      </div>
-                    </td>
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
@@ -162,10 +168,11 @@ export default function Admin() {
         )}
 
         <p className="mt-4 text-xs leading-relaxed text-slate-500">
-          <span className="text-slate-400">Ours</span> — the built-in assistant, and we pay
-          for the model calls. <span className="text-slate-400">Their own AI</span> — the
-          builder is replaced by instructions for connecting their Claude or ChatGPT over
-          MCP. Their data and their apps are untouched either way.
+          <span className="text-slate-400">Warmluke AI</span> — the chat inside the app,
+          whose model calls we pay for. <span className="text-slate-400">Their own AI</span>{" "}
+          — their Claude or ChatGPT connected over MCP, which they pay for. The two are
+          independent: either can be off, and an account with neither still has its app,
+          its data, and every section already built.
         </p>
       </main>
     </div>

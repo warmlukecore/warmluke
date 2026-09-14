@@ -153,6 +153,25 @@ export async function POST(req: Request) {
   }
   const db = auth.client;
 
+  // Connecting an outside AI is the other switch. Refused here rather
+  // than at the OAuth step so a merchant whose access is turned off
+  // gets a sentence their assistant can read out, not a silent
+  // failure to connect.
+  const { data: mcpOn } = await db.rpc("abo_feature", { p_name: "mcp" });
+  if (mcpOn === false) {
+    return NextResponse.json(
+      {
+        jsonrpc: "2.0",
+        id: null,
+        error: {
+          code: -32001,
+          message: "Outside AI access is turned off for this Warmluke account.",
+        },
+      },
+      { status: 403 }
+    );
+  }
+
   let body: RpcRequest;
   try {
     body = (await req.json()) as RpcRequest;

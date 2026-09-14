@@ -529,20 +529,31 @@ export default function ChatPanel({
   // ponytail: one extra round of head-counts on open; fold into a
   // shared fetch if the app screen ever gets a third reader of them.
   const [storeFacts, setStoreFacts] = useState<StoreFacts | null>(null);
-  // Whose assistant this account runs on. The route refuses either way;
-  // this is so the panel says what is going on instead of offering a
-  // box that answers with an error.
-  const [assistant, setAssistant] = useState<"ours" | "theirs" | null>(null);
+  // Two switches, not one choice. An account can have Warmluke's
+  // assistant, their own AI, both, or neither — the routes enforce it
+  // either way, and this is so the panel says what is going on rather
+  // than offering a box that answers with an error.
+  const [features, setFeatures] = useState<{ chat: boolean; mcp: boolean }>({
+    chat: true,
+    mcp: true,
+  });
   // What their AI has asked for and nobody has looked at yet. Without
   // this the request lands in the database and dies there: Claude says
   // "I've asked Warmluke to build it" and the merchant never sees it.
   const [requests, setRequests] = useState<
-    Array<{ id: string; request: string; client_id: string | null; created_at: string }>
+    Array<{
+      id: string;
+      request: string;
+      client_id: string | null;
+      created_at: string;
+      summary: string | null;
+      plans: AssistantPlan[] | null;
+    }>
   >([]);
   const loadRequests = useCallback(async () => {
     const { data } = await supabase
       .from("build_requests")
-      .select("id, request, client_id, created_at")
+      .select("id, request, client_id, created_at, summary, plans")
       .eq("project_id", projectId)
       .eq("status", "pending")
       .order("created_at", { ascending: false })
@@ -562,9 +573,33 @@ export default function ChatPanel({
     setRequests((prev) => prev.filter((x) => x.id !== r.id));
     onSend(r.request);
   }
+
+  /**
+   * Builds the design their AI already made. No model call, so this
+   * works on an account whose Warmluke assistant is switched off —
+   * which is the whole point of the two switches being separate.
+   */
+  async function buildRequest(r: { id: string; plans: AssistantPlan[] | null }) {
+    if (!r.plans?.length) return;
+    setRequests((prev) => prev.filter((x) => x.id !== r.id));
+    await onBuild(r.plans);
+    await supabase
+      .from("build_requests")
+      .update({ status: "built", resolved_at: new Date().toISOString() })
+      .eq("id", r.id);
+  }
+
+  async function dismissRequest(id: string) {
+    setRequests((prev) => prev.filter((x) => x.id !== id));
+    await supabase
+      .from("build_requests")
+      .update({ status: "dismissed", resolved_at: new Date().toISOString() })
+      .eq("id", id);
+  }
   useEffect(() => {
     supabase.rpc("abo_my_settings").then(({ data }) => {
-      setAssistant((data?.[0]?.assistant as "ours" | "theirs") ?? "ours");
+      const row = data?.[0];
+      setFeatures({ chat: row?.chat_enabled ?? true, mcp: row?.mcp_enabled ?? true });
     });
   }, []);
   useEffect(() => {
@@ -624,67 +659,8 @@ export default function ChatPanel({
     }
   }
 
-  // This account brings its own AI. The panel says how to connect it
-  // rather than offering a box that answers with a refusal — the route
-  // refuses either way, so an input here would only waste a click.
-  if (assistant === "theirs") {
-    return (
-      <aside
-        style={{ ["--chat-w" as string]: `${width}px` }}
-        className={`fixed inset-y-0 right-0 z-40 flex w-full max-w-[420px] shrink-0 flex-col border-l border-slate-200 bg-white lg:static lg:w-[var(--chat-w)] lg:max-w-none lg:translate-x-0 ${
-          dragging ? "" : "transition-transform duration-200"
-        } ${open ? "translate-x-0" : "translate-x-full"}`}
-      >
-        <div
-          onPointerDown={onResizeStart}
-          onDoubleClick={onResizeReset}
-          title="Drag to resize · double-click to reset"
-          className={resizeHandleClass("right", dragging)}
-        />
-        <div className="flex flex-1 flex-col justify-center px-6 text-center">
-          <div className="font-display text-base font-semibold text-slate-800">
-            Use this store in Claude or ChatGPT
-          </div>
-          <p className="mt-2 text-sm leading-relaxed text-slate-500">
-            This account runs on your own AI. Add Warmluke as a connector and ask it
-            about your orders, customers and stock from there.
-          </p>
-          <code className="mt-4 block rounded-lg bg-slate-50 px-3 py-2 text-[11px] break-all text-slate-600">
-            {typeof window === "undefined" ? "" : window.location.origin}/api/mcp
-          </code>
-          <p className="mt-3 text-[11px] text-slate-400">
-            It can read your store. It cannot change anything on its own — when you ask
-            it to build something, it comes here for your approval.
-          </p>
-
-          {requests.length > 0 && (
-            <div className="mt-6 space-y-2 text-left">
-              <div className="text-[10px] font-semibold tracking-widest text-slate-400 uppercase">
-                Asked for
-              </div>
-              {requests.map((r) => (
-                <div key={r.id} className="rounded-lg border border-slate-200 px-3 py-2.5">
-                  <p className="text-xs leading-relaxed text-slate-700">{r.request}</p>
-                  <div className="mt-2 flex items-center justify-between">
-                    <span className="text-[10px] text-slate-400">
-                      {r.client_id ? "via your AI" : "via an assistant"} ·{" "}
-                      {new Date(r.created_at).toLocaleDateString()}
-                    </span>
-                    <button
-                      onClick={() => openRequest(r)}
-                      className="rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700"
-                    >
-                      Design it
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </aside>
-    );
-  }
+  /** The endpoint their own AI connects to. */
+  const mcpUrl = typeof window === "undefined" ? "" : `${window.location.origin}/api/mcp`;
 
   return (
     <aside
@@ -705,16 +681,42 @@ export default function ChatPanel({
             Asked for by your AI
           </div>
           {requests.map((r) => (
-            <div key={r.id} className="mt-1.5 flex items-start gap-2">
-              <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-amber-900">
-                {r.request}
-              </p>
-              <button
-                onClick={() => openRequest(r)}
-                className="shrink-0 rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-amber-700"
-              >
-                Design it
-              </button>
+            <div key={r.id} className="mt-2">
+              <p className="text-[11px] leading-relaxed font-medium text-amber-900">{r.request}</p>
+              {/* The design their AI already read out, shown here word
+                  for word. Approving this builds exactly it — there is
+                  no second model turn that could produce something
+                  else, and no model call at all. */}
+              {r.summary && (
+                <pre className="mt-1.5 max-h-40 overflow-y-auto rounded-lg bg-white/70 px-2.5 py-2 text-[10px] leading-relaxed whitespace-pre-wrap text-amber-900">
+                  {r.summary}
+                </pre>
+              )}
+              <div className="mt-1.5 flex items-center gap-1.5">
+                {r.plans?.length ? (
+                  <button
+                    onClick={() => buildRequest(r)}
+                    disabled={busy}
+                    className="rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-amber-700 disabled:opacity-40"
+                  >
+                    Build it
+                  </button>
+                ) : null}
+                {features.chat && (
+                  <button
+                    onClick={() => openRequest(r)}
+                    className="rounded-lg border border-amber-300 px-2 py-1 text-[10px] font-medium text-amber-800 hover:bg-amber-100"
+                  >
+                    {r.plans?.length ? "Change it first" : "Design it"}
+                  </button>
+                )}
+                <button
+                  onClick={() => dismissRequest(r.id)}
+                  className="ml-auto text-[10px] text-amber-700 hover:underline"
+                >
+                  Dismiss
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -1138,7 +1140,33 @@ export default function ChatPanel({
         )}
       </div>
 
+      {/* Their own AI. Shown alongside the chat rather than instead of
+          it: both can be on, and a merchant who has connected Claude
+          still uses this panel to read and approve what it asked for. */}
+      {features.mcp && (
+        <details className="border-t border-slate-100 px-3 py-2 text-[11px]" open={!features.chat}>
+          <summary className="cursor-pointer list-none text-slate-500 hover:text-slate-700">
+            ✦ Use your own Claude or ChatGPT
+          </summary>
+          <p className="mt-2 leading-relaxed text-slate-500">
+            Add Warmluke as a connector with this address. It can read your store, and
+            anything it wants to build comes back here for you to approve.
+          </p>
+          <code className="mt-2 block rounded-lg bg-slate-50 px-2.5 py-1.5 text-[10px] break-all text-slate-600">
+            {mcpUrl}
+          </code>
+        </details>
+      )}
+
       {/* Input */}
+      {!features.chat ? (
+        <div className="border-t border-slate-100 p-3 text-[11px] leading-relaxed text-slate-500">
+          Warmluke&rsquo;s own assistant is off for this account.{" "}
+          {features.mcp
+            ? "Your own AI can still design changes, and you approve them above."
+            : "Ask us to turn an assistant on for you."}
+        </div>
+      ) : (
       <div className="border-t border-slate-100 p-3">
         <div className="flex items-end gap-2">
           <textarea
@@ -1169,6 +1197,7 @@ export default function ChatPanel({
           Asked, previewed, versioned, reversible — nothing applies without your approval.
         </div>
       </div>
+      )}
     </aside>
   );
 }

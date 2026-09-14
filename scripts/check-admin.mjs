@@ -38,7 +38,8 @@ await merchant.auth.signInWithPassword({ email, password });
 try {
   console.log("an ordinary merchant");
   const mine = await merchant.rpc("abo_my_settings");
-  check("can read their own settings", mine.data?.[0]?.assistant === "ours");
+  check("can read their own settings", mine.data?.[0]?.chat_enabled === true);
+  check("and their own AI is available too", mine.data?.[0]?.mcp_enabled === true);
   check("and is not an administrator", mine.data?.[0]?.is_superadmin === false);
 
   const list = await merchant.rpc("abo_admin_accounts");
@@ -50,9 +51,10 @@ try {
   check(
     "cannot switch even their own assistant",
     !!(
-      await merchant.rpc("abo_admin_set_assistant", {
+      await merchant.rpc("abo_admin_set_feature", {
         p_user: made.user.id,
-        p_assistant: "theirs",
+        p_feature: "chat",
+        p_on: false,
       })
     ).error
   );
@@ -112,29 +114,44 @@ try {
     check("the list carries emails", (all.data ?? []).every((r) => !!r.email));
     check("and counts their projects", (all.data ?? []).every((r) => typeof r.projects === "number"));
 
-    const to = await owner.rpc("abo_admin_set_assistant", {
+    const off = await owner.rpc("abo_admin_set_feature", {
       p_user: made.user.id,
-      p_assistant: "theirs",
+      p_feature: "chat",
+      p_on: false,
     });
-    check("can switch an account to its own AI", to.data === "theirs");
-    check(
-      "and the merchant sees the change",
-      (await merchant.rpc("abo_my_settings")).data?.[0]?.assistant === "theirs"
-    );
+    check("can switch Warmluke's assistant off", off.data === false);
+    let seen = (await merchant.rpc("abo_my_settings")).data?.[0];
+    check("and the merchant sees the change", seen?.chat_enabled === false);
+    // The two switches are independent — this is the whole reason the
+    // old single setting was split. Turning one off must not touch the
+    // other, or an account loses both assistants at once.
+    check("their own AI is untouched by it", seen?.mcp_enabled === true);
 
-    // A value outside the two is refused rather than stored: the app
+    await owner.rpc("abo_admin_set_feature", {
+      p_user: made.user.id,
+      p_feature: "mcp",
+      p_on: false,
+    });
+    seen = (await merchant.rpc("abo_my_settings")).data?.[0];
+    check("the other switch turns off on its own", seen?.mcp_enabled === false);
+    check("without turning the first back on", seen?.chat_enabled === false);
+
+    // A name outside the two is refused rather than stored: the app
     // would then branch on something it has never seen.
     check(
-      "an unknown assistant is refused",
+      "an unknown feature is refused",
       !!(
-        await owner.rpc("abo_admin_set_assistant", {
+        await owner.rpc("abo_admin_set_feature", {
           p_user: made.user.id,
-          p_assistant: "chatgpt",
+          p_feature: "chatgpt",
+          p_on: true,
         })
       ).error
     );
 
-    await owner.rpc("abo_admin_set_assistant", { p_user: made.user.id, p_assistant: "ours" });
+    for (const f of ["chat", "mcp"]) {
+      await owner.rpc("abo_admin_set_feature", { p_user: made.user.id, p_feature: f, p_on: true });
+    }
   }
 } finally {
   await admin.auth.admin.deleteUser(made.user.id);
