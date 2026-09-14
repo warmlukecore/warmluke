@@ -1132,7 +1132,11 @@ export default function AppShell({
           )}
           {/* Above the builder, because a merchant who just connected a
               store is asking about the store, not about building. */}
-          <StoreStrip projectId={projectId} />
+          <StoreStrip
+            projectId={projectId}
+            sectionCount={modules.length}
+            onSectionsCreated={loadModules}
+          />
 
           {isEmpty ? (
             <div className="flex h-full flex-col items-center justify-center text-center">

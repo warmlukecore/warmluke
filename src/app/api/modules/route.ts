@@ -68,7 +68,7 @@ export async function POST(req: Request) {
   if (!auth) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
   const { client } = auth;
 
-  const { projectId, nav_label, icon, parent_id, fields } = (await req
+  const { projectId, nav_label, icon, parent_id, fields, source_table } = (await req
     .json()
     .catch(() => ({}))) as {
     projectId?: string;
@@ -76,6 +76,8 @@ export async function POST(req: Request) {
     icon?: string;
     parent_id?: string | null;
     fields?: Array<{ label: string; type: string }>;
+    /** Create the section already pointed at a store table. */
+    source_table?: string | null;
   };
 
   if (!projectId || !nav_label?.trim()) {
@@ -85,9 +87,30 @@ export async function POST(req: Request) {
   const chosenIcon =
     icon && (ALLOWED_ICONS as readonly string[]).includes(icon) ? icon : "table";
 
-  const columns: SchemaColumn[] = [];
+  // A section built on the store takes its columns from the store, not
+  // from whatever fields the caller sent: the two have to agree or the
+  // rows render into columns that do not exist.
+  if (source_table != null && !isStoreTable(source_table)) {
+    return NextResponse.json({ error: "That isn't a store table." }, { status: 400 });
+  }
+  if (source_table != null) {
+    const { data: store } = await client
+      .from("stores")
+      .select("id")
+      .eq("project_id", projectId)
+      .eq("status", "connected")
+      .maybeSingle();
+    if (!store) {
+      return NextResponse.json(
+        { error: "No Shopify store is connected to this project yet." },
+        { status: 409 }
+      );
+    }
+  }
+
+  const columns: SchemaColumn[] = source_table != null ? storeTableSchema(source_table).columns : [];
   const seen = new Set<string>();
-  for (const f of fields ?? []) {
+  for (const f of source_table != null ? [] : (fields ?? [])) {
     if (!f?.label?.trim()) continue;
     if (!(COLUMN_TYPES as readonly string[]).includes(f.type)) {
       return NextResponse.json({ error: `"${f.type}" isn't a field type.` }, { status: 400 });
@@ -141,6 +164,7 @@ export async function POST(req: Request) {
       route: `/modules/${slug}`,
       sort_order: maxSort + 1,
       parent_id: parent_id ?? null,
+      source_table: source_table ?? null,
     })
     .select()
     .single();
@@ -151,7 +175,9 @@ export async function POST(req: Request) {
     schema_json: { columns, features: null },
     version: 1,
     created_by: "user",
-    change_description: `Created section "${label}"`,
+    change_description: source_table
+      ? `Showing ${source_table.replace("_", " ")} from the connected store`
+      : `Created section "${label}"`,
   });
   if (schemaErr) {
     // Without a schema the section would render as nothing; don't leave

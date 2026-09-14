@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase-client";
 import { apiFetch } from "@/lib/auth";
+import ConnectShopify from "@/components/ConnectShopify";
 
 type Progress = Record<string, { imported: number; status: string }>;
 
@@ -32,7 +33,16 @@ const LABELS: Record<string, string> = {
  *  to a background job when a real store outgrows it. */
 const MAX_PAGES = 400;
 
-export default function StoreStrip({ projectId }: { projectId: string }) {
+export default function StoreStrip({
+  projectId,
+  sectionCount,
+  onSectionsCreated,
+}: {
+  projectId: string;
+  /** How many sections the project has, so the offer is made once. */
+  sectionCount: number;
+  onSectionsCreated: () => void;
+}) {
   const [store, setStore] = useState<{
     id: string;
     shop_domain: string;
@@ -41,9 +51,49 @@ export default function StoreStrip({ projectId }: { projectId: string }) {
   const [progress, setProgress] = useState<Progress>({});
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
   // Survives re-renders, and is flipped on unmount so a merchant who
   // navigates away does not leave a loop calling the route forever.
   const cancelled = useRef(false);
+  const [makingSections, setMakingSections] = useState(false);
+  const [offerDismissed, setOfferDismissed] = useState(false);
+
+  /**
+   * Builds one section per store table that actually has rows.
+   *
+   * Offered rather than done automatically: a merchant whose whole app
+   * is about stock does not want three sections they never open, and
+   * deleting what an app decided for them is worse than clicking once.
+   */
+  async function makeSections() {
+    setMakingSections(true);
+    setError(null);
+    const wanted: Array<[string, string, string]> = [
+      ["orders", "Orders", "shopping-cart"],
+      ["customers", "Customers", "users"],
+      ["products", "Products", "package"],
+      ["inventory_levels", "Stock", "box"],
+    ];
+    for (const [table, label, icon] of wanted) {
+      if ((progress[table === "inventory_levels" ? "inventory" : table]?.imported ?? 0) === 0) {
+        continue;
+      }
+      const { ok, data } = await apiFetch("/api/modules", {
+        projectId,
+        nav_label: label,
+        icon,
+        source_table: table,
+      });
+      if (!ok) {
+        // Stop at the first refusal and say so. Carrying on would leave
+        // a half-built sidebar with no explanation of what is missing.
+        setError((data?.error as string) ?? `Couldn't create ${label}.`);
+        break;
+      }
+    }
+    setMakingSections(false);
+    onSectionsCreated();
+  }
 
   const pump = useCallback(async () => {
     setRunning(true);
@@ -95,7 +145,29 @@ export default function StoreStrip({ projectId }: { projectId: string }) {
     };
   }, [projectId, pump]);
 
-  if (!store) return null;
+  // No store on this project. The builder screen used to say nothing
+  // about Shopify at all, so the only way to find the connect button
+  // was to go back to the dashboard and notice it on the card.
+  if (!store) {
+    return connecting ? (
+      <div className="mb-4 max-w-sm rounded-xl border border-slate-200 bg-white p-3">
+        <ConnectShopify projectId={projectId} onCancel={() => setConnecting(false)} />
+      </div>
+    ) : (
+      <Strip>
+        <span className="text-slate-600">
+          Selling on Shopify? Connect the store and your orders, customers and stock
+          come across on their own.
+        </span>
+        <button
+          onClick={() => setConnecting(true)}
+          className="font-medium text-blue-600 hover:text-blue-700"
+        >
+          Connect Shopify
+        </button>
+      </Strip>
+    );
+  }
 
   if (store.status === "pending") {
     return (
@@ -133,6 +205,26 @@ export default function StoreStrip({ projectId }: { projectId: string }) {
         <span className="text-slate-500">{counts.join(" · ")}</span>
       ) : (
         <span className="text-slate-500">Nothing imported yet</span>
+      )}
+
+      {/* The whole point of connecting. Without this the merchant's
+          store sits in the database behind an empty sidebar. */}
+      {!running && !error && counts.length > 0 && sectionCount === 0 && !offerDismissed && (
+        <span className="flex items-center gap-2">
+          <button
+            onClick={makeSections}
+            disabled={makingSections}
+            className="rounded-lg bg-blue-600 px-2.5 py-1 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {makingSections ? "Building…" : "Show them in the app"}
+          </button>
+          <button
+            onClick={() => setOfferDismissed(true)}
+            className="text-slate-400 hover:text-slate-600"
+          >
+            Not now
+          </button>
+        </span>
       )}
     </Strip>
   );
