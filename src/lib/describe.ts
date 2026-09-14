@@ -160,6 +160,57 @@ export function describeFeaturesFull(f: FeatureSchema, modules: ModuleRow[]): st
 export interface PlanSummary {
   title: string;
   lines: string[];
+  /** Things true of this plan that the owner should see before saying yes. */
+  warnings?: string[];
+}
+
+/** A connected store, as far as overlap checking is concerned. */
+export type StoreFacts = {
+  shop_domain: string;
+  currency: string;
+  counts: Record<string, number>;
+};
+
+/**
+ * Which Shopify table a section would sit beside.
+ *
+ * Matched on the words a merchant actually types rather than on table
+ * names, because they ask for "Stock" and mean inventory levels.
+ */
+const STORE_TOPICS: Array<{ table: string; words: RegExp; noun: string }> = [
+  { table: "orders", words: /\border(s)?\b|\bsales?\b/i, noun: "orders" },
+  { table: "customers", words: /\bcustomer(s)?\b|\bbuyer(s)?\b|\bclient(s)?\b/i, noun: "customers" },
+  {
+    table: "products",
+    words: /\bproduct(s)?\b|\bcatalogue\b|\bcatalog\b|\bitem(s)?\b/i,
+    noun: "products",
+  },
+  { table: "inventory_levels", words: /\bstock\b|\binventory\b/i, noun: "stock levels" },
+  { table: "order_line_items", words: /\bline item(s)?\b/i, noun: "order lines" },
+];
+
+/**
+ * Says when a new section would duplicate data the store already holds.
+ *
+ * Deliberately a warning on the approval card, not a rejection sent
+ * back to the model. Whether to keep a hand-kept list beside the
+ * Shopify one is the merchant's call — plenty of them track something
+ * Shopify does not. A gate here would refuse a design they are entitled
+ * to ask for, and burn repair attempts arguing about it.
+ */
+export function storeOverlap(plan: AssistantPlan, store: StoreFacts | null): string[] {
+  if (!store || plan.changeType !== "NEW_MODULE") return [];
+
+  const name = `${plan.newModule?.nav_label ?? ""} ${plan.newModule?.name ?? ""}`.trim();
+  if (!name) return [];
+
+  const hit = STORE_TOPICS.find((t) => t.words.test(name) && (store.counts[t.table] ?? 0) > 0);
+  if (!hit) return [];
+
+  return [
+    `${store.shop_domain} already has ${store.counts[hit.table]} ${hit.noun} in this project. ` +
+      `This builds a separate section you would fill in yourself — the two lists will not match each other.`,
+  ];
 }
 
 /**
@@ -171,6 +222,19 @@ export function describePlan(
   plan: AssistantPlan,
   modules: ModuleRow[],
   /** The section's columns today, so a plan that adds some says so. */
+  currentColumns?: Array<{ field: string; label: string }>,
+  /** The connected store, if there is one, for the overlap warning. */
+  store?: StoreFacts | null
+): PlanSummary {
+  const warnings = storeOverlap(plan, store ?? null);
+  const withWarnings = (s: PlanSummary): PlanSummary =>
+    warnings.length ? { ...s, warnings } : s;
+  return withWarnings(describePlanBody(plan, modules, currentColumns));
+}
+
+function describePlanBody(
+  plan: AssistantPlan,
+  modules: ModuleRow[],
   currentColumns?: Array<{ field: string; label: string }>
 ): PlanSummary {
   const target = modules.find((m) => m.id === plan.targetModuleId);

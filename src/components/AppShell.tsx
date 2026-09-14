@@ -1151,6 +1151,7 @@ export default function AppShell({
       {/* ── Assistant + history ── */}
       {isOwner && (
       <ChatPanel
+        projectId={projectId}
         width={chat.width}
         dragging={chat.dragging}
         onResizeStart={chat.onPointerDown}

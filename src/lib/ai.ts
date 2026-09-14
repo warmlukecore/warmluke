@@ -235,11 +235,73 @@ HARD RULES:
 - Never put something in unmet that you could have built. If you can build it and chose not to, it is a section with "essential": false and a "why" — the owner decides.
 - Always include "explanation" on every plan: one short sentence a non-technical person understands.`;
 
+/**
+ * A connected Shopify store, as the assistant needs to know about it.
+ *
+ * Counts rather than rows: the design question is "is there already an
+ * orders table with eight thousand rows in it", not what any one of
+ * them says.
+ */
+export type StoreContext = {
+  shop_domain: string;
+  timezone: string;
+  currency: string;
+  /** True while an import is still running, so the counts are partial. */
+  importing: boolean;
+  counts: Record<string, number>;
+};
+
+/**
+ * What the assistant is told about the store, or nothing at all.
+ *
+ * Two things here are silent wrongness if left out. Without it the
+ * assistant designs a section the merchant would type their orders into
+ * by hand, beside the orders the app already holds. And a store selling
+ * in USD inside a project formatted in INR produces demo amounts in the
+ * wrong money, which looks right and is not.
+ */
+function storeBlock(store: StoreContext | null, projectCurrency: string): string {
+  if (!store) return "";
+
+  const rows = Object.entries(store.counts)
+    .filter(([, n]) => n > 0)
+    .map(([t, n]) => `${t} ${n}`)
+    .join(" · ");
+
+  const lines = [
+    ``,
+    `CONNECTED STORE: ${store.shop_domain} — ${store.timezone}, sells in ${store.currency}.`,
+    `This project already holds a read-only copy of their Shopify data. It is not a section they built and does not live in records; the app keeps it in step with Shopify.`,
+  ];
+
+  if (!rows) {
+    lines.push(
+      `Nothing has imported yet, so do not design as though this data is available — say so if they ask for it.`
+    );
+  } else {
+    lines.push(
+      `Already here${store.importing ? ", and still importing, so these are partial" : ""}: ${rows}.`
+    );
+    lines.push(
+      `Design on top of it. Never propose a section whose purpose is to re-enter this data by hand — if their request overlaps it, say plainly in "limitations" that what you are building would be a separate list from their Shopify orders, so they can decide.`
+    );
+  }
+
+  if (store.currency !== projectCurrency) {
+    lines.push(
+      `Their store sells in ${store.currency} but this project is set to ${projectCurrency}. Demo amounts must be realistic for ${store.currency}, and say in "limitations" that the two do not match.`
+    );
+  }
+
+  return lines.join("\n");
+}
+
 export function buildSystemPrompt(
   modules: ModuleRow[],
   projectName: string,
   locale = "en-IN",
-  currency = "INR"
+  currency = "INR",
+  store: StoreContext | null = null
   // Two blocks, not one string. The contract is ~6,500 tokens and never
   // varies; the project name and section list do. Joined together the
   // whole thing is a different prefix for every project, so a cache
@@ -265,7 +327,7 @@ export function buildSystemPrompt(
     `PROJECT: "${projectName}"
 LOCALE: ${locale} · CURRENCY: ${currency} — demo amounts must be realistic for this currency and market, and labels should read naturally to someone there.
 CURRENT SECTIONS (use these ids for targetModuleId; sort_order = sidebar position; indented ones sit inside the section above them):
-${list}`,
+${list}${storeBlock(store, currency)}`,
   ];
 }
 

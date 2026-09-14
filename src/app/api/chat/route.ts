@@ -8,7 +8,9 @@ import {
   findGaps,
   parseReply,
   type ChatTurn,
+  type StoreContext,
 } from "@/lib/ai";
+import { storeOverview } from "@/lib/store-read";
 import { describePlan } from "@/lib/describe";
 import type {
   AssistantReply,
@@ -220,7 +222,37 @@ export async function POST(req: Request) {
     // and stale copies in history would just confuse the model.
     const userTurn = buildUserMessage(message, moduleId ?? null, currentSchema, currentFeatures);
 
-    const system = buildSystemPrompt(moduleList, proj.name, proj.locale, proj.currency);
+    // The store the assistant is designing on top of, if there is one.
+    // Fetched through the caller's own client, so a project without a
+    // store — or a member who cannot see it — simply gets null and the
+    // prompt is exactly what it was before.
+    const { data: storeRow } = await client
+      .from("stores")
+      .select("id, shop_domain, timezone, currency")
+      .eq("project_id", projectId)
+      .eq("status", "connected")
+      .maybeSingle();
+
+    let store: StoreContext | null = null;
+    if (storeRow) {
+      const overview = await storeOverview(client, storeRow.id as string);
+      const { data: runs } = await client
+        .from("import_runs")
+        .select("status")
+        .eq("store_id", storeRow.id);
+      const runList = (runs ?? []) as Array<{ status: string }>;
+      store = {
+        shop_domain: storeRow.shop_domain as string,
+        timezone: storeRow.timezone as string,
+        currency: storeRow.currency as string,
+        // Counts quoted mid-import are partial, and a design built on
+        // "you have 4 orders" is wrong if 4,000 are still arriving.
+        importing: runList.length === 0 || runList.some((r) => r.status !== "done"),
+        counts: overview?.counts ?? {},
+      };
+    }
+
+    const system = buildSystemPrompt(moduleList, proj.name, proj.locale, proj.currency, store);
 
     // Repair loop: the rejected attempt and its errors stay in the turns
     // sent to the model, but are never persisted — replaying a malformed
@@ -289,7 +321,7 @@ export async function POST(req: Request) {
     if (parsed.reply.type === "blueprint") {
       const built = parsed.reply.blueprint.plans
         .map((pl) => {
-          const d = describePlan(pl, moduleList, currentSchema?.columns);
+          const d = describePlan(pl, moduleList, currentSchema?.columns, store);
           return [d.title, ...d.lines].join("\n  ");
         })
         .join("\n");

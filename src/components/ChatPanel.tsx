@@ -8,7 +8,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import GenericRenderer from "@/components/GenericRenderer";
-import { describeAutomation, describePlan } from "@/lib/describe";
+import { describeAutomation, describePlan, type StoreFacts } from "@/lib/describe";
+import { storeOverview } from "@/lib/store-read";
+import { supabase } from "@/lib/supabase-client";
 import { NOT_SUPPORTED } from "@/lib/capabilities";
 import { resizeHandleClass } from "@/lib/useResizable";
 import type {
@@ -226,6 +228,7 @@ function BlueprintCard({
   blueprint,
   modules,
   currentColumns,
+  storeFacts,
   done,
   onApprove,
   onAmend,
@@ -235,6 +238,8 @@ function BlueprintCard({
   modules: ModuleRow[];
   /** Columns of the section in view, so a plan that adds some says so. */
   currentColumns?: Array<{ field: string; label: string }>;
+  /** The connected store, so a duplicating section is flagged here. */
+  storeFacts: StoreFacts | null;
   done: boolean;
   /** Receives the exact plans the owner ticked — nothing is regenerated. */
   onApprove: (plans: AssistantPlan[]) => void;
@@ -306,7 +311,7 @@ function BlueprintCard({
           </div>
 
           {blueprint.plans.map((plan, i) => {
-            const summary = describePlan(plan, modules, currentColumns);
+            const summary = describePlan(plan, modules, currentColumns, storeFacts);
             const off = dropped[i] || referencesDropped(plan);
             const cascaded = !dropped[i] && off;
             return (
@@ -342,6 +347,16 @@ function BlueprintCard({
                         {plan.optionalWhy}
                       </div>
                     )}
+                    {/* Above the field list, not below it: this changes
+                        whether the owner wants the section at all. */}
+                    {summary.warnings?.map((w, k) => (
+                      <div
+                        key={k}
+                        className="mt-1 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] leading-relaxed text-amber-800"
+                      >
+                        {w}
+                      </div>
+                    ))}
                     {summary.lines.length > 0 && (
                       <>
                         <ul className="mt-1 space-y-0.5">
@@ -452,6 +467,7 @@ function BlueprintCard({
 }
 
 export default function ChatPanel({
+  projectId,
   width,
   dragging,
   onResizeStart,
@@ -503,8 +519,38 @@ export default function ChatPanel({
   /** Applies an approved blueprint's plans directly, with no model round trip. */
   onBuild: (plans: AssistantPlan[]) => void;
   onDiscard: (planId: string) => void;
+  /** Whose store to warn about, if this project has one connected. */
+  projectId: string;
 }) {
   const [input, setInput] = useState("");
+  // The connected store, so an approval card can say when a section
+  // would sit beside data the project already holds. Loaded once per
+  // panel, and null for a project without a store.
+  // ponytail: one extra round of head-counts on open; fold into a
+  // shared fetch if the app screen ever gets a third reader of them.
+  const [storeFacts, setStoreFacts] = useState<StoreFacts | null>(null);
+  useEffect(() => {
+    let gone = false;
+    (async () => {
+      const { data: row } = await supabase
+        .from("stores")
+        .select("id, shop_domain, currency")
+        .eq("project_id", projectId)
+        .eq("status", "connected")
+        .maybeSingle();
+      if (!row || gone) return;
+      const over = await storeOverview(supabase, row.id as string);
+      if (gone) return;
+      setStoreFacts({
+        shop_domain: row.shop_domain as string,
+        currency: row.currency as string,
+        counts: over?.counts ?? {},
+      });
+    })();
+    return () => {
+      gone = true;
+    };
+  }, [projectId]);
   const [applyingPlanId, setApplyingPlanId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<Record<string, string>>({});
   // Discovery cards collapse once answered/approved so the thread reads
@@ -695,6 +741,7 @@ export default function ChatPanel({
                 blueprint={m.blueprint}
                 modules={modules}
                 currentColumns={currentSchema?.columns}
+                storeFacts={storeFacts}
                 done={!!resolvedCards[m.id] || answered}
                 onApprove={(chosen) => {
                   setResolvedCards((prev) => ({ ...prev, [m.id]: true }));
