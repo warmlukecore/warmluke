@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getUserClient } from "@/lib/supabase-server";
-import { RESOURCES, importPage, type Resource } from "@/lib/shopify-import";
+import { RESOURCES, importPage, type Resource, type StoreToken } from "@/lib/shopify-import";
 import { ShopifyError } from "@/lib/shopify";
 
 export const runtime = "nodejs";
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   // here because that would be a second opinion on the same question.
   const { data: store } = await auth.client
     .from("stores")
-    .select("id, shop_domain, access_token, status")
+    .select("id, shop_domain, access_token, status, refresh_token, token_expires_at")
     .eq("project_id", projectId)
     .maybeSingle();
 
@@ -57,7 +57,7 @@ export async function POST(req: Request) {
   try {
     const page = await importPage(
       auth.client,
-      store as { id: string; shop_domain: string; access_token: string },
+      store as StoreToken,
       resource,
       run?.cursor ?? null
     );

@@ -14,7 +14,79 @@
 // ─────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { SHOPIFY_API_VERSION, ShopifyError } from "@/lib/shopify";
+import {
+  SHOPIFY_API_VERSION,
+  ShopifyError,
+  refreshAccessToken,
+  tokenNeedsRefresh,
+} from "@/lib/shopify";
+
+/** What the token functions below need off a store row. */
+export type StoreToken = {
+  id: string;
+  shop_domain: string;
+  access_token: string;
+  refresh_token?: string | null;
+  token_expires_at?: string | null;
+};
+
+/**
+ * Returns a token Shopify will still accept, renewing it if it is about
+ * to expire.
+ *
+ * Shopify no longer accepts non-expiring tokens, and an expiring one
+ * lasts an hour — shorter than some imports. Called before each page
+ * rather than once per import, because a run that outlives the hour
+ * would otherwise start failing halfway through with rows already in.
+ *
+ * A store with no expiry recorded was connected before any of this and
+ * cannot be renewed: it is told to reconnect rather than retried.
+ */
+export async function ensureFreshToken(
+  db: SupabaseClient,
+  store: StoreToken,
+  env: Record<string, string | undefined> = process.env
+): Promise<string> {
+  if (!tokenNeedsRefresh(store.token_expires_at)) return store.access_token;
+
+  if (!store.refresh_token || !env.SHOPIFY_CLIENT_ID || !env.SHOPIFY_CLIENT_SECRET) {
+    throw new ShopifyError(
+      "reconnect_required",
+      "Shopify's access to this store has expired. Connect the store again."
+    );
+  }
+
+  const grant = await refreshAccessToken({
+    shop: store.shop_domain,
+    clientId: env.SHOPIFY_CLIENT_ID,
+    clientSecret: env.SHOPIFY_CLIENT_SECRET,
+    refreshToken: store.refresh_token,
+  });
+
+  // Every refresh returns a new refresh token as well, and the old one
+  // stops working — storing only the access token would mean the next
+  // renewal fails and the merchant is asked to reconnect for nothing.
+  const now = Date.now();
+  await db
+    .from("stores")
+    .update({
+      access_token: grant.access_token,
+      refresh_token: grant.refresh_token ?? store.refresh_token,
+      token_expires_at: grant.expires_in
+        ? new Date(now + grant.expires_in * 1000).toISOString()
+        : null,
+      ...(grant.refresh_token_expires_in
+        ? {
+            refresh_token_expires_at: new Date(
+              now + grant.refresh_token_expires_in * 1000
+            ).toISOString(),
+          }
+        : {}),
+    })
+    .eq("id", store.id);
+
+  return grant.access_token;
+}
 
 /** One page. Small enough to finish, large enough not to crawl. */
 export const PAGE = 50;
@@ -334,9 +406,12 @@ const IMPORTERS: Record<Resource, typeof importProducts> = {
  * in anything that arrived out of sequence.
  */
 export async function importPage(
-  db: SupabaseClient, store: { id: string; shop_domain: string; access_token: string },
+  db: SupabaseClient, store: StoreToken,
   resource: Resource, after: string | null
 ): Promise<{ imported: number; cursor: string | null; hasNext: boolean }> {
-  const page = await IMPORTERS[resource](db, store.id, store.shop_domain, store.access_token, after);
+  // Renewed here rather than by each caller: every path into Shopify
+  // goes through this function, so one caller cannot forget.
+  const token = await ensureFreshToken(db, store);
+  const page = await IMPORTERS[resource](db, store.id, store.shop_domain, token, after);
   return { imported: page.nodes.length, cursor: page.cursor, hasNext: page.hasNext };
 }

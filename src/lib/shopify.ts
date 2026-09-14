@@ -138,21 +138,26 @@ export function authorizeUrl(opts: {
   return u.toString();
 }
 
-/** Trades the one-time code for a lasting access token. */
-export async function exchangeCodeForToken(opts: {
-  shop: string;
-  clientId: string;
-  clientSecret: string;
-  code: string;
-}): Promise<{ access_token: string; scope: string }> {
-  const res = await fetch(`https://${normalizeShopDomain(opts.shop)}/admin/oauth/access_token`, {
+/**
+ * What Shopify hands back for a token, expiring or not.
+ *
+ * Shopify no longer accepts non-expiring tokens on the Admin API, so in
+ * practice every field below arrives. They are optional only so that a
+ * store connected before this change still parses.
+ */
+export type TokenGrant = {
+  access_token: string;
+  scope: string;
+  expires_in?: number;
+  refresh_token?: string;
+  refresh_token_expires_in?: number;
+};
+
+async function postOAuth(shop: string, body: Record<string, string>): Promise<TokenGrant> {
+  const res = await fetch(`https://${normalizeShopDomain(shop)}/admin/oauth/access_token`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      client_id: opts.clientId,
-      client_secret: opts.clientSecret,
-      code: opts.code,
-    }),
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams(body).toString(),
   });
   if (!res.ok) {
     throw new ShopifyError(
@@ -160,7 +165,64 @@ export async function exchangeCodeForToken(opts: {
       `Shopify refused the token exchange (${res.status}).`
     );
   }
-  return (await res.json()) as { access_token: string; scope: string };
+  return (await res.json()) as TokenGrant;
+}
+
+/**
+ * Trades the one-time code for an access token.
+ *
+ * `expiring=1` is not optional in practice: without it Shopify issues a
+ * non-expiring token, and the Admin API then answers 403 to every call
+ * made with it. The token that comes back lasts an hour; the refresh
+ * token that comes with it lasts ninety days.
+ */
+export async function exchangeCodeForToken(opts: {
+  shop: string;
+  clientId: string;
+  clientSecret: string;
+  code: string;
+}): Promise<TokenGrant> {
+  return postOAuth(opts.shop, {
+    client_id: opts.clientId,
+    client_secret: opts.clientSecret,
+    code: opts.code,
+    expiring: "1",
+  });
+}
+
+/** Renews an expiring token server-side — the merchant is not involved. */
+export async function refreshAccessToken(opts: {
+  shop: string;
+  clientId: string;
+  clientSecret: string;
+  refreshToken: string;
+}): Promise<TokenGrant> {
+  return postOAuth(opts.shop, {
+    client_id: opts.clientId,
+    client_secret: opts.clientSecret,
+    grant_type: "refresh_token",
+    refresh_token: opts.refreshToken,
+  });
+}
+
+/**
+ * Whether to renew before using the token.
+ *
+ * Renewed a minute early on purpose. A token that passes this check and
+ * then expires mid-import fails halfway through, which is worse than one
+ * pointless refresh. A store with no recorded expiry predates expiring
+ * tokens: it cannot be refreshed and has to be reconnected, so it is not
+ * reported as refreshable here.
+ */
+export function tokenNeedsRefresh(
+  expiresAt: string | null | undefined,
+  now: Date = new Date(),
+  skewMs = 60_000
+): boolean {
+  if (!expiresAt) return false;
+  const at = Date.parse(expiresAt);
+  if (Number.isNaN(at)) return false;
+  return at - now.getTime() <= skewMs;
 }
 
 /**

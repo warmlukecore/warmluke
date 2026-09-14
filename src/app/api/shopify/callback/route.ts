@@ -34,12 +34,16 @@ export async function GET(req: Request) {
     const shop = normalizeShopDomain(q.shop ?? "");
     if (!q.code || !q.state) return back("incomplete");
 
-    const { access_token } = await exchangeCodeForToken({
+    // Expiring now, so the refresh token and both lifetimes are kept
+    // alongside it. Without them the token dies in an hour and the store
+    // can only be fixed by reconnecting.
+    const grant = await exchangeCodeForToken({
       shop,
       clientId,
       clientSecret,
       code: q.code,
     });
+    const access_token = grant.access_token;
 
     // The store's own calendar and money, read once and kept. Every
     // later "yesterday" is a question about this timezone.
@@ -57,6 +61,9 @@ export async function GET(req: Request) {
       p_timezone: ctx.timezone,
       p_currency: ctx.currency,
       p_country: ctx.country,
+      p_refresh_token: grant.refresh_token ?? null,
+      p_expires_in: grant.expires_in ?? null,
+      p_refresh_expires_in: grant.refresh_token_expires_in ?? null,
     });
     if (error) return back("save_failed");
     if (!projectId) return back("expired");

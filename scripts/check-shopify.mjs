@@ -16,6 +16,7 @@ import {
   scopesFor,
   verifyCallbackHmac,
   verifyWebhookHmac,
+  tokenNeedsRefresh,
 } from "../src/lib/shopify.ts";
 
 const fails = [];
@@ -115,6 +116,20 @@ check("a body signed with another secret is refused", refuses(() => verifyWebhoo
 const tampered = JSON.stringify({ shop_domain: "attacker.myshopify.com", customer: { id: 12345 } });
 check("a tampered body is refused", refuses(() => verifyWebhookHmac(tampered, digest(body), SECRET)));
 check("a short signature is refused", refuses(() => verifyWebhookHmac(body, "YWJj", SECRET)));
+
+console.log("\nand an expiring token is renewed before it dies");
+const at = (mins) => new Date(now.getTime() + mins * 60_000).toISOString();
+check("a token with an hour left is left alone", !tokenNeedsRefresh(at(60), now));
+check("a token with two minutes left is left alone", !tokenNeedsRefresh(at(2), now));
+// Renewed early on purpose: one that passes the check and then dies
+// mid-import fails halfway through, with rows already written.
+check("a token with thirty seconds left is renewed", tokenNeedsRefresh(at(0.5), now));
+check("an already-expired token is renewed", tokenNeedsRefresh(at(-10), now));
+// A store connected before expiring tokens has nothing to refresh with.
+// Reporting it as refreshable would send it into a refresh that cannot
+// work, instead of telling the merchant to reconnect.
+check("a store with no expiry is not called refreshable", !tokenNeedsRefresh(null, now));
+check("an unparseable expiry is not called refreshable", !tokenNeedsRefresh("whenever", now));
 
 console.log(fails.length === 0 ? "\nevery guard holds" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

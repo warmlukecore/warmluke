@@ -20,7 +20,9 @@ const env = Object.fromEntries(
 const db = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
 
 const { data: store } = await db
-  .from("stores").select("id, shop_domain, access_token").eq("status", "connected").maybeSingle();
+  .from("stores")
+  .select("id, shop_domain, access_token, refresh_token, token_expires_at")
+  .eq("status", "connected").maybeSingle();
 if (!store) { console.error("no connected store"); process.exit(1); }
 console.log(`store: ${store.shop_domain}\n`);
 
