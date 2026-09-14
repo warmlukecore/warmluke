@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getUserClient } from "@/lib/supabase-server";
 import { ALLOWED_ICONS, COLUMN_TYPES } from "@/lib/types";
-import { isStoreTable, storeTableSchema } from "@/lib/store-read";
+import { isStoreTable, storeTableSchema, type StoreTable } from "@/lib/store-read";
 import type { AutomationRow, ColumnType, ModuleRow, SchemaColumn } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -236,7 +236,11 @@ export async function PATCH(req: Request) {
     }
     patch.parent_id = parent_id;
   }
-  // Pointing a section at the store, or back at its own rows.
+  // Pointing a section at the store, or back at its own rows. The
+  // columns are written after the module is updated, not before: a
+  // schema saved beside a module that then failed to update would show
+  // the store's columns over the section's own rows.
+  let storeSchemaFor: StoreTable | null = null;
   if (source_table !== undefined) {
     if (source_table !== null && !isStoreTable(source_table)) {
       return NextResponse.json({ error: "That isn't a store table." }, { status: 400 });
@@ -254,24 +258,7 @@ export async function PATCH(req: Request) {
           { status: 409 }
         );
       }
-      // The columns have to change with the source, or the section
-      // renders blank cells for fields the store rows do not have.
-      // Written as a new version, so the old one is still in history.
-      const { data: latest } = await client
-        .from("ui_schemas")
-        .select("version")
-        .eq("module_id", id)
-        .order("version", { ascending: false })
-        .limit(1);
-      const { error: sErr } = await client.from("ui_schemas").insert({
-        module_id: id,
-        project_id: projectId,
-        version: ((latest?.[0]?.version as number) ?? 0) + 1,
-        schema_json: { ...storeTableSchema(source_table), features: null },
-        created_by: "user",
-        change_description: `Showing ${source_table.replace("_", " ")} from the connected store`,
-      });
-      if (sErr) return NextResponse.json({ error: sErr.message }, { status: 500 });
+      storeSchemaFor = source_table;
     }
     patch.source_table = source_table;
   }
@@ -288,6 +275,33 @@ export async function PATCH(req: Request) {
     .select();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!data?.length) return NextResponse.json({ error: "Section not found." }, { status: 404 });
+
+  if (storeSchemaFor) {
+    // The columns have to change with the source, or the section shows
+    // blank cells for fields the store rows do not have. A new version,
+    // so the section's own columns are still in history and come back
+    // if it is pointed at its own rows again.
+    const { data: latest } = await client
+      .from("ui_schemas")
+      .select("version")
+      .eq("module_id", id)
+      .order("version", { ascending: false })
+      .limit(1);
+    const { error: sErr } = await client.from("ui_schemas").insert({
+      module_id: id,
+      version: ((latest?.[0]?.version as number) ?? 0) + 1,
+      schema_json: { ...storeTableSchema(storeSchemaFor), features: null },
+      created_by: "user",
+      change_description: `Showing ${storeSchemaFor.replace("_", " ")} from the connected store`,
+    });
+    if (sErr) {
+      // Put it back rather than leave a section claiming a source whose
+      // columns never arrived.
+      await client.from("modules").update({ source_table: null }).eq("id", id);
+      return NextResponse.json({ error: sErr.message }, { status: 500 });
+    }
+  }
+
   return NextResponse.json({ module: data[0] });
 }
 
