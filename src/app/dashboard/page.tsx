@@ -311,18 +311,47 @@ function DashboardInner() {
           <div className="mt-10 text-sm text-slate-500">Loading projects…</div>
         ) : projects.length === 0 ? (
           <div className="mt-10 rounded-2xl border border-dashed border-slate-800 p-8 text-center sm:p-14">
-            <div className="font-display text-lg font-semibold">Nothing here yet</div>
-            <p className="mx-auto mt-2 max-w-md text-sm text-slate-400">
-              Create your first project and describe the problem you&rsquo;re stuck
-              on. It asks how you work, then builds the app around it.
-            </p>
-            <button
-              onClick={() => createAndBuild()}
-              disabled={creating}
-              className="mt-6 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-400 px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              {creating ? "Creating…" : "+ New project"}
-            </button>
+            {/* An administrator with no projects is not a merchant who
+                has not started — they are looking at the wrong screen.
+                Building one stays available; it is just not the pitch. */}
+            {isSuperadmin ? (
+              <>
+                <div className="font-display text-lg font-semibold">No projects of your own</div>
+                <p className="mx-auto mt-2 max-w-md text-sm text-slate-400">
+                  This is your own workspace. Everyone else&rsquo;s is under Accounts.
+                </p>
+                <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+                  <Link
+                    href="/admin"
+                    className="rounded-xl bg-gradient-to-r from-blue-500 to-cyan-400 px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                  >
+                    Accounts
+                  </Link>
+                  <button
+                    onClick={() => createAndBuild()}
+                    disabled={creating}
+                    className="rounded-xl border border-slate-800 px-5 py-2.5 text-sm text-slate-300 transition-colors hover:bg-slate-900 disabled:opacity-50"
+                  >
+                    {creating ? "Creating…" : "Build one anyway"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="font-display text-lg font-semibold">Nothing here yet</div>
+                <p className="mx-auto mt-2 max-w-md text-sm text-slate-400">
+                  Create your first project and describe the problem you&rsquo;re stuck on.
+                  It asks how you work, then builds the app around it.
+                </p>
+                <button
+                  onClick={() => createAndBuild()}
+                  disabled={creating}
+                  className="mt-6 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-400 px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                >
+                  {creating ? "Creating…" : "+ New project"}
+                </button>
+              </>
+            )}
           </div>
         ) : (
           <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
