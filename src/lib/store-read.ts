@@ -252,6 +252,19 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
   },
 } as Record<StoreTable, TableSpec>;
 
+/**
+ * The columns a search looks at, per table. Kept beside the specs
+ * rather than derived from them: a column being text is not the same
+ * as it being worth searching, and matching a postcode against a
+ * product title helps nobody.
+ */
+const SEARCHABLE: Record<StoreTable, string[]> = {
+  orders: ["order_number", "financial_status", "fulfilment_status"],
+  customers: ["name", "email", "phone", "city"],
+  products: ["title", "handle", "status"],
+  inventory_levels: ["location_name"],
+};
+
 export const isStoreTable = (v: unknown): v is StoreTable =>
   typeof v === "string" && v in STORE_TABLES;
 
@@ -272,15 +285,32 @@ export async function readStoreRows(
   db: SupabaseClient,
   storeId: string,
   table: StoreTable,
-  limit = 200
+  limit = 200,
+  /**
+   * Words to look for. Matched against the table's own text columns —
+   * never against every column, because a number typed into a search
+   * box would otherwise match an id nobody asked about.
+   */
+  q?: string
 ): Promise<{ rows: Array<{ id: string; data: Record<string, unknown> }>; total: number }> {
   const spec = STORE_TABLES[table];
-  const { data, count, error } = await db
+  let query = db
     .from(table)
     .select(spec.select, { count: "exact" })
     .eq("store_id", storeId)
     .order(spec.order.field, { ascending: spec.order.ascending })
     .limit(Math.min(Math.max(limit, 1), 500));
+
+  const needle = q?.trim();
+  if (needle) {
+    const fields = SEARCHABLE[table];
+    // Commas and parentheses end an or() clause early, so a search for
+    // "Shirt, blue" would silently become a search for "Shirt".
+    const safe = needle.replace(/[,()]/g, " ").trim();
+    if (safe) query = query.or(fields.map((f) => `${f}.ilike.%${safe}%`).join(","));
+  }
+
+  const { data, count, error } = await query;
   if (error) throw new Error(error.message);
 
   return {
@@ -385,4 +415,90 @@ export async function searchOrders(
       customer: Array.isArray(customers) ? (customers[0] ?? null) : (customers ?? null),
     };
   });
+}
+
+/**
+ * What is running out.
+ *
+ * "Low stock" is the question a shop actually asks, and it is not a
+ * filter over one table: the count lives on the level, the name on the
+ * variant, and the product it belongs to somewhere else again. A
+ * generic row search cannot answer it, which is why it gets a function.
+ */
+export async function lowStock(
+  db: SupabaseClient,
+  storeId: string,
+  { threshold = 5, limit = 50 }: { threshold?: number; limit?: number } = {}
+): Promise<Array<{ product: string | null; variant: string | null; sku: string | null; location: string; available: number }>> {
+  const { data, error } = await db
+    .from("inventory_levels")
+    .select("available, location_name, variants(title, sku, products(title))")
+    .eq("store_id", storeId)
+    .lte("available", Math.max(threshold, 0))
+    .order("available", { ascending: true })
+    .limit(Math.min(Math.max(limit, 1), MAX_LIMIT));
+  if (error) throw new Error(error.message);
+
+  return (data ?? []).map((r) => {
+    const row = r as unknown as Record<string, unknown>;
+    const v = one(row.variants as { title?: string; sku?: string; products?: unknown } | null);
+    const p = one(v?.products as { title?: string } | null);
+    return {
+      product: p?.title ?? null,
+      variant: v?.title ?? null,
+      sku: v?.sku ?? null,
+      location: (row.location_name as string) || "—",
+      available: (row.available as number) ?? 0,
+    };
+  });
+}
+
+/**
+ * One order, with what was in it.
+ *
+ * The list view deliberately leaves line items out — a hundred orders
+ * with their contents is a wall nobody reads. Asked about one order,
+ * they are the whole point.
+ */
+export async function orderDetail(
+  db: SupabaseClient,
+  storeId: string,
+  ref: string
+): Promise<Record<string, unknown> | null> {
+  const wanted = ref.trim();
+  if (!wanted) return null;
+  // Merchants say "1003"; the order is stored as "#1003".
+  const numbers = [wanted, wanted.startsWith("#") ? wanted.slice(1) : `#${wanted}`];
+
+  const { data, error } = await db
+    .from("orders")
+    .select(
+      "order_number, placed_at, total, currency, financial_status, fulfilment_status, cancelled_at, tags, customers(name, phone, email), order_line_items(title, variant_title, sku, quantity, price)"
+    )
+    .eq("store_id", storeId)
+    .in("order_number", numbers)
+    .limit(1);
+  if (error) throw new Error(error.message);
+
+  const row = data?.[0] as unknown as Record<string, unknown> | undefined;
+  if (!row) return null;
+
+  const c = one(row.customers as { name?: string; phone?: string; email?: string } | null);
+  const lines = (row.order_line_items ?? []) as Array<Record<string, unknown>>;
+  return {
+    order_number: row.order_number,
+    placed_at: row.placed_at,
+    total: row.total,
+    currency: row.currency,
+    status: row.cancelled_at ? "cancelled" : (row.financial_status ?? null),
+    fulfilment_status: row.fulfilment_status ?? null,
+    tags: row.tags ?? [],
+    customer: c ? { name: c.name ?? null, phone: c.phone ?? null, email: c.email ?? null } : null,
+    items: lines.map((l) => ({
+      title: l.variant_title ? `${l.title} — ${l.variant_title}` : l.title,
+      sku: l.sku ?? null,
+      quantity: l.quantity,
+      price: l.price,
+    })),
+  };
 }

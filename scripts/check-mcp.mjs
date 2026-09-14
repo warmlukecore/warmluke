@@ -93,9 +93,16 @@ const names = (list.json?.result?.tools ?? []).map((t) => t.name);
 check("tools/list answers a signed-in caller", list.status === 200);
 check(
   "all three tools are offered",
-  ["store_overview", "search_orders", "propose_change", "approve_change"].every((t) =>
-    names.includes(t)
-  )
+  [
+    "store_overview",
+    "search_orders",
+    "get_order",
+    "search_store",
+    "low_stock",
+    "read_section",
+    "propose_change",
+    "approve_change",
+  ].every((t) => names.includes(t))
 );
 check(
   "every tool has a schema a model can fill in",
@@ -241,6 +248,110 @@ try {
       await rpc("tools/call", { name: "search_orders", arguments: { limit: 100000 } }, t)
     );
     check("an absurd limit is capped", (capped?.count ?? 0) <= 100);
+
+    console.log("\nreading the rest of the store");
+    const one = toolText(
+      await rpc("tools/call", { name: "search_store", arguments: { table: "products" } }, t)
+    );
+    check("products come back", (one?.showing ?? 0) > 0);
+    check("with the total, not only the page", (one?.matched ?? 0) >= (one?.showing ?? 0));
+    check("and the store's own currency", one?.currency === over?.currency);
+
+    const searched = toolText(
+      await rpc(
+        "tools/call",
+        { name: "search_store", arguments: { table: "products", q: one.rows[0].title } },
+        t
+      )
+    );
+    check("searching by title narrows it", (searched?.matched ?? 0) < (one?.matched ?? 0));
+    // A comma ends an or() clause early, so this used to search for
+    // the first half and quietly answer about the wrong thing.
+    const comma = toolText(
+      await rpc(
+        "tools/call",
+        { name: "search_store", arguments: { table: "products", q: "nothing, at all" } },
+        t
+      )
+    );
+    check("punctuation in a search does not break it", comma?.matched === 0);
+    check(
+      "a table nobody has is named, with what there is",
+      Array.isArray(
+        toolText(
+          await rpc("tools/call", { name: "search_store", arguments: { table: "invoices" } }, t)
+        )?.available
+      )
+    );
+
+    const stock = toolText(
+      await rpc("tools/call", { name: "low_stock", arguments: { threshold: 100000 } }, t)
+    );
+    check("low stock lists what is running out", (stock?.count ?? 0) > 0);
+    check("lowest first", stock.rows[0].available <= stock.rows[stock.rows.length - 1].available);
+    check("each row says where it is short", !!stock.rows[0].location);
+    check(
+      "a negative threshold is refused, not guessed at",
+      /must be a number/.test(
+        toolText(
+          await rpc("tools/call", { name: "low_stock", arguments: { threshold: -1 } }, t)
+        )?.error ?? ""
+      )
+    );
+
+    const anOrder = all.orders?.[0]?.order_number;
+    if (anOrder) {
+      const detail = toolText(
+        await rpc("tools/call", { name: "get_order", arguments: { order_number: anOrder } }, t)
+      );
+      check("one order comes back in full", detail?.order_number === anOrder);
+      check("with the items in it", Array.isArray(detail?.items));
+      // Merchants say 1003; the order is stored as #1003.
+      const bare = String(anOrder).replace("#", "");
+      check(
+        "asked for without the hash, it is still found",
+        toolText(
+          await rpc("tools/call", { name: "get_order", arguments: { order_number: bare } }, t)
+        )?.order_number === anOrder
+      );
+    }
+    check(
+      "an order that does not exist says so",
+      /No order/.test(
+        toolText(
+          await rpc("tools/call", { name: "get_order", arguments: { order_number: "#999999" } }, t)
+        )?.error ?? ""
+      )
+    );
+
+    console.log("\nand the merchant's own sections");
+    const listed = toolText(await rpc("tools/call", { name: "read_section", arguments: {} }, t));
+    check("the sections are listed", Array.isArray(listed?.sections));
+    check(
+      "a section that does not exist says so",
+      /No section/.test(
+        toolText(
+          await rpc("tools/call", { name: "read_section", arguments: { section: "nope" } }, t)
+        )?.error ?? ""
+      )
+    );
+    const storeBacked = (listed.sections ?? []).find((x) => /Shopify/.test(x.rows_from));
+    if (storeBacked) {
+      // Reading it here as well would report the same rows twice under
+      // two different names.
+      check(
+        "a Shopify-backed section points at search_store instead",
+        /search_store/.test(
+          toolText(
+            await rpc(
+              "tools/call",
+              { name: "read_section", arguments: { section: storeBacked.section } },
+              t
+            )
+          )?.note ?? ""
+        )
+      );
+    }
 
     console.log("\nasking for something to be built");
     // The whole point of the design: the merchant hears the plan

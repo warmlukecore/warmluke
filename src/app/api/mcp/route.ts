@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
 import { getUserClient } from "@/lib/supabase-server";
-import { dayRangeInZone, listStores, searchOrders, storeOverview } from "@/lib/store-read";
+import {
+  dayRangeInZone,
+  isStoreTable,
+  listStores,
+  lowStock,
+  orderDetail,
+  readStoreRows,
+  searchOrders,
+  storeOverview,
+} from "@/lib/store-read";
 import { blueprintAsText, runTurn } from "@/lib/engine";
 import { applyPlans } from "@/lib/apply";
 import type { AssistantPlan, ModuleRow, ProjectRow } from "@/lib/types";
@@ -69,6 +78,71 @@ const TOOLS = [
         q: { type: "string", description: "An order number, or a customer's phone, email or name." },
         limit: { type: "number", description: "Up to 100. Defaults to 20." },
         shop_domain: { type: "string", description: "Which store, when there is more than one." },
+      },
+    },
+  },
+  {
+    name: "get_order",
+    description:
+      "One order in full, with the items in it. Use this when the merchant asks about a particular order; search_orders lists many and deliberately leaves the contents out.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        order_number: {
+          type: "string",
+          description: 'The order number, with or without the "#".',
+        },
+        shop_domain: { type: "string", description: "Which store, when there is more than one." },
+      },
+      required: ["order_number"],
+    },
+  },
+  {
+    name: "search_store",
+    description:
+      "Look through the store's products, customers, orders or stock levels. Read-only, and it only sees what has been synced from Shopify.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        table: {
+          type: "string",
+          enum: ["products", "customers", "orders", "inventory_levels"],
+          description: "Which of the store's lists to look in.",
+        },
+        q: {
+          type: "string",
+          description:
+            "Words to look for — a product title, a customer's name or email, an order number. Leave it out to list the most recent.",
+        },
+        limit: { type: "number", description: "Up to 200. Defaults to 25." },
+        shop_domain: { type: "string", description: "Which store, when there is more than one." },
+      },
+      required: ["table"],
+    },
+  },
+  {
+    name: "low_stock",
+    description:
+      "Products running out: every variant at or below a number, lowest first, with the location it is short at. Ask with threshold 0 for what is already out of stock.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        threshold: { type: "number", description: "At or below this count. Defaults to 5." },
+        limit: { type: "number", description: "Up to 100. Defaults to 50." },
+        shop_domain: { type: "string", description: "Which store, when there is more than one." },
+      },
+    },
+  },
+  {
+    name: "read_section",
+    description:
+      "The merchant's own sections in Warmluke — the things they or their assistant built, not their Shopify data. Call it with no arguments to see what sections exist, then with one to read its rows.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        section: { type: "string", description: "The section's name, as listed." },
+        limit: { type: "number", description: "Up to 200. Defaults to 50." },
+        project_id: { type: "string", description: "Which app, when they have more than one." },
       },
     },
   },
@@ -218,6 +292,25 @@ export async function POST(req: Request) {
 
   const { name, arguments: args = {} } = params as { name?: string; arguments?: Json };
 
+  // Counted before the work, not after: the point is to stop a client
+  // in a loop, and a limiter that only notices once the reads have
+  // happened has already paid for them. The same row is the record of
+  // what the assistant asked for.
+  const { data: allowance, error: callErr } = await db.rpc("abo_mcp_call", {
+    p_tool: name ?? "?",
+  });
+  if (callErr) return rpcError(id, -32603, callErr.message);
+  const allowed = allowance as { ok: boolean; used: number; limit: number } | null;
+  if (allowed && !allowed.ok) {
+    return ok(
+      id,
+      text({
+        error: `This account has made ${allowed.limit} requests in the last hour, which is the limit.`,
+        note: "Wait a little and try again. Nothing is broken.",
+      })
+    );
+  }
+
   try {
     if (name === "propose_change") {
       const request = String(args.request ?? "").trim();
@@ -334,6 +427,103 @@ export async function POST(req: Request) {
           request_id: requestId,
           design,
           open: `${origin}/app/${project.id}`,
+        })
+      );
+    }
+
+    if (name === "read_section") {
+      // Their own app, not their Shopify data — so this runs before
+      // the store lookup below. An account with no store still has
+      // sections, and refusing here would be answering a different
+      // question than the one asked.
+      const { data: projects } = await db.from("projects").select("id, name");
+      const list = projects ?? [];
+      const wanted = (args.project_id as string | undefined)?.trim();
+      const project = wanted
+        ? list.find((p) => p.id === wanted)
+        : list.length === 1
+          ? list[0]
+          : null;
+      if (!project) {
+        return ok(
+          id,
+          text({
+            error: list.length ? "Which app? Pass project_id." : "This account has no app yet.",
+            projects: list.map((p) => ({ id: p.id, name: p.name })),
+          })
+        );
+      }
+
+      const { data: modules } = await db
+        .from("modules")
+        .select("id, name, nav_label, source_table")
+        .eq("project_id", project.id)
+        .order("sort_order", { ascending: true });
+      const sections = (modules ?? []) as Array<{
+        id: string;
+        name: string;
+        nav_label: string;
+        source_table: string | null;
+      }>;
+
+      const asked = (args.section as string | undefined)?.trim().toLowerCase();
+      if (!asked) {
+        return ok(
+          id,
+          text({
+            sections: sections.map((m) => ({
+              section: m.nav_label,
+              // Saying where the rows come from stops the assistant
+              // reading a Shopify-backed section twice — once here and
+              // once through search_store — and reporting two numbers.
+              rows_from: m.source_table ? `Shopify ${m.source_table}` : "this app",
+            })),
+            note: sections.length
+              ? "Call again with one of these as `section`."
+              : "Nothing has been built in this app yet.",
+          })
+        );
+      }
+
+      const section =
+        sections.find((m) => m.nav_label.toLowerCase() === asked) ??
+        sections.find((m) => m.name.toLowerCase() === asked) ??
+        sections.find((m) => m.nav_label.toLowerCase().includes(asked));
+      if (!section) {
+        return ok(
+          id,
+          text({
+            error: `No section called "${args.section}".`,
+            sections: sections.map((m) => m.nav_label),
+          })
+        );
+      }
+
+      if (section.source_table) {
+        return ok(
+          id,
+          text({
+            section: section.nav_label,
+            note: `This section shows the store's ${section.source_table}. Use search_store with table "${section.source_table}" to read it.`,
+          })
+        );
+      }
+
+      const limit = Math.min(Math.max(Number(args.limit ?? 50) || 50, 1), 200);
+      const { data: rows, count } = await db
+        .from("records")
+        .select("data", { count: "exact" })
+        .eq("module_id", section.id)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+
+      return ok(
+        id,
+        text({
+          section: section.nav_label,
+          total: count ?? 0,
+          showing: rows?.length ?? 0,
+          rows: (rows ?? []).map((r) => r.data),
         })
       );
     }
@@ -460,6 +650,81 @@ export async function POST(req: Request) {
 
     if (name === "store_overview") {
       return ok(id, text(await storeOverview(db, store.id)));
+    }
+
+    if (name === "get_order") {
+      const ref = String(args.order_number ?? "").trim();
+      if (!ref) return ok(id, text({ error: "Which order? Pass order_number." }));
+      const order = await orderDetail(db, store.id, ref);
+      if (!order) {
+        return ok(
+          id,
+          text({
+            error: `No order ${ref} in ${store.shop_domain}.`,
+            // Said plainly, because "not found" on a store that is
+            // still importing means "not yet", and answering "you
+            // have no such order" would be wrong.
+            note: "If the store is still importing, it may not have arrived yet.",
+          })
+        );
+      }
+      return ok(id, text({ ...order, currency: order.currency ?? store.currency }));
+    }
+
+    if (name === "search_store") {
+      const table = String(args.table ?? "");
+      if (!isStoreTable(table)) {
+        return ok(
+          id,
+          text({
+            error: `"${table}" is not one of the store's lists.`,
+            available: ["products", "customers", "orders", "inventory_levels"],
+          })
+        );
+      }
+      const limit = Math.min(Math.max(Number(args.limit ?? 25) || 25, 1), 200);
+      const { rows, total } = await readStoreRows(
+        db,
+        store.id,
+        table,
+        limit,
+        args.q as string | undefined
+      );
+      return ok(
+        id,
+        text({
+          table,
+          // Both numbers, always: "12 rows" out of 4,000 read as an
+          // answer about the whole store otherwise.
+          matched: total,
+          showing: rows.length,
+          currency: store.currency,
+          rows: rows.map((r) => r.data),
+        })
+      );
+    }
+
+    if (name === "low_stock") {
+      const threshold = Number(args.threshold ?? 5);
+      if (!Number.isFinite(threshold) || threshold < 0) {
+        return ok(id, text({ error: "threshold must be a number, 0 or more." }));
+      }
+      const rows = await lowStock(db, store.id, {
+        threshold,
+        limit: Number(args.limit ?? 50) || 50,
+      });
+      return ok(
+        id,
+        text({
+          threshold,
+          count: rows.length,
+          note:
+            rows.length === 0
+              ? `Nothing is at or below ${threshold}.`
+              : "Counts are as of the last sync from Shopify.",
+          rows,
+        })
+      );
     }
 
     if (name === "search_orders") {
