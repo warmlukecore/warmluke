@@ -549,12 +549,13 @@ export default function ChatPanel({
       created_at: string;
       summary: string | null;
       plans: AssistantPlan[] | null;
+      unmet: string[] | null;
     }>
   >([]);
   const loadRequests = useCallback(async () => {
     const { data } = await supabase
       .from("build_requests")
-      .select("id, request, client_id, created_at, summary, plans")
+      .select("id, request, client_id, created_at, summary, plans, unmet")
       .eq("project_id", projectId)
       .eq("status", "pending")
       .order("created_at", { ascending: false })
@@ -770,15 +771,60 @@ export default function ChatPanel({
                   for word. Approving this builds exactly it — there is
                   no second model turn that could produce something
                   else, and no model call at all. */}
-              {/* Read in full, in the panel's own type. Behind a
-                  scroll box it cut off at the height of the box —
-                  and what sits at the bottom of a design is "not
-                  covered by this", the part they most need to see
-                  before saying yes. */}
-              {r.summary && (
-                <div className="mt-1.5 rounded-lg bg-white/70 px-2.5 py-2 text-[11px] leading-relaxed whitespace-pre-wrap text-amber-900">
-                  {r.summary}
+              {/* What changes their mind stays out in the open: the
+                  warning, and what they asked for that this does not
+                  do. The field-by-field detail folds away — it is how
+                  the thing is built, not whether they want it.
+
+                  Rendered from the plans, the same source the
+                  sentences their AI read out were generated from, so
+                  the two cannot drift. */}
+              {r.plans?.length ? (
+                <div className="mt-1.5 space-y-1.5">
+                  {r.plans.map((plan, i) => {
+                    const d = describePlan(plan, modules, undefined, storeFacts);
+                    return (
+                      <div key={i}>
+                        <div className="text-[11px] font-semibold text-amber-900">{d.title}</div>
+                        {d.warnings?.map((w, k) => (
+                          <div
+                            key={k}
+                            className="mt-1 rounded border border-amber-300 bg-amber-100/70 px-2 py-1.5 text-[11px] leading-relaxed text-amber-900"
+                          >
+                            {w}
+                          </div>
+                        ))}
+                        {d.lines.length > 0 && (
+                          <details className="mt-1">
+                            <summary className="cursor-pointer list-none text-[10px] text-amber-700 hover:underline">
+                              Show details
+                            </summary>
+                            <ul className="mt-1 space-y-0.5 text-[11px] leading-relaxed text-amber-900/90">
+                              {d.lines.map((l, k) => (
+                                <li key={k}>· {l}</li>
+                              ))}
+                            </ul>
+                          </details>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {r.unmet?.length ? (
+                    <div className="text-[11px] leading-relaxed text-amber-900">
+                      <span className="font-semibold">Not covered:</span>{" "}
+                      {r.unmet.join(" · ")}
+                    </div>
+                  ) : null}
                 </div>
+              ) : (
+                // A request made before designs were attached, or one
+                // whose design could not be rebuilt. The text it was
+                // stored with is all there is.
+                r.summary && (
+                  <div className="mt-1.5 rounded-lg bg-white/70 px-2.5 py-2 text-[11px] leading-relaxed whitespace-pre-wrap text-amber-900">
+                    {r.summary}
+                  </div>
+                )
               )}
               <div className="mt-1.5 flex items-center gap-1.5">
                 {r.plans?.length ? (

@@ -262,6 +262,10 @@ export async function POST(req: Request) {
         project,
         modules: moduleList,
         message: request,
+        // This tool cannot build. The design it hands back is the
+        // showing, so plain plans are a perfectly good answer — in the
+        // chat they would mean building before anyone had seen a plan.
+        plansAllowed: true,
         signal: req.signal,
       });
       if (!turn.ok) {
@@ -291,7 +295,7 @@ export async function POST(req: Request) {
         );
       }
 
-      const design = blueprintAsText(turn.reply, moduleList, turn.store);
+      const design = blueprintAsText(turn.reply, moduleList, turn.store, turn.unmet);
       const plans =
         turn.reply.type === "blueprint" ? turn.reply.blueprint.plans : turn.reply.plans;
 
@@ -312,6 +316,10 @@ export async function POST(req: Request) {
         p_request: request,
         p_plans: plans,
         p_summary: design,
+        // Stored apart from the rendered text because the card keeps
+        // this visible while the details fold away: everything else
+        // can be rebuilt from the plans, this cannot.
+        p_unmet: turn.unmet,
       });
       if (err) return ok(id, text({ error: err.message }));
 

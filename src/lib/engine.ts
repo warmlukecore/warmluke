@@ -83,6 +83,14 @@ export type TurnInput = {
    * straight to building things nobody agreed to.
    */
   blueprintShown?: boolean;
+  /**
+   * Whether plain plans are an acceptable answer. In the chat they are
+   * not until a design has been shown, or the assistant builds things
+   * nobody agreed to. Through the MCP tool they always are: that tool
+   * cannot build anything, so the design it returns IS the showing.
+   * Defaults to blueprintShown.
+   */
+  plansAllowed?: boolean;
   /** Module context for the turn, when the owner is looking at one. */
   moduleId?: string | null;
   signal?: AbortSignal;
@@ -99,6 +107,8 @@ export type TurnResult =
       repairs: number;
       repairErrors: string[];
       store: StoreContext | null;
+      /** What they asked for that this does not do. Possibly empty. */
+      unmet: string[];
     }
   | { ok: false; errors: string[]; repairs: number; repairErrors: string[] };
 
@@ -116,6 +126,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     currentSchema = null,
     currentFeatures = null,
     blueprintShown = false,
+    plansAllowed = blueprintShown,
     moduleId = null,
     signal,
   } = input;
@@ -144,7 +155,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     if (
       parsed.ok &&
       parsed.reply.type === "plans" &&
-      !blueprintShown &&
+      !plansAllowed &&
       parsed.reply.plans.some((pl) => pl.changeType === "NEW_MODULE")
     ) {
       parsed = {
@@ -182,27 +193,29 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     };
   }
 
-  // Gates cover the grammar; this covers the judgment. Run only on a
-  // blueprint, because that is the one moment somebody is being asked
-  // to approve something, and the only place saying "this does not do
-  // X" still changes the outcome.
-  if (parsed.reply.type === "blueprint") {
-    const built = parsed.reply.blueprint.plans
+  // Gates cover the grammar; this covers the judgment — whether the
+  // design actually does what was asked. It used to run on blueprints
+  // only, which left every plain-plans answer saying nothing about
+  // the half of the request it quietly dropped.
+  let unmet: string[] = [];
+  if (parsed.reply.type !== "clarify") {
+    const plans =
+      parsed.reply.type === "blueprint" ? parsed.reply.blueprint.plans : parsed.reply.plans;
+    const built = plans
       .map((pl) => {
         const d = describePlan(pl, modules, currentSchema?.columns, store);
         return [d.title, ...d.lines].join("\n  ");
       })
       .join("\n");
     const gaps = await findGaps(message.trim(), built, signal);
-    const existing = parsed.reply.blueprint.unmet ?? [];
+    const existing =
+      parsed.reply.type === "blueprint" ? (parsed.reply.blueprint.unmet ?? []) : [];
     const seen = new Set(existing.map((u) => u.toLowerCase().trim()));
-    parsed.reply.blueprint.unmet = [
-      ...existing,
-      ...gaps.filter((g) => !seen.has(g.toLowerCase().trim())),
-    ].slice(0, 6);
+    unmet = [...existing, ...gaps.filter((g) => !seen.has(g.toLowerCase().trim()))].slice(0, 6);
+    if (parsed.reply.type === "blueprint") parsed.reply.blueprint.unmet = unmet;
   }
 
-  return { ok: true, reply: parsed.reply, raw, userTurn, repairs, repairErrors, store };
+  return { ok: true, reply: parsed.reply, raw, userTurn, repairs, repairErrors, store, unmet };
 }
 
 /**
@@ -216,7 +229,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
 export function blueprintAsText(
   reply: AssistantReply,
   modules: ModuleRow[],
-  store: StoreContext | null
+  store: StoreContext | null,
+  /** Gaps found for this turn; a plains-plans reply has nowhere else to carry them. */
+  unmet: string[] = []
 ): string | null {
   if (reply.type === "clarify") return null;
   // A reply of plain plans is an edit to something that already
@@ -225,7 +240,7 @@ export function blueprintAsText(
   const bp =
     reply.type === "blueprint"
       ? reply.blueprint
-      : { summary: reply.message, plans: reply.plans, unmet: [] as string[] };
+      : { summary: reply.message, plans: reply.plans, unmet };
   const facts = store
     ? { shop_domain: store.shop_domain, currency: store.currency, counts: store.counts }
     : null;
