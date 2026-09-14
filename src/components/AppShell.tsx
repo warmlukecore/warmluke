@@ -223,17 +223,38 @@ export default function AppShell({
    * Writing the outcome puts a row after it, which both collapses the
    * card and leaves an honest record of what happened.
    */
+  /**
+   * Writes "this was built" into the thread, so it is still there
+   * tomorrow.
+   *
+   * It used to return early when there was no thread, which is exactly
+   * the case that matters: a build approved through their own AI, or
+   * from a request card, has no conversation behind it. The panel
+   * showed a tick that vanished on the next load, and a confirmation
+   * that disappears is worse than none — it teaches people not to
+   * believe the screen. So a thread is started to hold it.
+   */
   const recordOutcome = useCallback(
     async (text: string) => {
-      if (!conversationId) return;
+      let id = conversationId;
+      if (!id) {
+        const { data: made } = await supabase
+          .from("conversations")
+          .insert({ project_id: projectId, title: text.replace(/^[^\w]+/, "").slice(0, 80) })
+          .select("id")
+          .single();
+        if (!made) return;
+        id = made.id as string;
+        setConversationId(id);
+      }
       await supabase.from("messages").insert({
-        conversation_id: conversationId,
+        conversation_id: id,
         role: "assistant",
         content: text,
         payload: { type: "applied", message: text },
       });
     },
-    [conversationId]
+    [conversationId, projectId]
   );
 
   const startNewThread = useCallback(() => {
