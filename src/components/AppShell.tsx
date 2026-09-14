@@ -1134,7 +1134,9 @@ export default function AppShell({
               store is asking about the store, not about building. */}
           <StoreStrip
             projectId={projectId}
-            sectionCount={modules.length}
+            existingSources={modules
+              .map((m) => m.source_table)
+              .filter((x): x is string => !!x)}
             onSectionsCreated={loadModules}
           />
 

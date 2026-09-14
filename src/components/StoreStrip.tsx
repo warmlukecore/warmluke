@@ -35,12 +35,13 @@ const MAX_PAGES = 400;
 
 export default function StoreStrip({
   projectId,
-  sectionCount,
+  existingSources,
   onSectionsCreated,
 }: {
   projectId: string;
-  /** How many sections the project has, so the offer is made once. */
-  sectionCount: number;
+  /** Store tables that already have a section, so the offer covers the
+   *  rest — which is also what makes a half-finished attempt fixable. */
+  existingSources: string[];
   onSectionsCreated: () => void;
 }) {
   const [store, setStore] = useState<{
@@ -58,41 +59,46 @@ export default function StoreStrip({
   const [makingSections, setMakingSections] = useState(false);
   const [offerDismissed, setOfferDismissed] = useState(false);
 
+  /** The store tables worth a section: rows imported, none built yet. */
+  const WANTED: Array<[string, string, string, string]> = [
+    ["orders", "orders", "Orders", "shopping-cart"],
+    ["customers", "customers", "Customers", "users"],
+    ["products", "products", "Products", "package"],
+    ["inventory_levels", "inventory", "Stock", "box"],
+  ];
+  const missing = WANTED.filter(
+    ([table, progressKey]) =>
+      !existingSources.includes(table) && (progress[progressKey]?.imported ?? 0) > 0
+  );
+
   /**
-   * Builds one section per store table that actually has rows.
+   * Builds a section for each store table that has rows and no section.
    *
    * Offered rather than done automatically: a merchant whose whole app
-   * is about stock does not want three sections they never open, and
-   * deleting what an app decided for them is worse than clicking once.
+   * is about stock does not want three sections they never open.
+   *
+   * Carries on past a failure instead of stopping at the first. A flaky
+   * request used to leave one section built, the offer gone because the
+   * project was no longer empty, and no way back to the other three.
    */
   async function makeSections() {
     setMakingSections(true);
     setError(null);
-    const wanted: Array<[string, string, string]> = [
-      ["orders", "Orders", "shopping-cart"],
-      ["customers", "Customers", "users"],
-      ["products", "Products", "package"],
-      ["inventory_levels", "Stock", "box"],
-    ];
-    for (const [table, label, icon] of wanted) {
-      if ((progress[table === "inventory_levels" ? "inventory" : table]?.imported ?? 0) === 0) {
-        continue;
-      }
+    const failed: string[] = [];
+    for (const [table, , label, icon] of missing) {
       const { ok, data } = await apiFetch("/api/modules", {
         projectId,
         nav_label: label,
         icon,
         source_table: table,
       });
-      if (!ok) {
-        // Stop at the first refusal and say so. Carrying on would leave
-        // a half-built sidebar with no explanation of what is missing.
-        setError((data?.error as string) ?? `Couldn't create ${label}.`);
-        break;
-      }
+      if (!ok) failed.push(label);
     }
     setMakingSections(false);
     onSectionsCreated();
+    if (failed.length) {
+      setError(`Couldn't add ${failed.join(", ")}. The rest are in — try again for these.`);
+    }
   }
 
   const pump = useCallback(async () => {
@@ -209,14 +215,20 @@ export default function StoreStrip({
 
       {/* The whole point of connecting. Without this the merchant's
           store sits in the database behind an empty sidebar. */}
-      {!running && !error && counts.length > 0 && sectionCount === 0 && !offerDismissed && (
+      {/* Shown whenever a store table has rows and no section, so a
+          half-finished attempt can simply be repeated. */}
+      {!running && counts.length > 0 && missing.length > 0 && !offerDismissed && (
         <span className="flex items-center gap-2">
           <button
             onClick={makeSections}
             disabled={makingSections}
             className="rounded-lg bg-blue-600 px-2.5 py-1 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           >
-            {makingSections ? "Building…" : "Show them in the app"}
+            {makingSections
+              ? "Building…"
+              : existingSources.length
+                ? `Add ${missing.map(([, , l]) => l).join(", ")}`
+                : "Show them in the app"}
           </button>
           <button
             onClick={() => setOfferDismissed(true)}
