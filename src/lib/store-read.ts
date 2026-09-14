@@ -14,6 +14,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SchemaColumn } from "@/lib/types";
 
 export type StoreBrief = {
   id: string;
@@ -126,6 +127,169 @@ export function dayRangeInZone(day: string, timeZone: string): { from: string; t
   const to = midnight(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate());
 
   return { from: new Date(from).toISOString(), to: new Date(to).toISOString() };
+}
+
+// ── Sections backed by the store ────────────────────────────────
+//
+// A section normally holds rows the merchant typed, kept in `records`.
+// One of these holds rows that came from Shopify instead: read-only,
+// refreshed by the import, and never edited here — an edit would be
+// overwritten by the next import and the merchant would never know.
+//
+// The columns and the rows are defined together on purpose. Two lists
+// that must agree, written in two places, is how a section ends up
+// showing blank cells for fields the query never asked for.
+
+export type StoreTable = "orders" | "customers" | "products" | "inventory_levels";
+
+type TableSpec = {
+  label: string;
+  select: string;
+  /** Column and direction the rows arrive in, newest or A-Z first. */
+  order: { field: string; ascending: boolean };
+  columns: SchemaColumn[];
+  flatten: (row: Record<string, unknown>) => Record<string, unknown>;
+};
+
+const one = <T,>(v: T | T[] | null | undefined): T | null =>
+  Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
+
+export const STORE_TABLES: Record<StoreTable, TableSpec> = {
+  orders: {
+    label: "Shopify orders",
+    order: { field: "placed_at", ascending: false },
+    select:
+      "id, order_number, placed_at, total, currency, financial_status, fulfilment_status, cancelled_at, tags, customers(name, phone)",
+    columns: [
+      { field: "order_number", label: "Order", type: "text" },
+      { field: "placed_at", label: "Placed", type: "date" },
+      { field: "customer_name", label: "Customer", type: "text" },
+      { field: "customer_phone", label: "Phone", type: "phone" },
+      { field: "total", label: "Total", type: "currency" },
+      { field: "status", label: "Status", type: "badge" },
+      { field: "fulfilment_status", label: "Fulfilment", type: "badge" },
+    ],
+    flatten: (r) => {
+      const c = one(r.customers as { name?: string; phone?: string } | null);
+      return {
+        order_number: r.order_number,
+        // The date only — the renderer's date column shows a day, and
+        // a full timestamp would render as a wall of digits.
+        placed_at: typeof r.placed_at === "string" ? r.placed_at.slice(0, 10) : null,
+        customer_name: c?.name ?? null,
+        customer_phone: c?.phone ?? null,
+        total: r.total,
+        // A cancelled order keeps its last financial status, so showing
+        // that alone would call a cancelled order "paid".
+        status: r.cancelled_at ? "Cancelled" : (r.financial_status ?? null),
+        fulfilment_status: r.fulfilment_status ?? null,
+      };
+    },
+  },
+  customers: {
+    label: "Shopify customers",
+    order: { field: "name", ascending: true },
+    select: "id, name, email, phone, city, orders_count",
+    columns: [
+      { field: "name", label: "Name", type: "text" },
+      { field: "phone", label: "Phone", type: "phone" },
+      { field: "email", label: "Email", type: "email" },
+      { field: "city", label: "City", type: "text" },
+      { field: "orders_count", label: "Orders", type: "number" },
+    ],
+    flatten: (r) => ({
+      name: r.name,
+      phone: r.phone,
+      email: r.email,
+      city: r.city,
+      orders_count: r.orders_count,
+    }),
+  },
+  products: {
+    label: "Shopify products",
+    order: { field: "title", ascending: true },
+    select: "id, title, handle, status, tags",
+    columns: [
+      { field: "title", label: "Product", type: "text" },
+      { field: "handle", label: "Handle", type: "text" },
+      { field: "status", label: "Status", type: "badge" },
+      { field: "tags", label: "Tags", type: "text" },
+    ],
+    flatten: (r) => ({
+      title: r.title,
+      handle: r.handle ?? null,
+      status: r.status,
+      // A text column renders a string; an array would print as
+      // "[object Object]" or a bracketed dump.
+      tags: Array.isArray(r.tags) && r.tags.length ? (r.tags as string[]).join(", ") : null,
+    }),
+  },
+  inventory_levels: {
+    label: "Shopify stock",
+    // Lowest stock first: the rows a merchant opens this for.
+    order: { field: "available", ascending: true },
+    select: "id, available, location_name, updated_at, variants(sku, title, products(title))",
+    columns: [
+      { field: "product", label: "Product", type: "text" },
+      { field: "variant", label: "Variant", type: "text" },
+      { field: "sku", label: "SKU", type: "text" },
+      { field: "location_name", label: "Location", type: "text" },
+      { field: "available", label: "In stock", type: "number" },
+    ],
+    flatten: (r) => {
+      const v = one(
+        r.variants as { sku?: string; title?: string; products?: unknown } | null
+      );
+      const p = one(v?.products as { title?: string } | null);
+      return {
+        product: p?.title ?? null,
+        variant: v?.title ?? null,
+        sku: v?.sku ?? null,
+        location_name: r.location_name || null,
+        available: r.available,
+      };
+    },
+  },
+} as Record<StoreTable, TableSpec>;
+
+export const isStoreTable = (v: unknown): v is StoreTable =>
+  typeof v === "string" && v in STORE_TABLES;
+
+/** The schema a section gets when it is pointed at a store table. */
+export function storeTableSchema(table: StoreTable): { columns: SchemaColumn[] } {
+  return { columns: STORE_TABLES[table].columns };
+}
+
+/**
+ * Store rows in the shape the renderer already understands.
+ *
+ * Returned as `{ id, data }` so a section backed by Shopify renders
+ * through exactly the same component as one the merchant built — the
+ * difference is that nothing here is editable, which the caller enforces
+ * by passing no write handlers.
+ */
+export async function readStoreRows(
+  db: SupabaseClient,
+  storeId: string,
+  table: StoreTable,
+  limit = 200
+): Promise<{ rows: Array<{ id: string; data: Record<string, unknown> }>; total: number }> {
+  const spec = STORE_TABLES[table];
+  const { data, count, error } = await db
+    .from(table)
+    .select(spec.select, { count: "exact" })
+    .eq("store_id", storeId)
+    .order(spec.order.field, { ascending: spec.order.ascending })
+    .limit(Math.min(Math.max(limit, 1), 500));
+  if (error) throw new Error(error.message);
+
+  return {
+    rows: (data ?? []).map((r) => {
+      const row = r as unknown as Record<string, unknown>;
+      return { id: row.id as string, data: spec.flatten(row) };
+    }),
+    total: count ?? 0,
+  };
 }
 
 export type OrderSearch = {

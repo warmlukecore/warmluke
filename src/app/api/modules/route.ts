@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getUserClient } from "@/lib/supabase-server";
 import { ALLOWED_ICONS, COLUMN_TYPES } from "@/lib/types";
+import { isStoreTable, storeTableSchema } from "@/lib/store-read";
 import type { AutomationRow, ColumnType, ModuleRow, SchemaColumn } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -171,7 +172,7 @@ export async function PATCH(req: Request) {
   if (!auth) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
   const { client } = auth;
 
-  const { id, projectId, nav_label, icon, sort_order, parent_id } = (await req
+  const { id, projectId, nav_label, icon, sort_order, parent_id, source_table } = (await req
     .json()
     .catch(() => ({}))) as {
     id?: string;
@@ -181,6 +182,8 @@ export async function PATCH(req: Request) {
     sort_order?: number;
     /** null moves it back to the top level. */
     parent_id?: string | null;
+    /** A store table to show instead of this section's own rows. */
+    source_table?: string | null;
   };
   if (!id || !projectId) {
     return NextResponse.json({ error: "id and projectId are required" }, { status: 400 });
@@ -233,6 +236,46 @@ export async function PATCH(req: Request) {
     }
     patch.parent_id = parent_id;
   }
+  // Pointing a section at the store, or back at its own rows.
+  if (source_table !== undefined) {
+    if (source_table !== null && !isStoreTable(source_table)) {
+      return NextResponse.json({ error: "That isn't a store table." }, { status: 400 });
+    }
+    if (source_table !== null) {
+      const { data: store } = await client
+        .from("stores")
+        .select("id")
+        .eq("project_id", projectId)
+        .eq("status", "connected")
+        .maybeSingle();
+      if (!store) {
+        return NextResponse.json(
+          { error: "No Shopify store is connected to this project yet." },
+          { status: 409 }
+        );
+      }
+      // The columns have to change with the source, or the section
+      // renders blank cells for fields the store rows do not have.
+      // Written as a new version, so the old one is still in history.
+      const { data: latest } = await client
+        .from("ui_schemas")
+        .select("version")
+        .eq("module_id", id)
+        .order("version", { ascending: false })
+        .limit(1);
+      const { error: sErr } = await client.from("ui_schemas").insert({
+        module_id: id,
+        project_id: projectId,
+        version: ((latest?.[0]?.version as number) ?? 0) + 1,
+        schema_json: { ...storeTableSchema(source_table), features: null },
+        created_by: "user",
+        change_description: `Showing ${source_table.replace("_", " ")} from the connected store`,
+      });
+      if (sErr) return NextResponse.json({ error: sErr.message }, { status: 500 });
+    }
+    patch.source_table = source_table;
+  }
+
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
   }

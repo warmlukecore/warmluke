@@ -219,6 +219,12 @@ export interface ModuleRow {
   icon: string;
   route: string;
   sort_order: number;
+  /**
+   * Set when the section shows the connected store's rows instead of
+   * rows the merchant typed. Read-only in the app — the import owns
+   * those rows and would overwrite an edit made here.
+   */
+  source_table: string | null;
   created_at: string;
 }
 

@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/auth";
 import { supabase } from "@/lib/supabase-client";
+import { STORE_TABLES } from "@/lib/store-read";
 import { ALLOWED_ICONS } from "@/lib/types";
 import type { ModuleRow } from "@/lib/types";
 
@@ -55,6 +56,7 @@ export default function ModuleSettings({
   const [label, setLabel] = useState(module.nav_label);
   const [icon, setIcon] = useState(module.icon);
   const [parentId, setParentId] = useState<string>(module.parent_id ?? "");
+  const [source, setSource] = useState<string>(module.source_table ?? "");
   const [confirm, setConfirm] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -84,7 +86,8 @@ export default function ModuleSettings({
   const dirty =
     label.trim() !== module.nav_label ||
     icon !== module.icon ||
-    (parentId || null) !== (module.parent_id ?? null);
+    (parentId || null) !== (module.parent_id ?? null) ||
+    (source || null) !== (module.source_table ?? null);
   const canDelete = confirm.trim().toLowerCase() === module.nav_label.trim().toLowerCase();
   const blocked = (impact?.blockedBy.length ?? 0) > 0;
 
@@ -93,7 +96,14 @@ export default function ModuleSettings({
     setError(null);
     const { ok, data } = await apiFetch(
       "/api/modules",
-      { id: module.id, projectId, nav_label: label, icon, parent_id: parentId || null },
+      {
+        id: module.id,
+        projectId,
+        nav_label: label,
+        icon,
+        parent_id: parentId || null,
+        source_table: source || null,
+      },
       "PATCH"
     );
     setBusy(false);
@@ -204,6 +214,31 @@ export default function ModuleSettings({
                 Sections nest one level only.
               </div>
             )}
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[11px] font-medium tracking-wide text-slate-400 uppercase">
+              Rows come from
+            </label>
+            <select
+              value={source}
+              onChange={(e) => setSource(e.target.value)}
+              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-blue-500"
+            >
+              <option value="">Rows added in this section</option>
+              {Object.entries(STORE_TABLES).map(([table, spec]) => (
+                <option key={table} value={table}>
+                  {spec.label}
+                </option>
+              ))}
+            </select>
+            <div className="mt-1 text-[11px] leading-relaxed text-slate-500">
+              {source
+                ? // Said before they save, not after: switching replaces
+                  // the columns, and rows they typed stop being shown.
+                  "These rows come from Shopify and cannot be edited here — the import owns them. Rows added in this section stay in the database but are hidden while this is on, and the columns are replaced to match the store."
+                : "This section holds rows you or your staff add."}
+            </div>
           </div>
 
           <button

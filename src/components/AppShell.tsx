@@ -21,6 +21,7 @@ import { labelForRow } from "@/lib/links";
 import ModuleSettings from "@/components/ModuleSettings";
 import NewSection from "@/components/NewSection";
 import StoreStrip from "@/components/StoreStrip";
+import { isStoreTable, readStoreRows, type StoreTable } from "@/lib/store-read";
 import { resizeHandleClass, useResizable } from "@/lib/useResizable";
 import type {
   AssistantPlan,
@@ -75,6 +76,9 @@ export default function AppShell({
   // owner's tools would still render for them and then fail on save.
   // Showing a button that cannot work is its own kind of lying.
   const [userId, setUserId] = useState<string | null>(null);
+  // The connected store, so a section pointed at it knows where to read
+  // from. Null for a project without one, which is the common case.
+  const [storeId, setStoreId] = useState<string | null>(null);
   const isOwner = !!project && !!userId && project.owner_id === userId;
   const [modules, setModules] = useState<ModuleRow[]>([]);
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
@@ -285,11 +289,30 @@ export default function AppShell({
       const loadedSchema = (schemaRes.data as UiSchemaRow[])[0] ?? null;
       setSchema(loadedSchema);
       loadLinkOptions(loadedSchema?.schema_json ?? null);
-      setRecords(recordsRes.data as RecordRow[]);
-      setRecordTotal(recordsRes.count ?? (recordsRes.data as RecordRow[]).length);
+      // A section pointed at the store shows the store's rows. The
+      // records query above still ran and found nothing, which is
+      // correct — a store-backed section has no records of its own.
+      const mod = modules.find((m) => m.id === moduleId);
+      if (isStoreTable(mod?.source_table) && storeId) {
+        try {
+          const { rows, total } = await readStoreRows(
+            supabase,
+            storeId,
+            mod!.source_table as StoreTable,
+            limit
+          );
+          setRecords(rows as unknown as RecordRow[]);
+          setRecordTotal(total);
+        } catch (e) {
+          setLoadError(e instanceof Error ? e.message : "Couldn't read the store.");
+        }
+      } else {
+        setRecords(recordsRes.data as RecordRow[]);
+        setRecordTotal(recordsRes.count ?? (recordsRes.data as RecordRow[]).length);
+      }
       setSchemaHistory(historyRes.data as UiSchemaRow[]);
     },
-    []
+    [modules, storeId]
   );
 
   /**
@@ -383,6 +406,16 @@ export default function AppShell({
       .eq("id", projectId)
       .limit(1)
       .then(({ data }) => setProject((data?.[0] as ProjectRow) ?? null));
+
+    // Only the id: everything a store-backed section needs to read is
+    // keyed by it, and the strip already shows the rest.
+    supabase
+      .from("stores")
+      .select("id")
+      .eq("project_id", projectId)
+      .eq("status", "connected")
+      .maybeSingle()
+      .then(({ data }) => setStoreId((data?.id as string) ?? null));
   }, [projectId]);
 
   useEffect(() => {
@@ -810,6 +843,7 @@ export default function AppShell({
   }, [bootstrapped, loading]);
 
   const isEmpty = !loading && modules.length === 0;
+  const storeBacked = isStoreTable(selectedModule?.source_table);
 
   return (
     <FormatProvider locale={project?.locale} currency={project?.currency}>
@@ -1127,9 +1161,12 @@ export default function AppShell({
               records={records}
               totalRecords={recordTotal}
               onLoadMore={records.length < recordTotal ? loadMoreRecords : undefined}
-              onCreate={createRecord}
-              onUpdate={updateRecord}
-              onDelete={deleteRecord}
+              {...(storeBacked
+                ? // No write handlers at all, which is how the renderer
+                  // already expresses read-only. The import owns these
+                  // rows; an edit here would vanish on the next run.
+                  {}
+                : { onCreate: createRecord, onUpdate: updateRecord, onDelete: deleteRecord })}
             />
           ) : loading ? (
             <div className="text-sm text-slate-400">Loading module…</div>
