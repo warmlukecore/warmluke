@@ -33,6 +33,9 @@ const LABELS: Record<string, string> = {
  *  to a background job when a real store outgrows it. */
 const MAX_PAGES = 400;
 
+/** Consecutive stumbles the client rides out before it says so. */
+const IMPORT_RETRIES = 3;
+
 export default function StoreStrip({
   projectId,
   existingSources,
@@ -104,16 +107,27 @@ export default function StoreStrip({
   const pump = useCallback(async () => {
     setRunning(true);
     setError(null);
+    // A throttle or a dropped connection is Shopify asking for a
+    // moment, not a merchant's problem to solve with a button. The
+    // client tries again on its own a few times, waiting longer each
+    // time; anything still failing after that is real and is shown.
+    let stumbles = 0;
     for (let i = 0; i < MAX_PAGES && !cancelled.current; i++) {
       const { ok, data } = await apiFetch("/api/shopify/import", { projectId });
       if (data?.progress) setProgress(data.progress as Progress);
       if (!ok) {
-        // Stop rather than retry. The route records the failure against
-        // the resource, so a later retry resumes; looping here would
-        // hammer Shopify with the request that just failed.
+        if (data?.retryable && stumbles < IMPORT_RETRIES) {
+          stumbles++;
+          setError(null);
+          await new Promise((r) => setTimeout(r, 2000 * stumbles));
+          continue;
+        }
         setError((data?.error as string) ?? "The import stopped.");
         break;
       }
+      // A page that worked clears the count: a long import is allowed
+      // to stumble more than three times in total, just not in a row.
+      stumbles = 0;
       if (data?.done) break;
     }
     setRunning(false);

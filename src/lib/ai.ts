@@ -7,6 +7,8 @@
 // ─────────────────────────────────────────────────────────────
 
 import { isStoreTable, storeTableSchema } from "@/lib/store-read";
+// One definition, shared with the Shopify importer rather than copied.
+import { isTransient } from "@/lib/retry";
 import {
   ALLOWED_ICONS,
   COLUMN_TYPES,
@@ -1455,15 +1457,9 @@ export async function findGaps(
 }
 
 
-/**
- * Busy, rate-limited or briefly broken — worth trying again. A rejected
- * request or a bad key is not, and retrying one only delays the error
- * the caller needs to see.
- */
-export function isTransient(e: unknown): boolean {
-  const msg = e instanceof Error ? e.message : String(e);
-  return /\b(429|500|502|503|504)\b/.test(msg) || /overload|unavailable|high load|timeout/i.test(msg);
-}
+// Moved to lib/retry so the Shopify importer shares the rule rather
+// than growing its own copy.
+export { isTransient };
 
 /**
  * Gemini as the fallback when the Anthropic balance is out.

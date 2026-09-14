@@ -14,6 +14,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isTransient } from "@/lib/retry";
 import {
   SHOPIFY_API_VERSION,
   ShopifyError,
@@ -106,26 +107,108 @@ export type Resource = (typeof RESOURCES)[number];
 
 type Page<T> = { nodes: T[]; cursor: string | null; hasNext: boolean };
 
+/**
+ * How many times a page is attempted before the failure is real.
+ *
+ * Shopify meters the Admin API with a leaky bucket: an import that is
+ * going at any speed WILL be throttled, and being throttled is not an
+ * error — it is the API asking you to wait. Treating it as one is what
+ * stopped an import halfway and left a merchant pressing "Try again"
+ * to finish their own stock levels.
+ *
+ * Three attempts fit inside the route's 60s budget even at the longest
+ * wait below.
+ */
+const ATTEMPTS = 3;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Shopify says how much of the bucket is left and how fast it refills,
+ * so the wait can be the real one rather than a guess. Falls back to
+ * doubling when it says nothing.
+ */
+function waitFor(
+  attempt: number,
+  cost?: { requestedQueryCost?: number; throttleStatus?: { currentlyAvailable?: number; restoreRate?: number } },
+  retryAfter?: string | null
+): number {
+  const header = Number(retryAfter);
+  if (Number.isFinite(header) && header > 0) return Math.min(header * 1000, 10_000);
+
+  const need = cost?.requestedQueryCost ?? 0;
+  const have = cost?.throttleStatus?.currentlyAvailable ?? 0;
+  const rate = cost?.throttleStatus?.restoreRate ?? 0;
+  if (need > have && rate > 0) {
+    return Math.min(Math.ceil(((need - have) / rate) * 1000) + 250, 10_000);
+  }
+  return Math.min(1000 * 2 ** attempt, 8000);
+}
+
 export async function graphql<T>(
   shop: string,
   token: string,
   query: string,
   variables: Record<string, unknown> = {}
 ): Promise<T> {
-  const res = await fetch(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
-    method: "POST",
-    headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" },
-    body: JSON.stringify({ query, variables }),
-  });
-  if (!res.ok) {
-    throw new ShopifyError("shopify_unavailable", `Shopify answered ${res.status}.`);
+  let last: unknown;
+  let pause = 0;
+
+  for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+    if (attempt > 0) await sleep(pause);
+
+    let res: Response;
+    try {
+      res = await fetch(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
+        method: "POST",
+        headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" },
+        body: JSON.stringify({ query, variables }),
+      });
+    } catch (e) {
+      // A dropped connection mid-import is the commonest failure of
+      // all and says nothing about the request.
+      last = new ShopifyError("shopify_unavailable", `Could not reach Shopify: ${
+        e instanceof Error ? e.message : "network error"
+      }.`);
+      pause = waitFor(attempt);
+      continue;
+    }
+
+    if (!res.ok) {
+      const err = new ShopifyError("shopify_unavailable", `Shopify answered ${res.status}.`);
+      // 4xx other than 429 is this request being wrong; asking again
+      // changes nothing and hides the reason.
+      if (!isTransient(err)) throw err;
+      last = err;
+      pause = waitFor(attempt, undefined, res.headers.get("retry-after"));
+      continue;
+    }
+
+    const body = (await res.json()) as {
+      data?: T;
+      errors?: Array<{ message: string; extensions?: { code?: string } }>;
+      extensions?: { cost?: Parameters<typeof waitFor>[1] };
+    };
+
+    if (body.errors?.length) {
+      // A throttle arrives as a 200 with an error in the body, which
+      // is why checking res.ok alone was never enough.
+      const throttled = body.errors.some((e) => e.extensions?.code === "THROTTLED");
+      const err = new ShopifyError(
+        throttled ? "shopify_throttled" : "shopify_rejected",
+        body.errors.map((e) => e.message).join("; ")
+      );
+      if (!throttled) throw err;
+      last = err;
+      pause = waitFor(attempt, body.extensions?.cost, res.headers.get("retry-after"));
+      continue;
+    }
+
+    if (!body.data) throw new ShopifyError("shopify_empty", "Shopify returned no data.");
+    return body.data;
   }
-  const body = (await res.json()) as { data?: T; errors?: Array<{ message: string }> };
-  if (body.errors?.length) {
-    throw new ShopifyError("shopify_rejected", body.errors.map((e) => e.message).join("; "));
-  }
-  if (!body.data) throw new ShopifyError("shopify_empty", "Shopify returned no data.");
-  return body.data;
+
+  throw last ?? new ShopifyError("shopify_unavailable", "Shopify did not answer.");
 }
 
 const money = (m?: { shopMoney?: { amount?: string } } | null) =>

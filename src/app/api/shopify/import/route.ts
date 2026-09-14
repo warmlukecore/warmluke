@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getUserClient } from "@/lib/supabase-server";
 import { RESOURCES, importPage, type Resource, type StoreToken } from "@/lib/shopify-import";
 import { ShopifyError } from "@/lib/shopify";
+import { isTransient } from "@/lib/retry";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -89,7 +90,13 @@ export async function POST(req: Request) {
     const row = { store_id: store.id, resource, status: "failed", error: message, cursor: run?.cursor ?? null };
     if (run) await auth.client.from("import_runs").update(row).eq("id", run.id);
     else await auth.client.from("import_runs").insert(row);
-    return NextResponse.json({ done: false, resource, error: message }, { status: 502 });
+    // Whether another call is worth making is decided here, where the
+    // error still is one, rather than by the browser re-reading a
+    // sentence. The client already resumes from the cursor above.
+    return NextResponse.json(
+      { done: false, resource, error: message, retryable: isTransient(e) },
+      { status: 502 }
+    );
   }
 }
 
