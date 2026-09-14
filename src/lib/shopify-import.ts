@@ -1,0 +1,342 @@
+// ─────────────────────────────────────────────────────────────
+// Pulling a store into the canonical tables.
+//
+// GraphQL rather than REST: the REST order and customer endpoints are
+// refused outright without protected-customer-data approval, because a
+// REST order carries the customer whether you wanted it or not. GraphQL
+// asks for named fields, so a store connects and reports useful numbers
+// while that approval is still pending.
+//
+// Every call does one bounded page and writes down where it stopped. A
+// serverless request dies at five minutes and a real store has tens of
+// thousands of rows, so the only import that finishes is one that can be
+// resumed rather than restarted.
+// ─────────────────────────────────────────────────────────────
+
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { SHOPIFY_API_VERSION, ShopifyError } from "@/lib/shopify";
+
+/** One page. Small enough to finish, large enough not to crawl. */
+export const PAGE = 50;
+
+export const RESOURCES = ["products", "customers", "orders", "inventory"] as const;
+export type Resource = (typeof RESOURCES)[number];
+
+type Page<T> = { nodes: T[]; cursor: string | null; hasNext: boolean };
+
+export async function graphql<T>(
+  shop: string,
+  token: string,
+  query: string,
+  variables: Record<string, unknown> = {}
+): Promise<T> {
+  const res = await fetch(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
+    method: "POST",
+    headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" },
+    body: JSON.stringify({ query, variables }),
+  });
+  if (!res.ok) {
+    throw new ShopifyError("shopify_unavailable", `Shopify answered ${res.status}.`);
+  }
+  const body = (await res.json()) as { data?: T; errors?: Array<{ message: string }> };
+  if (body.errors?.length) {
+    throw new ShopifyError("shopify_rejected", body.errors.map((e) => e.message).join("; "));
+  }
+  if (!body.data) throw new ShopifyError("shopify_empty", "Shopify returned no data.");
+  return body.data;
+}
+
+const money = (m?: { shopMoney?: { amount?: string } } | null) =>
+  m?.shopMoney?.amount ? Number(m.shopMoney.amount) : null;
+
+// ── Products and their variants ─────────────────────────────────
+const PRODUCTS_QUERY = `
+query($n: Int!, $after: String) {
+  products(first: $n, after: $after) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      id title handle status tags updatedAt
+      variants(first: 100) {
+        nodes { id title sku barcode price updatedAt }
+      }
+    }
+  }
+}`;
+
+type GqlProduct = {
+  id: string; title: string; handle: string; status: string; tags: string[]; updatedAt: string;
+  variants: { nodes: Array<{ id: string; title: string; sku: string | null; barcode: string | null; price: string; updatedAt: string }> };
+};
+
+async function importProducts(
+  db: SupabaseClient, storeId: string, shop: string, token: string, after: string | null
+): Promise<Page<unknown>> {
+  const data = await graphql<{ products: { pageInfo: { hasNextPage: boolean; endCursor: string }; nodes: GqlProduct[] } }>(
+    shop, token, PRODUCTS_QUERY, { n: PAGE, after }
+  );
+  const { nodes, pageInfo } = data.products;
+  if (nodes.length === 0) return { nodes, cursor: pageInfo.endCursor, hasNext: false };
+
+  const { data: saved, error } = await db
+    .from("products")
+    .upsert(
+      nodes.map((p) => ({
+        store_id: storeId, external_id: p.id, title: p.title, handle: p.handle,
+        status: p.status, tags: p.tags ?? [], updated_at: p.updatedAt,
+      })),
+      { onConflict: "store_id,external_id" }
+    )
+    .select("id, external_id");
+  if (error) throw new Error(error.message);
+
+  const byExternal = new Map((saved ?? []).map((r) => [r.external_id as string, r.id as string]));
+  const variants = nodes.flatMap((p) =>
+    p.variants.nodes.map((v) => ({
+      store_id: storeId, product_id: byExternal.get(p.id) ?? null, external_id: v.id,
+      title: v.title, sku: v.sku, barcode: v.barcode,
+      price: v.price ? Number(v.price) : null, updated_at: v.updatedAt,
+    }))
+  );
+  if (variants.length > 0) {
+    const { error: ve } = await db.from("variants").upsert(variants, { onConflict: "store_id,external_id" });
+    if (ve) throw new Error(ve.message);
+  }
+  return { nodes, cursor: pageInfo.endCursor, hasNext: pageInfo.hasNextPage };
+}
+
+// ── Customers ───────────────────────────────────────────────────
+// Name, email, phone and postcode are protected customer data. Where
+// Shopify withholds them the row still lands with what it did give, so
+// counts and order links stay right and only the contact is missing.
+const CUSTOMERS_QUERY = `
+query($n: Int!, $after: String) {
+  customers(first: $n, after: $after) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      id displayName email phone numberOfOrders tags updatedAt
+      defaultAddress { city zip }
+    }
+  }
+}`;
+
+type GqlCustomer = {
+  id: string; displayName: string | null; email: string | null; phone: string | null;
+  numberOfOrders: string; tags: string[]; updatedAt: string;
+  defaultAddress: { city: string | null; zip: string | null } | null;
+};
+
+async function importCustomers(
+  db: SupabaseClient, storeId: string, shop: string, token: string, after: string | null
+): Promise<Page<unknown>> {
+  const data = await graphql<{ customers: { pageInfo: { hasNextPage: boolean; endCursor: string }; nodes: GqlCustomer[] } }>(
+    shop, token, CUSTOMERS_QUERY, { n: PAGE, after }
+  );
+  const { nodes, pageInfo } = data.customers;
+  if (nodes.length > 0) {
+    const { error } = await db.from("customers").upsert(
+      nodes.map((c) => ({
+        store_id: storeId, external_id: c.id, name: c.displayName, email: c.email,
+        phone: c.phone, city: c.defaultAddress?.city ?? null, postal_code: c.defaultAddress?.zip ?? null,
+        tags: c.tags ?? [], orders_count: Number(c.numberOfOrders ?? 0), updated_at: c.updatedAt,
+      })),
+      { onConflict: "store_id,external_id" }
+    );
+    if (error) throw new Error(error.message);
+  }
+  return { nodes, cursor: pageInfo.endCursor, hasNext: pageInfo.hasNextPage };
+}
+
+// ── Orders, their lines and refunds ─────────────────────────────
+// Line items keep the title and SKU as they were when bought. A product
+// renamed or deleted next year must not rewrite what somebody actually
+// received last month.
+const ORDERS_QUERY = `
+query($n: Int!, $after: String) {
+  orders(first: $n, after: $after, sortKey: CREATED_AT) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      id name createdAt updatedAt cancelledAt tags
+      displayFinancialStatus displayFulfillmentStatus
+      totalPriceSet { shopMoney { amount currencyCode } }
+      customer { id }
+      lineItems(first: 100) {
+        nodes {
+          id title quantity sku
+          variant { id }
+          product { id }
+          originalUnitPriceSet { shopMoney { amount } }
+        }
+      }
+      refunds(first: 20) {
+        id createdAt
+        totalRefundedSet { shopMoney { amount } }
+      }
+    }
+  }
+}`;
+
+type GqlOrder = {
+  id: string; name: string; createdAt: string; updatedAt: string; cancelledAt: string | null;
+  tags: string[]; displayFinancialStatus: string | null; displayFulfillmentStatus: string | null;
+  totalPriceSet: { shopMoney: { amount: string; currencyCode: string } };
+  customer: { id: string } | null;
+  lineItems: { nodes: Array<{ id: string; title: string; quantity: number; sku: string | null;
+    variant: { id: string } | null; product: { id: string } | null;
+    originalUnitPriceSet: { shopMoney: { amount: string } } | null }> };
+  refunds: Array<{ id: string; createdAt: string; totalRefundedSet: { shopMoney: { amount: string } } | null }>;
+};
+
+async function importOrders(
+  db: SupabaseClient, storeId: string, shop: string, token: string, after: string | null
+): Promise<Page<unknown>> {
+  const data = await graphql<{ orders: { pageInfo: { hasNextPage: boolean; endCursor: string }; nodes: GqlOrder[] } }>(
+    shop, token, ORDERS_QUERY, { n: PAGE, after }
+  );
+  const { nodes, pageInfo } = data.orders;
+  if (nodes.length === 0) return { nodes, cursor: pageInfo.endCursor, hasNext: false };
+
+  // Customers may not be imported yet, and an order whose customer is
+  // missing is still an order — the link fills in on a later pass rather
+  // than the order being dropped.
+  const externalIds = [...new Set(nodes.map((o) => o.customer?.id).filter(Boolean) as string[])];
+  const { data: known } = externalIds.length
+    ? await db.from("customers").select("id, external_id").eq("store_id", storeId).in("external_id", externalIds)
+    : { data: [] };
+  const customerId = new Map((known ?? []).map((c) => [c.external_id as string, c.id as string]));
+
+  const { data: saved, error } = await db
+    .from("orders")
+    .upsert(
+      nodes.map((o) => ({
+        store_id: storeId, external_id: o.id, order_number: o.name,
+        customer_id: o.customer ? (customerId.get(o.customer.id) ?? null) : null,
+        placed_at: o.createdAt, total: money(o.totalPriceSet),
+        currency: o.totalPriceSet?.shopMoney?.currencyCode ?? null,
+        financial_status: o.displayFinancialStatus, fulfilment_status: o.displayFulfillmentStatus,
+        cancelled_at: o.cancelledAt, tags: o.tags ?? [], source: "shopify", updated_at: o.updatedAt,
+      })),
+      { onConflict: "store_id,external_id" }
+    )
+    .select("id, external_id");
+  if (error) throw new Error(error.message);
+
+  const orderId = new Map((saved ?? []).map((r) => [r.external_id as string, r.id as string]));
+
+  const variantIds = [...new Set(nodes.flatMap((o) => o.lineItems.nodes.map((l) => l.variant?.id).filter(Boolean)) as string[])];
+  const { data: vrows } = variantIds.length
+    ? await db.from("variants").select("id, external_id").eq("store_id", storeId).in("external_id", variantIds)
+    : { data: [] };
+  const variantId = new Map((vrows ?? []).map((v) => [v.external_id as string, v.id as string]));
+
+  const productIds = [...new Set(nodes.flatMap((o) => o.lineItems.nodes.map((l) => l.product?.id).filter(Boolean)) as string[])];
+  const { data: prows } = productIds.length
+    ? await db.from("products").select("id, external_id").eq("store_id", storeId).in("external_id", productIds)
+    : { data: [] };
+  const productId = new Map((prows ?? []).map((p) => [p.external_id as string, p.id as string]));
+
+  const lines = nodes.flatMap((o) =>
+    o.lineItems.nodes.map((l) => ({
+      store_id: storeId, order_id: orderId.get(o.id)!, external_id: l.id,
+      product_id: l.product ? (productId.get(l.product.id) ?? null) : null,
+      variant_id: l.variant ? (variantId.get(l.variant.id) ?? null) : null,
+      title: l.title, sku: l.sku, quantity: l.quantity,
+      price: l.originalUnitPriceSet?.shopMoney?.amount ? Number(l.originalUnitPriceSet.shopMoney.amount) : null,
+    }))
+  ).filter((l) => l.order_id);
+
+  if (lines.length > 0) {
+    // Replaced rather than merged: a line removed from an order in
+    // Shopify has to disappear here too, and there is no key that would
+    // notice its absence.
+    const ids = [...new Set(lines.map((l) => l.order_id))];
+    await db.from("order_line_items").delete().in("order_id", ids);
+    const { error: le } = await db.from("order_line_items").insert(lines);
+    if (le) throw new Error(le.message);
+  }
+
+  const refunds = nodes.flatMap((o) =>
+    (o.refunds ?? []).map((r) => ({
+      store_id: storeId, order_id: orderId.get(o.id)!, external_id: r.id,
+      amount: r.totalRefundedSet?.shopMoney?.amount ? Number(r.totalRefundedSet.shopMoney.amount) : null,
+      refunded_at: r.createdAt,
+    }))
+  ).filter((r) => r.order_id);
+  if (refunds.length > 0) {
+    const { error: re } = await db.from("refunds").upsert(refunds, { onConflict: "id" });
+    if (re && !re.message.includes("duplicate")) throw new Error(re.message);
+  }
+
+  return { nodes, cursor: pageInfo.endCursor, hasNext: pageInfo.hasNextPage };
+}
+
+// ── Stock on hand ───────────────────────────────────────────────
+const INVENTORY_QUERY = `
+query($n: Int!, $after: String) {
+  productVariants(first: $n, after: $after) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      id
+      inventoryItem {
+        inventoryLevels(first: 10) {
+          nodes { quantities(names: ["available"]) { quantity } location { name } }
+        }
+      }
+    }
+  }
+}`;
+
+type GqlStock = {
+  id: string;
+  inventoryItem: { inventoryLevels: { nodes: Array<{ quantities: Array<{ quantity: number }>; location: { name: string } }> } } | null;
+};
+
+async function importInventory(
+  db: SupabaseClient, storeId: string, shop: string, token: string, after: string | null
+): Promise<Page<unknown>> {
+  const data = await graphql<{ productVariants: { pageInfo: { hasNextPage: boolean; endCursor: string }; nodes: GqlStock[] } }>(
+    shop, token, INVENTORY_QUERY, { n: PAGE, after }
+  );
+  const { nodes, pageInfo } = data.productVariants;
+  const ids = nodes.map((v) => v.id);
+  const { data: vrows } = ids.length
+    ? await db.from("variants").select("id, external_id").eq("store_id", storeId).in("external_id", ids)
+    : { data: [] };
+  const variantId = new Map((vrows ?? []).map((v) => [v.external_id as string, v.id as string]));
+
+  const levels = nodes.flatMap((v) =>
+    (v.inventoryItem?.inventoryLevels.nodes ?? []).map((l) => ({
+      store_id: storeId, variant_id: variantId.get(v.id) ?? null,
+      location_name: l.location?.name ?? "",
+      available: l.quantities?.[0]?.quantity ?? 0,
+      updated_at: new Date().toISOString(),
+    }))
+  ).filter((l) => l.variant_id);
+
+  if (levels.length > 0) {
+    const { error } = await db.from("inventory_levels").upsert(levels, { onConflict: "store_id,variant_id,location_name" });
+    if (error) throw new Error(error.message);
+  }
+  return { nodes, cursor: pageInfo.endCursor, hasNext: pageInfo.hasNextPage };
+}
+
+const IMPORTERS: Record<Resource, typeof importProducts> = {
+  products: importProducts,
+  customers: importCustomers,
+  orders: importOrders,
+  inventory: importInventory,
+};
+
+/**
+ * One page of one resource, then say whether there is more.
+ *
+ * Resources run in the order listed: an order's customer and variant
+ * links can only be made once those rows exist, and a later pass fills
+ * in anything that arrived out of sequence.
+ */
+export async function importPage(
+  db: SupabaseClient, store: { id: string; shop_domain: string; access_token: string },
+  resource: Resource, after: string | null
+): Promise<{ imported: number; cursor: string | null; hasNext: boolean }> {
+  const page = await IMPORTERS[resource](db, store.id, store.shop_domain, store.access_token, after);
+  return { imported: page.nodes.length, cursor: page.cursor, hasNext: page.hasNext };
+}
