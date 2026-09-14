@@ -78,7 +78,8 @@ export default function AppShell({
   const [userId, setUserId] = useState<string | null>(null);
   // The connected store, so a section pointed at it knows where to read
   // from. Null for a project without one, which is the common case.
-  const [storeId, setStoreId] = useState<string | null>(null);
+  const [store, setStore] = useState<{ id: string; currency: string } | null>(null);
+  const storeId = store?.id ?? null;
   const isOwner = !!project && !!userId && project.owner_id === userId;
   const [modules, setModules] = useState<ModuleRow[]>([]);
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
@@ -407,15 +408,18 @@ export default function AppShell({
       .limit(1)
       .then(({ data }) => setProject((data?.[0] as ProjectRow) ?? null));
 
-    // Only the id: everything a store-backed section needs to read is
-    // keyed by it, and the strip already shows the rest.
+    // The id to read by, and the currency to render money in: a store
+    // selling in USD inside a project set to INR would otherwise print
+    // $2,897 as ₹2,897, which looks right and is not.
     supabase
       .from("stores")
-      .select("id")
+      .select("id, currency")
       .eq("project_id", projectId)
       .eq("status", "connected")
       .maybeSingle()
-      .then(({ data }) => setStoreId((data?.id as string) ?? null));
+      .then(({ data }) =>
+        setStore(data ? { id: data.id as string, currency: data.currency as string } : null)
+      );
   }, [projectId]);
 
   useEffect(() => {
@@ -1156,6 +1160,13 @@ export default function AppShell({
               </div>
             </div>
           ) : schema ? (
+            // Money in a store-backed section is the store's money. The
+            // outer provider formats in the project's currency, which
+            // would print $2,897 as ₹2,897 — right-looking and wrong.
+            <FormatProvider
+              locale={project?.locale}
+              currency={storeBacked && store ? store.currency : project?.currency}
+            >
             <GenericRenderer
               schema={schema.schema_json}
               records={records}
@@ -1168,6 +1179,7 @@ export default function AppShell({
                   {}
                 : { onCreate: createRecord, onUpdate: updateRecord, onDelete: deleteRecord })}
             />
+            </FormatProvider>
           ) : loading ? (
             <div className="text-sm text-slate-400">Loading module…</div>
           ) : (
