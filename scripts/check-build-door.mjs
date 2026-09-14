@@ -120,6 +120,73 @@ check(
   )
 );
 
+console.log("\nbut it never opens onto removal");
+check(
+  "a client cannot remove a section, approved request or not",
+  failed(
+    await scenario(
+      "claude-test",
+      pending("claude-test"),
+      mk(REQ, "module_delete", `'{"module_id":"${row.project_id}"}'::jsonb`)
+    )
+  )
+);
+check(
+  "while the app still can",
+  !failed(
+    await scenario(
+      null,
+      "",
+      mk("null::uuid", "module_delete", `'{"module_id":"${row.project_id}"}'::jsonb`)
+    )
+  )
+);
+
+console.log("\na section over the store is the store's");
+check(
+  "a table nobody has is refused",
+  failed(
+    await scenario(
+      null,
+      "",
+      mk(
+        "null::uuid",
+        "module_insert",
+        `'{"name":"s","nav_label":"S","route":"/modules/s","source_table":"invoices"}'::jsonb`
+      )
+    )
+  )
+);
+check(
+  "one of the four is built",
+  !failed(
+    await scenario(
+      null,
+      "",
+      mk(
+        "null::uuid",
+        "module_insert",
+        `'{"name":"s","nav_label":"S","route":"/modules/s","source_table":"products"}'::jsonb`
+      )
+    )
+  )
+);
+check(
+  "and nothing can be seeded into it",
+  failed(
+    await scenario(
+      null,
+      `insert into public.modules (id, project_id, name, nav_label, route, source_table)
+       values ('55555555-5555-5555-5555-555555555555', '${row.project_id}', 'from-store', 'From Store', '/modules/from-store', 'products');`,
+      mk(
+        "null::uuid",
+        "records_insert",
+        `'{"module_id":"55555555-5555-5555-5555-555555555555","rows":[{"a":1}]}'::jsonb`
+      )
+    )
+  )
+);
+
 console.log("\nan approval is spent once");
 const twice = await scenario(
   "claude-test",

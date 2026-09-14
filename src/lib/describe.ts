@@ -200,6 +200,9 @@ const STORE_TOPICS: Array<{ table: string; words: RegExp; noun: string }> = [
  */
 export function storeOverlap(plan: AssistantPlan, store: StoreFacts | null): string[] {
   if (!store || plan.changeType !== "NEW_MODULE") return [];
+  // Nothing to warn about when the section IS the store's list rather
+  // than a second copy of it.
+  if (plan.newModule?.source_table) return [];
 
   const name = `${plan.newModule?.nav_label ?? ""} ${plan.newModule?.name ?? ""}`.trim();
   if (!name) return [];
@@ -246,6 +249,15 @@ function describePlanBody(
     case "NEW_MODULE": {
       const lines: string[] = [];
       const cols = plan.newSchema?.columns ?? [];
+      // Where the rows come from is the first thing worth knowing: a
+      // section over the store is read-only and always matches
+      // Shopify, and one they fill in themselves never will.
+      const src = plan.newModule?.source_table;
+      if (src) {
+        lines.push(
+          `Rows come from your ${src.replace("_", " ")} synced from Shopify — read-only, always the same list`
+        );
+      }
       if (cols.length) lines.push(`Fields: ${cols.map((c) => c.label).join(", ")}`);
       if (plan.features) lines.push(...describeFeaturesFull(plan.features, modules));
       if (plan.newRecords?.length) lines.push(`${plan.newRecords.length} example rows to start with`);

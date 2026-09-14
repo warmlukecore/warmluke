@@ -258,6 +258,12 @@ export interface AssistantPlan {
     icon: string;
     /** Section this sits inside — a uuid, a "#slug" from this batch, or null. */
     parent_id?: string | null;
+    /**
+     * Rows come from the connected store instead of from records the
+     * merchant types: "orders", "customers", "products",
+     * "inventory_levels". Read-only, and its columns are the store's.
+     */
+    source_table?: string | null;
   } | null;
   newSchema: UiSchema;
   moduleUpdate: {

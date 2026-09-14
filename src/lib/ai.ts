@@ -6,6 +6,7 @@
 // the apply route re-validates everything under the caller's RLS.
 // ─────────────────────────────────────────────────────────────
 
+import { isStoreTable, storeTableSchema } from "@/lib/store-read";
 import {
   ALLOWED_ICONS,
   COLUMN_TYPES,
@@ -114,7 +115,7 @@ Each plan must have exactly this shape:
 {
   "changeType": "UI_CHANGE" | "FIELD_ADD" | "NEW_MODULE" | "MODULE_UPDATE" | "MODULE_DELETE" | "FEATURE_UPDATE" | "RECORD_SEED" | "AUTOMATION_ADD" | "AUTOMATION_REMOVE",
   "targetModuleId": "<uuid, or null for NEW_MODULE>",
-  "newModule": { "name": "kebab-case-unique-slug", "nav_label": "Human Label", "icon": "<from icon list>", "parent_id": "<uuid or #slug of the section this sits inside, or null for top level>" } or null,
+  "newModule": { "name": "kebab-case-unique-slug", "nav_label": "Human Label", "icon": "<from icon list>", "parent_id": "<uuid or #slug of the section this sits inside, or null for top level>", "source_table": "<orders|customers|products|inventory_levels, ONLY when the section shows the connected store's own rows; otherwise null>" } or null,
   "newSchema": { "columns": [ { "field": "snake_case_field", "label": "Human Label", "type": "<type>" } ] },
   "moduleUpdate": { "nav_label": "...", "icon": "...", "sort_order": 1.5, "parent_id": "<uuid, #slug, or null to move it back to the top>" } or null,
   "deleteConfirmName": "<module 'name' slug for MODULE_DELETE, else null>",
@@ -137,6 +138,7 @@ HOW TO CHOOSE changeType:
 - UI_CHANGE — reorder/relabel/retype existing columns only. All existing fields kept.
 - FIELD_ADD — keep all existing columns, append new one(s).
 - NEW_MODULE — a new app section. Choose its "view" from how the owner works. Put its "features" (filters, stats, row actions, search, sort) in THIS SAME plan — a separate FEATURE_UPDATE cannot target a module that does not exist yet. 3-8 columns matched to what the user described; ALWAYS include 4-6 realistic demo rows in newRecords, using THEIR vocabulary and plausible values for THEIR trade (field names must match the schema exactly; money as numbers, dates "YYYY-MM-DD").
+- NEW_MODULE with "source_table" — the section SHOWS the store's own rows rather than rows they type. Use it whenever they mean the data already synced from Shopify ("our products", "the orders that came in"). Then: columns are the store's, so send newSchema as null and it is filled in for you; newRecords MUST be null, because nothing is seeded into the store's data; and the section is READ-ONLY — no row actions, no automations on it, and no extra column of their own (a "featured" tick or a note cannot be stored there). Say that in "limitations" when they asked for one. Filters, search, stats and sort all work.
 - MODULE_UPDATE — nav metadata only: rename label, change icon, move it inside another section (parent_id), reposition (sort_order: below the lowest existing value for top, midpoint like 1.5 for between, above max for bottom).
 - MODULE_DELETE — only when the user clearly asks to delete/remove a whole section. deleteConfirmName = exact name slug.
 - FEATURE_UPDATE — search box, dropdown filters, STAT CARDS (op: count | sum | avg | min | max over "value", an EXPRESSION evaluated per row — so a stock value is { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, not a bare column; optional "where" expression limits which rows count. Never label a stat as something the expression does not actually compute), default sort, ROW ACTION buttons (a one-click change to that row: "set" maps field -> EXPRESSION, and the optional "when" is an EXPRESSION deciding whether the button shows on that row — same operators as automations, so "only while it isn't Done" is { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }), or SCAN MODE (a scan-and-go bar: lookupField = the code column scanned into it, action.set = field -> expression applied to the matched row, sequenceField = a numeric column that must never go backwards between scans, for picking or queue order). It works with any USB or Bluetooth barcode scanner, which types the code like a keyboard — there is no camera scanning. A scan that matches nothing changes NOTHING: the person sees it on screen and that is the whole safeguard. Nothing is recorded, so never add a "scan errors" or "mistakes" count — no rule can fill it, and a stat built on it counts successful scans instead. Scanning only reaches rows currently in view, so the section needs a filter that narrows to the job in hand. Provide the FULL new config.
@@ -283,7 +285,7 @@ function storeBlock(store: StoreContext | null, projectCurrency: string): string
       `Already here${store.importing ? ", and still importing, so these are partial" : ""}: ${rows}.`
     );
     lines.push(
-      `Design on top of it. Never propose a section whose purpose is to re-enter this data by hand — if their request overlaps it, say plainly in "limitations" that what you are building would be a separate list from their Shopify orders, so they can decide.`
+      `Design on top of it. When what they want IS this data, build a section over it: NEW_MODULE with "source_table" set to the table. Never propose a section whose purpose is to re-enter this data by hand — if you build a separate list anyway, say plainly in "limitations" that it will not match their Shopify data, so they can decide.`
     );
   }
 
@@ -444,6 +446,20 @@ export function validateFeatures(
 
   if (f.search && typeof f.search.enabled !== "boolean") {
     err(errors, "features.search.enabled must be true or false.");
+  }
+  // The fields it searches were never checked, so a design could
+  // promise "search over title, vendor" on a section with no vendor
+  // column — the box then quietly never matches on it.
+  if (f.search?.fields !== undefined && f.search.fields !== null) {
+    if (!Array.isArray(f.search.fields)) {
+      err(errors, "features.search.fields must be an array of field names.");
+    } else {
+      for (const name of f.search.fields) {
+        if (typeof name !== "string" || !hasField(name)) {
+          err(errors, `features.search.fields names "${name}", which is not a column here.`);
+        }
+      }
+    }
   }
   if (f.filters !== undefined && f.filters !== null) {
     if (!Array.isArray(f.filters)) {
@@ -879,6 +895,26 @@ export function validatePlan(
     if (plan.newModule?.icon && !(ALLOWED_ICONS as readonly string[]).includes(plan.newModule.icon)) {
       err(errors, `Icon "${plan.newModule.icon}" is not allowed.`);
     }
+
+    // A section over the store's own rows. Its columns are the store's,
+    // not whatever the model sent: the two have to agree or the rows
+    // render into columns that do not exist. Same rule the by-hand
+    // route has always enforced, now reachable from a design.
+    const src = plan.newModule?.source_table ?? null;
+    if (src != null) {
+      if (!isStoreTable(src)) {
+        err(errors, `"${src}" is not one of the store's tables.`);
+      } else {
+        plan.newSchema = storeTableSchema(src);
+        if (plan.newRecords?.length) {
+          err(
+            errors,
+            "A section built on the store cannot be seeded with rows — its rows are the store's. Set newRecords to null and say so in the design."
+          );
+        }
+        plan.newRecords = null;
+      }
+    }
     // A parent that doesn't exist would fail only at apply time, after
     // the owner had approved a design that cannot be built.
     const parentRef = plan.newModule?.parent_id;
@@ -893,7 +929,7 @@ export function validatePlan(
     // FEATURE_UPDATE in the same batch could not target it, because the
     // module does not exist until this plan is applied.
     if (plan.features) {
-      validateFeatures(plan.features, columns, errors);
+      validateFeatures(plan.features, plan.newSchema?.columns ?? columns, errors);
     }
     plan.targetModuleId = null;
   } else {

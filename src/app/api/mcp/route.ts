@@ -106,6 +106,16 @@ const TOOLS = [
   },
 ] as const;
 
+/**
+ * Removing a section takes every row in it and does not come back. In
+ * the app the owner types the section's name to confirm; there is no
+ * such moment in a chat window, so this never travels that way. The
+ * database refuses it too — this is only so the answer is a sentence
+ * rather than an error.
+ */
+const removals = (plans: AssistantPlan[]) =>
+  plans.filter((p) => p.changeType === "MODULE_DELETE").map((p) => p.deleteConfirmName ?? "a section");
+
 const ok = (id: RpcRequest["id"], result: Json) => NextResponse.json({ jsonrpc: "2.0", id, result });
 
 const rpcError = (id: RpcRequest["id"], code: number, message: string) =>
@@ -285,6 +295,18 @@ export async function POST(req: Request) {
       const plans =
         turn.reply.type === "blueprint" ? turn.reply.blueprint.plans : turn.reply.plans;
 
+      const gone = removals(plans);
+      if (gone.length) {
+        return ok(
+          id,
+          text({
+            error: "Removing a section cannot be done from here.",
+            note: `Tell the merchant to open Warmluke, choose the section, and type its name (${gone.join(", ")}) to confirm. Nothing has been requested or changed.`,
+            open: `${new URL(req.url).origin}/app/${project.id}`,
+          })
+        );
+      }
+
       const { data: requestId, error: err } = await db.rpc("abo_mcp_propose", {
         p_project: project.id,
         p_request: request,
@@ -343,6 +365,17 @@ export async function POST(req: Request) {
           text({
             error: "This request has no design attached — it predates approval from here.",
             note: "Call propose_change again with the same words to get one.",
+          })
+        );
+      }
+
+      const goneNow = removals(reqRow.plans);
+      if (goneNow.length) {
+        return ok(
+          id,
+          text({
+            error: "This design removes a section, which cannot be built from here.",
+            note: `In Warmluke, open the section and type its name (${goneNow.join(", ")}) to confirm. Nothing has changed.`,
           })
         );
       }

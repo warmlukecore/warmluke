@@ -168,6 +168,25 @@ async function validateAndApply(
   // ── NEW_MODULE ──────────────────────────────────────────────
   if (plan.changeType === "NEW_MODULE") {
     if (!plan.newModule) return { ok: false, errors: ["newModule missing"] };
+
+    // A section over the store needs a store. Checked here rather than
+    // trusted to the design: a store can be disconnected between the
+    // moment a plan is approved and the moment it is built.
+    const sourceTable = plan.newModule.source_table ?? null;
+    if (sourceTable) {
+      const { data: store } = await client
+        .from("stores")
+        .select("id")
+        .eq("project_id", projectId)
+        .eq("status", "connected")
+        .maybeSingle();
+      if (!store) {
+        return {
+          ok: false,
+          errors: ["No Shopify store is connected to this project, so there are no rows to show."],
+        };
+      }
+    }
     const maxSort = Math.max(0, ...moduleList.map((m) => m.sort_order ?? 0));
     const mod = await write("module_insert", {
       name: plan.newModule.name,
@@ -176,6 +195,7 @@ async function validateAndApply(
       route: `/modules/${plan.newModule.name}`,
       sort_order: maxSort + 1,
       parent_id: plan.newModule.parent_id ?? null,
+      source_table: sourceTable,
     });
 
     const schemaJson: SchemaJsonWithFeatures = {
@@ -187,14 +207,24 @@ async function validateAndApply(
       schema_json: schemaJson,
       version: 1,
       created_by: "ai",
-      change_description: `Created module "${plan.newModule.nav_label}"`,
+      change_description: sourceTable
+        ? `Showing ${sourceTable.replace("_", " ")} from the connected store`
+        : `Created module "${plan.newModule.nav_label}"`,
     });
 
     if (Array.isArray(plan.newRecords) && plan.newRecords.length > 0) {
       await write("records_insert", { module_id: mod.id, rows: plan.newRecords });
     }
 
-    return { ok: true, applied: { changeType: "NEW_MODULE", moduleId: mod.id, navLabel: plan.newModule.nav_label } };
+    return {
+      ok: true,
+      applied: {
+        changeType: "NEW_MODULE",
+        moduleId: mod.id,
+        navLabel: plan.newModule.nav_label,
+        ...(sourceTable ? { sourceTable } : {}),
+      },
+    };
   }
 
   // ── MODULE_DELETE ───────────────────────────────────────────
