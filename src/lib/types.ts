@@ -205,6 +205,13 @@ export interface StoreRow {
    * so rather than leaving a green dot on a store that answers 403.
    */
   token_expires_at: string | null;
+  /**
+   * When the 90-day refresh token stops working. THIS is the one that
+   * means reconnect: the access token above lasts an hour and is
+   * renewed on use, so its expiry passing is the normal state of a
+   * store nobody has touched since lunch.
+   */
+  refresh_token_expires_at: string | null;
   status: "pending" | "connected" | "disconnected";
   created_at: string;
 }

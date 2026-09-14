@@ -37,15 +37,26 @@ function ShopifyStatus({
   onReconnect: () => void;
   onDisconnect: () => void;
 }) {
-  // Shopify tokens last an hour and are renewed on use, so an expiry in
-  // the past means nothing has renewed it since.
-  const expired = !!store.token_expires_at && Date.parse(store.token_expires_at) < Date.now();
+  // The hour-long access token expiring is not a problem — it is
+  // renewed on the next call, and it has lapsed on every store nobody
+  // has touched since lunch. Reading it as broken put "Access expired"
+  // and a Reconnect button on a store that was working perfectly, which
+  // is the kind of false alarm that teaches people to ignore real ones.
+  //
+  // Reconnecting is only needed when the 90-day refresh token is gone
+  // or has run out, because then nothing can renew anything.
+  const expired =
+    // A store from before Shopify made tokens expire has neither date
+    // and works indefinitely; only judge one that has an expiry.
+    !!store.token_expires_at &&
+    (!store.refresh_token_expires_at ||
+      Date.parse(store.refresh_token_expires_at) < Date.now());
 
   const line =
     store.status === "pending"
       ? { tone: "text-amber-400", dot: "bg-amber-400", text: "Shopify never came back" }
       : expired
-        ? { tone: "text-amber-400", dot: "bg-amber-400", text: "Access expired" }
+        ? { tone: "text-amber-400", dot: "bg-amber-400", text: "Shopify access ran out" }
         : {
             tone: "text-slate-300",
             dot: "bg-emerald-400",

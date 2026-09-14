@@ -550,15 +550,23 @@ export default function ChatPanel({
       summary: string | null;
       plans: AssistantPlan[] | null;
       unmet: string[] | null;
+      status: string;
+      built_at: string | null;
     }>
   >([]);
   const loadRequests = useCallback(async () => {
     const { data } = await supabase
       .from("build_requests")
-      .select("id, request, client_id, created_at, summary, plans, unmet")
+      .select("id, request, client_id, created_at, summary, plans, unmet, status, built_at")
       .eq("project_id", projectId)
-      .eq("status", "pending")
-      .order("created_at", { ascending: false })
+      // Built ones stay. A build that came in through their own AI
+      // wrote nothing to this conversation, so once the row stopped
+      // being pending the only sign it ever happened was a section
+      // appearing in the sidebar — and a refresh took even the
+      // "it's live now" message away.
+      .in("status", ["pending", "built"])
+      .gt("created_at", new Date(Date.now() - 7 * 864e5).toISOString())
+      .order("created_at", { ascending: true })
       .limit(10);
     setRequests(data ?? []);
   }, [projectId]);
@@ -594,12 +602,18 @@ export default function ChatPanel({
    */
   async function buildRequest(r: { id: string; plans: AssistantPlan[] | null }) {
     if (!r.plans?.length) return;
-    setRequests((prev) => prev.filter((x) => x.id !== r.id));
     await onBuild(r.plans);
     await supabase
       .from("build_requests")
-      .update({ status: "built", resolved_at: new Date().toISOString() })
+      .update({
+        status: "built",
+        built_at: new Date().toISOString(),
+        resolved_at: new Date().toISOString(),
+      })
       .eq("id", r.id);
+    // Reloaded rather than removed: it becomes the record that this
+    // was built, which is the whole point of keeping it.
+    loadRequests();
   }
 
   async function dismissRequest(id: string) {
@@ -646,10 +660,12 @@ export default function ChatPanel({
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Keep the latest message in view.
+  // Keep the latest message in view. Request cards sit at the end of
+  // the same list, so they count as newest too — without them here, a
+  // build that just landed opens below the fold.
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
-  }, [messages.length, busy]);
+  }, [messages.length, requests.length, busy]);
 
   function send(text?: string) {
     const content = (text ?? input).trim();
@@ -754,107 +770,6 @@ export default function ChatPanel({
         ref={listRef}
         className="flex-1 space-y-3 overflow-y-auto px-4 py-4 thin-scroll"
       >
-        {/* What their own AI asked for, read in the conversation it
-            belongs to. As a banner above the header it pushed the
-            whole panel down and a long design covered the chat
-            entirely — the one place it must not be is on top of the
-            thing it is asking about. */}
-        {requests.length > 0 && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
-          <div className="text-[10px] font-semibold tracking-widest text-amber-700 uppercase">
-            Asked for by your AI
-          </div>
-          {requests.map((r) => (
-            <div key={r.id} className="mt-2">
-              <p className="text-[11px] leading-relaxed font-medium text-amber-900">{r.request}</p>
-              {/* The design their AI already read out, shown here word
-                  for word. Approving this builds exactly it — there is
-                  no second model turn that could produce something
-                  else, and no model call at all. */}
-              {/* What changes their mind stays out in the open: the
-                  warning, and what they asked for that this does not
-                  do. The field-by-field detail folds away — it is how
-                  the thing is built, not whether they want it.
-
-                  Rendered from the plans, the same source the
-                  sentences their AI read out were generated from, so
-                  the two cannot drift. */}
-              {r.plans?.length ? (
-                <div className="mt-1.5 space-y-1.5">
-                  {r.plans.map((plan, i) => {
-                    const d = describePlan(plan, modules, undefined, storeFacts);
-                    return (
-                      <div key={i}>
-                        <div className="text-[11px] font-semibold text-amber-900">{d.title}</div>
-                        {d.warnings?.map((w, k) => (
-                          <div
-                            key={k}
-                            className="mt-1 rounded border border-amber-300 bg-amber-100/70 px-2 py-1.5 text-[11px] leading-relaxed text-amber-900"
-                          >
-                            {w}
-                          </div>
-                        ))}
-                        {d.lines.length > 0 && (
-                          <details className="mt-1">
-                            <summary className="cursor-pointer list-none text-[10px] text-amber-700 hover:underline">
-                              Show details
-                            </summary>
-                            <ul className="mt-1 space-y-0.5 text-[11px] leading-relaxed text-amber-900/90">
-                              {d.lines.map((l, k) => (
-                                <li key={k}>· {l}</li>
-                              ))}
-                            </ul>
-                          </details>
-                        )}
-                      </div>
-                    );
-                  })}
-                  {r.unmet?.length ? (
-                    <div className="text-[11px] leading-relaxed text-amber-900">
-                      <span className="font-semibold">Not covered:</span>{" "}
-                      {r.unmet.join(" · ")}
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                // A request made before designs were attached, or one
-                // whose design could not be rebuilt. The text it was
-                // stored with is all there is.
-                r.summary && (
-                  <div className="mt-1.5 rounded-lg bg-white/70 px-2.5 py-2 text-[11px] leading-relaxed whitespace-pre-wrap text-amber-900">
-                    {r.summary}
-                  </div>
-                )
-              )}
-              <div className="mt-1.5 flex items-center gap-1.5">
-                {r.plans?.length ? (
-                  <button
-                    onClick={() => buildRequest(r)}
-                    disabled={busy}
-                    className="rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-amber-700 disabled:opacity-40"
-                  >
-                    Build it
-                  </button>
-                ) : null}
-                {features.chat && (
-                  <button
-                    onClick={() => openRequest(r)}
-                    className="rounded-lg border border-amber-300 px-2 py-1 text-[10px] font-medium text-amber-800 hover:bg-amber-100"
-                  >
-                    {r.plans?.length ? "Change it first" : "Design it"}
-                  </button>
-                )}
-                <button
-                  onClick={() => dismissRequest(r.id)}
-                  className="ml-auto text-[10px] text-amber-700 hover:underline"
-                >
-                  Dismiss
-                </button>
-              </div>
-            </div>
-          ))}
-          </div>
-        )}
         {messages.length === 0 && (
           <div className="space-y-3">
             <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
@@ -1200,6 +1115,131 @@ export default function ChatPanel({
           );
         })}
 
+        {/* What their own AI asked for, read in the conversation it
+            belongs to. As a banner above the header it pushed the
+            whole panel down and a long design covered the chat
+            entirely — the one place it must not be is on top of the
+            thing it is asking about. */}
+        {requests.map((r) => {
+          const done = r.status === "built";
+          return (
+            <div
+              key={r.id}
+              className={`rounded-xl border px-3 py-2.5 ${
+                done ? "border-slate-200 bg-slate-50" : "border-amber-200 bg-amber-50"
+              }`}
+            >
+              <div
+                className={`text-[10px] font-semibold tracking-widest uppercase ${
+                  done ? "text-slate-400" : "text-amber-700"
+                }`}
+              >
+                {done
+                  ? `Built by your AI${r.built_at ? ` · ${new Date(r.built_at).toLocaleString()}` : ""}`
+                  : "Asked for by your AI"}
+              </div>
+              <div className="mt-2">
+              <p className={`text-[11px] leading-relaxed font-medium ${done ? "text-slate-700" : "text-amber-900"}`}>{r.request}</p>
+              {/* What changes their mind stays out in the open: the
+                  warning, and what they asked for that this does not
+                  do. The field-by-field detail folds away — it is how
+                  the thing is built, not whether they want it.
+
+                  Rendered from the plans, the same source the
+                  sentences their AI read out were generated from, so
+                  the two cannot drift. */}
+              {r.plans?.length ? (
+                <div className="mt-1.5 space-y-1.5">
+                  {r.plans.map((plan, i) => {
+                    const d = describePlan(plan, modules, undefined, storeFacts);
+                    return (
+                      <div key={i}>
+                        <div
+                          className={`text-[11px] font-semibold ${done ? "text-slate-700" : "text-amber-900"}`}
+                        >
+                          {d.title}
+                        </div>
+                        {d.warnings?.map((w, k) => (
+                          <div
+                            key={k}
+                            className="mt-1 rounded border border-amber-300 bg-amber-100/70 px-2 py-1.5 text-[11px] leading-relaxed text-amber-900"
+                          >
+                            {w}
+                          </div>
+                        ))}
+                        {d.lines.length > 0 && (
+                          <details className="mt-1">
+                            <summary
+                              className={`cursor-pointer list-none text-[10px] hover:underline ${
+                                done ? "text-slate-500" : "text-amber-700"
+                              }`}
+                            >
+                              {done ? "What was built" : "Show details"}
+                            </summary>
+                            <ul
+                              className={`mt-1 space-y-0.5 text-[11px] leading-relaxed ${
+                                done ? "text-slate-600" : "text-amber-900/90"
+                              }`}
+                            >
+                              {d.lines.map((l, k) => (
+                                <li key={k}>· {l}</li>
+                              ))}
+                            </ul>
+                          </details>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {r.unmet?.length ? (
+                    <div
+                      className={`text-[11px] leading-relaxed ${done ? "text-slate-600" : "text-amber-900"}`}
+                    >
+                      <span className="font-semibold">Not covered:</span>{" "}
+                      {r.unmet.join(" · ")}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                // A request made before designs were attached, or one
+                // whose design could not be rebuilt. The text it was
+                // stored with is all there is.
+                r.summary && (
+                  <div className="mt-1.5 rounded-lg bg-white/70 px-2.5 py-2 text-[11px] leading-relaxed whitespace-pre-wrap text-amber-900">
+                    {r.summary}
+                  </div>
+                )
+              )}
+              {!done && (
+              <div className="mt-1.5 flex items-center gap-1.5">
+                {r.plans?.length ? (
+                  <button
+                    onClick={() => buildRequest(r)}
+                    disabled={busy}
+                    className="rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-amber-700 disabled:opacity-40"
+                  >
+                    Build it
+                  </button>
+                ) : null}
+                {features.chat && (
+                  <button
+                    onClick={() => openRequest(r)}
+                    className="rounded-lg border border-amber-300 px-2 py-1 text-[10px] font-medium text-amber-800 hover:bg-amber-100"
+                  >
+                    {r.plans?.length ? "Change it first" : "Design it"}
+                  </button>
+                )}
+                <button
+                  onClick={() => dismissRequest(r.id)}
+                  className="ml-auto text-[10px] text-amber-700 hover:underline"
+                >
+                  Dismiss
+                </button>
+              </div>
+              )}
+            </div>
+          </div>
+          );
+        })}
         {busy && (
           <div className="flex items-center gap-2 text-xs text-slate-400">
             <span className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
