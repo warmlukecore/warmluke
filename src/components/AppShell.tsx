@@ -7,6 +7,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { watchRows } from "@/lib/live";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
 import { apiFetch, takePendingPrompt } from "@/lib/auth";
@@ -375,6 +376,36 @@ export default function AppShell({
   useEffect(() => {
     loadModules();
   }, [loadModules]);
+
+  // Anything built while this screen is open — by their own AI, by a
+  // second tab, by a colleague — arrives here. Without it the page
+  // keeps showing what it loaded on open, and looks no different from
+  // one that is up to date.
+  useEffect(() => {
+    return watchRows(`project:${projectId}`, [
+      { table: "modules", filter: `project_id=eq.${projectId}`, onChange: loadModules },
+      // Rows live under the project, so this catches a seed into any
+      // section; the reload only touches the one being looked at.
+      {
+        table: "records",
+        filter: `project_id=eq.${projectId}`,
+        onChange: () => {
+          if (selectedModuleId) loadModuleData(selectedModuleId);
+        },
+      },
+      ...(selectedModuleId
+        ? [
+            {
+              // Columns and features of the open section. ui_schemas
+              // has no project_id, so this narrows by module instead.
+              table: "ui_schemas",
+              filter: `module_id=eq.${selectedModuleId}`,
+              onChange: () => loadModuleData(selectedModuleId),
+            },
+          ]
+        : []),
+    ]);
+  }, [projectId, selectedModuleId, loadModules, loadModuleData]);
 
   // Which groups are folded is a per-project preference, so it is kept
   // per project rather than globally.

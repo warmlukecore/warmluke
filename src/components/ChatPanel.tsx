@@ -7,6 +7,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { watchRows } from "@/lib/live";
 import GenericRenderer from "@/components/GenericRenderer";
 import { describeAutomation, describePlan, type StoreFacts } from "@/lib/describe";
 import { storeOverview } from "@/lib/store-read";
@@ -563,6 +564,17 @@ export default function ChatPanel({
   useEffect(() => {
     loadRequests();
   }, [loadRequests]);
+
+  // A request made in Claude a moment ago should appear here without
+  // the merchant being told to refresh a page nobody told them was
+  // stale.
+  useEffect(
+    () =>
+      watchRows(`requests:${projectId}`, [
+        { table: "build_requests", filter: `project_id=eq.${projectId}`, onChange: loadRequests },
+      ]),
+    [projectId, loadRequests]
+  );
 
   /** Hands one to the builder, as though the owner had typed it. */
   async function openRequest(r: { id: string; request: string }) {
