@@ -15,6 +15,7 @@ import {
   normalizeShopDomain,
   scopesFor,
   verifyCallbackHmac,
+  verifyWebhookHmac,
 } from "../src/lib/shopify.ts";
 
 const fails = [];
@@ -102,6 +103,18 @@ check("a future-dated callback is refused", refuses(() => verifyCallbackHmac({ .
 const fresh = { ...base, timestamp: String(Math.floor(now.getTime() / 1000) - 60) };
 check("a one-minute-old callback still passes", !refuses(() => verifyCallbackHmac({ ...fresh, hmac: sign(fresh) }, SECRET, now)));
 check("a missing timestamp is refused", refuses(() => verifyCallbackHmac({ ...good, timestamp: undefined }, SECRET, now)));
+
+console.log("\nand a webhook body has to be signed too");
+const body = JSON.stringify({ shop_domain: "acme.myshopify.com", customer: { id: 12345 } });
+const digest = (b, secret = SECRET) => createHmac("sha256", secret).update(b, "utf8").digest("base64");
+check("a correctly signed body passes", !refuses(() => verifyWebhookHmac(body, digest(body), SECRET)));
+check("an unsigned body is refused", refuses(() => verifyWebhookHmac(body, null, SECRET)));
+check("a body signed with another secret is refused", refuses(() => verifyWebhookHmac(body, digest(body, "wrong"), SECRET)));
+// The one that matters: a tampered body keeps the old, still-valid-looking
+// signature. Verifying the parsed object instead of the bytes would pass this.
+const tampered = JSON.stringify({ shop_domain: "attacker.myshopify.com", customer: { id: 12345 } });
+check("a tampered body is refused", refuses(() => verifyWebhookHmac(tampered, digest(body), SECRET)));
+check("a short signature is refused", refuses(() => verifyWebhookHmac(body, "YWJj", SECRET)));
 
 console.log(fails.length === 0 ? "\nevery guard holds" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

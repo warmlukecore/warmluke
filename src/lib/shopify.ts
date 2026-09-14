@@ -104,6 +104,25 @@ export function verifyCallbackHmac(
   if (expected.length !== received.length || !timingSafeEqual(expected, received)) fail();
 }
 
+/**
+ * Verifies the signature on a webhook body.
+ *
+ * Different from the callback: Shopify signs the raw bytes and sends the
+ * digest base64 in a header, so the body must be read exactly as it
+ * arrived. Parsing it to JSON first and re-serialising changes the bytes,
+ * and then every signature fails.
+ */
+export function verifyWebhookHmac(rawBody: string, header: string | null, secret: string): void {
+  const fail = () => {
+    throw new ShopifyError("invalid_webhook", "This webhook didn't come from Shopify.");
+  };
+  if (!header) fail();
+
+  const expected = createHmac("sha256", secret).update(rawBody, "utf8").digest();
+  const received = Buffer.from(header as string, "base64");
+  if (expected.length !== received.length || !timingSafeEqual(expected, received)) fail();
+}
+
 /** Where to send the merchant so Shopify can ask them to approve us. */
 export function authorizeUrl(opts: {
   shop: string;
