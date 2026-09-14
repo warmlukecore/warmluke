@@ -198,6 +198,13 @@ export interface StoreRow {
   /** Null until an import has actually run — which is not the same as connected. */
   last_synced_at: string | null;
   history_from: string | null;
+  /**
+   * When Shopify's access token stops working. Shopify no longer issues
+   * non-expiring ones, so a connected store whose expiry has passed and
+   * which cannot be refreshed has to be reconnected — the dashboard says
+   * so rather than leaving a green dot on a store that answers 403.
+   */
+  token_expires_at: string | null;
   status: "pending" | "connected" | "disconnected";
   created_at: string;
 }

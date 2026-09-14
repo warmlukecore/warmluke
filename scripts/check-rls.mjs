@@ -133,6 +133,12 @@ try {
     (await S(`orders?id=eq.${ord.id}`, { method: "PATCH", body: JSON.stringify({ total: 1 }) })).json?.length === 0);
   check("staff cannot connect or alter a store",
     (await S(`stores?id=eq.${store.id}`, { method: "PATCH", body: JSON.stringify({ shop_domain: "hijacked.myshopify.com" }) })).json?.length === 0);
+  // The dashboard hides Disconnect from staff, but that is only a label.
+  // Disconnecting deletes the store and cascades to every order and
+  // customer under it, so the real refusal has to be here.
+  check("staff cannot disconnect the store",
+    (await S(`stores?id=eq.${store.id}`, { method: "DELETE" })).json?.length === 0);
+  check("the store survived that attempt", (await O(`stores?id=eq.${store.id}`)).json.length === 1);
   check("staff cannot read the access token",
     !(await S(`stores?id=eq.${store.id}&select=access_token`, { method: "PATCH", body: JSON.stringify({ access_token: "stolen" }) })).ok ||
       (await O(`stores?id=eq.${store.id}&select=access_token`)).json[0]?.access_token == null);
@@ -145,6 +151,10 @@ try {
       body: JSON.stringify({
         p_state: state, p_token: "shpat_test", p_timezone: "Asia/Kolkata",
         p_currency: "INR", p_country: "IN",
+        // Shopify tokens expire now, so the connect function stores the
+        // refresh token and both lifetimes alongside the access token.
+        p_refresh_token: "shprt_test", p_expires_in: 3600,
+        p_refresh_expires_in: 7776000,
       }),
     }).then((r) => r.json());
 

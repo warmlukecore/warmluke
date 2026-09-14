@@ -19,29 +19,73 @@ import type { ProjectRow, StoreRow } from "@/lib/types";
  *
  * Connected and synced are different things, and saying "synced" before
  * an import has run would be the app telling the owner their data is
- * there when it is not. A pending row that has sat too long is a failed
- * connection, and says so rather than spinning forever.
+ * there when it is not. Two other states are just as real and used to be
+ * invisible: a pending row that never came back from Shopify, and a
+ * connected store whose token has expired — both look fine on a card
+ * that only knows how to draw a green dot.
  */
-function ShopifyStatus({ store }: { store: StoreRow }) {
-  if (store.status === "pending") {
-    return (
-      <div className="text-xs text-amber-400">
-        Waiting for Shopify — <span className="text-slate-500">reopen to try again</span>
-      </div>
-    );
-  }
-  const synced = store.last_synced_at
-    ? `Synced ${new Date(store.last_synced_at).toLocaleDateString()}`
-    : "Not imported yet";
+function ShopifyStatus({
+  store,
+  isOwner,
+  busy,
+  onReconnect,
+  onDisconnect,
+}: {
+  store: StoreRow;
+  isOwner: boolean;
+  busy: boolean;
+  onReconnect: () => void;
+  onDisconnect: () => void;
+}) {
+  // Shopify tokens last an hour and are renewed on use, so an expiry in
+  // the past means nothing has renewed it since.
+  const expired = !!store.token_expires_at && Date.parse(store.token_expires_at) < Date.now();
+
+  const line =
+    store.status === "pending"
+      ? { tone: "text-amber-400", dot: "bg-amber-400", text: "Shopify never came back" }
+      : expired
+        ? { tone: "text-amber-400", dot: "bg-amber-400", text: "Access expired" }
+        : {
+            tone: "text-slate-300",
+            dot: "bg-emerald-400",
+            text: store.last_synced_at
+              ? `Synced ${new Date(store.last_synced_at).toLocaleDateString()}`
+              : "Not imported yet",
+          };
+
   return (
-    <div className="space-y-0.5">
-      <div className="flex items-center gap-1.5 text-xs text-slate-300">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+    <div className="space-y-1">
+      <div className={`flex items-center gap-1.5 text-xs ${line.tone}`}>
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${line.dot}`} />
         <span className="truncate">{store.shop_domain}</span>
       </div>
       <div className="text-[11px] text-slate-500">
-        {synced} · {store.timezone}
+        {line.text} · {store.timezone}
       </div>
+      {isOwner ? (
+        <div className="flex items-center gap-2 pt-0.5 text-[11px]">
+          <button
+            onClick={onReconnect}
+            disabled={busy}
+            className="font-medium text-blue-400 transition-colors hover:text-blue-300 disabled:opacity-40"
+          >
+            Reconnect
+          </button>
+          <span className="text-slate-700">·</span>
+          <button
+            onClick={onDisconnect}
+            disabled={busy}
+            className="text-slate-500 transition-colors hover:text-rose-400 disabled:opacity-40"
+          >
+            {busy ? "Disconnecting…" : "Disconnect"}
+          </button>
+        </div>
+      ) : (
+        // A member can see the store but not change it; a button that
+        // silently did nothing would be worse than no button.
+        <div className="pt-0.5 text-[11px] text-slate-600">Managed by the owner</div>
+      )}
     </div>
   );
 }
@@ -71,7 +115,48 @@ function DashboardInner() {
   // Asking per card would be twenty requests to draw one screen.
   const [stores, setStores] = useState<Record<string, StoreRow>>({});
   const [connecting, setConnecting] = useState<string | null>(null);
+  // The project whose store is mid-disconnect, so its two buttons go
+  // inert instead of accepting a second click on the same row.
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
+  const [storeError, setStoreError] = useState<string | null>(null);
   const storeOf = (projectId: string) => stores[projectId];
+
+  /** Reconnecting is the connect form again, with the address filled in. */
+  function reconnect(projectId: string) {
+    setStoreError(null);
+    setConnecting(projectId);
+  }
+
+  /**
+   * Disconnecting deletes the store row, and the cascade from 0018 takes
+   * its products, orders, customers and access token with it. That is
+   * what /privacy and /terms promise, so it is asked about plainly
+   * first rather than softened into "you can undo this".
+   */
+  async function disconnect(projectId: string) {
+    const store = stores[projectId];
+    if (!store || disconnecting) return;
+    const ok = window.confirm(
+      `Disconnect ${store.shop_domain}?\n\n` +
+        "Everything imported from it — products, stock, orders and customers — is deleted. " +
+        "Your Shopify store itself is not touched, and you can connect it again later."
+    );
+    if (!ok) return;
+
+    setDisconnecting(projectId);
+    setStoreError(null);
+    const { error } = await supabase.from("stores").delete().eq("id", store.id);
+    setDisconnecting(null);
+    if (error) {
+      setStoreError("That store couldn't be disconnected. Try again.");
+      return;
+    }
+    setStores((prev) => {
+      const next = { ...prev };
+      delete next[projectId];
+      return next;
+    });
+  }
   const connectFailure =
     searchParams.get("shopify") === "failed"
       ? (CONNECT_FAILURE[searchParams.get("reason") ?? ""] ??
@@ -195,9 +280,9 @@ function DashboardInner() {
           </button>
         </div>
 
-        {connectFailure && (
+        {(connectFailure || storeError) && (
           <div className="mt-6 rounded-xl border border-rose-900/60 bg-rose-950/40 px-4 py-3 text-sm text-rose-200">
-            {connectFailure}
+            {connectFailure ?? storeError}
           </div>
         )}
 
@@ -245,10 +330,23 @@ function DashboardInner() {
                   </div>
                 </Link>
                 <div className="border-t border-slate-800 px-5 py-3">
-                  {storeOf(p.id) ? (
-                    <ShopifyStatus store={storeOf(p.id)!} />
-                  ) : connecting === p.id ? (
-                    <ConnectShopify projectId={p.id} onCancel={() => setConnecting(null)} />
+                  {/* The form wins over the status: a reconnect starts
+                      from a store that is already there. */}
+                  {connecting === p.id ? (
+                    <ConnectShopify
+                      projectId={p.id}
+                      initialShop={storeOf(p.id)?.shop_domain ?? ""}
+                      submitLabel={storeOf(p.id) ? "Reconnect" : "Connect"}
+                      onCancel={() => setConnecting(null)}
+                    />
+                  ) : storeOf(p.id) ? (
+                    <ShopifyStatus
+                      store={storeOf(p.id)!}
+                      isOwner={p.owner_id === user.id}
+                      busy={disconnecting === p.id}
+                      onReconnect={() => reconnect(p.id)}
+                      onDisconnect={() => disconnect(p.id)}
+                    />
                   ) : (
                     <button
                       onClick={() => setConnecting(p.id)}

@@ -21,11 +21,17 @@ function explain(status: number, message?: string): string {
 export default function ConnectShopify({
   projectId,
   onCancel,
+  // Reconnecting is the same flow with the address already known, so it
+  // reuses this rather than growing a second near-identical component.
+  initialShop = "",
+  submitLabel = "Connect",
 }: {
   projectId: string;
   onCancel: () => void;
+  initialShop?: string;
+  submitLabel?: string;
 }) {
-  const [shop, setShop] = useState("");
+  const [shop, setShop] = useState(initialShop);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,6 +60,7 @@ export default function ConnectShopify({
     <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
       <input
         autoFocus
+        onFocus={(e) => e.currentTarget.select()}
         value={shop}
         onChange={(e) => setShop(e.target.value)}
         onKeyDown={(e) => {
@@ -84,7 +91,7 @@ export default function ConnectShopify({
           disabled={busy || !shop.trim()}
           className="flex-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-40"
         >
-          {busy ? "Opening Shopify…" : "Connect"}
+          {busy ? "Opening Shopify…" : submitLabel}
         </button>
         <button
           onClick={onCancel}
