@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getUserClient } from "@/lib/supabase-server";
 import { dayRangeInZone, listStores, searchOrders, storeOverview } from "@/lib/store-read";
+import { blueprintAsText, runTurn } from "@/lib/engine";
+import { applyPlans } from "@/lib/apply";
+import type { AssistantPlan, ModuleRow, ProjectRow } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -12,9 +15,11 @@ export const runtime = "nodejs";
  * and a server that keeps no state cannot lose any — nothing here
  * streams, so pretending to would be ceremony.
  *
- * Read-only on purpose. A tool that could change a merchant's data from
- * a sentence typed into a chat window is a different product with a
- * different conversation about consent.
+ * Store data is read-only. The app itself can be changed, but only
+ * along one path: propose_change designs it here — the assistant never
+ * writes plans — and approve_change builds it once the merchant has
+ * heard that design and said yes. The database enforces this; a token
+ * carrying client_id cannot write anything else at all.
  */
 
 /**
@@ -70,7 +75,7 @@ const TOOLS = [
   {
     name: "propose_change",
     description:
-      "Ask for something to be built or changed in the merchant's Warmluke app — a new section, a rule, a fix. Describe the problem in their own words; the design is made in Warmluke and shown to them for approval, so nothing changes until they say yes. Use this instead of claiming a change was made.",
+      "Ask for something to be built or changed in the merchant's Warmluke app — a new section, a rule, a fix. Describe the problem in their own words, not a database design. Warmluke designs it and returns the plan; read that plan back to the merchant word for word and, if they approve, call approve_change. Nothing is built until then.",
     inputSchema: {
       type: "object",
       properties: {
@@ -85,6 +90,18 @@ const TOOLS = [
         },
       },
       required: ["request"],
+    },
+  },
+  {
+    name: "approve_change",
+    description:
+      "Build a design the merchant has just approved. Call this ONLY after reading the design from propose_change back to them and hearing them agree — it changes their live app. Pass the request_id propose_change returned.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        request_id: { type: "string", description: "The id propose_change returned." },
+      },
+      required: ["request_id"],
     },
   },
 ] as const;
@@ -159,7 +176,7 @@ export async function POST(req: Request) {
       capabilities: { tools: {} },
       serverInfo: { name: "warmluke", version: "0.1.0" },
       instructions:
-        "Reads one merchant's connected Shopify store. Everything here is read-only, and a day always means a day in the store's own timezone.",
+        "One merchant's Warmluke app and connected Shopify store. Store data is read-only, and a day always means a day in the store's own timezone. Changes to their app go through propose_change, which returns a design, and approve_change, which builds it only after they have heard the design and agreed.",
     });
   }
 
@@ -173,6 +190,195 @@ export async function POST(req: Request) {
   const { name, arguments: args = {} } = params as { name?: string; arguments?: Json };
 
   try {
+    if (name === "propose_change") {
+      const request = String(args.request ?? "").trim();
+      if (!request) {
+        return ok(id, text({ error: "Say what they want built." }));
+      }
+      // Which app. A merchant with one project should not be asked;
+      // a merchant with several must not have one picked for them.
+      const { data: projects } = await db.from("projects").select("*");
+      const list = (projects ?? []) as ProjectRow[];
+      const wantedProject = (args.project_id as string | undefined)?.trim();
+      const project = wantedProject
+        ? list.find((p) => p.id === wantedProject)
+        : list.length === 1
+          ? list[0]
+          : null;
+      if (!project) {
+        return ok(
+          id,
+          text({
+            error: list.length
+              ? "Which app is this for? Pass project_id."
+              : "This account has no app yet.",
+            projects: list.map((p) => ({ id: p.id, name: p.name })),
+          })
+        );
+      }
+
+      const { data: modules } = await db
+        .from("modules")
+        .select("*")
+        .eq("project_id", project.id)
+        .order("sort_order", { ascending: true });
+      const moduleList = (modules ?? []) as ModuleRow[];
+
+      // The design is made here, by the same engine the app uses, from
+      // the same gates. Claude supplies the sentence and nothing else —
+      // letting it write plans would put every structural gate on the
+      // wrong side of the fence.
+      const turn = await runTurn({
+        client: db,
+        project,
+        modules: moduleList,
+        message: request,
+        signal: req.signal,
+      });
+      if (!turn.ok) {
+        return ok(
+          id,
+          text({
+            error: "Warmluke could not turn that into a design it trusts.",
+            detail: turn.errors.slice(0, 3),
+            note: "Say it again with more about how they actually work, and what should happen when.",
+          })
+        );
+      }
+
+      // Questions come back unanswered rather than guessed at. The
+      // merchant is already in this conversation, so they answer here
+      // and the request comes back complete — no trip to the app to
+      // fill in what could have been asked out loud.
+      if (turn.reply.type === "clarify") {
+        return ok(
+          id,
+          text({
+            status: "needs answers",
+            note: "Nothing has been requested yet. Ask the merchant these, then call propose_change again with their answers included.",
+            message: turn.reply.message,
+            questions: turn.reply.questions,
+          })
+        );
+      }
+
+      const design = blueprintAsText(turn.reply, moduleList, turn.store);
+      const plans =
+        turn.reply.type === "blueprint" ? turn.reply.blueprint.plans : turn.reply.plans;
+
+      const { data: requestId, error: err } = await db.rpc("abo_mcp_propose", {
+        p_project: project.id,
+        p_request: request,
+        p_plans: plans,
+        p_summary: design,
+      });
+      if (err) return ok(id, text({ error: err.message }));
+
+      const origin = new URL(req.url).origin;
+      return ok(
+        id,
+        text({
+          // Said plainly so the model reports it plainly: nothing has
+          // been built, and somebody still has to say yes.
+          status: "waiting for approval",
+          note: "Nothing has changed yet. Read this design back to the merchant word for word. If they approve, call approve_change with the request_id.",
+          request_id: requestId,
+          design,
+          open: `${origin}/app/${project.id}`,
+        })
+      );
+    }
+
+    if (name === "approve_change") {
+      const requestId = String(args.request_id ?? "").trim();
+      if (!requestId) return ok(id, text({ error: "Which request? Pass request_id." }));
+
+      // RLS already limits this to the merchant's own requests.
+      const { data: rows } = await db
+        .from("build_requests")
+        .select("id, project_id, request, plans, summary, status")
+        .eq("id", requestId)
+        .limit(1);
+      const reqRow = rows?.[0] as
+        | { id: string; project_id: string; request: string; plans: AssistantPlan[] | null; summary: string | null; status: string }
+        | undefined;
+      if (!reqRow) return ok(id, text({ error: "No such request on this account." }));
+      if (reqRow.status === "built") {
+        return ok(id, text({ status: "already built", note: "This design was already applied. Nothing was built again." }));
+      }
+      if (reqRow.status === "opened") {
+        return ok(
+          id,
+          text({
+            error: "The merchant already opened this in Warmluke and is designing it there.",
+            note: "Leave it to them rather than building a second copy.",
+          })
+        );
+      }
+      if (reqRow.status === "dismissed") {
+        return ok(id, text({ error: "The merchant dismissed this request. Propose it again if they changed their mind." }));
+      }
+      if (!reqRow.plans?.length) {
+        return ok(
+          id,
+          text({
+            error: "This request has no design attached — it predates approval from here.",
+            note: "Call propose_change again with the same words to get one.",
+          })
+        );
+      }
+
+      // Claim it first. Two assistants approving at once would
+      // otherwise both build, and the merchant would get the section
+      // twice.
+      const { data: claim, error: claimErr } = await db.rpc("abo_build", {
+        p_project: reqRow.project_id,
+        p_request: reqRow.id,
+        p_op: "request_claim",
+        p_payload: {},
+      });
+      if (claimErr) return ok(id, text({ error: claimErr.message }));
+      if (Number((claim as { count?: number } | null)?.count ?? 0) === 0) {
+        return ok(id, text({ status: "already being built", note: "Somebody is applying this right now." }));
+      }
+
+      const { applied, errors } = await applyPlans(db, reqRow.project_id, reqRow.plans, reqRow.id);
+
+      if (applied.length === 0) {
+        await db.rpc("abo_build", {
+          p_project: reqRow.project_id,
+          p_request: reqRow.id,
+          p_op: "request_release",
+          p_payload: {},
+        });
+        return ok(id, text({ status: "not built", errors: errors.slice(0, 3) }));
+      }
+
+      await db.rpc("abo_build", {
+        p_project: reqRow.project_id,
+        p_request: reqRow.id,
+        p_op: "request_built",
+        p_payload: {},
+      });
+
+      const origin = new URL(req.url).origin;
+      // A partial build is said out loud. Reporting only the parts
+      // that worked would hand the merchant half a feature and no sign
+      // that the rest is missing.
+      return ok(
+        id,
+        text({
+          status: errors.length ? "partly built" : "built",
+          built: applied,
+          ...(errors.length ? { not_built: errors.slice(0, 3) } : {}),
+          note: errors.length
+            ? "Some of it went in and some did not. Tell the merchant exactly which, and what is still missing."
+            : "It is live in their app now.",
+          open: `${origin}/app/${reqRow.project_id}`,
+        })
+      );
+    }
+
     // RLS decides which stores exist for this caller, so an account
     // with none gets an answer saying so rather than an empty list that
     // reads as "you have no orders".
@@ -194,53 +400,6 @@ export async function POST(req: Request) {
 
     if (name === "store_overview") {
       return ok(id, text(await storeOverview(db, store.id)));
-    }
-
-    if (name === "propose_change") {
-      const request = String(args.request ?? "").trim();
-      if (!request) {
-        return ok(id, text({ error: "Say what they want built." }));
-      }
-      // Which app. A merchant with one project should not be asked;
-      // a merchant with several must not have one picked for them.
-      const { data: projects } = await db.from("projects").select("id, name");
-      const list = projects ?? [];
-      const wantedProject = (args.project_id as string | undefined)?.trim();
-      const project = wantedProject
-        ? list.find((p) => p.id === wantedProject)
-        : list.length === 1
-          ? list[0]
-          : null;
-      if (!project) {
-        return ok(
-          id,
-          text({
-            error: list.length
-              ? "Which app is this for? Pass project_id."
-              : "This account has no app yet.",
-            projects: list.map((p) => ({ id: p.id, name: p.name })),
-          })
-        );
-      }
-
-      const { data: requestId, error: err } = await db.rpc("abo_mcp_propose", {
-        p_project: project.id,
-        p_request: request,
-      });
-      if (err) return ok(id, text({ error: err.message }));
-
-      const origin = new URL(req.url).origin;
-      return ok(
-        id,
-        text({
-          // Said plainly so the model reports it plainly: nothing has
-          // been built, and the merchant has to look.
-          status: "waiting for the merchant",
-          note: "Nothing has changed yet. Warmluke will design this and show them a plan to approve.",
-          request_id: requestId,
-          open: `${origin}/app/${project.id}`,
-        })
-      );
     }
 
     if (name === "search_orders") {

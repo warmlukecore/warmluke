@@ -93,7 +93,9 @@ const names = (list.json?.result?.tools ?? []).map((t) => t.name);
 check("tools/list answers a signed-in caller", list.status === 200);
 check(
   "all three tools are offered",
-  ["store_overview", "search_orders", "propose_change"].every((t) => names.includes(t))
+  ["store_overview", "search_orders", "propose_change", "approve_change"].every((t) =>
+    names.includes(t)
+  )
 );
 check(
   "every tool has a schema a model can fill in",
@@ -241,25 +243,64 @@ try {
     check("an absurd limit is capped", (capped?.count ?? 0) <= 100);
 
     console.log("\nasking for something to be built");
-    // The point of the whole design: a request is recorded, and
-    // nothing is built. A tool that quietly created a section would
-    // put the merchant's approval card on the wrong side of the fence.
+    // The whole point of the design: the merchant hears the plan
+    // before anything is built, and hears it in words generated from
+    // the plans rather than from the model's prose.
     const before = await admin.from("modules").select("*", { count: "exact", head: true });
-    const proposed = toolText(
-      await rpc(
-        "tools/call",
-        {
-          name: "propose_change",
-          arguments: { request: "Orders keep getting packed wrong, sort that out" },
-        },
-        t
-      )
+    const ask = async (request) =>
+      toolText(await rpc("tools/call", { name: "propose_change", arguments: { request } }, t));
+    let proposed = await ask(
+      "Add a section called Packing Checks with the order number, who packed it, and whether it is done."
     );
+    // A vague request comes back as questions rather than a guess.
+    // Answering them is what a merchant would do, so the check does
+    // the same rather than treating it as a failure.
+    if (proposed?.status === "needs answers") {
+      check("questions come back instead of a guess", Array.isArray(proposed.questions));
+      proposed = await ask(
+        "Add a section called Packing Checks. Columns: order number (text), packed by (text), done (yes/no). No rules, no automations. Just the section."
+      );
+    }
     check("the request is recorded", !!proposed?.request_id);
+    check("and it comes back with the design", (proposed?.design ?? "").length > 20);
     check("and it says nothing has changed yet", /nothing has changed/i.test(proposed?.note ?? ""));
     check("with somewhere for the merchant to go", /\/app\//.test(proposed?.open ?? ""));
     const after = await admin.from("modules").select("*", { count: "exact", head: true });
     check("no section was created", after.count === before.count);
+
+    const { data: stored } = await admin
+      .from("build_requests")
+      .select("plans, summary")
+      .eq("id", proposed.request_id)
+      .single();
+    check("the design is stored with the request", Array.isArray(stored?.plans));
+    check("and it is the same words the assistant read out", stored?.summary === proposed.design);
+
+    console.log("\napproving it, without leaving the conversation");
+    const approve = async (request_id) =>
+      toolText(await rpc("tools/call", { name: "approve_change", arguments: { request_id } }, t));
+
+    check(
+      "an id that is not theirs builds nothing",
+      /no such request/i.test((await approve("00000000-0000-0000-0000-000000000000"))?.error ?? "")
+    );
+
+    const built = await approve(proposed.request_id);
+    check("approving builds it", built?.status === "built" || built?.status === "partly built");
+    const afterBuild = await admin.from("modules").select("*", { count: "exact", head: true });
+    check("and the section is really there", afterBuild.count > before.count);
+
+    const again = await approve(proposed.request_id);
+    check("approving twice builds nothing twice", again?.status === "already built");
+
+    // Everything this check created, removed. A test that leaves a
+    // section behind is a test that changes the next run's answers.
+    const { data: madeModules } = await admin
+      .from("modules")
+      .select("id")
+      .eq("project_id", (await admin.from("build_requests").select("project_id").eq("id", proposed.request_id).single()).data.project_id)
+      .ilike("nav_label", "%packing%");
+    for (const m of madeModules ?? []) await admin.from("modules").delete().eq("id", m.id);
 
     check(
       "an empty request is refused",

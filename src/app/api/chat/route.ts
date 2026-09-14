@@ -1,17 +1,8 @@
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getUserClient } from "@/lib/supabase-server";
-import {
-  buildSystemPrompt,
-  buildUserMessage,
-  callAnthropicChat,
-  findGaps,
-  parseReply,
-  type ChatTurn,
-  type StoreContext,
-} from "@/lib/ai";
-import { storeOverview } from "@/lib/store-read";
-import { describePlan } from "@/lib/describe";
+import { MAX_REPAIR_ATTEMPTS, runTurn } from "@/lib/engine";
+import type { ChatTurn } from "@/lib/ai";
 import type {
   AssistantReply,
   FeatureSchema,
@@ -78,14 +69,6 @@ type SchemaJsonWithFeatures = UiSchema & { features?: FeatureSchema | null };
 
 /** How many past turns to replay. Enough for a full discovery loop. */
 const HISTORY_LIMIT = 30;
-
-/**
- * Validation errors are the assistant's own mistakes — a bad column type,
- * a name that is already taken. Handing them straight to the owner makes
- * them debug the AI. Instead we feed the errors back and let it correct
- * itself; only a repeated failure surfaces.
- */
-const MAX_REPAIR_ATTEMPTS = 2;
 
 /**
  * Each turn is a large model call, and the repair loop can triple it.
@@ -228,120 +211,33 @@ export async function POST(req: Request) {
     // creating things the owner never agreed to.
     const blueprintShown = rows.some((m) => m.ptype === "blueprint");
 
-    // Module context rides on the newest turn only — it's the state now,
-    // and stale copies in history would just confuse the model.
-    const userTurn = buildUserMessage(message, moduleId ?? null, currentSchema, currentFeatures);
-
     // The store the assistant is designing on top of, if there is one.
-    // Fetched through the caller's own client, so a project without a
-    // store — or a member who cannot see it — simply gets null and the
-    // prompt is exactly what it was before.
-    const { data: storeRow } = await client
-      .from("stores")
-      .select("id, shop_domain, timezone, currency")
-      .eq("project_id", projectId)
-      .eq("status", "connected")
-      .maybeSingle();
+    // One engine, two callers. The MCP tool designs a merchant's
+    // request through this same function, so the gates cannot drift
+    // apart between the two ways in.
+    const turn = await runTurn({
+      client,
+      project: proj,
+      modules: moduleList,
+      message,
+      history,
+      currentSchema,
+      currentFeatures,
+      blueprintShown,
+      moduleId: moduleId ?? null,
+      signal: req.signal,
+    });
 
-    let store: StoreContext | null = null;
-    if (storeRow) {
-      const overview = await storeOverview(client, storeRow.id as string);
-      const { data: runs } = await client
-        .from("import_runs")
-        .select("status")
-        .eq("store_id", storeRow.id);
-      const runList = (runs ?? []) as Array<{ status: string }>;
-      store = {
-        shop_domain: storeRow.shop_domain as string,
-        timezone: storeRow.timezone as string,
-        currency: storeRow.currency as string,
-        // Counts quoted mid-import are partial, and a design built on
-        // "you have 4 orders" is wrong if 4,000 are still arriving.
-        importing: runList.length === 0 || runList.some((r) => r.status !== "done"),
-        counts: overview?.counts ?? {},
-      };
-    }
-
-    const system = buildSystemPrompt(moduleList, proj.name, proj.locale, proj.currency, store);
-
-    // Repair loop: the rejected attempt and its errors stay in the turns
-    // sent to the model, but are never persisted — replaying a malformed
-    // reply from history would only teach it to repeat the mistake.
-    const attemptTurns: ChatTurn[] = [{ role: "user", content: userTurn }];
-    let raw = "";
-    let parsed = null as ReturnType<typeof parseReply> | null;
-    let repairs = 0;
-    // Which gate fired, not just how often something did. Guessing at
-    // that is how an afternoon goes into the wrong fix: the repair count
-    // alone cannot tell a malformed shape from a design that missed the
-    // point, and those want opposite remedies.
-    const repairErrors: string[] = [];
-
-    for (let attempt = 0; attempt <= MAX_REPAIR_ATTEMPTS; attempt++) {
-      raw = await callAnthropicChat(system, [...history, ...attemptTurns], req.signal);
-      parsed = parseReply(raw, moduleList, currentSchema, currentFeatures);
-
-      // Structural gate, enforced here rather than trusted to the prompt.
-      if (
-        parsed.ok &&
-        parsed.reply.type === "plans" &&
-        !blueprintShown &&
-        parsed.reply.plans.some((pl) => pl.changeType === "NEW_MODULE")
-      ) {
-        parsed = {
-          ok: false,
-          errors: [
-            "You tried to create new sections before showing the owner a design. Reply with a \"blueprint\" instead so they can approve it first.",
-          ],
-        };
-      }
-
-      if (parsed.ok) break;
-
-      repairs = attempt + 1;
-      repairErrors.push(...parsed.errors);
-      if (attempt === MAX_REPAIR_ATTEMPTS) break;
-      attemptTurns.push(
-        { role: "assistant", content: raw },
-        {
-          role: "user",
-          content: `Your previous reply was rejected by the validator:\n${parsed.errors
-            .map((e) => `- ${e}`)
-            .join("\n")}\n\nFix every one of these and reply again with the corrected JSON only. Do not apologise or explain — just the corrected reply. If a module name is already taken, either target the existing module instead of creating a new one, or choose a different name.`,
-        }
-      );
-    }
-
-    if (!parsed || !parsed.ok) {
+    if (!turn.ok) {
       return NextResponse.json(
         {
           conversationId: convId,
-          repairs,
-          errors: parsed?.errors ?? ["The assistant could not produce a valid reply."],
+          repairs: turn.repairs,
+          errors: turn.errors,
           hint: `The assistant tried ${MAX_REPAIR_ATTEMPTS + 1} times and its plan still failed validation, so nothing was changed. Try rephrasing your request.`,
         },
         { status: 200 }
       );
-    }
-
-    // Gates cover the grammar; this covers the judgment. Run only on a
-    // blueprint, because that is the one moment the owner is being asked
-    // to approve something, and the only place saying "this does not do
-    // X" still changes the outcome.
-    if (parsed.reply.type === "blueprint") {
-      const built = parsed.reply.blueprint.plans
-        .map((pl) => {
-          const d = describePlan(pl, moduleList, currentSchema?.columns, store);
-          return [d.title, ...d.lines].join("\n  ");
-        })
-        .join("\n");
-      const gaps = await findGaps(message.trim(), built, req.signal);
-      const existing = parsed.reply.blueprint.unmet ?? [];
-      const seen = new Set(existing.map((u) => u.toLowerCase().trim()));
-      parsed.reply.blueprint.unmet = [
-        ...existing,
-        ...gaps.filter((g) => !seen.has(g.toLowerCase().trim())),
-      ].slice(0, 6);
     }
 
     if (isNewConversation) {
@@ -354,10 +250,18 @@ export async function POST(req: Request) {
       convId = created.id as string;
     }
 
-    await persistTurn(client, convId!, userTurn, message.trim(), raw, parsed.reply, repairErrors);
+    await persistTurn(
+      client,
+      convId!,
+      turn.userTurn,
+      message.trim(),
+      turn.raw,
+      turn.reply,
+      turn.repairErrors
+    );
     await client.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
 
-    return NextResponse.json({ conversationId: convId, reply: parsed.reply, repairs });
+    return NextResponse.json({ conversationId: convId, reply: turn.reply, repairs: turn.repairs });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json({ error: msg }, { status: 500 });
