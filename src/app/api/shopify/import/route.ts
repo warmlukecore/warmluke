@@ -1,11 +1,21 @@
 import { NextResponse } from "next/server";
 import { getUserClient } from "@/lib/supabase-server";
-import { RESOURCES, importPage, type Resource, type StoreToken } from "@/lib/shopify-import";
+import {
+  RESOURCES,
+  ensureFreshToken,
+  importPage,
+  type Resource,
+  type StoreToken,
+} from "@/lib/shopify-import";
+import { BULK_THRESHOLD, countOf, ingestSlice, pollBulk, startBulk } from "@/lib/shopify-bulk";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { ShopifyError } from "@/lib/shopify";
 import { isTransient } from "@/lib/retry";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
+
+type Db = SupabaseClient;
 
 /**
  * POST /api/shopify/import — pull one page, say what is left.
@@ -56,12 +66,21 @@ export async function POST(req: Request) {
 
   const run = byResource.get(resource);
   try {
-    const page = await importPage(
-      auth.client,
-      store as StoreToken,
-      resource,
-      run?.cursor ?? null
-    );
+    const step = await advance(auth.client, store as StoreToken, resource, run?.cursor ?? null);
+    // A bulk operation Shopify is still running has produced nothing to
+    // write yet. Saying so beats reporting zero rows imported, which
+    // reads as a finished import of an empty store.
+    if (step.waiting) {
+      return NextResponse.json({
+        done: false,
+        resource,
+        waiting: true,
+        imported: 0,
+        total: run?.imported ?? 0,
+        progress: summarise(runs ?? []),
+      });
+    }
+    const page = step;
 
     const imported = (run?.imported ?? 0) + page.imported;
     const row = {
@@ -98,6 +117,72 @@ export async function POST(req: Request) {
       { status: 502 }
     );
   }
+}
+
+/**
+ * One bounded step of one resource, by whichever route suits the size.
+ *
+ * Paging is right for a small store and cannot finish a large one; a
+ * bulk operation is the reverse. Which one is in play is held in the
+ * cursor, so a half-finished import resumes into the same machine it
+ * started in — nothing here remembers anything between requests.
+ *
+ *   null            — nothing started yet: count, then choose
+ *   <cursor>        — paging, Shopify's own cursor
+ *   bulk:<gid>      — Shopify is building the file
+ *   read:<offset>|<url> — reading the file it built
+ */
+async function advance(
+  db: Db,
+  store: StoreToken,
+  resource: Resource,
+  cursor: string | null
+): Promise<{ imported: number; cursor: string | null; hasNext: boolean; waiting?: false } | { waiting: true }> {
+  const token = await ensureFreshToken(db, store);
+  const shop = store.shop_domain;
+
+  if (cursor?.startsWith("read:")) {
+    const bar = cursor.indexOf("|");
+    const offset = Number(cursor.slice(5, bar));
+    const url = cursor.slice(bar + 1);
+    const slice = await ingestSlice(db, store.id, resource, url, offset);
+    return {
+      imported: slice.imported,
+      cursor: slice.done ? null : `read:${slice.nextOffset}|${url}`,
+      hasNext: !slice.done,
+    };
+  }
+
+  if (cursor?.startsWith("bulk:")) {
+    const op = await pollBulk(shop, token);
+    if (!op || op.id !== cursor.slice(5)) {
+      // Somebody else's operation, or ours vanished. Start again
+      // rather than read a file belonging to another query.
+      return { imported: 0, cursor: null, hasNext: true };
+    }
+    if (op.status === "CREATED" || op.status === "RUNNING") return { waiting: true };
+    if (op.status !== "COMPLETED" || !op.url) {
+      // An empty store completes with no file at all, which is a
+      // finished import of nothing rather than a failure.
+      if (op.status === "COMPLETED") return { imported: 0, cursor: null, hasNext: false };
+      throw new ShopifyError("bulk_failed", `Shopify could not export ${resource}: ${op.errorCode ?? op.status}.`);
+    }
+    return { imported: 0, cursor: `read:0|${op.url}`, hasNext: true };
+  }
+
+  if (cursor === null) {
+    // Counting first costs one small query and decides the route. A
+    // store with a few hundred rows finishes before a bulk operation
+    // would even have been queued.
+    const count = await countOf(shop, token, resource);
+    if (count > BULK_THRESHOLD) {
+      const id = await startBulk(shop, token, resource);
+      return { imported: 0, cursor: `bulk:${id}`, hasNext: true };
+    }
+  }
+
+  const page = await importPage(db, store, resource, cursor);
+  return page;
 }
 
 function summarise(runs: Array<{ resource?: string; imported?: number; status?: string }>) {

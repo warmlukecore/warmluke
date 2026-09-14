@@ -228,7 +228,7 @@ query($n: Int!, $after: String) {
   }
 }`;
 
-type GqlProduct = {
+export type GqlProduct = {
   id: string; title: string; handle: string; status: string; tags: string[]; updatedAt: string;
   variants: { nodes: Array<{ id: string; title: string; sku: string | null; barcode: string | null; price: string; updatedAt: string }> };
 };
@@ -241,7 +241,22 @@ async function importProducts(
   );
   const { nodes, pageInfo } = data.products;
   if (nodes.length === 0) return { nodes, cursor: pageInfo.endCursor, hasNext: false };
+  await saveProducts(db, storeId, nodes);
+  return { nodes, cursor: pageInfo.endCursor, hasNext: pageInfo.hasNextPage };
+}
 
+/**
+ * Writes a batch of products and their variants.
+ *
+ * Split from the fetch so the bulk importer, which gets the same nodes
+ * out of a JSONL file rather than a page, writes them through exactly
+ * this code. Two ways in, one set of rules about what a row looks
+ * like — a second copy would drift the first time a column moved.
+ */
+export async function saveProducts(
+  db: SupabaseClient, storeId: string, nodes: GqlProduct[]
+): Promise<void> {
+  if (nodes.length === 0) return;
   const { data: saved, error } = await db
     .from("products")
     .upsert(
@@ -266,7 +281,6 @@ async function importProducts(
     const { error: ve } = await db.from("variants").upsert(variants, { onConflict: "store_id,external_id" });
     if (ve) throw new Error(ve.message);
   }
-  return { nodes, cursor: pageInfo.endCursor, hasNext: pageInfo.hasNextPage };
 }
 
 // ── Customers ───────────────────────────────────────────────────
@@ -284,7 +298,7 @@ query($n: Int!, $after: String) {
   }
 }`;
 
-type GqlCustomer = {
+export type GqlCustomer = {
   id: string; displayName: string | null; email: string | null; phone: string | null;
   numberOfOrders: string; tags: string[]; updatedAt: string;
   defaultAddress: { city: string | null; zip: string | null } | null;
@@ -297,6 +311,14 @@ async function importCustomers(
     shop, token, CUSTOMERS_QUERY, { n: PAGE, after }
   );
   const { nodes, pageInfo } = data.customers;
+  await saveCustomers(db, storeId, nodes);
+  return { nodes, cursor: pageInfo.endCursor, hasNext: pageInfo.hasNextPage };
+}
+
+/** Writes a batch of customers. Shared with the bulk importer. */
+export async function saveCustomers(
+  db: SupabaseClient, storeId: string, nodes: GqlCustomer[]
+): Promise<void> {
   if (nodes.length > 0) {
     const { error } = await db.from("customers").upsert(
       nodes.map((c) => ({
@@ -308,7 +330,6 @@ async function importCustomers(
     );
     if (error) throw new Error(error.message);
   }
-  return { nodes, cursor: pageInfo.endCursor, hasNext: pageInfo.hasNextPage };
 }
 
 // ── Orders, their lines and refunds ─────────────────────────────
@@ -340,7 +361,7 @@ query($n: Int!, $after: String) {
   }
 }`;
 
-type GqlOrder = {
+export type GqlOrder = {
   id: string; name: string; createdAt: string; updatedAt: string; cancelledAt: string | null;
   tags: string[]; displayFinancialStatus: string | null; displayFulfillmentStatus: string | null;
   totalPriceSet: { shopMoney: { amount: string; currencyCode: string } };
@@ -359,6 +380,15 @@ async function importOrders(
   );
   const { nodes, pageInfo } = data.orders;
   if (nodes.length === 0) return { nodes, cursor: pageInfo.endCursor, hasNext: false };
+  await saveOrders(db, storeId, nodes);
+  return { nodes, cursor: pageInfo.endCursor, hasNext: pageInfo.hasNextPage };
+}
+
+/** Writes a batch of orders, their lines and refunds. */
+export async function saveOrders(
+  db: SupabaseClient, storeId: string, nodes: GqlOrder[]
+): Promise<void> {
+  if (nodes.length === 0) return;
 
   // Customers may not be imported yet, and an order whose customer is
   // missing is still an order — the link fills in on a later pass rather
@@ -430,8 +460,6 @@ async function importOrders(
     const { error: re } = await db.from("refunds").upsert(refunds, { onConflict: "id" });
     if (re && !re.message.includes("duplicate")) throw new Error(re.message);
   }
-
-  return { nodes, cursor: pageInfo.endCursor, hasNext: pageInfo.hasNextPage };
 }
 
 // ── Stock on hand ───────────────────────────────────────────────
@@ -450,7 +478,7 @@ query($n: Int!, $after: String) {
   }
 }`;
 
-type GqlStock = {
+export type GqlStock = {
   id: string;
   inventoryItem: { inventoryLevels: { nodes: Array<{ quantities: Array<{ quantity: number }>; location: { name: string } }> } } | null;
 };
@@ -462,6 +490,14 @@ async function importInventory(
     shop, token, INVENTORY_QUERY, { n: PAGE, after }
   );
   const { nodes, pageInfo } = data.productVariants;
+  await saveInventory(db, storeId, nodes);
+  return { nodes, cursor: pageInfo.endCursor, hasNext: pageInfo.hasNextPage };
+}
+
+/** Writes a batch of stock levels. */
+export async function saveInventory(
+  db: SupabaseClient, storeId: string, nodes: GqlStock[]
+): Promise<void> {
   const ids = nodes.map((v) => v.id);
   const { data: vrows } = ids.length
     ? await db.from("variants").select("id, external_id").eq("store_id", storeId).in("external_id", ids)
@@ -481,7 +517,6 @@ async function importInventory(
     const { error } = await db.from("inventory_levels").upsert(levels, { onConflict: "store_id,variant_id,location_name" });
     if (error) throw new Error(error.message);
   }
-  return { nodes, cursor: pageInfo.endCursor, hasNext: pageInfo.hasNextPage };
 }
 
 const IMPORTERS: Record<Resource, typeof importProducts> = {

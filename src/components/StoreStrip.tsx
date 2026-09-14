@@ -128,6 +128,13 @@ export default function StoreStrip({
       // A page that worked clears the count: a long import is allowed
       // to stumble more than three times in total, just not in a row.
       stumbles = 0;
+      // A big store is exported on Shopify's side before there is
+      // anything to read. Asking again immediately would just burn
+      // through MAX_PAGES waiting.
+      if (data?.waiting) {
+        await new Promise((r) => setTimeout(r, 3000));
+        continue;
+      }
       if (data?.done) break;
     }
     setRunning(false);
