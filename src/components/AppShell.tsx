@@ -20,6 +20,7 @@ import { LinkProvider, type LinkOptions } from "@/components/LinkContext";
 import { labelForRow } from "@/lib/links";
 import ModuleSettings from "@/components/ModuleSettings";
 import NewSection from "@/components/NewSection";
+import StoreStrip from "@/components/StoreStrip";
 import { resizeHandleClass, useResizable } from "@/lib/useResizable";
 import type {
   AssistantPlan,
@@ -1091,6 +1092,10 @@ export default function AppShell({
               Couldn&rsquo;t load your data: {loadError}
             </div>
           )}
+          {/* Above the builder, because a merchant who just connected a
+              store is asking about the store, not about building. */}
+          <StoreStrip projectId={projectId} />
+
           {isEmpty ? (
             <div className="flex h-full flex-col items-center justify-center text-center">
               <div className="font-display text-3xl font-bold tracking-tight text-slate-800">
