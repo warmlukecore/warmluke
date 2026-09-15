@@ -150,6 +150,14 @@ try {
   const gone = mine.find((h) => h.asked_for.includes("gone"));
   check("a dismissed one says so rather than vanishing", gone?.state === "dismissed");
 
+  // Nothing in a history is approvable. Saying otherwise hands the
+  // model an id it cannot act on — approve_change refuses every one
+  // of these, so the field has to agree with the database.
+  check(
+    "and nothing finished claims it can be approved",
+    mine.every((h) => h.you_can_approve_it === false)
+  );
+
   console.log("\nand there is a way to keep going back");
   const firstPage = await tool("build_history", { project_id: project.id, limit: 2 }, 2);
   check("a page is the size asked for", firstPage?.showing === 2);

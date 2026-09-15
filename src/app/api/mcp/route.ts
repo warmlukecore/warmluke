@@ -371,10 +371,14 @@ const shapeRequest = (r: RequestRow, client: string | null) => {
       : r.client_id === client
         ? "this assistant"
         : "another assistant connected to this account",
-    // Only the client that raised a request may build it — the
-    // database enforces that. Saying otherwise hands the model an id
-    // it cannot act on.
-    you_can_approve_it: client === null || r.client_id === client,
+    // Two things have to hold, and only one of them used to be
+    // checked. The client that raised it may build it — the database
+    // enforces that — but so must the request still be approvable at
+    // all. A finished, dismissed or taken-over one came back as yours
+    // to approve, which is an id the model cannot act on.
+    you_can_approve_it:
+      (r.status === "pending" || r.status === "building") &&
+      (client === null || r.client_id === client),
     ...(r.outcome
       ? {
           built: r.outcome.applied ?? [],
