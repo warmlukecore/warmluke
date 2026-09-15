@@ -30,12 +30,18 @@ function ShopifyStatus({
   busy,
   onReconnect,
   onDisconnect,
+  onAskDisconnect,
+  onCancelDisconnect,
+  confirming,
 }: {
   store: StoreRow;
   isOwner: boolean;
   busy: boolean;
   onReconnect: () => void;
   onDisconnect: () => void;
+  onAskDisconnect: () => void;
+  onCancelDisconnect: () => void;
+  confirming: boolean;
 }) {
   // The hour-long access token expiring is not a problem — it is
   // renewed on the next call, and it has lapsed on every store nobody
@@ -75,6 +81,32 @@ function ShopifyStatus({
         {line.text} · {store.timezone}
       </div>
       {isOwner ? (
+        confirming ? (
+          // The cost, in the card, in the app's own type — rather than
+          // a browser box that cannot be styled or placed and reads as
+          // though a different program is asking.
+          <div className="mt-1 rounded-lg border border-rose-900/50 bg-rose-950/30 p-2.5 text-[11px]">
+            <p className="leading-relaxed text-rose-100">
+              Disconnect {store.shop_domain}? Everything imported from it — products,
+              stock, orders and customers — is deleted.
+            </p>
+            <p className="mt-1 leading-relaxed text-slate-400">
+              Your Shopify store itself is untouched, and you can connect it again later.
+            </p>
+            <div className="mt-2 flex items-center gap-3">
+              <button
+                onClick={onDisconnect}
+                disabled={busy}
+                className="font-medium text-rose-300 hover:text-rose-200 disabled:opacity-40"
+              >
+                {busy ? "Disconnecting…" : "Yes, disconnect"}
+              </button>
+              <button onClick={onCancelDisconnect} className="text-slate-400 hover:text-slate-200">
+                Keep it
+              </button>
+            </div>
+          </div>
+        ) : (
         <div className="flex items-center gap-2 pt-0.5 text-[11px]">
           <button
             onClick={onReconnect}
@@ -85,13 +117,14 @@ function ShopifyStatus({
           </button>
           <span className="text-slate-700">·</span>
           <button
-            onClick={onDisconnect}
+            onClick={onAskDisconnect}
             disabled={busy}
             className="text-slate-500 transition-colors hover:text-rose-400 disabled:opacity-40"
           >
-            {busy ? "Disconnecting…" : "Disconnect"}
+            Disconnect
           </button>
         </div>
+        )
       ) : (
         // A member can see the store but not change it; a button that
         // silently did nothing would be worse than no button.
@@ -151,13 +184,9 @@ function DashboardInner() {
   async function disconnect(projectId: string) {
     const store = stores[projectId];
     if (!store || disconnecting) return;
-    const ok = window.confirm(
-      `Disconnect ${store.shop_domain}?\n\n` +
-        "Everything imported from it — products, stock, orders and customers — is deleted. " +
-        "Your Shopify store itself is not touched, and you can connect it again later."
-    );
-    if (!ok) return;
-
+    // What this costs is spelled out in the card itself, and this
+    // runs only after the merchant has said yes to it there.
+    setConfirmDisconnect(null);
     setDisconnecting(projectId);
     setStoreError(null);
     const { error } = await supabase.from("stores").delete().eq("id", store.id);
@@ -172,6 +201,7 @@ function DashboardInner() {
       return next;
     });
   }
+  const [confirmDisconnect, setConfirmDisconnect] = useState<string | null>(null);
   const connectFailure =
     searchParams.get("shopify") === "failed"
       ? (CONNECT_FAILURE[searchParams.get("reason") ?? ""] ??
@@ -407,6 +437,9 @@ function DashboardInner() {
                       busy={disconnecting === p.id}
                       onReconnect={() => reconnect(p.id)}
                       onDisconnect={() => disconnect(p.id)}
+                      onAskDisconnect={() => setConfirmDisconnect(p.id)}
+                      onCancelDisconnect={() => setConfirmDisconnect(null)}
+                      confirming={confirmDisconnect === p.id}
                     />
                   ) : (
                     <button

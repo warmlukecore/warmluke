@@ -267,7 +267,7 @@ export default function AppShell({
    */
   const deleteThread = useCallback(
     async (id: string) => {
-      if (!confirm("Delete this conversation? Anything it built stays.")) return;
+      // Confirmed in the picker, a click before this one.
       await supabase.from("conversations").delete().eq("id", id);
       setThreads((prev) => prev.filter((t) => t.id !== id));
       if (id === conversationId) {

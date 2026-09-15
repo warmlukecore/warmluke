@@ -648,6 +648,32 @@ export default function ChatPanel({
   // as history rather than a pile of still-actionable prompts.
   const [resolvedCards, setResolvedCards] = useState<Record<string, boolean>>({});
   const [threadsOpen, setThreadsOpen] = useState(false);
+  const [bellOpen, setBellOpen] = useState(false);
+  // Which row is asking "are you sure". A browser confirm box is
+  // another application's chrome interrupting ours, and it cannot be
+  // styled, placed, or dismissed the way anything else here can.
+  const [confirmThread, setConfirmThread] = useState<string | null>(null);
+  const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
+  const menus = useRef<HTMLDivElement | null>(null);
+
+  // A popover that only closes by pressing the thing that opened it
+  // is a popover people leave open and then click through.
+  useEffect(() => {
+    if (!bellOpen && !threadsOpen) return;
+    const shut = (e: Event) => {
+      if (e instanceof KeyboardEvent && e.key !== "Escape") return;
+      if (e instanceof PointerEvent && menus.current?.contains(e.target as Node)) return;
+      setBellOpen(false);
+      setThreadsOpen(false);
+      setConfirmThread(null);
+    };
+    document.addEventListener("pointerdown", shut);
+    document.addEventListener("keydown", shut);
+    return () => {
+      document.removeEventListener("pointerdown", shut);
+      document.removeEventListener("keydown", shut);
+    };
+  }, [bellOpen, threadsOpen]);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -699,6 +725,8 @@ export default function ChatPanel({
   const [revoking, setRevoking] = useState<string | null>(null);
   /** Built requests the merchant has opened back up. */
   const [openBuilt, setOpenBuilt] = useState<Record<string, boolean>>({});
+  /** Only the ones still waiting on them deserve the badge. */
+  const pendingCount = requests.filter((r) => r.status === "pending").length;
   const loadClients = useCallback(async () => {
     const { data } = await supabase.rpc("abo_oauth_clients");
     setClients(data ?? []);
@@ -708,9 +736,6 @@ export default function ChatPanel({
   }, [features.mcp, loadClients]);
 
   async function revoke(client: { client_id: string; name: string }) {
-    // Worth a pause: the assistant stops working mid-sentence, and
-    // reconnecting means going through consent again.
-    if (!confirm(`Disconnect ${client.name}? It will lose access immediately.`)) return;
     setRevoking(client.client_id);
     await supabase.rpc("abo_oauth_revoke", { p_client: client.client_id });
     setRevoking(null);
@@ -741,7 +766,32 @@ export default function ChatPanel({
               Build anything by describing it — preview before it applies
             </div>
           </div>
-          <div className="relative ml-auto flex items-center gap-1">
+          <div ref={menus} className="relative ml-auto flex items-center gap-1">
+            {/* What their own AI asked for is a notification, not a
+                turn in the conversation. It lived in the stream and
+                sat there through every reload, taller than the chat
+                and describing something already dealt with. Twice we
+                moved where it sat; what was wrong was what it was. */}
+            {requests.length > 0 && (
+              <button
+                onClick={() => {
+                  setBellOpen((o) => !o);
+                  setThreadsOpen(false);
+                }}
+                title="What your AI asked for"
+                aria-label={`${pendingCount} waiting for you`}
+                className={`relative rounded-lg px-2 py-1 text-[12px] transition-colors hover:bg-slate-100 ${
+                  pendingCount > 0 ? "text-amber-600" : "text-slate-400"
+                }`}
+              >
+                🔔
+                {pendingCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-semibold text-white">
+                    {pendingCount}
+                  </span>
+                )}
+              </button>
+            )}
             <button
               onClick={onNewThread}
               title="Start a fresh conversation"
@@ -751,13 +801,171 @@ export default function ChatPanel({
             </button>
             {threads.length > 0 && (
               <button
-                onClick={() => setThreadsOpen((o) => !o)}
+                onClick={() => {
+                  setThreadsOpen((o) => !o);
+                  setBellOpen(false);
+                }}
                 title="Past conversations"
                 aria-label="Past conversations"
                 className="rounded-lg px-2 py-1 text-[11px] text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
               >
                 🕘 {threads.length}
               </button>
+            )}
+            {bellOpen && (
+              <div className="absolute top-full right-0 z-50 mt-1 max-h-96 w-80 space-y-2 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg thin-scroll">
+        {requests.map((r) => {
+          const done = r.status === "built";
+          // A finished thing does not belong in the live area at full
+          // height. It sat there for a week, taller than the chat,
+          // describing something the merchant dealt with yesterday —
+          // and naming a section they may since have deleted.
+          if (done && !openBuilt[r.id]) {
+            return (
+              <div
+                key={r.id}
+                className="flex items-center gap-2 rounded-lg border border-slate-150 bg-slate-50 px-2.5 py-1.5"
+              >
+                <span className="min-w-0 flex-1 truncate text-[10px] text-slate-400">
+                  Built by your AI
+                  {r.built_at ? ` · ${new Date(r.built_at).toLocaleDateString()}` : ""} ·{" "}
+                  {r.request}
+                </span>
+                <button
+                  onClick={() => setOpenBuilt((p) => ({ ...p, [r.id]: true }))}
+                  className="shrink-0 text-[10px] text-slate-500 hover:underline"
+                >
+                  Show
+                </button>
+                <button
+                  onClick={() => dismissRequest(r.id)}
+                  aria-label="Hide this"
+                  className="shrink-0 text-[11px] text-slate-400 hover:text-slate-600"
+                >
+                  ✕
+                </button>
+              </div>
+            );
+          }
+          return (
+            <div
+              key={r.id}
+              className={`rounded-xl border px-3 py-2.5 ${
+                done ? "border-slate-200 bg-slate-50" : "border-amber-200 bg-amber-50"
+              }`}
+            >
+              <div
+                className={`text-[10px] font-semibold tracking-widest uppercase ${
+                  done ? "text-slate-400" : "text-amber-700"
+                }`}
+              >
+                {done
+                  ? `Built by your AI${r.built_at ? ` · ${new Date(r.built_at).toLocaleString()}` : ""}`
+                  : "Asked for by your AI"}
+              </div>
+              <div className="mt-2">
+              <p className={`text-[11px] leading-relaxed font-medium ${done ? "text-slate-700" : "text-amber-900"}`}>{r.request}</p>
+              {/* What changes their mind stays out in the open: the
+                  warning, and what they asked for that this does not
+                  do. The field-by-field detail folds away — it is how
+                  the thing is built, not whether they want it.
+
+                  Rendered from the plans, the same source the
+                  sentences their AI read out were generated from, so
+                  the two cannot drift. */}
+              {r.plans?.length ? (
+                <div className="mt-1.5 space-y-1.5">
+                  {r.plans.map((plan, i) => {
+                    const d = describePlan(plan, modules, undefined, storeFacts);
+                    return (
+                      <div key={i}>
+                        <div
+                          className={`text-[11px] font-semibold ${done ? "text-slate-700" : "text-amber-900"}`}
+                        >
+                          {d.title}
+                        </div>
+                        {d.warnings?.map((w, k) => (
+                          <div
+                            key={k}
+                            className="mt-1 rounded border border-amber-300 bg-amber-100/70 px-2 py-1.5 text-[11px] leading-relaxed text-amber-900"
+                          >
+                            {w}
+                          </div>
+                        ))}
+                        {d.lines.length > 0 && (
+                          <details className="mt-1">
+                            <summary
+                              className={`cursor-pointer list-none text-[10px] hover:underline ${
+                                done ? "text-slate-500" : "text-amber-700"
+                              }`}
+                            >
+                              {done ? "What was built" : "Show details"}
+                            </summary>
+                            <ul
+                              className={`mt-1 space-y-0.5 text-[11px] leading-relaxed ${
+                                done ? "text-slate-600" : "text-amber-900/90"
+                              }`}
+                            >
+                              {d.lines.map((l, k) => (
+                                <li key={k}>· {l}</li>
+                              ))}
+                            </ul>
+                          </details>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {r.unmet?.length ? (
+                    <div
+                      className={`text-[11px] leading-relaxed ${done ? "text-slate-600" : "text-amber-900"}`}
+                    >
+                      <span className="font-semibold">Not covered:</span>{" "}
+                      {r.unmet.join(" · ")}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                // A request made before designs were attached, or one
+                // whose design could not be rebuilt. The text it was
+                // stored with is all there is.
+                r.summary && (
+                  <div className="mt-1.5 rounded-lg bg-white/70 px-2.5 py-2 text-[11px] leading-relaxed whitespace-pre-wrap text-amber-900">
+                    {r.summary}
+                  </div>
+                )
+              )}
+              {!done && (
+              <div className="mt-1.5 flex items-center gap-1.5">
+                {r.plans?.length ? (
+                  <button
+                    onClick={() => buildRequest(r)}
+                    disabled={busy}
+                    className="rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-amber-700 disabled:opacity-40"
+                  >
+                    Build it
+                  </button>
+                ) : null}
+                {features.chat && (
+                  <button
+                    onClick={() => openRequest(r)}
+                    className="rounded-lg border border-amber-300 px-2 py-1 text-[10px] font-medium text-amber-800 hover:bg-amber-100"
+                  >
+                    {r.plans?.length ? "Change it first" : "Design it"}
+                  </button>
+                )}
+                <button
+                  onClick={() => dismissRequest(r.id)}
+                  className="ml-auto text-[10px] text-amber-700 hover:underline"
+                >
+                  Dismiss
+                </button>
+              </div>
+              )}
+            </div>
+          </div>
+          );
+        })}
+              </div>
             )}
             {threadsOpen && (
               <div className="absolute top-full right-0 z-50 mt-1 max-h-72 w-64 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg thin-scroll">
@@ -787,13 +995,33 @@ export default function ChatPanel({
                     </button>
                     {/* Threads accumulate — six of them called "hello"
                         before there was any way to be rid of one. */}
-                    <button
-                      onClick={() => onDeleteThread(t.id)}
-                      aria-label={`Delete ${t.title ?? "this conversation"}`}
-                      className="shrink-0 rounded px-1.5 py-1 text-[11px] text-slate-300 hover:bg-rose-50 hover:text-rose-500"
-                    >
-                      ✕
-                    </button>
+                    {confirmThread === t.id ? (
+                      <span className="flex shrink-0 items-center gap-1 pr-1 text-[10px]">
+                        <button
+                          onClick={() => {
+                            setConfirmThread(null);
+                            onDeleteThread(t.id);
+                          }}
+                          className="font-medium text-rose-600 hover:underline"
+                        >
+                          Delete
+                        </button>
+                        <button
+                          onClick={() => setConfirmThread(null)}
+                          className="text-slate-400 hover:underline"
+                        >
+                          Keep
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmThread(t.id)}
+                        aria-label={`Delete ${t.title ?? "this conversation"}`}
+                        className="shrink-0 rounded px-1.5 py-1 text-[11px] text-slate-300 hover:bg-rose-50 hover:text-rose-500"
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1156,157 +1384,6 @@ export default function ChatPanel({
             whole panel down and a long design covered the chat
             entirely — the one place it must not be is on top of the
             thing it is asking about. */}
-        {requests.map((r) => {
-          const done = r.status === "built";
-          // A finished thing does not belong in the live area at full
-          // height. It sat there for a week, taller than the chat,
-          // describing something the merchant dealt with yesterday —
-          // and naming a section they may since have deleted.
-          if (done && !openBuilt[r.id]) {
-            return (
-              <div
-                key={r.id}
-                className="flex items-center gap-2 rounded-lg border border-slate-150 bg-slate-50 px-2.5 py-1.5"
-              >
-                <span className="min-w-0 flex-1 truncate text-[10px] text-slate-400">
-                  Built by your AI
-                  {r.built_at ? ` · ${new Date(r.built_at).toLocaleDateString()}` : ""} ·{" "}
-                  {r.request}
-                </span>
-                <button
-                  onClick={() => setOpenBuilt((p) => ({ ...p, [r.id]: true }))}
-                  className="shrink-0 text-[10px] text-slate-500 hover:underline"
-                >
-                  Show
-                </button>
-                <button
-                  onClick={() => dismissRequest(r.id)}
-                  aria-label="Hide this"
-                  className="shrink-0 text-[11px] text-slate-400 hover:text-slate-600"
-                >
-                  ✕
-                </button>
-              </div>
-            );
-          }
-          return (
-            <div
-              key={r.id}
-              className={`rounded-xl border px-3 py-2.5 ${
-                done ? "border-slate-200 bg-slate-50" : "border-amber-200 bg-amber-50"
-              }`}
-            >
-              <div
-                className={`text-[10px] font-semibold tracking-widest uppercase ${
-                  done ? "text-slate-400" : "text-amber-700"
-                }`}
-              >
-                {done
-                  ? `Built by your AI${r.built_at ? ` · ${new Date(r.built_at).toLocaleString()}` : ""}`
-                  : "Asked for by your AI"}
-              </div>
-              <div className="mt-2">
-              <p className={`text-[11px] leading-relaxed font-medium ${done ? "text-slate-700" : "text-amber-900"}`}>{r.request}</p>
-              {/* What changes their mind stays out in the open: the
-                  warning, and what they asked for that this does not
-                  do. The field-by-field detail folds away — it is how
-                  the thing is built, not whether they want it.
-
-                  Rendered from the plans, the same source the
-                  sentences their AI read out were generated from, so
-                  the two cannot drift. */}
-              {r.plans?.length ? (
-                <div className="mt-1.5 space-y-1.5">
-                  {r.plans.map((plan, i) => {
-                    const d = describePlan(plan, modules, undefined, storeFacts);
-                    return (
-                      <div key={i}>
-                        <div
-                          className={`text-[11px] font-semibold ${done ? "text-slate-700" : "text-amber-900"}`}
-                        >
-                          {d.title}
-                        </div>
-                        {d.warnings?.map((w, k) => (
-                          <div
-                            key={k}
-                            className="mt-1 rounded border border-amber-300 bg-amber-100/70 px-2 py-1.5 text-[11px] leading-relaxed text-amber-900"
-                          >
-                            {w}
-                          </div>
-                        ))}
-                        {d.lines.length > 0 && (
-                          <details className="mt-1">
-                            <summary
-                              className={`cursor-pointer list-none text-[10px] hover:underline ${
-                                done ? "text-slate-500" : "text-amber-700"
-                              }`}
-                            >
-                              {done ? "What was built" : "Show details"}
-                            </summary>
-                            <ul
-                              className={`mt-1 space-y-0.5 text-[11px] leading-relaxed ${
-                                done ? "text-slate-600" : "text-amber-900/90"
-                              }`}
-                            >
-                              {d.lines.map((l, k) => (
-                                <li key={k}>· {l}</li>
-                              ))}
-                            </ul>
-                          </details>
-                        )}
-                      </div>
-                    );
-                  })}
-                  {r.unmet?.length ? (
-                    <div
-                      className={`text-[11px] leading-relaxed ${done ? "text-slate-600" : "text-amber-900"}`}
-                    >
-                      <span className="font-semibold">Not covered:</span>{" "}
-                      {r.unmet.join(" · ")}
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                // A request made before designs were attached, or one
-                // whose design could not be rebuilt. The text it was
-                // stored with is all there is.
-                r.summary && (
-                  <div className="mt-1.5 rounded-lg bg-white/70 px-2.5 py-2 text-[11px] leading-relaxed whitespace-pre-wrap text-amber-900">
-                    {r.summary}
-                  </div>
-                )
-              )}
-              {!done && (
-              <div className="mt-1.5 flex items-center gap-1.5">
-                {r.plans?.length ? (
-                  <button
-                    onClick={() => buildRequest(r)}
-                    disabled={busy}
-                    className="rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-amber-700 disabled:opacity-40"
-                  >
-                    Build it
-                  </button>
-                ) : null}
-                {features.chat && (
-                  <button
-                    onClick={() => openRequest(r)}
-                    className="rounded-lg border border-amber-300 px-2 py-1 text-[10px] font-medium text-amber-800 hover:bg-amber-100"
-                  >
-                    {r.plans?.length ? "Change it first" : "Design it"}
-                  </button>
-                )}
-                <button
-                  onClick={() => dismissRequest(r.id)}
-                  className="ml-auto text-[10px] text-amber-700 hover:underline"
-                >
-                  Dismiss
-                </button>
-              </div>
-              )}
-            </div>
-          </div>
-          );
-        })}
         {busy && (
           <div className="flex items-center gap-2 text-xs text-slate-400">
             <span className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
@@ -1349,13 +1426,39 @@ export default function ChatPanel({
                         : "Connected, not used yet"}
                     </div>
                   </div>
-                  <button
-                    onClick={() => revoke(c)}
-                    disabled={revoking === c.client_id}
-                    className="shrink-0 text-[10px] font-medium text-rose-600 hover:underline disabled:opacity-40"
-                  >
-                    {revoking === c.client_id ? "…" : "Disconnect"}
-                  </button>
+                  {/* Worth a pause — the assistant stops mid-sentence
+                      and reconnecting means consent again — but a
+                      browser confirm box is somebody else's chrome
+                      appearing in the middle of our app. The second
+                      click is the confirmation. */}
+                  {confirmRevoke === c.client_id ? (
+                    <span className="flex shrink-0 items-center gap-1.5 text-[10px]">
+                      <span className="text-slate-500">Sure?</span>
+                      <button
+                        onClick={() => {
+                          setConfirmRevoke(null);
+                          revoke(c);
+                        }}
+                        className="font-medium text-rose-600 hover:underline"
+                      >
+                        Disconnect
+                      </button>
+                      <button
+                        onClick={() => setConfirmRevoke(null)}
+                        className="text-slate-400 hover:underline"
+                      >
+                        Keep
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmRevoke(c.client_id)}
+                      disabled={revoking === c.client_id}
+                      className="shrink-0 text-[10px] font-medium text-rose-600 hover:underline disabled:opacity-40"
+                    >
+                      {revoking === c.client_id ? "…" : "Disconnect"}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
