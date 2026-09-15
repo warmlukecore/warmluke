@@ -185,6 +185,29 @@ const TOOLS = [
     },
   },
   {
+    name: "build_history",
+    description:
+      "What has actually been built in this app, newest first — including the ones that only partly worked, and what did not. Use it to answer \"what changed last week?\", to check whether something was already done before proposing it again, and to see whether an earlier build left anything unfinished.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project_id: {
+          type: "string",
+          description: "Which app, when they have more than one. Optional.",
+        },
+        limit: {
+          type: "number",
+          description: "How many to return, 1 to 50. Default 20.",
+        },
+        before: {
+          type: "string",
+          description:
+            "An ISO instant. Returns only requests raised before it — pass the `next_before` from the last answer to keep going back.",
+        },
+      },
+    },
+  },
+  {
     name: "design_format",
     description:
       "Everything you need to write a design yourself instead of asking Warmluke to write it: the column types, view types, rule triggers and actions this platform has, the expression operators, and the shape of a plan. Read this before calling submit_design. Designing here costs the merchant nothing — you are the one doing the thinking, on their own subscription.",
@@ -300,6 +323,67 @@ const ruleRowsFor = async (db: SupabaseClient, projectId: string, moduleId: stri
   q = moduleId === null ? q.is("module_id", null) : q.eq("module_id", moduleId);
   const { data } = await q;
   return data ?? [];
+};
+
+/**
+ * One request, as the assistant reads it.
+ *
+ * pending_changes and build_history ask the same table two different
+ * questions, and a row that means one thing in one answer and another
+ * thing in the other is how the last three of these bugs happened.
+ */
+type RequestRow = {
+  id: string;
+  project_id: string;
+  request: string;
+  summary: string | null;
+  status: string;
+  approved_at: string | null;
+  created_at: string;
+  built_at?: string | null;
+  client_id: string | null;
+  outcome: { applied?: unknown[]; errors?: string[] } | null;
+};
+
+const shapeRequest = (r: RequestRow, client: string | null) => {
+  const state =
+    r.status === "partly_built"
+      ? "partly built"
+      : r.status === "built"
+        ? "built"
+        : r.status === "dismissed"
+          ? "dismissed"
+          : r.status === "opened"
+            ? "the merchant took it over in Warmluke"
+            : r.status === "building"
+              ? "building"
+              : r.approved_at
+                ? "approved, not built yet"
+                : "awaiting_approval";
+  return {
+    request_id: r.id,
+    project_id: r.project_id,
+    asked_for: r.request,
+    design: r.summary,
+    state,
+    raised_by: !r.client_id
+      ? "the merchant, in Warmluke"
+      : r.client_id === client
+        ? "this assistant"
+        : "another assistant connected to this account",
+    // Only the client that raised a request may build it — the
+    // database enforces that. Saying otherwise hands the model an id
+    // it cannot act on.
+    you_can_approve_it: client === null || r.client_id === client,
+    ...(r.outcome
+      ? {
+          built: r.outcome.applied ?? [],
+          did_not_build: (r.outcome.errors ?? []).slice(0, 3),
+        }
+      : {}),
+    since: r.created_at,
+    ...(r.built_at ? { finished: r.built_at } : {}),
+  };
 };
 
 /** How many waiting designs one answer names before it says so. */
@@ -877,61 +961,93 @@ export async function POST(req: Request) {
             ? "Only the ones marked awaiting_approval need the merchant's yes. Anything marked partly built already happened and cannot be finished from here — say what is missing. Read a waiting one back and call approve_change with its request_id if they say so."
             : "Nothing is waiting for approval. Do not tell the merchant otherwise — anything from earlier in this conversation has since been built or dismissed.",
           waiting: rows.map((r) => {
-            // Three different situations were being described with one
-            // sentence about needing approval: one that does, one that
-            // has it already, and one that is mid-build.
-            const state =
-              r.status === "partly_built"
-                ? "partly built"
-                : r.status === "building"
-                  ? "building"
-                  : r.approved_at
-                    ? "approved, not built yet"
-                    : "awaiting_approval";
-            // Only the client that raised a request may build it — the
-            // database enforces that. Saying otherwise hands the model
-            // an id it cannot act on.
-            const canApprove = client === null || r.client_id === client;
+            const shaped = shapeRequest(r as RequestRow, client);
             return {
-              request_id: r.id,
-              project_id: r.project_id,
-              asked_for: r.request,
-              design: r.summary,
-              state,
-              raised_by: !r.client_id
-                ? "the merchant, in Warmluke"
-                : r.client_id === client
-                  ? "this assistant"
-                  : "another assistant connected to this account",
-              you_can_approve_it: canApprove,
-              ...(r.status === "partly_built"
-                ? {
-                    // Named, because "it did not all work" without
-                    // saying which part is no use to anybody.
-                    built: (r.outcome as { applied?: unknown[] } | null)?.applied ?? [],
-                    did_not_build:
-                      ((r.outcome as { errors?: string[] } | null)?.errors ?? []).slice(0, 3),
-                  }
-                : {}),
+              ...shaped,
               next_action:
                 r.status === "partly_built"
                   ? "Some of this was built and some was not. Tell the merchant exactly which, and ask for the missing part again as a new request — approve_change will not finish this one."
-                  : state === "building"
-                  ? // ponytail: no lease on a claim yet, so a build that
-                    // died mid-way sits here. Say so rather than invent
-                    // a timeout; add claimed_at and a recovery path when
-                    // one is actually seen stuck.
-                    "Somebody is applying this now. If it has been like this for a long time, the merchant can look in Warmluke."
-                  : state === "approved, not built yet"
-                    ? canApprove
-                      ? "Already approved — call approve_change with this request_id to build it."
-                      : "Already approved. The assistant that raised it, or the merchant in Warmluke, builds it."
-                    : canApprove
-                      ? "Read the design back. If they say yes, call approve_change with this request_id."
-                      : "Not yours to approve — tell the merchant it is waiting in Warmluke.",
-              since: r.created_at,
+                  : shaped.state === "building"
+                    ? // ponytail: no lease on a claim yet, so a build
+                      // that died mid-way sits here. Say so rather than
+                      // invent a timeout; add claimed_at and a recovery
+                      // path when one is actually seen stuck.
+                      "Somebody is applying this now. If it has been like this for a long time, the merchant can look in Warmluke."
+                    : shaped.state === "approved, not built yet"
+                      ? shaped.you_can_approve_it
+                        ? "Already approved — call approve_change with this request_id to build it."
+                        : "Already approved. The assistant that raised it, or the merchant in Warmluke, builds it."
+                      : shaped.you_can_approve_it
+                        ? "Read the design back. If they say yes, call approve_change with this request_id."
+                        : "Not yours to approve — tell the merchant it is waiting in Warmluke.",
             };
           }),
+        })
+      );
+    }
+
+    if (name === "build_history") {
+      const wanted = (args.project_id as string | undefined)?.trim();
+      const { data: mine } = await db.from("projects").select("id, name");
+      const projectList = (mine ?? []) as Array<{ id: string; name: string }>;
+      // Same rule as pending_changes: an id is resolved, never trusted.
+      // An empty answer about the wrong app reads as an answer about
+      // the right one.
+      if (wanted && !projectList.some((p) => p.id === wanted)) {
+        return ok(
+          id,
+          text({
+            error: `No app of theirs has the id ${wanted}.`,
+            note: "Do not tell the merchant anything about their history — this answer covers no app at all.",
+            projects: projectList.map((p) => ({ id: p.id, name: p.name })),
+          })
+        );
+      }
+
+      const limit = Math.min(Math.max(Number(args.limit ?? 20) || 20, 1), 50);
+      const before = String(args.before ?? "").trim();
+      const client = clientIdOf(req);
+
+      let q = db
+        .from("build_requests")
+        .select(
+          "id, project_id, request, summary, status, approved_at, created_at, built_at, client_id, outcome"
+        )
+        // Everything that happened, not only what worked. A history
+        // that hides the failures is the reason none of this was
+        // trustworthy in the first place.
+        .in("status", ["built", "partly_built", "dismissed", "opened"])
+        .order("created_at", { ascending: false })
+        .limit(limit + 1);
+      if (wanted) q = q.eq("project_id", wanted);
+      if (before) q = q.lt("created_at", before);
+      const { data: rows, error: hErr } = await q;
+      if (hErr) return ok(id, text({ error: hErr.message }));
+
+      // One extra was asked for, purely to know whether there is more.
+      const page = (rows ?? []).slice(0, limit);
+      const more = (rows ?? []).length > limit;
+      const half = page.filter((r) => r.status === "partly_built").length;
+
+      return ok(
+        id,
+        text({
+          showing: page.length,
+          ...(more
+            ? {
+                more: "There are older ones. Pass next_before to see them.",
+                next_before: page[page.length - 1]?.created_at,
+              }
+            : {}),
+          ...(half
+            ? {
+                needs_attention: `${half} of these only partly worked. Say which part is missing rather than describing them as done.`,
+              }
+            : {}),
+          note: page.length
+            ? "Newest first. Anything waiting for approval is not here — that is pending_changes."
+            : "Nothing has been built in this app yet. Do not describe earlier work from memory.",
+          history: page.map((r) => shapeRequest(r as RequestRow, client)),
         })
       );
     }

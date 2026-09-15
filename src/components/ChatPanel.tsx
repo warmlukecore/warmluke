@@ -550,19 +550,23 @@ export default function ChatPanel({
       unmet: string[] | null;
       status: string;
       built_at: string | null;
+      outcome: { applied?: unknown[]; errors?: string[] } | null;
     }>
   >([]);
   const loadRequests = useCallback(async () => {
     const { data } = await supabase
       .from("build_requests")
-      .select("id, request, client_id, created_at, summary, plans, unmet, status, built_at")
+      .select("id, request, client_id, created_at, summary, plans, unmet, status, built_at, outcome")
       .eq("project_id", projectId)
       // Built ones stay. A build that came in through their own AI
       // wrote nothing to this conversation, so once the row stopped
       // being pending the only sign it ever happened was a section
       // appearing in the sidebar — and a refresh took even the
       // "it's live now" message away.
-      .in("status", ["pending", "built"])
+      // partly_built joins them. It is the one state nobody may be
+      // left unaware of — a section exists with half of what was asked
+      // for — and it was the only state with nowhere at all to appear.
+      .in("status", ["pending", "built", "partly_built"])
       .gt("created_at", new Date(Date.now() - 7 * 864e5).toISOString())
       .order("created_at", { ascending: true })
       .limit(10);
@@ -778,7 +782,12 @@ export default function ChatPanel({
   /** Built requests the merchant has opened back up. */
   const [openBuilt, setOpenBuilt] = useState<Record<string, boolean>>({});
   /** Only the ones still waiting on them deserve the badge. */
-  const pendingCount = requests.filter((r) => r.status === "pending").length;
+  // Not "pending" — "wants you". A half-built section is nobody's
+  // decision to make and so counted as nothing, which put it behind a
+  // bell with no number on it: recorded, and still unknown to them.
+  const pendingCount = requests.filter(
+    (r) => r.status === "pending" || r.status === "partly_built"
+  ).length;
   /** Requests that turned up just now, floating over the panel. */
   const [toasts, setToasts] = useState<string[]>([]);
   /** What was already waiting last time we looked. Null = never looked. */
@@ -844,7 +853,7 @@ export default function ChatPanel({
                   setThreadsOpen(false);
                 }}
                 title="What your AI asked for"
-                aria-label={`${pendingCount} waiting for you`}
+                aria-label={`${pendingCount} want your attention`}
                 className={`relative rounded-lg px-2 py-1 text-[12px] transition-colors hover:bg-slate-100 ${
                   pendingCount > 0 ? "text-amber-600" : "text-slate-400"
                 }`}
@@ -881,10 +890,46 @@ export default function ChatPanel({
               <div className="absolute top-full right-0 z-50 mt-1 max-h-96 w-80 space-y-2 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg thin-scroll">
         {requests.map((r) => {
           const done = r.status === "built";
+          const half = r.status === "partly_built";
           // A finished thing does not belong in the live area at full
           // height. It sat there for a week, taller than the chat,
           // describing something the merchant dealt with yesterday —
           // and naming a section they may since have deleted.
+          // A half-built one is never collapsed away. It is not a
+          // finished thing being kept for the record; it is a section
+          // sitting there with part of what was asked for, and the
+          // only screen that can say so.
+          if (half) {
+            const missed = r.outcome?.errors ?? [];
+            return (
+              <div
+                key={r.id}
+                className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2"
+              >
+                <div className="text-[11px] font-medium text-amber-800">
+                  ⚠️ Only part of this was built
+                </div>
+                <div className="text-[11px] text-slate-600">{r.request}</div>
+                {missed.length > 0 && (
+                  <ul className="list-disc space-y-0.5 pl-4 text-[10px] text-amber-700">
+                    {missed.slice(0, 3).map((e, i) => (
+                      <li key={i}>{e}</li>
+                    ))}
+                  </ul>
+                )}
+                <div className="text-[10px] text-slate-500">
+                  Ask for the missing part again — this one cannot be finished.
+                </div>
+                <button
+                  onClick={() => dismissRequest(r.id)}
+                  className="text-[10px] text-slate-500 hover:underline"
+                >
+                  Dismiss
+                </button>
+              </div>
+            );
+          }
+
           if (done && !openBuilt[r.id]) {
             return (
               <div
