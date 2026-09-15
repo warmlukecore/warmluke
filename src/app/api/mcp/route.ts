@@ -395,6 +395,22 @@ export async function POST(req: Request) {
       // the same gates. Claude supplies the sentence and nothing else —
       // letting it write plans would put every structural gate on the
       // wrong side of the fence.
+      // The same counter as the chat box. Designing through their own
+      // Claude still runs our engine on our key — a quota that only
+      // watched the chat would have capped nothing.
+      const { data: allowance } = await db.rpc("abo_spend_turn");
+      const turns = allowance as { ok: boolean; used: number; free: number } | null;
+      if (turns && !turns.ok) {
+        return ok(
+          id,
+          text({
+            error: `This account has used all ${turns.free} free builds on Warmluke's assistant.`,
+            note: "Reading their store still works — orders, stock, products, customers — and any design already waiting can still be approved. Building something new needs Warmluke AI.",
+            open: `${new URL(req.url).origin}/app/${project.id}`,
+          })
+        );
+      }
+
       const turn = await runTurn({
         client: db,
         project,
@@ -407,6 +423,7 @@ export async function POST(req: Request) {
         signal: req.signal,
       });
       if (!turn.ok) {
+        await db.rpc("abo_refund_turn");
         return ok(
           id,
           text({

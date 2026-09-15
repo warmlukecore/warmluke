@@ -221,6 +221,25 @@ export async function POST(req: Request) {
     // One engine, two callers. The MCP tool designs a merchant's
     // request through this same function, so the gates cannot drift
     // apart between the two ways in.
+    // Spent before the model runs. One turn here is two to four
+    // calls on our key — a design, its repairs, and the pass that
+    // works out what it misses — so a loop that pays only on success
+    // would not pay at all.
+    const { data: allowance, error: spendErr } = await client.rpc("abo_spend_turn");
+    if (spendErr) throw new Error(spendErr.message);
+    const turns = allowance as { ok: boolean; used: number; free: number } | null;
+    if (turns && !turns.ok) {
+      return NextResponse.json(
+        {
+          error: `You have used all ${turns.free} free builds on Warmluke's own assistant.`,
+          out_of_turns: true,
+          used: turns.used,
+          free: turns.free,
+        },
+        { status: 402 }
+      );
+    }
+
     const turn = await runTurn({
       client,
       project: proj,
@@ -235,6 +254,9 @@ export async function POST(req: Request) {
     });
 
     if (!turn.ok) {
+      // Our engine could not produce something it trusts. Charging
+      // for that is charging for our own failure.
+      await client.rpc("abo_refund_turn");
       return NextResponse.json(
         {
           conversationId: convId,

@@ -529,6 +529,12 @@ export default function ChatPanel({
     chat: true,
     mcp: true,
   });
+  /** Free builds on our own model: how many, and how many are gone. */
+  const [turns, setTurns] = useState<{ free: number; used: number } | null>(null);
+  const [wantsPlan, setWantsPlan] = useState(false);
+  /** Whether the connect-your-own-AI block is open, so the button
+   *  offered when the free builds run out can open it. */
+  const [ownAiOpen, setOwnAiOpen] = useState(false);
   // What their AI has asked for and nobody has looked at yet. Without
   // this the request lands in the database and dies there: Claude says
   // "I've asked Warmluke to build it" and the merchant never sees it.
@@ -634,6 +640,9 @@ export default function ChatPanel({
     supabase.rpc("abo_my_settings").then(({ data }) => {
       const row = data?.[0];
       setFeatures({ chat: row?.chat_enabled ?? true, mcp: row?.mcp_enabled ?? true });
+      if (typeof row?.free_turns === "number") {
+        setTurns({ free: row.free_turns, used: row.turns_used ?? 0 });
+      }
     });
   }, []);
   useEffect(() => {
@@ -1495,7 +1504,11 @@ export default function ChatPanel({
           it: both can be on, and a merchant who has connected Claude
           still uses this panel to read and approve what it asked for. */}
       {features.mcp && (
-        <details className="border-t border-slate-100 px-3 py-2 text-[11px]" open={!features.chat}>
+        <details
+          className="border-t border-slate-100 px-3 py-2 text-[11px]"
+          open={ownAiOpen || !features.chat}
+          onToggle={(e) => setOwnAiOpen((e.currentTarget as HTMLDetailsElement).open)}
+        >
           <summary className="cursor-pointer list-none text-slate-500 hover:text-slate-700">
             ✦ Use your own Claude or ChatGPT
           </summary>
@@ -1566,7 +1579,53 @@ export default function ChatPanel({
       )}
 
       {/* Input */}
-      {!features.chat ? (
+      {turns && turns.used >= turns.free && features.chat ? (
+        // Not a locked door with a price on it. What they can still
+        // do is the larger half — reading their store never costs us
+        // anything — so it is offered first, by name.
+        <div className="border-t border-slate-100 p-3">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="text-[11px] font-semibold text-slate-700">
+              That is all {turns.free} free builds used
+            </div>
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+              Asking about your store still works, and anything already designed can still
+              be built. Designing something new is the part that needs Warmluke AI.
+            </p>
+            <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+              <button
+                onClick={() => setWantsPlan(true)}
+                className="rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-medium text-white hover:bg-slate-700"
+              >
+                Get Warmluke AI
+              </button>
+              {features.mcp && (
+                <button
+                  onClick={() => {
+                    setWantsPlan(false);
+                    setOwnAiOpen(true);
+                  }}
+                  className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-white"
+                >
+                  Use your own Claude
+                </button>
+              )}
+            </div>
+            {wantsPlan && (
+              <div className="mt-2.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[11px] leading-relaxed text-slate-600">
+                Still being built — it releases soon. Until then your own Claude or ChatGPT
+                does the asking, and Warmluke keeps building what you have already approved.
+                <button
+                  onClick={() => setWantsPlan(false)}
+                  className="mt-1.5 block text-[10px] text-slate-400 hover:underline"
+                >
+                  Close
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : !features.chat ? (
         <div className="border-t border-slate-100 p-3 text-[11px] leading-relaxed text-slate-500">
           Warmluke&rsquo;s own assistant is off for this account.{" "}
           {features.mcp

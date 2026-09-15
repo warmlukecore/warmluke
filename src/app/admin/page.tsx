@@ -25,6 +25,8 @@ type Account = {
   email: string;
   chat_enabled: boolean;
   mcp_enabled: boolean;
+  free_turns: number;
+  turns_used: number;
   is_superadmin: boolean;
   projects: number;
   stores: number;
@@ -78,6 +80,21 @@ export default function Admin() {
     load();
   }
 
+  async function setTurns(row: Account, turns: number) {
+    setBusy(row.user_id);
+    setError(null);
+    const { error: err } = await supabase.rpc("abo_admin_set_turns", {
+      p_user: row.user_id,
+      p_turns: turns,
+    });
+    setBusy(null);
+    if (err) {
+      setError(err.message);
+      return;
+    }
+    load();
+  }
+
   if (loading || !user || rows === null) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-950 text-sm text-slate-400">
@@ -122,6 +139,7 @@ export default function Admin() {
                   <th className="px-4 py-2.5 font-medium">Stores</th>
                   <th className="px-4 py-2.5 font-medium">Warmluke AI</th>
                   <th className="px-4 py-2.5 font-medium">Their own AI</th>
+                  <th className="px-4 py-2.5 font-medium">Free builds</th>
                 </tr>
               </thead>
               <tbody>
@@ -160,6 +178,23 @@ export default function Admin() {
                         </td>
                       );
                     })}
+                    <td className="px-4 py-3">
+                      {/* Used against granted. A trial extension should
+                          be a number somebody types, not a migration. */}
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-400">{r.turns_used} /</span>
+                        <input
+                          type="number"
+                          min={0}
+                          defaultValue={r.free_turns}
+                          onBlur={(e) => {
+                            const next = Number(e.target.value);
+                            if (Number.isFinite(next) && next !== r.free_turns) setTurns(r, next);
+                          }}
+                          className="w-16 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-200 outline-none focus:border-blue-500"
+                        />
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -172,7 +207,11 @@ export default function Admin() {
           whose model calls we pay for. <span className="text-slate-400">Their own AI</span>{" "}
           — their Claude or ChatGPT connected over MCP, which they pay for. The two are
           independent: either can be off, and an account with neither still has its app,
-          its data, and every section already built.
+          its data, and every section already built.{" "}
+          <span className="text-slate-400">Free builds</span> — turns of our own engine this
+          account may spend, counted whether they came from the chat or from their Claude,
+          because both run it. Reading a store and approving a design already made cost
+          nothing and are never counted.
         </p>
       </main>
     </div>
