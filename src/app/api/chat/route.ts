@@ -265,7 +265,16 @@ export async function POST(req: Request) {
       turn.reply,
       turn.repairErrors
     );
-    await client.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
+    // A thread is named after whatever was typed first, which is how
+    // six of them end up called "hello". Once a design exists there is
+    // something better to call it — and only then, because renaming on
+    // every turn would move a thread the owner was looking for.
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (isNewConversation || looksLikeAGreeting(message)) {
+      const named = titleFor(turn.reply);
+      if (named) patch.title = named;
+    }
+    await client.from("conversations").update(patch).eq("id", convId);
 
     return NextResponse.json({ conversationId: convId, reply: turn.reply, repairs: turn.repairs });
   } catch (e) {
@@ -306,4 +315,24 @@ async function persistTurn(
     },
   ]);
   if (error) throw new Error(error.message);
+}
+
+/** Words that say nothing about what the thread is for. */
+function looksLikeAGreeting(message: string): boolean {
+  return /^(hi|hey|hello|yo|test|hola|namaste)\b[\s!.?]*$/i.test(message.trim());
+}
+
+/**
+ * What to call a thread, taken from what the assistant decided to do
+ * rather than from the first thing anybody typed.
+ */
+function titleFor(reply: AssistantReply): string | null {
+  const from =
+    reply.type === "blueprint"
+      ? (reply.blueprint.summary ?? reply.message)
+      : reply.type === "plans"
+        ? reply.message
+        : null;
+  const line = from?.split(/[.\n]/)[0]?.trim();
+  return line && line.length > 3 ? line.slice(0, 80) : null;
 }

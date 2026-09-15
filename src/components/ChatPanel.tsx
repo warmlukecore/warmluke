@@ -474,6 +474,7 @@ export default function ChatPanel({
   conversationId,
   onNewThread,
   onPickThread,
+  onDeleteThread,
   onStop,
   canStop,
   onSend,
@@ -499,6 +500,7 @@ export default function ChatPanel({
   conversationId: string | null;
   onNewThread: () => void;
   onPickThread: (id: string) => void;
+  onDeleteThread: (id: string) => void;
   onStop: () => void;
   /** Only a model call can be stopped. Applying a build must not be
    *  interrupted halfway, and there is nothing to abort during it. */
@@ -695,6 +697,8 @@ export default function ChatPanel({
     }>
   >([]);
   const [revoking, setRevoking] = useState<string | null>(null);
+  /** Built requests the merchant has opened back up. */
+  const [openBuilt, setOpenBuilt] = useState<Record<string, boolean>>({});
   const loadClients = useCallback(async () => {
     const { data } = await supabase.rpc("abo_oauth_clients");
     setClients(data ?? []);
@@ -757,22 +761,40 @@ export default function ChatPanel({
             )}
             {threadsOpen && (
               <div className="absolute top-full right-0 z-50 mt-1 max-h-72 w-64 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg thin-scroll">
+                {threads.length === 0 && (
+                  <div className="px-3 py-2 text-[11px] text-slate-400">No past conversations.</div>
+                )}
                 {threads.map((t) => (
-                  <button
+                  <div
                     key={t.id}
-                    onClick={() => {
-                      onPickThread(t.id);
-                      setThreadsOpen(false);
-                    }}
-                    className={`block w-full px-3 py-2 text-left text-[11px] transition-colors hover:bg-slate-50 ${
-                      t.id === conversationId ? "bg-blue-50 text-blue-800" : "text-slate-600"
+                    className={`flex items-center gap-1 px-1.5 transition-colors hover:bg-slate-50 ${
+                      t.id === conversationId ? "bg-blue-50" : ""
                     }`}
                   >
-                    <div className="truncate font-medium">{t.title ?? "Untitled"}</div>
-                    <div className="text-[10px] text-slate-400">
-                      {new Date(t.updated_at).toLocaleString()}
-                    </div>
-                  </button>
+                    <button
+                      onClick={() => {
+                        onPickThread(t.id);
+                        setThreadsOpen(false);
+                      }}
+                      className={`min-w-0 flex-1 px-1.5 py-2 text-left text-[11px] ${
+                        t.id === conversationId ? "text-blue-800" : "text-slate-600"
+                      }`}
+                    >
+                      <div className="truncate font-medium">{t.title ?? "Untitled"}</div>
+                      <div className="text-[10px] text-slate-400">
+                        {new Date(t.updated_at).toLocaleString()}
+                      </div>
+                    </button>
+                    {/* Threads accumulate — six of them called "hello"
+                        before there was any way to be rid of one. */}
+                    <button
+                      onClick={() => onDeleteThread(t.id)}
+                      aria-label={`Delete ${t.title ?? "this conversation"}`}
+                      className="shrink-0 rounded px-1.5 py-1 text-[11px] text-slate-300 hover:bg-rose-50 hover:text-rose-500"
+                    >
+                      ✕
+                    </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -1136,6 +1158,37 @@ export default function ChatPanel({
             thing it is asking about. */}
         {requests.map((r) => {
           const done = r.status === "built";
+          // A finished thing does not belong in the live area at full
+          // height. It sat there for a week, taller than the chat,
+          // describing something the merchant dealt with yesterday —
+          // and naming a section they may since have deleted.
+          if (done && !openBuilt[r.id]) {
+            return (
+              <div
+                key={r.id}
+                className="flex items-center gap-2 rounded-lg border border-slate-150 bg-slate-50 px-2.5 py-1.5"
+              >
+                <span className="min-w-0 flex-1 truncate text-[10px] text-slate-400">
+                  Built by your AI
+                  {r.built_at ? ` · ${new Date(r.built_at).toLocaleDateString()}` : ""} ·{" "}
+                  {r.request}
+                </span>
+                <button
+                  onClick={() => setOpenBuilt((p) => ({ ...p, [r.id]: true }))}
+                  className="shrink-0 text-[10px] text-slate-500 hover:underline"
+                >
+                  Show
+                </button>
+                <button
+                  onClick={() => dismissRequest(r.id)}
+                  aria-label="Hide this"
+                  className="shrink-0 text-[11px] text-slate-400 hover:text-slate-600"
+                >
+                  ✕
+                </button>
+              </div>
+            );
+          }
           return (
             <div
               key={r.id}

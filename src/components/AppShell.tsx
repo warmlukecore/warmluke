@@ -257,6 +257,27 @@ export default function AppShell({
     [conversationId, projectId]
   );
 
+  /**
+   * Removes a conversation and its messages.
+   *
+   * Threads pile up — one per thing anybody typed, several of them
+   * called "hello" — and there was no way to be rid of one. Deleting
+   * the row takes its messages with it; the build history lives on
+   * build_requests and is untouched.
+   */
+  const deleteThread = useCallback(
+    async (id: string) => {
+      if (!confirm("Delete this conversation? Anything it built stays.")) return;
+      await supabase.from("conversations").delete().eq("id", id);
+      setThreads((prev) => prev.filter((t) => t.id !== id));
+      if (id === conversationId) {
+        setConversationId(null);
+        setChatMessages([]);
+      }
+    },
+    [conversationId]
+  );
+
   const startNewThread = useCallback(() => {
     setConversationId(null);
     setChatMessages([]);
@@ -1286,6 +1307,7 @@ export default function AppShell({
         onNewThread={startNewThread}
         onStop={() => chatAbort.current?.abort()}
         onPickThread={loadThread}
+        onDeleteThread={deleteThread}
         onSend={runPrompt}
         onApply={applyPlan}
         onBuild={buildApproved}
