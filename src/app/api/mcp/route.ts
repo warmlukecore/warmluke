@@ -137,7 +137,7 @@ const TOOLS = [
   {
     name: "read_section",
     description:
-      "The merchant's own sections in Warmluke — the things they or their assistant built, not their Shopify data. Call it with no arguments to see what sections exist, then with one to read its rows.",
+      "How a section in the merchant's Warmluke app is put together — its fields, its filters, its stats, where its rows come from — and its rows when it holds its own. Call it with no arguments to list the sections. Use this before guessing why something on screen behaves the way it does.",
     inputSchema: {
       type: "object",
       properties: {
@@ -597,12 +597,35 @@ export async function POST(req: Request) {
         );
       }
 
+      // How the section is put together, whoever owns its rows. An
+      // assistant asked "the dropdown does not work" could not look
+      // at the dropdown: it could read rows and nothing else, so it
+      // had to guess, and it guessed that nothing had been built.
+      const { data: schemaRow } = await db
+        .from("ui_schemas")
+        .select("schema_json, version")
+        .eq("module_id", section.id)
+        .order("version", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const sj = (schemaRow?.schema_json ?? {}) as {
+        columns?: Array<{ field: string; label: string; type: string }>;
+        features?: Record<string, unknown> | null;
+      };
+      const setup = {
+        section: section.nav_label,
+        rows_from: section.source_table ? `Shopify ${section.source_table}` : "this app",
+        version: schemaRow?.version ?? null,
+        fields: (sj.columns ?? []).map((c) => ({ field: c.field, label: c.label, type: c.type })),
+        features: sj.features ?? null,
+      };
+
       if (section.source_table) {
         return ok(
           id,
           text({
-            section: section.nav_label,
-            note: `This section shows the store's ${section.source_table}. Use search_store with table "${section.source_table}" to read it.`,
+            ...setup,
+            note: `Its rows are the store's ${section.source_table} — read them with search_store, table "${section.source_table}".`,
           })
         );
       }
@@ -618,7 +641,7 @@ export async function POST(req: Request) {
       return ok(
         id,
         text({
-          section: section.nav_label,
+          ...setup,
           total: count ?? 0,
           showing: rows?.length ?? 0,
           rows: (rows ?? []).map((r) => r.data),

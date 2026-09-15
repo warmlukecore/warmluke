@@ -8,6 +8,7 @@
 // specific module or field: everything comes from schema_json.
 // ─────────────────────────────────────────────────────────────
 
+import { filterOptions, matchesFilter } from "@/lib/filters";
 import { useMemo, useState } from "react";
 import type { FeatureSchema, RecordRow, UiSchema, ViewSpec } from "@/lib/types";
 import RecordModal from "@/components/RecordModal";
@@ -89,7 +90,10 @@ export default function GenericRenderer({
 
     for (const fl of features?.filters ?? []) {
       const v = filterValues[fl.field];
-      if (v) rows = rows.filter((r) => String(r.data?.[fl.field] ?? "") === v);
+      // Compared the way the search box beside it compares: a
+      // dropdown that matched byte for byte offered "active" against
+      // Shopify's "ACTIVE" and found nothing, twenty-one times.
+      if (v) rows = rows.filter((r) => matchesFilter(r, fl.field, v));
     }
 
     if (effectiveSort && columns.some((c) => c.field === effectiveSort.field)) {
@@ -263,7 +267,7 @@ export default function GenericRenderer({
                 className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-600 outline-none transition-colors focus:border-blue-400"
               >
                 <option value="">{fl.label}: All</option>
-                {fl.options.map((o) => (
+                {filterOptions(fl.options ?? [], records, fl.field).map((o) => (
                   <option key={o} value={o}>
                     {o}
                   </option>
