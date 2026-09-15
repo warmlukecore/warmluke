@@ -14,7 +14,7 @@ import {
 import { blueprintAsText, runTurn } from "@/lib/engine";
 import { parseReply } from "@/lib/ai";
 import { vocabularyPrompt } from "@/lib/capabilities";
-import { describePlan } from "@/lib/describe";
+import { describePlan, describeRules, type RuleRow } from "@/lib/describe";
 import { applyPlans } from "@/lib/apply";
 import type { AssistantPlan, ModuleRow, ProjectRow } from "@/lib/types";
 
@@ -283,6 +283,24 @@ function whyNotAutomatic(
 
   return null;
 }
+
+/**
+ * The rules on a project, or on one section of it.
+ *
+ * RLS scopes these to the caller. A section's rules and the app's own
+ * are the same question asked twice, so they are the same query.
+ */
+const ruleRowsFor = async (db: SupabaseClient, projectId: string, moduleId: string | null) => {
+  let q = db
+    .from("automations")
+    .select("id, name, enabled, module_id, definition")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: true })
+    .limit(40);
+  q = moduleId === null ? q.is("module_id", null) : q.eq("module_id", moduleId);
+  const { data } = await q;
+  return data ?? [];
+};
 
 /** How many waiting designs one answer names before it says so. */
 const SHOW_WAITING = 20;
@@ -716,6 +734,13 @@ export async function POST(req: Request) {
             note: sections.length
               ? "Call again with one of these as `section`."
               : "Nothing has been built in this app yet.",
+            // Rules that belong to the app rather than to one section.
+            // Left out, an assistant asked "does anything run daily?"
+            // had to guess, and guessed no.
+            rules_on_the_whole_app: describeRules(
+              ((await ruleRowsFor(db, project.id, null)) ?? []) as RuleRow[],
+              sections
+            ),
           })
         );
       }
@@ -749,12 +774,21 @@ export async function POST(req: Request) {
         columns?: Array<{ field: string; label: string; type: string }>;
         features?: Record<string, unknown> | null;
       };
+      // read_section says it explains how a section works, and left
+      // the rules out of that explanation entirely — so an assistant
+      // asked why a status keeps changing by itself could not see the
+      // rule changing it.
+      const sectionRules = describeRules(
+        ((await ruleRowsFor(db, project.id, section.id)) ?? []) as RuleRow[],
+        sections
+      );
       const setup = {
         section: section.nav_label,
         rows_from: section.source_table ? `Shopify ${section.source_table}` : "this app",
         version: schemaRow?.version ?? null,
         fields: (sj.columns ?? []).map((c) => ({ field: c.field, label: c.label, type: c.type })),
         features: sj.features ?? null,
+        rules: sectionRules.length ? sectionRules : "none on this section",
       };
 
       if (section.source_table) {

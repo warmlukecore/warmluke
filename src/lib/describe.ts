@@ -61,6 +61,34 @@ export function exprText(e: Expr | undefined): string {
   }
 }
 
+/** A rule row, as the database keeps it. */
+export type RuleRow = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  module_id: string | null;
+  definition: AutomationDefinition;
+};
+
+/**
+ * The rules already running, in the words the approval card uses.
+ *
+ * Nothing told the designer these existed. Not the chat box, not a
+ * connected assistant — so both would answer "there is no such rule"
+ * about a rule that runs every day, or propose a second one beside it.
+ * A designer that cannot see what is there designs over the top of it.
+ */
+export function describeRules(
+  rules: RuleRow[],
+  modules: Array<{ id: string; nav_label: string }>
+): string[] {
+  return rules.map((r) => {
+    const where = modules.find((m) => m.id === r.module_id)?.nav_label;
+    const lines = describeAutomation(r, modules).join("; ");
+    return `“${r.name}”${where ? ` on ${where}` : ""}${r.enabled ? "" : " (turned off)"} — ${lines}`;
+  });
+}
+
 export function describeAutomation(
   auto: { name: string; definition: AutomationDefinition },
   modules: Array<{ id: string; nav_label: string }>

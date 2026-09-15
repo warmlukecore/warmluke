@@ -43,6 +43,10 @@ const strangerToken = sess.session.access_token;
 let n = 0;
 let projectRow;
 let autoWas;
+// The calls below count against the account's hourly ceiling. Left
+// counted, a few runs of this check lock the next one out of the
+// server it exists to check.
+const runStartedAt = new Date().toISOString();
 let turnsWas;
 let ownerId;
 const rpc = (method, params, token) =>
@@ -478,6 +482,7 @@ try {
       .update({ free_turns: turnsWas.free_turns })
       .eq("user_id", ownerId);
   }
+  await admin.from("mcp_calls").delete().gte("created_at", runStartedAt);
   await admin.auth.admin.deleteUser(made.user.id);
   console.log("\ntest user removed");
 }

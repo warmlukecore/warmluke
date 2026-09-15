@@ -73,6 +73,15 @@ const tool = async (name, args, id = 1) => {
   }
 };
 
+
+// Calls this run makes count against the account's hourly ceiling, so
+// after a few runs the check cannot reach the server it is checking.
+// Its own calls are not a merchant's; they are swept at the end.
+const runStartedAt = new Date().toISOString();
+const sweepOwnCalls = async (userId) => {
+  await admin.from("mcp_calls").delete().eq("user_id", userId).gte("created_at", runStartedAt);
+};
+
 const stamp = Date.now().toString(36);
 const spent = async () =>
   (await admin.from("account_settings").select("turns_used").eq("user_id", uid).single()).data
@@ -274,6 +283,7 @@ try {
     paid?.do_this_instead === "design_format"
   );
 } finally {
+  await sweepOwnCalls(uid);
   for (const id of made) await admin.from("build_requests").delete().eq("id", id);
   await admin
     .from("account_settings")

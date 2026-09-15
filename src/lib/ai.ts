@@ -357,7 +357,9 @@ export function buildUserMessage(
   userRequest: string,
   targetModuleId: string | null,
   currentSchema: UiSchema | null,
-  currentFeatures: FeatureSchema | null
+  currentFeatures: FeatureSchema | null,
+  /** Rules already running on this app, in plain words. */
+  rules: string[] = []
 ): string {
   const schemaCtx = currentSchema
     ? JSON.stringify(currentSchema)
@@ -370,6 +372,10 @@ ${schemaCtx}
 
 CONTEXT — current features (search/filters/stats/sort) of that module:
 ${featuresCtx}
+
+CONTEXT — rules already running on this app. Do not propose one that
+is already here; to change a rule, remove it and add the new one.
+${rules.length ? rules.map((r) => `- ${r}`).join("\n") : "none"}
 
 USER REQUEST:
 ${userRequest}`;

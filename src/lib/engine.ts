@@ -22,7 +22,16 @@ import {
   type ChatTurn,
   type StoreContext,
 } from "@/lib/ai";
-import { describePlan } from "@/lib/describe";
+import { describePlan, describeRules, type RuleRow } from "@/lib/describe";
+
+/**
+ * How many rules the designer is shown.
+ *
+ * ponytail: a flat cap, and the oldest win. An app with more rules
+ * than this needs them summarised by section rather than listed;
+ * raise it or group them when one actually has that many.
+ */
+const RULES_IN_CONTEXT = 40;
 import { storeOverview, storeValues } from "@/lib/store-read";
 import type { AssistantReply, FeatureSchema, ModuleRow, ProjectRow, UiSchema } from "@/lib/types";
 
@@ -134,8 +143,20 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   } = input;
 
   const store = await storeContextFor(client, project.id);
+  // What already runs on this app. Left out, the designer proposes a
+  // rule that exists, or tells the merchant no rule exists when one
+  // fires every morning. It goes in the user turn rather than the
+  // system prompt because that prompt is cached across projects.
+  const { data: ruleRows } = await client
+    .from("automations")
+    .select("id, name, enabled, module_id, definition")
+    .eq("project_id", project.id)
+    .order("created_at", { ascending: true })
+    .limit(RULES_IN_CONTEXT);
+  const rules = describeRules((ruleRows ?? []) as RuleRow[], modules);
+
   const system = buildSystemPrompt(modules, project.name, project.locale, project.currency, store);
-  const userTurn = buildUserMessage(message, moduleId, currentSchema, currentFeatures);
+  const userTurn = buildUserMessage(message, moduleId, currentSchema, currentFeatures, rules);
 
   // The rejected attempt and its errors stay in the turns sent to the
   // model but are never persisted — replaying a malformed reply from
