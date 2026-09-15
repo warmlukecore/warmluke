@@ -162,21 +162,77 @@ try {
   // except from its own memory of proposing one — so it listed designs
   // the merchant had long since dismissed and called them pending.
   const waiting = await tool("pending_changes", { project_id: project.id }, 6);
-  check("the one just submitted is waiting", waiting?.count >= 1);
+  check("the one just submitted is waiting", waiting?.total >= 1);
   check(
     "and it is named with the id approve_change wants",
     (waiting?.waiting ?? []).some((w) => w.request_id === good?.request_id)
   );
   check(
     "and it is not pretending to be approved",
-    (waiting?.waiting ?? []).every((w) => w.approved === false)
+    (waiting?.waiting ?? []).every((w) => w.state !== "approved, not built yet")
   );
+
+  // Three different situations were being described with one sentence
+  // about needing approval.
+  const one = (waiting?.waiting ?? []).find((w) => w.request_id === good?.request_id);
+  check("a request nobody stamped says so", one?.state === "awaiting_approval");
+  check("and this connection may act on it", one?.you_can_approve_it === true);
+  check("and it is not credited to an assistant", /merchant/i.test(one?.raised_by ?? ""));
+  check("and it says what to do next", (one?.next_action ?? "").length > 0);
+
+  // Approved is not the same as awaiting approval; saying so sent the
+  // model back to ask for a yes it already had.
+  await admin
+    .from("build_requests")
+    .update({ approved_at: new Date().toISOString() })
+    .eq("id", good.request_id);
+  const stamped = await tool("pending_changes", { project_id: project.id }, 8);
+  check(
+    "an approved one stops asking for approval",
+    (stamped?.waiting ?? []).find((w) => w.request_id === good.request_id)?.state ===
+      "approved, not built yet"
+  );
+
+  // A second connected assistant's request is not this one's to build
+  // — the database already refuses it, so advertising the id would
+  // hand the model something it cannot act on.
+  const { data: other } = await admin
+    .from("build_requests")
+    .insert({
+      project_id: project.id,
+      requested_by: uid,
+      client_id: "some-other-assistant",
+      request: `raised elsewhere ${stamp}`,
+      plans: [],
+      status: "pending",
+    })
+    .select("id")
+    .single();
+  made.push(other.id);
+  const mixed = await tool("pending_changes", { project_id: project.id }, 10);
+  const theirs = (mixed?.waiting ?? []).find((w) => w.request_id === other.id);
+  check("another assistant's request is named as theirs", /another assistant/i.test(theirs?.raised_by ?? ""));
+
+  // The count has to be the whole count, not the size of the page.
+  check("it says how many there are in total", typeof waiting?.total === "number");
+  check("and how many it actually listed", typeof waiting?.showing === "number");
+
+  // An id that is not theirs used to answer "nothing is waiting" —
+  // the same lie, about the wrong app.
+  const foreign = await tool(
+    "pending_changes",
+    { project_id: "11111111-2222-3333-4444-555555555555" },
+    9
+  );
+  check("an app that is not theirs is an error", typeof foreign?.error === "string");
+  check("not an empty queue", foreign?.total === undefined);
+  check("and it names the apps they do have", Array.isArray(foreign?.projects));
 
   // The half that was actually going wrong: when nothing waits, the
   // answer has to be a plain no.
   for (const r of made) await admin.from("build_requests").update({ status: "dismissed" }).eq("id", r);
   const empty = await tool("pending_changes", { project_id: project.id }, 7);
-  check("a dismissed design stops waiting", empty?.count === 0);
+  check("a dismissed design stops waiting", empty?.total === 0);
   check(
     "and the model is told not to claim otherwise",
     /do not tell the merchant otherwise/i.test(empty?.note ?? "")

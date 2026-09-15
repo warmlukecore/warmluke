@@ -509,7 +509,7 @@ export default function ChatPanel({
   onSend: (text: string) => void;
   onApply: (plan: AssistantPlan, planId: string) => void;
   /** Applies an approved blueprint's plans directly, with no model round trip. */
-  onBuild: (plans: AssistantPlan[]) => void;
+  onBuild: (plans: AssistantPlan[]) => Promise<"built" | "partly" | "failed">;
   onDiscard: (planId: string) => void;
   /** Whose store to warn about, if this project has one connected. */
   projectId: string;
@@ -619,8 +619,20 @@ export default function ChatPanel({
     // approve from inside Claude too: their AI can only build a
     // request somebody stamped, and it cannot stamp its own.
     await supabase.rpc("abo_approve_request", { p_request: r.id });
-    await onBuild(r.plans);
-    await supabase
+
+    // Only what actually got built is written down as built. This used
+    // to mark it regardless, so a failed build disappeared from the
+    // queue as done — and their assistant, reading that queue, would
+    // tell them it was finished.
+    const outcome = await onBuild(r.plans);
+    if (outcome === "failed") {
+      // It stays where it is, with the yes recorded. The chat above
+      // already says what went wrong.
+      loadRequests();
+      return;
+    }
+
+    const { error } = await supabase
       .from("build_requests")
       .update({
         status: "built",
@@ -628,17 +640,26 @@ export default function ChatPanel({
         resolved_at: new Date().toISOString(),
       })
       .eq("id", r.id);
+    if (error) console.error("could not mark the request built:", error.message);
     // Reloaded rather than removed: it becomes the record that this
     // was built, which is the whole point of keeping it.
     loadRequests();
   }
 
   async function dismissRequest(id: string) {
-    setRequests((prev) => prev.filter((x) => x.id !== id));
-    await supabase
+    const { error } = await supabase
       .from("build_requests")
       .update({ status: "dismissed", resolved_at: new Date().toISOString() })
       .eq("id", id);
+    // Removed after the write, not before it. Dropping the card first
+    // meant a failed dismissal looked done here and stayed waiting
+    // everywhere else — including in what their assistant is told.
+    if (error) {
+      console.error("could not dismiss the request:", error.message);
+      loadRequests();
+      return;
+    }
+    setRequests((prev) => prev.filter((x) => x.id !== id));
   }
   useEffect(() => {
     supabase.rpc("abo_my_settings").then(({ data }) => {

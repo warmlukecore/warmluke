@@ -284,6 +284,27 @@ function whyNotAutomatic(
   return null;
 }
 
+/** How many waiting designs one answer names before it says so. */
+const SHOW_WAITING = 20;
+
+/** The connected client this request came from, or null for the app. */
+const clientIdOf = (req: Request): string | null => {
+  const raw = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
+  const body = raw.split(".")[1];
+  if (!body) return null;
+  try {
+    const claims = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as {
+      client_id?: string;
+    };
+    return claims.client_id || null;
+  } catch {
+    // An unreadable token is not a client. Everything it could reach is
+    // already decided by RLS on the same token, so reading none of it
+    // here costs nothing.
+    return null;
+  }
+};
+
 const ok = (id: RpcRequest["id"], result: Json) => NextResponse.json({ jsonrpc: "2.0", id, result });
 
 const rpcError = (id: RpcRequest["id"], code: number, message: string) =>
@@ -770,33 +791,94 @@ export async function POST(req: Request) {
       // the merchant had since dismissed or built — and called them
       // waiting. They were not.
       const wanted = (args.project_id as string | undefined)?.trim();
+
+      // An id is resolved, never trusted. Filtering on one that is not
+      // theirs returns nothing, and "nothing is waiting" said about the
+      // wrong app is the same lie this tool exists to stop.
+      const { data: mine } = await db.from("projects").select("id, name");
+      const projectList = (mine ?? []) as Array<{ id: string; name: string }>;
+      if (wanted && !projectList.some((p) => p.id === wanted)) {
+        return ok(
+          id,
+          text({
+            error: `No app of theirs has the id ${wanted}.`,
+            note: "Do not tell the merchant anything about what is waiting — this answer covers no app at all.",
+            projects: projectList.map((p) => ({ id: p.id, name: p.name })),
+          })
+        );
+      }
+
+      const client = clientIdOf(req);
       let q = db
         .from("build_requests")
-        .select("id, project_id, request, summary, status, approved_at, created_at, client_id")
+        .select("id, project_id, request, summary, status, approved_at, created_at, client_id", {
+          count: "exact",
+        })
         .in("status", ["pending", "building"])
         .order("created_at", { ascending: false })
-        .limit(20);
+        .limit(SHOW_WAITING);
       if (wanted) q = q.eq("project_id", wanted);
-      const { data: waiting, error: wErr } = await q;
+      const { data: waiting, count, error: wErr } = await q;
       if (wErr) return ok(id, text({ error: wErr.message }));
 
       const rows = waiting ?? [];
+      const total = count ?? rows.length;
       return ok(
         id,
         text({
-          count: rows.length,
-          note: rows.length
-            ? "These are waiting. Read one back to the merchant and call approve_change with its request_id if they say yes."
+          // rows.length alone read as the whole truth once the queue
+          // grew past a page of it.
+          total,
+          showing: rows.length,
+          ...(total > rows.length
+            ? { has_more: `${total - rows.length} older ones are not listed here.` }
+            : {}),
+          note: total
+            ? "Only the ones marked awaiting_approval need the merchant's yes. Read one back and call approve_change with its request_id if they say so."
             : "Nothing is waiting for approval. Do not tell the merchant otherwise — anything from earlier in this conversation has since been built or dismissed.",
-          waiting: rows.map((r) => ({
-            request_id: r.id,
-            project_id: r.project_id,
-            asked_for: r.request,
-            design: r.summary,
-            raised_by: r.client_id ? "this assistant" : "the merchant, in Warmluke",
-            approved: r.approved_at !== null,
-            since: r.created_at,
-          })),
+          waiting: rows.map((r) => {
+            // Three different situations were being described with one
+            // sentence about needing approval: one that does, one that
+            // has it already, and one that is mid-build.
+            const state =
+              r.status === "building"
+                ? "building"
+                : r.approved_at
+                  ? "approved, not built yet"
+                  : "awaiting_approval";
+            // Only the client that raised a request may build it — the
+            // database enforces that. Saying otherwise hands the model
+            // an id it cannot act on.
+            const canApprove = client === null || r.client_id === client;
+            return {
+              request_id: r.id,
+              project_id: r.project_id,
+              asked_for: r.request,
+              design: r.summary,
+              state,
+              raised_by: !r.client_id
+                ? "the merchant, in Warmluke"
+                : r.client_id === client
+                  ? "this assistant"
+                  : "another assistant connected to this account",
+              you_can_approve_it: canApprove,
+              next_action:
+                state === "building"
+                  ? // ponytail: no lease on a claim yet, so a build that
+                    // died mid-way sits here. Say so rather than invent
+                    // a timeout; add claimed_at and a recovery path when
+                    // one is actually seen stuck.
+                    "Somebody is applying this now. If it has been like this for a long time, the merchant can look in Warmluke."
+                  : state === "approved, not built yet"
+                    ? canApprove
+                      ? "Already approved — call approve_change with this request_id to build it."
+                      : "Already approved. The assistant that raised it, or the merchant in Warmluke, builds it."
+                    : canApprove
+                      ? "Read the design back. If they say yes, call approve_change with this request_id."
+                      : "Not yours to approve — tell the merchant it is waiting in Warmluke.",
+              since: r.created_at,
+            };
+          }),
         })
       );
     }

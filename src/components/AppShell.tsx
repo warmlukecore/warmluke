@@ -908,9 +908,18 @@ export default function AppShell({
    * owner just read, so what runs is exactly what they saw — there is
    * no second model turn that could produce something else.
    */
+  /**
+   * Applies an approved blueprint and says how it went.
+   *
+   * It used to answer nothing at all, whatever happened. The caller
+   * that builds a request card then marked the request "built" the
+   * moment this returned — after a failure just the same — so a build
+   * that did not happen vanished from the queue as done. A function
+   * that swallows its own outcome makes every caller guess.
+   */
   const buildApproved = useCallback(
-    async (plans: AssistantPlan[]) => {
-      if (plans.length === 0 || building) return;
+    async (plans: AssistantPlan[]): Promise<"built" | "partly" | "failed"> => {
+      if (plans.length === 0 || building) return "failed";
       setBuilding(true);
       setChatMessages((prev) => [
         ...prev,
@@ -951,6 +960,7 @@ export default function AppShell({
           const first = results.find((r) => r.changeType === "NEW_MODULE");
           if (first?.moduleId) setSelectedModuleId(first.moduleId as string);
           else if (selectedModuleId) await loadModuleData(selectedModuleId);
+          return data.partial ? "partly" : "built";
         } else {
           setChatMessages((prev) => [
             ...prev,
@@ -962,6 +972,7 @@ export default function AppShell({
             },
           ]);
         }
+        return "failed";
       } finally {
         setBuilding(false);
       }
