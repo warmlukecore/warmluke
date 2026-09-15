@@ -505,6 +505,10 @@ export async function POST(req: Request) {
       const origin = new URL(req.url).origin;
 
       if (automatic) {
+        // auto-build IS the approval — given in Warmluke, on this
+        // project, before any of this was asked for. The stamp records
+        // that, so the row says who agreed and when.
+        await db.rpc("abo_approve_request", { p_request: requestId });
         const { applied, errors } = await applyPlans(db, project.id, plans, requestId as string);
         if (applied.length > 0) {
           await db.rpc("abo_build", {
@@ -714,6 +718,26 @@ export async function POST(req: Request) {
           text({
             error: "This design removes a section, which cannot be built from here.",
             note: `In Warmluke, open the section and type its name (${goneNow.join(", ")}) to confirm. Nothing has changed.`,
+          })
+        );
+      }
+
+      // Record the yes before anything is written. The database no
+      // longer takes a client's word for it: with auto-build on this
+      // stamps, and with it off it refuses and the design waits for
+      // the merchant in Warmluke — where the bell already shows it.
+      const { data: nod } = await db.rpc("abo_approve_request", { p_request: reqRow.id });
+      const approval = nod as { approved: boolean; reason?: string } | null;
+      if (!approval?.approved) {
+        return ok(
+          id,
+          text({
+            status: "waiting for approval",
+            error:
+              "Warmluke needs the merchant's yes from inside their own app before this is built.",
+            note: "Tell them it is waiting in Warmluke — the bell in the assistant panel. If they would rather you built these without asking each time, they can turn auto-build on for this app.",
+            open: `${new URL(req.url).origin}/app/${reqRow.project_id}`,
+            reason: approval?.reason,
           })
         );
       }

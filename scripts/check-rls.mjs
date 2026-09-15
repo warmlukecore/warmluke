@@ -122,7 +122,10 @@ try {
     (await S(`projects?id=eq.${proj.id}`, { method: "DELETE" })).json?.length === 0);
 
   console.log("\ncommerce data is locked to its store the same way");
-  const store = (await O("stores", { method: "POST", body: JSON.stringify({ project_id: proj.id, shop_domain: `rls-${stamp}.myshopify.com`, timezone: "Asia/Kolkata", currency: "INR" }) })).json[0];
+  // select=id, not the default representation: since 0046 the token
+  // columns are not selectable by anyone, so asking for the whole row
+  // back is a permission error rather than a store.
+  const store = (await O("stores?select=id", { method: "POST", body: JSON.stringify({ project_id: proj.id, shop_domain: `rls-${stamp}.myshopify.com`, timezone: "Asia/Kolkata", currency: "INR" }) })).json[0];
   const cust = (await O("customers", { method: "POST", body: JSON.stringify({ store_id: store.id, external_id: `c${stamp}`, name: "Aman K", phone: "9999900000" }) })).json[0];
   const ord = (await O("orders", { method: "POST", body: JSON.stringify({ store_id: store.id, external_id: `o${stamp}`, order_number: "#1847", customer_id: cust.id, total: 2340, currency: "INR", tags: ["cod"] }) })).json[0];
 
@@ -132,16 +135,21 @@ try {
   check("staff cannot change an order",
     (await S(`orders?id=eq.${ord.id}`, { method: "PATCH", body: JSON.stringify({ total: 1 }) })).json?.length === 0);
   check("staff cannot connect or alter a store",
-    (await S(`stores?id=eq.${store.id}`, { method: "PATCH", body: JSON.stringify({ shop_domain: "hijacked.myshopify.com" }) })).json?.length === 0);
+    (await S(`stores?id=eq.${store.id}&select=id`, { method: "PATCH", body: JSON.stringify({ shop_domain: "hijacked.myshopify.com" }) })).json?.length === 0);
   // The dashboard hides Disconnect from staff, but that is only a label.
   // Disconnecting deletes the store and cascades to every order and
   // customer under it, so the real refusal has to be here.
   check("staff cannot disconnect the store",
-    (await S(`stores?id=eq.${store.id}`, { method: "DELETE" })).json?.length === 0);
-  check("the store survived that attempt", (await O(`stores?id=eq.${store.id}`)).json.length === 1);
-  check("staff cannot read the access token",
-    !(await S(`stores?id=eq.${store.id}&select=access_token`, { method: "PATCH", body: JSON.stringify({ access_token: "stolen" }) })).ok ||
-      (await O(`stores?id=eq.${store.id}&select=access_token`)).json[0]?.access_token == null);
+    (await S(`stores?id=eq.${store.id}&select=id`, { method: "DELETE" })).json?.length === 0);
+  check("the store survived that attempt", (await O(`stores?id=eq.${store.id}&select=id`)).json.length === 1);
+  check("staff cannot write the access token",
+    !(await S(`stores?id=eq.${store.id}&select=id`, { method: "PATCH", body: JSON.stringify({ access_token: "stolen" }) })).ok ||
+      (await O(`stores?id=eq.${store.id}&select=id`)).json.length === 1);
+  // Nor read it — RLS decides rows, so this is a column privilege and
+  // it refuses the owner too. check-store-token covers it in full.
+  check("and nobody reads it as a column",
+    !(await S(`stores?id=eq.${store.id}&select=access_token`)).ok &&
+      !(await O(`stores?id=eq.${store.id}&select=access_token`)).ok);
 
   console.log("\na Shopify connection can only be completed once");
   const rpc = (token, state) =>
@@ -158,7 +166,7 @@ try {
       }),
     }).then((r) => r.json());
 
-  const pending = (await O("stores", {
+  const pending = (await O("stores?select=id", {
     method: "POST",
     body: JSON.stringify({
       project_id: proj.id, shop_domain: `pend-${stamp}.myshopify.com`, status: "pending",
@@ -171,13 +179,16 @@ try {
   check("the real state completes the connection", (await rpc(owner.jwt, `state-${stamp}`)) === proj.id);
   check("the same state cannot be used twice", (await rpc(owner.jwt, `state-${stamp}`)) === null);
   check("the store is now connected",
-    (await O(`stores?id=eq.${pending.id}&select=status,timezone,oauth_state`)).json[0]?.status === "connected");
+    (await O(`stores?id=eq.${pending.id}&select=status,timezone`)).json[0]?.status === "connected");
   check("the store kept its own timezone",
     (await O(`stores?id=eq.${pending.id}&select=timezone`)).json[0]?.timezone === "Asia/Kolkata");
-  check("the nonce was spent",
-    (await O(`stores?id=eq.${pending.id}&select=oauth_state`)).json[0]?.oauth_state === null);
+  // The nonce is not selectable since 0046 — it is a secret like the
+  // token. That it was spent is what the line above already proves:
+  // the same state connected nothing the second time.
+  check("and the nonce is not readable either",
+    !(await O(`stores?id=eq.${pending.id}&select=oauth_state`)).ok);
 
-  const stale = (await O("stores", {
+  const stale = (await O("stores?select=id", {
     method: "POST",
     body: JSON.stringify({
       project_id: proj.id, shop_domain: `stale-${stamp}.myshopify.com`, status: "pending",
@@ -192,7 +203,7 @@ try {
     (await rpc(outsider.jwt, `expired-${stamp}`)) === null);
 
   console.log("\nanother merchant's commerce is invisible");
-  check("outsider sees no store", (await X(`stores?id=eq.${store.id}`)).json.length === 0);
+  check("outsider sees no store", (await X(`stores?id=eq.${store.id}&select=id`)).json.length === 0);
   check("outsider sees no orders", (await X(`orders?id=eq.${ord.id}`)).json.length === 0);
   check("outsider sees no customers", (await X(`customers?id=eq.${cust.id}`)).json.length === 0);
   check("outsider cannot insert into someone else's store",

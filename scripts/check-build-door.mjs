@@ -73,6 +73,21 @@ const pending = (clientId) => `
           ${clientId ? `'${clientId}'` : "null"}, 'a test request', '[]'::jsonb, 'pending');
 `;
 
+/**
+ * The same request, after somebody said yes.
+ *
+ * Pending is the word for nobody having answered yet, and 0047 stopped
+ * treating it as permission. A stamp is what a client now has to find
+ * already there — it cannot make its own unless the merchant left
+ * auto-build on.
+ */
+const approved = (clientId) => `
+  ${pending(clientId)}
+  update public.build_requests
+     set approved_at = now(), approved_by = '${row.owner_id}'
+   where id = '11111111-1111-1111-1111-111111111111';
+`;
+
 const REQ = "'11111111-1111-1111-1111-111111111111'::uuid";
 const mk = (req, op = "module_insert", payload = `'{"name":"door-test","nav_label":"Door","route":"/modules/door-test"}'::jsonb`) =>
   `select public.abo_build('${row.project_id}'::uuid, ${req}, '${op}', ${payload});`;
@@ -90,19 +105,23 @@ check(
   failed(await scenario("claude-test", "", mk(REQ)))
 );
 check(
-  "can build against a pending request it raised",
-  !failed(await scenario("claude-test", pending("claude-test"), mk(REQ)))
+  "cannot build against a pending request it raised",
+  failed(await scenario("claude-test", pending("claude-test"), mk(REQ)))
+);
+check(
+  "can build against one the merchant approved",
+  !failed(await scenario("claude-test", approved("claude-test"), mk(REQ)))
 );
 check(
   "cannot build against another client's request",
-  failed(await scenario("claude-test", pending("some-other-client"), mk(REQ)))
+  failed(await scenario("claude-test", approved("some-other-client"), mk(REQ)))
 );
 check(
   "cannot build against a request already built",
   failed(
     await scenario(
       "claude-test",
-      pending("claude-test") +
+      approved("claude-test") +
         `update public.build_requests set status = 'built' where id = ${REQ};`,
       mk(REQ)
     )
@@ -113,7 +132,7 @@ check(
   failed(
     await scenario(
       "claude-test",
-      pending("claude-test") +
+      approved("claude-test") +
         `update public.build_requests set status = 'dismissed' where id = ${REQ};`,
       mk(REQ)
     )
@@ -126,7 +145,7 @@ check(
   failed(
     await scenario(
       "claude-test",
-      pending("claude-test"),
+      approved("claude-test"),
       mk(REQ, "module_delete", `'{"module_id":"${row.project_id}"}'::jsonb`)
     )
   )
@@ -190,14 +209,14 @@ check(
 console.log("\nan approval is spent once");
 const twice = await scenario(
   "claude-test",
-  pending("claude-test"),
+  approved("claude-test"),
   `select public.abo_build('${row.project_id}'::uuid, ${REQ}, 'request_claim', '{}'::jsonb) as first;
    select public.abo_build('${row.project_id}'::uuid, ${REQ}, 'request_claim', '{}'::jsonb) as second;`
 );
 check("a second claim on the same request builds nothing", said(twice, '"count":0'));
 const spent = await scenario(
   "claude-test",
-  pending("claude-test"),
+  approved("claude-test"),
   `select public.abo_build('${row.project_id}'::uuid, ${REQ}, 'request_built', '{}'::jsonb);
    ${mk(REQ)}`
 );

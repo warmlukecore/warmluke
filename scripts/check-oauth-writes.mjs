@@ -41,7 +41,7 @@ const check = (name, cond) => {
 // A real owner and a real project, so the ordinary policies pass and
 // the only thing that can refuse is the OAuth restriction.
 const who = await sql(`
-  select p.id as project_id, p.owner_id, m.id as module_id
+  select p.id as project_id, p.owner_id, p.auto_build, m.id as module_id
     from public.projects p
     left join public.modules m on m.project_id = p.id
    order by p.created_at limit 1
@@ -138,6 +138,109 @@ console.log("\nbut reading is the whole point");
 const read = await sql(asUser("claude-test", `select count(*) as n from public.orders;`));
 check("can still read orders", read.status === 201);
 check("and sees them", JSON.stringify(read.body).includes('"n"'));
+
+// ── The one door, and what it asks for ──────────────────────────
+// abo_build is the only write a client gets. 0033 let it through on a
+// request that was merely pending — the word for the merchant not
+// having answered yet — so a client could raise its own request with
+// propose_change and then write whatever it liked, never going near
+// /api/mcp. Approval is a stamp now, and a client cannot make its own
+// unless the merchant left auto-build on.
+console.log("\nthe one door a client does get");
+{
+  // Made the way propose_change makes it: RLS refuses a direct insert,
+  // which is why the real one goes through a definer function.
+  const made = await sql(`
+    insert into public.build_requests
+      (project_id, requested_by, request, status, client_id, plans)
+    values ('${row.project_id}', '${row.owner_id}', 'a check', 'pending', 'claude-test', '[]'::jsonb)
+    returning id
+  `);
+  const reqId = made.body?.[0]?.id;
+  check("a client's request can be raised", typeof reqId === "string");
+  if (typeof reqId !== "string") console.log("     →", JSON.stringify(made.body).slice(0, 300));
+
+  // asUser rolls everything back, which is what makes the write tests
+  // safe — and means a stamp and the build it permits have to happen
+  // inside the SAME block to be seen by each other.
+  const attempt = (clientId, before = "") =>
+    sql(
+      asUser(
+        clientId,
+        `do $$
+         declare v_said jsonb; v_out jsonb;
+         begin
+           ${before}
+           begin
+             v_out := public.abo_build('${row.project_id}', '${reqId}', 'module_insert',
+               '{"name":"oauth_check","nav_label":"OAuth Check","route":"/oauth-check"}'::jsonb);
+             raise exception 'said=% built=%', v_said, v_out;
+           exception when sqlstate '42501' then
+             raise exception 'said=% refused=%', v_said, sqlerrm;
+           end;
+         end $$;`
+      )
+    );
+  const stamping = `v_said := public.abo_approve_request('${reqId}');`;
+  // The outcome is raised, so it arrives as an error message. Reading
+  // it through JSON.stringify would escape every quote in the jsonb.
+  const said = (r) => r.body?.message ?? JSON.stringify(r.body);
+
+  const bare = await attempt("claude-test");
+  check(
+    "a client cannot build a request nobody approved",
+    said(bare).includes("refused=")
+  );
+
+  await sql(`update public.projects set auto_build = false where id = '${row.project_id}'`);
+  const self = await attempt("claude-test", stamping);
+  const selfSaid = said(self);
+  check(
+    "nor approve its own, with auto-build off",
+    selfSaid.includes("refused=") && /"approved"\s*:\s*false/.test(selfSaid)
+  );
+
+  // The merchant's standing yes. This is the setting they already
+  // understand, and the only way approving inside Claude still works.
+  await sql(`update public.projects set auto_build = true where id = '${row.project_id}'`);
+  const standing = await attempt("claude-test", stamping);
+  const standingSaid = said(standing);
+  check(
+    "with auto-build on it approves and builds",
+    standingSaid.includes("built=") && /"approved"\s*:\s*true/.test(standingSaid)
+  );
+
+  // And the ordinary route: the merchant taps approve in Warmluke,
+  // their AI builds it afterwards. No auto-build involved, so the
+  // stamp has to survive the transaction — it is written for real and
+  // taken back at the end.
+  await sql(`update public.projects set auto_build = false where id = '${row.project_id}'`);
+  const byOwner = await sql(`
+    select set_config('request.jwt.claims', $claims$${JSON.stringify({
+      sub: row.owner_id,
+      role: "authenticated",
+    })}$claims$, false);
+    set role authenticated;
+    select public.abo_approve_request('${reqId}') as said;
+  `);
+  check(
+    "the app itself can approve it",
+    /"approved"\s*:\s*true/.test(JSON.stringify(byOwner.body ?? {}))
+  );
+  const allowed = await attempt("claude-test");
+  check("and then the client may build that", said(allowed).includes("built="));
+
+  await sql(`
+    delete from public.build_requests where id = '${reqId}';
+    delete from public.modules where project_id = '${row.project_id}' and name = 'oauth_check';
+    update public.projects set auto_build = ${row.auto_build === true} where id = '${row.project_id}';
+  `);
+  const left = await sql(
+    `select count(*)::int as n from public.modules
+      where project_id = '${row.project_id}' and name = 'oauth_check'`
+  );
+  check("nothing this check built is left behind", left.body?.[0]?.n === 0);
+}
 
 console.log("\nand the app itself is untouched");
 check(

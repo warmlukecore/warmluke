@@ -615,6 +615,10 @@ export default function ChatPanel({
    */
   async function buildRequest(r: { id: string; plans: AssistantPlan[] | null }) {
     if (!r.plans?.length) return;
+    // This tap is the yes. Recording it here is what lets the merchant
+    // approve from inside Claude too: their AI can only build a
+    // request somebody stamped, and it cannot stamp its own.
+    await supabase.rpc("abo_approve_request", { p_request: r.id });
     await onBuild(r.plans);
     await supabase
       .from("build_requests")
