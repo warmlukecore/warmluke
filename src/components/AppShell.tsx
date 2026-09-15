@@ -172,15 +172,21 @@ export default function AppShell({
    * can still be approved.
    */
   const loadThread = useCallback(
-    async (id?: string) => {
+    async (id?: string, openLatest = false) => {
       const { data } = await supabase.auth.getSession();
       const token = data.session?.access_token;
-      // No id = list the threads and leave the panel empty. Opening the
-      // app usually means a new task, and dropping someone into an old
-      // conversation about sections that may not exist any more reads as
-      // a bug. The picker is one click away.
+      // Opening the app used to list the threads and leave the panel
+      // empty, on the reasoning that a new visit means a new task. But
+      // the last thing in that thread is usually "Built 3 changes" —
+      // the receipt for what the assistant just did — and a receipt
+      // that disappears on refresh reads as the build not having
+      // happened. So the newest thread comes back with it.
+      //
+      // Without an id and without openLatest this only re-lists the
+      // threads: the caller has messages on screen worth keeping.
       const qs = new URLSearchParams({ projectId });
       if (id) qs.set("id", id);
+      else if (openLatest) qs.set("latest", "1");
       const res = await fetch(`/api/chat?${qs}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -191,6 +197,10 @@ export default function AppShell({
         messages: Array<{ id: string; role: string; payload: Record<string, unknown> | null }>;
       };
       setThreads(json.threads ?? []);
+      // Re-listing only. Replacing the panel here wiped the message the
+      // caller had just put on screen — the "couldn't reach the
+      // assistant" line vanished the moment it was written.
+      if (!id && !openLatest) return;
       setConversationId(json.conversationId);
 
       const rebuilt: ChatMessage[] = [];
@@ -231,7 +241,7 @@ export default function AppShell({
   );
 
   useEffect(() => {
-    loadThread();
+    loadThread(undefined, true);
   }, [loadThread]);
 
   /**
