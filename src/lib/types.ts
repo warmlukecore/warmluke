@@ -173,6 +173,12 @@ export interface UiSchema {
 // ── Core rows ────────────────────────────────────────────────
 
 export interface ProjectRow {
+  /**
+   * Additive designs from an AI apply without waiting for approval.
+   * Per project, because the risk is the app's: on for something
+   * being played with, off for the one staff use every day.
+   */
+  auto_build?: boolean;
   id: string;
   owner_id: string;
   name: string;

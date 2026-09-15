@@ -55,7 +55,7 @@ export async function PATCH(req: Request) {
   if (!auth) {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
   }
-  const { id, name, description, locale, currency } = (await req
+  const { id, name, description, locale, currency, auto_build } = (await req
     .json()
     .catch(() => ({}))) as {
     id?: string;
@@ -63,6 +63,7 @@ export async function PATCH(req: Request) {
     description?: string | null;
     locale?: string;
     currency?: string;
+    auto_build?: boolean;
   };
   if (!id) {
     return NextResponse.json({ error: "id is required" }, { status: 400 });
@@ -89,6 +90,10 @@ export async function PATCH(req: Request) {
     }
     patch.currency = code;
   }
+  // Reachable only under the caller's own RLS, which is what keeps an
+  // assistant from granting itself permission to skip approval: a
+  // token carrying client_id cannot write this table at all (0028).
+  if (typeof auto_build === "boolean") patch.auto_build = auto_build;
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
   }

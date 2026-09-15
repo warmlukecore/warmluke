@@ -39,6 +39,7 @@ export default function ProjectSettings({
   const [name, setName] = useState(project.name);
   const [locale, setLocale] = useState(project.locale ?? "en-IN");
   const [currency, setCurrency] = useState(project.currency ?? "INR");
+  const [autoBuild, setAutoBuild] = useState(project.auto_build === true);
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,14 +80,17 @@ export default function ProjectSettings({
   const preview = makeFormatting(locale, currency);
   const canDelete = confirm.trim().toLowerCase() === project.name.trim().toLowerCase();
   const dirty =
-    name.trim() !== project.name || locale !== project.locale || currency !== project.currency;
+    name.trim() !== project.name ||
+    locale !== project.locale ||
+    currency !== project.currency ||
+    autoBuild !== (project.auto_build === true);
 
   async function save() {
     setBusy(true);
     setError(null);
     const { ok, data } = await apiFetch(
       "/api/projects",
-      { id: project.id, name, locale, currency },
+      { id: project.id, name, locale, currency, auto_build: autoBuild },
       "PATCH"
     );
     setBusy(false);
@@ -190,6 +194,37 @@ export default function ProjectSettings({
             {busy ? "Saving…" : "Save changes"}
           </button>
 
+
+          <div className="border-t border-slate-800 pt-4">
+            <div className="text-sm font-semibold text-slate-100">Your own AI</div>
+            <label className="mt-2 flex cursor-pointer items-start gap-2.5">
+              <input
+                type="checkbox"
+                checked={autoBuild}
+                onChange={(e) => setAutoBuild(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-blue-600"
+              />
+              <span className="text-[11px] leading-relaxed text-slate-300">
+                Build new sections without asking me first
+              </span>
+            </label>
+            {/* What it will and will not do, in full, because a
+                setting whose limits are a surprise is worse than no
+                setting. */}
+            <div className="mt-2 space-y-1 rounded-lg bg-slate-800/60 px-2.5 py-2 text-[11px] leading-relaxed text-slate-400">
+              <div>
+                <span className="text-slate-300">Applies on its own:</span> new sections, and
+                example rows in them. Up to five a day.
+              </div>
+              <div>
+                <span className="text-slate-300">Still waits for you:</span> anything that
+                changes a section you already have, any rule that runs on every order,
+                anything the assistant flagged, and removing a section — which it can
+                never do.
+              </div>
+              <div>Whatever it builds appears in the panel, and you can delete it.</div>
+            </div>
+          </div>
 
           <div className="border-t border-slate-800 pt-4">
             <div className="text-sm font-semibold text-slate-100">People</div>

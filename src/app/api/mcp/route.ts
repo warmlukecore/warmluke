@@ -11,6 +11,7 @@ import {
   storeOverview,
 } from "@/lib/store-read";
 import { blueprintAsText, runTurn } from "@/lib/engine";
+import { describePlan } from "@/lib/describe";
 import { applyPlans } from "@/lib/apply";
 import type { AssistantPlan, ModuleRow, ProjectRow } from "@/lib/types";
 
@@ -189,6 +190,50 @@ const TOOLS = [
  */
 const removals = (plans: AssistantPlan[]) =>
   plans.filter((p) => p.changeType === "MODULE_DELETE").map((p) => p.deleteConfirmName ?? "a section");
+
+/**
+ * How many designs an assistant may build unattended in a day.
+ *
+ * Not about cost — about waking up to a changed app. A merchant who
+ * wanted ten new sections will ask again tomorrow; a client stuck in
+ * a loop will not.
+ */
+const AUTO_BUILDS_PER_DAY = 5;
+
+/** Change types that only ever add. Everything else waits. */
+const ADDITIVE = new Set(["NEW_MODULE", "RECORD_SEED"]);
+
+/**
+ * Whether this design may be built without the merchant reading it,
+ * and if not, the reason in words they can be told.
+ *
+ * The setting says they are willing in principle. This decides about
+ * one design, because "yes, build things for me" is not the same as
+ * "yes, rewrite the section my staff use" — and the engine's own
+ * doubts are exactly the moments a person should be reading.
+ */
+function whyNotAutomatic(
+  plans: AssistantPlan[],
+  unmet: string[],
+  modules: ModuleRow[],
+  store: Parameters<typeof blueprintAsText>[2]
+): string | null {
+  if (plans.length === 0) return "there is nothing to build";
+
+  const heavy = plans.find((p) => !ADDITIVE.has(p.changeType));
+  if (heavy) {
+    return `it changes something that already exists (${heavy.changeType}), and only additions are built automatically`;
+  }
+  if (unmet.length > 0) {
+    return "part of what was asked for is not covered by this design, which is worth reading first";
+  }
+  // A warning is the engine saying "this may not be what you want" —
+  // the duplicate-of-your-Shopify-data one, most often.
+  const warned = plans.some((p) => (describePlan(p, modules, undefined, store).warnings ?? []).length > 0);
+  if (warned) return "the design carries a warning worth reading first";
+
+  return null;
+}
 
 const ok = (id: RpcRequest["id"], result: Json) => NextResponse.json({ jsonrpc: "2.0", id, result });
 
@@ -392,6 +437,15 @@ export async function POST(req: Request) {
       const plans =
         turn.reply.type === "blueprint" ? turn.reply.blueprint.plans : turn.reply.plans;
 
+      // ── Does this one get to skip the merchant? ──────────────
+      //
+      // The switch says they are willing; this decides whether THIS
+      // design qualifies. Additive only, nothing the engine flagged,
+      // and a ceiling per day — a client in a loop must not be able
+      // to build fifty sections overnight.
+      const autoReason = whyNotAutomatic(plans, turn.unmet, moduleList, turn.store);
+      const wantsAuto = project.auto_build === true;
+
       const gone = removals(plans);
       if (gone.length) {
         return ok(
@@ -402,6 +456,19 @@ export async function POST(req: Request) {
             open: `${new URL(req.url).origin}/app/${project.id}`,
           })
         );
+      }
+
+      let automatic = wantsAuto && autoReason === null;
+      if (automatic) {
+        // Counted before building, so a loop pays for its own stop.
+        const since = new Date(Date.now() - 864e5).toISOString();
+        const { count } = await db
+          .from("build_requests")
+          .select("id", { count: "exact", head: true })
+          .eq("project_id", project.id)
+          .eq("auto_built", true)
+          .gt("built_at", since);
+        if ((count ?? 0) >= AUTO_BUILDS_PER_DAY) automatic = false;
       }
 
       const { data: requestId, error: err } = await db.rpc("abo_mcp_propose", {
@@ -417,6 +484,33 @@ export async function POST(req: Request) {
       if (err) return ok(id, text({ error: err.message }));
 
       const origin = new URL(req.url).origin;
+
+      if (automatic) {
+        const { applied, errors } = await applyPlans(db, project.id, plans, requestId as string);
+        if (applied.length > 0) {
+          await db.rpc("abo_build", {
+            p_project: project.id,
+            p_request: requestId,
+            p_op: "request_built",
+            p_payload: {},
+          });
+          await db.from("build_requests").update({ auto_built: true }).eq("id", requestId);
+          return ok(
+            id,
+            text({
+              status: errors.length ? "partly built" : "built",
+              note: "This app builds additive changes without waiting. Tell the merchant what was built — it is already live and shows in their panel.",
+              built: applied,
+              ...(errors.length ? { not_built: errors.slice(0, 3) } : {}),
+              design,
+              open: `${origin}/app/${project.id}`,
+            })
+          );
+        }
+        // Nothing applied. It stays a request for a person to look at
+        // rather than being reported as done.
+      }
+
       return ok(
         id,
         text({
@@ -426,6 +520,10 @@ export async function POST(req: Request) {
           note: "Nothing has changed yet. Read this design back to the merchant word for word. If they approve, call approve_change with the request_id.",
           request_id: requestId,
           design,
+          // When the merchant has asked for automatic builds, say why
+          // this one still needs them. Otherwise they are left
+          // wondering why the setting did nothing.
+          ...(wantsAuto && autoReason ? { not_automatic_because: autoReason } : {}),
           open: `${origin}/app/${project.id}`,
         })
       );
