@@ -559,7 +559,23 @@ export default function ChatPanel({
       .gt("created_at", new Date(Date.now() - 7 * 864e5).toISOString())
       .order("created_at", { ascending: true })
       .limit(10);
-    setRequests(data ?? []);
+    const rows = data ?? [];
+    setRequests(rows);
+
+    // Anything that arrived while they were watching announces
+    // itself. A bell is a container, and nobody taps a container to
+    // find out whether something happened — the count only tells you
+    // afterwards, if you look.
+    const pending = rows.filter((r) => r.status === "pending").map((r) => r.id);
+    if (seen.current === null) {
+      // First load. What is already waiting is not news; that is
+      // exactly what the bell is for.
+      seen.current = new Set(pending);
+      return;
+    }
+    const arrived = pending.filter((id) => !seen.current!.has(id));
+    seen.current = new Set(pending);
+    if (arrived.length > 0) setToasts((prev) => [...new Set([...prev, ...arrived])].slice(-3));
   }, [projectId]);
   useEffect(() => {
     loadRequests();
@@ -727,6 +743,19 @@ export default function ChatPanel({
   const [openBuilt, setOpenBuilt] = useState<Record<string, boolean>>({});
   /** Only the ones still waiting on them deserve the badge. */
   const pendingCount = requests.filter((r) => r.status === "pending").length;
+  /** Requests that turned up just now, floating over the panel. */
+  const [toasts, setToasts] = useState<string[]>([]);
+  /** What was already waiting last time we looked. Null = never looked. */
+  const seen = useRef<Set<string> | null>(null);
+
+  // A toast interrupts; it should not also nag. After a while it
+  // steps aside and the bell keeps the count — nothing is lost by
+  // letting it go.
+  useEffect(() => {
+    if (toasts.length === 0) return;
+    const t = setTimeout(() => setToasts((prev) => prev.slice(1)), 12000);
+    return () => clearTimeout(t);
+  }, [toasts]);
   const loadClients = useCallback(async () => {
     const { data } = await supabase.rpc("abo_oauth_clients");
     setClients(data ?? []);
@@ -745,7 +774,7 @@ export default function ChatPanel({
   return (
     <aside
       style={{ ["--chat-w" as string]: `${width}px` }}
-      className={`fixed inset-y-0 right-0 z-40 flex w-full max-w-[420px] shrink-0 flex-col border-l border-slate-200 bg-white lg:static lg:w-[var(--chat-w)] lg:max-w-none lg:translate-x-0 ${
+      className={`fixed inset-y-0 right-0 z-40 flex w-full max-w-[420px] shrink-0 flex-col border-l border-slate-200 bg-white lg:relative lg:w-[var(--chat-w)] lg:max-w-none lg:translate-x-0 ${
         dragging ? "" : "transition-transform duration-200"
       } ${open ? "translate-x-0" : "translate-x-full"}`}
     >
@@ -1391,6 +1420,76 @@ export default function ChatPanel({
           </div>
         )}
       </div>
+
+      {/* What just arrived, saying so. It floats rather than taking
+          a place in the layout: an interruption that pushed the
+          conversation around would be a worse interruption. Letting
+          it go loses nothing — the bell above still has it. */}
+      {toasts.length > 0 && (
+        <div className="pointer-events-none absolute inset-x-3 bottom-32 z-30 space-y-2">
+          {toasts.map((id) => {
+            const r = requests.find((x) => x.id === id);
+            if (!r || r.status !== "pending") return null;
+            return (
+              <div
+                key={id}
+                className="pointer-events-auto rounded-xl border border-amber-300 bg-amber-50 p-3 shadow-lg"
+              >
+                <div className="flex items-start gap-2">
+                  <span className="text-sm">✦</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[10px] font-semibold tracking-widest text-amber-700 uppercase">
+                      Your AI asked for this
+                    </div>
+                    <p className="mt-0.5 line-clamp-3 text-[11px] leading-relaxed text-amber-900">
+                      {r.request}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setToasts((p) => p.filter((x) => x !== id))}
+                    aria-label="Later"
+                    className="shrink-0 text-[11px] text-amber-600 hover:text-amber-800"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="mt-2 flex items-center gap-1.5">
+                  {r.plans?.length ? (
+                    <button
+                      onClick={() => {
+                        setToasts((p) => p.filter((x) => x !== id));
+                        buildRequest(r);
+                      }}
+                      disabled={busy}
+                      className="rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-amber-700 disabled:opacity-40"
+                    >
+                      Build it
+                    </button>
+                  ) : null}
+                  <button
+                    onClick={() => {
+                      setToasts((p) => p.filter((x) => x !== id));
+                      setBellOpen(true);
+                    }}
+                    className="rounded-lg border border-amber-300 px-2 py-1 text-[10px] font-medium text-amber-800 hover:bg-amber-100"
+                  >
+                    See it
+                  </button>
+                  <button
+                    onClick={() => {
+                      setToasts((p) => p.filter((x) => x !== id));
+                      dismissRequest(r.id);
+                    }}
+                    className="ml-auto text-[10px] text-amber-700 hover:underline"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Their own AI. Shown alongside the chat rather than instead of
           it: both can be on, and a merchant who has connected Claude
