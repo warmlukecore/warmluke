@@ -253,6 +253,16 @@ export type StoreContext = {
   /** True while an import is still running, so the counts are partial. */
   importing: boolean;
   counts: Record<string, number>;
+  /**
+   * The values a column actually holds, for the few columns worth
+   * filtering on — "products.status" to ACTIVE, DRAFT, ARCHIVED.
+   *
+   * Without this the assistant writes the options it imagines. It
+   * designed a filter offering "active" for a store whose products
+   * all say "ACTIVE", and every choice matched nothing. Counts told
+   * it how much there was and never what it said.
+   */
+  values?: Record<string, string[]>;
 };
 
 /**
@@ -289,6 +299,14 @@ function storeBlock(store: StoreContext | null, projectCurrency: string): string
     lines.push(
       `Design on top of it. When what they want IS this data, build a section over it: NEW_MODULE with "source_table" set to the table. Never propose a section whose purpose is to re-enter this data by hand — if you build a separate list anyway, say plainly in "limitations" that it will not match their Shopify data, so they can decide.`
     );
+  }
+
+  const known = Object.entries(store.values ?? {}).filter(([, v]) => v.length > 0);
+  if (known.length > 0) {
+    lines.push(
+      `These columns hold exactly these values — use them verbatim in filter options, spelling and all, rather than what they ought to be:`
+    );
+    for (const [column, vals] of known) lines.push(`  ${column}: ${vals.join(", ")}`);
   }
 
   if (store.currency !== projectCurrency) {

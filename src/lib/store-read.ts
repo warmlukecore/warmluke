@@ -208,15 +208,19 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
   products: {
     label: "Shopify products",
     order: { field: "title", ascending: true },
-    select: "id, title, handle, status, tags",
+    select: "id, title, handle, status, product_type, vendor, tags",
     columns: [
       { field: "title", label: "Product", type: "text" },
-      { field: "handle", label: "Handle", type: "text" },
+      { field: "product_type", label: "Category", type: "badge" },
+      { field: "vendor", label: "Vendor", type: "text" },
       { field: "status", label: "Status", type: "badge" },
+      { field: "handle", label: "Handle", type: "text" },
       { field: "tags", label: "Tags", type: "text" },
     ],
     flatten: (r) => ({
       title: r.title,
+      product_type: r.product_type ?? null,
+      vendor: r.vendor ?? null,
       handle: r.handle ?? null,
       status: r.status,
       // A text column renders a string; an array would print as
@@ -261,7 +265,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
 const SEARCHABLE: Record<StoreTable, string[]> = {
   orders: ["order_number", "financial_status", "fulfilment_status"],
   customers: ["name", "email", "phone", "city"],
-  products: ["title", "handle", "status"],
+  products: ["title", "handle", "status", "product_type", "vendor"],
   inventory_levels: ["location_name"],
 };
 
@@ -501,4 +505,57 @@ export async function orderDetail(
       price: l.price,
     })),
   };
+}
+
+/**
+ * What a few columns actually contain, so a design can use the real
+ * strings instead of the ones a model would have guessed.
+ *
+ * Only the columns worth a dropdown, and only when there are few
+ * enough to be one. A vendor list of four hundred names is not a
+ * filter, and pasting it into a prompt would cost more than it tells.
+ */
+const FILTERABLE: Array<[StoreTable, string]> = [
+  ["products", "status"],
+  ["products", "product_type"],
+  ["products", "vendor"],
+  ["orders", "financial_status"],
+  ["orders", "fulfilment_status"],
+  ["inventory_levels", "location_name"],
+];
+
+/** Above this many distinct values it is a search box, not a dropdown. */
+const MAX_CHOICES = 25;
+
+export async function storeValues(
+  db: SupabaseClient,
+  storeId: string
+): Promise<Record<string, string[]>> {
+  const out: Record<string, string[]> = {};
+
+  await Promise.all(
+    FILTERABLE.map(async ([table, column]) => {
+      // Distinct is not exposed through PostgREST, so a page of rows
+      // is read and reduced here. Bounded on purpose: this runs on
+      // every design, and the answer only has to be representative
+      // enough to spell the values correctly.
+      const { data, error } = await db
+        .from(table)
+        .select(column)
+        .eq("store_id", storeId)
+        .not(column, "is", null)
+        .limit(500);
+      if (error || !data) return;
+
+      const seen = new Set<string>();
+      for (const row of data as unknown as Array<Record<string, unknown>>) {
+        const v = String(row[column] ?? "").trim();
+        if (v) seen.add(v);
+        if (seen.size > MAX_CHOICES) return; // too many to be a choice
+      }
+      if (seen.size > 0) out[`${table}.${column}`] = [...seen].sort();
+    })
+  );
+
+  return out;
 }

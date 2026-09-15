@@ -22,7 +22,12 @@ import { labelForRow } from "@/lib/links";
 import ModuleSettings from "@/components/ModuleSettings";
 import NewSection from "@/components/NewSection";
 import StoreStrip from "@/components/StoreStrip";
-import { isStoreTable, readStoreRows, type StoreTable } from "@/lib/store-read";
+import {
+  isStoreTable,
+  readStoreRows,
+  storeTableSchema,
+  type StoreTable,
+} from "@/lib/store-read";
 import { resizeHandleClass, useResizable } from "@/lib/useResizable";
 import type {
   AssistantPlan,
@@ -62,6 +67,21 @@ const ICONS: Record<string, string> = {
 
 function Icon({ name }: { name: string }) {
   return <span className="w-5 text-center text-base">{ICONS[name] ?? "📋"}</span>;
+}
+
+/**
+ * The columns a section should show, for a section whose rows are the
+ * store's. Live from the store table rather than the copy saved when
+ * it was created, so adding a column to the importer reaches every
+ * section that already exists.
+ */
+function withStoreColumns(row: UiSchemaRow, sourceTable: string | null | undefined): UiSchemaRow {
+  if (!isStoreTable(sourceTable)) return row;
+  const sj = row.schema_json as UiSchema & { features?: unknown };
+  return {
+    ...row,
+    schema_json: { ...sj, columns: storeTableSchema(sourceTable).columns },
+  } as UiSchemaRow;
 }
 
 export default function AppShell({
@@ -337,12 +357,17 @@ export default function AppShell({
       }
       setLoadError(null);
       const loadedSchema = (schemaRes.data as UiSchemaRow[])[0] ?? null;
-      setSchema(loadedSchema);
       loadLinkOptions(loadedSchema?.schema_json ?? null);
       // A section pointed at the store shows the store's rows. The
       // records query above still ran and found nothing, which is
       // correct — a store-backed section has no records of its own.
       const sourceTable = modRes.data?.source_table as string | null | undefined;
+      // A section over the store does not own its columns — we do. The
+      // saved schema is a copy taken the day it was created, so a
+      // column added to the importer later never reached it: Category
+      // arrived in the data and the section carried on showing four
+      // fields. Features stay as saved; those are the merchant's.
+      setSchema(loadedSchema ? withStoreColumns(loadedSchema, sourceTable) : null);
       // Kept so read-only and currency follow the section that actually
       // loaded, not whatever the module list happens to hold.
       setLoadedSource(sourceTable ?? null);

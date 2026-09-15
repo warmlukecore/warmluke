@@ -220,7 +220,7 @@ query($n: Int!, $after: String) {
   products(first: $n, after: $after) {
     pageInfo { hasNextPage endCursor }
     nodes {
-      id title handle status tags updatedAt
+      id title handle status productType vendor tags updatedAt
       variants(first: 100) {
         nodes { id title sku barcode price updatedAt inventoryItem { id } }
       }
@@ -230,6 +230,8 @@ query($n: Int!, $after: String) {
 
 export type GqlProduct = {
   id: string; title: string; handle: string; status: string; tags: string[]; updatedAt: string;
+  // What a merchant calls a category, and who it came from.
+  productType?: string | null; vendor?: string | null;
   variants: {
     nodes: Array<{
       id: string; title: string; sku: string | null; barcode: string | null;
@@ -270,7 +272,12 @@ export async function saveProducts(
     .upsert(
       nodes.map((p) => ({
         store_id: storeId, external_id: p.id, title: p.title, handle: p.handle,
-        status: p.status, tags: p.tags ?? [], updated_at: p.updatedAt,
+        status: p.status,
+        // Shopify sends "" for a product with no type; a blank is not
+        // a category, and a dropdown offering one helps nobody.
+        product_type: p.productType?.trim() || null,
+        vendor: p.vendor?.trim() || null,
+        tags: p.tags ?? [], updated_at: p.updatedAt,
       })),
       { onConflict: "store_id,external_id" }
     )

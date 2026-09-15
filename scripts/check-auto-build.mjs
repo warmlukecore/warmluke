@@ -144,7 +144,13 @@ try {
     .gt("built_at", new Date(Date.now() - 864e5).toISOString());
   check("automatic builds are counted", (count ?? 0) >= 1);
 } finally {
+  // Verified, not assumed. A check that leaves this on hands the next
+  // merchant a project that builds without asking — and the next
+  // check a failure it did not cause.
   await setAuto(project.auto_build === true);
+  const after = (await admin.from("projects").select("auto_build").eq("id", project.id).single())
+    .data;
+  check("the setting is back as it was", after?.auto_build === (project.auto_build === true));
   for (const id of made) await admin.from("modules").delete().eq("id", id);
   await admin
     .from("build_requests")

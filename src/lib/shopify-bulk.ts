@@ -77,7 +77,7 @@ export async function countOf(shop: string, token: string, resource: Resource): 
 // missing here.
 const BULK_QUERIES: Record<Resource, string> = {
   products: `{ products { edges { node {
-    id title handle status tags updatedAt
+    id title handle status productType vendor tags updatedAt
     variants { edges { node { id title sku barcode price updatedAt inventoryItem { id } } } }
   } } } }`,
   customers: `{ customers { edges { node {

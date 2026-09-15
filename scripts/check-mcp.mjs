@@ -41,6 +41,8 @@ const { data: sess } = await client.auth.signInWithPassword({ email, password })
 const strangerToken = sess.session.access_token;
 
 let n = 0;
+let projectRow;
+let autoWas;
 const rpc = (method, params, token) =>
   fetch(MCP, {
     method: "POST",
@@ -354,6 +356,17 @@ try {
     }
 
     console.log("\nasking for something to be built");
+  // This whole section is about a design that waits for approval, so
+  // the setting that skips approval has to be off while it runs. It
+  // was on once and the check crashed on a request_id that was never
+  // returned — a check that depends on a setting has to own it.
+  ({ data: projectRow } = await admin
+    .from("projects")
+    .select("id, auto_build")
+    .limit(1)
+    .single());
+  autoWas = projectRow.auto_build === true;
+  if (autoWas) await admin.from("projects").update({ auto_build: false }).eq("id", projectRow.id);
     // The whole point of the design: the merchant hears the plan
     // before anything is built, and hears it in words generated from
     // the plans rather than from the model's prose.
@@ -436,6 +449,9 @@ try {
     check("an unknown shop is named, with what is available", Array.isArray(noSuchShop?.available));
   }
 } finally {
+  if (typeof autoWas === "boolean" && autoWas) {
+    await admin.from("projects").update({ auto_build: true }).eq("id", projectRow.id);
+  }
   await admin.auth.admin.deleteUser(made.user.id);
   console.log("\ntest user removed");
 }

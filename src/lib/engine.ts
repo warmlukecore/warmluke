@@ -23,7 +23,7 @@ import {
   type StoreContext,
 } from "@/lib/ai";
 import { describePlan } from "@/lib/describe";
-import { storeOverview } from "@/lib/store-read";
+import { storeOverview, storeValues } from "@/lib/store-read";
 import type { AssistantReply, FeatureSchema, ModuleRow, ProjectRow, UiSchema } from "@/lib/types";
 
 /**
@@ -50,6 +50,7 @@ export async function storeContextFor(
   if (!storeRow) return null;
 
   const overview = await storeOverview(client, storeRow.id as string);
+  const values = await storeValues(client, storeRow.id as string);
   const { data: runs } = await client
     .from("import_runs")
     .select("status")
@@ -64,6 +65,7 @@ export async function storeContextFor(
     // have 4 orders" is wrong if 4,000 are still arriving.
     importing: runList.length === 0 || runList.some((r) => r.status !== "done"),
     counts: overview?.counts ?? {},
+    values,
   };
 }
 

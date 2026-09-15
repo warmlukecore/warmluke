@@ -11,8 +11,10 @@ import { createClient } from "@supabase/supabase-js";
 import {
   dayRangeInZone,
   listStores,
+  readStoreRows,
   searchOrders,
   storeOverview,
+  storeValues,
 } from "../src/lib/store-read.ts";
 
 const fails = [];
@@ -144,6 +146,46 @@ if (stores.length === 0) {
     check(
       `an order placed on ${day} is found by that day in ${store.timezone}`,
       sameDay.some((o) => o.order_number === placed.order_number)
+    );
+  }
+  console.log("\nwhat the assistant is told a column contains");
+  {
+    // The bug this exists for: the assistant wrote filter options out
+    // of its head — "active" for a store whose products say "ACTIVE" —
+    // and every choice matched nothing. Counts told it how much there
+    // was and never what it said.
+    const values = await storeValues(db, store.id);
+    const status = values["products.status"] ?? [];
+    check("product statuses come back", status.length > 0);
+    check(
+      "spelled the way the rows spell them",
+      status.every((v) => v === v.toUpperCase())
+    );
+
+    const rows = (await readStoreRows(db, store.id, "products", 500)).rows;
+    const real = new Set(
+      rows.map((r) => String(r.data.status ?? "").trim()).filter(Boolean)
+    );
+    check(
+      "and every one of them is really in the rows",
+      status.every((v) => real.has(v))
+    );
+    check("nothing that is in the rows is left out", [...real].every((v) => status.includes(v)));
+
+    // The field a merchant means by "category". Before it was
+    // imported, a category filter could not be built at all.
+    const category = values["products.product_type"] ?? [];
+    check("categories come back", category.length > 0);
+    check(
+      "as a column somebody can see",
+      rows.some((r) => String(r.data.product_type ?? "").trim() !== "")
+    );
+
+    // A blank is not a category, and a dropdown offering one helps
+    // nobody.
+    check(
+      "blanks are never offered",
+      [...Object.values(values)].every((list) => list.every((v) => v.trim() !== ""))
     );
   }
 }
