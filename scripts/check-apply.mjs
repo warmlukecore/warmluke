@@ -202,5 +202,41 @@ try {
   await db.from("automations").delete().eq("project_id", projectId).eq("name", `mark-${stamp}`);
 }
 
+// ── And what the owner is told afterwards ───────────────────────
+// The receipt used to read "Built 1 changes": a number, and the number
+// is the least interesting part of it. The panel now writes the same
+// line the approval card showed, so the two cannot drift apart.
+console.log("\nthe receipt names what changed");
+{
+  const { describePlan } = await import("../src/lib/describe.ts");
+  const mods = [{ id: "m1", nav_label: "Products" }];
+  const titled = (p, cols) => describePlan(p, mods, cols).title;
+
+  const added = titled(
+    plan({ changeType: "FIELD_ADD", targetModuleId: "m1", newSchema: { columns: [col("cat", "Category", "text")] } })
+  );
+  check("a new field names the section", added === "Add fields to Products");
+
+  // The commonest edit of all, and the one that used to come back as
+  // "Applied as schema v4".
+  const moved = titled(
+    plan({ changeType: "UI_CHANGE", targetModuleId: "m1", newSchema: { columns: [col("a", "A", "text"), col("b", "B", "text")] } }),
+    [{ field: "a", label: "A" }]
+  );
+  check("a column added under UI_CHANGE still says so", moved === "Add fields to Products");
+
+  const made = titled(
+    plan({ changeType: "NEW_MODULE", newModule: { name: "sup", nav_label: "Suppliers", icon: "table" }, newSchema: { columns: [col("a", "A", "text")] } })
+  );
+  check("a new section is named", made === "New section: Suppliers");
+
+  // Nothing here may come back empty or with an "undefined" in it: the
+  // receipt is the whole sentence the owner reads.
+  for (const t of [added, moved, made]) {
+    if (!t || /undefined|null/.test(t)) check(`a usable line, not "${t}"`, false);
+  }
+  check("none of them are gaps", !fails.some((f) => f.startsWith("a usable line")));
+}
+
 console.log(fails.length === 0 ? "\nevery write lands" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

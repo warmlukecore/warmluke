@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { watchRows } from "@/lib/live";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
+import { describePlan } from "@/lib/describe";
 import { apiFetch, takePendingPrompt } from "@/lib/auth";
 import GenericRenderer from "@/components/GenericRenderer";
 import ChatPanel, { type ChatMessage, nextChatId } from "@/components/ChatPanel";
@@ -792,6 +793,30 @@ export default function AppShell({
     [loadModules, runPrompt]
   );
 
+  /**
+   * The one short line that says what a change did.
+   *
+   * "Built 1 changes" gave the owner a number, and the number is the
+   * least interesting part — they wanted to know what happened to
+   * their app. describePlan already writes that line for the approval
+   * card, from the plan itself rather than from the sentence the model
+   * wrote beside it, so the receipt and the card now say the same
+   * thing in the same words.
+   */
+  const planTitle = useCallback(
+    (plan: AssistantPlan) =>
+      describePlan(
+        plan,
+        modules,
+        // Only for the section on screen: for any other one these are
+        // the wrong columns, and the diff would invent fields.
+        plan.targetModuleId && plan.targetModuleId === selectedModuleId
+          ? (schema?.schema_json?.columns ?? undefined)
+          : undefined
+      ).title,
+    [modules, selectedModuleId, schema]
+  );
+
   const applyPlan = useCallback(
     async (plan: AssistantPlan, planId: string) => {
       const { ok, data } = await apiFetch("/api/apply", { projectId, plans: [plan] });
@@ -826,7 +851,10 @@ export default function AppShell({
           doneText = `✅ ${result.seeded as number} record(s) added.`;
           break;
         default:
-          doneText = `✅ Applied as schema v${result.version as number}.`;
+          // Was "Applied as schema v4", which is true and tells a shop
+          // owner nothing. This branch is the commonest edit of all —
+          // a field added, a column moved.
+          doneText = `✅ ${planTitle(plan)}.`;
       }
       setChatMessages((prev) =>
         prev.map((m) => (m.id === planId ? { ...m, plan: undefined, text: doneText } : m))
@@ -837,7 +865,7 @@ export default function AppShell({
         loadModuleData(selectedModuleId);
       }
     },
-    [projectId, loadModules, loadModuleData, selectedModuleId, repairFailedApply, recordOutcome]
+    [projectId, loadModules, loadModuleData, selectedModuleId, repairFailedApply, recordOutcome, planTitle]
   );
 
   // ── The owner's own record writes ────────────────────────
@@ -907,10 +935,13 @@ export default function AppShell({
               },
             ]);
           }
-          const created = results
-            .filter((r) => r.changeType === "NEW_MODULE")
-            .map((r) => r.navLabel as string);
-          const doneText = `✅ Built${created.length ? `: ${created.join(", ")}` : ` ${results.length} changes`}. Tell me what to change next.`;
+          // Plans apply in order, so the ones that landed are the first
+          // `results.length` of them — naming all of them after a partial
+          // build would claim something that did not happen.
+          const titles = plans.slice(0, results.length).map(planTitle);
+          const shown = titles.slice(0, 3).join(" · ");
+          const rest = titles.length - 3;
+          const doneText = `✅ ${shown}${rest > 0 ? ` · and ${rest} more` : ""}. Tell me what to change next.`;
           setChatMessages((prev) => [
             ...prev,
             { id: nextChatId(), role: "assistant", text: doneText },
@@ -935,7 +966,7 @@ export default function AppShell({
         setBuilding(false);
       }
     },
-    [building, projectId, loadModules, loadModuleData, selectedModuleId, recordOutcome]
+    [building, projectId, loadModules, loadModuleData, selectedModuleId, recordOutcome, planTitle]
   );
 
   const discardPlan = useCallback((planId: string) => {
