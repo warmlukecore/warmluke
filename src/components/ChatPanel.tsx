@@ -38,17 +38,6 @@ export interface ChatMessage {
 let msgSeq = 0;
 export const nextChatId = () => `m${++msgSeq}`;
 
-// Problems, not features. Each one maps to something the engine can
-// actually do — clash detection, cross-section writes, date maths,
-// computed totals — so clicking one shows the hard thing working
-// rather than a column reorder anyone could do in a spreadsheet.
-const SUGGESTIONS = [
-  "Two people book the same slot and I only find out on the day",
-  "When a job is finished, take the parts it used off my stock",
-  "Flag anything that has sat more than 3 days without moving",
-  "Tell me what my stock is worth, not just how many I have",
-];
-
 const ICON_GLYPHS: Record<string, string> = {
   "shopping-cart": "🛒",
   package: "📦",
@@ -803,24 +792,16 @@ export default function ChatPanel({
         ref={listRef}
         className="flex-1 space-y-3 overflow-y-auto px-4 py-4 thin-scroll"
       >
+        {/* Four invented problems used to sit here — a double-booked
+            slot, parts coming off a job. They were written to show what
+            the engine can do, and to a shop selling phone cases they
+            read as a product for somebody else. A prompt for their own
+            words is the honest opening. */}
         {messages.length === 0 && (
-          <div className="space-y-3">
-            <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
-              👋 Tell me the problem you&rsquo;re trying to solve — in your own words.
-              I&rsquo;ll ask how you work, show you a plan, and only build once you
-              approve it.
-            </div>
-            <div className="space-y-2">
-              {SUGGESTIONS.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => send(s)}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-left text-xs text-slate-600 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
+          <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
+            👋 Tell me the problem you&rsquo;re trying to solve — in your own words.
+            I&rsquo;ll ask how you work, show you a plan, and only build once you
+            approve it.
           </div>
         )}
 
