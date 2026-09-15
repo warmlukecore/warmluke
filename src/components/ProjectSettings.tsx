@@ -186,15 +186,6 @@ export default function ProjectSettings({
             </div>
           </div>
 
-          <button
-            onClick={save}
-            disabled={busy || !dirty || !name.trim()}
-            className="w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-40"
-          >
-            {busy ? "Saving…" : "Save changes"}
-          </button>
-
-
           <div className="border-t border-slate-800 pt-4">
             <div className="text-sm font-semibold text-slate-100">Your own AI</div>
             <label className="mt-2 flex cursor-pointer items-start gap-2.5">
@@ -225,6 +216,15 @@ export default function ProjectSettings({
               <div>Whatever it builds appears in the panel, and you can delete it.</div>
             </div>
           </div>
+
+          <button
+            onClick={save}
+            disabled={busy || !dirty || !name.trim()}
+            className="w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-40"
+          >
+            {busy ? "Saving…" : "Save changes"}
+          </button>
+
 
           <div className="border-t border-slate-800 pt-4">
             <div className="text-sm font-semibold text-slate-100">People</div>
