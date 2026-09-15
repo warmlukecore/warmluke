@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { watchRows } from "@/lib/live";
 import GenericRenderer from "@/components/GenericRenderer";
 import { describeAutomation, describePlan, type StoreFacts } from "@/lib/describe";
+import type { BuildOutcome } from "@/components/AppShell";
 import { storeOverview } from "@/lib/store-read";
 import { supabase } from "@/lib/supabase-client";
 import { NOT_SUPPORTED } from "@/lib/capabilities";
@@ -509,7 +510,7 @@ export default function ChatPanel({
   onSend: (text: string) => void;
   onApply: (plan: AssistantPlan, planId: string) => void;
   /** Applies an approved blueprint's plans directly, with no model round trip. */
-  onBuild: (plans: AssistantPlan[]) => Promise<"built" | "partly" | "failed">;
+  onBuild: (plans: AssistantPlan[]) => Promise<BuildOutcome>;
   onDiscard: (planId: string) => void;
   /** Whose store to warn about, if this project has one connected. */
   projectId: string;
@@ -625,22 +626,23 @@ export default function ChatPanel({
     // queue as done — and their assistant, reading that queue, would
     // tell them it was finished.
     const outcome = await onBuild(r.plans);
-    if (outcome === "failed") {
+    if (outcome.applied.length === 0) {
       // It stays where it is, with the yes recorded. The chat above
       // already says what went wrong.
       loadRequests();
       return;
     }
 
-    const { error } = await supabase
-      .from("build_requests")
-      .update({
-        status: "built",
-        built_at: new Date().toISOString(),
-        resolved_at: new Date().toISOString(),
-      })
-      .eq("id", r.id);
-    if (error) console.error("could not mark the request built:", error.message);
+    // Through the same door the assistant uses, carrying the same
+    // outcome. Writing the row here by hand is how this path came to
+    // disagree with that one about what "built" means.
+    const { error } = await supabase.rpc("abo_build", {
+      p_project: projectId,
+      p_request: r.id,
+      p_op: "request_built",
+      p_payload: { applied: outcome.applied, errors: outcome.errors },
+    });
+    if (error) console.error("could not record the build:", error.message);
     // Reloaded rather than removed: it becomes the record that this
     // was built, which is the whole point of keeping it.
     loadRequests();

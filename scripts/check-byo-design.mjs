@@ -228,6 +228,27 @@ try {
   check("not an empty queue", foreign?.total === undefined);
   check("and it names the apps they do have", Array.isArray(foreign?.projects));
 
+  // A half-built request is waiting for nobody, and that is exactly why
+  // it used to be invisible: a section exists with half of what was
+  // asked for and nothing on any screen says so.
+  await admin
+    .from("build_requests")
+    .update({
+      status: "partly_built",
+      outcome: { applied: [{ changeType: "NEW_MODULE", navLabel: "BYO" }], errors: ["fields failed"] },
+    })
+    .eq("id", other.id);
+  const broken = await tool("pending_changes", { project_id: project.id }, 11);
+  const hurt = (broken?.waiting ?? []).find((w) => w.request_id === other.id);
+  check("a half-built request is still shown", hurt !== undefined);
+  check("and called what it is", hurt?.state === "partly built");
+  check("with the part that worked named", (hurt?.built ?? []).length === 1);
+  check("and the part that did not", (hurt?.did_not_build ?? []).length === 1);
+  check(
+    "and it does not send them back to approve_change",
+    /will not finish this one/i.test(hurt?.next_action ?? "")
+  );
+
   // The half that was actually going wrong: when nothing waits, the
   // answer has to be a plain no.
   for (const r of made) await admin.from("build_requests").update({ status: "dismissed" }).eq("id", r);

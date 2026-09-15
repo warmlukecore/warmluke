@@ -78,8 +78,30 @@ const tool = async (name, args, id = 1) => {
   }
 };
 
+// Each design here is a real engine turn on a real key, so this check
+// spends the account's free builds and then cannot run. Owned for the
+// length of the run and handed back, like the setting above.
+const turnsWas = (
+  await admin
+    .from("account_settings")
+    .select("free_turns, turns_used")
+    .eq("user_id", owner.user.id)
+    .single()
+).data;
+if (turnsWas) {
+  await admin
+    .from("account_settings")
+    .update({ free_turns: turnsWas.turns_used + 20 })
+    .eq("user_id", owner.user.id);
+}
+
 const stamp = Date.now().toString(36);
 const made = [];
+// Rows this run causes to be built without asking. They count against
+// the daily ceiling, so after a few runs the check stops being able to
+// prove the thing it exists to prove — the same way it once left
+// auto_build switched on. A check that leans on a number owns it.
+const autoMade = [];
 
 try {
   console.log("with the setting off");
@@ -110,7 +132,7 @@ try {
   const row = (
     await admin
       .from("build_requests")
-      .select("status, auto_built")
+      .select("id, status, auto_built")
       .eq("project_id", project.id)
       .eq("auto_built", true)
       .order("built_at", { ascending: false })
@@ -118,6 +140,7 @@ try {
       .maybeSingle()
   ).data;
   check("the row records that nobody approved it", row?.status === "built" && row.auto_built === true);
+  if (row?.id) autoMade.push(row.id);
 
   console.log("\nbut not a rule that runs on every order");
   const ruled = await tool(
@@ -151,7 +174,19 @@ try {
   const after = (await admin.from("projects").select("auto_build").eq("id", project.id).single())
     .data;
   check("the setting is back as it was", after?.auto_build === (project.auto_build === true));
+  if (turnsWas) {
+    // What it really spent stays spent; only the ceiling comes back.
+    await admin
+      .from("account_settings")
+      .update({ free_turns: turnsWas.free_turns })
+      .eq("user_id", owner.user.id);
+  }
   for (const id of made) await admin.from("modules").delete().eq("id", id);
+  // Not a merchant's automatic build — a check's. Left counted, it
+  // spends the day's allowance on nothing.
+  for (const id of autoMade) {
+    await admin.from("build_requests").update({ auto_built: false }).eq("id", id);
+  }
   await admin
     .from("build_requests")
     .update({ status: "dismissed" })

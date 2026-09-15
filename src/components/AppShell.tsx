@@ -85,6 +85,12 @@ function withStoreColumns(row: UiSchemaRow, sourceTable: string | null | undefin
   } as UiSchemaRow;
 }
 
+/** What a build did, for whoever has to write it down. */
+export type BuildOutcome = {
+  applied: Array<Record<string, unknown>>;
+  errors: string[];
+};
+
 export default function AppShell({
   projectId,
   ownerEmail,
@@ -918,8 +924,8 @@ export default function AppShell({
    * that swallows its own outcome makes every caller guess.
    */
   const buildApproved = useCallback(
-    async (plans: AssistantPlan[]): Promise<"built" | "partly" | "failed"> => {
-      if (plans.length === 0 || building) return "failed";
+    async (plans: AssistantPlan[]): Promise<BuildOutcome> => {
+      if (plans.length === 0 || building) return { applied: [], errors: [] };
       setBuilding(true);
       setChatMessages((prev) => [
         ...prev,
@@ -960,7 +966,7 @@ export default function AppShell({
           const first = results.find((r) => r.changeType === "NEW_MODULE");
           if (first?.moduleId) setSelectedModuleId(first.moduleId as string);
           else if (selectedModuleId) await loadModuleData(selectedModuleId);
-          return data.partial ? "partly" : "built";
+          return { applied: results, errors: (data.errors as string[]) ?? [] };
         } else {
           setChatMessages((prev) => [
             ...prev,
@@ -972,7 +978,7 @@ export default function AppShell({
             },
           ]);
         }
-        return "failed";
+        return { applied: [], errors: (data.errors as string[]) ?? ["The build did not run."] };
       } finally {
         setBuilding(false);
       }

@@ -396,7 +396,9 @@ async function settleDesign(opts: {
             p_project: project.id,
             p_request: requestId,
             p_op: "request_built",
-            p_payload: {},
+            // What really happened, not that something happened. With
+            // errors in it the row lands as partly_built.
+            p_payload: { applied, errors },
           });
           await db.from("build_requests").update({ auto_built: true }).eq("id", requestId);
           return ok(
@@ -811,10 +813,14 @@ export async function POST(req: Request) {
       const client = clientIdOf(req);
       let q = db
         .from("build_requests")
-        .select("id, project_id, request, summary, status, approved_at, created_at, client_id", {
-          count: "exact",
-        })
-        .in("status", ["pending", "building"])
+        .select(
+          "id, project_id, request, summary, status, approved_at, created_at, client_id, outcome",
+          { count: "exact" }
+        )
+        // partly_built is not waiting for anybody, but it is the one
+        // state nobody may be left unaware of: a section exists with
+        // half of what was asked for. Hiding it is how it stays broken.
+        .in("status", ["pending", "building", "partly_built"])
         .order("created_at", { ascending: false })
         .limit(SHOW_WAITING);
       if (wanted) q = q.eq("project_id", wanted);
@@ -834,18 +840,20 @@ export async function POST(req: Request) {
             ? { has_more: `${total - rows.length} older ones are not listed here.` }
             : {}),
           note: total
-            ? "Only the ones marked awaiting_approval need the merchant's yes. Read one back and call approve_change with its request_id if they say so."
+            ? "Only the ones marked awaiting_approval need the merchant's yes. Anything marked partly built already happened and cannot be finished from here — say what is missing. Read a waiting one back and call approve_change with its request_id if they say so."
             : "Nothing is waiting for approval. Do not tell the merchant otherwise — anything from earlier in this conversation has since been built or dismissed.",
           waiting: rows.map((r) => {
             // Three different situations were being described with one
             // sentence about needing approval: one that does, one that
             // has it already, and one that is mid-build.
             const state =
-              r.status === "building"
-                ? "building"
-                : r.approved_at
-                  ? "approved, not built yet"
-                  : "awaiting_approval";
+              r.status === "partly_built"
+                ? "partly built"
+                : r.status === "building"
+                  ? "building"
+                  : r.approved_at
+                    ? "approved, not built yet"
+                    : "awaiting_approval";
             // Only the client that raised a request may build it — the
             // database enforces that. Saying otherwise hands the model
             // an id it cannot act on.
@@ -862,8 +870,19 @@ export async function POST(req: Request) {
                   ? "this assistant"
                   : "another assistant connected to this account",
               you_can_approve_it: canApprove,
+              ...(r.status === "partly_built"
+                ? {
+                    // Named, because "it did not all work" without
+                    // saying which part is no use to anybody.
+                    built: (r.outcome as { applied?: unknown[] } | null)?.applied ?? [],
+                    did_not_build:
+                      ((r.outcome as { errors?: string[] } | null)?.errors ?? []).slice(0, 3),
+                  }
+                : {}),
               next_action:
-                state === "building"
+                r.status === "partly_built"
+                  ? "Some of this was built and some was not. Tell the merchant exactly which, and ask for the missing part again as a new request — approve_change will not finish this one."
+                  : state === "building"
                   ? // ponytail: no lease on a claim yet, so a build that
                     // died mid-way sits here. Say so rather than invent
                     // a timeout; add claimed_at and a recovery path when
@@ -1094,7 +1113,7 @@ export async function POST(req: Request) {
         p_project: reqRow.project_id,
         p_request: reqRow.id,
         p_op: "request_built",
-        p_payload: {},
+        p_payload: { applied, errors },
       });
 
       const origin = new URL(req.url).origin;
