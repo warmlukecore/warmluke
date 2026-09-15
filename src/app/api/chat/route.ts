@@ -128,6 +128,21 @@ export async function POST(req: Request) {
     if (!proj) {
       return NextResponse.json({ error: "Project not found." }, { status: 404 });
     }
+    // A member can SEE this project — that is what a staff login is
+    // for — and could reach here. Two things went wrong when they
+    // did: their own free allowance paid for a turn on somebody
+    // else's app, which is ten more builds per person invited, and
+    // the reply could not be saved afterwards because conversations
+    // belong to the owner. We paid for a model call that nobody got.
+    //
+    // The People settings already promise this: they cannot change
+    // how the app is built.
+    if (proj.owner_id !== auth.userId) {
+      return NextResponse.json(
+        { error: "Only the owner of this app can build with the assistant." },
+        { status: 403 }
+      );
+    }
 
     // RLS scopes this count to the caller's own conversations.
     const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();

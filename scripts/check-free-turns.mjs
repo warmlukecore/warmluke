@@ -62,11 +62,60 @@ try {
   // from the allowance every time it retried.
   check("a refusal spends nothing", afterRefusal.turns_used === 2);
 
-  await user.rpc("abo_refund_turn");
+  const refund = (await user.rpc("abo_refund_turn")).data;
+  check("a refund buys one back", refund?.refunded === true);
   const back = (await user.rpc("abo_spend_turn")).data;
-  check("a refund buys one back", back?.ok === true);
+  check("and the turn can be taken again", back?.ok === true);
+
+  console.log("\nand the refund is not free money");
+  // It takes no arguments and every signed-in role may call it, so
+  // PostgREST is one curl away. What stops a loop is that a refund
+  // has to answer for a spend.
+  await admin.from("account_settings").update({ free_turns: 3 }).eq("user_id", made.user.id);
+  const before = (
+    await admin.from("account_settings").select("turns_used").eq("user_id", made.user.id).single()
+  ).data.turns_used;
+  const many = await Promise.all(
+    Array.from({ length: 10 }, () => user.rpc("abo_refund_turn").then((r) => r.data))
+  );
+  const granted = many.filter((r) => r?.refunded).length;
+  check("ten calls in a row refund at most one", granted <= 1);
+  const afterLoop = (
+    await admin.from("account_settings").select("turns_used").eq("user_id", made.user.id).single()
+  ).data.turns_used;
+  check("and the count did not fall away", afterLoop >= before - 1);
+
+  // A refund with nothing recent behind it buys nothing at all.
+  await admin
+    .from("account_settings")
+    .update({ last_spend_at: new Date(Date.now() - 3600e3).toISOString(), last_refund_at: null })
+    .eq("user_id", made.user.id);
+  const stale = (await user.rpc("abo_refund_turn")).data;
+  check("an old spend cannot be refunded", stale?.refunded === false);
+
+  console.log("\nand two at once cannot both slip through");
+  // Read-then-write left a gap: both requests saw one left.
+  await admin
+    .from("account_settings")
+    .update({ free_turns: 5, turns_used: 4 })
+    .eq("user_id", made.user.id);
+  const race = await Promise.all(
+    Array.from({ length: 6 }, () => user.rpc("abo_spend_turn").then((r) => r.data))
+  );
+  check("only the last one is allowed", race.filter((r) => r?.ok).length === 1);
+  const final = (
+    await admin.from("account_settings").select("turns_used").eq("user_id", made.user.id).single()
+  ).data.turns_used;
+  check("and the allowance is not overspent", final === 5);
 
   console.log("\nand it cannot be gamed");
+  const nowAt = (
+    await admin
+      .from("account_settings")
+      .select("turns_used, free_turns")
+      .eq("user_id", made.user.id)
+      .single()
+  ).data;
   const forged = await user
     .from("account_settings")
     .update({ turns_used: 0, free_turns: 999 })
@@ -81,7 +130,9 @@ try {
   ).data;
   check(
     "a merchant cannot reset their own count",
-    !forged.data?.length && stillThere.turns_used === 2 && stillThere.free_turns === 2
+    !forged.data?.length &&
+      stillThere.turns_used === nowAt.turns_used &&
+      stillThere.free_turns === nowAt.free_turns
   );
   check(
     "nor grant themselves more",
@@ -181,6 +232,60 @@ if (!signedIn?.session) {
       "the account is back as it was",
       after.free_turns === was.free_turns && after.turns_used === was.turns_used
     );
+  }
+}
+
+// ── A staff member spends nobody's allowance ────────────────────
+// They can open the app they were invited to — that is the point of a
+// seat. Building is not part of it: their own ten turns would pay for
+// a turn on somebody else's app, which is ten more builds per person
+// invited, and the reply could not be saved afterwards anyway.
+{
+  const { data: project } = await admin.from("projects").select("id").limit(1).single();
+  const st = Date.now();
+  const mail = `member_${st}@example.com`;
+  const pw = `pw_${st}_aA1!`;
+  const { data: staff } = await admin.auth.admin.createUser({
+    email: mail,
+    password: pw,
+    email_confirm: true,
+  });
+  const { data: seat } = await admin
+    .from("project_members")
+    .insert({ project_id: project.id, user_id: staff.user.id, email: mail, joined_at: new Date().toISOString() })
+    .select()
+    .single();
+
+  const staffClient = createClient(URL_, ANON);
+  const { data: session } = await staffClient.auth.signInWithPassword({ email: mail, password: pw });
+
+  try {
+    console.log("\nand a staff member cannot build");
+    const seen = await staffClient.from("projects").select("id").eq("id", project.id);
+    check("they can still open the app", seen.data?.length === 1);
+
+    const res = await fetch(`${APP}/api/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.session.access_token}`,
+      },
+      body: JSON.stringify({ projectId: project.id, message: "build me something" }),
+    });
+    check("but the assistant refuses them", res.status === 403);
+
+    const theirs = (
+      await admin
+        .from("account_settings")
+        .select("turns_used")
+        .eq("user_id", staff.user.id)
+        .maybeSingle()
+    ).data;
+    check("and it cost them nothing", (theirs?.turns_used ?? 0) === 0);
+  } finally {
+    if (seat) await admin.from("project_members").delete().eq("id", seat.id);
+    await admin.auth.admin.deleteUser(staff.user.id);
+    console.log("the seat is given back");
   }
 }
 
