@@ -157,6 +157,31 @@ try {
   // has not been said yes to.
   check("and nobody has approved it", row?.approved_at === null);
 
+  console.log("\nand what is waiting can be asked for, not remembered");
+  // Without this tool the model had no way to learn a request_id
+  // except from its own memory of proposing one — so it listed designs
+  // the merchant had long since dismissed and called them pending.
+  const waiting = await tool("pending_changes", { project_id: project.id }, 6);
+  check("the one just submitted is waiting", waiting?.count >= 1);
+  check(
+    "and it is named with the id approve_change wants",
+    (waiting?.waiting ?? []).some((w) => w.request_id === good?.request_id)
+  );
+  check(
+    "and it is not pretending to be approved",
+    (waiting?.waiting ?? []).every((w) => w.approved === false)
+  );
+
+  // The half that was actually going wrong: when nothing waits, the
+  // answer has to be a plain no.
+  for (const r of made) await admin.from("build_requests").update({ status: "dismissed" }).eq("id", r);
+  const empty = await tool("pending_changes", { project_id: project.id }, 7);
+  check("a dismissed design stops waiting", empty?.count === 0);
+  check(
+    "and the model is told not to claim otherwise",
+    /do not tell the merchant otherwise/i.test(empty?.note ?? "")
+  );
+
   console.log("\nand none of it was charged for");
   check("the counter never moved", (await spent()) === 1);
 

@@ -171,6 +171,20 @@ const TOOLS = [
     },
   },
   {
+    name: "pending_changes",
+    description:
+      "Designs that are actually waiting for the merchant's approval right now, with the request_id approve_change needs. Call this before telling them anything is waiting — a design they dismissed, or built in Warmluke, is no longer waiting, and there is no way to know that from memory.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project_id: {
+          type: "string",
+          description: "Which app, when they have more than one. Optional.",
+        },
+      },
+    },
+  },
+  {
     name: "design_format",
     description:
       "Everything you need to write a design yourself instead of asking Warmluke to write it: the column types, view types, rule triggers and actions this platform has, the expression operators, and the shape of a plan. Read this before calling submit_design. Designing here costs the merchant nothing — you are the one doing the thinking, on their own subscription.",
@@ -386,7 +400,7 @@ async function settleDesign(opts: {
           // Said plainly so the model reports it plainly: nothing has
           // been built, and somebody still has to say yes.
           status: "waiting for approval",
-          note: "Nothing has changed yet. Read this design back to the merchant word for word. If they approve, call approve_change with the request_id.",
+          note: "Nothing has changed yet. Read this design back to the merchant word for word. If they approve, call approve_change with the request_id. If they leave it and come back later, check pending_changes rather than trusting this id — they may have dealt with it in Warmluke.",
           request_id: requestId,
           design,
           // When the merchant has asked for automatic builds, say why
@@ -566,7 +580,7 @@ export async function POST(req: Request) {
             // open with no limit on it.
             note: "That counter is only for designs Warmluke writes. Write this one yourself instead: call design_format, then submit_design. It is checked by the same validator, goes to the merchant the same way, and does not touch the counter.",
             do_this_instead: "design_format",
-            reading_still_works: "orders, stock, products, customers — and any design already waiting can still be approved",
+            reading_still_works: "orders, stock, products, customers — and pending_changes says what, if anything, is still waiting to be approved",
             open: `${new URL(req.url).origin}/app/${project.id}`,
           })
         );
@@ -745,6 +759,44 @@ export async function POST(req: Request) {
           total: count ?? 0,
           showing: rows?.length ?? 0,
           rows: (rows ?? []).map((r) => r.data),
+        })
+      );
+    }
+
+    if (name === "pending_changes") {
+      // approve_change needs a request_id, and until this existed the
+      // only place to get one was the model's memory of its own
+      // propose_change call. So it listed things from memory — designs
+      // the merchant had since dismissed or built — and called them
+      // waiting. They were not.
+      const wanted = (args.project_id as string | undefined)?.trim();
+      let q = db
+        .from("build_requests")
+        .select("id, project_id, request, summary, status, approved_at, created_at, client_id")
+        .in("status", ["pending", "building"])
+        .order("created_at", { ascending: false })
+        .limit(20);
+      if (wanted) q = q.eq("project_id", wanted);
+      const { data: waiting, error: wErr } = await q;
+      if (wErr) return ok(id, text({ error: wErr.message }));
+
+      const rows = waiting ?? [];
+      return ok(
+        id,
+        text({
+          count: rows.length,
+          note: rows.length
+            ? "These are waiting. Read one back to the merchant and call approve_change with its request_id if they say yes."
+            : "Nothing is waiting for approval. Do not tell the merchant otherwise — anything from earlier in this conversation has since been built or dismissed.",
+          waiting: rows.map((r) => ({
+            request_id: r.id,
+            project_id: r.project_id,
+            asked_for: r.request,
+            design: r.summary,
+            raised_by: r.client_id ? "this assistant" : "the merchant, in Warmluke",
+            approved: r.approved_at !== null,
+            since: r.created_at,
+          })),
         })
       );
     }
