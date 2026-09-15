@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getUserClient } from "@/lib/supabase-server";
 import {
   dayRangeInZone,
@@ -11,6 +12,8 @@ import {
   storeOverview,
 } from "@/lib/store-read";
 import { blueprintAsText, runTurn } from "@/lib/engine";
+import { parseReply } from "@/lib/ai";
+import { vocabularyPrompt } from "@/lib/capabilities";
 import { describePlan } from "@/lib/describe";
 import { applyPlans } from "@/lib/apply";
 import type { AssistantPlan, ModuleRow, ProjectRow } from "@/lib/types";
@@ -168,6 +171,38 @@ const TOOLS = [
     },
   },
   {
+    name: "design_format",
+    description:
+      "Everything you need to write a design yourself instead of asking Warmluke to write it: the column types, view types, rule triggers and actions this platform has, the expression operators, and the shape of a plan. Read this before calling submit_design. Designing here costs the merchant nothing — you are the one doing the thinking, on their own subscription.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "submit_design",
+    description:
+      "Submit a design you wrote yourself. Warmluke checks it against the same validator its own engine answers to and, if it holds, puts it in front of the merchant for approval exactly like propose_change does. Rejections come back as a list of what is wrong, so you can correct it and submit again. Unlike propose_change this runs no Warmluke model, so it does not use the merchant's free builds — use it when they have run out, or whenever you would rather design it yourself.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        plans: {
+          type: "array",
+          description:
+            "The plans, in the shape design_format describes. This is the same array propose_change would have produced.",
+          items: { type: "object" },
+        },
+        request: {
+          type: "string",
+          description:
+            "What the merchant asked for, in their own words. Shown on the approval card so they recognise what they asked for.",
+        },
+        project_id: {
+          type: "string",
+          description: "Which app, when they have more than one. Optional.",
+        },
+      },
+      required: ["plans"],
+    },
+  },
+  {
     name: "approve_change",
     description:
       "Build a design the merchant has just approved. Call this ONLY after reading the design from propose_change back to them and hearing them agree — it changes their live app. Pass the request_id propose_change returned.",
@@ -244,6 +279,124 @@ const rpcError = (id: RpcRequest["id"], code: number, message: string) =>
 const text = (value: unknown): Json => ({
   content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
 });
+
+/**
+ * What happens to a design once there is one: stored, shown, and built
+ * only if the merchant already said it could be.
+ *
+ * Both doors end here — the one where Warmluke does the designing, and
+ * the one where the merchant's own assistant does. They must agree
+ * about approval and about the daily ceiling, and the only way to be
+ * sure of that is for there to be one copy of it.
+ */
+async function settleDesign(opts: {
+  db: SupabaseClient;
+  id: RpcRequest["id"];
+  origin: string;
+  project: ProjectRow;
+  moduleList: ModuleRow[];
+  plans: AssistantPlan[];
+  design: string | null;
+  unmet: string[];
+  request: string;
+  store: Parameters<typeof whyNotAutomatic>[3];
+}) {
+  const { db, id, origin, project, moduleList, plans, design, unmet, request, store } = opts;
+
+      // ── Does this one get to skip the merchant? ──────────────
+      //
+      // The switch says they are willing; this decides whether THIS
+      // design qualifies. Additive only, nothing the engine flagged,
+      // and a ceiling per day — a client in a loop must not be able
+      // to build fifty sections overnight.
+      const autoReason = whyNotAutomatic(plans, unmet, moduleList, store);
+      const wantsAuto = project.auto_build === true;
+
+      const gone = removals(plans);
+      if (gone.length) {
+        return ok(
+          id,
+          text({
+            error: "Removing a section cannot be done from here.",
+            note: `Tell the merchant to open Warmluke, choose the section, and type its name (${gone.join(", ")}) to confirm. Nothing has been requested or changed.`,
+            open: `${origin}/app/${project.id}`,
+          })
+        );
+      }
+
+      let automatic = wantsAuto && autoReason === null;
+      if (automatic) {
+        // Counted before building, so a loop pays for its own stop.
+        const since = new Date(Date.now() - 864e5).toISOString();
+        const { count } = await db
+          .from("build_requests")
+          .select("id", { count: "exact", head: true })
+          .eq("project_id", project.id)
+          .eq("auto_built", true)
+          .gt("built_at", since);
+        if ((count ?? 0) >= AUTO_BUILDS_PER_DAY) automatic = false;
+      }
+
+      const { data: requestId, error: err } = await db.rpc("abo_mcp_propose", {
+        p_project: project.id,
+        p_request: request,
+        p_plans: plans,
+        p_summary: design,
+        // Stored apart from the rendered text because the card keeps
+        // this visible while the details fold away: everything else
+        // can be rebuilt from the plans, this cannot.
+        p_unmet: unmet,
+      });
+      if (err) return ok(id, text({ error: err.message }));
+
+
+      if (automatic) {
+        // auto-build IS the approval — given in Warmluke, on this
+        // project, before any of this was asked for. The stamp records
+        // that, so the row says who agreed and when.
+        await db.rpc("abo_approve_request", { p_request: requestId });
+        const { applied, errors } = await applyPlans(db, project.id, plans, requestId as string);
+        if (applied.length > 0) {
+          await db.rpc("abo_build", {
+            p_project: project.id,
+            p_request: requestId,
+            p_op: "request_built",
+            p_payload: {},
+          });
+          await db.from("build_requests").update({ auto_built: true }).eq("id", requestId);
+          return ok(
+            id,
+            text({
+              status: errors.length ? "partly built" : "built",
+              note: "This app builds additive changes without waiting. Tell the merchant what was built — it is already live and shows in their panel.",
+              built: applied,
+              ...(errors.length ? { not_built: errors.slice(0, 3) } : {}),
+              design,
+              open: `${origin}/app/${project.id}`,
+            })
+          );
+        }
+        // Nothing applied. It stays a request for a person to look at
+        // rather than being reported as done.
+      }
+
+      return ok(
+        id,
+        text({
+          // Said plainly so the model reports it plainly: nothing has
+          // been built, and somebody still has to say yes.
+          status: "waiting for approval",
+          note: "Nothing has changed yet. Read this design back to the merchant word for word. If they approve, call approve_change with the request_id.",
+          request_id: requestId,
+          design,
+          // When the merchant has asked for automatic builds, say why
+          // this one still needs them. Otherwise they are left
+          // wondering why the setting did nothing.
+          ...(wantsAuto && autoReason ? { not_automatic_because: autoReason } : {}),
+          open: `${origin}/app/${project.id}`,
+        })
+      );
+    }
 
 export async function POST(req: Request) {
   // Required by the spec: without it a page on another origin could
@@ -406,8 +559,14 @@ export async function POST(req: Request) {
         return ok(
           id,
           text({
-            error: `This account has used all ${turns.free} free builds on Warmluke's assistant.`,
-            note: "Reading their store still works — orders, stock, products, customers — and any design already waiting can still be approved. Building something new needs Warmluke AI.",
+            error: `This account has used all ${turns.free} free builds on Warmluke's own assistant.`,
+            // The old wording sent them to a paywall that does not
+            // exist. What actually costs money is Warmluke doing the
+            // designing; you doing it costs nothing, and that door is
+            // open with no limit on it.
+            note: "That counter is only for designs Warmluke writes. Write this one yourself instead: call design_format, then submit_design. It is checked by the same validator, goes to the merchant the same way, and does not touch the counter.",
+            do_this_instead: "design_format",
+            reading_still_works: "orders, stock, products, customers — and any design already waiting can still be approved",
             open: `${new URL(req.url).origin}/app/${project.id}`,
           })
         );
@@ -456,100 +615,18 @@ export async function POST(req: Request) {
       const plans =
         turn.reply.type === "blueprint" ? turn.reply.blueprint.plans : turn.reply.plans;
 
-      // ── Does this one get to skip the merchant? ──────────────
-      //
-      // The switch says they are willing; this decides whether THIS
-      // design qualifies. Additive only, nothing the engine flagged,
-      // and a ceiling per day — a client in a loop must not be able
-      // to build fifty sections overnight.
-      const autoReason = whyNotAutomatic(plans, turn.unmet, moduleList, turn.store);
-      const wantsAuto = project.auto_build === true;
-
-      const gone = removals(plans);
-      if (gone.length) {
-        return ok(
-          id,
-          text({
-            error: "Removing a section cannot be done from here.",
-            note: `Tell the merchant to open Warmluke, choose the section, and type its name (${gone.join(", ")}) to confirm. Nothing has been requested or changed.`,
-            open: `${new URL(req.url).origin}/app/${project.id}`,
-          })
-        );
-      }
-
-      let automatic = wantsAuto && autoReason === null;
-      if (automatic) {
-        // Counted before building, so a loop pays for its own stop.
-        const since = new Date(Date.now() - 864e5).toISOString();
-        const { count } = await db
-          .from("build_requests")
-          .select("id", { count: "exact", head: true })
-          .eq("project_id", project.id)
-          .eq("auto_built", true)
-          .gt("built_at", since);
-        if ((count ?? 0) >= AUTO_BUILDS_PER_DAY) automatic = false;
-      }
-
-      const { data: requestId, error: err } = await db.rpc("abo_mcp_propose", {
-        p_project: project.id,
-        p_request: request,
-        p_plans: plans,
-        p_summary: design,
-        // Stored apart from the rendered text because the card keeps
-        // this visible while the details fold away: everything else
-        // can be rebuilt from the plans, this cannot.
-        p_unmet: turn.unmet,
-      });
-      if (err) return ok(id, text({ error: err.message }));
-
-      const origin = new URL(req.url).origin;
-
-      if (automatic) {
-        // auto-build IS the approval — given in Warmluke, on this
-        // project, before any of this was asked for. The stamp records
-        // that, so the row says who agreed and when.
-        await db.rpc("abo_approve_request", { p_request: requestId });
-        const { applied, errors } = await applyPlans(db, project.id, plans, requestId as string);
-        if (applied.length > 0) {
-          await db.rpc("abo_build", {
-            p_project: project.id,
-            p_request: requestId,
-            p_op: "request_built",
-            p_payload: {},
-          });
-          await db.from("build_requests").update({ auto_built: true }).eq("id", requestId);
-          return ok(
-            id,
-            text({
-              status: errors.length ? "partly built" : "built",
-              note: "This app builds additive changes without waiting. Tell the merchant what was built — it is already live and shows in their panel.",
-              built: applied,
-              ...(errors.length ? { not_built: errors.slice(0, 3) } : {}),
-              design,
-              open: `${origin}/app/${project.id}`,
-            })
-          );
-        }
-        // Nothing applied. It stays a request for a person to look at
-        // rather than being reported as done.
-      }
-
-      return ok(
+      return settleDesign({
+        db,
         id,
-        text({
-          // Said plainly so the model reports it plainly: nothing has
-          // been built, and somebody still has to say yes.
-          status: "waiting for approval",
-          note: "Nothing has changed yet. Read this design back to the merchant word for word. If they approve, call approve_change with the request_id.",
-          request_id: requestId,
-          design,
-          // When the merchant has asked for automatic builds, say why
-          // this one still needs them. Otherwise they are left
-          // wondering why the setting did nothing.
-          ...(wantsAuto && autoReason ? { not_automatic_because: autoReason } : {}),
-          open: `${origin}/app/${project.id}`,
-        })
-      );
+        origin: new URL(req.url).origin,
+        project,
+        moduleList,
+        plans,
+        design,
+        unmet: turn.unmet ?? [],
+        request,
+        store: turn.store,
+      });
     }
 
     if (name === "read_section") {
@@ -670,6 +747,117 @@ export async function POST(req: Request) {
           rows: (rows ?? []).map((r) => r.data),
         })
       );
+    }
+
+    if (name === "design_format") {
+      // Written once, for the model that has to obey it. The engine's
+      // own prompt is built from this same function, so a client
+      // reading it is being told exactly what Warmluke tells itself.
+      return ok(
+        id,
+        text({
+          note: "Write the design yourself and send it with submit_design. Nothing here costs the merchant a free build — their subscription is paying for your thinking, not ours.",
+          envelope: {
+            plans: "an array of plan objects, applied in order",
+          },
+          plan: {
+            changeType:
+              "NEW_MODULE | FIELD_ADD | UI_CHANGE | MODULE_UPDATE | FEATURE_UPDATE | RECORD_SEED | AUTOMATION_ADD | AUTOMATION_REMOVE",
+            targetModuleId:
+              'the section this changes, or "#slug" to point at a section created earlier in the same array, or null for a new one',
+            newModule: "{ name, nav_label, icon, parent_id?, source_table? } — NEW_MODULE only",
+            newSchema: "{ columns: [...], view: {...} } — the section's fields and how they are shown",
+            moduleUpdate: "{ nav_label?, icon?, sort_order?, parent_id? } — MODULE_UPDATE only",
+            features: "filters, search, sorting, stats — see the vocabulary",
+            automation: "{ name, definition } — AUTOMATION_ADD only",
+            newRecords: "rows to start the section with — RECORD_SEED only",
+            explanation: "one sentence, in the merchant's language, saying what this does for them",
+          },
+          removing_a_section:
+            "MODULE_DELETE is not accepted here at all. The merchant types the section's name in Warmluke to confirm that one.",
+          vocabulary: vocabularyPrompt(),
+        })
+      );
+    }
+
+    if (name === "submit_design") {
+      const given = args.plans;
+      if (!Array.isArray(given) || given.length === 0) {
+        return ok(
+          id,
+          text({
+            error: "Pass plans: an array of plan objects.",
+            note: "Call design_format first if you have not seen the shape.",
+          })
+        );
+      }
+
+      const { data: projects } = await db.from("projects").select("*");
+      const list = (projects ?? []) as ProjectRow[];
+      const wantedProject = (args.project_id as string | undefined)?.trim();
+      const project = wantedProject
+        ? list.find((p) => p.id === wantedProject)
+        : list.length === 1
+          ? list[0]
+          : null;
+      if (!project) {
+        return ok(
+          id,
+          text({
+            error: list.length
+              ? "Which app is this for? Pass project_id."
+              : "This account has no app yet.",
+            projects: list.map((p) => ({ id: p.id, name: p.name })),
+          })
+        );
+      }
+
+      const { data: modules } = await db
+        .from("modules")
+        .select("*")
+        .eq("project_id", project.id)
+        .order("sort_order", { ascending: true });
+      const moduleList = (modules ?? []) as ModuleRow[];
+
+      // The same validator the engine answers to, with the same
+      // arguments it is given here. A design that would be rejected
+      // coming out of Warmluke's own model is rejected coming out of
+      // anybody else's — that is the whole reason this is safe to
+      // offer. No model runs on our side, so no turn is spent.
+      const checked = parseReply(JSON.stringify({ plans: given }), moduleList, null, null);
+      if (!checked.ok || checked.reply.type === "clarify") {
+        return ok(
+          id,
+          text({
+            status: "not accepted",
+            errors: checked.ok ? ["That is not a design — it is a set of questions."] : checked.errors,
+            note: "Correct these and call submit_design again. Nothing has been requested or changed, and this cost the merchant nothing.",
+          })
+        );
+      }
+
+      const plans =
+        checked.reply.type === "blueprint" ? checked.reply.blueprint.plans : checked.reply.plans;
+      const request =
+        String(args.request ?? "").trim() ||
+        // The card is read by a person who has to recognise what they
+        // asked for. Falling back to the design's own words beats an
+        // empty line.
+        plans.map((pl) => pl.explanation).filter(Boolean).join(" ") ||
+        "A change designed by their own assistant";
+
+      return settleDesign({
+        db,
+        id,
+        origin: new URL(req.url).origin,
+        project,
+        moduleList,
+        plans,
+        design: blueprintAsText({ type: "plans", plans }, moduleList, null, []),
+        unmet: [],
+        request,
+        store: null,
+      });
     }
 
     if (name === "approve_change") {

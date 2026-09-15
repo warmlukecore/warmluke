@@ -43,6 +43,8 @@ const strangerToken = sess.session.access_token;
 let n = 0;
 let projectRow;
 let autoWas;
+let turnsWas;
+let ownerId;
 const rpc = (method, params, token) =>
   fetch(MCP, {
     method: "POST",
@@ -367,6 +369,22 @@ try {
     .single());
   autoWas = projectRow.auto_build === true;
   if (autoWas) await admin.from("projects").update({ auto_build: false }).eq("id", projectRow.id);
+  // And the same goes for the free-build counter. Every run of this
+  // check spends some, so after a few runs the account has none left
+  // and the design it is about to ask for never happens. A check that
+  // depends on a number has to own that number too.
+  turnsWas = (
+    await admin
+      .from("account_settings")
+      .select("free_turns, turns_used")
+      .eq("user_id", owner.user.id)
+      .single()
+  ).data;
+  ownerId = owner.user.id;
+  await admin
+    .from("account_settings")
+    .update({ free_turns: (turnsWas?.turns_used ?? 0) + 20 })
+    .eq("user_id", ownerId);
     // The whole point of the design: the merchant hears the plan
     // before anything is built, and hears it in words generated from
     // the plans rather than from the model's prose.
@@ -451,6 +469,14 @@ try {
 } finally {
   if (typeof autoWas === "boolean" && autoWas) {
     await admin.from("projects").update({ auto_build: true }).eq("id", projectRow.id);
+  }
+  if (turnsWas && ownerId) {
+    // The turns this check really spent stay spent; only the ceiling
+    // it raised comes back down.
+    await admin
+      .from("account_settings")
+      .update({ free_turns: turnsWas.free_turns })
+      .eq("user_id", ownerId);
   }
   await admin.auth.admin.deleteUser(made.user.id);
   console.log("\ntest user removed");
