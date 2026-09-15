@@ -73,5 +73,39 @@ console.log("\nand the ones it would have hit next");
   );
 }
 
+{
+  // Tags. The cell reads "Premium, Snow, Winter" because the array was
+  // joined for display, and filtering it whole meant a shop could pick
+  // "snowboard" out of the dropdown and be shown nothing at all.
+  const tagged = [
+    { data: { tags: "Accessory, Sport, Winter" } },
+    { data: { tags: "Premium, Snow, Snowboard, Sport, Winter" } },
+    { data: { tags: "cases" } },
+    { data: { tags: null } },
+  ];
+  const options = filterOptions([], tagged, "tags");
+  check("each tag is its own choice", options.includes("Winter") && options.includes("Premium"));
+  check("not the whole list as one", !options.includes("Accessory, Sport, Winter"));
+  check("and each appears once", options.filter((o) => o === "Winter").length === 1);
+
+  const winter = tagged.filter((r) => matchesFilter(r, "tags", "Winter"));
+  check("picking one finds every row carrying it", winter.length === 2);
+  check(
+    "and not the rows without it",
+    tagged.filter((r) => matchesFilter(r, "tags", "cases")).length === 1
+  );
+
+  // An option designed before any of this, spelling out the whole list.
+  check(
+    "a choice that is itself a list still matches",
+    matchesFilter(tagged[0], "tags", "Accessory, Sport, Winter")
+  );
+
+  // A field that holds the array itself, not the joined string.
+  const raw = [{ data: { tags: ["Snow", "Winter"] } }];
+  check("an array value works the same", matchesFilter(raw[0], "tags", "snow"));
+  check("and lists its items", filterOptions([], raw, "tags").length === 2);
+}
+
 console.log(fails.length === 0 ? "\nthe dropdown points at the rows" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);
