@@ -224,7 +224,14 @@ function DashboardInner() {
     }
     setProjectsLoading(false);
 
-    const { data: storeRows } = await supabase.from("stores").select("*");
+    // Not select("*"): the token columns are no longer readable, and a
+    // dashboard has no business asking for them — it wants a domain and
+    // two expiry dates.
+    const { data: storeRows } = await supabase
+      .from("stores")
+      .select(
+        "id, project_id, shop_domain, status, currency, timezone, last_synced_at, token_expires_at, refresh_token_expires_at"
+      );
     setStores(
       Object.fromEntries(((storeRows ?? []) as StoreRow[]).map((st) => [st.project_id, st]))
     );

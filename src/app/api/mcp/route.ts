@@ -399,7 +399,9 @@ export async function POST(req: Request) {
       // Claude still runs our engine on our key — a quota that only
       // watched the chat would have capped nothing.
       const { data: allowance } = await db.rpc("abo_spend_turn");
-      const turns = allowance as { ok: boolean; used: number; free: number } | null;
+      const turns = allowance as
+        | { ok: boolean; used: number; free: number; spend_id?: string }
+        | null;
       if (turns && !turns.ok) {
         return ok(
           id,
@@ -423,7 +425,7 @@ export async function POST(req: Request) {
         signal: req.signal,
       });
       if (!turn.ok) {
-        await db.rpc("abo_refund_turn");
+        await db.rpc("abo_refund_turn", { p_spend: turns?.spend_id ?? null });
         return ok(
           id,
           text({

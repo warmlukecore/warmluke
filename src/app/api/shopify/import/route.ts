@@ -35,13 +35,27 @@ export async function POST(req: Request) {
 
   // RLS decides whether this store is reachable; there is no owner check
   // here because that would be a second opinion on the same question.
-  const { data: store } = await auth.client
+  const { data: found } = await auth.client
     .from("stores")
-    .select("id, shop_domain, access_token, status, refresh_token, token_expires_at")
+    .select("id, shop_domain, status")
     .eq("project_id", projectId)
     .maybeSingle();
 
-  if (!store) return NextResponse.json({ error: "No store connected." }, { status: 404 });
+  if (!found) return NextResponse.json({ error: "No store connected." }, { status: 404 });
+
+  // The token is no longer a column anyone may select — a seat on the
+  // project used to be enough to read it. It comes through a function
+  // that answers the owner and nobody else, least of all a connected
+  // AI client holding their session.
+  const { data: secret } = await auth.client
+    .rpc("abo_store_token", { p_store: found.id })
+    .maybeSingle();
+  const store = { ...found, ...(secret ?? {}) } as typeof found & {
+    access_token?: string | null;
+    refresh_token?: string | null;
+    token_expires_at?: string | null;
+  };
+
   if (store.status !== "connected" || !store.access_token) {
     return NextResponse.json({ error: "That store isn't connected yet." }, { status: 409 });
   }

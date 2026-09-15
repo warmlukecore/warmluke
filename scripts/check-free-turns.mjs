@@ -62,36 +62,57 @@ try {
   // from the allowance every time it retried.
   check("a refusal spends nothing", afterRefusal.turns_used === 2);
 
-  const refund = (await user.rpc("abo_refund_turn")).data;
-  check("a refund buys one back", refund?.refunded === true);
-  const back = (await user.rpc("abo_spend_turn")).data;
-  check("and the turn can be taken again", back?.ok === true);
+  const refund = (await user.rpc("abo_refund_turn", { p_spend: third?.spend_id ?? null })).data;
+  check("a refused turn has nothing to refund", refund?.refunded === false);
+  const back = (await user.rpc("abo_refund_turn", { p_spend: second?.spend_id ?? null })).data;
+  check("but the turn that was taken can be given back", back?.refunded === true);
+  const again = (await user.rpc("abo_spend_turn")).data;
+  check("and the turn can be taken again", again?.ok === true);
 
   console.log("\nand the refund is not free money");
-  // It takes no arguments and every signed-in role may call it, so
-  // PostgREST is one curl away. What stops a loop is that a refund
-  // has to answer for a spend.
-  await admin.from("account_settings").update({ free_turns: 3 }).eq("user_id", made.user.id);
-  const before = (
-    await admin.from("account_settings").select("turns_used").eq("user_id", made.user.id).single()
-  ).data.turns_used;
-  const many = await Promise.all(
-    Array.from({ length: 10 }, () => user.rpc("abo_refund_turn").then((r) => r.data))
-  );
-  const granted = many.filter((r) => r?.refunded).length;
-  check("ten calls in a row refund at most one", granted <= 1);
-  const afterLoop = (
-    await admin.from("account_settings").select("turns_used").eq("user_id", made.user.id).single()
-  ).data.turns_used;
-  check("and the count did not fall away", afterLoop >= before - 1);
+  // This is the one 0044 left open. It stopped the LOOP — one refund
+  // per spend — and one per spend is exactly enough: take the turn,
+  // get the design, hand the turn back. Ten free builds meant
+  // unlimited builds. A refund now has to name the spend, and the id
+  // never leaves the server.
+  await admin.from("account_settings").update({ free_turns: 9, turns_used: 0 }).eq("user_id", made.user.id);
+  const paid = (await user.rpc("abo_spend_turn")).data;
+  check("a spend answers with an id", typeof paid?.spend_id === "string");
 
-  // A refund with nothing recent behind it buys nothing at all.
+  const guessed = await Promise.all(
+    [null, crypto.randomUUID(), made.user.id].map((g) =>
+      user.rpc("abo_refund_turn", { p_spend: g }).then((r) => r.data)
+    )
+  );
+  check("a refund without the right id is refused", guessed.every((r) => r?.refunded !== true));
+
+  const real = (await user.rpc("abo_refund_turn", { p_spend: paid.spend_id })).data;
+  check("with it, the turn comes back", real?.refunded === true);
+  const twice = (await user.rpc("abo_refund_turn", { p_spend: paid.spend_id })).data;
+  check("and only the once", twice?.refunded === false);
+
+  // Spending straight through PostgREST still teaches them nothing:
+  // the id they learn refunds the turn they just burned.
+  const burnt = (
+    await admin.from("account_settings").select("turns_used").eq("user_id", made.user.id).single()
+  ).data.turns_used;
+  const own = (await user.rpc("abo_spend_turn")).data;
+  await user.rpc("abo_refund_turn", { p_spend: own.spend_id });
+  const afterOwn = (
+    await admin.from("account_settings").select("turns_used").eq("user_id", made.user.id).single()
+  ).data.turns_used;
+  check("spending it themselves nets them nothing", afterOwn === burnt);
+
+  // And the id from an earlier turn is spent, not a spare key.
+  const stale = (await user.rpc("abo_refund_turn", { p_spend: paid.spend_id })).data;
+  check("an older turn's id is no longer worth anything", stale?.refunded === false);
+
   await admin
     .from("account_settings")
     .update({ last_spend_at: new Date(Date.now() - 3600e3).toISOString(), last_refund_at: null })
     .eq("user_id", made.user.id);
-  const stale = (await user.rpc("abo_refund_turn")).data;
-  check("an old spend cannot be refunded", stale?.refunded === false);
+  const old = (await user.rpc("abo_refund_turn", { p_spend: own.spend_id })).data;
+  check("an old spend cannot be refunded", old?.refunded === false);
 
   console.log("\nand two at once cannot both slip through");
   // Read-then-write left a gap: both requests saw one left.

@@ -242,7 +242,9 @@ export async function POST(req: Request) {
     // would not pay at all.
     const { data: allowance, error: spendErr } = await client.rpc("abo_spend_turn");
     if (spendErr) throw new Error(spendErr.message);
-    const turns = allowance as { ok: boolean; used: number; free: number } | null;
+    const turns = allowance as
+      | { ok: boolean; used: number; free: number; spend_id?: string }
+      | null;
     if (turns && !turns.ok) {
       return NextResponse.json(
         {
@@ -271,7 +273,9 @@ export async function POST(req: Request) {
     if (!turn.ok) {
       // Our engine could not produce something it trusts. Charging
       // for that is charging for our own failure.
-      await client.rpc("abo_refund_turn");
+      // The id is what proves this is the server undoing its own
+      // failure. It stays in this request and is never sent back.
+      await client.rpc("abo_refund_turn", { p_spend: turns?.spend_id ?? null });
       return NextResponse.json(
         {
           conversationId: convId,
