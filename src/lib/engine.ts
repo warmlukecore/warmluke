@@ -32,7 +32,7 @@ import { describePlan, describeRules, type RuleRow } from "@/lib/describe";
  * raise it or group them when one actually has that many.
  */
 const RULES_IN_CONTEXT = 40;
-import { storeOverview, storeValues } from "@/lib/store-read";
+import { lowStock, searchOrders, storeOverview, storeValues } from "@/lib/store-read";
 import type { AssistantReply, FeatureSchema, ModuleRow, ProjectRow, UiSchema } from "@/lib/types";
 
 /**
@@ -52,13 +52,31 @@ export async function storeContextFor(
   // a member who cannot see it — simply gets null.
   const { data: storeRow } = await client
     .from("stores")
-    .select("id, shop_domain, timezone, currency")
+    .select("id, shop_domain, timezone, currency, last_synced_at")
     .eq("project_id", projectId)
     .eq("status", "connected")
     .maybeSingle();
   if (!storeRow) return null;
 
   const overview = await storeOverview(client, storeRow.id as string);
+
+  // Read here, before the model runs, rather than fetched by the model
+  // through tools. Two reasons: whether a read happened is then a fact
+  // about this code path instead of something the model asserts, and a
+  // provider without tool support behaves exactly the same as one with
+  // it. The ceiling is that the model can only answer from what was
+  // brought — it cannot go and look for one particular order.
+  //
+  // ponytail: a fixed snapshot, not a tool loop. Move to real tools
+  // when "find order #1042" becomes a question people actually ask.
+  const [recent, low] = await Promise.all([
+    searchOrders(
+      client,
+      { id: storeRow.id as string, timezone: storeRow.timezone as string },
+      { limit: 20 }
+    ).catch(() => []),
+    lowStock(client, storeRow.id as string, { threshold: 10, limit: 15 }).catch(() => []),
+  ]);
   const values = await storeValues(client, storeRow.id as string);
   const { data: runs } = await client
     .from("import_runs")
@@ -75,6 +93,21 @@ export async function storeContextFor(
     importing: runList.length === 0 || runList.some((r) => r.status !== "done"),
     counts: overview?.counts ?? {},
     values,
+    snapshot: {
+      last_synced_at: (storeRow.last_synced_at as string | null) ?? null,
+      recent: recent.map((o) => ({
+        number: o.order_number ?? "—",
+        placed: o.placed_at,
+        total: o.total,
+        status: o.financial_status,
+      })),
+      low: low.map((l) => ({
+        product: l.product ?? "—",
+        variant: l.variant,
+        location: l.location,
+        available: l.available,
+      })),
+    },
   };
 }
 
@@ -221,7 +254,11 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // only, which left every plain-plans answer saying nothing about
   // the half of the request it quietly dropped.
   let unmet: string[] = [];
-  if (parsed.reply.type !== "clarify") {
+  // Neither a clarify nor an answer has a design in it. The gap pass
+  // asks "does what you built do what they asked" — of a question
+  // answered, there is nothing to ask that of, and running it would
+  // spend a second model call to compare prose with nothing.
+  if (parsed.reply.type !== "clarify" && parsed.reply.type !== "answer") {
     const plans =
       parsed.reply.type === "blueprint" ? parsed.reply.blueprint.plans : parsed.reply.plans;
     const built = plans
@@ -260,6 +297,9 @@ export function blueprintAsText(
   // A reply of plain plans is an edit to something that already
   // exists. It still gets described the same way — the merchant is
   // approving it either way, so they read the same sentences.
+  // A question answered has no design to render — it is already prose.
+  if (reply.type === "answer") return reply.message;
+
   const bp =
     reply.type === "blueprint"
       ? reply.blueprint

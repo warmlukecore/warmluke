@@ -717,6 +717,16 @@ export default function AppShell({
           return;
         }
 
+        // A question answered. Nothing to approve, nothing to build —
+        // it goes into the thread as what Luke said and stops there.
+        if (reply.type === "answer") {
+          setChatMessages((prev) => [
+            ...prev,
+            { id: nextChatId(), role: "assistant", text: reply.message },
+          ]);
+          return;
+        }
+
         const plans = reply.plans;
 
         // Every design is approved before it is built, however many

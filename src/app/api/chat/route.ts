@@ -312,6 +312,19 @@ export async function POST(req: Request) {
       convId = created.id as string;
     }
 
+    // Written here, by the server, from what the server actually read —
+    // and before the row is stored, so the thread keeps the receipt
+    // rather than only this response carrying it. The model is never
+    // asked to attest that it looked; an assertion from the thing
+    // being checked is not a check.
+    if (turn.reply.type === "answer") {
+      turn.reply.grounding = {
+        kind: "store_snapshot",
+        last_synced_at: turn.store?.snapshot?.last_synced_at ?? null,
+        shop: turn.store?.shop_domain ?? "",
+      };
+    }
+
     await persistTurn(
       client,
       convId!,

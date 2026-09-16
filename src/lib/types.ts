@@ -359,6 +359,19 @@ export interface Blueprint {
 }
 
 export type AssistantReply =
+  /**
+   * A question answered rather than a change designed.
+   *
+   * `grounding` is written by the server, never by the model: it says
+   * which snapshot the answer was allowed to use and when that data
+   * last came from Shopify. A model asserting "I checked" proves
+   * nothing; this is the receipt.
+   */
+  | {
+      type: "answer";
+      message: string;
+      grounding?: { kind: "store_snapshot"; last_synced_at: string | null; shop: string };
+    }
   | { type: "clarify"; message: string; questions: ClarifyQuestion[] }
   | { type: "blueprint"; message: string; blueprint: Blueprint }
   | { type: "plans"; message?: string; plans: AssistantPlan[] };

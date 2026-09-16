@@ -774,6 +774,13 @@ export async function POST(req: Request) {
         );
       }
 
+      // An answer is a reply to a question, and nobody asked one here:
+      // this path exists to design a change. Refusing beats settling a
+      // design that has no plans in it.
+      if (turn.reply.type === "answer") {
+        return ok(id, text({ error: "That reads as a question, not a change to make." }));
+      }
+
       const design = blueprintAsText(turn.reply, moduleList, turn.store, turn.unmet);
       const plans =
         turn.reply.type === "blueprint" ? turn.reply.blueprint.plans : turn.reply.plans;
@@ -1210,6 +1217,9 @@ export async function POST(req: Request) {
         );
       }
 
+      if (checked.reply.type === "answer") {
+        return ok(id, text({ error: "That reads as a question, not a change to make." }));
+      }
       const plans =
         checked.reply.type === "blueprint" ? checked.reply.blueprint.plans : checked.reply.plans;
       const request =
