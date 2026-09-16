@@ -124,8 +124,13 @@ export async function startBulk(shop: string, token: string, resource: Resource)
   }>(
     shop,
     token,
+    // groupObjects, because every reader below assumes a child is
+    // written next to its parent. Shopify changed that default to
+    // false in 2026-01, so leaving it out means a file whose lines are
+    // in no particular order — and a parent whose children arrive
+    // after it has already been written.
     `mutation($q: String!) {
-       bulkOperationRunQuery(query: $q) {
+       bulkOperationRunQuery(query: $q, groupObjects: true) {
          bulkOperation { id status }
          userErrors { field message }
        }
@@ -141,13 +146,26 @@ export async function startBulk(shop: string, token: string, resource: Resource)
   return bulkOperation.id;
 }
 
-export async function pollBulk(shop: string, token: string): Promise<BulkOp | null> {
-  const data = await graphql<{ currentBulkOperation: BulkOp | null }>(
+/**
+ * The operation we started, asked for by name.
+ *
+ * This used to ask for currentBulkOperation — the most recent one —
+ * and compare its id afterwards. Shopify now allows five at once, so
+ * the most recent is often somebody else's and ours would look like it
+ * had vanished.
+ */
+export async function pollBulk(shop: string, token: string, id: string): Promise<BulkOp | null> {
+  const data = await graphql<{ node: BulkOp | null }>(
     shop,
     token,
-    `{ currentBulkOperation(type: QUERY) { id status errorCode objectCount url } }`
+    `query($id: ID!) {
+       node(id: $id) {
+         ... on BulkOperation { id status errorCode objectCount url }
+       }
+     }`,
+    { id }
   );
-  return data.currentBulkOperation;
+  return data.node;
 }
 
 /** A line of the file: an object, plus where it hangs if it is a child. */
@@ -294,10 +312,15 @@ async function writeLines(
     const order: string[] = [];
     for (const l of lines) {
       if (!l.__parentId) {
+        // refunds is a plain list, not a connection, so the file
+        // carries it inside the order itself and never as separate
+        // __parentId lines. Blanking it here threw away every refund
+        // the export had already handed us.
+        const parent = l as unknown as GqlOrder;
         parents.set(l.id!, {
-          ...(l as unknown as GqlOrder),
+          ...parent,
           lineItems: { nodes: [] },
-          refunds: [],
+          refunds: parent.refunds ?? [],
         });
         order.push(l.id!);
         continue;

@@ -40,7 +40,7 @@ export async function POST(req: Request) {
   // here because that would be a second opinion on the same question.
   const { data: found } = await auth.client
     .from("stores")
-    .select("id, shop_domain, status")
+    .select("id, shop_domain, status, last_synced_at")
     .eq("project_id", projectId)
     .maybeSingle();
 
@@ -108,8 +108,15 @@ export async function POST(req: Request) {
       .filter(Boolean)
       .sort()
       .pop();
+    // Only ever forward, and decided in one statement. An order webhook
+    // stamps this the moment it lands; reading the value here and
+    // writing it after would let one land in between and be undone.
     if (finished) {
-      await auth.client.from("stores").update({ last_synced_at: finished }).eq("id", store.id);
+      const { error: stamped } = await auth.client.rpc("abo_store_synced", {
+        p_store: store.id,
+        p_at: finished,
+      });
+      if (stamped) console.error("could not record the sync time:", stamped.message);
     }
 
     // Rows we hold that the pass did not bring back.
@@ -172,7 +179,7 @@ export async function POST(req: Request) {
     }
     const page = step;
 
-    const imported = (run?.imported ?? 0) + page.imported;
+    const imported = page.restart ? 0 : (run?.imported ?? 0) + page.imported;
     const row = {
       store_id: store.id,
       resource,
@@ -181,8 +188,25 @@ export async function POST(req: Request) {
       imported,
       finished_at: page.hasNext ? null : new Date().toISOString(),
     };
-    if (run) await auth.client.from("import_runs").update(row).eq("id", run.id);
-    else await auth.client.from("import_runs").insert(row);
+    // Two callers starting at once both had no row to update, and both
+    // inserted; the unique index now refuses the second, so it is an
+    // upsert rather than an error nobody reads.
+    let wrote;
+    if (run) {
+      // The same compare-and-set the failure path uses. A slow request
+      // finishing after a faster one would otherwise drag the cursor
+      // back to where this one had got to — the rows it imported are
+      // upserts and survive either way, but the progress must not go
+      // backwards.
+      let q = auth.client.from("import_runs").update(row).eq("id", run.id).eq("status", run.status);
+      q = run.cursor === null ? q.is("cursor", null) : q.eq("cursor", run.cursor);
+      ({ error: wrote } = await q);
+    } else {
+      ({ error: wrote } = await auth.client
+        .from("import_runs")
+        .upsert(row, { onConflict: "store_id,resource" }));
+    }
+    if (wrote) throw new Error(wrote.message);
 
     const after = (runs ?? []).filter((r) => r.resource !== resource).concat([{ ...run, ...row } as never]);
     return NextResponse.json({
@@ -196,14 +220,52 @@ export async function POST(req: Request) {
     // The failure is recorded against the resource so a retry resumes
     // from the last good cursor rather than starting over.
     const message = e instanceof ShopifyError ? e.message : e instanceof Error ? e.message : "Import failed.";
-    const row = { store_id: store.id, resource, status: "failed", error: message, cursor: run?.cursor ?? null };
-    if (run) await auth.client.from("import_runs").update(row).eq("id", run.id);
-    else await auth.client.from("import_runs").insert(row);
+    // A dead bulk operation is the one failure whose cursor must not
+    // survive: keeping it would point every retry back at an operation
+    // Shopify will never finish.
+    const spent = e instanceof ShopifyError && e.code === "bulk_failed";
+    const row = {
+      store_id: store.id,
+      resource,
+      status: "failed",
+      error: message,
+      cursor: spent ? null : (run?.cursor ?? null),
+    };
+    // A failure must never be the newest thing written. Two callers can
+    // both be here while one of them succeeded in between, and this row
+    // carries the cursor as it was read at the top of the request — so
+    // writing it flatly would put a finished import back to where this
+    // one started, and blank the cursor of a resource that had moved on.
+    //
+    // So: only overwrite the row this request actually saw, matched on
+    // the cursor it was holding; and if there was no row to see, insert
+    // one only where nobody else has since.
+    let noted;
+    if (run) {
+      // The status as well as the cursor. A resource that finished
+      // empty ends at status done with the cursor still null — which is
+      // exactly the state this request read — so matching the cursor
+      // alone would let a failure here undo somebody else's finished
+      // import.
+      let q = auth.client.from("import_runs").update(row).eq("id", run.id).eq("status", run.status);
+      q = run.cursor === null ? q.is("cursor", null) : q.eq("cursor", run.cursor);
+      ({ error: noted } = await q);
+    } else {
+      ({ error: noted } = await auth.client
+        .from("import_runs")
+        .upsert(row, { onConflict: "store_id,resource", ignoreDuplicates: true }));
+    }
+    if (noted) console.error("could not record the import failure:", noted.message);
     // Whether another call is worth making is decided here, where the
     // error still is one, rather than by the browser re-reading a
     // sentence. The client already resumes from the cursor above.
     return NextResponse.json(
-      { done: false, resource, error: message, retryable: isTransient(e) },
+      // A dead bulk operation whose cursor has just been cleared is
+      // never retryable, whatever it failed with. Shopify's TIMEOUT
+      // reads as transient, the strip retries on transient, and with
+      // no cursor left that retry would start a whole new export —
+      // which is the automatic relaunch this was meant to stop.
+      { done: false, resource, error: message, retryable: spent ? false : isTransient(e) },
       { status: 502 }
     );
   }
@@ -227,7 +289,17 @@ async function advance(
   store: StoreToken,
   resource: Resource,
   cursor: string | null
-): Promise<{ imported: number; cursor: string | null; hasNext: boolean; waiting?: false } | { waiting: true }> {
+): Promise<
+  | {
+      imported: number;
+      cursor: string | null;
+      hasNext: boolean;
+      waiting?: false;
+      /** Start this resource's count over: the walk begins again. */
+      restart?: boolean;
+    }
+  | { waiting: true }
+> {
   const token = await ensureFreshToken(db, store);
   const shop = store.shop_domain;
 
@@ -244,7 +316,10 @@ async function advance(
   }
 
   if (cursor?.startsWith("bulk:")) {
-    const op = await pollBulk(shop, token);
+    // Asked for by id. currentBulkOperation returns the most recent
+    // one, and Shopify now runs five at once, so ours could simply not
+    // be the one that came back.
+    const op = await pollBulk(shop, token, cursor.slice(5));
     if (!op || op.id !== cursor.slice(5)) {
       // Somebody else's operation, or ours vanished. Start again
       // rather than read a file belonging to another query.
@@ -255,7 +330,20 @@ async function advance(
       // An empty store completes with no file at all, which is a
       // finished import of nothing rather than a failure.
       if (op.status === "COMPLETED") return { imported: 0, cursor: null, hasNext: false };
-      throw new ShopifyError("bulk_failed", `Shopify could not export ${resource}: ${op.errorCode ?? op.status}.`);
+      // FAILED, CANCELED and EXPIRED are final: this operation will
+      // never produce a file. This used to throw and keep the bulk:
+      // cursor, so every retry polled the same dead operation for
+      // ever. Clearing the cursor and reporting success was worse
+      // again — a store that cannot export would quietly start a new
+      // operation on every poll and never say so.
+      //
+      // So it stays an error, which the caller sees and stops on, and
+      // the catch below clears the cursor for this one code so the
+      // next attempt is a fresh start rather than the same corpse.
+      throw new ShopifyError(
+        "bulk_failed",
+        `Shopify could not export ${resource}: ${op.errorCode ?? op.status}.`
+      );
     }
     return { imported: 0, cursor: `read:0|${op.url}`, hasNext: true };
   }
@@ -272,6 +360,24 @@ async function advance(
   }
 
   const page = await importPage(db, store, resource, cursor);
+
+  // A page that hit a child limit lost rows nobody would have missed:
+  // the variants past the hundredth, the order lines past the
+  // hundredth. The bulk route asks for children with no limit at all,
+  // so the resource starts again that way rather than finishing a walk
+  // that is already incomplete. Everything written is an upsert keyed
+  // on the Shopify id, so starting over costs time and nothing else.
+  if (page.cut) {
+    const id = await startBulk(shop, token, resource);
+    // The count starts again, not just this page.
+    //
+    // Zeroing one page was not enough: the pages already walked stay
+    // in run.imported, and the bulk pass then counts the same rows
+    // from the beginning on top of them. The total would say the store
+    // holds more than it does, and the drift report reads that total.
+    return { imported: 0, cursor: `bulk:${id}`, hasNext: true, restart: true };
+  }
+
   return page;
 }
 

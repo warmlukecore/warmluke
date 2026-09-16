@@ -6,6 +6,7 @@ import {
   fetchShopContext,
   normalizeShopDomain,
   verifyCallbackHmac,
+  webhookAddress,
 } from "@/lib/shopify";
 import { subscribeWebhooks } from "@/lib/shopify-webhooks";
 
@@ -82,10 +83,12 @@ export async function GET(req: Request) {
     // without any of this. A failure here means slower updates, not a
     // broken connection, and failing the callback over it would undo
     // a connection that succeeded.
+    // Each store is given its own address, so a delivery's shop is
+    // the URL it arrives at rather than a header anyone can rewrite.
     const result = await subscribeWebhooks(
       shop,
       access_token,
-      `${url.origin}/api/shopify/webhooks`
+      `${url.origin}/api/shopify/webhooks/${webhookAddress(shop, clientSecret)}`
     );
     // Written down, not only logged. A merchant told "connected" about
     // a store that will never send us anything has been told the wrong

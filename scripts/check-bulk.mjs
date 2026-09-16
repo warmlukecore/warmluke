@@ -215,6 +215,18 @@ console.log("\nan order keeps its lines and its refunds apart");
       displayFulfillmentStatus: "FULFILLED",
       totalPriceSet: { shopMoney: { amount: "50.00", currencyCode: "USD" } },
       customer: null,
+      // Inline, because refunds is a plain list and not a connection:
+      // the export writes it inside the order and never as separate
+      // __parentId lines. The reader used to blank this and wait for
+      // lines that were never coming, so every refund was lost —
+      // which this fixture hid by modelling the wrong shape.
+      refunds: [
+        {
+          id: "gid://shopify/Refund/1",
+          createdAt: "2026-01-02T00:00:00Z",
+          totalRefundedSet: { shopMoney: { amount: "25.00" } },
+        },
+      ],
     },
     {
       id: "gid://shopify/LineItem/1",
@@ -222,12 +234,6 @@ console.log("\nan order keeps its lines and its refunds apart");
       quantity: 2,
       sku: "X",
       originalUnitPriceSet: { shopMoney: { amount: "25.00" } },
-      __parentId: "gid://shopify/Order/1",
-    },
-    {
-      id: "gid://shopify/Refund/1",
-      createdAt: "2026-01-02T00:00:00Z",
-      totalRefundedSet: { shopMoney: { amount: "25.00" } },
       __parentId: "gid://shopify/Order/1",
     },
   ];
@@ -239,6 +245,47 @@ console.log("\nan order keeps its lines and its refunds apart");
   check("and its refund is a refund", (written.refunds ?? []).length === 1);
   check("the refund kept its amount", written.refunds[0].amount === 25);
   await file.stop();
+}
+
+// ── A page that lost children ───────────────────────────────────
+// The paged route asks for a hundred variants, a hundred order lines,
+// ten stock locations — and Shopify stops there without saying so. The
+// bulk route has no such limits, so a page that came back at the limit
+// sends the whole resource that way rather than finishing a walk that
+// is already missing rows.
+{
+  const { childrenWereCut } = await import("../src/lib/shopify-import.ts");
+  const product = (variants) => ({
+    id: "gid://shopify/Product/1",
+    variants: { nodes: Array.from({ length: variants }, (_, i) => ({ id: `v${i}` })) },
+  });
+
+  check("a product with room to spare is left alone", !childrenWereCut("products", [product(99)]));
+  check("one that filled the page is not", childrenWereCut("products", [product(100)]));
+  check(
+    "and one full product among many is enough",
+    childrenWereCut("products", [product(2), product(100), product(3)])
+  );
+
+  const order = (lines, refunds = 0) => ({
+    lineItems: { nodes: Array.from({ length: lines }, (_, i) => ({ id: `l${i}` })) },
+    refunds: Array.from({ length: refunds }, (_, i) => ({ id: `r${i}` })),
+  });
+  check("an ordinary order is left alone", !childrenWereCut("orders", [order(5, 1)]));
+  check("a hundred lines is not", childrenWereCut("orders", [order(100)]));
+  // Refunds are a plain list with its own smaller limit, and were the
+  // one child that could never be asked for a pageInfo.
+  check("and twenty refunds is not", childrenWereCut("orders", [order(3, 20)]));
+
+  const stocked = (places) => ({
+    inventoryItem: {
+      inventoryLevels: { nodes: Array.from({ length: places }, (_, i) => ({ id: `s${i}` })) },
+    },
+  });
+  check("a variant in three shops is left alone", !childrenWereCut("inventory", [stocked(3)]));
+  check("one in ten is not", childrenWereCut("inventory", [stocked(10)]));
+
+  check("customers carry no children to lose", !childrenWereCut("customers", [{ id: "c1" }]));
 }
 
 console.log(fails.length === 0 ? "\nthe file is read whole" : `\n${fails.length} FAILED`);

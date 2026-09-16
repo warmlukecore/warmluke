@@ -18,6 +18,7 @@ import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { ensureFreshToken, graphql } from "../src/lib/shopify-import.ts";
 import { subscribeWebhooks } from "../src/lib/shopify-webhooks.ts";
+import { webhookAddress } from "../src/lib/shopify.ts";
 
 const env = Object.fromEntries(
   readFileSync(new URL("../.env.local", import.meta.url), "utf8")
@@ -30,6 +31,7 @@ const env = Object.fromEntries(
 Object.assign(process.env, env);
 
 const APP = process.env.APP_URL ?? "https://warmluke.vercel.app";
+const SECRET = env.SHOPIFY_CLIENT_SECRET;
 const db = createClient(
   env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
   env.ADAPTIVE_OS_SERVICE_ROLE_KEY
@@ -46,11 +48,16 @@ if (!stores?.length) {
 }
 
 for (const store of stores) {
-  console.log(`${store.shop_domain} → ${APP}/api/shopify/webhooks`);
+  // Each store has its own address; the last segment is what the
+  // database looks the store up from, so a delivery cannot claim to be
+  // from a shop it did not come from.
+  const address = `${APP}/api/shopify/webhooks/${webhookAddress(store.shop_domain, SECRET)}`;
+  console.log(`${store.shop_domain} → ${address}`);
   const token = await ensureFreshToken(db, store);
 
-  const result = await subscribeWebhooks(store.shop_domain, token, `${APP}/api/shopify/webhooks`);
+  const result = await subscribeWebhooks(store.shop_domain, token, address);
   if (result.added.length) console.log(`  added    ${result.added.join(", ")}`);
+  if (result.moved.length) console.log(`  moved    ${result.moved.join(", ")}`);
   if (result.already.length) console.log(`  already  ${result.already.length} topics`);
   for (const f of result.failed) console.log(`  FAILED   ${f}`);
 

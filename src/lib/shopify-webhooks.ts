@@ -52,7 +52,34 @@ mutation($topic: WebhookSubscriptionTopic!, $url: URL!) {
   }
 }`;
 
-export type SubscribeResult = { added: string[]; already: string[]; failed: string[] };
+const EXISTING = `
+query {
+  webhookSubscriptions(first: 100) {
+    nodes {
+      id
+      topic
+      endpoint { ... on WebhookHttpEndpoint { callbackUrl } }
+    }
+  }
+}`;
+
+const MOVE = `
+mutation($id: ID!, $url: URL!) {
+  webhookSubscriptionUpdate(
+    id: $id
+    webhookSubscription: { callbackUrl: $url }
+  ) {
+    webhookSubscription { id }
+    userErrors { message }
+  }
+}`;
+
+export type SubscribeResult = {
+  added: string[];
+  already: string[];
+  moved: string[];
+  failed: string[];
+};
 
 /**
  * Subscribes every topic, and says what happened to each.
@@ -70,10 +97,79 @@ export async function subscribeWebhooks(
   token: string,
   callbackUrl: string
 ): Promise<SubscribeResult> {
-  const out: SubscribeResult = { added: [], already: [], failed: [] };
+  const out: SubscribeResult = { added: [], already: [], moved: [], failed: [] };
+
+  // What the shop already has. A subscription pointed at our old
+  // address is not something to add beside — it is the same topic at
+  // the wrong URL, and creating a second one either fails or leaves
+  // Shopify still delivering to an address that no longer exists.
+  // webhookSubscriptionUpdate moves it in one step.
+  // Every subscription for a topic, not the last one seen. A shop can
+  // hold more than one, and keeping a single entry per topic left the
+  // others pointed at an address that no longer answers — quietly, and
+  // looking exactly like a tidy run.
+  const existing = new Map<string, Array<{ id: string; url: string }>>();
+  try {
+    const data = await graphql<{
+      webhookSubscriptions: {
+        nodes: Array<{ id: string; topic: string; endpoint: { callbackUrl?: string } | null }>;
+      };
+    }>(shop, token, EXISTING, {});
+    for (const n of data.webhookSubscriptions.nodes) {
+      const list = existing.get(n.topic) ?? [];
+      list.push({ id: n.id, url: n.endpoint?.callbackUrl ?? "" });
+      existing.set(n.topic, list);
+    }
+  } catch (e) {
+    // Not silent. Without this list every topic looks absent, so the
+    // loop creates beside whatever is already there and the shop keeps
+    // delivering to the old address — the exact failure this listing
+    // was added to prevent, wearing the face of a clean run.
+    out.failed.push(
+      `existing subscriptions could not be listed: ${e instanceof Error ? e.message : "failed"}`
+    );
+    return out;
+  }
 
   for (const topic of WEBHOOK_TOPICS) {
     try {
+      const have = existing.get(topic) ?? [];
+      if (have.length > 0) {
+        // Each of them is moved rather than one moved and the rest
+        // abandoned. Nothing is deleted: these are subscriptions on a
+        // merchant's shop, and a duplicate delivery costs an idempotent
+        // upsert while a deletion cannot be taken back. Shopify refuses
+        // a second move onto an address it already holds, and that
+        // refusal is reported rather than swallowed.
+        let settled = false;
+        for (const one of have) {
+          if (one.url === callbackUrl) {
+            settled = true;
+            continue;
+          }
+          const data = await graphql<{
+            webhookSubscriptionUpdate: {
+              webhookSubscription: { id: string } | null;
+              userErrors: Array<{ message: string }>;
+            };
+          }>(shop, token, MOVE, { id: one.id, url: callbackUrl });
+          const { webhookSubscription, userErrors } = data.webhookSubscriptionUpdate;
+          if (webhookSubscription) {
+            settled = true;
+            out.moved.push(topic);
+          } else if (userErrors.some((e) => /already|taken/i.test(e.message))) {
+            // Another subscription for this topic already sits there.
+            settled = true;
+          } else {
+            out.failed.push(
+              `${topic} (${one.url || "no address"}): ${userErrors.map((e) => e.message).join("; ")}`
+            );
+          }
+        }
+        if (settled && !out.moved.includes(topic)) out.already.push(topic);
+        continue;
+      }
+
       const data = await graphql<{
         webhookSubscriptionCreate: {
           webhookSubscription: { id: string } | null;

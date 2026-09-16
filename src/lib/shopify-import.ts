@@ -105,7 +105,13 @@ export const PAGE = 50;
 export const RESOURCES = ["products", "customers", "orders", "inventory"] as const;
 export type Resource = (typeof RESOURCES)[number];
 
-type Page<T> = { nodes: T[]; cursor: string | null; hasNext: boolean };
+type Page<T> = {
+  nodes: T[];
+  cursor: string | null;
+  hasNext: boolean;
+  /** Set when an importer found the cut itself and wrote nothing. */
+  cut?: boolean;
+};
 
 /**
  * How many times a page is attempted before the failure is real.
@@ -397,6 +403,16 @@ async function importOrders(
   );
   const { nodes, pageInfo } = data.orders;
   if (nodes.length === 0) return { nodes, cursor: pageInfo.endCursor, hasNext: false };
+  // Checked BEFORE saving, not after. saveOrders replaces an order's
+  // lines rather than merging them — it has to, or a line deleted in
+  // Shopify would live here for ever — so writing a page whose orders
+  // were cut at a hundred lines deletes the real lines and puts back
+  // only the first hundred. The bulk route is about to fetch the whole
+  // thing anyway; if starting it fails, an order left untouched is
+  // still right, and one already truncated is not.
+  if (childrenWereCut("orders", nodes)) {
+    return { nodes: [], cursor: after, hasNext: true, cut: true };
+  }
   await saveOrders(db, storeId, nodes);
   return { nodes, cursor: pageInfo.endCursor, hasNext: pageInfo.hasNextPage };
 }
@@ -474,8 +490,13 @@ export async function saveOrders(
     }))
   ).filter((r) => r.order_id);
   if (refunds.length > 0) {
-    const { error: re } = await db.from("refunds").upsert(refunds, { onConflict: "id" });
-    if (re && !re.message.includes("duplicate")) throw new Error(re.message);
+    // On the Shopify id, not on `id` — that is a generated uuid the
+    // importer never supplies, so the conflict never matched and every
+    // pass inserted the same refunds again.
+    const { error: re } = await db
+      .from("refunds")
+      .upsert(refunds, { onConflict: "store_id,external_id" });
+    if (re) throw new Error(re.message);
   }
 }
 
@@ -555,13 +576,68 @@ const IMPORTERS: Record<Resource, typeof importProducts> = {
  * links can only be made once those rows exist, and a later pass fills
  * in anything that arrived out of sequence.
  */
+/**
+ * How many of each child a page is allowed to carry.
+ *
+ * These are limits, not sizes. A product with more than a hundred
+ * variants, an order with more than a hundred lines, a variant stocked
+ * in more than ten places — the paged route asks for that many and
+ * Shopify stops there, silently, and the rest was simply lost. Nothing
+ * said so: the import reported the product imported.
+ *
+ * The bulk route has no such limits (it asks for `variants { edges }`
+ * with no `first`), so the cure is to notice and go that way instead
+ * of writing a paginator for every child.
+ *
+ * ponytail: a page holding exactly the limit is treated as truncated
+ * even when it is merely full. That costs one unnecessary bulk run on
+ * a store where some product has exactly a hundred variants, and buys
+ * not having to ask Shopify a second question per child.
+ */
+const CHILD_LIMIT = { variants: 100, lineItems: 100, refunds: 20, levels: 10 } as const;
+
+/** Whether a page lost children to those limits. */
+export function childrenWereCut(resource: Resource, nodes: unknown[]): boolean {
+  if (resource === "products") {
+    return (nodes as GqlProduct[]).some(
+      (p) => (p.variants?.nodes?.length ?? 0) >= CHILD_LIMIT.variants
+    );
+  }
+  if (resource === "orders") {
+    return (nodes as GqlOrder[]).some(
+      (o) =>
+        (o.lineItems?.nodes?.length ?? 0) >= CHILD_LIMIT.lineItems ||
+        (o.refunds?.length ?? 0) >= CHILD_LIMIT.refunds
+    );
+  }
+  if (resource === "inventory") {
+    return (nodes as GqlStock[]).some(
+      (v) => (v.inventoryItem?.inventoryLevels?.nodes?.length ?? 0) >= CHILD_LIMIT.levels
+    );
+  }
+  return false;
+}
+
 export async function importPage(
   db: SupabaseClient, store: StoreToken,
   resource: Resource, after: string | null
-): Promise<{ imported: number; cursor: string | null; hasNext: boolean }> {
+): Promise<{
+  imported: number;
+  cursor: string | null;
+  hasNext: boolean;
+  /** This page lost children to a limit; only bulk can carry them. */
+  cut?: boolean;
+}> {
   // Renewed here rather than by each caller: every path into Shopify
   // goes through this function, so one caller cannot forget.
   const token = await ensureFreshToken(db, store);
   const page = await IMPORTERS[resource](db, store.id, store.shop_domain, token, after);
-  return { imported: page.nodes.length, cursor: page.cursor, hasNext: page.hasNext };
+  return {
+    imported: page.nodes.length,
+    cursor: page.cursor,
+    hasNext: page.hasNext,
+    // An importer that saw the cut before writing says so itself and
+    // hands back no nodes; the rest are judged on what they returned.
+    cut: page.cut ?? childrenWereCut(resource, page.nodes),
+  };
 }

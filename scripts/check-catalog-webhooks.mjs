@@ -35,11 +35,18 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
-const { data: store } = await db
+const { data: store, error: lookup } = await db
   .from("stores")
   .select("id, shop_domain")
   .eq("status", "connected")
   .maybeSingle();
+// A query that could not run is not an empty result. This reported
+// "nothing to check" and exited 0 when the request had failed outright,
+// so a check of a security boundary passed without reaching it.
+if (lookup) {
+  console.log(`could not look for a store: ${lookup.message}`);
+  process.exit(1);
+}
 if (!store) {
   console.log("no connected store — nothing to check");
   process.exit(0);

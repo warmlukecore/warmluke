@@ -252,3 +252,21 @@ export async function fetchShopContext(
     name: s.name ?? shop,
   };
 }
+
+/**
+ * The path segment a store's webhooks must arrive at.
+ *
+ * Shopify signs the body with one secret shared by the whole app, so
+ * its HMAC proves a delivery came from Shopify and can never prove
+ * which shop it came from — the shop rides in a header anybody can
+ * change. So the shop is taken from the address instead: each store
+ * gets its own, and the database looks the store up from this segment
+ * rather than believing anything the request says about itself.
+ *
+ * Derived, not stored, so there is no column to back-fill and no new
+ * secret for a client to read. It matches abo_shopify_webhook_token in
+ * migration 0057 exactly; if one changes, the other must.
+ */
+export function webhookAddress(shop: string, secret: string): string {
+  return createHmac("sha256", secret).update(shop.toLowerCase(), "utf8").digest("hex");
+}

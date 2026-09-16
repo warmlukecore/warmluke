@@ -1,22 +1,31 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { ShopifyError, normalizeShopDomain, verifyWebhookHmac } from "@/lib/shopify";
+import { verifyWebhookHmac } from "@/lib/shopify";
 
 export const runtime = "nodejs";
 
 /**
- * POST /api/shopify/webhooks — everything Shopify tells us about.
+ * POST /api/shopify/webhooks/[token] — everything Shopify tells us
+ * about.
  *
- * One endpoint for every topic, because the topic is a header, and a
- * route per topic would be a dozen places to forget to verify a
- * signature.
+ * One endpoint per store and not per topic: the topic is a header, and
+ * a route per topic would be a dozen places to forget to verify a
+ * signature. The store, though, cannot be a header. Shopify signs the
+ * body with one secret shared by the whole app, so its HMAC says a
+ * delivery came from Shopify and never which shop sent it — and this
+ * route once read the shop out of a header and then SIGNED it, which
+ * turned it into an oracle: replay one real signed body here with
+ * somebody else's shop name and it handed back a valid signature for
+ * the claim. The address carries the store now, and nothing the
+ * request says about itself is believed.
  *
  * Order matters the same way it does in the callback: the body is read
  * as raw text and its signature checked before anything in it is parsed
  * or believed. An unsigned request is refused before it can name a shop
  * — otherwise anyone who guessed this URL could erase a store.
  */
-export async function POST(req: Request) {
+export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
+  const { token } = await ctx.params;
   const secret = process.env.SHOPIFY_CLIENT_SECRET;
   if (!secret) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 
@@ -33,32 +42,13 @@ export async function POST(req: Request) {
   }
 
   const topic = req.headers.get("x-shopify-topic") ?? "";
-  // Only the fields this route reads are named; the rest of an order
-  // payload is passed through to the database untouched, because
-  // picking it apart here would be a second place to keep in step with
-  // Shopify's shape.
-  let body: {
-    shop_domain?: string;
-    customer?: { id?: number | string };
-    id?: number | string;
-    [k: string]: unknown;
-  };
+  // The body is still parsed for nothing but validity — every field
+  // the handlers need is read in the database, from a body whose
+  // signature has already been checked.
   try {
-    body = JSON.parse(raw);
+    JSON.parse(raw);
   } catch {
     return NextResponse.json({ error: "bad_body" }, { status: 400 });
-  }
-
-  let shop: string;
-  try {
-    // The header is the authoritative one; the body field is a fallback
-    // for topics that omit it.
-    shop = normalizeShopDomain(req.headers.get("x-shopify-shop-domain") ?? body.shop_domain ?? "");
-  } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof ShopifyError ? e.code : "unknown" },
-      { status: 400 }
-    );
   }
 
   const anon = createClient(
@@ -66,14 +56,14 @@ export async function POST(req: Request) {
     process.env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY!
   );
 
-  // One call, and the signature travels with it. The database checks
-  // it again before writing anything, because this route is not the
-  // only way to reach those functions — PostgREST is, and the anon key
-  // is public. A check that lives only here protects only the people
-  // who choose to come through here.
+  // One call. Which store this belongs to is the address it arrived
+  // at, and the database resolves that itself — it is not passed a
+  // shop to trust. The body signature is checked there a second time
+  // because this route is not the only way to reach that function:
+  // PostgREST is, and the anon key is public.
   const { error } = await anon.rpc("abo_shopify_webhook", {
+    p_token: token,
     p_topic: topic,
-    p_shop: shop,
     p_raw: raw,
     p_hmac: req.headers.get("x-shopify-hmac-sha256"),
   });
