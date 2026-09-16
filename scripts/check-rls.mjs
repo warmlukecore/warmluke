@@ -152,12 +152,15 @@ try {
       !(await O(`stores?id=eq.${store.id}&select=access_token`)).ok);
 
   console.log("\na Shopify connection can only be completed once");
-  const rpc = (token, state) =>
+  // p_shop joined the signature: the nonce says which attempt this is,
+  // the shop says which store came back, and both have to agree or a
+  // token lands on a row naming somebody else's shop.
+  const rpc = (token, state, shop = `pend-${stamp}.myshopify.com`) =>
     fetch(`${URL_}/rest/v1/rpc/abo_shopify_connect`, {
       method: "POST",
       headers: { apikey: ANON, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        p_state: state, p_token: "shpat_test", p_timezone: "Asia/Kolkata",
+        p_state: state, p_shop: shop, p_token: "shpat_test", p_timezone: "Asia/Kolkata",
         p_currency: "INR", p_country: "IN",
         // Shopify tokens expire now, so the connect function stores the
         // refresh token and both lifetimes alongside the access token.
@@ -178,6 +181,10 @@ try {
   check("an unknown state connects nothing", (await rpc(owner.jwt, "made-up-state")) === null);
   check("the real state completes the connection", (await rpc(owner.jwt, `state-${stamp}`)) === proj.id);
   check("the same state cannot be used twice", (await rpc(owner.jwt, `state-${stamp}`)) === null);
+  check(
+    "a callback naming a different shop connects nothing",
+    (await rpc(owner.jwt, `state-${stamp}`, "someone-else.myshopify.com")) === null
+  );
   check("the store is now connected",
     (await O(`stores?id=eq.${pending.id}&select=status,timezone`)).json[0]?.status === "connected");
   check("the store kept its own timezone",

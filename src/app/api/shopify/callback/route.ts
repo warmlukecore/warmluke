@@ -58,6 +58,10 @@ export async function GET(req: Request) {
     );
     const { data: projectId, error } = await anon.rpc("abo_shopify_connect", {
       p_state: q.state,
+      // Which store came back. Without it the nonce alone decided
+      // which row got this token, and a row may name any shop its
+      // author typed.
+      p_shop: shop,
       p_token: access_token,
       p_timezone: ctx.timezone,
       p_currency: ctx.currency,
@@ -83,9 +87,16 @@ export async function GET(req: Request) {
       access_token,
       `${url.origin}/api/shopify/webhooks`
     );
-    if (result.failed.length > 0) {
-      console.error("shopify webhooks not subscribed:", result.failed.join(" | "));
-    }
+    // Written down, not only logged. A merchant told "connected" about
+    // a store that will never send us anything has been told the wrong
+    // thing, and the log is somewhere they cannot see.
+    const trouble = result.failed.length > 0 ? result.failed.join(" | ").slice(0, 2000) : null;
+    if (trouble) console.error("shopify webhooks not subscribed:", trouble);
+    await anon
+      .from("stores")
+      .update({ webhook_error: trouble })
+      .eq("project_id", projectId)
+      .eq("shop_domain", shop);
 
     return NextResponse.redirect(`${url.origin}/app/${projectId}?shopify=connected`);
   } catch (e) {

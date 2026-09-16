@@ -51,6 +51,8 @@ export default function StoreStrip({
     id: string;
     shop_domain: string;
     status: string;
+    /** Why Shopify was never asked to send updates, if it was not. */
+    webhook_error?: string | null;
   } | null>(null);
   const [progress, setProgress] = useState<Progress>({});
   /** What is in the store now, as opposed to what the import brought. */
@@ -179,7 +181,7 @@ export default function StoreStrip({
     (async () => {
       const { data: row } = await supabase
         .from("stores")
-        .select("id, shop_domain, status")
+        .select("id, shop_domain, status, webhook_error")
         .eq("project_id", projectId)
         .maybeSingle();
       if (!row || cancelled.current) return;
@@ -300,6 +302,17 @@ export default function StoreStrip({
               there while a webhook went undelivered — but a page that
               failed quietly looks the same, and a wrong delete does
               not come back. */}
+          {/* Connecting succeeded and the updates did not. Saying only
+              "connected" leaves a merchant reading a store that will
+              never change again and no reason to doubt it. */}
+          {store.webhook_error && (
+            <span
+              className="text-[11px] text-rose-700"
+              title={store.webhook_error}
+            >
+              ⚠️ Shopify was not asked to send updates — Reconnect to try again
+            </span>
+          )}
           {drift && Object.keys(drift).length > 0 && (
             <span
               className="text-[11px] text-amber-700"
