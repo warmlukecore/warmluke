@@ -110,5 +110,22 @@ if (!signedIn?.session) {
   check("with what it needs to renew it", got !== null && "refresh_token" in (got ?? {}));
 }
 
+// And the other half of the same rule: hiding columns one at a time
+// means a column added later is hidden from everybody until somebody
+// says otherwise. webhook_error was added, the strip began selecting
+// it, and PostgREST refuses the WHOLE row over one ungranted column —
+// so the app told the merchant "not connected" about a store that was
+// connected, synced and holding a valid token. Nothing failed loudly;
+// the store simply stopped existing on screen.
+console.log("\nand what the merchant is meant to see, they can see");
+{
+  const shown = await owner
+    .from("stores")
+    .select("id, shop_domain, status, webhook_error")
+    .limit(1);
+  check("the strip's own query is answered", !shown.error);
+  check("and it comes back with a store", (shown.data ?? []).length > 0);
+}
+
 console.log(fails.length === 0 ? "\nthe key stays with the lock" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);
