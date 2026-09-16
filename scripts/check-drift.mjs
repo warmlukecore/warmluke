@@ -103,7 +103,6 @@ try {
   await set("products", products);
   await set("customers", customers);
   await set("orders", await rowsOf("orders"));
-  await set("inventory", await rowsOf("inventory_levels"));
 
   console.log("a pass that brought back everything we hold");
   const agreed = await ask();
@@ -119,6 +118,19 @@ try {
   check("against what the pass brought", short.drift?.products?.imported === products - 2);
   check("and it is said plainly", /removed there/i.test(short.drift_note ?? ""));
   check("a resource that agrees is not mentioned", short.drift?.customers === undefined);
+
+  // Stock is never compared this way. A pass counts variants and the
+  // table holds levels, so a store with two locations would be told
+  // for ever that rows had gone missing — which is what happened.
+  await set("inventory", 1);
+  const stock = await ask();
+  check("and stock is never counted this way at all", stock.drift?.inventory === undefined);
+
+  // More here than the pass brought is a loss. Fewer is a webhook that
+  // landed mid-pass, and must not read as one.
+  await set("products", products + 5);
+  const ahead = await ask();
+  check("a pass that brought back more is not a loss", ahead.drift?.products === undefined);
 
   // The whole point of reporting rather than sweeping.
   check("and nothing was deleted", (await rowsOf("products")) === products);

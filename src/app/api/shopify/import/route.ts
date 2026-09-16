@@ -133,7 +133,10 @@ export async function POST(req: Request) {
         .select("id", { count: "exact", head: true })
         .eq("store_id", store.id);
       const holding = count ?? 0;
-      if (holding !== imported) drift[resource] = { holding, imported };
+      // Only rows we hold and the pass did not bring back. Fewer than
+      // imported means something arrived by webhook while the pass was
+      // running, which is the system working, not a loss.
+      if (holding > imported) drift[resource] = { holding, imported };
     }
 
     return NextResponse.json({
@@ -272,12 +275,24 @@ async function advance(
   return page;
 }
 
-/** Which of our tables holds each resource, for counting what we keep. */
+/**
+ * Which of our tables holds each resource, for counting what we keep.
+ *
+ * Inventory is deliberately absent. A pass counts what Shopify returned
+ * per page, and for stock those pages are VARIANTS — one variant can
+ * hold a level at every location it is stocked in, so a store with two
+ * locations reports more rows than variants and looks permanently two
+ * short. It said exactly that about this store on the first run, and
+ * the two "missing" levels were a product sitting in a second shop.
+ *
+ * Comparing a count of variants with a count of levels was never going
+ * to answer the question. Stock drift needs the ids compared, not the
+ * totals; until then saying nothing beats crying wolf every time.
+ */
 const COUNTED: Record<string, string> = {
   products: "products",
   customers: "customers",
   orders: "orders",
-  inventory: "inventory_levels",
 };
 
 function summarise(runs: Array<{ resource?: string; imported?: number; status?: string }>) {
