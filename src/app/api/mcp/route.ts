@@ -1363,7 +1363,24 @@ export async function POST(req: Request) {
       return ok(id, text({ error: "No Shopify store is connected to this account yet." }));
     }
     const wanted = (args.shop_domain as string | undefined)?.trim().toLowerCase();
-    const store = wanted ? stores.find((s) => s.shop_domain === wanted) : stores[0];
+    // An owner with two projects has two stores, and stores[0] is
+    // whichever the database returned first — so a question about one
+    // shop could be answered from the other, silently and with a
+    // straight face. Ambiguity is now a question rather than a guess.
+    const store = wanted
+      ? stores.find((s) => s.shop_domain.toLowerCase() === wanted)
+      : stores.length === 1
+        ? stores[0]
+        : null;
+    if (!store && !wanted && stores.length > 1) {
+      return ok(
+        id,
+        text({
+          error: "More than one store is connected. Say which one.",
+          available: stores.map((s) => s.shop_domain),
+        })
+      );
+    }
     if (!store) {
       return ok(
         id,

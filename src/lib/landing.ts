@@ -54,7 +54,9 @@ export const HEROES: Hero[] = [
     sub: "Connect your store, marketing, support and operations to Warmluke. Luke understands what's happening, helps you take action and builds the tools your business needs.",
     cta: "Book a Demo",
     secondary: "See how it works",
-    supporting: "Shopify · Meta Ads · Google Ads · WhatsApp · Support · Operations · Custom Apps",
+    // Only what is connected today. Listing Meta, Google and WhatsApp
+    // here read as "these are plugged in", and none of them is.
+    supporting: "Connected today: Shopify — orders, products, customers, stock",
   },
   {
     id: "apps",
@@ -70,7 +72,7 @@ export const HEROES: Hero[] = [
     weight: 25,
     live: true,
     headline: "You've got ChatGPT. Now give your business its own AI.",
-    sub: "Luke understands your actual store, ads, customers and operations — so AI can finally help with what's happening inside your business.",
+    sub: "Connect Warmluke to ChatGPT or Claude and ask about your real orders, customers and stock — so AI can finally answer from what's actually in your store.",
     cta: "Meet Luke",
     secondary: "Book a Demo",
   },
@@ -79,7 +81,7 @@ export const HEROES: Hero[] = [
     weight: 25,
     live: true,
     headline: "Have a problem with your ecommerce business? Tell Luke.",
-    sub: "Ask questions. Analyse performance. Monitor problems. Automate repetitive work. Or have Luke build the tool your business needs.",
+    sub: "Ask about your orders, customers and stock. Automate repetitive work. Or have Luke build the internal tool your business needs and can't buy.",
     cta: "Book a Demo",
   },
   // Written and ready, but out of the running experiment: the first

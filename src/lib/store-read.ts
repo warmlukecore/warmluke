@@ -29,7 +29,11 @@ const BRIEF = "id, project_id, shop_domain, timezone, currency, last_synced_at";
 
 /** The stores this caller can see at all. */
 export async function listStores(db: SupabaseClient): Promise<StoreBrief[]> {
-  const { data } = await db.from("stores").select(BRIEF).eq("status", "connected");
+  const { data, error } = await db.from("stores").select(BRIEF).eq("status", "connected");
+  // "No stores" and "could not ask" are different answers, and the
+  // caller acts on them differently. Returning [] for both told an
+  // owner with a connected store that they had none.
+  if (error) throw new Error(error.message);
   return (data ?? []) as StoreBrief[];
 }
 
@@ -57,16 +61,24 @@ export async function storeOverview(
   db: SupabaseClient,
   storeId: string
 ): Promise<StoreOverview | null> {
-  const { data: store } = await db.from("stores").select(BRIEF).eq("id", storeId).maybeSingle();
+  const { data: store, error } = await db
+    .from("stores")
+    .select(BRIEF)
+    .eq("id", storeId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
   if (!store) return null;
 
   const counts = Object.fromEntries(
     await Promise.all(
       COUNTED.map(async (table) => {
-        const { count } = await db
+        const { count, error: counted } = await db
           .from(table)
           .select("*", { count: "exact", head: true })
           .eq("store_id", storeId);
+        // A count that failed is not a count of zero. Reported as zero,
+        // it reads as an empty store — and drift is measured from it.
+        if (counted) throw new Error(counted.message);
         return [table, count ?? 0];
       })
     )
@@ -353,6 +365,9 @@ export type OrderHit = {
 /** Hard ceiling. An assistant that asks for everything gets a page. */
 const MAX_LIMIT = 100;
 
+/** What may appear inside a PostgREST or() without changing its shape. */
+const SAFE_TERM = /^[\w@.+\- ]{1,80}$/;
+
 export async function searchOrders(
   db: SupabaseClient,
   store: Pick<StoreBrief, "id" | "timezone">,
@@ -378,7 +393,7 @@ export async function searchOrders(
 
   if (search.status === "cancelled") {
     q = q.not("cancelled_at", "is", null);
-  } else if (search.status) {
+  } else if (search.status && SAFE_TERM.test(search.status)) {
     // A cancelled order keeps its last financial status, so asking for
     // "paid" and being handed cancelled ones would be a wrong answer
     // rather than a generous one.
@@ -387,8 +402,16 @@ export async function searchOrders(
       .or(`financial_status.eq.${search.status},fulfilment_status.eq.${search.status}`);
   }
 
+  // Both of these end up inside a PostgREST or() expression, where a
+  // comma or a bracket is punctuation rather than text. The caller is
+  // frequently a language model repeating whatever a merchant typed —
+  // or whatever a product title happens to contain — so the characters
+  // that could change the shape of the filter are refused rather than
+  // escaped. The store_id filter and RLS are separate and always
+  // applied, so this was never a way into another shop; it was a way
+  // to make one shop's query mean something else.
   const term = search.q?.trim();
-  if (term) {
+  if (term && SAFE_TERM.test(term)) {
     const { data: people } = await db
       .from("customers")
       .select("id")

@@ -81,31 +81,44 @@ function Section({
   );
 }
 
+/**
+ * What Luke can be asked today, and what is honestly next.
+ *
+ * Split, because two of the six the brief wrote have no data behind
+ * them at all — no advertising spend, no support conversations. A line
+ * that cannot survive its own demo is worse than a shorter list.
+ */
 const ASKS = [
   {
-    q: "Why were sales down yesterday?",
-    a: "Luke checks your store and marketing performance together and helps identify what changed.",
+    q: "Which products are running out?",
+    a: "Low stock by variant and location, straight from what Shopify last told us.",
   },
   {
-    q: "Tell me if we're wasting money on any ads.",
-    a: "Luke can monitor your marketing data and surface issues your team should investigate.",
+    q: "What happened in orders yesterday?",
+    a: "Orders for a real calendar day in your store's own timezone — totals, status, who ordered.",
   },
   {
-    q: "Which products are selling but about to run out?",
-    a: "Luke combines store performance with inventory context and surfaces what needs attention.",
+    q: "Find this customer's orders.",
+    a: "Look somebody up by name, email or phone and see what they bought.",
   },
   {
     q: "Our returns process is a mess. Make something better.",
-    a: "Luke can create the workflow or internal tool your team needs.",
-  },
-  {
-    q: "What are customers complaining about this week?",
-    a: "Luke can analyse support conversations and help identify recurring issues.",
+    a: "Luke builds the tracker — fields, board, filters, the rules that move a return along.",
   },
   {
     q: "Create a dashboard for my operations team.",
-    a: "Luke can generate tools around the way your business actually works.",
+    a: "A real internal section your team uses, shaped around how they actually work.",
   },
+  {
+    q: "Add an approval step before we refund.",
+    a: "Luke writes the rule and shows you what it will do before anything runs.",
+  },
+];
+
+/** Written down rather than implied. These need a connector first. */
+const NEXT = [
+  ["Advertising", "Wasted spend, campaign performance — needs Meta and Google connected."],
+  ["Support", "Recurring complaints, WhatsApp and reviews — needs a support connector."],
 ];
 
 const WATCHES: Array<[string, string]> = [
@@ -120,18 +133,21 @@ const WATCHES: Array<[string, string]> = [
 const AREAS = [
   {
     name: "Operations",
-    items: ["Orders", "Inventory", "Returns", "Shipping", "Workflows", "Internal dashboards"],
+    soon: false,
+    items: ["Orders", "Inventory", "Customers", "Workflows", "Internal dashboards"],
     body: "Connect the operational parts of your store and give your team one place to understand what's happening and get things done.",
   },
   {
     name: "Marketing",
-    items: ["Meta Ads", "Google Ads", "Store performance", "Campaign monitoring", "Reporting"],
-    body: "Luke can look beyond individual advertising dashboards and understand marketing performance in the context of the actual business.",
+    soon: true,
+    items: ["Meta Ads", "Google Ads", "Campaign monitoring", "Reporting"],
+    body: "Once your ad accounts are connected, Luke can read campaign performance in the context of the orders it actually produced. Not connected yet.",
   },
   {
     name: "Support",
-    items: ["WhatsApp", "Customer conversations", "Reviews", "Common issues", "Support workflows"],
-    body: "Bring customer conversations closer to the rest of the business so recurring problems don't stay buried inside support tickets.",
+    soon: true,
+    items: ["WhatsApp", "Customer conversations", "Reviews", "Common issues"],
+    body: "Once support is connected, recurring problems stop being buried inside tickets. Not connected yet.",
   },
 ];
 
@@ -229,8 +245,12 @@ export default async function Landing({
           <p className="mt-6 text-xs tracking-wide text-slate-500">{shown.supporting}</p>
         )}
 
-        {/* What the product actually does, rather than an illustration
-            of an idea. */}
+        {/* The product answering something it can actually answer. The
+            first version of this showed sessions holding steady, two
+            variants going out of stock at 11:40 and a campaign that
+            kept spending — none of which exists anywhere in the
+            product. A mock is a promise, and that one could not be
+            kept. */}
         <div className="mt-14 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/60 text-left shadow-2xl shadow-blue-500/5">
           <div className="flex items-center gap-2 border-b border-slate-800 px-4 py-2.5">
             <span className="h-2.5 w-2.5 rounded-full bg-slate-700" />
@@ -240,17 +260,16 @@ export default async function Landing({
           </div>
           <div className="space-y-4 p-5 sm:p-7">
             <div className="ml-auto max-w-md rounded-2xl rounded-br-sm bg-blue-500/15 px-4 py-3 text-sm text-slate-100">
-              Why were sales down yesterday?
+              What&apos;s running low?
             </div>
             <div className="max-w-xl rounded-2xl rounded-bl-sm border border-slate-800 bg-slate-900 px-4 py-3 text-sm text-slate-300">
               <div className="mb-2 flex flex-wrap gap-1.5 text-[11px] text-slate-500">
                 <span className="rounded border border-slate-800 px-1.5 py-0.5">Shopify</span>
-                <span className="rounded border border-slate-800 px-1.5 py-0.5">Meta</span>
-                <span className="rounded border border-slate-800 px-1.5 py-0.5">Google</span>
+                <span className="rounded border border-slate-800 px-1.5 py-0.5">synced 6 min ago</span>
               </div>
-              Orders fell 24% against last Tuesday. Sessions held steady, so it isn&apos;t traffic —
-              two of your best-selling variants went out of stock at 11:40, and the campaign driving
-              them kept spending for another six hours.
+              Three variants are under ten at your main location — Classic Tee / M (4),
+              Canvas Tote (7), Ceramic Mug / White (9). Want a low-stock board your team
+              can work from?
             </div>
           </div>
         </div>
@@ -259,22 +278,20 @@ export default async function Landing({
       {/* ── One context ──────────────────────────────────────── */}
       <Section id="integrations" title="Your whole ecommerce business. One context.">
         <div className="flex flex-wrap gap-2">
-          {[
-            "Shopify",
-            "Meta",
-            "Google",
-            "WhatsApp",
-            "Customer Support",
-            "Logistics",
-            "Reviews",
-            "Internal Tools",
-            "Custom Apps",
-          ].map((n) => (
+          {["Shopify", "Internal tools Luke builds"].map((n) => (
             <span
               key={n}
-              className="rounded-lg border border-slate-800 bg-slate-900 px-3.5 py-2 text-sm text-slate-300"
+              className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3.5 py-2 text-sm text-emerald-200"
             >
-              {n}
+              {n} <span className="text-emerald-400/70">· connected</span>
+            </span>
+          ))}
+          {["Meta Ads", "Google Ads", "WhatsApp", "Reviews", "Logistics"].map((n) => (
+            <span
+              key={n}
+              className="rounded-lg border border-slate-800 px-3.5 py-2 text-sm text-slate-500"
+            >
+              {n} <span className="text-slate-600">· next</span>
             </span>
           ))}
         </div>
@@ -296,6 +313,18 @@ export default async function Landing({
               <p className="mt-2 text-sm leading-relaxed text-slate-400">{x.a}</p>
             </div>
           ))}
+        </div>
+        <div className="mt-8 rounded-2xl border border-slate-900 bg-slate-900/30 p-5">
+          <div className="text-xs font-semibold tracking-widest text-slate-500">
+            NOT YET — AND WE&apos;D RATHER SAY SO
+          </div>
+          <div className="mt-3 space-y-2">
+            {NEXT.map(([area, what]) => (
+              <div key={area} className="text-sm text-slate-400">
+                <span className="text-slate-300">{area}:</span> {what}
+              </div>
+            ))}
+          </div>
         </div>
         <div className="mt-8">
           <Cta where="asks">See what Luke could do for your store →</Cta>
@@ -362,8 +391,22 @@ export default async function Landing({
       <Section title="One Luke. Across your business.">
         <div className="grid gap-5 sm:grid-cols-3">
           {AREAS.map((a) => (
-            <div key={a.name} className="rounded-2xl border border-slate-900 bg-slate-900/50 p-5">
-              <div className="font-display text-lg font-semibold">{a.name}</div>
+            <div
+              key={a.name}
+              className={`rounded-2xl border p-5 ${
+                a.soon
+                  ? "border-slate-900 bg-slate-900/20 text-slate-500"
+                  : "border-slate-800 bg-slate-900/50"
+              }`}
+            >
+              <div className="font-display flex items-center gap-2 text-lg font-semibold">
+                {a.name}
+                {a.soon && (
+                  <span className="rounded border border-slate-800 px-1.5 py-0.5 text-[10px] font-medium tracking-widest text-slate-500">
+                    NEXT
+                  </span>
+                )}
+              </div>
               <ul className="mt-3 space-y-1 text-sm text-slate-400">
                 {a.items.map((i) => (
                   <li key={i}>{i}</li>
