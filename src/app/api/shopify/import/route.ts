@@ -30,7 +30,10 @@ export async function POST(req: Request) {
   const auth = await getUserClient(req);
   if (!auth) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
 
-  const { projectId } = (await req.json().catch(() => ({}))) as { projectId?: string };
+  const { projectId, recheck } = (await req.json().catch(() => ({}))) as {
+    projectId?: string;
+    recheck?: boolean;
+  };
   if (!projectId) return NextResponse.json({ error: "projectId is required." }, { status: 400 });
 
   // RLS decides whether this store is reachable; there is no owner check
@@ -62,20 +65,58 @@ export async function POST(req: Request) {
 
   const { data: runs } = await auth.client
     .from("import_runs")
-    .select("id, resource, status, cursor, imported")
+    .select("id, resource, status, cursor, imported, finished_at")
     .eq("store_id", store.id);
 
   const byResource = new Map((runs ?? []).map((r) => [r.resource as Resource, r]));
+
+  // Reading Shopify over again, from the start.
+  //
+  // Webhooks are how this stays current, and a webhook that is never
+  // delivered — a subscription that failed to register, an outage, a
+  // topic Shopify switched off after too many failures — is missed in
+  // silence. Nothing here noticed, because once every resource was
+  // done the importer stopped reading Shopify entirely.
+  //
+  // Every write on this path is an upsert keyed on the Shopify id, so
+  // walking it again costs time and changes nothing that is already
+  // right. The cursors go back to the beginning and the ordinary loop
+  // does the rest — there is no second importer to keep in step with
+  // the first.
+  if (recheck && (runs ?? []).length > 0) {
+    await auth.client
+      .from("import_runs")
+      .update({ status: "pending", cursor: null, imported: 0, finished_at: null })
+      .eq("store_id", store.id);
+    return NextResponse.json({
+      done: false,
+      rechecking: true,
+      progress: summarise([]),
+    });
+  }
 
   // Resources in a fixed order. An order's customer and variant links can
   // only be made once those rows are present.
   const resource = RESOURCES.find((r) => (byResource.get(r)?.status ?? "pending") !== "done");
   if (!resource) {
-    await auth.client
-      .from("stores")
-      .update({ last_synced_at: new Date().toISOString() })
-      .eq("id", store.id);
-    return NextResponse.json({ done: true, progress: summarise(runs ?? []) });
+    // Nothing left to walk. This branch used to stamp last_synced_at
+    // with now() every time anybody asked — so the app said the store
+    // was fresh at the moment of asking, having read nothing from
+    // Shopify at all. It is when the last pass actually finished.
+    const finished = (runs ?? [])
+      .map((r) => (r as { finished_at?: string | null }).finished_at)
+      .filter(Boolean)
+      .sort()
+      .pop();
+    if (finished) {
+      await auth.client.from("stores").update({ last_synced_at: finished }).eq("id", store.id);
+    }
+    return NextResponse.json({
+      done: true,
+      checked_at: finished ?? null,
+      note: "Everything imported. Ask again with recheck to read Shopify over from the start.",
+      progress: summarise(runs ?? []),
+    });
   }
 
   const run = byResource.get(resource);

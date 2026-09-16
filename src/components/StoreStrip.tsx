@@ -104,9 +104,15 @@ export default function StoreStrip({
     }
   }
 
-  const pump = useCallback(async () => {
+  const pump = useCallback(async (recheck = false) => {
     setRunning(true);
     setError(null);
+    // Reading Shopify over from the start. Everything on this path is
+    // an upsert keyed on the Shopify id, so a second pass costs time
+    // and changes nothing that is already right.
+    if (recheck) {
+      await apiFetch("/api/shopify/import", { projectId, recheck: true });
+    }
     // A throttle or a dropped connection is Shopify asking for a
     // moment, not a merchant's problem to solve with a button. The
     // client tries again on its own a few times, waiting longer each
@@ -218,7 +224,7 @@ export default function StoreStrip({
       {error ? (
         <span className="text-rose-600">
           {error}{" "}
-          <button onClick={pump} className="underline hover:text-rose-700">
+          <button onClick={() => pump()} className="underline hover:text-rose-700">
             Try again
           </button>
         </span>
@@ -229,7 +235,21 @@ export default function StoreStrip({
           Importing… {counts.length ? counts.join(" · ") : "starting"}
         </span>
       ) : counts.length ? (
-        <span className="text-slate-500">{counts.join(" · ")}</span>
+        <span className="flex items-center gap-2 text-slate-500">
+          {counts.join(" · ")}
+          {/* Webhooks keep this current, and a webhook that never
+              arrives is missed in silence — a subscription that failed
+              to register, an outage, a topic Shopify switched off.
+              Nothing noticed, because once the import finished it
+              stopped reading Shopify at all. */}
+          <button
+            onClick={() => pump(true)}
+            className="text-[11px] text-slate-400 underline hover:text-slate-600"
+            title="Read the store again from Shopify"
+          >
+            Check for changes
+          </button>
+        </span>
       ) : (
         <span className="text-slate-500">Nothing imported yet</span>
       )}

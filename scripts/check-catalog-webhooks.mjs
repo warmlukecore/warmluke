@@ -190,17 +190,33 @@ if (!variant) {
     await db.from("inventory_levels").update({ available: level.available }).eq("id", level.id);
   }
 
-  // An item nobody has imported belongs to no variant, and a level
-  // stored against nothing would be worse than none.
+  // A level for a variant nobody has imported is almost always the two
+  // webhooks arriving out of order. It used to be discarded with a
+  // success answer, so Shopify never sent that number again and the
+  // stock stayed wrong for good. Now it fails, which is what makes
+  // Shopify try again once the product has landed.
   const orphanBefore = await countOf("inventory_levels");
-  await db.rpc("abo_shopify_set_inventory", {
+  const orphan = await db.rpc("abo_shopify_set_inventory", {
     p_shop: store.shop_domain,
     p_level: { inventory_item_id: "999999999", location_id: "1", available: 5 },
   });
+  check("a level for an unknown item is refused, not swallowed", !!orphan.error);
   check(
-    "a level for an unknown item is dropped",
+    "and says why, so the log is readable",
+    /arrived before its product/i.test(orphan.error?.message ?? "")
+  );
+  check(
+    "nothing is written against nothing",
     (await countOf("inventory_levels")) === orphanBefore
   );
+
+  // A shop nobody has connected is not a timing problem, and retrying
+  // it for two days would only get the topic switched off.
+  const unknownShop = await db.rpc("abo_shopify_set_inventory", {
+    p_shop: "not-a-shop.myshopify.com",
+    p_level: { inventory_item_id: "1", location_id: "1", available: 5 },
+  });
+  check("but an unknown shop is not retried", !unknownShop.error);
 }
 
 console.log(fails.length === 0 ? "\nthe catalogue keeps itself current" : `\n${fails.length} FAILED`);

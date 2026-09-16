@@ -491,6 +491,33 @@ export default function AppShell({
     ]);
   }, [projectId, selectedModuleId, loadModules, loadModuleData]);
 
+  // A Shopify-backed section, when they come back to this tab.
+  //
+  // Those rows live in products, orders, customers and inventory_levels
+  // — tables the watcher above does not cover, and which realtime does
+  // not publish. A webhook could land while this screen sat open and
+  // the merchant went on reading yesterday's stock.
+  //
+  // Coming back is the moment that matters: the change was made in
+  // Shopify, in another tab, and this is when they turn round to look.
+  //
+  // ponytail: a section left open in a tab that never loses focus
+  // stays as it was. Publish the store tables to realtime if that ever
+  // turns out to be how somebody works — it costs an event per webhook
+  // row, which on a large catalogue is not free.
+  useEffect(() => {
+    if (!selectedModuleId || !isStoreTable(loadedSource)) return;
+    const refresh = () => {
+      if (document.visibilityState === "visible") loadModuleData(selectedModuleId);
+    };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [selectedModuleId, loadedSource, loadModuleData]);
+
   // Which groups are folded is a per-project preference, so it is kept
   // per project rather than globally.
   const collapseKey = `abo_collapsed_${projectId}`;
