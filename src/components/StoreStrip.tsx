@@ -53,6 +53,8 @@ export default function StoreStrip({
     status: string;
   } | null>(null);
   const [progress, setProgress] = useState<Progress>({});
+  /** What is in the store now, as opposed to what the import brought. */
+  const [held, setHeld] = useState<Record<string, number> | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -146,6 +148,23 @@ export default function StoreStrip({
     setRunning(false);
   }, [projectId]);
 
+  // The strip read import_runs.imported — how many the first import
+  // carried across. Webhooks have been adding rows ever since without
+  // touching that number, so the header said "21 products" over a
+  // section listing 26. A merchant reads this as what they have.
+  const countHeld = useCallback(async (storeId: string) => {
+    const of = async (table: string) =>
+      (await supabase.from(table).select("id", { count: "exact", head: true }).eq("store_id", storeId))
+        .count ?? 0;
+    const [products, customers, orders, inventory] = await Promise.all([
+      of("products"),
+      of("customers"),
+      of("orders"),
+      of("inventory_levels"),
+    ]);
+    if (!cancelled.current) setHeld({ products, customers, orders, inventory });
+  }, []);
+
   useEffect(() => {
     cancelled.current = false;
     (async () => {
@@ -172,11 +191,27 @@ export default function StoreStrip({
       // Either way the merchant is waiting on it, so start.
       const unfinished = Object.keys(LABELS).some((k) => (seen[k]?.status ?? "pending") !== "done");
       if (row.status === "connected" && unfinished) pump();
+      else await countHeld(row.id);
     })();
     return () => {
       cancelled.current = true;
     };
-  }, [projectId, pump]);
+  }, [projectId, pump, countHeld]);
+
+  // And again when they come back from Shopify, which is when the
+  // webhooks they triggered have landed.
+  useEffect(() => {
+    if (!store?.id || running) return;
+    const refresh = () => {
+      if (document.visibilityState === "visible") countHeld(store.id);
+    };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [store?.id, running, countHeld]);
 
   // No store on this project. The builder screen used to say nothing
   // about Shopify at all, so the only way to find the connect button
@@ -211,7 +246,9 @@ export default function StoreStrip({
   }
 
   const counts = Object.entries(LABELS)
-    .map(([key, label]) => [progress[key]?.imported ?? 0, label] as const)
+    // While importing, the running total is the point. Once it is done,
+    // what matters is what the store holds.
+    .map(([key, label]) => [(running ? progress[key]?.imported : held?.[key]) ?? progress[key]?.imported ?? 0, label] as const)
     .filter(([n]) => n > 0)
     .map(([n, label]) => `${n.toLocaleString()} ${label}`);
 
