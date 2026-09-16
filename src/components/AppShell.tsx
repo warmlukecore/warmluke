@@ -692,59 +692,42 @@ export default function AppShell({
 
         const plans = reply.plans;
 
-        // Multiple plans: the owner already approved the blueprint these
-        // came from, so apply them in build order. A single plan is an
-        // ad-hoc edit and still gets its own preview card.
+        // Every design is approved before it is built, however many
+        // plans it happens to contain.
+        //
+        // This branch used to apply anything with more than one plan
+        // straight to the live app, on the reasoning that such a reply
+        // could only have come from a blueprint the owner had already
+        // agreed to. Nothing checked that. The gate that let the model
+        // answer with plans at all only asks whether a blueprint was
+        // ever shown in the thread — shown, not accepted — so a later,
+        // unrelated request returning two plans changed the app with
+        // nobody having said yes to it.
+        //
+        // A blueprint card already shows several plans and has the
+        // button that approves them, so there is nothing to build here
+        // beyond handing these plans to it.
         if (plans.length > 1) {
-          setBuilding(true);
           setChatMessages((prev) => [
             ...prev,
             {
               id: nextChatId(),
-              role: "system",
-              text: `🏗️ Building ${plans.length} changes… applying in order.`,
+              role: "assistant",
+              text: (reply.message ?? "").trim() || "Here is what I would change.",
+              blueprint: {
+                summary: reply.message ?? "",
+                plans,
+                // The workflow and the unmet list belong to a blueprint
+                // the engine wrote. This reply has neither, and the
+                // card is honest about showing nothing rather than
+                // inventing steps.
+                workflow: [],
+              },
             },
           ]);
-          const { ok: applyOk, data: applyData } = await apiFetch("/api/apply", {
-            projectId,
-            plans,
-          });
-          setBuilding(false);
-
-          if (applyOk && applyData.applied) {
-            const created = (applyData.results as Array<Record<string, unknown>>)
-              .filter((r) => r.changeType === "NEW_MODULE")
-              .map((r) => r.navLabel as string);
-            setChatMessages((prev) => [
-              ...prev,
-              {
-                id: nextChatId(),
-                role: "assistant",
-                plan: plans[0],
-                text: `✅ Built: ${created.join(", ") || `${plans.length} changes`}. Open a section on the left — then just tell me what to change.`,
-              },
-            ]);
-            await loadModules();
-            // Auto-select the first created module.
-            const firstModule = (applyData.results as Array<Record<string, unknown>>).find(
-              (r) => r.changeType === "NEW_MODULE"
-            );
-            if (firstModule?.moduleId) setSelectedModuleId(firstModule.moduleId as string);
-          } else {
-            setChatMessages((prev) => [
-              ...prev,
-              {
-                id: nextChatId(),
-                role: "system",
-                text: "⚠️ The build hit a validation error partway — nothing more was applied.",
-                errors: applyData.errors as string[] | undefined,
-              },
-            ]);
-          }
           return;
         }
 
-        // Single plan → preview card.
         setChatMessages((prev) => [
           ...prev,
           { id: nextChatId(), role: "assistant", plan: plans[0] },

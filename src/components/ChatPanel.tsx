@@ -566,11 +566,31 @@ export default function ChatPanel({
       // partly_built joins them. It is the one state nobody may be
       // left unaware of — a section exists with half of what was asked
       // for — and it was the only state with nowhere at all to appear.
-      .in("status", ["pending", "built", "partly_built"])
+      // Two questions, not one list.
+      //
+      // This was a single query: every status, seven days, oldest
+      // first, ten rows. Ten old receipts could push a request that
+      // wants an answer out of the bell entirely, and anything
+      // unanswered for more than a week vanished — while the connected
+      // assistant went on truthfully saying it was waiting. Work that
+      // wants a person is never aged out and never crowded out;
+      // finished work is the part that is bounded.
+      .in("status", ["pending", "partly_built"])
+      .order("created_at", { ascending: true });
+    const active = data ?? [];
+
+    const { data: doneRows } = await supabase
+      .from("build_requests")
+      .select("id, request, client_id, created_at, summary, plans, unmet, status, built_at, outcome")
+      .eq("project_id", projectId)
+      .eq("status", "built")
       .gt("created_at", new Date(Date.now() - 7 * 864e5).toISOString())
-      .order("created_at", { ascending: true })
+      .order("created_at", { ascending: false })
       .limit(10);
-    const rows = data ?? [];
+
+    // Oldest first inside each half: the receipts read as history above
+    // the thing still being asked.
+    const rows = [...[...(doneRows ?? [])].reverse(), ...active];
     setRequests(rows);
 
     // Anything that arrived while they were watching announces

@@ -54,15 +54,22 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Thread not found." }, { status: 404 });
   }
 
+  // The same trap as the replay below: ascending with a limit keeps the
+  // oldest, so a long thread reopened showed its first two hundred
+  // messages and none of the recent ones. Newest first, then reversed.
   const { data: msgs, error: mErr } = await client
     .from("messages")
     .select("id, role, payload, created_at")
     .eq("conversation_id", wanted)
-    .order("created_at", { ascending: true })
+    .order("created_at", { ascending: false })
     .limit(200);
   if (mErr) return NextResponse.json({ error: mErr.message }, { status: 500 });
 
-  return NextResponse.json({ threads, conversationId: wanted, messages: msgs ?? [] });
+  return NextResponse.json({
+    threads,
+    conversationId: wanted,
+    messages: [...(msgs ?? [])].reverse(),
+  });
 }
 
 type SchemaJsonWithFeatures = UiSchema & { features?: FeatureSchema | null };
@@ -208,7 +215,13 @@ export async function POST(req: Request) {
           .from("messages")
           .select("role, content, ptype:payload->>type, said:payload->>text")
           .eq("conversation_id", convId)
-          .order("created_at", { ascending: true })
+          // Newest first, then turned back round below. Ascending with a
+          // limit keeps the OLDEST rows, so past this many messages the
+          // assistant was replaying the start of the conversation for
+          // ever and had no idea what had just been decided — it asked
+          // again for answers it had been given, and designed against
+          // requirements the owner had already replaced.
+          .order("created_at", { ascending: false })
           .limit(HISTORY_LIMIT)
       : { data: [], error: null };
     if (histErr) throw new Error(histErr.message);
@@ -217,7 +230,9 @@ export async function POST(req: Request) {
       ptype: string | null;
       said: string | null;
     };
-    const rows = (historyRows ?? []) as HistoryRow[];
+    // Back into the order they were said in; a model reading a
+    // conversation backwards is worse than one reading half of it.
+    const rows = [...((historyRows ?? []) as HistoryRow[])].reverse();
 
     // Replay the owner's actual words, not the CONTEXT-wrapped turn we
     // sent at the time: that block is a snapshot of the schema as it was,
