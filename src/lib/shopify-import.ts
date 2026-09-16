@@ -536,7 +536,7 @@ export async function saveInventory(
   ).filter((l) => l.variant_id);
 
   if (levels.length > 0) {
-    const { error } = await db.from("inventory_levels").upsert(levels, { onConflict: "store_id,variant_id,location_name" });
+    const { error } = await db.from("inventory_levels").upsert(levels, { onConflict: "store_id,variant_id,location_id" });
     if (error) throw new Error(error.message);
   }
 }

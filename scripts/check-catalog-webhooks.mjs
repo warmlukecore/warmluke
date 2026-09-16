@@ -190,6 +190,36 @@ if (!variant) {
     await db.from("inventory_levels").update({ available: level.available }).eq("id", level.id);
   }
 
+  // Two different locations may share a name. The key used to be the
+  // name, so the second one landed on the first one's row and one
+  // shop's stock quietly overwrote the other's.
+  const twinLocation = "gid://shopify/Location/424242";
+  await db.rpc("abo_shopify_set_inventory", {
+    p_shop: store.shop_domain,
+    p_level: {
+      inventory_item_id: bare(variant.inventory_item_id),
+      location_id: bare(twinLocation),
+      available: 7,
+      updated_at: new Date().toISOString(),
+    },
+  });
+  const both = await db
+    .from("inventory_levels")
+    .select("location_id, available")
+    .eq("variant_id", variant.id);
+  check(
+    "a second location keeps its own row",
+    (both.data ?? []).some((r) => r.location_id === twinLocation)
+  );
+  check(
+    "and does not overwrite the first",
+    // The first row is still its own row with its own number. Its
+    // value was put back a few lines up, so what matters is that it
+    // is not the seven this second location just reported.
+    (both.data ?? []).some((r) => r.location_id === locationId && r.available !== 7)
+  );
+  await db.from("inventory_levels").delete().eq("location_id", twinLocation);
+
   // A level for a variant nobody has imported is almost always the two
   // webhooks arriving out of order. It used to be discarded with a
   // success answer, so Shopify never sent that number again and the
