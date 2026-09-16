@@ -19,8 +19,9 @@
 // ─────────────────────────────────────────────────────────────
 
 import Link from "next/link";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { DEFAULT_HERO, VARIANT_COOKIE, heroById, resolveHero } from "@/lib/landing";
+import { VARIANT_HEADER } from "@/proxy";
 import { DemoForm, LandingTracker } from "@/components/Landing";
 
 export const metadata = {
@@ -145,17 +146,24 @@ export default async function Landing({
     return Array.isArray(v) ? v[0] : v;
   };
 
-  // Middleware has already decided and written the cookie; reading the
-  // parameters again here keeps the two in step on the first request,
-  // when the cookie it just set is not yet on the way back in.
+  // The proxy already decided, and says so on a header. Resolving
+  // again here would roll a second time on a first visit — before the
+  // cookie it just set has come back round — and render a hero that
+  // nobody recorded.
+  const decided = heroById((await headers()).get(VARIANT_HEADER));
+
+  // Only if the proxy did not run at all: a direct render in a test,
+  // or a deployment where the matcher missed. A malformed everything
+  // still produces a headline rather than an empty hero.
   const jar = await cookies();
-  const { hero } = resolveHero({
-    wlVariant: one("wl_variant"),
-    utmCampaign: one("utm_campaign"),
-    assigned: jar.get(VARIANT_COOKIE)?.value,
-  });
-  // Belt and braces: a malformed everything still renders a headline.
-  const shown = hero ?? heroById(DEFAULT_HERO)!;
+  const shown =
+    decided ??
+    resolveHero({
+      wlVariant: one("wl_variant"),
+      utmCampaign: one("utm_campaign"),
+      assigned: jar.get(VARIANT_COOKIE)?.value,
+    }).hero ??
+    heroById(DEFAULT_HERO)!;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">

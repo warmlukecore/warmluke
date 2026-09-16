@@ -16,9 +16,10 @@
 // Callers: src/app/page.tsx.
 // ─────────────────────────────────────────────────────────────
 
-import { useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useId, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase-client";
 import { UTM_KEYS, type Utm } from "@/lib/landing";
+import { bookDemo, type BookingState } from "@/app/actions";
 
 const SESSION_KEY = "wl_session";
 
@@ -33,6 +34,21 @@ function sessionId(): string {
   } catch {
     // Private window, or storage refused. One visit, one id.
     return crypto.randomUUID().replace(/-/g, "").slice(0, 32);
+  }
+}
+
+/**
+ * Where they are, short enough to store.
+ *
+ * The column caps this at 500, and a query string longer than that
+ * would have failed the whole insert — including the booking, which is
+ * the one event that must not be lost over a detail nobody reads.
+ */
+function landingPath(): string {
+  try {
+    return (window.location.pathname + window.location.search).slice(0, 500);
+  } catch {
+    return "/";
   }
 }
 
@@ -61,7 +77,7 @@ async function record(
       session_id: sessionId(),
       variant,
       ...utmFromUrl(),
-      landing_path: window.location.pathname + window.location.search,
+      landing_path: landingPath(),
       event,
       payload,
     });
@@ -106,8 +122,25 @@ export function LandingTracker({ variant }: { variant: string }) {
  * form its completion rate.
  */
 export function DemoForm({ variant }: { variant: string }) {
-  const [state, setState] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const [state, act, pending] = useActionState<BookingState, FormData>(bookDemo, {
+    ok: false,
+  });
   const started = useRef(false);
+  // One key per rendered form. A submit whose answer never arrived and
+  // is sent again carries the same one, so the lead lands once.
+  const idem = useId().replace(/[^a-zA-Z0-9]/g, "").slice(0, 32) + Date.now().toString(36);
+  const [ctx, setCtx] = useState<{ session: string; path: string; utm: Utm }>({
+    session: "",
+    path: "",
+    utm: {},
+  });
+
+  // Filled after mount, because none of it exists on the server. With
+  // JavaScript off these stay empty and the action makes its own — the
+  // booking still arrives, it just is not joined to the earlier events.
+  useEffect(() => {
+    setCtx({ session: sessionId(), path: landingPath(), utm: utmFromUrl() });
+  }, []);
 
   function began() {
     if (started.current) return;
@@ -115,37 +148,7 @@ export function DemoForm({ variant }: { variant: string }) {
     void record("demo_start", variant);
   }
 
-  async function submit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (state === "sending") return;
-    setState("sending");
-
-    const form = new FormData(e.currentTarget);
-    const payload = {
-      name: String(form.get("name") ?? "").slice(0, 120),
-      email: String(form.get("email") ?? "").slice(0, 160),
-      store: String(form.get("store") ?? "").slice(0, 200),
-      note: String(form.get("note") ?? "").slice(0, 600),
-    };
-
-    try {
-      const { error } = await supabase.from("landing_events").insert({
-        session_id: sessionId(),
-        variant,
-        ...utmFromUrl(),
-        landing_path: window.location.pathname + window.location.search,
-        event: "demo_booked",
-        payload,
-      });
-      // Told the truth either way. A form that says "thanks" over a
-      // failed write loses the lead and nobody ever finds out.
-      setState(error ? "failed" : "sent");
-    } catch {
-      setState("failed");
-    }
-  }
-
-  if (state === "sent") {
+  if (state.ok) {
     return (
       <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-8 text-center">
         <div className="font-display text-xl font-semibold text-emerald-300">
@@ -159,7 +162,15 @@ export function DemoForm({ variant }: { variant: string }) {
   }
 
   return (
-    <form onSubmit={submit} onFocusCapture={began} className="grid gap-3 sm:grid-cols-2">
+    <form action={act} onFocusCapture={began} className="grid gap-3 sm:grid-cols-2">
+      <input type="hidden" name="variant" value={variant} />
+      <input type="hidden" name="idem" value={idem} />
+      <input type="hidden" name="session_id" value={ctx.session} />
+      <input type="hidden" name="landing_path" value={ctx.path} />
+      {UTM_KEYS.map((k) => (
+        <input key={k} type="hidden" name={k} value={ctx.utm[k] ?? ""} />
+      ))}
+
       <input
         name="name"
         required
@@ -188,16 +199,13 @@ export function DemoForm({ variant }: { variant: string }) {
       <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
         <button
           type="submit"
-          disabled={state === "sending"}
+          disabled={pending}
+          data-cta="book"
           className="rounded-xl bg-gradient-to-r from-blue-500 to-cyan-400 px-6 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
         >
-          {state === "sending" ? "Sending…" : "Book a Demo"}
+          {pending ? "Sending\u2026" : "Book a Demo"}
         </button>
-        {state === "failed" && (
-          <span className="text-sm text-amber-300">
-            That didn&apos;t send — please try again in a moment.
-          </span>
-        )}
+        {state.message && <span className="text-sm text-amber-300">{state.message}</span>}
       </div>
     </form>
   );

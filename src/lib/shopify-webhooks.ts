@@ -161,8 +161,12 @@ export async function subscribeWebhooks(
             // Another subscription for this topic already sits there.
             settled = true;
           } else {
+            // The URL is deliberately not in the message. This string
+            // ends up in stores.webhook_error, which the app shows to
+            // every member of the project — and the address is what
+            // decides which store a delivery belongs to.
             out.failed.push(
-              `${topic} (${one.url || "no address"}): ${userErrors.map((e) => e.message).join("; ")}`
+              `${topic} (could not be moved): ${userErrors.map((e) => e.message).join("; ")}`
             );
           }
         }

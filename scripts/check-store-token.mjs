@@ -117,14 +117,22 @@ if (!signedIn?.session) {
 // so the app told the merchant "not connected" about a store that was
 // connected, synced and holding a valid token. Nothing failed loudly;
 // the store simply stopped existing on screen.
-console.log("\nand what the merchant is meant to see, they can see");
-{
+if (signedIn?.session) {
+  console.log("\nand what the merchant is meant to see, they can see");
+  // StoreStrip's query, not an approximation of it: the same columns,
+  // filtered the same way. A version that only resembles it can pass
+  // while the real one still fails on a column nobody granted.
+  const project = (
+    await admin.from("stores").select("project_id").eq("status", "connected").limit(1).maybeSingle()
+  ).data;
   const shown = await owner
     .from("stores")
     .select("id, shop_domain, status, webhook_error")
-    .limit(1);
+    .eq("project_id", project?.project_id ?? "00000000-0000-0000-0000-000000000000");
   check("the strip's own query is answered", !shown.error);
   check("and it comes back with a store", (shown.data ?? []).length > 0);
+} else {
+  console.log("\n  --    no owner session; the strip's query is not checked");
 }
 
 console.log(fails.length === 0 ? "\nthe key stays with the lock" : `\n${fails.length} FAILED`);
