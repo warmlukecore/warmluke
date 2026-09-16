@@ -258,6 +258,66 @@ try {
     /will not finish this one/i.test(hurt?.next_action ?? "")
   );
 
+  console.log("\nand a no is a decision, not a silence");
+  // Until this existed, a merchant refusing a design inside their own
+  // assistant changed nothing: the queue went on saying it was waiting
+  // and the bell went on counting it.
+  const toRefuse = await tool(
+    "submit_design",
+    {
+      request: `BYO refuse ${stamp}`,
+      project_id: project.id,
+      plans: [
+        {
+          changeType: "NEW_MODULE",
+          targetModuleId: null,
+          newModule: { name: `byo-no-${stamp}`, nav_label: `BYO No ${stamp}`, icon: "table" },
+          newSchema: {
+            columns: [{ field: "note", label: "Note", type: "text" }],
+            view: { type: "table" },
+          },
+          explanation: "Somewhere to write a note.",
+        },
+      ],
+    },
+    12
+  );
+  made.push(toRefuse.request_id);
+
+  const said = await tool(
+    "reject_change",
+    { request_id: toRefuse.request_id, reason: "they said they already have this in a spreadsheet" },
+    13
+  );
+  check("it is recorded as dismissed", said?.status === "dismissed");
+
+  const afterNo = await tool("pending_changes", { project_id: project.id }, 14);
+  check(
+    "and it stops waiting",
+    !(afterNo?.waiting ?? []).some((w) => w.request_id === toRefuse.request_id)
+  );
+  const stored = (
+    await admin.from("build_requests").select("status, summary").eq("id", toRefuse.request_id).single()
+  ).data;
+  check("the row says so too", stored?.status === "dismissed");
+  check("with the merchant's reason kept", /spreadsheet/.test(stored?.summary ?? ""));
+
+  // Asking twice is not an error — the answer is the state it is in.
+  const twice = await tool("reject_change", { request_id: toRefuse.request_id }, 15);
+  check("refusing twice changes nothing", twice?.status === "dismissed");
+  check("and says it was already done", /already dismissed/i.test(twice?.note ?? ""));
+
+  // Nothing finished can be refused: there is no decision left to make.
+  const finished = await tool("reject_change", { request_id: other.id }, 16);
+  check("a half-built one cannot be refused", finished?.status === "not rejected");
+
+  const nobody = await tool(
+    "reject_change",
+    { request_id: "11111111-2222-3333-4444-555555555555" },
+    17
+  );
+  check("nor one that is not theirs", nobody?.status === "not rejected");
+
   // The half that was actually going wrong: when nothing waits, the
   // answer has to be a plain no.
   for (const r of made) await admin.from("build_requests").update({ status: "dismissed" }).eq("id", r);

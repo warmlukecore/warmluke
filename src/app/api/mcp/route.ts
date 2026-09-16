@@ -208,6 +208,26 @@ const TOOLS = [
     },
   },
   {
+    name: "reject_change",
+    description:
+      "Record that the merchant said no to a design. Call this when you read a waiting design back to them and they turn it down — otherwise it keeps sitting in their queue and their app keeps telling them it needs an answer. You may only refuse a request you raised.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        request_id: {
+          type: "string",
+          description: "The id from pending_changes or propose_change.",
+        },
+        reason: {
+          type: "string",
+          description:
+            "Why, in the merchant's own words. Kept with the request so they recognise the decision later. Optional.",
+        },
+      },
+      required: ["request_id"],
+    },
+  },
+  {
     name: "design_format",
     description:
       "Everything you need to write a design yourself instead of asking Warmluke to write it: the column types, view types, rule triggers and actions this platform has, the expression operators, and the shape of a plan. Read this before calling submit_design. Designing here costs the merchant nothing — you are the one doing the thinking, on their own subscription.",
@@ -982,7 +1002,7 @@ export async function POST(req: Request) {
                         ? "Already approved — call approve_change with this request_id to build it."
                         : "Already approved. The assistant that raised it, or the merchant in Warmluke, builds it."
                       : shaped.you_can_approve_it
-                        ? "Read the design back. If they say yes, call approve_change with this request_id."
+                        ? "Read the design back. If they say yes, call approve_change with this request_id; if they say no, call reject_change so it stops asking."
                         : "Not yours to approve — tell the merchant it is waiting in Warmluke.",
             };
           }),
@@ -1052,6 +1072,53 @@ export async function POST(req: Request) {
             ? "Newest first. Anything waiting for approval is not here — that is pending_changes."
             : "Nothing has been built in this app yet. Do not describe earlier work from memory.",
           history: page.map((r) => shapeRequest(r as RequestRow, client)),
+        })
+      );
+    }
+
+    if (name === "reject_change") {
+      const requestId = String(args.request_id ?? "").trim();
+      if (!requestId) return ok(id, text({ error: "Which request? Pass request_id." }));
+
+      const { data: said, error: rErr } = await db.rpc("abo_reject_request", {
+        p_request: requestId,
+      });
+      if (rErr) return ok(id, text({ error: rErr.message }));
+      const answer = said as
+        | { rejected: boolean; already?: boolean; status?: string; reason?: string }
+        | null;
+
+      if (!answer?.rejected) {
+        return ok(
+          id,
+          text({
+            status: "not rejected",
+            error: answer?.reason ?? "That request could not be refused.",
+            ...(answer?.status ? { it_is: answer.status } : {}),
+          })
+        );
+      }
+
+      // The merchant's words are worth keeping — they are what makes
+      // the decision recognisable in build_history a week later. Best
+      // effort: the refusal itself is already recorded and must not be
+      // undone by a failure to annotate it.
+      const reason = String(args.reason ?? "").trim();
+      if (reason) {
+        await db
+          .from("build_requests")
+          .update({ summary: reason.slice(0, 2000) })
+          .eq("id", requestId);
+      }
+
+      return ok(
+        id,
+        text({
+          status: "dismissed",
+          ...(answer.already ? { note: "It was already dismissed. Nothing changed." } : {}),
+          note: answer.already
+            ? "It was already dismissed. Nothing changed."
+            : "Recorded. It has left their queue, and their app will stop asking about it.",
         })
       );
     }
