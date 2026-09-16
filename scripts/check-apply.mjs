@@ -170,22 +170,55 @@ try {
     }),
   ]);
   const secondRuleId = again.json?.results?.[0]?.automationId;
-  check("adding it again replaces it", !!secondRuleId && secondRuleId !== firstRuleId);
+  // The id stays put. It used to change, because the old row was
+  // deleted and a new one inserted — and automation_runs cascades off
+  // that row, so the rule's whole history went with it.
+  check("adding it again changes the same rule", secondRuleId === firstRuleId);
 
   const { data: byName } = await db
     .from("automations")
     .select("id, definition")
     .eq("project_id", projectId)
     .eq("name", `mark-${stamp}`);
-  // One, not two: the old one must go. And it must be the NEW one that
-  // survived — the delete matches on name, so without except_id it
-  // would have taken the replacement with it.
   check("leaving exactly one rule of that name", (byName ?? []).length === 1);
-  check("and it is the new one", byName?.[0]?.id === secondRuleId);
+  check("and it is the one that was already there", byName?.[0]?.id === firstRuleId);
   check(
     "with the new definition",
     byName?.[0]?.definition?.actions?.[0]?.set?.done?.const === false
   );
+
+  // What the deletion was really costing. A run recorded against the
+  // rule must survive the rule being changed.
+  // Seeded as the service role: RLS lets only the trigger write a run,
+  // which is right, and is why this cannot be set up as the owner.
+  const admin = createClient(
+    env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
+    env.ADAPTIVE_OS_SERVICE_ROLE_KEY
+  );
+  await admin.from("automation_runs").insert({
+    automation_id: firstRuleId,
+    ok: true,
+    detail: { note: `ran before the change ${stamp}` },
+  });
+  const changedAgain = await apply([
+    plan({
+      changeType: "AUTOMATION_ADD",
+      targetModuleId: moduleId,
+      automation: {
+        name: `mark-${stamp}`,
+        definition: {
+          trigger: { type: "record_created" },
+          actions: [{ type: "set_fields", target: { self: true }, set: { done: { const: true } } }],
+        },
+      },
+    }),
+  ]);
+  check("changing it again still works", !!changedAgain.json?.results?.[0]?.automationId);
+  const { count: runsLeft } = await admin
+    .from("automation_runs")
+    .select("id", { count: "exact", head: true })
+    .eq("automation_id", firstRuleId);
+  check("and the record of it having run survives", (runsLeft ?? 0) === 1);
 
   const off = await apply([
     plan({

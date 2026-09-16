@@ -277,26 +277,16 @@ async function validateAndApply(
   // alike — nothing here generates code.
   if (plan.changeType === "AUTOMATION_ADD") {
     const auto = plan.automation!;
-    // Re-adding a rule by the same name replaces it rather than stacking
-    // a second copy that would fire twice on the same write.
-    //
-    // The replacement goes in first. This used to delete the old one
-    // and then insert — two statements with a gap — so an insert that
-    // failed left the merchant with no rule at all: the one that had
-    // been running every day was gone, nothing replaced it, and they
-    // were told nothing had been built.
+    // A rule of the same name on the same section is that rule with a
+    // new definition. It is updated in place, so its id never moves
+    // and automation_runs keeps every time it fired — the history used
+    // to be deleted along with the old row, which emptied the Rules
+    // screen at the exact moment the merchant had changed something
+    // and wanted to see what it had been doing.
     const inserted = await write("automation_insert", {
       module_id: plan.targetModuleId ?? null,
       name: auto.name,
       definition: auto.definition,
-    });
-
-    // Now what it replaced, and only that: the delete matches on name,
-    // so without except_id it would take the new row with it.
-    await write("automation_delete", {
-      module_id: plan.targetModuleId!,
-      name: auto.name,
-      except_id: inserted.id,
     });
     return {
       ok: true,

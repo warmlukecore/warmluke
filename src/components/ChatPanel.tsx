@@ -13,6 +13,7 @@ import { describeAutomation, describePlan, type StoreFacts } from "@/lib/describ
 import type { BuildOutcome } from "@/components/AppShell";
 import { storeOverview } from "@/lib/store-read";
 import { supabase } from "@/lib/supabase-client";
+import { showWaiting } from "@/lib/favicon";
 import { NOT_SUPPORTED } from "@/lib/capabilities";
 import { resizeHandleClass } from "@/lib/useResizable";
 import type {
@@ -817,6 +818,15 @@ export default function ChatPanel({
   const pendingCount = requests.filter(
     (r) => r.status === "pending" || r.status === "partly_built"
   ).length;
+
+  // On the tab, not only in the panel. A merchant is not sitting here
+  // when their assistant proposes something — they are in another tab,
+  // doing the job this app is meant to help with, and the bell they
+  // never see is no better than nothing.
+  useEffect(() => {
+    showWaiting(pendingCount);
+    return () => showWaiting(0);
+  }, [pendingCount]);
   /** Requests that turned up just now, floating over the panel. */
   const [toasts, setToasts] = useState<string[]>([]);
   /** What was already waiting last time we looked. Null = never looked. */
