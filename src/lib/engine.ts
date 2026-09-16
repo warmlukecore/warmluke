@@ -210,7 +210,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   if (!parsed || !parsed.ok) {
     return {
       ok: false,
-      errors: parsed?.errors ?? ["The assistant could not produce a valid reply."],
+      errors: parsed?.errors ?? ["Luke could not produce a valid reply."],
       repairs,
       repairErrors,
     };

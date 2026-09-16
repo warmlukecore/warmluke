@@ -874,7 +874,7 @@ export default function ChatPanel({
             ✦
           </span>
           <div>
-            <div className="font-display text-sm font-semibold tracking-tight">AI Assistant</div>
+            <div className="font-display text-sm font-semibold tracking-tight">Luke</div>
             <div className="text-[11px] text-slate-400">
               Build anything by describing it — preview before it applies
             </div>
@@ -1183,7 +1183,7 @@ export default function ChatPanel({
           </div>
           <button
             onClick={onClose}
-            aria-label="Close assistant"
+            aria-label="Close Luke"
             className="rounded-lg px-2 py-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 lg:hidden"
           >
             ✕
@@ -1749,10 +1749,10 @@ export default function ChatPanel({
         </div>
       ) : !features.chat ? (
         <div className="border-t border-slate-100 p-3 text-[11px] leading-relaxed text-slate-500">
-          Warmluke&rsquo;s own assistant is off for this account.{" "}
+          Luke is off for this account.{" "}
           {features.mcp
             ? "Your own AI can still design changes, and you approve them above."
-            : "Ask us to turn an assistant on for you."}
+            : "Ask us to turn Luke on for you."}
         </div>
       ) : (
       <div className="border-t border-slate-100 p-3">

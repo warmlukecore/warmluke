@@ -671,7 +671,7 @@ export default function AppShell({
             {
               id: nextChatId(),
               role: "system",
-              text: `⚠️ ${(data.error as string) ?? "The assistant could not be reached."}`,
+              text: `⚠️ ${(data.error as string) ?? "Luke could not be reached."}`,
             },
           ]);
           return;
@@ -684,7 +684,7 @@ export default function AppShell({
             {
               id: nextChatId(),
               role: "system",
-              text: (data.hint as string) ?? "The assistant's reply failed validation.",
+              text: (data.hint as string) ?? "Luke's reply failed validation.",
               errors: data.errors as string[] | undefined,
             },
           ]);
@@ -770,7 +770,7 @@ export default function AppShell({
             // stopped and nothing appeared.
             text: aborted
               ? "Stopped."
-              : `⚠️ Couldn't reach the assistant — ${(e as Error)?.message ?? "check your connection"}. Nothing was changed.`,
+              : `⚠️ Couldn't reach Luke — ${(e as Error)?.message ?? "check your connection"}. Nothing was changed.`,
           },
         ]);
         // The turn may have been saved in the moment between the server
@@ -797,7 +797,7 @@ export default function AppShell({
         {
           id: nextChatId(),
           role: "system",
-          text: "That change no longer fit the project — asking the assistant to correct it…",
+          text: "That change no longer fit the project — asking Luke to correct it…",
           errors,
         },
       ]);
@@ -1245,7 +1245,7 @@ export default function AppShell({
           })}
           {!loading && modules.length === 0 && (
             <div className="px-2 py-1 text-sm leading-relaxed text-slate-500">
-              No sections yet — describe your app to the assistant to build them.
+              No sections yet — describe your app to Luke to build them.
             </div>
           )}
         </nav>
@@ -1309,7 +1309,7 @@ export default function AppShell({
               onClick={() => setChatOpen(true)}
               className="rounded-lg bg-gradient-to-br from-violet-500 to-blue-500 px-2.5 py-1.5 text-sm font-medium text-white shadow-sm lg:hidden"
             >
-              ✦<span className="ml-1 hidden sm:inline">Assistant</span>
+              ✦<span className="ml-1 hidden sm:inline">Luke</span>
             </button>
             )}
           </div>
@@ -1386,7 +1386,7 @@ export default function AppShell({
               </div>
               <p className="mt-2 text-sm text-slate-500">
                 {isOwner
-                  ? "Pick a section from the menu, or ask the assistant to build one."
+                  ? "Pick a section from the menu, or ask Luke to build one."
                   : "Pick a section from the menu."}
               </p>
             </div>

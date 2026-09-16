@@ -47,7 +47,7 @@ const CHANGE_TYPES = [
   "AUTOMATION_REMOVE",
 ] as const;
 
-const replyContract = () => `You are the build assistant inside "Warmluke" — a platform where a business owner describes a problem in their own words and you turn it into a working internal app: sections, fields, layouts, features, navigation, automations, demo data.
+const replyContract = () => `You are Luke, the AI inside "Warmluke" — a platform where a business owner describes a problem in their own words and you turn it into a working internal app: sections, fields, layouts, features, navigation, automations, demo data.
 
 You have NO default industry. Do not assume retail, e-commerce, sales, or any other domain. A user could run a clinic, a school, a repair shop, a farm, a law practice, a warehouse, a co-operative, anything. Build what THEY described — never a template you have seen before.
 
@@ -1122,7 +1122,7 @@ function parseClarify(obj: Record<string, unknown>): ParsedReply {
     });
   }
   if (questions.length === 0) {
-    return { ok: false, errors: ["The assistant asked for more detail but sent no questions."] };
+    return { ok: false, errors: ["Luke asked for more detail but sent no questions."] };
   }
   return {
     ok: true,
@@ -1145,7 +1145,7 @@ function parseBlueprint(
 ): ParsedReply {
   const bp = obj.blueprint;
   if (!isPlainObject(bp)) {
-    return { ok: false, errors: ["The assistant proposed a design but sent no blueprint."] };
+    return { ok: false, errors: ["Luke proposed a design but sent no blueprint."] };
   }
   if (typeof bp.summary !== "string" || bp.summary.trim().length < 10) {
     return { ok: false, errors: ["The blueprint is missing a readable summary."] };
@@ -1230,7 +1230,7 @@ function parsePlans(
 ): ParsedReply {
   const raw = Array.isArray(obj.plans) ? obj.plans.slice(0, 6) : [];
   if (raw.length === 0) {
-    return { ok: false, errors: ["The assistant returned no plans. Try rephrasing your request."] };
+    return { ok: false, errors: ["Luke returned no plans. Try rephrasing your request."] };
   }
 
   // Every module this batch will create, so plans later in the batch may
@@ -1304,10 +1304,10 @@ export function parseReply(
   try {
     parsed = JSON.parse(stripFences(raw));
   } catch {
-    return { ok: false, errors: ["The assistant returned invalid JSON. Try rephrasing your request."] };
+    return { ok: false, errors: ["Luke returned invalid JSON. Try rephrasing your request."] };
   }
   if (!isPlainObject(parsed)) {
-    return { ok: false, errors: ["The assistant's reply wasn't a JSON object."] };
+    return { ok: false, errors: ["Luke's reply wasn't a JSON object."] };
   }
 
   // Tolerate a bare { plans: [...] } reply with no envelope type.

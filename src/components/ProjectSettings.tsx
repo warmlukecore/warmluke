@@ -231,7 +231,7 @@ export default function ProjectSettings({
             <div className="mt-1 text-[11px] text-slate-400">
               Share a link and whoever opens it can use this app — see the
               sections, add rows, update them. They cannot change how the app
-              is built, read your conversation with the assistant, or delete
+              is built, read your conversation with Luke, or delete
               anything.
             </div>
 

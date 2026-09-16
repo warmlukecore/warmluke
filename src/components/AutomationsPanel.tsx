@@ -114,7 +114,7 @@ export default function AutomationsPanel({
             <div className="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center">
               <div className="text-sm text-slate-500">No rules yet.</div>
               <p className="mx-auto mt-1.5 max-w-xs text-[11px] leading-relaxed text-slate-400">
-                Ask the assistant for something like &ldquo;when a job is marked done, take
+                Ask Luke for something like &ldquo;when a job is marked done, take
                 the parts off my stock&rdquo;.
               </p>
             </div>

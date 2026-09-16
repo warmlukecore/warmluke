@@ -118,7 +118,7 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           error:
-            "Warmluke's assistant is turned off for this account. Your own AI can still design and build — or ask us to turn it back on.",
+            "Luke is turned off for this account. Your own AI can still design and build — or ask us to turn Luke back on.",
         },
         { status: 403 }
       );
@@ -146,7 +146,7 @@ export async function POST(req: Request) {
     // how the app is built.
     if (proj.owner_id !== auth.userId) {
       return NextResponse.json(
-        { error: "Only the owner of this app can build with the assistant." },
+        { error: "Only the owner of this app can build with Luke." },
         { status: 403 }
       );
     }
