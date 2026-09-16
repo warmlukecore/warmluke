@@ -507,10 +507,10 @@ export default function ChatPanel({
    *  interrupted halfway, and there is nothing to abort during it. */
   canStop: boolean;
   busy: boolean;
-  onSend: (text: string) => void;
+  onSend: (text: string) => Promise<void> | void;
   onApply: (plan: AssistantPlan, planId: string) => void;
   /** Applies an approved blueprint's plans directly, with no model round trip. */
-  onBuild: (plans: AssistantPlan[]) => Promise<BuildOutcome>;
+  onBuild: (plans: AssistantPlan[], requestId?: string) => Promise<BuildOutcome>;
   onDiscard: (planId: string) => void;
   /** Whose store to warn about, if this project has one connected. */
   projectId: string;
@@ -625,12 +625,32 @@ export default function ChatPanel({
 
   /** Hands one to the builder, as though the owner had typed it. */
   async function openRequest(r: { id: string; request: string }) {
-    await supabase
+    // The turn runs first. This used to mark the request opened and
+    // drop it from the queue before the replacement design existed —
+    // and the turn can fail on the network, on a validation loop, on a
+    // used-up allowance. Once opened, approve_change refuses the
+    // original and the panel stops loading it, so there was nothing
+    // left to go back to.
+    setOpening(r.id);
+    try {
+      await onSend(r.request);
+    } finally {
+      setOpening(null);
+    }
+
+    const { error } = await supabase
       .from("build_requests")
       .update({ status: "opened", resolved_at: new Date().toISOString() })
       .eq("id", r.id);
+    // It stays in the queue if that did not save. A card that is still
+    // there is a nuisance; one that is gone with nothing to replace it
+    // is a design the merchant cannot get back.
+    if (error) {
+      console.error("could not mark the request opened:", error.message);
+      loadRequests();
+      return;
+    }
     setRequests((prev) => prev.filter((x) => x.id !== r.id));
-    onSend(r.request);
   }
 
   /**
@@ -649,24 +669,11 @@ export default function ChatPanel({
     // to mark it regardless, so a failed build disappeared from the
     // queue as done — and their assistant, reading that queue, would
     // tell them it was finished.
-    const outcome = await onBuild(r.plans);
-    if (outcome.applied.length === 0) {
-      // It stays where it is, with the yes recorded. The chat above
-      // already says what went wrong.
-      loadRequests();
-      return;
-    }
-
-    // Through the same door the assistant uses, carrying the same
-    // outcome. Writing the row here by hand is how this path came to
-    // disagree with that one about what "built" means.
-    const { error } = await supabase.rpc("abo_build", {
-      p_project: projectId,
-      p_request: r.id,
-      p_op: "request_built",
-      p_payload: { applied: outcome.applied, errors: outcome.errors },
-    });
-    if (error) console.error("could not record the build:", error.message);
+    // The id goes with it now. The server claims the request before
+    // writing anything and records the outcome afterwards, so a second
+    // tab — or the assistant approving at the same moment — is told it
+    // is already being built instead of building it a second time.
+    await onBuild(r.plans, r.id);
     // Reloaded rather than removed: it becomes the record that this
     // was built, which is the whole point of keeping it.
     loadRequests();
@@ -724,6 +731,8 @@ export default function ChatPanel({
   // as history rather than a pile of still-actionable prompts.
   const [resolvedCards, setResolvedCards] = useState<Record<string, boolean>>({});
   const [threadsOpen, setThreadsOpen] = useState(false);
+  /** The request whose redesign is running, so it cannot be started twice. */
+  const [opening, setOpening] = useState<string | null>(null);
   const [bellOpen, setBellOpen] = useState(false);
   // Which row is asking "are you sure". A browser confirm box is
   // another application's chrome interrupting ours, and it cannot be
@@ -1078,9 +1087,14 @@ export default function ChatPanel({
                 {features.chat && (
                   <button
                     onClick={() => openRequest(r)}
-                    className="rounded-lg border border-amber-300 px-2 py-1 text-[10px] font-medium text-amber-800 hover:bg-amber-100"
+                    disabled={opening !== null}
+                    className="rounded-lg border border-amber-300 px-2 py-1 text-[10px] font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
                   >
-                    {r.plans?.length ? "Change it first" : "Design it"}
+                    {opening === r.id
+                      ? "Designing…"
+                      : r.plans?.length
+                        ? "Change it first"
+                        : "Design it"}
                   </button>
                 )}
                 <button
@@ -1264,7 +1278,13 @@ export default function ChatPanel({
           }
 
           const plan = m.plan;
-          const isPending = applyingPlanId === m.id;
+          // A card with anything after it was dealt with — the same
+          // rule the clarify and blueprint cards already follow, and
+          // the one this card was left out of. Session state alone
+          // meant a reloaded thread offered Apply Change on a plan
+          // that had already been applied, and applying a RECORD_SEED
+          // twice writes its rows twice.
+          const isPending = applyingPlanId === m.id || answered;
           const targetModule = modules.find((mod) => mod.id === plan.targetModuleId);
 
           // The world can move on while a proposal sits in the thread: the
@@ -1475,7 +1495,7 @@ export default function ChatPanel({
                         }
                         className="flex-1 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-rose-700 disabled:opacity-40"
                       >
-                        {isPending ? "Deleting…" : "Delete module"}
+                        {answered ? "Dealt with" : isPending ? "Deleting…" : "Delete module"}
                       </button>
                       <button
                         onClick={() => onDiscard(m.id)}
@@ -1493,7 +1513,7 @@ export default function ChatPanel({
                       disabled={isPending}
                       className="flex-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
                     >
-                      {isPending ? "Applying…" : "Apply Change"}
+                      {answered ? "Dealt with" : isPending ? "Applying…" : "Apply Change"}
                     </button>
                     <button
                       onClick={() => onDiscard(m.id)}

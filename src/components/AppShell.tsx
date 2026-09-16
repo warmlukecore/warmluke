@@ -907,7 +907,7 @@ export default function AppShell({
    * that swallows its own outcome makes every caller guess.
    */
   const buildApproved = useCallback(
-    async (plans: AssistantPlan[]): Promise<BuildOutcome> => {
+    async (plans: AssistantPlan[], requestId?: string): Promise<BuildOutcome> => {
       if (plans.length === 0 || building) return { applied: [], errors: [] };
       setBuilding(true);
       setChatMessages((prev) => [
@@ -919,7 +919,10 @@ export default function AppShell({
         },
       ]);
       try {
-        const { ok, data } = await apiFetch("/api/apply", { projectId, plans });
+        // requestId, when this came from a card the assistant raised:
+        // the endpoint then claims it, applies it and records the
+        // outcome as one sequence, the way the MCP path always has.
+        const { ok, data } = await apiFetch("/api/apply", { projectId, plans, requestId });
         if (ok && data.applied) {
           const results = data.results as Array<Record<string, unknown>>;
           if (data.partial) {
@@ -961,7 +964,12 @@ export default function AppShell({
             },
           ]);
         }
-        return { applied: [], errors: (data.errors as string[]) ?? ["The build did not run."] };
+        return {
+          applied: [],
+          errors: (data.errors as string[]) ?? [
+            data.already ? "Somebody is already building this." : "The build did not run.",
+          ],
+        };
       } finally {
         setBuilding(false);
       }
@@ -969,13 +977,21 @@ export default function AppShell({
     [building, projectId, loadModules, loadModuleData, selectedModuleId, recordOutcome, planTitle]
   );
 
-  const discardPlan = useCallback((planId: string) => {
-    setChatMessages((prev) =>
-      prev.map((m) =>
-        m.id === planId ? { ...m, plan: undefined, text: "Discarded — nothing was changed." } : m
-      )
-    );
-  }, []);
+  const discardPlan = useCallback(
+    (planId: string) => {
+      setChatMessages((prev) =>
+        prev.map((m) =>
+          m.id === planId ? { ...m, plan: undefined, text: "Discarded — nothing was changed." } : m
+        )
+      );
+      // Written down, not only crossed out on screen. A discard that
+      // lived in session state alone came back as a live card on the
+      // next reload, offering to build the thing they had just said no
+      // to. The row after it is what retires the card.
+      recordOutcome("Discarded — nothing was changed.");
+    },
+    [recordOutcome]
+  );
 
   // ── First-run: consume the pending prompt from landing/signup ──
   const [bootstrapped, setBootstrapped] = useState(false);
