@@ -151,6 +151,41 @@ try {
     }),
   ]);
   check("a rule is stored as data", !!rule.json?.results?.[0]?.automationId);
+  const firstRuleId = rule.json?.results?.[0]?.automationId;
+
+  // Re-adding by the same name replaces it. It used to do that by
+  // deleting first and inserting after — so an insert that failed left
+  // the merchant with no rule at all, and told them nothing was built.
+  const again = await apply([
+    plan({
+      changeType: "AUTOMATION_ADD",
+      targetModuleId: moduleId,
+      automation: {
+        name: `mark-${stamp}`,
+        definition: {
+          trigger: { type: "record_created" },
+          actions: [{ type: "set_fields", target: { self: true }, set: { done: { const: false } } }],
+        },
+      },
+    }),
+  ]);
+  const secondRuleId = again.json?.results?.[0]?.automationId;
+  check("adding it again replaces it", !!secondRuleId && secondRuleId !== firstRuleId);
+
+  const { data: byName } = await db
+    .from("automations")
+    .select("id, definition")
+    .eq("project_id", projectId)
+    .eq("name", `mark-${stamp}`);
+  // One, not two: the old one must go. And it must be the NEW one that
+  // survived — the delete matches on name, so without except_id it
+  // would have taken the replacement with it.
+  check("leaving exactly one rule of that name", (byName ?? []).length === 1);
+  check("and it is the new one", byName?.[0]?.id === secondRuleId);
+  check(
+    "with the new definition",
+    byName?.[0]?.definition?.actions?.[0]?.set?.done?.const === false
+  );
 
   const off = await apply([
     plan({
