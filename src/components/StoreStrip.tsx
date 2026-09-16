@@ -55,6 +55,10 @@ export default function StoreStrip({
   const [progress, setProgress] = useState<Progress>({});
   /** What is in the store now, as opposed to what the import brought. */
   const [held, setHeld] = useState<Record<string, number> | null>(null);
+  /** Rows we hold that the last pass did not bring back from Shopify. */
+  const [drift, setDrift] = useState<Record<string, { holding: number; imported: number }> | null>(
+    null
+  );
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -123,6 +127,11 @@ export default function StoreStrip({
     for (let i = 0; i < MAX_PAGES && !cancelled.current; i++) {
       const { ok, data } = await apiFetch("/api/shopify/import", { projectId });
       if (data?.progress) setProgress(data.progress as Progress);
+      if (data?.done) {
+        setDrift(
+          (data.drift as Record<string, { holding: number; imported: number }> | undefined) ?? null
+        );
+      }
       if (!ok) {
         if (data?.retryable && stumbles < IMPORT_RETRIES) {
           stumbles++;
@@ -286,6 +295,25 @@ export default function StoreStrip({
           >
             Check for changes
           </button>
+          {/* Said out loud rather than swept away. A row here that
+              Shopify no longer returns was almost certainly deleted
+              there while a webhook went undelivered — but a page that
+              failed quietly looks the same, and a wrong delete does
+              not come back. */}
+          {drift && Object.keys(drift).length > 0 && (
+            <span
+              className="text-[11px] text-amber-700"
+              title="Nothing has been deleted. Reconnecting the store re-subscribes the webhooks."
+            >
+              ⚠️{" "}
+              {Object.entries(drift)
+                .map(
+                  ([resource, d]) =>
+                    `${d.holding - d.imported} ${LABELS[resource] ?? resource} no longer in Shopify`
+                )
+                .join(" · ")}
+            </span>
+          )}
         </span>
       ) : (
         <span className="text-slate-500">Nothing imported yet</span>

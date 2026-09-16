@@ -111,10 +111,42 @@ export async function POST(req: Request) {
     if (finished) {
       await auth.client.from("stores").update({ last_synced_at: finished }).eq("id", store.id);
     }
+
+    // Rows we hold that the pass did not bring back.
+    //
+    // A pass has just walked the whole of Shopify, so what it imported
+    // IS Shopify's count — no second API call is needed to learn it.
+    // Anything we hold beyond that was removed in Shopify while nobody
+    // was listening: a delete webhook that never arrived, a
+    // subscription that lapsed, an outage.
+    //
+    // Reported, never deleted. A page that failed quietly, or a bulk
+    // file that came back short, would look exactly like a deletion —
+    // and a wrong delete does not come back. Saying so ends the
+    // silence, which is the actual problem; sweeping rows away would
+    // trade it for a worse one.
+    const drift: Record<string, { holding: number; imported: number }> = {};
+    for (const [resource, table] of Object.entries(COUNTED)) {
+      const imported = (runs ?? []).find((r) => r.resource === resource)?.imported ?? 0;
+      const { count } = await auth.client
+        .from(table)
+        .select("id", { count: "exact", head: true })
+        .eq("store_id", store.id);
+      const holding = count ?? 0;
+      if (holding !== imported) drift[resource] = { holding, imported };
+    }
+
     return NextResponse.json({
       done: true,
       checked_at: finished ?? null,
       note: "Everything imported. Ask again with recheck to read Shopify over from the start.",
+      ...(Object.keys(drift).length
+        ? {
+            drift,
+            drift_note:
+              "These are here but did not come back from Shopify this time — most likely removed there while a webhook was not delivered. Nothing has been deleted.",
+          }
+        : {}),
       progress: summarise(runs ?? []),
     });
   }
@@ -239,6 +271,14 @@ async function advance(
   const page = await importPage(db, store, resource, cursor);
   return page;
 }
+
+/** Which of our tables holds each resource, for counting what we keep. */
+const COUNTED: Record<string, string> = {
+  products: "products",
+  customers: "customers",
+  orders: "orders",
+  inventory: "inventory_levels",
+};
 
 function summarise(runs: Array<{ resource?: string; imported?: number; status?: string }>) {
   return Object.fromEntries(
