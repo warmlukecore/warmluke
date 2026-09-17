@@ -27,6 +27,7 @@ import {
   type ValidationResult,
 } from "./types";
 import {
+  EXPR_OPS,
   OPERATORS,
   STAT_OP_LIST,
   TRIGGER_TYPES,
@@ -46,6 +47,161 @@ const CHANGE_TYPES = [
   "AUTOMATION_ADD",
   "AUTOMATION_REMOVE",
 ] as const;
+
+/**
+ * The exact shape of a plan, and how to pick its changeType.
+ *
+ * Lifted out of the prompt so that design_format can return the real
+ * thing. It used to answer with prose placeholders — "features" was
+ * described as "filters, search, sorting, stats — see the vocabulary",
+ * which names the parts and not one key. A client had no way to learn
+ * that the operator key is "op", so it guessed: operator, op, type,
+ * target, targetModuleId, "self", "#slug" — eight rejections for a
+ * question the documentation was never able to answer.
+ *
+ * One constant, two readers. Luke is told this and so is anybody
+ * writing a design by hand, and neither can drift from the other.
+ */
+export const PLAN_FORMAT = `Each plan must have exactly this shape:
+{
+  "changeType": "UI_CHANGE" | "FIELD_ADD" | "NEW_MODULE" | "MODULE_UPDATE" | "MODULE_DELETE" | "FEATURE_UPDATE" | "RECORD_SEED" | "AUTOMATION_ADD" | "AUTOMATION_REMOVE",
+  "targetModuleId": "<uuid, or null for NEW_MODULE>",
+  "newModule": { "name": "kebab-case-unique-slug", "nav_label": "Human Label", "icon": "<from icon list>", "parent_id": "<uuid or #slug of the section this sits inside, or null for top level>", "source_table": "<orders|customers|products|inventory_levels, ONLY when the section shows the connected store's own rows; otherwise null>" } or null,
+  "newSchema": { "columns": [ { "field": "snake_case_field", "label": "Human Label", "type": "<type>", "compute": <expression, optional> } ] },
+  "moduleUpdate": { "nav_label": "...", "icon": "...", "sort_order": 1.5, "parent_id": "<uuid, #slug, or null to move it back to the top>" } or null,
+  "deleteConfirmName": "<module 'name' slug for MODULE_DELETE, else null>",
+  "features": {
+    "view": { "type": "board", "groupBy": "stage", "cardTitle": "customer_name", "cardFields": ["bike_description", "dropped_off_date"] },
+    "search": { "enabled": true, "fields": ["field"], "placeholder": "Search…" },
+    "filters": [ { "field": "stage", "label": "Stage", "options": ["Intake","Review"] } ],
+    "stats": [ { "label": "Stock value", "op": "sum", "value": { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, "format": "currency" }, { "label": "Still open", "op": "count", "where": { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] } } ],
+    "defaultSort": { "field": "created_at", "dir": "desc" },
+    "actions": [ { "label": "Mark Done", "set": { "stage": { "const": "Done" }, "finished_on": { "op": "today" } }, "when": { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }, "style": "primary" } ],
+    "scanMode": { "lookupField": "barcode", "action": { "label": "Check in", "set": { "stage": { "const": "Received" }, "checked_in_on": { "op": "today" } } }, "sequenceField": "queue_position", "hint": "Scan a code to check the item in" }
+  } or null,
+  "automation": { "name": "Short rule name", "definition": { "trigger": { "type": "record_updated", "when": <expression> }, "actions": [ <action>, ... ] } } or null,
+  "automationRemoveName": "<automation name>" or null,
+  "newRecords": [ { "field": "value" } ] or null,
+  "explanation": "one sentence, plain language, for the user"
+}
+
+A COMPUTED COLUMN — "compute" — is worked out every time the row is read, and never stored. Use it for anything that is a statement ABOUT the other columns rather than a fact somebody types: whether stock is low, whether a job is overdue, what a line is worth. It reads any stored column in the section, plus any computed column declared ABOVE it.
+    { "field": "stock_level", "label": "Stock", "type": "badge",
+      "compute": { "op": "if", "args": [ { "op": "<=", "args": [ { "field": "available" }, { "const": 5 } ] }, { "const": "Low" }, { "const": "OK" } ] } }
+  Filters, search, sorting, stats and every view read it as an ordinary column, so a filter over "stock_level" works without anything else being built.
+  NOBODY WRITES ONE. It is not offered in the row editor, and a rule, a button or a scan that sets it is rejected — the value would be recomputed on the next read and the write thrown away. This is the RIGHT answer whenever you were about to add a field plus a schedule rule to keep it up to date: the rule is what rots, and the computed column cannot.
+  Prefer a stored field only when somebody genuinely types the value, or when it depends on OTHER ROWS (a clash flag), which a compute cannot see.
+
+HOW TO CHOOSE changeType:
+- UI_CHANGE — reorder/relabel/retype existing columns only. All existing fields kept.
+- FIELD_ADD — keep all existing columns, append new one(s).
+- NEW_MODULE — a new app section. Choose its "view" from how the owner works. Put its "features" (filters, stats, row actions, search, sort) in THIS SAME plan — a separate FEATURE_UPDATE cannot target a module that does not exist yet. 3-8 columns matched to what the user described; ALWAYS include 4-6 realistic demo rows in newRecords, using THEIR vocabulary and plausible values for THEIR trade (field names must match the schema exactly; money as numbers, dates "YYYY-MM-DD").
+- NEW_MODULE with "source_table" — the section SHOWS the store's own rows rather than rows they type. Use it whenever they mean the data already synced from Shopify ("our products", "the orders that came in"). Then: columns are the store's, so send newSchema as null and it is filled in for you; newRecords MUST be null, because nothing is seeded into the store's data; and the section is READ-ONLY — no row actions, no automations on it, and no extra column they can TYPE INTO (a "featured" tick or a note cannot be stored there, because the next import would overwrite it). Say that in "limitations" when they asked for one. Filters, search, stats and sort all work. A COMPUTED column may be added to one and is usually what they meant: "flag the ones running out" on the store's stock is a computed badge over "available", not a stored field and a rule.
+- MODULE_UPDATE — nav metadata only: rename label, change icon, move it inside another section (parent_id), reposition (sort_order: below the lowest existing value for top, midpoint like 1.5 for between, above max for bottom).
+- MODULE_DELETE — only when the user clearly asks to delete/remove a whole section. deleteConfirmName = exact name slug.
+- FEATURE_UPDATE — search box, dropdown filters, STAT CARDS (op: count | sum | avg | min | max over "value", an EXPRESSION evaluated per row — so a stock value is { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, not a bare column; optional "where" expression limits which rows count. Never label a stat as something the expression does not actually compute), default sort, ROW ACTION buttons (a one-click change to that row: "set" maps field -> EXPRESSION, and the optional "when" is an EXPRESSION deciding whether the button shows on that row — same operators as automations, so "only while it isn't Done" is { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }), or SCAN MODE (a scan-and-go bar: lookupField = the code column scanned into it, action.set = field -> expression applied to the matched row, sequenceField = a numeric column that must never go backwards between scans, for picking or queue order). It works with any USB or Bluetooth barcode scanner, which types the code like a keyboard — there is no camera scanning. A scan that matches nothing changes NOTHING: the person sees it on screen and that is the whole safeguard. Nothing is recorded, so never add a "scan errors" or "mistakes" count — no rule can fill it, and a stat built on it counts successful scans instead. Scanning only reaches rows currently in view, so the section needs a filter that narrows to the job in hand. Provide the FULL new config.
+- RECORD_SEED — ADDS rows to an existing module. It only ever inserts; it cannot change or delete a row that is already there. Never use it to "correct" or "update" existing data — that produces a duplicate and tells the owner it was an edit. Changing a value is something they do themselves by opening the row.
+- RECORD_SEED — add rows to an existing module (field names must exist in its schema).
+- AUTOMATION_ADD — business logic that runs automatically. "targetModuleId" is the section whose rows trigger it. You BUILD the rule out of the operators below — there is no menu of pre-made rule types, so express exactly what the owner described.
+
+  trigger: { "type": "record_created" | "record_updated" | "schedule", "every": "hourly"|"daily"|"weekly" (schedule only), "when": <expression, optional> }
+    The "when" expression decides whether the rule fires. For schedules it is evaluated against every row, so it is how you pick which rows to act on.
+
+  EXPRESSIONS — a tree of these. Leaves read a value:
+    { "const": 5 }            a literal (number, string or boolean)
+    { "field": "stage" }      a field on the row that fired the rule
+    { "was": "stage" }        that field's value BEFORE the write
+    { "target": "on_hand" }   a field on the row an action is writing to
+  Operators take "args" — the full list is in the capability block above.
+  Examples of the shape:
+    stage just became Done →
+      { "op": "and", "args": [ { "op": "=", "args": [ { "field": "stage" }, { "const": "Done" } ] }, { "op": "changed", "args": [ { "field": "stage" } ] } ] }
+    stock fell below its reorder level →
+      { "op": "<", "args": [ { "field": "on_hand" }, { "field": "reorder_at" } ] }
+    untouched for more than 2 days and still open →
+      { "op": "and", "args": [ { "op": ">", "args": [ { "op": "days_since", "args": [ { "field": "last_update" } ] }, { "const": 2 } ] }, { "op": "!=", "args": [ { "field": "status" }, { "const": "Closed" } ] } ] }
+
+  ACTIONS — "actions" is a list of:
+    { "type": "set_fields", "target": { "self": true }, "set": { "field_name": <expression> } }
+        writes back to the row that fired the rule — use it to stamp dates, compute totals, flag things.
+    { "type": "set_fields", "target": { "module_id": "<uuid or #slug>", "match": { "field": "sku", "to": { "field": "sku" } } }, "set": { "on_hand": { "op": "-", "args": [ { "target": "on_hand" }, { "field": "qty" } ] } } }
+        finds rows in another section whose match.field equals the "to" expression, and updates each one. Use { "target": "x" } to read that row's own current value.
+    { "type": "create_record", "module_id": "<uuid or #slug>", "data": { "field_name": <expression> } }
+  There is no action for calling an external service or sending a message — if the owner asks for that, put it in blueprint.limitations and build the rest.
+
+  NEVER STORE A VALUE THAT DEPENDS ON TODAY'S DATE. A rule runs when a row is written, so a field holding "days old" is correct for one day and then rots — the row sits untouched and still says 3 while three months pass, which is exactly the blindness the owner asked you to fix. Put today-dependent maths where it is READ, not where it is stored: a stat's "value" or "where", or a row action's guard, all evaluate fresh every time the page opens. Storing is right only for values derived from OTHER ROWS (a clash flag), because those genuinely change only on a write.
+
+  A COMPLETE SCHEDULE RULE, because the parts above are worth nothing until they are assembled. This is the whole shape — the date maths lives in "when", and "set" writes a plain word. Copy this arrangement whenever the owner finds out too late:
+    { "name": "Flag overdue tools",
+      "definition": {
+        "trigger": { "type": "schedule", "every": "daily",
+                     "when": { "op": "and", "args": [ { "op": ">", "args": [ { "op": "days_since", "args": [ { "field": "date_taken" } ] }, { "const": 7 } ] }, { "op": "=", "args": [ { "field": "status" }, { "const": "Out" } ] } ] } },
+        "actions": [ { "type": "set_fields", "target": { "self": true }, "set": { "status": { "const": "Overdue" } } } ] } }
+  Note where days_since sits. In "when" it is re-evaluated every day and stays true; moved into "set" it freezes the day it ran and the row lies from then on.
+
+  "I ONLY FIND OUT LATER" IS ALWAYS A SCHEDULE RULE. Whenever the owner describes noticing something too late — they forget to follow up, they realise months afterwards, they only spot it when someone complains — a view does not fix that, because a view still has to be looked at. The answer is a rule on a schedule whose "when" does the date maths and whose action writes a plain status word. Ask yourself, for every problem: does this need to be NOTICED without anyone looking? If yes, it is a schedule rule, and leaving it out means the design does not solve what they told you.
+
+  A RULE ONLY TOUCHES THE ROWS ITS ACTIONS NAME. set_fields on self writes to the row being saved and nothing else, so a clash rule flags the row just entered — NOT the earlier booking it collides with. Never write "marks both", "flags both bookings" or similar in summary or workflow: it does not happen, and the owner will trust it.
+
+  A FLAG MUST BE ABLE TO CLEAR ITSELF. Setting a field only when something is true leaves it set forever once the condition passes — a clash flag stays on after the clash is resolved. Instead run the rule on every write (no "when"), and set the field to an "if": { "op": "if", "args": [ <test>, { "const": "Yes" }, { "const": "No" } ] }.
+
+  CATCHING DUPLICATES AND CLASHES: count_matching is how a rule sees the rest of the section. Two appointments in one slot, a repeated SKU, the same customer entered twice — trigger record_created AND a second rule on record_updated, both with NO "when", each setting the flag on self to { "op": "if", "args": [ { "op": ">", "args": [ { "op": "count_matching", "args": [ { "field": "appointment_date" }, { "field": "appointment_time" } ] }, { "const": 0 } ] }, { "const": "Yes" }, { "const": "No" } ] } — so moving an appointment out of a clash clears its flag. Add the flag field in the same plan. It marks the clash the moment it is saved; it does not refuse the save, so never describe it as preventing or blocking.
+
+  "IS EVERY CHILD DONE?" — count_matching with a condition answers it, and it is how a parent moves on when its last child finishes: on the child, count siblings sharing the parent key that are NOT yet done; zero means this was the last one, so set the parent. Without the condition you are only counting siblings, which is never zero for a parent with more than one child.
+
+  Every "field"/"was" name must exist in the triggering section's columns. Write the rule the owner actually described — do not simplify it into something easier.
+
+- AUTOMATION_REMOVE — disable an existing automation by name (automationRemoveName).`;
+
+/**
+ * One design that holds, handed out with the format.
+ *
+ * A grammar and a worked example are not the same thing: the first
+ * client to write a design by hand read the grammar, got the shape
+ * wrong eight times, and the ninth attempt was accepted while being
+ * broken. This is the answer to the question it was actually asking —
+ * "what does a real one look like?" — and it is the merchant's own
+ * low-stock request, done the way the platform can actually do it.
+ *
+ * Checked by scripts/check-design.mjs against the same validator the
+ * route runs, so what is handed out cannot drift into something that
+ * would be rejected on arrival.
+ */
+export const WORKED_EXAMPLE = {
+  what_it_does:
+    "Shows the store's stock, lowest first, with a count of what is at or below 5. No new column: the flag is worked out when the page is read, so it is never stale.",
+  plans: [
+    {
+      changeType: "NEW_MODULE",
+      targetModuleId: null,
+      newModule: {
+        name: "low-stock",
+        nav_label: "Low stock",
+        icon: "package",
+        parent_id: null,
+        source_table: "inventory_levels",
+      },
+      newSchema: null,
+      features: {
+        view: { type: "table" },
+        stats: [
+          {
+            label: "At or below 5",
+            op: "count",
+            where: {
+              op: "<=",
+              args: [{ field: "available" }, { const: 5 }],
+            },
+          },
+        ],
+        defaultSort: { field: "available", dir: "asc" },
+      },
+      newRecords: null,
+      explanation:
+        "Your Shopify stock, lowest first, with a count of how many lines are down to 5 or fewer.",
+    },
+  ],
+} as const;
 
 const replyContract = () => `You are Luke, the AI inside "Warmluke" — a platform where a business owner describes a problem in their own words and you turn it into a working internal app: sections, fields, layouts, features, navigation, automations, demo data.
 
@@ -122,89 +278,7 @@ HOW MANY SECTIONS:
 - The owner amended a blueprint → reply with a NEW "blueprint" carrying the corrected plans. Approval applies plans directly, so you never need to re-emit them as a "plans" reply.
 - Never emit "plans" for a whole new app before a blueprint has been approved in this conversation.
 
-Each plan must have exactly this shape:
-{
-  "changeType": "UI_CHANGE" | "FIELD_ADD" | "NEW_MODULE" | "MODULE_UPDATE" | "MODULE_DELETE" | "FEATURE_UPDATE" | "RECORD_SEED" | "AUTOMATION_ADD" | "AUTOMATION_REMOVE",
-  "targetModuleId": "<uuid, or null for NEW_MODULE>",
-  "newModule": { "name": "kebab-case-unique-slug", "nav_label": "Human Label", "icon": "<from icon list>", "parent_id": "<uuid or #slug of the section this sits inside, or null for top level>", "source_table": "<orders|customers|products|inventory_levels, ONLY when the section shows the connected store's own rows; otherwise null>" } or null,
-  "newSchema": { "columns": [ { "field": "snake_case_field", "label": "Human Label", "type": "<type>" } ] },
-  "moduleUpdate": { "nav_label": "...", "icon": "...", "sort_order": 1.5, "parent_id": "<uuid, #slug, or null to move it back to the top>" } or null,
-  "deleteConfirmName": "<module 'name' slug for MODULE_DELETE, else null>",
-  "features": {
-    "view": { "type": "board", "groupBy": "stage", "cardTitle": "customer_name", "cardFields": ["bike_description", "dropped_off_date"] },
-    "search": { "enabled": true, "fields": ["field"], "placeholder": "Search…" },
-    "filters": [ { "field": "stage", "label": "Stage", "options": ["Intake","Review"] } ],
-    "stats": [ { "label": "Stock value", "op": "sum", "value": { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, "format": "currency" }, { "label": "Still open", "op": "count", "where": { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] } } ],
-    "defaultSort": { "field": "created_at", "dir": "desc" },
-    "actions": [ { "label": "Mark Done", "set": { "stage": { "const": "Done" }, "finished_on": { "op": "today" } }, "when": { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }, "style": "primary" } ],
-    "scanMode": { "lookupField": "barcode", "action": { "label": "Check in", "set": { "stage": { "const": "Received" }, "checked_in_on": { "op": "today" } } }, "sequenceField": "queue_position", "hint": "Scan a code to check the item in" }
-  } or null,
-  "automation": { "name": "Short rule name", "definition": { "trigger": { "type": "record_updated", "when": <expression> }, "actions": [ <action>, ... ] } } or null,
-  "automationRemoveName": "<automation name>" or null,
-  "newRecords": [ { "field": "value" } ] or null,
-  "explanation": "one sentence, plain language, for the user"
-}
-
-HOW TO CHOOSE changeType:
-- UI_CHANGE — reorder/relabel/retype existing columns only. All existing fields kept.
-- FIELD_ADD — keep all existing columns, append new one(s).
-- NEW_MODULE — a new app section. Choose its "view" from how the owner works. Put its "features" (filters, stats, row actions, search, sort) in THIS SAME plan — a separate FEATURE_UPDATE cannot target a module that does not exist yet. 3-8 columns matched to what the user described; ALWAYS include 4-6 realistic demo rows in newRecords, using THEIR vocabulary and plausible values for THEIR trade (field names must match the schema exactly; money as numbers, dates "YYYY-MM-DD").
-- NEW_MODULE with "source_table" — the section SHOWS the store's own rows rather than rows they type. Use it whenever they mean the data already synced from Shopify ("our products", "the orders that came in"). Then: columns are the store's, so send newSchema as null and it is filled in for you; newRecords MUST be null, because nothing is seeded into the store's data; and the section is READ-ONLY — no row actions, no automations on it, and no extra column of their own (a "featured" tick or a note cannot be stored there). Say that in "limitations" when they asked for one. Filters, search, stats and sort all work.
-- MODULE_UPDATE — nav metadata only: rename label, change icon, move it inside another section (parent_id), reposition (sort_order: below the lowest existing value for top, midpoint like 1.5 for between, above max for bottom).
-- MODULE_DELETE — only when the user clearly asks to delete/remove a whole section. deleteConfirmName = exact name slug.
-- FEATURE_UPDATE — search box, dropdown filters, STAT CARDS (op: count | sum | avg | min | max over "value", an EXPRESSION evaluated per row — so a stock value is { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, not a bare column; optional "where" expression limits which rows count. Never label a stat as something the expression does not actually compute), default sort, ROW ACTION buttons (a one-click change to that row: "set" maps field -> EXPRESSION, and the optional "when" is an EXPRESSION deciding whether the button shows on that row — same operators as automations, so "only while it isn't Done" is { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }), or SCAN MODE (a scan-and-go bar: lookupField = the code column scanned into it, action.set = field -> expression applied to the matched row, sequenceField = a numeric column that must never go backwards between scans, for picking or queue order). It works with any USB or Bluetooth barcode scanner, which types the code like a keyboard — there is no camera scanning. A scan that matches nothing changes NOTHING: the person sees it on screen and that is the whole safeguard. Nothing is recorded, so never add a "scan errors" or "mistakes" count — no rule can fill it, and a stat built on it counts successful scans instead. Scanning only reaches rows currently in view, so the section needs a filter that narrows to the job in hand. Provide the FULL new config.
-- RECORD_SEED — ADDS rows to an existing module. It only ever inserts; it cannot change or delete a row that is already there. Never use it to "correct" or "update" existing data — that produces a duplicate and tells the owner it was an edit. Changing a value is something they do themselves by opening the row.
-- RECORD_SEED — add rows to an existing module (field names must exist in its schema).
-- AUTOMATION_ADD — business logic that runs automatically. "targetModuleId" is the section whose rows trigger it. You BUILD the rule out of the operators below — there is no menu of pre-made rule types, so express exactly what the owner described.
-
-  trigger: { "type": "record_created" | "record_updated" | "schedule", "every": "hourly"|"daily"|"weekly" (schedule only), "when": <expression, optional> }
-    The "when" expression decides whether the rule fires. For schedules it is evaluated against every row, so it is how you pick which rows to act on.
-
-  EXPRESSIONS — a tree of these. Leaves read a value:
-    { "const": 5 }            a literal (number, string or boolean)
-    { "field": "stage" }      a field on the row that fired the rule
-    { "was": "stage" }        that field's value BEFORE the write
-    { "target": "on_hand" }   a field on the row an action is writing to
-  Operators take "args" — the full list is in the capability block above.
-  Examples of the shape:
-    stage just became Done →
-      { "op": "and", "args": [ { "op": "=", "args": [ { "field": "stage" }, { "const": "Done" } ] }, { "op": "changed", "args": [ { "field": "stage" } ] } ] }
-    stock fell below its reorder level →
-      { "op": "<", "args": [ { "field": "on_hand" }, { "field": "reorder_at" } ] }
-    untouched for more than 2 days and still open →
-      { "op": "and", "args": [ { "op": ">", "args": [ { "op": "days_since", "args": [ { "field": "last_update" } ] }, { "const": 2 } ] }, { "op": "!=", "args": [ { "field": "status" }, { "const": "Closed" } ] } ] }
-
-  ACTIONS — "actions" is a list of:
-    { "type": "set_fields", "target": { "self": true }, "set": { "field_name": <expression> } }
-        writes back to the row that fired the rule — use it to stamp dates, compute totals, flag things.
-    { "type": "set_fields", "target": { "module_id": "<uuid or #slug>", "match": { "field": "sku", "to": { "field": "sku" } } }, "set": { "on_hand": { "op": "-", "args": [ { "target": "on_hand" }, { "field": "qty" } ] } } }
-        finds rows in another section whose match.field equals the "to" expression, and updates each one. Use { "target": "x" } to read that row's own current value.
-    { "type": "create_record", "module_id": "<uuid or #slug>", "data": { "field_name": <expression> } }
-  There is no action for calling an external service or sending a message — if the owner asks for that, put it in blueprint.limitations and build the rest.
-
-  NEVER STORE A VALUE THAT DEPENDS ON TODAY'S DATE. A rule runs when a row is written, so a field holding "days old" is correct for one day and then rots — the row sits untouched and still says 3 while three months pass, which is exactly the blindness the owner asked you to fix. Put today-dependent maths where it is READ, not where it is stored: a stat's "value" or "where", or a row action's guard, all evaluate fresh every time the page opens. Storing is right only for values derived from OTHER ROWS (a clash flag), because those genuinely change only on a write.
-
-  A COMPLETE SCHEDULE RULE, because the parts above are worth nothing until they are assembled. This is the whole shape — the date maths lives in "when", and "set" writes a plain word. Copy this arrangement whenever the owner finds out too late:
-    { "name": "Flag overdue tools",
-      "definition": {
-        "trigger": { "type": "schedule", "every": "daily",
-                     "when": { "op": "and", "args": [ { "op": ">", "args": [ { "op": "days_since", "args": [ { "field": "date_taken" } ] }, { "const": 7 } ] }, { "op": "=", "args": [ { "field": "status" }, { "const": "Out" } ] } ] } },
-        "actions": [ { "type": "set_fields", "target": { "self": true }, "set": { "status": { "const": "Overdue" } } } ] } }
-  Note where days_since sits. In "when" it is re-evaluated every day and stays true; moved into "set" it freezes the day it ran and the row lies from then on.
-
-  "I ONLY FIND OUT LATER" IS ALWAYS A SCHEDULE RULE. Whenever the owner describes noticing something too late — they forget to follow up, they realise months afterwards, they only spot it when someone complains — a view does not fix that, because a view still has to be looked at. The answer is a rule on a schedule whose "when" does the date maths and whose action writes a plain status word. Ask yourself, for every problem: does this need to be NOTICED without anyone looking? If yes, it is a schedule rule, and leaving it out means the design does not solve what they told you.
-
-  A RULE ONLY TOUCHES THE ROWS ITS ACTIONS NAME. set_fields on self writes to the row being saved and nothing else, so a clash rule flags the row just entered — NOT the earlier booking it collides with. Never write "marks both", "flags both bookings" or similar in summary or workflow: it does not happen, and the owner will trust it.
-
-  A FLAG MUST BE ABLE TO CLEAR ITSELF. Setting a field only when something is true leaves it set forever once the condition passes — a clash flag stays on after the clash is resolved. Instead run the rule on every write (no "when"), and set the field to an "if": { "op": "if", "args": [ <test>, { "const": "Yes" }, { "const": "No" } ] }.
-
-  CATCHING DUPLICATES AND CLASHES: count_matching is how a rule sees the rest of the section. Two appointments in one slot, a repeated SKU, the same customer entered twice — trigger record_created AND a second rule on record_updated, both with NO "when", each setting the flag on self to { "op": "if", "args": [ { "op": ">", "args": [ { "op": "count_matching", "args": [ { "field": "appointment_date" }, { "field": "appointment_time" } ] }, { "const": 0 } ] }, { "const": "Yes" }, { "const": "No" } ] } — so moving an appointment out of a clash clears its flag. Add the flag field in the same plan. It marks the clash the moment it is saved; it does not refuse the save, so never describe it as preventing or blocking.
-
-  "IS EVERY CHILD DONE?" — count_matching with a condition answers it, and it is how a parent moves on when its last child finishes: on the child, count siblings sharing the parent key that are NOT yet done; zero means this was the last one, so set the parent. Without the condition you are only counting siblings, which is never zero for a parent with more than one child.
-
-  Every "field"/"was" name must exist in the triggering section's columns. Write the rule the owner actually described — do not simplify it into something easier.
-
-- AUTOMATION_REMOVE — disable an existing automation by name (automationRemoveName).
+${PLAN_FORMAT}
 
 WHEN BUILDING AN APPROVED BLUEPRINT:
 - Emit the NEW_MODULE plans first, one per section, in the order the workflow actually happens — the thing that comes first in their real process comes first in the sidebar. Each carries its own features inline.
@@ -432,15 +506,34 @@ export function buildUserMessage(
   currentSchema: UiSchema | null,
   currentFeatures: FeatureSchema | null,
   /** Rules already running on this app, in plain words. */
-  rules: string[] = []
+  rules: string[] = [],
+  /**
+   * Every section's columns, one line each.
+   *
+   * The model used to be shown the open section's schema and nothing
+   * else, so a request naming another section by name — which is the
+   * only way to name one through MCP, where nothing is open — left it
+   * guessing at fields or asking the merchant to list them.
+   */
+  sectionColumns: string[] = []
 ): string {
+  // "null (no module selected)" read as "you cannot see any schemas",
+  // and the model answered a request to put a rule on a named section
+  // by asking the merchant to open it — which, asked through their own
+  // Claude, they cannot do. Every section's fields are listed above; a
+  // section being open is only about which one they are looking at.
   const schemaCtx = currentSchema
     ? JSON.stringify(currentSchema)
-    : "null (no module selected)";
+    : "none is open — they are not looking at one. The list above is the whole app, and it is enough to design from. Never ask them to open a section.";
   const featuresCtx = currentFeatures
     ? JSON.stringify(currentFeatures)
     : "null (no features configured)";
-  return `CONTEXT — schema of the module the user is looking at:
+  return `CONTEXT — every section in this app and the fields it has.
+These are the ONLY field names that exist. A rule, filter or stat on a
+section must use one of its fields, or add the field in the same batch.
+${sectionColumns.length ? sectionColumns.join("\n") : "- none yet"}
+
+CONTEXT — schema of the module the user is looking at:
 ${schemaCtx}
 
 CONTEXT — current features (search/filters/stats/sort) of that module:
@@ -524,6 +617,13 @@ function validateView(view: unknown, columns: SchemaColumn[] | null, errors: str
  * Features are validated against whichever column set they will live on:
  * the module's current schema for FEATURE_UPDATE, or the plan's own new
  * columns for a NEW_MODULE that ships with features inline.
+ *
+ * `columns` used to be allowed through as null, and every field check
+ * then passed. That is how "Filter by undefined" reached an approval
+ * card: the MCP route had no schema to pass, so nothing a client sent
+ * was ever checked against a real column. The caller now has to say
+ * which columns these features will live on; when it genuinely cannot,
+ * that is the error, not a pass.
  */
 export function validateFeatures(
   features: unknown,
@@ -536,12 +636,26 @@ export function validateFeatures(
     err(errors, "features must be an object.");
     return;
   }
+  if (!columns) {
+    err(errors, "No current schema found for this section, so its features can't be checked.");
+    return;
+  }
   const f = features as FeatureSchema;
   const hasField = (name: string) =>
     RESERVED_FIELDS.has(name) ||
-    !columns ||
     columns.some((c) => c.field === name) ||
     !!pendingFields?.has(name);
+  // Reading one is fine everywhere. Writing one is not a thing that
+  // can happen: the value is recomputed on the next read, so a button
+  // that sets it would appear to work and change nothing.
+  const computed = new Set(columns.filter((c) => c.compute).map((c) => c.field));
+  const notComputed = (name: string, what: string) => {
+    if (computed.has(name)) {
+      err(errors, `${what} writes "${name}", which is computed — its value comes from its expression every time the row is read, so a write to it would be thrown away. Change what it is computed from instead.`);
+      return false;
+    }
+    return true;
+  };
 
   if (f.search && typeof f.search.enabled !== "boolean") {
     err(errors, "features.search.enabled must be true or false.");
@@ -567,13 +681,22 @@ export function validateFeatures(
       const seen = new Set<string>();
       for (const fl of f.filters) {
         if (!fl || typeof fl.field !== "string") {
-          err(errors, "Each filter needs a field.");
+          err(
+            errors,
+            'Each filter is { "field": "<a column in this section>", "label": "Human Label", "options": ["One", "Two"] }.'
+          );
           continue;
         }
         if (seen.has(fl.field)) err(errors, `Duplicate filter for field "${fl.field}".`);
         seen.add(fl.field);
         if (!hasField(fl.field)) {
           err(errors, `Filter field "${fl.field}" doesn't exist in the module schema.`);
+        }
+        // Never checked, and the renderer interpolates it: a filter
+        // sent without one drew the words "Filter by undefined" across
+        // the merchant's screen.
+        if (typeof fl.label !== "string" || !fl.label.trim()) {
+          err(errors, `Filter "${fl.field}" needs a label — the words shown above the dropdown.`);
         }
         if (!Array.isArray(fl.options) || fl.options.length < 2 || fl.options.length > 15) {
           err(errors, `Filter "${fl.field}" needs 2-15 options.`);
@@ -620,6 +743,7 @@ export function validateFeatures(
     }
     for (const [k, v] of Object.entries(a.set)) {
       if (!hasField(k)) err(errors, `Row action "${a.label}" sets unknown field "${k}".`);
+      notComputed(k, `Row action "${a.label}"`);
       validateExpr(v, hasField, errors, "client");
       rejectClockDerivedWrites(v, `Row action "${a.label}" writing "${k}"`, errors);
     }
@@ -631,6 +755,7 @@ export function validateFeatures(
     } else {
       for (const [k, v] of Object.entries(f.scanMode.action.set)) {
         if (!hasField(k)) err(errors, `scanMode sets unknown field "${k}".`);
+        notComputed(k, "Scanning");
         // One scan is one event, so a number it writes has to be built
         // from that number's own current value. `qty_packed = qty_ordered`
         // records a complete pack after a single beep: a short pack then
@@ -700,7 +825,17 @@ function validateExpr(
 
   const op = node.op;
   if (!isOperator(op)) {
-    err(errors, `Unknown operator "${String(op)}" in an automation rule.`);
+    // A rejection that only says what is wrong sends the next attempt
+    // guessing. One client spelled this key "operator", then "op", then
+    // "type", then gave up on the rule — eight submissions over a name
+    // no message ever said out loud. Say it, and show the shape.
+    const keys = Object.keys(node);
+    err(
+      errors,
+      op === undefined
+        ? `An expression is missing its "op". Every part of a rule is either a leaf — { "field": "available" } or { "const": 5 } — or an operator with args: { "op": "<=", "args": [ { "field": "available" }, { "const": 5 } ] }. This one has ${keys.length ? `"${keys.join('", "')}"` : "no keys at all"}.`
+        : `Unknown operator "${String(op)}". It must be one of: ${EXPR_OPS.join(", ")}.`
+    );
     return;
   }
   const args = Array.isArray(node.args) ? node.args : [];
@@ -786,6 +921,21 @@ function rejectClockDerivedWrites(node: unknown, where: string, errors: string[]
  * dereference is checked up front: the module ids must belong to this
  * project, and the fields must exist on the schemas they point at.
  */
+/** Every field a rule reads, however deeply buried. */
+function fieldsRead(node: unknown, out: Set<string> = new Set(), depth = 0): Set<string> {
+  if (depth > 12 || node === null || typeof node !== "object") return out;
+  if (Array.isArray(node)) {
+    for (const v of node) fieldsRead(v, out, depth + 1);
+    return out;
+  }
+  const o = node as Record<string, unknown>;
+  for (const leaf of ["field", "was"] as const) {
+    if (typeof o[leaf] === "string") out.add(o[leaf] as string);
+  }
+  for (const v of Object.values(o)) fieldsRead(v, out, depth + 1);
+  return out;
+}
+
 function validateAutomation(
   plan: AssistantPlan,
   modules: ModuleRow[],
@@ -817,10 +967,41 @@ function validateAutomation(
     err(errors, "A schedule trigger needs every: hourly, daily or weekly.");
   }
 
-  // Fields of the section this rule hangs off.
+  // Fields of the section this rule hangs off — its own columns, or the
+  // ones a NEW_MODULE earlier in the same batch is about to give it.
+  //
+  // With neither, every field reference used to pass. A rule could then
+  // be accepted writing a column that does not exist and never will,
+  // and the merchant would approve a build that does nothing.
   const ownFields = currentSchema ? new Set(currentSchema.columns.map((c) => c.field)) : null;
+  if (!ownFields && !pendingFields?.size) {
+    err(errors, "No current schema found for this section, so this rule can't be checked.");
+    return;
+  }
   const ownHas = (f: string) =>
-    RESERVED_FIELDS.has(f) || !ownFields || ownFields.has(f) || !!pendingFields?.has(f);
+    RESERVED_FIELDS.has(f) || !!ownFields?.has(f) || !!pendingFields?.has(f);
+  const ownComputed = new Set(
+    (currentSchema?.columns ?? []).filter((c) => c.compute).map((c) => c.field)
+  );
+
+  // A rule runs in Postgres, against the row as it is stored. A
+  // computed column is not stored — it is worked out in the browser
+  // when the section is read — so the rule would find nothing there
+  // and quietly compare against blank. On screen the column shows
+  // "Low" and the rule that was supposed to act on it never fires,
+  // which is the worst shape a bug can take: visible, and wrong.
+  //
+  // Read whatever it is computed FROM instead; that is stored.
+  if (ownComputed.size > 0) {
+    for (const f of fieldsRead(def)) {
+      if (ownComputed.has(f)) {
+        err(
+          errors,
+          `This rule reads "${f}", which is a computed column. Rules run in the database against the stored row, and a computed column is worked out when the section is read, so the rule would always see it as blank. Read the columns it is computed from instead.`
+        );
+      }
+    }
+  }
 
   if (trigger.when !== undefined) validateExpr(trigger.when, ownHas, errors);
 
@@ -853,7 +1034,10 @@ function validateAutomation(
     if (a.type === "set_fields") {
       const target = a.target;
       if (!isPlainObject(target)) {
-        err(errors, "A set_fields action needs a target.");
+        err(
+          errors,
+          'A set_fields action needs a target. To write back to the row that fired the rule: "target": { "self": true }. To write to matching rows in another section: "target": { "module_id": "<uuid or #slug>", "match": { "field": "sku", "to": { "field": "sku" } } }.'
+        );
         continue;
       }
       if (!("self" in target)) {
@@ -872,6 +1056,14 @@ function validateAutomation(
         continue;
       }
       for (const [f, v] of Object.entries(a.set)) {
+        // Only for a rule writing to its own section; another section's
+        // columns are not loaded here, so there is nothing to check.
+        if ("self" in target && ownComputed.has(f)) {
+          err(
+            errors,
+            `The rule writes "${f}", which is a computed column — it is worked out from its expression on every read, so the write would be thrown away. A computed column needs no rule to keep it up to date; that is the point of it.`
+          );
+        }
         validateExpr(v, ownHas, errors);
         rejectClockDerivedWrites(v, `The rule's write to "${f}"`, errors);
       }
@@ -925,8 +1117,7 @@ export function validatePlan(
   // check below uses it, so a later plan can build on an earlier one.
   const knownField = (f: string): boolean =>
     RESERVED_FIELDS.has(f) ||
-    !currentSchema ||
-    currentSchema.columns.some((c) => c.field === f) ||
+    !!currentSchema?.columns.some((c) => c.field === f) ||
     !!pendingFields?.has(f);
 
   const pending = (ref: unknown): boolean =>
@@ -949,9 +1140,31 @@ export function validatePlan(
       err(errors, "newSchema.columns is present but empty.");
     } else {
       const seen = new Set<string>();
-      for (const c of columns) {
+      // A compute may read any stored column, wherever it sits, and any
+      // computed column declared above it — rows are filled in top to
+      // bottom, so one declared below would always read blank.
+      //
+      // On a store-backed section the stored columns are the store's,
+      // and the plan does not have to repeat them. They are added here
+      // so a computed column may read "available" without the design
+      // having listed it.
+      const storeSrc =
+        plan?.changeType === "NEW_MODULE" && isStoreTable(plan?.newModule?.source_table)
+          ? plan.newModule!.source_table!
+          : null;
+      const storedFields = new Set([
+        ...(storeSrc ? storeTableSchema(storeSrc).columns.map((c) => c.field) : []),
+        ...columns
+          .filter((c) => c && typeof c.field === "string" && !c.compute)
+          .map((c) => c.field),
+      ]);
+      for (let ci = 0; ci < columns.length; ci++) {
+        const c = columns[ci];
         if (!c || typeof c.field !== "string" || !c.field.trim()) {
-          err(errors, "A column is missing its field name.");
+          err(
+          errors,
+          'A column is missing its field name. Each one is { "field": "snake_case_name", "label": "Human Label", "type": "text" }.'
+        );
           continue;
         }
         if (seen.has(c.field)) err(errors, `Duplicate column field: "${c.field}".`);
@@ -972,6 +1185,24 @@ export function validatePlan(
         } else if (c.linkTo) {
           err(errors, `"linkTo" only applies to a link column, not "${c.field}" (${c.type}).`);
         }
+
+        if (c.compute !== undefined) {
+          if (c.type === "link") {
+            err(errors, `Column "${c.field}" cannot be both a link and computed.`);
+          }
+          const computedAbove = new Set(
+            columns
+              .slice(0, ci)
+              .filter((x) => x && typeof x.field === "string" && x.compute)
+              .map((x) => x.field)
+          );
+          validateExpr(
+            c.compute,
+            (f) => RESERVED_FIELDS.has(f) || storedFields.has(f) || computedAbove.has(f),
+            errors,
+            "client"
+          );
+        }
       }
     }
   }
@@ -985,26 +1216,68 @@ export function validatePlan(
         err(errors, `A module named "${name}" already exists.`);
       }
       if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) {
-        err(errors, `newModule.name "${name}" must be kebab-case.`);
+        const asKebab = name
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "");
+        err(
+          errors,
+          `newModule.name "${name}" must be kebab-case${asKebab ? ` — write "${asKebab}"` : ""}. nav_label is where the human wording goes.`
+        );
       }
     }
     if (!plan.newModule?.nav_label?.trim()) {
       err(errors, "newModule.nav_label is required.");
     }
     if (plan.newModule?.icon && !(ALLOWED_ICONS as readonly string[]).includes(plan.newModule.icon)) {
-      err(errors, `Icon "${plan.newModule.icon}" is not allowed.`);
+      err(
+        errors,
+        `Icon "${plan.newModule.icon}" is not allowed. Pick one of: ${ALLOWED_ICONS.join(", ")}.`
+      );
     }
 
     // A section over the store's own rows. Its columns are the store's,
     // not whatever the model sent: the two have to agree or the rows
     // render into columns that do not exist. Same rule the by-hand
     // route has always enforced, now reachable from a design.
+    //
+    // This used to replace the submitted schema outright and say
+    // nothing. A design asking for an "alert_status" column on the
+    // stock table was accepted, lost that column here, and the rule in
+    // the next plan was left writing to a field the section would
+    // never have. Now the disagreement is the error, and the message
+    // says which columns actually exist so the next attempt can be
+    // right. A plan that sends no schema at all still gets the store's,
+    // because there is nothing to disagree with.
     const src = plan.newModule?.source_table ?? null;
     if (src != null) {
       if (!isStoreTable(src)) {
         err(errors, `"${src}" is not one of the store's tables.`);
       } else {
-        plan.newSchema = storeTableSchema(src);
+        const storeCols = storeTableSchema(src).columns;
+        const allowed = storeCols.map((c) => c.field);
+        const sent = plan.newSchema?.columns;
+        if (!sent?.length) {
+          plan.newSchema = { columns: storeCols };
+        } else {
+          // A computed column is the one thing that may be added: it is
+          // never stored, so the next import has nothing to overwrite.
+          // This is what makes "flag the ones running out" buildable on
+          // the store's own stock without a second copy of the data.
+          const computed = sent.filter((c) => c?.compute && !allowed.includes(c.field));
+          const extra = sent
+            .filter((c) => !c?.compute)
+            .map((c) => c?.field)
+            .filter((f): f is string => typeof f === "string" && !allowed.includes(f));
+          if (extra.length > 0) {
+            err(
+              errors,
+              `A section on the store's "${src}" shows the store's own columns, and ${extra.join(", ")} is not one of them — those rows come from Shopify and an import would overwrite anything written here. Its columns are: ${allowed.join(", ")}. A column worked out from those, rather than stored, is allowed: give it a "compute" expression and it is filled in every time the section is read.`
+            );
+          }
+          // Whatever else was sent, the section renders the store's own
+          // columns, plus any computed ones after them.
+          plan.newSchema = { columns: [...storeCols, ...computed] };
+        }
         if (plan.newRecords?.length) {
           err(
             errors,
@@ -1034,7 +1307,18 @@ export function validatePlan(
   } else {
     const target = modules.find((m) => m.id === plan.targetModuleId);
     if (!target && !pending(plan.targetModuleId)) {
-      err(errors, "The request targets a module that doesn't exist in this project.");
+      // Naming the sections that do exist turns this from a guess into
+      // a lookup. A client with no way to see the ids will otherwise
+      // try "self", then "#slug", then the section's own label.
+      const known = modules.map((m) => `${m.name} = ${m.id}`).join("; ");
+      err(
+        errors,
+        `No section here has the id ${JSON.stringify(plan.targetModuleId)}. ${
+          known
+            ? `The sections in this app are: ${known}. Use "#its-name" only for a section a NEW_MODULE plan earlier in this same array is creating.`
+            : "This app has no sections yet, so every plan must be a NEW_MODULE."
+        }`
+      );
     }
 
     if (plan.changeType === "UI_CHANGE") {
@@ -1145,7 +1429,9 @@ export function validatePlan(
       if (!Array.isArray(plan.newRecords) || plan.newRecords.length === 0) {
         err(errors, "newRecords must be a non-empty array for RECORD_SEED.");
       } else if (currentSchema) {
-        const validFields = new Set(currentSchema.columns.map((c) => c.field));
+        const validFields = new Set(
+          currentSchema.columns.filter((c) => !c.compute).map((c) => c.field)
+        );
         for (const rec of plan.newRecords) {
           if (!isPlainObject(rec)) {
             err(errors, "Each record must be an object of field -> value.");
@@ -1169,6 +1455,17 @@ export function validatePlan(
 export type ParsedReply =
   | { ok: true; reply: AssistantReply }
   | { ok: false; errors: string[] };
+
+/**
+ * Looks up the stored schema of a section by id, so a batch touching
+ * several sections is checked against each one's real columns instead
+ * of whichever section happened to be open.
+ *
+ * Returning `undefined` means "I don't know about that id" and leaves
+ * the caller's current schema in play; returning `null` means "that
+ * section has no schema", which is an error the plan has to answer for.
+ */
+export type SchemaLookup = (moduleId: string) => UiSchema | null | undefined;
 
 function stripFences(raw: string): string {
   return raw
@@ -1214,7 +1511,8 @@ function parseBlueprint(
   obj: Record<string, unknown>,
   modules: ModuleRow[],
   currentSchema: UiSchema | null,
-  currentFeatures: FeatureSchema | null
+  currentFeatures: FeatureSchema | null,
+  schemas?: SchemaLookup
 ): ParsedReply {
   const bp = obj.blueprint;
   if (!isPlainObject(bp)) {
@@ -1230,7 +1528,8 @@ function parseBlueprint(
     { plans: bp.plans },
     modules,
     currentSchema,
-    currentFeatures
+    currentFeatures,
+    schemas
   );
   if (!planResult.ok) return planResult;
   const plans = (planResult.reply as { type: "plans"; plans: AssistantPlan[] }).plans;
@@ -1295,15 +1594,71 @@ function parseBlueprint(
   };
 }
 
+/**
+ * The one rename that has exactly one reading.
+ *
+ * "operator" is not a key anywhere in this contract, so an object
+ * carrying it and no "op" can only have meant "op" — and that single
+ * spelling cost one client three of its eight rejected submissions.
+ * Nothing else is guessed at: "type" is a real key on triggers, actions
+ * and views, so it is never treated as a misspelt "op", and a design
+ * that uses it wrongly is told what "op" is instead.
+ *
+ * An automation's "action" is folded into "actions" for the same
+ * reason — one action is the common case and the singular is the
+ * obvious slip. scanMode's own "action" key is correct and is reached
+ * only through the explicit path below, never by this walk.
+ */
+function normaliseAliases(node: unknown, depth = 0): void {
+  if (depth > 12 || node === null || typeof node !== "object") return;
+  if (Array.isArray(node)) {
+    for (const v of node) normaliseAliases(v, depth + 1);
+    return;
+  }
+  const o = node as Record<string, unknown>;
+  if ("operator" in o && !("op" in o)) {
+    o.op = o.operator;
+    delete o.operator;
+  }
+  for (const v of Object.values(o)) normaliseAliases(v, depth + 1);
+}
+
+/** One action written without its plural, which is the usual slip. */
+function foldSingleAction(plan: AssistantPlan): void {
+  const def = plan?.automation?.definition as Record<string, unknown> | undefined;
+  if (!isPlainObject(def)) return;
+  if (!("actions" in def) && isPlainObject(def.action)) {
+    def.actions = [def.action];
+    delete def.action;
+  }
+}
+
 function parsePlans(
   obj: Record<string, unknown>,
   modules: ModuleRow[],
   currentSchema: UiSchema | null,
-  currentFeatures: FeatureSchema | null
+  currentFeatures: FeatureSchema | null,
+  schemas?: SchemaLookup
 ): ParsedReply {
   const raw = Array.isArray(obj.plans) ? obj.plans.slice(0, 6) : [];
   if (raw.length === 0) {
     return { ok: false, errors: ["Luke returned no plans. Try rephrasing your request."] };
+  }
+
+  for (const p of raw) {
+    normaliseAliases(p);
+    foldSingleAction(p as AssistantPlan);
+  }
+
+  // A store-backed section's columns are the store's, and the batch has
+  // to know that before it works out which fields a later plan may
+  // reference. Filling them in here rather than inside validatePlan is
+  // what lets a rule in plan 2 read a column plan 1 never spelled out.
+  for (const p of raw as AssistantPlan[]) {
+    const src = p?.changeType === "NEW_MODULE" ? p?.newModule?.source_table ?? null : null;
+    if (src != null && isStoreTable(src) && !p.newSchema?.columns?.length) {
+      p.newSchema = { columns: storeTableSchema(src).columns };
+    }
   }
 
   // Every module this batch will create, so plans later in the batch may
@@ -1331,15 +1686,42 @@ function parsePlans(
     return batchFields.get(ref.startsWith("#") ? ref.slice(1).toLowerCase() : ref);
   };
 
+  // One design may touch several sections, and only one of them can be
+  // the "current" one. Without this, a plan targeting any other section
+  // was checked against the wrong columns — or, from MCP where there is
+  // no current section at all, against none. Each plan is now checked
+  // against the schema of the section it actually names.
+  const schemaFor = (p: AssistantPlan): UiSchema | null => {
+    if (p.changeType === "NEW_MODULE") return p.newSchema ?? null;
+    const target = p.targetModuleId;
+    if (typeof target === "string" && target.startsWith("#")) {
+      // A section this same batch is creating. Its schema is the
+      // earlier plan's, which is the only place it exists yet — and
+      // without this a rule on a brand-new section was checked against
+      // no columns at all.
+      const slug = target.slice(1).trim().toLowerCase();
+      const maker = (raw as AssistantPlan[]).find(
+        (o) => o?.changeType === "NEW_MODULE" && o?.newModule?.name?.trim().toLowerCase() === slug
+      );
+      return maker?.newSchema ?? currentSchema;
+    }
+    if (typeof target === "string") {
+      const found = schemas?.(target);
+      if (found !== undefined) return found;
+    }
+    return currentSchema;
+  };
+
   const plans: AssistantPlan[] = [];
   const errors: string[] = [];
   for (const p of raw) {
     const plan = p as AssistantPlan;
+    const own = schemaFor(plan);
     const res = validatePlan(
       plan,
       modules,
-      currentSchema,
-      currentFeatures,
+      own,
+      own === currentSchema ? currentFeatures : own?.features ?? null,
       pendingSlugs,
       fieldsFor(plan)
     );
@@ -1371,7 +1753,9 @@ export function parseReply(
   raw: string,
   modules: ModuleRow[],
   currentSchema: UiSchema | null,
-  currentFeatures: FeatureSchema | null
+  currentFeatures: FeatureSchema | null,
+  /** Per-section schemas, for a design that touches more than one. */
+  schemas?: SchemaLookup
 ): ParsedReply {
   let parsed: unknown;
   try {
@@ -1396,9 +1780,9 @@ export function parseReply(
     case "clarify":
       return parseClarify(parsed);
     case "blueprint":
-      return parseBlueprint(parsed, modules, currentSchema, currentFeatures);
+      return parseBlueprint(parsed, modules, currentSchema, currentFeatures, schemas);
     case "plans":
-      return parsePlans(parsed, modules, currentSchema, currentFeatures);
+      return parsePlans(parsed, modules, currentSchema, currentFeatures, schemas);
     default:
       return { ok: false, errors: ['The assistant\'s reply had no recognised "type".'] };
   }

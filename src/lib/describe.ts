@@ -286,7 +286,19 @@ function describePlanBody(
           `Rows come from your ${src.replace("_", " ")} synced from Shopify — read-only, always the same list`
         );
       }
-      if (cols.length) lines.push(`Fields: ${cols.map((c) => c.label).join(", ")}`);
+      // A computed column is not a field anybody fills in, and the
+      // merchant approving this is the one person who would otherwise
+      // find that out by trying to type in it.
+      if (cols.length) {
+        const typed = cols.filter((c) => !c.compute);
+        const worked = cols.filter((c) => c.compute);
+        if (typed.length) lines.push(`Fields: ${typed.map((c) => c.label).join(", ")}`);
+        if (worked.length) {
+          lines.push(
+            `Worked out for you, not typed: ${worked.map((c) => c.label).join(", ")} — kept right on its own, every time you open it`
+          );
+        }
+      }
       if (plan.features) lines.push(...describeFeaturesFull(plan.features, modules));
       if (plan.newRecords?.length) lines.push(`${plan.newRecords.length} example rows to start with`);
       return { title: `New section: ${plan.newModule?.nav_label ?? plan.newModule?.name ?? "—"}`, lines };

@@ -8,10 +8,11 @@
 // The project's setting is put back at the end, and anything built
 // here is removed.
 //
-//   OWNER_PASSWORD=… node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-auto-build.mjs
+//   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-auto-build.mjs
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
+import { signInAsOwner } from "./owner-session.mjs";
 
 const env = Object.fromEntries(
   readFileSync(new URL("../.env.local", import.meta.url), "utf8")
@@ -31,13 +32,10 @@ const client = createClient(
   env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
   env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
 );
-const { data: owner } = await client.auth.signInWithPassword({
-  email: "aaa@gmail.com",
-  password: process.env.OWNER_PASSWORD ?? "",
-});
-if (!owner?.session) {
-  console.log("no OWNER_PASSWORD given — nothing to check");
-  process.exit(0);
+const owner = await signInAsOwner(client, env);
+if (!owner.session) {
+  console.log(`could not sign in as the owner — ${owner.why}`);
+  process.exit(1);
 }
 const token = owner.session.access_token;
 const admin = createClient(
@@ -79,7 +77,7 @@ const tool = async (name, args, id = 1) => {
 };
 
 // Each design here is a real engine turn on a real key, so this check
-// spends the account's free builds and then cannot run. Owned for the
+// spends the account's included designs and then cannot run. Owned for the
 // length of the run and handed back, like the setting above.
 const turnsWas = (
   await admin
@@ -102,6 +100,11 @@ const made = [];
 // prove the thing it exists to prove — the same way it once left
 // auto_build switched on. A check that leans on a number owns it.
 const autoMade = [];
+// Every request this run puts in the queue, so the cleanup can take
+// exactly those back out again. Kept apart from `made`, which holds
+// the modules it created — deleting one by the other's id is a silent
+// no-op, which is the kind of cleanup that looks like it worked.
+const madeRequests = [];
 
 try {
   console.log("with the setting off");
@@ -112,7 +115,7 @@ try {
   });
   check("the design waits for approval", off.status === "waiting for approval");
   check("and nothing was built", (await sectionCount()) === before);
-  if (off.request_id) await admin.from("build_requests").update({ status: "dismissed" }).eq("id", off.request_id);
+  if (off.request_id) madeRequests.push(off.request_id);
 
   console.log("\nwith it on, and an addition");
   await setAuto(true);
@@ -140,7 +143,10 @@ try {
       .maybeSingle()
   ).data;
   check("the row records that nobody approved it", row?.status === "built" && row.auto_built === true);
-  if (row?.id) autoMade.push(row.id);
+  if (row?.id) {
+    autoMade.push(row.id);
+    madeRequests.push(row.id);
+  }
 
   console.log("\nbut not a rule that runs on every order");
   const ruled = await tool(
@@ -151,12 +157,15 @@ try {
     3
   );
   check("it waits instead", ruled.status === "waiting for approval");
+  if (ruled.status !== "waiting for approval") {
+    console.log(`     propose_change said: ${JSON.stringify(ruled).slice(0, 400)}`);
+  }
   check(
     "and says why the setting did not apply",
     typeof ruled.not_automatic_because === "string" && ruled.not_automatic_because.length > 0
   );
   if (ruled.not_automatic_because) console.log(`     → ${ruled.not_automatic_because}`);
-  if (ruled.request_id) await admin.from("build_requests").update({ status: "dismissed" }).eq("id", ruled.request_id);
+  if (ruled.request_id) madeRequests.push(ruled.request_id);
 
   console.log("\nand the day is counted");
   const { count } = await admin
@@ -187,11 +196,15 @@ try {
   for (const id of autoMade) {
     await admin.from("build_requests").update({ auto_built: false }).eq("id", id);
   }
-  await admin
-    .from("build_requests")
-    .update({ status: "dismissed" })
-    .eq("project_id", project.id)
-    .in("status", ["pending", "built"]);
+  // Deleted, not dismissed, and only the rows this run made.
+  //
+  // Dismissing left them counting against the twenty-an-hour ceiling in
+  // migration 0035 — eight runs of this check filled it exactly, and
+  // the next run then failed on a limit doing its job. And the sweep
+  // used to dismiss EVERY pending request on the project, which would
+  // have quietly thrown away a design the merchant was still deciding
+  // about.
+  for (const id of madeRequests) await admin.from("build_requests").delete().eq("id", id);
   console.log("\nthe project is back as it was");
 }
 

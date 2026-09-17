@@ -79,9 +79,15 @@ function Icon({ name }: { name: string }) {
 function withStoreColumns(row: UiSchemaRow, sourceTable: string | null | undefined): UiSchemaRow {
   if (!isStoreTable(sourceTable)) return row;
   const sj = row.schema_json as UiSchema & { features?: unknown };
+  // Computed columns are the one thing here that is not the store's,
+  // and they are kept: nothing stores them, so the import this
+  // refreshes from has nothing to overwrite. Taking the store's list
+  // wholesale would drop the "Low / OK" column off a stock section
+  // the moment it was reloaded, and the filter beside it with it.
+  const computed = (sj.columns ?? []).filter((c) => c.compute);
   return {
     ...row,
-    schema_json: { ...sj, columns: storeTableSchema(sourceTable).columns },
+    schema_json: { ...sj, columns: [...storeTableSchema(sourceTable).columns, ...computed] },
   } as UiSchemaRow;
 }
 

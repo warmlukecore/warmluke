@@ -30,6 +30,46 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
+// ── What an included design is, read off the routes themselves ──
+//
+// The card shown when the ten run out says "Asking about your store
+// still works" — and asking is what had been using them up. Every
+// question answered, and every question the assistant asked BACK,
+// spent one, so a design that needed one round of clarifying cost two
+// or three. The counter was right; what it counted was not.
+//
+// Read from source because the alternative is a live account with ten
+// turns to burn, and this is the part that silently regresses: the
+// charge happens before the model runs, so the refund is a line
+// somebody can delete without any test going red.
+console.log("a turn that designed nothing is not an included design");
+{
+  const chat = readFileSync(new URL("../src/app/api/chat/route.ts", import.meta.url), "utf8");
+  const mcp = readFileSync(new URL("../src/app/api/mcp/route.ts", import.meta.url), "utf8");
+
+  check(
+    "the chat gives it back when no design came out",
+    /reply\.type !== "plans" && turn\.reply\.type !== "blueprint"[\s\S]{0,300}abo_refund_turn/.test(chat)
+  );
+  // Written against the absence of a design rather than a list of
+  // reply types, so a new kind of reply is free by default and has to
+  // be argued into costing something.
+  check(
+    "stated as what it is not, so a new reply type is free by default",
+    !/reply\.type === "answer"[\s\S]{0,120}abo_refund_turn/.test(chat)
+  );
+  check(
+    "and propose_change gives it back when it only asked questions",
+    /reply\.type === "clarify"\) \{[\s\S]{0,300}abo_refund_turn/.test(mcp)
+  );
+  // Both still charge up front. A client in a loop has to pay for its
+  // own stop, or the cap caps nothing.
+  check(
+    "both still charge before the model runs",
+    /abo_spend_turn/.test(chat) && /abo_spend_turn/.test(mcp)
+  );
+}
+
 // ── The counter itself, under a throwaway account ───────────────
 const stamp = Date.now();
 const email = `turns_${stamp}@example.com`;
@@ -72,8 +112,8 @@ try {
   console.log("\nand the refund is not free money");
   // This is the one 0044 left open. It stopped the LOOP — one refund
   // per spend — and one per spend is exactly enough: take the turn,
-  // get the design, hand the turn back. Ten free builds meant
-  // unlimited builds. A refund now has to name the spend, and the id
+  // get the design, hand the turn back. Ten included designs meant
+  // unlimited designs. A refund now has to name the spend, and the id
   // never leaves the server.
   await admin.from("account_settings").update({ free_turns: 9, turns_used: 0 }).eq("user_id", made.user.id);
   const paid = (await user.rpc("abo_spend_turn")).data;
@@ -225,7 +265,12 @@ if (!signedIn?.session) {
     // The one that would have been missed: designing through their
     // own Claude runs the same engine.
     const proposed = await tool("propose_change", { request: "Add a Suppliers section." });
-    check("designing through their own AI refuses too", /free builds/i.test(proposed?.error ?? ""));
+    // Same reason as check-byo-design: the refusal is the thing, not the
+  // noun it uses for the allowance.
+  check(
+    "designing through their own AI refuses too",
+    typeof proposed?.error === "string" && proposed?.do_this_instead === "design_format"
+  );
 
     // And the half that costs nothing stays open, or the whole pitch
     // — bring your own assistant — is untrue.

@@ -6,7 +6,7 @@
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-store-context.mjs
 
-import { buildSystemPrompt } from "../src/lib/ai.ts";
+import { buildSystemPrompt, buildUserMessage } from "../src/lib/ai.ts";
 import { storeOverlap } from "../src/lib/describe.ts";
 
 const fails = [];
@@ -35,9 +35,44 @@ const [contractA] = buildSystemPrompt([], "Acme", "en-US", "USD", store());
 const [contractB] = buildSystemPrompt([], "Other", "en-IN", "INR", null);
 check("the cached block does not change with the store", contractA === contractB);
 
+// ── What the model can see of the app itself ────────────────────
+//
+// Asked through MCP to put a rule on a section by name, the engine
+// answered "I don't have its current schema — could you open that
+// section?". The merchant is inside their own Claude; they cannot open
+// anything. It was true, too: the only schema ever passed was the one
+// section the caller had open, and through MCP that is none.
+//
+// So every section's fields go in the user turn, and the line about
+// nothing being open had to stop reading as "you are blind".
+console.log("every section's fields reach the model");
+{
+  const lines = [
+    "- Orders [id aaa]: order_number (text), total (currency)",
+    "- On Check [id bbb]: note (longtext)",
+  ];
+  const withCols = buildUserMessage("add a rule", null, null, null, [], lines);
+  check("the sections are listed", withCols.includes("On Check [id bbb]: note (longtext)"));
+  check("with their ids, so a plan can target one", withCols.includes("[id aaa]"));
+  check(
+    "and named as the only fields there are",
+    /ONLY field names that exist/.test(withCols)
+  );
+  // The contradiction that caused it: the list was there, and the next
+  // line said no schema was available.
+  check("nothing then says no schema is available", !/^null \(no module selected\)$/m.test(withCols));
+  check("and it does not ask them to open one", /Never ask them to open a section/.test(withCols));
+}
+
 console.log("\na project with no store is untouched");
 const bare = prompt(null);
-check("nothing about a store is mentioned", !/CONNECTED STORE/.test(bare));
+// This used to assert that a store was never mentioned at all, and it
+// has been failing since the prompt started saying "NO CONNECTED STORE"
+// out loud — which was the point of that change. Silence is what let
+// the model answer about a shop that was not there; the absence has to
+// be stated, not merely left out.
+check("it says plainly that there is no store", /NO CONNECTED STORE/.test(bare));
+check("and does not describe one anyway", !/last synced/i.test(bare));
 check("and it still describes the project", /PROJECT: "Acme"/.test(bare));
 
 console.log("\na connected store is described honestly");

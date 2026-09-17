@@ -10,13 +10,15 @@ import {
   readStoreRows,
   searchOrders,
   storeOverview,
+  storeTableSchema,
 } from "@/lib/store-read";
-import { blueprintAsText, runTurn } from "@/lib/engine";
-import { parseReply } from "@/lib/ai";
+import { blueprintAsText, runTurn, schemasFor } from "@/lib/engine";
+import { PLAN_FORMAT, WORKED_EXAMPLE, parseReply } from "@/lib/ai";
 import { vocabularyPrompt } from "@/lib/capabilities";
 import { describePlan, describeRules, type RuleRow } from "@/lib/describe";
 import { applyPlans } from "@/lib/apply";
-import type { AssistantPlan, ModuleRow, ProjectRow } from "@/lib/types";
+import { ALLOWED_ICONS } from "@/lib/types";
+import type { AssistantPlan, ModuleRow, ProjectRow, UiSchema } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -234,9 +236,29 @@ const TOOLS = [
     inputSchema: { type: "object", properties: {} },
   },
   {
+    name: "validate_design",
+    description:
+      "Check a design without sending it anywhere. Returns the same list of problems submit_design would return, or confirms it holds — but nothing is requested, nothing reaches the merchant and nothing is changed. Use it while you are still writing: it is cheaper to be told the shape is wrong here than to put a half-right design in front of somebody.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        plans: {
+          type: "array",
+          description: "The plans to check, in the shape design_format describes.",
+          items: { type: "object" },
+        },
+        project_id: {
+          type: "string",
+          description: "Which app, when they have more than one. Optional.",
+        },
+      },
+      required: ["plans"],
+    },
+  },
+  {
     name: "submit_design",
     description:
-      "Submit a design you wrote yourself. Warmluke checks it against the same validator its own engine answers to and, if it holds, puts it in front of the merchant for approval exactly like propose_change does. Rejections come back as a list of what is wrong, so you can correct it and submit again. Unlike propose_change this runs no Warmluke model, so it does not use the merchant's free builds — use it when they have run out, or whenever you would rather design it yourself.",
+      "Submit a design you wrote yourself. Warmluke checks it against the same validator its own engine answers to and, if it holds, puts it in front of the merchant for approval exactly like propose_change does. Rejections come back as a list of what is wrong, so you can correct it and submit again. Unlike propose_change this runs no Warmluke model, so it does not use one of the merchant's included designs — use it when they have run out, or whenever you would rather design it yourself.",
     inputSchema: {
       type: "object",
       properties: {
@@ -486,6 +508,8 @@ async function settleDesign(opts: {
       }
 
       let automatic = wantsAuto && autoReason === null;
+      // Why an automatic build did not happen, when it was meant to.
+      let autoFailed: string[] = [];
       if (automatic) {
         // Counted before building, so a loop pays for its own stop.
         const since = new Date(Date.now() - 864e5).toISOString();
@@ -540,7 +564,12 @@ async function settleDesign(opts: {
           );
         }
         // Nothing applied. It stays a request for a person to look at
-        // rather than being reported as done.
+        // rather than being reported as done — but the reason it could
+        // not be built used to be dropped right here, and the answer
+        // was an ordinary "waiting for approval". So a merchant with
+        // automatic builds switched on saw it silently stop working,
+        // and nothing anywhere said why. Carried out instead.
+        autoFailed = errors;
       }
 
       return ok(
@@ -555,7 +584,13 @@ async function settleDesign(opts: {
           // When the merchant has asked for automatic builds, say why
           // this one still needs them. Otherwise they are left
           // wondering why the setting did nothing.
-          ...(wantsAuto && autoReason ? { not_automatic_because: autoReason } : {}),
+          ...(autoFailed.length > 0
+            ? {
+                not_automatic_because: `it could not be built: ${autoFailed.slice(0, 3).join("; ")}`,
+              }
+            : wantsAuto && autoReason
+              ? { not_automatic_because: autoReason }
+              : {}),
           open: `${origin}/app/${project.id}`,
         })
       );
@@ -734,8 +769,8 @@ export async function POST(req: Request) {
             // zero, and saying "you have used all 0" would be a lie
             // about the merchant rather than about us.
             error: turns
-              ? `This account has used all ${turns.free} of its included Warmluke AI turns.`
-              : "Warmluke could not check this account's remaining AI turns, so it has not started a design.",
+              ? `This account has used all ${turns.free} included design${turns.free === 1 ? "" : "s"} from Warmluke.`
+              : "Warmluke could not check how many included designs this account has left, so it has not started a design.",
             // The old wording sent them to a paywall that does not
             // exist. What actually costs money is Warmluke doing the
             // designing; you doing it costs nothing, and that door is
@@ -776,6 +811,10 @@ export async function POST(req: Request) {
       // and the request comes back complete — no trip to the app to
       // fill in what could have been asked out loud.
       if (turn.reply.type === "clarify") {
+        // The note below says nothing has been requested. Charging a
+        // design for it made that sentence false — and a design that
+        // needed one round of questions cost two of the ten.
+        await db.rpc("abo_refund_turn", { p_spend: turns?.spend_id ?? null });
         return ok(
           id,
           text({
@@ -1150,23 +1189,20 @@ export async function POST(req: Request) {
       return ok(
         id,
         text({
-          note: "Write the design yourself and send it with submit_design. Nothing here costs the merchant a free build — their subscription is paying for your thinking, not ours.",
-          envelope: {
-            plans: "an array of plan objects, applied in order",
-          },
-          plan: {
-            changeType:
-              "NEW_MODULE | FIELD_ADD | UI_CHANGE | MODULE_UPDATE | FEATURE_UPDATE | RECORD_SEED | AUTOMATION_ADD | AUTOMATION_REMOVE",
-            targetModuleId:
-              'the section this changes, or "#slug" to point at a section created earlier in the same array, or null for a new one',
-            newModule: "{ name, nav_label, icon, parent_id?, source_table? } — NEW_MODULE only",
-            newSchema: "{ columns: [...], view: {...} } — the section's fields and how they are shown",
-            moduleUpdate: "{ nav_label?, icon?, sort_order?, parent_id? } — MODULE_UPDATE only",
-            features: "filters, search, sorting, stats — see the vocabulary",
-            automation: "{ name, definition } — AUTOMATION_ADD only",
-            newRecords: "rows to start the section with — RECORD_SEED only",
-            explanation: "one sentence, in the merchant's language, saying what this does for them",
-          },
+          note: "Write the design yourself and send it with submit_design. This does not use one of the merchant's included designs — their subscription is paying for your thinking, not ours.",
+          envelope: '{ "plans": [ <plan>, ... ] } — applied in order, up to 6.',
+          // The real shape, not a description of it. This is the same
+          // constant Luke is given, so what a client reads here and
+          // what the validator enforces cannot drift apart.
+          plan_format: PLAN_FORMAT,
+          allowed_icons: ALLOWED_ICONS,
+          worked_example: WORKED_EXAMPLE,
+          two_things_that_get_guessed_wrong: [
+            'The operator key is "op", never "operator" or "type": { "op": "<=", "args": [ { "field": "available" }, { "const": 5 } ] }.',
+            '"view" belongs inside "features", not inside "newSchema".',
+          ],
+          store_backed_sections:
+            "A section with source_table shows Shopify's own rows. Its columns are the store's — send newSchema as null and it is filled in. You cannot add a column of your own to one (an import would overwrite it), so express a flag as a stat or a filter over the columns that are there.",
           removing_a_section:
             "MODULE_DELETE is not accepted here at all. The merchant types the section's name in Warmluke to confirm that one.",
           vocabulary: vocabularyPrompt(),
@@ -1174,14 +1210,15 @@ export async function POST(req: Request) {
       );
     }
 
-    if (name === "submit_design") {
+    if (name === "validate_design" || name === "submit_design") {
+      const dryRun = name === "validate_design";
       const given = args.plans;
       if (!Array.isArray(given) || given.length === 0) {
         return ok(
           id,
           text({
             error: "Pass plans: an array of plan objects.",
-            note: "Call design_format first if you have not seen the shape.",
+            note: "Call design_format first if you have not seen the shape. It returns the real JSON, not a description of it.",
           })
         );
       }
@@ -1218,14 +1255,24 @@ export async function POST(req: Request) {
       // coming out of Warmluke's own model is rejected coming out of
       // anybody else's — that is the whole reason this is safe to
       // offer. No model runs on our side, so no turn is spent.
-      const checked = parseReply(JSON.stringify({ plans: given }), moduleList, null, null);
+      const schemas = await schemasFor(db, moduleList);
+      const checked = parseReply(
+        JSON.stringify({ plans: given }),
+        moduleList,
+        null,
+        null,
+        (moduleId) => schemas.get(moduleId) ?? null
+      );
       if (!checked.ok || checked.reply.type === "clarify") {
         return ok(
           id,
           text({
             status: "not accepted",
             errors: checked.ok ? ["That is not a design — it is a set of questions."] : checked.errors,
-            note: "Correct these and call submit_design again. Nothing has been requested or changed, and this cost the merchant nothing.",
+            note: dryRun
+              ? "A dry run: nothing has been requested and the merchant has seen nothing. Correct these and check again."
+              : "Correct these and call submit_design again. Nothing has been requested or changed, and this cost the merchant nothing.",
+            hint: "design_format returns the exact shape, including a worked example.",
           })
         );
       }
@@ -1235,6 +1282,23 @@ export async function POST(req: Request) {
       }
       const plans =
         checked.reply.type === "blueprint" ? checked.reply.blueprint.plans : checked.reply.plans;
+
+      // The dry run stops here. It reads the same state and runs the
+      // same validator, and then goes no further: no request row, no
+      // approval card, nothing for the merchant to dismiss. Writing a
+      // design used to mean finding out whether it held by sending it,
+      // which put every failed attempt on somebody's screen.
+      if (dryRun) {
+        return ok(
+          id,
+          text({
+            status: "holds",
+            note: "Nothing was requested and the merchant has seen nothing. Call submit_design with these same plans to put it in front of them.",
+            would_build: plans.map((pl) => describePlan(pl, moduleList)),
+          })
+        );
+      }
+
       const request =
         String(args.request ?? "").trim() ||
         // The card is read by a person who has to recognise what they

@@ -5,10 +5,11 @@
 // that a signed-in caller only ever reaches their own store.
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-mcp.mjs
-//   APP_URL=https://warmluke.vercel.app OWNER_PASSWORD=… node ...
+//   APP_URL=https://warmluke.vercel.app node ...
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
+import { signInAsOwner } from "./owner-session.mjs";
 
 const env = Object.fromEntries(
   readFileSync(new URL("../.env.local", import.meta.url), "utf8")
@@ -224,12 +225,12 @@ try {
   );
 
   console.log("\nthe owner's own store");
-  const { data: owner } = await client.auth.signInWithPassword({
-    email: "aaa@gmail.com",
-    password: process.env.OWNER_PASSWORD ?? "",
-  });
+  const owner = await signInAsOwner(client, env);
   if (!owner?.session) {
-    console.log("  ..    no OWNER_PASSWORD given, the store checks did not run");
+    // Silently skipping was how these stayed unrun for weeks. A check
+    // that cannot sign in has not passed.
+    console.log(`  FAIL  could not sign in as the owner — ${owner.why}`);
+    fails.push("owner sign-in");
   } else {
     const t = owner.session.access_token;
     const over = toolText(await rpc("tools/call", { name: "store_overview", arguments: {} }, t));

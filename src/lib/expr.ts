@@ -7,7 +7,7 @@
 // Keep this in step with abo_eval: same operators, same coercion.
 // ─────────────────────────────────────────────────────────────
 
-import type { Expr } from "./types";
+import type { Expr, SchemaColumn } from "./types";
 
 type Row = Record<string, unknown>;
 
@@ -46,6 +46,34 @@ function cmp(a: unknown, b: unknown): number {
 
 function isoToday(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * A row with its computed columns filled in.
+ *
+ * A computed column holds an expression rather than a value, so it has
+ * to be worked out before anything looks at the row — filtering,
+ * sorting, searching, stats and every view then treat it as an ordinary
+ * field and none of them needs to know the difference.
+ *
+ * Evaluated in the order the columns are declared, so one computed
+ * column may read another declared above it. A reference to one
+ * declared below reads blank, which is why the validator refuses it.
+ *
+ * Returns the original object untouched when the section has no
+ * computed columns, which is almost all of them.
+ */
+export function withComputed(
+  columns: SchemaColumn[],
+  data: Row
+): Row {
+  let out: Row | null = null;
+  for (const c of columns) {
+    if (!c.compute) continue;
+    if (!out) out = { ...data };
+    out[c.field] = evalExpr(c.compute, out);
+  }
+  return out ?? data;
 }
 
 export function evalExpr(

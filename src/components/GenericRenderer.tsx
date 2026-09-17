@@ -23,7 +23,7 @@ import {
   compare,
 } from "@/components/views";
 import { useFormat } from "@/lib/format";
-import { evalExpr, truthy } from "@/lib/expr";
+import { evalExpr, truthy, withComputed } from "@/lib/expr";
 
 const VIEW_LABELS: Record<ViewSpec["type"], string> = {
   table: "Table",
@@ -75,8 +75,19 @@ export default function GenericRenderer({
   const effectiveSort = sort ?? features?.defaultSort ?? null;
   const view: ViewSpec = features?.view ?? { type: "table" };
 
+  // Computed columns are filled in once, up front, so that everything
+  // below — the search box, the filters, the sort, the stats and every
+  // view — reads them as ordinary fields.
+  const rowsWithComputed = useMemo(
+    () =>
+      columns.some((c) => c.compute)
+        ? records.map((r) => ({ ...r, data: withComputed(columns, r.data ?? {}) }))
+        : records,
+    [records, columns]
+  );
+
   const filteredRecords = useMemo(() => {
-    let rows = records;
+    let rows = rowsWithComputed;
 
     if (features?.search?.enabled && search.trim()) {
       const q = search.trim().toLowerCase();
@@ -106,7 +117,7 @@ export default function GenericRenderer({
     }
 
     return rows;
-  }, [records, columns, features, search, filterValues, effectiveSort]);
+  }, [rowsWithComputed, columns, features, search, filterValues, effectiveSort]);
 
   const stats = useMemo(() => {
     if (!features?.stats?.length) return [];
@@ -267,7 +278,7 @@ export default function GenericRenderer({
                 className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-600 outline-none transition-colors focus:border-blue-400"
               >
                 <option value="">{fl.label}: All</option>
-                {filterOptions(fl.options ?? [], records, fl.field).map((o) => (
+                {filterOptions(fl.options ?? [], rowsWithComputed, fl.field).map((o) => (
                   <option key={o} value={o}>
                     {o}
                   </option>

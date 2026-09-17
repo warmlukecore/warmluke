@@ -13,6 +13,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isStoreTable, storeTableSchema } from "@/lib/store-read";
 import {
   buildSystemPrompt,
   buildUserMessage,
@@ -160,6 +161,73 @@ export type TurnResult =
  * Runs the model, repairs what the validator rejects, and fills in the
  * gaps a blueprint failed to mention. Writes nothing.
  */
+/**
+ * The current schema of every section in a project, by module id.
+ *
+ * A design may touch any section, and only one of them can be the
+ * "current" one — through the MCP tool, none of them is. Without this
+ * the validator had nothing to check field references against, and
+ * read that as "cannot check", which it treated as "passes". So a rule
+ * could name a column that does not exist and be accepted.
+ *
+ * It is also what the model is shown: it used to be handed the columns
+ * of the open section and nothing else, so asked through MCP to put a
+ * rule on a section by name it could only answer that it could not see
+ * the fields.
+ *
+ * Store-backed sections answer with the store's columns rather than
+ * whatever is saved against them, because that is what is rendered,
+ * plus any computed columns, which are not the store's and are kept.
+ */
+export async function schemasFor(
+  client: SupabaseClient,
+  modules: ModuleRow[]
+): Promise<Map<string, UiSchema>> {
+  const byModule = new Map<string, UiSchema>();
+  if (modules.length === 0) return byModule;
+
+  const { data } = await client
+    .from("ui_schemas")
+    .select("module_id, schema_json, version")
+    .in(
+      "module_id",
+      modules.map((m) => m.id)
+    )
+    .order("version", { ascending: false });
+
+  // Ordered newest first, so the first row seen for a module is its
+  // current version and every later one is history.
+  for (const row of (data ?? []) as Array<{ module_id: string; schema_json: UiSchema }>) {
+    if (!byModule.has(row.module_id)) byModule.set(row.module_id, row.schema_json);
+  }
+  for (const m of modules) {
+    if (m.source_table && isStoreTable(m.source_table)) {
+      const saved = byModule.get(m.id);
+      byModule.set(m.id, {
+        columns: [
+          ...storeTableSchema(m.source_table).columns,
+          ...(saved?.columns ?? []).filter((c) => c.compute),
+        ],
+        features: saved?.features ?? null,
+      });
+    }
+  }
+  return byModule;
+}
+
+/** Each section's columns in one line, for the model to read. */
+function columnLines(modules: ModuleRow[], schemas: Map<string, UiSchema>): string[] {
+  return modules.map((m) => {
+    const cols = schemas.get(m.id)?.columns ?? [];
+    const spelled = cols.length
+      ? cols
+          .map((c) => `${c.field} (${c.type}${c.compute ? ", computed" : ""})`)
+          .join(", ")
+      : "no fields yet";
+    return `- ${m.nav_label} [id ${m.id}]: ${spelled}`;
+  });
+}
+
 export async function runTurn(input: TurnInput): Promise<TurnResult> {
   const {
     client,
@@ -188,8 +256,19 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     .limit(RULES_IN_CONTEXT);
   const rules = describeRules((ruleRows ?? []) as RuleRow[], modules);
 
+  // Every section's columns, so a design that touches one the caller
+  // did not have open is both checked and readable.
+  const schemas = await schemasFor(client, modules);
+
   const system = buildSystemPrompt(modules, project.name, project.locale, project.currency, store);
-  const userTurn = buildUserMessage(message, moduleId, currentSchema, currentFeatures, rules);
+  const userTurn = buildUserMessage(
+    message,
+    moduleId,
+    currentSchema ?? (moduleId ? schemas.get(moduleId) ?? null : null),
+    currentFeatures,
+    rules,
+    columnLines(modules, schemas)
+  );
 
   // The rejected attempt and its errors stay in the turns sent to the
   // model but are never persisted — replaying a malformed reply from
@@ -205,7 +284,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
 
   for (let attempt = 0; attempt <= MAX_REPAIR_ATTEMPTS; attempt++) {
     raw = await callAnthropicChat(system, [...history, ...attemptTurns], signal);
-    parsed = parseReply(raw, modules, currentSchema, currentFeatures);
+    parsed = parseReply(raw, modules, currentSchema, currentFeatures, (mid) =>
+      schemas.get(mid) ?? null
+    );
 
     // Structural gate, enforced here rather than trusted to the prompt.
     if (

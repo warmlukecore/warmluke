@@ -145,8 +145,9 @@ export async function POST(req: Request) {
     }
     // A member can SEE this project — that is what a staff login is
     // for — and could reach here. Two things went wrong when they
-    // did: their own free allowance paid for a turn on somebody
-    // else's app, which is ten more builds per person invited, and
+    // did: their own included-design allowance paid for a turn on
+    // somebody else's app, which is ten more designs per person
+    // invited, and
     // the reply could not be saved afterwards because conversations
     // belong to the owner. We paid for a model call that nobody got.
     //
@@ -271,7 +272,7 @@ export async function POST(req: Request) {
     if (turns && !turns.ok) {
       return NextResponse.json(
         {
-          error: `You have used all ${turns.free} free builds on Warmluke's own assistant.`,
+          error: `You have used all ${turns.free} included design${turns.free === 1 ? "" : "s"} from Warmluke.`,
           out_of_turns: true,
           used: turns.used,
           free: turns.free,
@@ -308,6 +309,19 @@ export async function POST(req: Request) {
         },
         { status: 200 }
       );
+    }
+
+    // Only a turn that produced a design counts.
+    //
+    // The card shown when the counter runs out says "Asking about your
+    // store still works" — and asking is what had been using it up.
+    // Every question answered, and every question the assistant asked
+    // BACK, spent one of the ten, so a single design that needed one
+    // round of clarifying cost two or three. Refunded here rather than
+    // never charged, because the charge has to happen before the model
+    // runs: a client in a loop pays for its own stop.
+    if (turn.reply.type !== "plans" && turn.reply.type !== "blueprint") {
+      await client.rpc("abo_refund_turn", { p_spend: turns?.spend_id ?? null });
     }
 
     if (isNewConversation) {

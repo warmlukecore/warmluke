@@ -46,9 +46,163 @@ export type ApplyOutcome = {
 };
 
 /**
+ * How to put one write back, and what to say if it cannot be.
+ *
+ * Every write goes through one RPC, so an undo is the same RPC with
+ * the opposite op — which is the only reason this is small enough to
+ * be worth having.
+ */
+type Undo =
+  | { kind: "op"; op: string; payload: Record<string, unknown> }
+  | { kind: "stranded"; what: string };
+
+/**
+ * Records how to reverse each write as it happens.
+ *
+ * A batch is several RPCs, and PostgREST gives each one its own
+ * transaction: there is no way to ask the database to hold six of them
+ * open together. So the undo is built here instead, one entry per
+ * write, and replayed backwards if a later plan fails.
+ *
+ * Reversed order matters even where the database would cascade: a
+ * section's schema and rules are put back before the section itself is
+ * removed, so this does not depend on which foreign keys happen to
+ * cascade.
+ *
+ * Two writes have no opposite — rows seeded into a section that already
+ * existed, and a rule switched off — so they are recorded as stranded
+ * and said out loud rather than quietly left behind.
+ */
+function recording(client: Db, projectId: string, write: Write, undo: Undo[]): Write {
+  return async (op, payload) => {
+    // Anything needed to undo this write has to be read before it
+    // happens; afterwards the old value is already gone.
+    let before: Record<string, unknown> | null = null;
+    if (op === "schema_insert") {
+      const { data } = await client
+        .from("ui_schemas")
+        .select("schema_json, version")
+        .eq("module_id", payload.module_id as string)
+        .order("version", { ascending: false })
+        .limit(1);
+      before = (data?.[0] as Record<string, unknown> | undefined) ?? null;
+    } else if (op === "module_update") {
+      const { data } = await client
+        .from("modules")
+        .select("nav_label, icon, sort_order, parent_id")
+        .eq("id", payload.module_id as string)
+        .eq("project_id", projectId)
+        .maybeSingle();
+      before = (data as Record<string, unknown> | null) ?? null;
+    } else if (op === "automation_delete") {
+      const { data } = await client
+        .from("automations")
+        .select("module_id, name, definition")
+        .eq("project_id", projectId)
+        .eq("module_id", payload.module_id as string)
+        .eq("name", payload.name as string)
+        .maybeSingle();
+      before = (data as Record<string, unknown> | null) ?? null;
+    }
+
+    const result = await write(op, payload);
+
+    switch (op) {
+      case "module_insert":
+        undo.push({ kind: "op", op: "module_delete", payload: { module_id: result.id } });
+        break;
+      case "automation_insert":
+        undo.push({
+          kind: "op",
+          op: "automation_delete",
+          payload: { module_id: payload.module_id, name: payload.name },
+        });
+        break;
+      case "schema_insert":
+        // Put back by appending the old one again, the same way the
+        // rollback route does. History stays a record of what happened
+        // rather than being edited to hide it.
+        //
+        // With no earlier version there is nothing to restore, and the
+        // section it belongs to is being removed anyway.
+        if (before) {
+          undo.push({
+            kind: "op",
+            op: "schema_insert",
+            payload: {
+              module_id: payload.module_id,
+              schema_json: before.schema_json,
+              version: Number(payload.version ?? 0) + 1,
+              created_by: "ai",
+              change_description: "Undone: a later part of the same build failed.",
+            },
+          });
+        }
+        break;
+      case "module_update":
+        if (before) {
+          undo.push({
+            kind: "op",
+            op: "module_update",
+            payload: { module_id: payload.module_id, ...before },
+          });
+        }
+        break;
+      case "automation_delete":
+        if (before) {
+          undo.push({
+            kind: "op",
+            op: "automation_insert",
+            payload: { module_id: before.module_id, name: before.name, definition: before.definition },
+          });
+        }
+        break;
+      case "records_insert":
+        undo.push({
+          kind: "stranded",
+          what: `${result.count ?? "some"} row(s) added to a section that already existed`,
+        });
+        break;
+      case "automation_disable":
+        undo.push({ kind: "stranded", what: `the rule "${String(payload.name)}" was switched off` });
+        break;
+      // request_claim, request_release and request_built are
+      // bookkeeping about the request itself, not about the app.
+      default:
+        break;
+    }
+    return result;
+  };
+}
+
+/** Replays the undo backwards. Returns what could not be put back. */
+async function rollback(write: Write, undo: Undo[]): Promise<string[]> {
+  const stranded: string[] = [];
+  for (let i = undo.length - 1; i >= 0; i--) {
+    const step = undo[i];
+    if (step.kind === "stranded") {
+      stranded.push(step.what);
+      continue;
+    }
+    try {
+      await write(step.op, step.payload);
+    } catch (e) {
+      // An undo that fails is worse than one that was never possible,
+      // because the owner has no way to know. Say exactly which.
+      stranded.push(`${step.op} could not be undone (${e instanceof Error ? e.message : "refused"})`);
+    }
+  }
+  return stranded;
+}
+
+/**
  * Runs plans in order — a later plan may point at a section an earlier
- * one created — and stops at the first failure, so a partial run is
- * reported as partial rather than as a success.
+ * one created — and, if one fails, puts the earlier ones back.
+ *
+ * It used to stop at the first failure and leave everything before it
+ * standing. A two-plan design whose rule was refused left the merchant
+ * a section with no rule in it, described on their screen as the thing
+ * they had approved. Either the whole design is there or none of it is.
  */
 export async function applyPlans(
   client: Db,
@@ -58,22 +212,36 @@ export async function applyPlans(
   requestId: string | null = null
 ): Promise<ApplyOutcome> {
   const write = writer(client, projectId, requestId);
+  const undo: Undo[] = [];
+  const recorded = recording(client, projectId, write, undo);
   const applied: Array<Record<string, unknown>> = [];
   const errors: string[] = [];
 
   for (const rawPlan of plans.slice(0, 6)) {
     let result: ApplyResult;
     try {
-      result = await validateAndApply(client, projectId, rawPlan, write);
+      result = await validateAndApply(client, projectId, rawPlan, recorded);
     } catch (e) {
       result = { ok: false, errors: [e instanceof Error ? e.message : "Write refused."] };
     }
     if (result.ok) {
       applied.push(result.applied!);
-    } else {
-      errors.push(...result.errors);
-      break;
+      continue;
     }
+
+    errors.push(...result.errors);
+    if (applied.length > 0) {
+      const stranded = await rollback(write, undo);
+      errors.push(
+        stranded.length === 0
+          ? `Nothing was built: ${applied.length} earlier part(s) of this design were put back, so the app is as it was.`
+          : `Nothing was built. ${applied.length} earlier part(s) were put back, except: ${stranded.join("; ")}.`
+      );
+      // Not one of them stands, so none of them is reported as applied.
+      // Both callers read this to decide whether the request was built.
+      applied.length = 0;
+    }
+    break;
   }
 
   return { applied, errors };

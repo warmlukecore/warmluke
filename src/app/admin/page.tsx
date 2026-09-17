@@ -139,7 +139,7 @@ export default function Admin() {
                   <th className="px-4 py-2.5 font-medium">Stores</th>
                   <th className="px-4 py-2.5 font-medium">Warmluke AI</th>
                   <th className="px-4 py-2.5 font-medium">Their own AI</th>
-                  <th className="px-4 py-2.5 font-medium">Free builds</th>
+                  <th className="px-4 py-2.5 font-medium">Included designs</th>
                 </tr>
               </thead>
               <tbody>
@@ -193,6 +193,22 @@ export default function Admin() {
                           }}
                           className="w-16 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-200 outline-none focus:border-blue-500"
                         />
+                        {/* The count only ever goes up, so the box is a
+                            ceiling and not a grant: typing 10 for an
+                            account that has spent 18 gives them nothing,
+                            and the row still reads "18 / 10" as though
+                            something were broken. Saying what is left
+                            turns that into arithmetic nobody has to do
+                            in their head. */}
+                        <span
+                          className={
+                            r.free_turns - r.turns_used > 0 ? "text-slate-500" : "text-amber-500"
+                          }
+                        >
+                          {r.free_turns - r.turns_used > 0
+                            ? `${r.free_turns - r.turns_used} left`
+                            : "none left"}
+                        </span>
                       </div>
                     </td>
                   </tr>
@@ -208,10 +224,9 @@ export default function Admin() {
           — their Claude or ChatGPT connected over MCP, which they pay for. The two are
           independent: either can be off, and an account with neither still has its app,
           its data, and every section already built.{" "}
-          <span className="text-slate-400">Free builds</span> — turns of our own engine this
-          account may spend, counted whether they came from the chat or from their Claude,
-          because both run it. Reading a store and approving a design already made cost
-          nothing and are never counted.
+          <span className="text-slate-400">Included designs</span> — designs Warmluke may
+          produce for this account, whether requested in chat or through their Claude.
+          Reading a store and building a design already made are never counted.
         </p>
       </main>
     </div>

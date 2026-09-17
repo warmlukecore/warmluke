@@ -168,7 +168,10 @@ export default function RecordModal({
   onDelete: () => void | Promise<void>;
   onClose: () => void;
 }) {
-  const columns = schema.columns ?? [];
+  // A computed column has no value of its own to edit — it is worked
+  // out from the others every time the row is read. Leaving it out here
+  // is also what keeps it out of the draft, so nothing ever writes one.
+  const columns = (schema.columns ?? []).filter((c) => !c.compute);
   const features = (schema as UiSchema & { features?: FeatureSchema | null }).features ?? null;
   const isNew = record === null;
 

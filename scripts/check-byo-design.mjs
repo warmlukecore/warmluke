@@ -12,10 +12,11 @@
 //
 // What this has to prove is that "free" did not also mean "unchecked".
 //
-//   OWNER_PASSWORD=… node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-byo-design.mjs
+//   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-byo-design.mjs
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
+import { signInAsOwner } from "./owner-session.mjs";
 
 const env = Object.fromEntries(
   readFileSync(new URL("../.env.local", import.meta.url), "utf8")
@@ -35,13 +36,10 @@ const client = createClient(
   env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
   env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
 );
-const { data: owner } = await client.auth.signInWithPassword({
-  email: "aaa@gmail.com",
-  password: process.env.OWNER_PASSWORD ?? "",
-});
-if (!owner?.session) {
-  console.log("no OWNER_PASSWORD given — nothing to check");
-  process.exit(0);
+const owner = await signInAsOwner(client, env);
+if (!owner.session) {
+  console.log(`could not sign in as the owner — ${owner.why}`);
+  process.exit(1);
 }
 const token = owner.session.access_token;
 const uid = owner.user.id;
@@ -99,12 +97,49 @@ try {
 
   console.log("the format is there to be read");
   const format = await tool("design_format", {});
-  check("it says what a plan looks like", typeof format?.plan?.changeType === "string");
+  // It used to answer with prose ABOUT the shape — "features: filters,
+  // search, sorting, stats — see the vocabulary" — which names the
+  // parts and not one key, and is what sent a client guessing at
+  // "operator" / "op" / "type" through eight rejected submissions.
+  const shape = String(format?.plan_format ?? "");
+  check("it says what a plan looks like", shape.length > 500);
+  check('naming the operator key out loud', /"op": "\*"/.test(shape));
+  check('and putting "view" where it really goes', shape.indexOf('"features": {') < shape.indexOf('"view": { "type": "board"'));
+  check(
+    "and it carries a design that actually validates",
+    Array.isArray(format?.worked_example?.plans) && format.worked_example.plans.length > 0
+  );
   check("and hands over the whole vocabulary", (format?.vocabulary ?? "").length > 500);
   check(
     "and is plain that deleting is not on offer",
     /MODULE_DELETE/.test(JSON.stringify(format?.removing_a_section ?? ""))
   );
+
+  console.log("\nand the worked example is not just decoration");
+  {
+    // Checking it through the dry run proves two things at once: that
+    // validate_design changes nothing, and that what design_format
+    // hands out is a design this server would actually accept.
+    const dry = await tool(
+      "validate_design",
+      { plans: format.worked_example.plans, project_id: project.id },
+      21
+    );
+    check("the example design holds", dry?.status === "holds");
+    if (dry?.status !== "holds") console.log(`     said: ${JSON.stringify(dry?.errors ?? dry)}`);
+    check("and nothing was put in front of the merchant", !dry?.request_id);
+  }
+
+  console.log("\nand a dry run of a broken design changes nothing either");
+  {
+    const dry = await tool(
+      "validate_design",
+      { plans: [{ changeType: "NOT_A_REAL_THING", explanation: "nope" }], project_id: project.id },
+      22
+    );
+    check("it is not accepted", dry?.status === "not accepted");
+    check("and says it was a dry run", /dry run/.test(String(dry?.note ?? "")));
+  }
 
   console.log("\nand a design that does not hold is refused");
   const nonsense = await tool(
@@ -290,6 +325,10 @@ try {
     13
   );
   check("it is recorded as dismissed", said?.status === "dismissed");
+  if (said?.status !== "dismissed") {
+    console.log(`     reject_change said: ${JSON.stringify(said).slice(0, 250)}`);
+    console.log(`     the design it was given: ${JSON.stringify(toRefuse).slice(0, 250)}`);
+  }
 
   const afterNo = await tool("pending_changes", { project_id: project.id }, 14);
   check(
@@ -334,14 +373,24 @@ try {
   // The other door still charges, because the other door still runs
   // our model. This is the line the whole change rests on.
   const paid = await tool("propose_change", { request: "Add a Suppliers section.", project_id: project.id }, 5);
+  // Tracked even though it is expected to be refused. When it is NOT
+  // refused it leaves a design waiting on the merchant's real account
+  // for ever, and the next run of this check fails on a queue it was
+  // told would be empty — which is exactly how it failed today.
+  if (paid?.request_id) made.push(paid.request_id);
+  // Asserted on what the refusal DOES, not on the words it uses. The
+  // wording is marketing copy and has already been changed once on one
+  // door and not the other; a check pinned to a phrase goes red for a
+  // rewrite and stays green for a hole.
   check(
     "while Warmluke doing the designing still needs a turn",
-    /free builds/i.test(paid?.error ?? "")
+    typeof paid?.error === "string" && /\b1\b/.test(paid.error) && !paid?.status
   );
   check(
     "and now points at the free way instead of a paywall",
     paid?.do_this_instead === "design_format"
   );
+  if (!paid?.error) console.log(`     propose_change said: ${JSON.stringify(paid).slice(0, 300)}`);
 } finally {
   await sweepOwnCalls(uid);
   for (const id of made) await admin.from("build_requests").delete().eq("id", id);

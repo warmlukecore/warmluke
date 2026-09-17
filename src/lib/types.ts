@@ -18,6 +18,21 @@ export interface SchemaColumn {
    * stores the linked row's id, never a copy of its text.
    */
   linkTo?: string;
+  /**
+   * Worked out when the row is read, not stored.
+   *
+   * A merchant asking to "flag products running out" wants a column
+   * saying Low or OK. Storing that means a rule has to write it, which
+   * means it is right only until the number beside it changes — and on
+   * rows synced from a shop, an import would overwrite it anyway. So
+   * the section keeps the expression instead of the answer, and the
+   * answer is computed every time the page opens.
+   *
+   * Nobody writes to one: it is not offered in the editor, and a rule
+   * or a button that tries to set it is refused when the design is
+   * checked.
+   */
+  compute?: Expr;
 }
 
 // ── Automations: business logic as expression trees ──────────

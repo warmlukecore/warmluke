@@ -531,11 +531,11 @@ export default function ChatPanel({
     chat: true,
     mcp: true,
   });
-  /** Free builds on our own model: how many, and how many are gone. */
+  /** Included designs from our own model: how many, and how many are gone. */
   const [turns, setTurns] = useState<{ free: number; used: number } | null>(null);
   const [wantsPlan, setWantsPlan] = useState(false);
   /** Whether the connect-your-own-AI block is open, so the button
-   *  offered when the free builds run out can open it. */
+   *  offered when the included designs run out can open it. */
   const [ownAiOpen, setOwnAiOpen] = useState(false);
   // What their AI has asked for and nobody has looked at yet. Without
   // this the request lands in the database and dies there: Claude says
@@ -1708,7 +1708,7 @@ export default function ChatPanel({
         <div className="border-t border-slate-100 p-3">
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
             <div className="text-[11px] font-semibold text-slate-700">
-              That is all {turns.free} free builds used
+              You have used all {turns.free} included {turns.free === 1 ? "design" : "designs"}
             </div>
             <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
               Asking about your store still works, and anything already designed can still

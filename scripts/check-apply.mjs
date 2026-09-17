@@ -6,10 +6,11 @@
 // somebody approved a design. Each change type is applied for real and
 // read back, then removed.
 //
-//   OWNER_PASSWORD=… node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-apply.mjs
+//   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-apply.mjs
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
+import { signInAsOwner } from "./owner-session.mjs";
 
 const env = Object.fromEntries(
   readFileSync(new URL("../.env.local", import.meta.url), "utf8")
@@ -29,13 +30,10 @@ const client = createClient(
   env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
   env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
 );
-const { data: owner } = await client.auth.signInWithPassword({
-  email: "aaa@gmail.com",
-  password: process.env.OWNER_PASSWORD ?? "",
-});
-if (!owner?.session) {
-  console.log("no OWNER_PASSWORD given — nothing to check");
-  process.exit(0);
+const owner = await signInAsOwner(client, env);
+if (!owner.session) {
+  console.log(`could not sign in as the owner — ${owner.why}`);
+  process.exit(1);
 }
 const token = owner.session.access_token;
 const db = createClient(
