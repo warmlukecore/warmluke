@@ -42,7 +42,7 @@ export async function signOut(router: ReturnType<typeof useRouter>) {
 export async function apiFetch(
   path: string,
   body: unknown,
-  method: "POST" | "PATCH" | "DELETE" = "POST",
+  method: "GET" | "POST" | "PATCH" | "DELETE" = "POST",
   signal?: AbortSignal
 ): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
   const { data } = await supabase.auth.getSession();
@@ -53,7 +53,9 @@ export async function apiFetch(
       "content-type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify(body),
+    // A GET with a body is refused by fetch itself, and a read has
+    // nothing to send anyway.
+    ...(method === "GET" ? {} : { body: JSON.stringify(body) }),
     signal,
   });
   const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;

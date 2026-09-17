@@ -107,6 +107,16 @@ export default function AppShell({
   // The connected store, so a section pointed at it knows where to read
   // from. Null for a project without one, which is the common case.
   const [store, setStore] = useState<{ id: string; currency: string } | null>(null);
+  /**
+   * What the shop's money is worth in the merchant's currency.
+   *
+   * Null until it is known, and null for ever if the rate cannot be
+   * had — in which case amounts stay in the shop's own currency, which
+   * is the truthful fallback. Nothing here guesses a rate.
+   */
+  const [fx, setFx] = useState<{ rate: number; as_of: string | null; stale?: boolean } | null>(
+    null
+  );
   const storeId = store?.id ?? null;
   const isOwner = !!project && !!userId && project.owner_id === userId;
   const [modules, setModules] = useState<ModuleRow[]>([]);
@@ -1367,12 +1377,24 @@ export default function AppShell({
               </div>
             </div>
           ) : schema ? (
-            // Money in a store-backed section is the store's money. The
-            // outer provider formats in the project's currency, which
-            // would print $2,897 as ₹2,897 — right-looking and wrong.
+            // Money in a store-backed section is the store's money, and
+            // there are three states. Same currency: nothing to do.
+            // Different, with a rate: converted into the merchant's
+            // currency and labelled as converted. Different, with no
+            // rate: left in the shop's own currency, because printing
+            // $2,897 as ₹2,897 is right-looking and wrong.
             <FormatProvider
               locale={project?.locale}
-              currency={storeBacked && store ? store.currency : project?.currency}
+              currency={
+                storeBacked && store && !fx
+                  ? store.currency
+                  : project?.currency
+              }
+              convert={
+                storeBacked && store && fx && store.currency !== project?.currency
+                  ? { rate: fx.rate, from: store.currency }
+                  : null
+              }
             >
             {/* Said out loud, because the alternative is a merchant who
                 set this project to rupees looking at dollars and
@@ -1381,9 +1403,25 @@ export default function AppShell({
                 it without converting would be the actual bug. */}
             {storeBacked && store && project?.currency && store.currency !== project.currency && (
               <div className="mb-3 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs text-slate-400">
-                Amounts here are in <span className="text-slate-200">{store.currency}</span> —
-                that&rsquo;s how your Shopify store records them. Everything you build yourself
-                uses {project.currency}.
+                {fx ? (
+                  <>
+                    Your shop sells in <span className="text-slate-200">{store.currency}</span>.
+                    These amounts are converted to {project.currency} at{" "}
+                    <span className="text-slate-200">
+                      1 {store.currency} = {fx.rate.toFixed(2)} {project.currency}
+                    </span>
+                    {fx.as_of ? `, the rate from ${fx.as_of}` : ""}
+                    {fx.stale ? " (we could not refresh it today)" : ""}. Today&rsquo;s rate is
+                    used for every order, including older ones — so this is what they would be
+                    worth now, not what they were worth then.
+                  </>
+                ) : (
+                  <>
+                    Amounts here are in <span className="text-slate-200">{store.currency}</span> —
+                    that&rsquo;s how your Shopify store records them, and no conversion rate was
+                    available. Everything you build yourself uses {project.currency}.
+                  </>
+                )}
               </div>
             )}
             <GenericRenderer
