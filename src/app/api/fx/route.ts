@@ -32,6 +32,20 @@ const CODE = /^[A-Z]{3}$/;
 /** Rates move slowly enough that a day old is honest, said out loud. */
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Past this, a cached rate stops being an answer.
+ *
+ * Without it, a pair whose refresh keeps failing would serve the same
+ * number for ever — marked stale, but served — and a month-old rate
+ * quietly becomes a wrong price rather than an old one. Beyond this the
+ * amounts go back to the shop's own currency, which is always true.
+ */
+const REFUSE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Postgres numeric permits NaN and Infinity, and both survive Number(). */
+const usable = (n: unknown): n is number =>
+  typeof n === "number" && Number.isFinite(n) && n > 0;
+
 export async function GET(req: Request) {
   const auth = await getUserClient(req);
   if (!auth) return NextResponse.json({ error: "unauthorised" }, { status: 401 });
@@ -61,10 +75,18 @@ export async function GET(req: Request) {
     .eq("quote", to)
     .maybeSingle();
 
-  const fresh =
-    cached && Date.now() - new Date(cached.fetched_at as string).getTime() < STALE_AFTER_MS;
-  if (fresh) {
-    return NextResponse.json({ rate: Number(cached!.rate), as_of: cached!.as_of });
+  // numeric comes back as a string, and a stored NaN would pass
+  // `rate > 0` in Postgres — NaN sorts above every number there — then
+  // multiply every amount into NaN here. Checked on the way out, not
+  // only on the way in.
+  const cachedRate = cached ? Number(cached.rate) : null;
+  const cachedAgeMs = cached
+    ? Date.now() - new Date(cached.fetched_at as string).getTime()
+    : Infinity;
+  const cachedUsable = usable(cachedRate) && cachedAgeMs < REFUSE_AFTER_MS;
+
+  if (cachedUsable && cachedAgeMs < STALE_AFTER_MS) {
+    return NextResponse.json({ rate: cachedRate, as_of: cached!.as_of });
   }
 
   try {
@@ -77,9 +99,7 @@ export async function GET(req: Request) {
     const rate = body.rates?.[to];
     // Missing, zero, negative or not a number would make every amount
     // wrong in a way that still renders perfectly.
-    if (typeof rate !== "number" || !Number.isFinite(rate) || rate <= 0) {
-      throw new Error("rate source sent no usable rate");
-    }
+    if (!usable(rate)) throw new Error("rate source sent no usable rate");
 
     // Looked at, not fired and forgotten. A write that silently failed
     // would mean the cache never fills and every page load goes back
@@ -106,8 +126,10 @@ export async function GET(req: Request) {
     // A stale rate, clearly labelled, beats no amount at all — but only
     // because the caller is told how old it is. A rate we never had
     // stays absent, and the shop's own currency is shown instead.
-    if (cached) {
-      return NextResponse.json({ rate: Number(cached.rate), as_of: cached.as_of, stale: true });
+    // A day-old rate, clearly labelled, beats no amount at all. A
+    // week-old one does not, and neither does an unusable one.
+    if (cachedUsable) {
+      return NextResponse.json({ rate: cachedRate, as_of: cached!.as_of, stale: true });
     }
     return NextResponse.json(
       { error: "no_rate", why: e instanceof Error ? e.message : "unavailable" },

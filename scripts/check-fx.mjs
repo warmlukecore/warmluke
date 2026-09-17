@@ -16,6 +16,7 @@
 //   OWNER_PASSWORD=… node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-fx.mjs
 
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 import { makeFormatting } from "../src/lib/money.ts";
 
@@ -33,7 +34,39 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
-console.log("the arithmetic");
+// The check that would have caught this shipping dead.
+//
+// The arithmetic passed, the route answered curl, and the feature did
+// nothing in production — the effect that calls it had been lost to a
+// bad edit, so every mismatch fell into the "no rate" branch and the
+// page looked exactly as it had before. A check that only tests the
+// parts cannot notice that nothing joins them.
+console.log("the feature is actually wired up");
+{
+  const shell = readFileSync(new URL("../src/components/AppShell.tsx", import.meta.url), "utf8");
+  check("something asks for a rate", /apiFetch\(`\/api\/fx/.test(shell));
+  check("and something does so with the answer", /setFx\(/.test(shell));
+  check("only when the two currencies differ", /from === to/.test(shell));
+  // Written against what has to be true, not against how it is
+  // currently spelled: the rate must reach a converter somewhere. The
+  // first version matched the exact JSX and broke the moment the two
+  // call sites were given one shared decision.
+  check("and the rate reaches a converter", /convert:\s*\{\s*rate:\s*fx\.rate/.test(shell));
+  check(
+    "which both the section and the chat preview use",
+    (shell.match(/convert=\{sectionMoney\.convert\}/g) ?? []).length >= 2
+  );
+
+  // A client-only module imported from a server one compiles in tsc
+  // and fails in next build, and the error says neither "Failed" nor
+  // "error TS" — which is how it was missed.
+  const fmt = readFileSync(new URL("../src/lib/format.tsx", import.meta.url), "utf8");
+  const money = readFileSync(new URL("../src/lib/money.ts", import.meta.url), "utf8");
+  check("the file with React in it says so", fmt.startsWith('"use client"'));
+  check("and the file without React does not", !money.includes('"use client"'));
+}
+
+console.log("\nthe arithmetic");
 {
   const plain = makeFormatting("en-IN", "INR");
   const converted = makeFormatting("en-IN", "INR", { rate: 95.96, from: "USD" });

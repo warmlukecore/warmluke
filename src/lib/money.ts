@@ -9,8 +9,6 @@
 // Callers: src/lib/format.tsx, scripts/check-fx.mjs.
 // ─────────────────────────────────────────────────────────────
 
-"use client";
-
 // ─────────────────────────────────────────────────────────────
 // Number, money and date formatting for the project's own locale.
 // It used to be en-US/USD in the renderer, which quietly told an
@@ -100,4 +98,3 @@ export function makeFormatting(
     percent: (n) => `${nf.format(n)}%`,
   };
 }
-

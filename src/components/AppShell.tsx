@@ -561,6 +561,43 @@ export default function AppShell({
     supabase.auth.getSession().then(({ data }) => setUserId(data.session?.user.id ?? null));
   }, []);
 
+  // What the shop's money is worth in the merchant's, fetched once the
+  // two are known to differ.
+  //
+  // This effect was written and then silently lost to a bad edit: the
+  // state existed, the route existed, and nothing ever called it, so
+  // every mismatch fell into the "no rate" branch and the feature was
+  // dead in a way that still rendered. check-fx now asserts the call
+  // exists, because arithmetic passing proves nothing about wiring.
+  useEffect(() => {
+    const from = store?.currency;
+    const to = project?.currency;
+    if (!from || !to || from === to) {
+      setFx(null);
+      return;
+    }
+    let live = true;
+    apiFetch(`/api/fx?from=${from}&to=${to}&project=${projectId}`, null, "GET").then(
+      ({ ok, data }) => {
+        if (!live) return;
+        // A missing rate is not an error anybody needs shown: amounts
+        // stay in the shop's currency and the note says why.
+        setFx(
+          ok && typeof data.rate === "number" && Number.isFinite(data.rate) && data.rate > 0
+            ? {
+                rate: data.rate,
+                as_of: (data.as_of as string | null) ?? null,
+                stale: data.stale === true,
+              }
+            : null
+        );
+      }
+    );
+    return () => {
+      live = false;
+    };
+  }, [store?.currency, project?.currency, projectId]);
+
   useEffect(() => {
     supabase
       .from("projects")
@@ -1060,6 +1097,22 @@ export default function AppShell({
   const isEmpty = !loading && modules.length === 0;
   const storeBacked = isStoreTable(loadedSource);
 
+  /**
+   * How money in the selected section should read.
+   *
+   * Decided once and used twice: the section itself, and the preview
+   * Luke shows inside the chat — which renders the SAME records. Left
+   * to the outer provider, that preview labelled the shop's dollars
+   * with the project's rupee sign, which is the one thing this whole
+   * feature exists to prevent.
+   */
+  const sectionMoney =
+    storeBacked && store
+      ? fx && store.currency !== project?.currency
+        ? { currency: project?.currency, convert: { rate: fx.rate, from: store.currency } }
+        : { currency: store.currency, convert: null }
+      : { currency: project?.currency, convert: null };
+
   return (
     <FormatProvider locale={project?.locale} currency={project?.currency}>
     <LinkProvider options={linkOptions}>
@@ -1385,16 +1438,8 @@ export default function AppShell({
             // $2,897 as ₹2,897 is right-looking and wrong.
             <FormatProvider
               locale={project?.locale}
-              currency={
-                storeBacked && store && !fx
-                  ? store.currency
-                  : project?.currency
-              }
-              convert={
-                storeBacked && store && fx && store.currency !== project?.currency
-                  ? { rate: fx.rate, from: store.currency }
-                  : null
-              }
+              currency={sectionMoney.currency}
+              convert={sectionMoney.convert}
             >
             {/* Said out loud, because the alternative is a merchant who
                 set this project to rupees looking at dollars and
@@ -1408,12 +1453,24 @@ export default function AppShell({
                     Your shop sells in <span className="text-slate-200">{store.currency}</span>.
                     These amounts are converted to {project.currency} at{" "}
                     <span className="text-slate-200">
-                      1 {store.currency} = {fx.rate.toFixed(2)} {project.currency}
+                      1 {store.currency} ={" "}
+                      {/* Two decimals reads as 0.00 for a currency
+                          worth a fraction of a rupee, while the
+                          multiplication quietly uses the real number.
+                          Show enough digits to mean something. */}
+                      {fx.rate < 0.01 ? fx.rate.toPrecision(3) : fx.rate.toFixed(2)}{" "}
+                      {project.currency}
                     </span>
-                    {fx.as_of ? `, the rate from ${fx.as_of}` : ""}
-                    {fx.stale ? " (we could not refresh it today)" : ""}. Today&rsquo;s rate is
-                    used for every order, including older ones — so this is what they would be
-                    worth now, not what they were worth then.
+                    {/* Said from what the rate actually is, not from
+                        what it usually is. Claiming "today's rate"
+                        over a rate that failed to refresh, or over
+                        Friday's rate on a Sunday, is the same kind of
+                        confident wrongness this whole feature exists
+                        to avoid. */}
+                    {fx.as_of ? ` — the rate from ${fx.as_of}` : ""}
+                    {fx.stale ? ", which we could not refresh today" : ""}. One rate is used for
+                    every order, including older ones, so these are what they would be worth at
+                    that rate — not what they were worth on the day of the order.
                   </>
                 ) : (
                   <>
@@ -1456,6 +1513,11 @@ export default function AppShell({
 
       {/* ── Assistant + history ── */}
       {isOwner && (
+      <FormatProvider
+        locale={project?.locale}
+        currency={sectionMoney.currency}
+        convert={sectionMoney.convert}
+      >
       <ChatPanel
         projectId={projectId}
         width={chat.width}
@@ -1482,6 +1544,7 @@ export default function AppShell({
         onBuild={buildApproved}
         onDiscard={discardPlan}
       />
+      </FormatProvider>
       )}
       {newSectionParent !== undefined && (
         <NewSection

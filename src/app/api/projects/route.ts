@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getUserClient } from "@/lib/supabase-server";
-import { DEFAULT_CURRENCY, DEFAULT_LOCALE } from "@/lib/format";
+import { DEFAULT_CURRENCY, DEFAULT_LOCALE } from "@/lib/money";
 
 export const runtime = "nodejs";
 
