@@ -304,17 +304,30 @@ export default function Admin() {
                             className="inline-flex items-center gap-1.5 text-slate-400 disabled:opacity-40"
                           >
                             <span
-                              className={`relative h-4 w-7 rounded-full transition-colors ${
-                                r.turns_unlimited ? "bg-emerald-500" : "bg-slate-700"
+                              className={`relative h-4 w-7 rounded-full border transition-colors ${
+                                r.turns_unlimited
+                                  ? "border-emerald-400 bg-emerald-500"
+                                  : "border-slate-600 bg-slate-800"
                               }`}
                             >
                               <span
-                                className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-transform ${
-                                  r.turns_unlimited ? "translate-x-3.5" : "translate-x-0.5"
+                                className={`absolute top-0.5 h-3 w-3 rounded-full transition-transform ${
+                                  r.turns_unlimited
+                                    ? "translate-x-3.5 bg-white"
+                                    : "translate-x-0.5 bg-slate-400"
                                 }`}
                               />
                             </span>
-                            Unlimited
+                            {/* The state is said, not only coloured. A
+                                white knob on a dark track reads as "on"
+                                to most people, and the one person who
+                                uses this screen read it that way — then
+                                asked why an "unlimited" account still
+                                said "none left". It was off, and every
+                                number on the row was correct. */}
+                            <span className={r.turns_unlimited ? "text-emerald-400" : "text-slate-500"}>
+                              Unlimited {r.turns_unlimited ? "on" : "off"}
+                            </span>
                           </button>
                           {r.turns_used > 0 && (
                             <button
