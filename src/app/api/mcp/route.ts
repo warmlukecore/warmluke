@@ -560,7 +560,30 @@ async function settleDesign(opts: {
         // auto-build IS the approval — given in Warmluke, on this
         // project, before any of this was asked for. The stamp records
         // that, so the row says who agreed and when.
-        await db.rpc("abo_approve_request", { p_request: requestId });
+        //
+        // And the answer is read. It was not: abo_approve_request can
+        // refuse — it is the only place that decides whether a client
+        // may stamp anything — and this went straight on to apply
+        // plans that abo_build then rejected one by one for want of an
+        // approved_at. The failure arrived as a list of write errors
+        // about permissions, never as the reason it was actually
+        // refused.
+        const { data: nod } = await db.rpc("abo_approve_request", { p_request: requestId });
+        const approval = nod as { approved: boolean; reason?: string } | null;
+        if (!approval?.approved) {
+          return ok(
+            id,
+            text({
+              status: "waiting for approval",
+              request_id: requestId,
+              design,
+              not_automatic_because:
+                approval?.reason ?? "the merchant has to approve this one in Warmluke",
+              note: "Nothing has changed yet. Read this design back to the merchant and tell them it is waiting in Warmluke — the bell in the assistant panel.",
+              open: `${origin}/app/${project.id}`,
+            })
+          );
+        }
         const { applied, errors } = await applyPlans(db, project.id, plans, requestId as string);
         if (applied.length > 0) {
           await db.rpc("abo_build", {

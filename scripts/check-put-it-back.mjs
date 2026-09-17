@@ -201,6 +201,66 @@ try {
   const record = await lastBuildMessage();
   check("the thread says it happened", /put back/i.test(record?.content ?? ""));
 
+  // The one that would have lost the merchant's own work.
+  //
+  // Putting back writes what the section held BEFORE that build, on
+  // top of whatever it holds now. If they changed something since,
+  // that copy does not contain it — so an old build's undo would take
+  // the newer change with it, silently. Refused instead.
+  console.log("\nbut not once the section has moved on");
+  const moved = await submit(`Put back ${stamp} — one more field`, [
+    {
+      changeType: "FIELD_ADD",
+      targetModuleId: moduleId,
+      newSchema: {
+        columns: [
+          { field: "note", label: "Note", type: "text" },
+          { field: "extra", label: "Extra", type: "text" },
+        ],
+      },
+      explanation: "One more field.",
+    },
+  ]);
+  check("a later change is built", isBuilt(moved));
+  const movedMsg = await lastBuildMessage();
+  const newer = await submit(`Put back ${stamp} — and another`, [
+    {
+      changeType: "FIELD_ADD",
+      targetModuleId: moduleId,
+      newSchema: {
+        columns: [
+          { field: "note", label: "Note", type: "text" },
+          { field: "extra", label: "Extra", type: "text" },
+          { field: "extra_two", label: "Extra two", type: "text" },
+        ],
+      },
+      explanation: "And another.",
+    },
+  ]);
+  check("and then another on top of it", isBuilt(newer));
+  // Grabbed now, not after the refusal below: a refusal is written to
+  // the thread too, so by then "the last message" is that.
+  const newestMsg = await lastBuildMessage();
+  const before = await latestSchema();
+  const stale = await undoCall(movedMsg.id);
+  check("undoing the older one is refused", (stale.body?.done ?? []).length === 0);
+  check(
+    "and says the section has changed since",
+    /changed .* since/i.test((stale.body?.couldNot ?? []).join(" "))
+  );
+  if ((stale.body?.done ?? []).length > 0) show(stale.body);
+  const untouched = await latestSchema();
+  check("the newer work is still there", untouched?.version === before?.version);
+  check(
+    "and the field it added is still on the section",
+    (untouched?.schema_json?.columns ?? []).some((c) => c.field === "extra_two")
+  );
+  // And the newest one can still be put back, so the guard is about
+  // order rather than about refusing everything.
+  const fine = await undoCall(newestMsg.id);
+  check("the newest one still goes back", (fine.body?.done ?? []).length > 0);
+  if ((fine.body?.done ?? []).length === 0) show(fine.body);
+
   console.log("\nand a message with nothing to put back is refused");
   const nothing = await undoCall(firstMsg.id);
   check("it is a plain no, not a crash", nothing.status === 400);

@@ -70,6 +70,34 @@ export async function putBack(
         continue;
       }
 
+      // Still where this build left it?
+      //
+      // Putting back means writing what the section held BEFORE this
+      // build, on top of whatever it holds now. If anything changed
+      // since, that copy does not contain it — so undoing an old
+      // build would quietly take the newer work with it. Version 2
+      // undone after a version 3 wrote version 4 holding version 1,
+      // and version 3 was gone without a word about it.
+      //
+      // Refused instead, because only the merchant can know whether
+      // they meant to lose the newer change as well. Working out an
+      // inverse patch would let both survive; it is also a merge, and
+      // a merge that gets it wrong loses the same data more quietly.
+      const { data: latest } = await client
+        .from("ui_schemas")
+        .select("version")
+        .eq("module_id", step.moduleId)
+        .order("version", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const now = Number(latest?.version ?? 0);
+      if (now !== step.version) {
+        couldNot.push(
+          `${step.what} — the section has been changed ${now - step.version} time(s) since, and putting this back would undo those too`
+        );
+        continue;
+      }
+
       // What it was immediately before this build wrote its version.
       const { data: before } = await client
         .from("ui_schemas")
@@ -82,18 +110,10 @@ export async function putBack(
         continue;
       }
 
-      const { data: latest } = await client
-        .from("ui_schemas")
-        .select("version")
-        .eq("module_id", step.moduleId)
-        .order("version", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
       await write("schema_insert", {
         module_id: step.moduleId,
         schema_json: before.schema_json,
-        version: Number(latest?.version ?? step.version) + 1,
+        version: now + 1,
         // "user", because the merchant asked for this one — the
         // column only knows those two words, and a third was refused
         // by a check constraint the first time this ran.

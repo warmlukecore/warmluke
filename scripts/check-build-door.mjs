@@ -279,5 +279,59 @@ check(
   )
 );
 
+// The stamp itself, which nothing in this suite ever ran as a client.
+//
+// Every check that exercised auto-build signed in as the owner, and
+// this function's whole client branch is skipped when there is no
+// client_id claim. So a five-a-day ceiling sat in it, unseen, while a
+// check called "the sixth automatic build of the day still goes in"
+// passed — because the sixth build in that check was never made by a
+// client. The blind spot mattered more than the ceiling did.
+console.log("\nand the stamp a client asks for");
+const OK = (res) => /"approved"\s*:\s*true/.test(JSON.stringify(res.body ?? ""));
+const nod = (req = REQ) => `select public.abo_approve_request(${req});`;
+const autoOff = `update public.projects set auto_build = false where id = '${row.project_id}';`;
+const autoOn = `update public.projects set auto_build = true where id = '${row.project_id}';`;
+/** n automatic builds already made today, as the ceiling used to count them. */
+const alreadyBuilt = (n) => `
+  insert into public.build_requests (project_id, requested_by, client_id, request, plans, status, auto_built, built_at)
+  select '${row.project_id}', '${row.owner_id}', 'claude-test', 'earlier ' || g, '[]'::jsonb, 'built', true, now()
+    from generate_series(1, ${n}) g;
+`;
+
+check(
+  "with the setting off, a client cannot stamp its own",
+  !OK(await scenario("claude-test", autoOff + pending("claude-test"), nod()))
+);
+check(
+  "with it on, it can",
+  OK(await scenario("claude-test", autoOn + pending("claude-test"), nod()))
+);
+// The one 0076 exists for. Six already built today used to make this
+// a no, while the screen said nothing waits.
+check(
+  "and the sixth of the day is not refused",
+  OK(await scenario("claude-test", autoOn + alreadyBuilt(6) + pending("claude-test"), nod()))
+);
+check(
+  "nor the fiftieth",
+  OK(await scenario("claude-test", autoOn + alreadyBuilt(50) + pending("claude-test"), nod()))
+);
+// What the cap was standing in for is still here.
+check(
+  "but not another client's request",
+  !OK(await scenario("claude-test", autoOn + pending("some-other-client"), nod()))
+);
+check(
+  "nor one that does not exist",
+  !OK(await scenario("claude-test", autoOn, nod()))
+);
+// The merchant tapping Build in Warmluke is not automation and was
+// never capped — it must not start being.
+check(
+  "and the merchant's own yes is never refused",
+  OK(await scenario(null, autoOff + alreadyBuilt(50) + pending(null), nod()))
+);
+
 console.log(fails.length === 0 ? "\nthe one door holds" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);
