@@ -200,6 +200,29 @@ try {
   // Adding a column cannot lose one — the validator refuses a FIELD_ADD
 // that drops or reorders anything — so it sits on the same side of the
 // line as a new section, which has always built automatically.
+// The setting's own description is part of the setting. It promised
+// "new sections and example rows" for a day after a new field joined
+// them, and its second line — "anything that changes a section you
+// already have waits" — was untrue while it said so.
+console.log("\nthe screen describes what it actually does");
+{
+  const settings = readFileSync(
+    new URL("../src/components/ProjectSettings.tsx", import.meta.url),
+    "utf8"
+  );
+  const route = readFileSync(
+    new URL("../src/app/api/mcp/route.ts", import.meta.url),
+    "utf8"
+  );
+  const additive = /const ADDITIVE = new Set\(\[([^\]]*)\]\)/.exec(route)?.[1] ?? "";
+  check("a new section is on the list", additive.includes("NEW_MODULE"));
+  check("and so is a new field", additive.includes("FIELD_ADD"));
+  check("and the settings screen says so too", /new fields added to a section/.test(settings));
+  // A rule keeps writing to rows after it is built, so it is the one
+  // addition that still asks.
+  check("a rule is not on the list", !additive.includes("AUTOMATION_ADD"));
+}
+
 console.log("\nand a new field, which loses nothing");
 {
   const added = await tool(

@@ -230,22 +230,28 @@ export default function ProjectSettings({
                 className="mt-0.5 h-4 w-4 shrink-0 accent-blue-600"
               />
               <span className="text-[11px] leading-relaxed text-slate-300">
-                Build new sections without asking me first
+                Build additions without asking me first
               </span>
             </label>
             {/* What it will and will not do, in full, because a
                 setting whose limits are a surprise is worse than no
                 setting. */}
             <div className="mt-2 space-y-1 rounded-lg bg-slate-800/60 px-2.5 py-2 text-[11px] leading-relaxed text-slate-400">
+              {/* This list has to match ADDITIVE in the MCP route. It
+                  said "new sections and example rows" for a day after
+                  adding a field joined them, which made the sentence
+                  below it — "anything that changes a section you
+                  already have" — untrue. */}
               <div>
-                <span className="text-slate-300">Applies on its own:</span> new sections, and
-                example rows in them. Up to five a day.
+                <span className="text-slate-300">Applies on its own:</span> new sections,
+                example rows in them, and new fields added to a section — which never
+                removes or reorders the ones already there. Up to five a day.
               </div>
               <div>
                 <span className="text-slate-300">Still waits for you:</span> anything that
-                changes a section you already have, any rule that runs on every order,
-                anything the assistant flagged, and removing a section — which it can
-                never do.
+                changes a field or a layout you already have, any rule that runs by itself
+                afterwards, anything the assistant flagged, and removing a section — which
+                it can never do.
               </div>
               <div>Whatever it builds appears in the panel, and you can delete it.</div>
             </div>
