@@ -989,7 +989,21 @@ export default function AppShell({
       setChatMessages((prev) =>
         prev.map((m) => (m.id === planId ? { ...m, plan: undefined, text: doneText } : m))
       );
-      recordOutcome(doneText);
+      // What it applied goes with it. Without this a single-plan reply
+      // from Luke — the commonest edit there is — was the one build
+      // with no Put it back on it, while the same change through a
+      // blueprint or the merchant's own AI had one.
+      const writtenId = await recordOutcome(doneText, "assistant", [result]);
+      const undo = undoableFrom([result]);
+      if (writtenId && undo.length) {
+        setChatMessages((prev) =>
+          prev.map((m) =>
+            m.id === planId
+              ? { ...m, undo: { messageId: writtenId, what: undo.map((u) => u.what) } }
+              : m
+          )
+        );
+      }
       loadModules();
       if (selectedModuleId && plan.targetModuleId === selectedModuleId) {
         loadModuleData(selectedModuleId);

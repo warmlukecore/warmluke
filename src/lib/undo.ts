@@ -14,7 +14,14 @@
  */
 export type UndoStep =
   | { kind: "schema"; moduleId: string; version: number; what: string }
-  | { kind: "rule"; automationName: string; what: string };
+  | {
+      kind: "rule";
+      /** The row the build wrote, so undoing it touches only that one. */
+      automationId: string;
+      /** Its definition and enabled state before, when it existed. */
+      was: { definition?: unknown; enabled?: boolean } | null;
+      what: string;
+    };
 
 /**
  * Which parts of a build can be put back, from what it recorded.
@@ -40,7 +47,9 @@ export function undoableFrom(applied: unknown[]): UndoStep[] {
       changeType?: string;
       moduleId?: string;
       version?: number;
+      automationId?: string;
       automationName?: string;
+      automationWas?: { definition?: unknown; enabled?: boolean } | null;
       navLabel?: string;
     };
     if (typeof e.moduleId === "string" && typeof e.version === "number" && e.version > 1) {
@@ -50,11 +59,18 @@ export function undoableFrom(applied: unknown[]): UndoStep[] {
         version: e.version,
         what: e.changeType === "FIELD_ADD" ? "the fields it added" : "the layout it changed",
       });
-    } else if (e.changeType === "AUTOMATION_ADD" && typeof e.automationName === "string") {
+    } else if (e.changeType === "AUTOMATION_ADD" && typeof e.automationId === "string") {
       out.push({
         kind: "rule",
-        automationName: e.automationName,
-        what: `the rule "${e.automationName}"`,
+        automationId: e.automationId,
+        was: e.automationWas ?? null,
+        // A rule that was rewritten goes back to what it said before;
+        // one that was made goes off. Different words, because they
+        // are different outcomes and the merchant is choosing between
+        // them by reading this line.
+        what: e.automationWas
+          ? `the rule "${e.automationName ?? "it changed"}" to what it said before`
+          : `the rule "${e.automationName ?? "it added"}"`,
       });
     }
   }

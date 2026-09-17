@@ -286,20 +286,96 @@ try {
   check("the rule is built", isBuilt(ruled));
   if (!isBuilt(ruled)) show(ruled);
   const ruleMsg = await lastBuildMessage();
-  check("and offered back by name", /Back /.test((ruleMsg?.payload?.undo ?? [])[0]?.what ?? ""));
+  const ruleStep = (ruleMsg?.payload?.undo ?? [])[0];
+  check("and offered back by id, not by name", typeof ruleStep?.automationId === "string");
+  const ruleId = ruleStep?.automationId;
+
+  // A rule of the same name on ANOTHER section. automation_disable
+  // matches on project and name, so the old undo switched this one off
+  // too — a rule on a section nobody had asked about.
+  const bystander = (
+    await admin
+      .from("automations")
+      .insert({
+        project_id: project.id,
+        module_id: null,
+        name: `Back ${stamp} stamp`,
+        enabled: true,
+        definition: { trigger: { type: "record_created" }, actions: [] },
+      })
+      .select("id")
+      .single()
+  ).data;
+
   const ruleUndone = await undoCall(ruleMsg.id);
   check("putting it back is accepted", ruleUndone.status === 200);
   const { data: rule } = await admin
     .from("automations")
     .select("enabled")
-    .eq("module_id", moduleId)
-    .order("created_at", { ascending: false })
-    .limit(1)
+    .eq("id", ruleId)
     .maybeSingle();
   // Switched off rather than deleted, so the run log stays readable —
   // the same choice AUTOMATION_REMOVE already makes.
   check("the rule stops running", rule?.enabled === false);
   check("but is still there to read", rule !== null);
+  const { data: other } = await admin
+    .from("automations")
+    .select("enabled")
+    .eq("id", bystander.id)
+    .maybeSingle();
+  check("and a rule of the same name elsewhere is left alone", other?.enabled === true);
+  await admin.from("automations").delete().eq("id", bystander.id);
+
+  // AUTOMATION_ADD rewrites a rule of the same name on the same
+  // section in place, keeping its id and its run history. Undoing that
+  // has to give back the rule they had, not no rule at all.
+  console.log("\nand a rule that was changed comes back changed");
+  await admin.from("automations").update({ enabled: true }).eq("id", ruleId);
+  const rewritten = await submit(`Put back ${stamp} — change that rule`, [
+    {
+      changeType: "AUTOMATION_ADD",
+      targetModuleId: moduleId,
+      automation: {
+        name: `Back ${stamp} stamp`,
+        definition: {
+          trigger: { type: "record_created" },
+          actions: [
+            { type: "set_fields", target: { self: true }, set: { note: { const: "changed" } } },
+          ],
+        },
+      },
+      explanation: "Marks a new row as changed instead.",
+    },
+  ]);
+  check("the change is built", isBuilt(rewritten));
+  const { data: nowSays } = await admin
+    .from("automations")
+    .select("id, definition")
+    .eq("id", ruleId)
+    .single();
+  check("the same rule row was rewritten, not replaced", nowSays?.id === ruleId);
+  check(
+    "and it says the new thing",
+    JSON.stringify(nowSays?.definition).includes("changed")
+  );
+  const rewrittenMsg = await lastBuildMessage();
+  check(
+    "the offer says it goes back to what it said before",
+    /what it said before/.test((rewrittenMsg?.payload?.undo ?? [])[0]?.what ?? "")
+  );
+  const putRuleBack = await undoCall(rewrittenMsg.id);
+  check("putting it back is accepted", (putRuleBack.body?.done ?? []).length > 0);
+  if ((putRuleBack.body?.done ?? []).length === 0) show(putRuleBack.body);
+  const { data: backAgain } = await admin
+    .from("automations")
+    .select("enabled, definition")
+    .eq("id", ruleId)
+    .single();
+  check(
+    "the rule says what it said before, not nothing",
+    JSON.stringify(backAgain?.definition).includes("seen")
+  );
+  check("and it is still running", backAgain?.enabled === true);
 } finally {
   await setAuto(project.auto_build === true);
   const back = (await admin.from("projects").select("auto_build").eq("id", project.id).single()).data;

@@ -64,9 +64,21 @@ export async function putBack(
   for (const step of steps) {
     try {
       if (step.kind === "rule") {
-        const off = await write("automation_disable", { name: step.automationName });
-        if (Number(off.count ?? 0) > 0) done.push(`switched off ${step.what}`);
-        else couldNot.push(`${step.what} — it is not there any more`);
+        // By id, and back to what it held — not off by name. A name is
+        // unique only within a section, so the old version switched off
+        // every rule of that name in the app; and a rule the build had
+        // rewritten rather than created came back off instead of
+        // coming back.
+        const back = await write("automation_restore", {
+          id: step.automationId,
+          enabled: step.was?.enabled ?? false,
+          ...(step.was?.definition ? { definition: step.was.definition } : {}),
+        });
+        if (Number(back.count ?? 0) === 0) {
+          couldNot.push(`${step.what} — it is not there any more`);
+        } else {
+          done.push(step.was ? `put back ${step.what}` : `switched off ${step.what}`);
+        }
         continue;
       }
 
@@ -647,6 +659,15 @@ async function validateAndApply(
         moduleId: plan.targetModuleId,
         automationId: inserted.id,
         automationName: auto.name,
+        // Whether this made the rule or rewrote one, and what the one
+        // it rewrote held. Only the id came back before, and the id
+        // looks the same either way — so an undo could not tell a rule
+        // it created from a rule it edited.
+        automationCreated: inserted.created === true,
+        automationWas: (inserted.was ?? null) as {
+          definition?: unknown;
+          enabled?: boolean;
+        } | null,
       },
     };
   }
