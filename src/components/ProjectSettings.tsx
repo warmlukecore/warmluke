@@ -230,7 +230,7 @@ export default function ProjectSettings({
                 className="mt-0.5 h-4 w-4 shrink-0 accent-blue-600"
               />
               <span className="text-[11px] leading-relaxed text-slate-300">
-                Build additions without asking me first
+                Build without asking me first
               </span>
             </label>
             {/* What it will and will not do, in full, because a
@@ -243,17 +243,23 @@ export default function ProjectSettings({
                   below it — "anything that changes a section you
                   already have" — untrue. */}
               <div>
-                <span className="text-slate-300">Applies on its own:</span> new sections,
-                example rows in them, and new fields added to a section — which never
-                removes or reorders the ones already there. Up to five a day.
+                <span className="text-slate-300">Applies on its own:</span> everything your
+                AI is allowed to design — new sections, example rows, new fields, changes to
+                sections you already have, and rules that run by themselves afterwards.
               </div>
               <div>
-                <span className="text-slate-300">Still waits for you:</span> anything that
-                changes a field or a layout you already have, any rule that runs by itself
-                afterwards, anything the assistant flagged, and removing a section — which
-                it can never do.
+                <span className="text-slate-300">Still waits for you:</span> nothing. Turn
+                this off and every design waits for your yes instead.
               </div>
-              <div>Whatever it builds appears in the panel, and you can delete it.</div>
+              <div>
+                <span className="text-slate-300">Never, either way:</span> removing a
+                section. That one is typed out by you, in Warmluke, and your AI cannot ask
+                for it at all.
+              </div>
+              <div>
+                Whatever it builds appears in the panel with what was asked for, and you can
+                delete it.
+              </div>
             </div>
           </div>
 

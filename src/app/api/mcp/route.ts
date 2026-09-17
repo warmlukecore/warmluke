@@ -15,12 +15,7 @@ import {
 import { blueprintAsText, runTurn, schemasFor } from "@/lib/engine";
 import { PLAN_FORMAT, WORKED_EXAMPLE, parseReply } from "@/lib/ai";
 import { vocabularyPrompt } from "@/lib/capabilities";
-import {
-  BUILT_WITHOUT_ASKING,
-  describePlan,
-  describeRules,
-  type RuleRow,
-} from "@/lib/describe";
+import { describePlan, describeRules, type RuleRow } from "@/lib/describe";
 import { applyPlans, logClientBuild } from "@/lib/apply";
 import { ALLOWED_ICONS } from "@/lib/types";
 import type { AssistantPlan, ModuleRow, ProjectRow, UiSchema } from "@/lib/types";
@@ -311,13 +306,17 @@ const removals = (plans: AssistantPlan[]) =>
   plans.filter((p) => p.changeType === "MODULE_DELETE").map((p) => p.deleteConfirmName ?? "a section");
 
 /**
- * How many designs an assistant may build unattended in a day.
+ * There is no ceiling on automatic builds any more.
  *
- * Not about cost — about waking up to a changed app. A merchant who
- * wanted ten new sections will ask again tomorrow; a client stuck in
- * a loop will not.
+ * There used to be five a day, against a client stuck in a loop. But
+ * every design already spends one of the merchant's included turns
+ * before it is built, so a loop stops itself at the quota — the
+ * ceiling only ever stopped the merchant who meant it, and stopped
+ * them in the middle of a day's work with no way to raise it.
+ *
+ * The one account with no quota to stop it is one an admin has
+ * deliberately set to unlimited.
  */
-const AUTO_BUILDS_PER_DAY = 5;
 
 /** Change types that only ever add. Everything else waits. */
 // What may be built without the merchant reading it first.
@@ -332,7 +331,6 @@ const AUTO_BUILDS_PER_DAY = 5;
 // Everything else still waits, because it edits what is already
 // there — or, for AUTOMATION_ADD, starts something that writes to
 // rows on its own afterwards.
-const ADDITIVE = BUILT_WITHOUT_ASKING;
 
 /** What went in, in the words the panel already uses for a build. */
 function builtLine(
@@ -347,37 +345,6 @@ function builtLine(
   return errors.length ? `${head} — the rest stopped on an error.` : `${head}.`;
 }
 
-/**
- * Whether this design may be built without the merchant reading it,
- * and if not, the reason in words they can be told.
- *
- * The setting says they are willing in principle. This decides about
- * one design, because "yes, build things for me" is not the same as
- * "yes, rewrite the section my staff use" — and the engine's own
- * doubts are exactly the moments a person should be reading.
- */
-function whyNotAutomatic(
-  plans: AssistantPlan[],
-  unmet: string[],
-  modules: ModuleRow[],
-  store: Parameters<typeof blueprintAsText>[2]
-): string | null {
-  if (plans.length === 0) return "there is nothing to build";
-
-  const heavy = plans.find((p) => !ADDITIVE.has(p.changeType));
-  if (heavy) {
-    return `it changes something that already exists (${heavy.changeType}), and only additions are built automatically`;
-  }
-  if (unmet.length > 0) {
-    return "part of what was asked for is not covered by this design, which is worth reading first";
-  }
-  // A warning is the engine saying "this may not be what you want" —
-  // the duplicate-of-your-Shopify-data one, most often.
-  const warned = plans.some((p) => (describePlan(p, modules, undefined, store).warnings ?? []).length > 0);
-  if (warned) return "the design carries a warning worth reading first";
-
-  return null;
-}
 
 /**
  * The rules on a project, or on one section of it.
@@ -545,17 +512,18 @@ async function settleDesign(opts: {
   design: string | null;
   unmet: string[];
   request: string;
-  store: Parameters<typeof whyNotAutomatic>[3];
+  store: Parameters<typeof blueprintAsText>[2];
 }) {
   const { db, id, origin, project, moduleList, plans, design, unmet, request, store } = opts;
 
       // ── Does this one get to skip the merchant? ──────────────
       //
       // The switch says they are willing; this decides whether THIS
-      // design qualifies. Additive only, nothing the engine flagged,
-      // and a ceiling per day — a client in a loop must not be able
-      // to build fifty sections overnight.
-      const autoReason = whyNotAutomatic(plans, unmet, moduleList, store);
+      // design qualifies. The setting says everything, so the only
+      // thing left to decide is whether there is anything to build.
+      // The switch means everything now, so the only design that
+      // cannot be built on its own is one with nothing in it.
+      const autoReason = plans.length === 0 ? "there is nothing to build" : null;
       const wantsAuto = project.auto_build === true;
 
       const gone = removals(plans);
@@ -570,29 +538,9 @@ async function settleDesign(opts: {
         );
       }
 
-      let automatic = wantsAuto && autoReason === null;
+      const automatic = wantsAuto && autoReason === null;
       // Why an automatic build did not happen, when it was meant to.
       let autoFailed: string[] = [];
-      let ceilingHit = false;
-      if (automatic) {
-        // Counted before building, so a loop pays for its own stop.
-        const since = new Date(Date.now() - 864e5).toISOString();
-        const { count } = await db
-          .from("build_requests")
-          .select("id", { count: "exact", head: true })
-          .eq("project_id", project.id)
-          .eq("auto_built", true)
-          .gt("built_at", since);
-        if ((count ?? 0) >= AUTO_BUILDS_PER_DAY) {
-          automatic = false;
-          // Said out loud. The design qualified and nothing failed, so
-          // neither of the other two reasons fires — a merchant with
-          // the switch on simply saw it stop working for the rest of
-          // the day with no explanation anywhere. Same silence that
-          // used to hide a failed apply, one branch over.
-          ceilingHit = true;
-        }
-      }
 
       const { data: requestId, error: err } = await db.rpc("abo_mcp_propose", {
         p_project: project.id,
@@ -632,7 +580,7 @@ async function settleDesign(opts: {
             id,
             text({
               status: errors.length ? "partly built" : "built",
-              note: "This app builds additive changes without waiting. Tell the merchant what was built — it is already live and shows in their panel.",
+              note: "This app builds without waiting for approval. Tell the merchant what was built — it is already live and shows in their panel.",
               built: applied,
               ...(errors.length ? { not_built: errors.slice(0, 3) } : {}),
               design,
@@ -647,6 +595,14 @@ async function settleDesign(opts: {
         // automatic builds switched on saw it silently stop working,
         // and nothing anywhere said why. Carried out instead.
         autoFailed = errors;
+        // Recorded on the request, not only returned to the assistant.
+        // The merchant looks at a card in Warmluke, not at the tool's
+        // answer — and a card that asks with the setting on has to be
+        // able to say why, or it reads as the setting not working.
+        await db
+          .from("build_requests")
+          .update({ outcome: { applied: [], errors } })
+          .eq("id", requestId);
       }
 
       return ok(
@@ -665,13 +621,9 @@ async function settleDesign(opts: {
             ? {
                 not_automatic_because: `it could not be built: ${autoFailed.slice(0, 3).join("; ")}`,
               }
-            : ceilingHit
-              ? {
-                  not_automatic_because: `this app has already been built automatically ${AUTO_BUILDS_PER_DAY} times today, so the rest of today's changes wait for the merchant`,
-                }
-              : wantsAuto && autoReason
-                ? { not_automatic_because: autoReason }
-                : {}),
+            : wantsAuto && autoReason
+              ? { not_automatic_because: autoReason }
+              : {}),
           open: `${origin}/app/${project.id}`,
         })
       );

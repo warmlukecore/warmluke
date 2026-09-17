@@ -107,23 +107,6 @@ const autoMade = [];
 const madeRequests = [];
 let aiThreadId = null;
 
-// Clear the day's ceiling of THIS check's own leavings before starting.
-//
-// The cleanup below un-counts the rows a run creates, but a run that
-// crashed, or one from before that cleanup existed, leaves its rows
-// counted for twenty-four hours. Four of them were enough to push the
-// fifth assertion here into "waiting for approval" — a red that was
-// entirely the test's own doing.
-//
-// Matched on the wording this file generates, so a real automatic
-// build the merchant actually wanted is never touched.
-await admin
-  .from("build_requests")
-  .update({ auto_built: false })
-  .eq("project_id", project.id)
-  .eq("auto_built", true)
-  .ilike("request", "%Check mu%");
-
 try {
   console.log("with the setting off");
   await setAuto(false);
@@ -214,13 +197,11 @@ try {
     madeRequests.push(row.id);
   }
 
-  // Adding a column cannot lose one — the validator refuses a FIELD_ADD
-// that drops or reorders anything — so it sits on the same side of the
-// line as a new section, which has always built automatically.
-// The setting's own description is part of the setting. It promised
+  // The setting's own description is part of the setting. It promised
 // "new sections and example rows" for a day after a new field joined
 // them, and its second line — "anything that changes a section you
-// already have waits" — was untrue while it said so.
+// already have waits" — was untrue while it said so. It now says
+// everything, so everything is what it has to do.
 console.log("\nthe screen describes what it actually does");
 {
   const settings = readFileSync(
@@ -231,33 +212,32 @@ console.log("\nthe screen describes what it actually does");
     new URL("../src/app/api/mcp/route.ts", import.meta.url),
     "utf8"
   );
-  const describe = readFileSync(
-    new URL("../src/lib/describe.ts", import.meta.url),
-    "utf8"
-  );
   const panel = readFileSync(
     new URL("../src/components/ChatPanel.tsx", import.meta.url),
     "utf8"
   );
-  const additive =
-    /export const BUILT_WITHOUT_ASKING = new Set\(\[([^\]]*)\]\)/.exec(describe)?.[1] ?? "";
-  check("a new section is on the list", additive.includes("NEW_MODULE"));
-  check("and so is a new field", additive.includes("FIELD_ADD"));
-  check("and the settings screen says so too", /new fields added to a section/.test(settings));
-  // A rule keeps writing to rows after it is built, so it is the one
-  // addition that still asks.
-  check("a rule is not on the list", !additive.includes("AUTOMATION_ADD"));
-
-  // One list, read by both. The card telling a merchant why a design
-  // is still asking has to be reading the list the server decided on
-  // — a second copy would drift and the reason would be a guess.
-  check("the server reads that one list", /ADDITIVE = BUILT_WITHOUT_ASKING/.test(route));
-  check("and so does the card", /BUILT_WITHOUT_ASKING/.test(panel));
-  // The card that made the setting look broken: it is on, and this
-  // one is still asking, and nothing said why.
+  // Nothing is held back by what kind of change it is any more. A
+  // list of allowed change types anywhere in this path means the
+  // limit grew back.
+  check("no change type is singled out", !/ADDITIVE|BUILT_WITHOUT_ASKING/.test(route));
+  check("and the screen does not promise one", !/Applies on its own:<\/span> new sections/.test(settings));
+  check("the screen says it waits for nothing", /Still waits for you:<\/span> nothing/.test(settings));
+  // The ceiling is gone too, and the quota is what stops a loop now.
+  check("there is no builds-per-day ceiling", !/AUTO_BUILDS_PER_DAY/.test(route));
+  // The one thing the setting must never reach, on or off.
+  check("removing a section is still refused outright", /Removing a section cannot be done from here/.test(route));
+  check("and the screen still says so", /Never, either way:/.test(settings));
+  // A card that asks anyway, with the setting on, has to say why —
+  // otherwise the setting reads as broken, which is what it did.
   check(
     "a card that asks anyway says why",
-    /Waiting for you:/.test(panel) && /only builds things that are added/.test(panel)
+    /Waiting for you:/.test(panel) && /did not go in/.test(panel)
+  );
+  // And the reason has to have been written down, or the card has
+  // nothing to read.
+  check(
+    "a failed automatic build records its reason",
+    /\.update\(\{ outcome: \{ applied: \[\], errors \} \}\)/.test(route)
   );
 }
 
@@ -277,7 +257,12 @@ console.log("\nand a new field, which loses nothing");
   if (added.request_id) madeRequests.push(added.request_id);
 }
 
-console.log("\nbut not a rule that runs on every order");
+  // A rule was the last thing held back: it keeps writing to rows
+  // after it is built, so it is not one action but an ongoing one.
+  // The setting now says everything, and a merchant who reads
+  // "waits for you: nothing" and then finds a rule waiting has been
+  // told something untrue.
+  console.log("\nand a rule that runs on every row, which used to wait");
   const ruled = await tool(
     "propose_change",
     {
@@ -285,18 +270,27 @@ console.log("\nbut not a rule that runs on every order");
     },
     3
   );
-  check("it waits instead", ruled.status === "waiting for approval");
-  if (ruled.status !== "waiting for approval") {
+  const ruleBuilt = ruled.status === "built" || ruled.status === "partly built";
+  check("it is built too", ruleBuilt);
+  if (!ruleBuilt) {
     console.log(`     propose_change said: ${JSON.stringify(ruled).slice(0, 400)}`);
   }
-  check(
-    "and says why the setting did not apply",
-    typeof ruled.not_automatic_because === "string" && ruled.not_automatic_because.length > 0
-  );
+  check("and nothing is said about the setting not applying", !ruled.not_automatic_because);
   if (ruled.not_automatic_because) console.log(`     → ${ruled.not_automatic_because}`);
   if (ruled.request_id) madeRequests.push(ruled.request_id);
 
-  console.log("\nand the day is counted");
+  // The one that must still be refused however the setting is set.
+  console.log("\nbut removing a section, never");
+  const removal = await tool(
+    "propose_change",
+    { request: `Delete the section On Check ${stamp} entirely.` },
+    4
+  );
+  check("it is refused outright", /cannot be done from here/i.test(removal.error ?? ""));
+  check("and nothing was requested", !removal.request_id);
+  if (removal.request_id) madeRequests.push(removal.request_id);
+
+  console.log("\nand the build is recorded as automatic");
   const { count } = await admin
     .from("build_requests")
     .select("id", { count: "exact", head: true })

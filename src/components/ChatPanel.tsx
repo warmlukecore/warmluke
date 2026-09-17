@@ -9,12 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { watchRows } from "@/lib/live";
 import GenericRenderer from "@/components/GenericRenderer";
-import {
-  BUILT_WITHOUT_ASKING,
-  describeAutomation,
-  describePlan,
-  type StoreFacts,
-} from "@/lib/describe";
+import { describeAutomation, describePlan, type StoreFacts } from "@/lib/describe";
 import type { BuildOutcome } from "@/components/AppShell";
 import { storeOverview } from "@/lib/store-read";
 import { supabase } from "@/lib/supabase-client";
@@ -530,8 +525,8 @@ export default function ChatPanel({
     requestText?: string
   ) => Promise<BuildOutcome>;
   onDiscard: (planId: string) => void;
-  /** Whether this project builds additions on its own, so a card that
-   *  is asking anyway can say why rather than look broken. */
+  /** Whether this project builds on its own, so a card that is asking
+   *  anyway can say why rather than look broken. */
   autoBuild: boolean;
   /** Whose store to warn about, if this project has one connected. */
   projectId: string;
@@ -583,39 +578,17 @@ export default function ChatPanel({
   /**
    * Why a design is still asking although the setting is on.
    *
-   * The same three questions the server asks, in the same order, from
-   * the same list — see BUILT_WITHOUT_ASKING. It is worded for the
-   * merchant rather than for a model, because this one is read by a
-   * person looking at a button they thought they had turned off.
-   *
-   * ponytail: the day's ceiling is the one reason not derivable from
-   * the design, so a card held back by it says nothing here. Give the
-   * request a stored reason if that turns out to confuse anyone.
+   * With the setting on there is only one answer left: it was tried
+   * and it did not go in. Everything else the assistant may design is
+   * built without asking now, so a card that is here anyway is a card
+   * that failed — and saying nothing made the setting look broken.
    */
   const whyItIsAsking = (r: {
-    plans: AssistantPlan[] | null;
-    unmet: string[] | null;
+    outcome: { applied?: unknown[]; errors?: string[] } | null;
   }): string | null => {
-    const plans = r.plans ?? [];
-    if (plans.length === 0) return null;
-    const heavy = plans.find((p) => !BUILT_WITHOUT_ASKING.has(p.changeType));
-    if (heavy) {
-      const target = modules.find((m) => m.id === heavy.targetModuleId);
-      return target
-        ? `this changes ${target.nav_label}, which you already have — the setting only builds things that are added.`
-        : "this changes something you already have — the setting only builds things that are added.";
-    }
-    if ((r.unmet?.length ?? 0) > 0) {
-      return "part of what was asked for is not in this design, so it is worth reading first.";
-    }
-    if (
-      plans.some(
-        (p) => (describePlan(p, modules, undefined, storeFacts).warnings ?? []).length > 0
-      )
-    ) {
-      return "the design carries a warning worth reading first.";
-    }
-    return null;
+    const errors = r.outcome?.errors ?? [];
+    if (errors.length === 0) return null;
+    return `it was tried on its own and did not go in — ${errors.slice(0, 2).join("; ")}`;
   };
 
   const loadRequests = useCallback(async () => {

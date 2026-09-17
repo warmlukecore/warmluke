@@ -191,7 +191,7 @@ export interface UiSchema {
 
 export interface ProjectRow {
   /**
-   * Additive designs from an AI apply without waiting for approval.
+   * Designs from an AI apply without waiting for approval.
    * Per project, because the risk is the app's: on for something
    * being played with, off for the one staff use every day.
    */
