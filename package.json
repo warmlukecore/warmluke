@@ -7,7 +7,8 @@
     "dev": "next dev -p 3100",
     "build": "NODE_ENV=production next build",
     "start": "next start -p 3100",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "audit": "pnpm audit --audit-level=high"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",

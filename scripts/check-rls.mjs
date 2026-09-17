@@ -263,5 +263,55 @@ console.log("\nand no table is left outside the wall");
   }
 }
 
+// ── A project id that is not yours ──────────────────────────────
+//
+// Editing two characters of the uuid in /app/<id> showed the empty
+// "Start building" workspace. No row ever crossed the boundary — RLS
+// refused every one — but the SCREEN said more than the database did,
+// and it read exactly like somebody else's app had opened.
+//
+// Two halves, and both have to hold: the data side, checked live here,
+// and the shell's reading of an empty answer, checked in its source.
+// The second is read rather than driven because reaching that screen
+// in a browser needs a real session, and minting one to assert a
+// five-line condition is not worth putting an access token on disk.
+console.log("\na project id that is not yours");
+{
+  // Asked as the outsider this check already created, which is exactly
+  // who a tampered url is being opened by.
+  const nowhere = "00000000-0000-4000-8000-000000000000";
+  const none = await X(`projects?id=eq.${nowhere}&select=id`);
+  check("an id nobody owns returns no rows", Array.isArray(none.json) && none.json.length === 0);
+  // A real project that is not theirs is already covered above, where
+  // the outsider is refused the one the owner just built.
+
+  const shell = readFileSync(new URL("../src/components/AppShell.tsx", import.meta.url), "utf8");
+  // Two states cannot tell "still loading" from "nothing there", which
+  // is the whole bug: null meant both, and both rendered the app.
+  check(
+    "the shell can tell 'not asked yet' from 'nothing came back'",
+    /useState<ProjectRow \| null \| undefined>\(undefined\)/.test(shell)
+  );
+  check(
+    "and renders a refusal rather than an empty workspace",
+    /if \(project === null\) \{/.test(shell)
+  );
+  // One screen for "does not exist" and "not yours". Telling them
+  // apart is how an outsider learns which ids are real.
+  // Scoped to that screen's own copy, not the whole file: "does not
+  // exist" is ordinary wording elsewhere in a 1600-line component, and
+  // a check that greps everything fails for the wrong reason.
+  const refusal = shell.slice(
+    shell.indexOf("if (project === null) {"),
+    shell.indexOf("<FormatProvider")
+  );
+  check(
+    "that says the same thing either way",
+    /isn&rsquo;t available/.test(refusal) &&
+      !/(does not exist|doesn&rsquo;t exist|not found|no such)/i.test(refusal)
+  );
+  check("and offers a way back", /\/dashboard/.test(refusal));
+}
+
 console.log(fails.length === 0 ? "\nall boundaries hold" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

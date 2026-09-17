@@ -105,7 +105,12 @@ export default function AppShell({
   ownerEmail: string;
 }) {
   const router = useRouter();
-  const [project, setProject] = useState<ProjectRow | null>(null);
+  // Three states, not two. `undefined` is "not asked yet"; `null` is
+  // "asked, and nothing came back". Collapsing them is what let a
+  // tampered id render the empty-workspace screen: RLS correctly
+  // returned no rows, and the shell read that as a brand-new project
+  // and said "Start building".
+  const [project, setProject] = useState<ProjectRow | null | undefined>(undefined);
   // Staff are let in by the database, not by this component — but the
   // owner's tools would still render for them and then fail on save.
   // Showing a button that cannot work is its own kind of lying.
@@ -1118,6 +1123,34 @@ export default function AppShell({
         ? { currency: project?.currency, convert: { rate: fx.rate, from: store.currency } }
         : { currency: store.currency, convert: null }
       : { currency: project?.currency, convert: null };
+
+  // Nothing came back for this id, so there is nothing here for them.
+  //
+  // One screen for two different facts — the project does not exist,
+  // and the project is somebody else's — because telling them apart is
+  // how an outsider learns which ids are real. They already cannot read
+  // a row either way; this stops the SCREEN from saying more than the
+  // database does.
+  if (project === null) {
+    return (
+      <div className="flex min-h-[100dvh] items-center justify-center bg-slate-950 px-6">
+        <div className="max-w-sm text-center">
+          <h1 className="font-display text-lg font-semibold text-slate-200">
+            This app isn&rsquo;t available
+          </h1>
+          <p className="mt-2 text-sm text-slate-400">
+            It may have been deleted, or it belongs to someone who hasn&rsquo;t shared it with you.
+          </p>
+          <button
+            onClick={() => router.replace("/dashboard")}
+            className="mt-5 rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-900 transition-colors hover:bg-white"
+          >
+            Back to your apps
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <FormatProvider locale={project?.locale} currency={project?.currency}>
