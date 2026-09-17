@@ -14,6 +14,7 @@ import { describePlan } from "@/lib/describe";
 import { apiFetch, takePendingPrompt } from "@/lib/auth";
 import GenericRenderer from "@/components/GenericRenderer";
 import ChatPanel, { type ChatMessage, nextChatId } from "@/components/ChatPanel";
+import { undoableFrom } from "@/lib/undo";
 import VersionHistory from "@/components/VersionHistory";
 import AutomationsPanel from "@/components/AutomationsPanel";
 import { FormatProvider } from "@/lib/format";
@@ -269,10 +270,18 @@ export default function AppShell({
               : { id: m.id, role: "assistant", text: p.message ?? `${p.plans.length} changes` }
           );
         } else {
+          // A build that recorded what it changed can offer to put it
+          // back. Read from the stored payload, so the offer survives
+          // a reload — which is where it matters, because a change
+          // made without anyone watching is one they find later.
+          const undoSteps = (p as { undo?: Array<{ what: string }> }).undo ?? [];
           rebuilt.push({
             id: m.id,
             role: "assistant",
             text: (p as { message?: string }).message ?? "(an earlier reply)",
+            ...(undoSteps.length
+              ? { undo: { messageId: m.id, what: undoSteps.map((u) => u.what) } }
+              : {}),
           });
         }
       }
@@ -306,7 +315,12 @@ export default function AppShell({
    * believe the screen. So a thread is started to hold it.
    */
   const recordOutcome = useCallback(
-    async (text: string, role: "assistant" | "user" = "assistant") => {
+    async (
+      text: string,
+      role: "assistant" | "user" = "assistant",
+      /** What the build applied, so the message can offer to put it back. */
+      applied: unknown[] = []
+    ): Promise<string | null> => {
       let id = conversationIdRef.current ?? conversationId;
       if (!id) {
         const { data: made } = await supabase
@@ -314,23 +328,32 @@ export default function AppShell({
           .insert({ project_id: projectId, title: text.replace(/^[^\w]+/, "").slice(0, 80) })
           .select("id")
           .single();
-        if (!made) return;
+        if (!made) return null;
         id = made.id as string;
         rememberConversation(id);
       }
-      await supabase.from("messages").insert({
-        conversation_id: id,
-        role,
-        content: text,
-        // A reloaded thread reads a user turn out of payload.text and
-        // an assistant turn out of payload.message. Writing only the
-        // assistant shape put the request line back as an empty blue
-        // bubble the next time the panel opened.
-        payload:
-          role === "user"
-            ? { kind: "asked", text, via: "client" }
-            : { type: "applied", message: text },
-      });
+      const undo = role === "assistant" ? undoableFrom(applied) : [];
+      // The id comes back so the bubble already on screen can offer to
+      // put it back straight away. Without it the offer only appeared
+      // after a reload, which is the one moment they do not need it.
+      const { data: written } = await supabase
+        .from("messages")
+        .insert({
+          conversation_id: id,
+          role,
+          content: text,
+          // A reloaded thread reads a user turn out of payload.text and
+          // an assistant turn out of payload.message. Writing only the
+          // assistant shape put the request line back as an empty blue
+          // bubble the next time the panel opened.
+          payload:
+            role === "user"
+              ? { kind: "asked", text, via: "client" }
+              : { type: "applied", message: text, ...(undo.length ? { undo } : {}) },
+        })
+        .select("id")
+        .single();
+      return (written?.id as string) ?? null;
     },
     [conversationId, projectId, rememberConversation]
   );
@@ -1087,14 +1110,29 @@ export default function AppShell({
           const shown = titles.slice(0, 3).join(" · ");
           const rest = titles.length - 3;
           const doneText = `✅ ${shown}${rest > 0 ? ` · and ${rest} more` : ""}. Tell me what to change next.`;
+          const bubbleId = nextChatId();
           setChatMessages((prev) => [
             ...prev,
-            { id: nextChatId(), role: "assistant", text: doneText },
+            { id: bubbleId, role: "assistant", text: doneText },
           ]);
           // Only a design of Luke's own belongs in the open thread;
           // one raised by their assistant is recorded by the server,
           // in the thread that collects those.
-          if (!requestId) await recordOutcome(doneText);
+          if (!requestId) {
+            const writtenId = await recordOutcome(doneText, "assistant", results);
+            // Put it back needs the row's id, not this session's, so
+            // the offer is attached once the row exists.
+            const undo = undoableFrom(results);
+            if (writtenId && undo.length) {
+              setChatMessages((prev) =>
+                prev.map((m) =>
+                  m.id === bubbleId
+                    ? { ...m, undo: { messageId: writtenId, what: undo.map((u) => u.what) } }
+                    : m
+                )
+              );
+            }
+          }
           await loadModules();
           const first = results.find((r) => r.changeType === "NEW_MODULE");
           if (first?.moduleId) setSelectedModuleId(first.moduleId as string);
@@ -1122,6 +1160,28 @@ export default function AppShell({
       }
     },
     [building, projectId, loadModules, loadModuleData, selectedModuleId, recordOutcome, planTitle]
+  );
+
+  /**
+   * Puts one build's changes back and shows the result in the thread.
+   *
+   * Here rather than in the panel because the section on screen has to
+   * be reloaded afterwards — a schema restored under a page still
+   * showing the old one is the same silence this was built to end.
+   */
+  const undoBuild = useCallback(
+    async (messageId: string) => {
+      const { ok, data } = await apiFetch("/api/undo", { projectId, messageId });
+      const line = (data.message as string) ?? (data.error as string) ?? "Nothing was put back.";
+      setChatMessages((prev) => [
+        ...prev,
+        { id: nextChatId(), role: ok ? "assistant" : "system", text: line },
+      ]);
+      await loadModules();
+      if (selectedModuleId) await loadModuleData(selectedModuleId);
+      return ok ? { message: line } : null;
+    },
+    [projectId, loadModules, loadModuleData, selectedModuleId]
   );
 
   const discardPlan = useCallback(
@@ -1622,6 +1682,7 @@ export default function AppShell({
       <ChatPanel
         projectId={projectId}
         autoBuild={project?.auto_build === true}
+        onUndo={undoBuild}
         width={chat.width}
         dragging={chat.dragging}
         onResizeStart={chat.onPointerDown}

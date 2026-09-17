@@ -12,6 +12,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { undoableFrom, type UndoStep } from "@/lib/undo";
 import { validatePlan } from "@/lib/ai";
 import type {
   AssistantPlan,
@@ -39,6 +40,73 @@ const writer =
     if (error) throw new Error(error.message);
     return (data ?? {}) as Record<string, unknown>;
   };
+
+/**
+ * Puts a build's changes back, as new changes.
+ *
+ * Nothing is deleted and no version is rewritten. Restoring version 3
+ * writes version 5 holding what version 3 held, so the history reads
+ * as what really happened — including the putting back. A merchant who
+ * changes their mind twice is not left with a gap where a version was.
+ *
+ * Every write goes through abo_build, the same door a build goes
+ * through, so the same checks apply to undoing as to doing.
+ */
+export async function putBack(
+  client: Db,
+  projectId: string,
+  steps: UndoStep[]
+): Promise<{ done: string[]; couldNot: string[] }> {
+  const write = writer(client, projectId, null);
+  const done: string[] = [];
+  const couldNot: string[] = [];
+
+  for (const step of steps) {
+    try {
+      if (step.kind === "rule") {
+        const off = await write("automation_disable", { name: step.automationName });
+        if (Number(off.count ?? 0) > 0) done.push(`switched off ${step.what}`);
+        else couldNot.push(`${step.what} — it is not there any more`);
+        continue;
+      }
+
+      // What it was immediately before this build wrote its version.
+      const { data: before } = await client
+        .from("ui_schemas")
+        .select("schema_json")
+        .eq("module_id", step.moduleId)
+        .eq("version", step.version - 1)
+        .maybeSingle();
+      if (!before?.schema_json) {
+        couldNot.push(`${step.what} — nothing earlier was kept`);
+        continue;
+      }
+
+      const { data: latest } = await client
+        .from("ui_schemas")
+        .select("version")
+        .eq("module_id", step.moduleId)
+        .order("version", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      await write("schema_insert", {
+        module_id: step.moduleId,
+        schema_json: before.schema_json,
+        version: Number(latest?.version ?? step.version) + 1,
+        // "user", because the merchant asked for this one — the
+        // column only knows those two words, and a third was refused
+        // by a check constraint the first time this ran.
+        created_by: "user",
+        change_description: `Put back to version ${step.version - 1}.`,
+      });
+      done.push(`put back ${step.what}`);
+    } catch (e) {
+      couldNot.push(`${step.what} — ${e instanceof Error ? e.message : "it would not go back"}`);
+    }
+  }
+  return { done, couldNot };
+}
 
 /**
  * The thread every change made by the merchant's own AI is written to.
@@ -71,7 +139,16 @@ export async function logClientBuild(
   client: Db,
   projectId: string,
   asked: string,
-  outcome: string
+  outcome: string,
+  /**
+   * What the build applied, so the message can offer to put it back.
+   *
+   * Worked out here and stored on the message, not read off the
+   * request later: what we want to restore is what the section was
+   * before THIS build, and by the time anyone taps it the section may
+   * have moved on twice more.
+   */
+  applied: unknown[] = []
 ): Promise<void> {
   try {
     const { data: found } = await client
@@ -115,7 +192,10 @@ export async function logClientBuild(
         conversation_id: id,
         role: "assistant",
         content: outcome,
-        payload: { type: "applied", message: outcome },
+        payload: (() => {
+          const undo = undoableFrom(applied);
+          return { type: "applied", message: outcome, ...(undo.length ? { undo } : {}) };
+        })(),
         created_at: new Date(t + 1).toISOString(),
       },
     ]);

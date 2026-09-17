@@ -42,6 +42,15 @@ export interface ChatMessage {
    * wrote it in this box and forgot.
    */
   viaClient?: boolean;
+  /**
+   * What this build changed that can be put back, and the id of the
+   * stored message holding it.
+   *
+   * Carried on the message rather than looked up on demand: the point
+   * of putting something back is to restore what it was before THIS
+   * build, and the section may have moved on twice since.
+   */
+  undo?: { messageId: string; what: string[] };
 }
 
 let msgSeq = 0;
@@ -490,6 +499,7 @@ export default function ChatPanel({
   onApply,
   onBuild,
   onDiscard,
+  onUndo,
   autoBuild,
 }: {
   /** Panel width above lg; below it the panel is a full-width drawer. */
@@ -525,6 +535,9 @@ export default function ChatPanel({
     requestText?: string
   ) => Promise<BuildOutcome>;
   onDiscard: (planId: string) => void;
+  /** Puts one build's changes back, by the id of the message offering
+   *  it. Lives in the shell because the screen has to reload after. */
+  onUndo: (messageId: string) => Promise<{ message: string } | null>;
   /** Whether this project builds on its own, so a card that is asking
    *  anyway can say why rather than look broken. */
   autoBuild: boolean;
@@ -696,6 +709,18 @@ export default function ChatPanel({
    * works on an account whose Warmluke assistant is switched off —
    * which is the whole point of the two switches being separate.
    */
+  /** Which build is being put back, so its own button says so. */
+  const [undoing, setUndoing] = useState<string | null>(null);
+
+  async function putItBack(messageId: string) {
+    setUndoing(messageId);
+    try {
+      await onUndo(messageId);
+    } finally {
+      setUndoing(null);
+    }
+  }
+
   async function buildRequest(r: { id: string; request: string; plans: AssistantPlan[] | null }) {
     if (!r.plans?.length) return;
     // This tap is the yes. Recording it here is what lets the merchant
@@ -1344,7 +1369,26 @@ export default function ChatPanel({
           if (!m.plan) {
             return (
               <div key={m.id} className="rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-                {m.text}
+                <div className="break-words">{m.text}</div>
+                {/* Under the build, which is where they find out it
+                    happened — a change made with nobody watching is
+                    read here first, and this is the moment they want
+                    to say no. It names what goes back, because "undo"
+                    on its own does not say how much. */}
+                {m.undo && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-emerald-200 pt-1.5">
+                    <button
+                      onClick={() => putItBack(m.undo!.messageId)}
+                      disabled={undoing !== null}
+                      className="rounded-lg border border-emerald-300 bg-white px-2 py-1 text-[10px] font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+                    >
+                      {undoing === m.undo.messageId ? "Putting it back…" : "↩️ Put it back"}
+                    </button>
+                    <span className="text-[10px] text-emerald-700/80">
+                      {m.undo.what.join(", ")}
+                    </span>
+                  </div>
+                )}
               </div>
             );
           }

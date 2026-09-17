@@ -115,7 +115,8 @@ export async function POST(req: Request) {
           asked.request,
           `✅ ${shown}${rest > 0 ? ` · and ${rest} more` : ""}${
             errors.length ? " — the rest stopped on an error." : "."
-          }`
+          }`,
+          applied
         );
       }
     }

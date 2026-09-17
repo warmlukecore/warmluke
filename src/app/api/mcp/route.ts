@@ -576,12 +576,19 @@ async function settleDesign(opts: {
           // that is the whole point of automatic builds — so if this
           // did not record it, the app would change and the merchant's
           // history would stay blank.
-          await logClientBuild(db, project.id, request, builtLine(plans, moduleList, errors));
+          await logClientBuild(db, project.id, request, builtLine(plans, moduleList, errors), applied);
           return ok(
             id,
             text({
               status: errors.length ? "partly built" : "built",
               note: "This app builds without waiting for approval. Tell the merchant what was built — it is already live and shows in their panel.",
+              // Named even though nobody has to approve it. An
+              // automatic build was the one answer that came back
+              // without an id, so an assistant that built something
+              // had no way to refer to it afterwards — not in
+              // build_history, not to the merchant. It is the same id
+              // every other answer here carries.
+              request_id: requestId,
               built: applied,
               ...(errors.length ? { not_built: errors.slice(0, 3) } : {}),
               design,
@@ -1492,7 +1499,8 @@ export async function POST(req: Request) {
         db,
         reqRow.project_id,
         reqRow.request,
-        builtLine(reqRow.plans ?? [], (builtMods ?? []) as ModuleRow[], errors)
+        builtLine(reqRow.plans ?? [], (builtMods ?? []) as ModuleRow[], errors),
+        applied
       );
 
       const origin = new URL(req.url).origin;
