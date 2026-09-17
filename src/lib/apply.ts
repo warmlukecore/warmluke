@@ -40,6 +40,90 @@ const writer =
     return (data ?? {}) as Record<string, unknown>;
   };
 
+/**
+ * The thread every change made by the merchant's own AI is written to.
+ *
+ * Not "whichever thread happens to be open". Until now the record was
+ * written by the browser, which meant it existed only when somebody
+ * tapped Build there — so approving inside Claude, or leaving
+ * auto-build on, changed the app and left the history blank. Written
+ * here instead, it does not depend on anyone watching.
+ *
+ * Kept apart from Luke's own threads because these are not a
+ * conversation with Luke: nobody typed them into that box, and
+ * dropping them into whatever discussion was open would muddle both.
+ */
+const CLIENT_THREAD_TITLE = "Changes from your AI";
+
+/**
+ * Records what was asked and what came of it, for a change that came
+ * from the merchant's own assistant.
+ *
+ * Never throws: a build that worked must not be reported as failed
+ * because its diary entry did not save.
+ *
+ * ponytail: find-or-create by title, so two builds landing in the same
+ * instant could make two threads. Harmless — both are readable and the
+ * next build joins the older one. Give it a column of its own if that
+ * ever actually happens.
+ */
+export async function logClientBuild(
+  client: Db,
+  projectId: string,
+  asked: string,
+  outcome: string
+): Promise<void> {
+  try {
+    const { data: found } = await client
+      .from("conversations")
+      .select("id")
+      .eq("project_id", projectId)
+      .eq("title", CLIENT_THREAD_TITLE)
+      .order("created_at", { ascending: true })
+      .limit(1);
+
+    let id = found?.[0]?.id as string | undefined;
+    if (!id) {
+      const { data: made } = await client
+        .from("conversations")
+        .insert({ project_id: projectId, title: CLIENT_THREAD_TITLE })
+        .select("id")
+        .single();
+      id = made?.id as string | undefined;
+    }
+    if (!id) return;
+
+    const short = asked.trim().length > 160 ? `${asked.trim().slice(0, 157)}…` : asked.trim();
+    // Stamped a millisecond apart, the same way persistTurn does it.
+    // Both rows in one insert share the default now(), so ordering by
+    // created_at is a coin flip — and it came up wrong: the panel
+    // showed the answer above the question it answered. The fix for
+    // this already existed twenty lines from here and I wrote the bug
+    // again rather than looking.
+    const t = Date.now();
+    await client.from("messages").insert([
+      // The shapes the panel reads back: a user turn from payload.text,
+      // an assistant turn from payload.message.
+      {
+        conversation_id: id,
+        role: "user",
+        content: short,
+        payload: { kind: "asked", text: short, via: "client" },
+        created_at: new Date(t).toISOString(),
+      },
+      {
+        conversation_id: id,
+        role: "assistant",
+        content: outcome,
+        payload: { type: "applied", message: outcome },
+        created_at: new Date(t + 1).toISOString(),
+      },
+    ]);
+  } catch {
+    // Deliberately silent. See above.
+  }
+}
+
 export type ApplyOutcome = {
   applied: Array<Record<string, unknown>>;
   errors: string[];

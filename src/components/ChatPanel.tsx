@@ -35,6 +35,13 @@ export interface ChatMessage {
   /** Plain-language design awaiting the owner's approval. */
   blueprint?: Blueprint;
   errors?: string[];
+  /**
+   * Asked through the merchant's own Claude rather than typed here.
+   *
+   * Same bubble, one label — otherwise the thread looks like they
+   * wrote it in this box and forgot.
+   */
+  viaClient?: boolean;
 }
 
 let msgSeq = 0;
@@ -511,7 +518,11 @@ export default function ChatPanel({
   onSend: (text: string) => Promise<void> | void;
   onApply: (plan: AssistantPlan, planId: string) => void;
   /** Applies an approved blueprint's plans directly, with no model round trip. */
-  onBuild: (plans: AssistantPlan[], requestId?: string) => Promise<BuildOutcome>;
+  onBuild: (
+    plans: AssistantPlan[],
+    requestId?: string,
+    requestText?: string
+  ) => Promise<BuildOutcome>;
   onDiscard: (planId: string) => void;
   /** Whose store to warn about, if this project has one connected. */
   projectId: string;
@@ -664,7 +675,7 @@ export default function ChatPanel({
    * works on an account whose Warmluke assistant is switched off —
    * which is the whole point of the two switches being separate.
    */
-  async function buildRequest(r: { id: string; plans: AssistantPlan[] | null }) {
+  async function buildRequest(r: { id: string; request: string; plans: AssistantPlan[] | null }) {
     if (!r.plans?.length) return;
     // This tap is the yes. Recording it here is what lets the merchant
     // approve from inside Claude too: their AI can only build a
@@ -679,7 +690,9 @@ export default function ChatPanel({
     // writing anything and records the outcome afterwards, so a second
     // tab — or the assistant approving at the same moment — is told it
     // is already being built instead of building it a second time.
-    await onBuild(r.plans, r.id);
+    // The request text goes with it so the thread can say what was
+    // asked, not only what came of it.
+    await onBuild(r.plans, r.id, r.request);
     // Reloaded rather than removed: it becomes the record that this
     // was built, which is the whole point of keeping it.
     loadRequests();
@@ -1226,8 +1239,18 @@ export default function ChatPanel({
           const answered = i < messages.length - 1;
           if (m.role === "user") {
             return (
-              <div key={m.id} className="flex justify-end">
-                <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-blue-600 px-3 py-2 text-sm text-white">
+              <div key={m.id} className="flex flex-col items-end">
+                {m.viaClient && (
+                  <div className="mb-0.5 pr-1 text-[10px] tracking-wide text-slate-400 uppercase">
+                    Asked through your AI
+                  </div>
+                )}
+                {/* break-words, because a request is not always made of
+                    words: "(Pending/Packed/Verified/Discrepancy)" is one
+                    unbreakable token, and without this it ran straight
+                    off the right edge of the panel and was cut in half.
+                    Same for a pasted URL or a list of SKUs. */}
+                <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-blue-600 px-3 py-2 text-sm break-words text-white">
                   {m.text}
                 </div>
               </div>

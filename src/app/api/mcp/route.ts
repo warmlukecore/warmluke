@@ -16,7 +16,7 @@ import { blueprintAsText, runTurn, schemasFor } from "@/lib/engine";
 import { PLAN_FORMAT, WORKED_EXAMPLE, parseReply } from "@/lib/ai";
 import { vocabularyPrompt } from "@/lib/capabilities";
 import { describePlan, describeRules, type RuleRow } from "@/lib/describe";
-import { applyPlans } from "@/lib/apply";
+import { applyPlans, logClientBuild } from "@/lib/apply";
 import { ALLOWED_ICONS } from "@/lib/types";
 import type { AssistantPlan, ModuleRow, ProjectRow, UiSchema } from "@/lib/types";
 
@@ -315,7 +315,32 @@ const removals = (plans: AssistantPlan[]) =>
 const AUTO_BUILDS_PER_DAY = 5;
 
 /** Change types that only ever add. Everything else waits. */
-const ADDITIVE = new Set(["NEW_MODULE", "RECORD_SEED"]);
+// What may be built without the merchant reading it first.
+//
+// The line is not how visible the change is — a whole new section
+// appears in the sidebar unasked and has always been on this list. It
+// is whether anything can be lost. FIELD_ADD cannot: the validator
+// refuses it unless every existing column survives, in its existing
+// order, with at least one new one appended. Leaving it off while
+// NEW_MODULE was on was an inconsistency, not a safeguard.
+//
+// Everything else still waits, because it edits what is already
+// there — or, for AUTOMATION_ADD, starts something that writes to
+// rows on its own afterwards.
+const ADDITIVE = new Set(["NEW_MODULE", "RECORD_SEED", "FIELD_ADD"]);
+
+/** What went in, in the words the panel already uses for a build. */
+function builtLine(
+  plans: AssistantPlan[],
+  modules: ModuleRow[],
+  errors: string[]
+): string {
+  const titles = plans.map((p) => describePlan(p, modules).title).filter(Boolean);
+  const shown = titles.slice(0, 3).join(" · ");
+  const rest = titles.length - 3;
+  const head = `✅ ${shown}${rest > 0 ? ` · and ${rest} more` : ""}`;
+  return errors.length ? `${head} — the rest stopped on an error.` : `${head}.`;
+}
 
 /**
  * Whether this design may be built without the merchant reading it,
@@ -510,6 +535,7 @@ async function settleDesign(opts: {
       let automatic = wantsAuto && autoReason === null;
       // Why an automatic build did not happen, when it was meant to.
       let autoFailed: string[] = [];
+      let ceilingHit = false;
       if (automatic) {
         // Counted before building, so a loop pays for its own stop.
         const since = new Date(Date.now() - 864e5).toISOString();
@@ -519,7 +545,15 @@ async function settleDesign(opts: {
           .eq("project_id", project.id)
           .eq("auto_built", true)
           .gt("built_at", since);
-        if ((count ?? 0) >= AUTO_BUILDS_PER_DAY) automatic = false;
+        if ((count ?? 0) >= AUTO_BUILDS_PER_DAY) {
+          automatic = false;
+          // Said out loud. The design qualified and nothing failed, so
+          // neither of the other two reasons fires — a merchant with
+          // the switch on simply saw it stop working for the rest of
+          // the day with no explanation anywhere. Same silence that
+          // used to hide a failed apply, one branch over.
+          ceilingHit = true;
+        }
       }
 
       const { data: requestId, error: err } = await db.rpc("abo_mcp_propose", {
@@ -551,6 +585,11 @@ async function settleDesign(opts: {
             p_payload: { applied, errors },
           });
           await db.from("build_requests").update({ auto_built: true }).eq("id", requestId);
+          // Written here, not by the browser. Nobody tapped anything —
+          // that is the whole point of automatic builds — so if this
+          // did not record it, the app would change and the merchant's
+          // history would stay blank.
+          await logClientBuild(db, project.id, request, builtLine(plans, moduleList, errors));
           return ok(
             id,
             text({
@@ -588,9 +627,13 @@ async function settleDesign(opts: {
             ? {
                 not_automatic_because: `it could not be built: ${autoFailed.slice(0, 3).join("; ")}`,
               }
-            : wantsAuto && autoReason
-              ? { not_automatic_because: autoReason }
-              : {}),
+            : ceilingHit
+              ? {
+                  not_automatic_because: `this app has already been built automatically ${AUTO_BUILDS_PER_DAY} times today, so the rest of today's changes wait for the merchant`,
+                }
+              : wantsAuto && autoReason
+                ? { not_automatic_because: autoReason }
+                : {}),
           open: `${origin}/app/${project.id}`,
         })
       );
@@ -1423,6 +1466,20 @@ export async function POST(req: Request) {
         p_op: "request_built",
         p_payload: { applied, errors },
       });
+
+      // Approved inside their own Claude, so the browser never saw it
+      // and never wrote it down. Read after the build, so a section it
+      // just created is named rather than shown as an unknown id.
+      const { data: builtMods } = await db
+        .from("modules")
+        .select("*")
+        .eq("project_id", reqRow.project_id);
+      await logClientBuild(
+        db,
+        reqRow.project_id,
+        reqRow.request,
+        builtLine(reqRow.plans ?? [], (builtMods ?? []) as ModuleRow[], errors)
+      );
 
       const origin = new URL(req.url).origin;
       // A partial build is said out loud. Reporting only the parts

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getUserClient } from "@/lib/supabase-server";
-import { applyPlans } from "@/lib/apply";
-import type { AssistantPlan } from "@/lib/types";
+import { applyPlans, logClientBuild } from "@/lib/apply";
+import { describePlan } from "@/lib/describe";
+import type { AssistantPlan, ModuleRow } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -86,6 +87,37 @@ export async function POST(req: Request) {
         p_op: "request_built",
         p_payload: { applied, errors },
       });
+
+      // A request row exists only when this came from the merchant's
+      // own assistant, so this is the one path where the thread needs
+      // to say what was asked — the browser knows the outcome but the
+      // question was put somewhere else entirely.
+      const { data: askedRow } = await client
+        .from("build_requests")
+        .select("request, client_id")
+        .eq("id", requestId)
+        .maybeSingle();
+      const asked = (askedRow as { request?: string; client_id?: string | null } | null) ?? null;
+      if (asked?.client_id && asked.request) {
+        const { data: mods } = await client
+          .from("modules")
+          .select("*")
+          .eq("project_id", projectId);
+        const titles = (plans as AssistantPlan[])
+          .slice(0, applied.length)
+          .map((p) => describePlan(p, (mods ?? []) as ModuleRow[]).title)
+          .filter(Boolean);
+        const shown = titles.slice(0, 3).join(" · ");
+        const rest = titles.length - 3;
+        await logClientBuild(
+          client,
+          projectId,
+          asked.request,
+          `✅ ${shown}${rest > 0 ? ` · and ${rest} more` : ""}${
+            errors.length ? " — the rest stopped on an error." : "."
+          }`
+        );
+      }
     }
 
     // Plans run in order and stop at the first failure, so a partial run

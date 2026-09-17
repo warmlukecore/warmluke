@@ -184,6 +184,18 @@ export default function AppShell({
   // One thread per builder session: the server replays it so the
   // assistant remembers what it already asked.
   const [conversationId, setConversationId] = useState<string | null>(null);
+  // The same id, readable the instant it is set.
+  //
+  // recordOutcome starts a thread when there is none, and two calls in
+  // one tick both read the state — which React has not updated yet —
+  // so both started one. The request line and the outcome it belongs
+  // to ended up in two different threads, and the panel, showing the
+  // newest, dropped the request.
+  const conversationIdRef = useRef<string | null>(null);
+  const rememberConversation = useCallback((id: string | null) => {
+    conversationIdRef.current = id;
+    setConversationId(id);
+  }, []);
   const [threads, setThreads] = useState<Array<{ id: string; title: string | null; updated_at: string }>>([]);
   const [building, setBuilding] = useState(false);
 
@@ -223,13 +235,20 @@ export default function AppShell({
       // caller had just put on screen — the "couldn't reach the
       // assistant" line vanished the moment it was written.
       if (!id && !openLatest) return;
-      setConversationId(json.conversationId);
+      rememberConversation(json.conversationId);
 
       const rebuilt: ChatMessage[] = [];
       for (const m of json.messages ?? []) {
         const p = m.payload as (AssistantReply & { kind?: string; text?: string }) | null;
         if (m.role === "user") {
-          rebuilt.push({ id: m.id, role: "user", text: p?.text ?? "" });
+          rebuilt.push({
+            id: m.id,
+            role: "user",
+            text: p?.text ?? "",
+            // Kept across a reload, or the thread would claim they
+            // typed it here.
+            viaClient: (p as { via?: string } | null)?.via === "client",
+          });
           continue;
         }
         if (!p) continue;
@@ -287,8 +306,8 @@ export default function AppShell({
    * believe the screen. So a thread is started to hold it.
    */
   const recordOutcome = useCallback(
-    async (text: string) => {
-      let id = conversationId;
+    async (text: string, role: "assistant" | "user" = "assistant") => {
+      let id = conversationIdRef.current ?? conversationId;
       if (!id) {
         const { data: made } = await supabase
           .from("conversations")
@@ -297,16 +316,23 @@ export default function AppShell({
           .single();
         if (!made) return;
         id = made.id as string;
-        setConversationId(id);
+        rememberConversation(id);
       }
       await supabase.from("messages").insert({
         conversation_id: id,
-        role: "assistant",
+        role,
         content: text,
-        payload: { type: "applied", message: text },
+        // A reloaded thread reads a user turn out of payload.text and
+        // an assistant turn out of payload.message. Writing only the
+        // assistant shape put the request line back as an empty blue
+        // bubble the next time the panel opened.
+        payload:
+          role === "user"
+            ? { kind: "asked", text, via: "client" }
+            : { type: "applied", message: text },
       });
     },
-    [conversationId, projectId]
+    [conversationId, projectId, rememberConversation]
   );
 
   /**
@@ -323,17 +349,19 @@ export default function AppShell({
       await supabase.from("conversations").delete().eq("id", id);
       setThreads((prev) => prev.filter((t) => t.id !== id));
       if (id === conversationId) {
-        setConversationId(null);
+        // Through the ref too, or the next recordOutcome writes into a
+        // thread that has just been deleted.
+        rememberConversation(null);
         setChatMessages([]);
       }
     },
-    [conversationId]
+    [conversationId, rememberConversation]
   );
 
   const startNewThread = useCallback(() => {
-    setConversationId(null);
+    rememberConversation(null);
     setChatMessages([]);
-  }, []);
+  }, [rememberConversation]);
 
   // ── Data loading (RLS-scoped: only this owner's project) ──
   const loadModules = useCallback(async () => {
@@ -713,7 +741,7 @@ export default function AppShell({
         );
 
         if (data.conversationId && data.conversationId !== conversationId) {
-          setConversationId(data.conversationId as string);
+          rememberConversation(data.conversationId as string);
           // A brand-new thread needs to appear in the switcher.
           loadThread(data.conversationId as string).catch(() => {});
         }
@@ -997,9 +1025,35 @@ export default function AppShell({
    * that swallows its own outcome makes every caller guess.
    */
   const buildApproved = useCallback(
-    async (plans: AssistantPlan[], requestId?: string): Promise<BuildOutcome> => {
+    async (
+      plans: AssistantPlan[],
+      requestId?: string,
+      requestText?: string
+    ): Promise<BuildOutcome> => {
       if (plans.length === 0 || building) return { applied: [], errors: [] };
       setBuilding(true);
+      // What was asked for, said in the thread before what came of it.
+      //
+      // A design raised by their own Claude has no user turn here —
+      // nobody typed anything into this box — so the thread showed a
+      // row of green ticks with no question above them. Coming back a
+      // day later, "New section: Packing Verification" answered a
+      // question the screen had never asked.
+      // Shown at once, saved by the server.
+      //
+      // /api/apply writes both lines into the "Changes from your AI"
+      // thread, because a build started from their own Claude — or by
+      // auto-build — never passes through this browser at all. Writing
+      // them here as well would file the same change twice, and in a
+      // different thread.
+      const asked = requestText?.trim();
+      if (asked) {
+        const short = asked.length > 160 ? `${asked.slice(0, 157)}…` : asked;
+        setChatMessages((prev) => [
+          ...prev,
+          { id: nextChatId(), role: "user", text: short, viaClient: true },
+        ]);
+      }
       setChatMessages((prev) => [
         ...prev,
         {
@@ -1037,7 +1091,10 @@ export default function AppShell({
             ...prev,
             { id: nextChatId(), role: "assistant", text: doneText },
           ]);
-          await recordOutcome(doneText);
+          // Only a design of Luke's own belongs in the open thread;
+          // one raised by their assistant is recorded by the server,
+          // in the thread that collects those.
+          if (!requestId) await recordOutcome(doneText);
           await loadModules();
           const first = results.find((r) => r.changeType === "NEW_MODULE");
           if (first?.moduleId) setSelectedModuleId(first.moduleId as string);

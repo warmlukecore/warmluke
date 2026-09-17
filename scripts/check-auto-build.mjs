@@ -105,6 +105,7 @@ const autoMade = [];
 // the modules it created — deleting one by the other's id is a silent
 // no-op, which is the kind of cleanup that looks like it worked.
 const madeRequests = [];
+let aiThreadId = null;
 
 try {
   console.log("with the setting off");
@@ -132,6 +133,54 @@ try {
   check("and the assistant is told what was built", Array.isArray(on.built) && on.built.length > 0);
   for (const b of on.built ?? []) if (b.moduleId) made.push(b.moduleId);
 
+  // Nobody tapped anything — that is what automatic means — so if the
+  // server does not write this down, the app changes and the
+  // merchant's history stays blank. It used to: the record was written
+  // by the browser, which was never involved.
+  {
+    const { data: thread } = await admin
+      .from("conversations")
+      .select("id")
+      .eq("project_id", project.id)
+      .eq("title", "Changes from your AI")
+      .maybeSingle();
+    check("an automatic build is written to the AI's own thread", !!thread?.id);
+    if (thread?.id) {
+      aiThreadId = thread.id;
+      const { data: msgs } = await admin
+        .from("messages")
+        .select("role, content")
+        .eq("conversation_id", thread.id)
+        .order("created_at");
+      const asked = (msgs ?? []).find((m) => m.role === "user" && m.content?.includes(stamp));
+      const said = (msgs ?? []).find((m) => m.role === "assistant" && m.content?.includes(stamp));
+      check("with what was asked", !!asked);
+      check("and what came of it", !!said);
+      // Not Luke's thread. Nobody typed this into that box, and
+      // dropping it into whatever discussion was open muddles both.
+      //
+      // Asked as "did THIS run leak into another thread", not "is this
+      // the only thread" — a real account has the owner's own Luke
+      // conversations sitting there, and the first version of this
+      // check failed on them rather than on anything being wrong.
+      const { data: others } = await admin
+        .from("conversations")
+        .select("id")
+        .eq("project_id", project.id)
+        .neq("id", thread.id);
+      let leaked = 0;
+      for (const o of others ?? []) {
+        const { count } = await admin
+          .from("messages")
+          .select("id", { count: "exact", head: true })
+          .eq("conversation_id", o.id)
+          .ilike("content", `%${stamp}%`);
+        leaked += count ?? 0;
+      }
+      check("and nowhere else", leaked === 0);
+    }
+  }
+
   const row = (
     await admin
       .from("build_requests")
@@ -148,7 +197,26 @@ try {
     madeRequests.push(row.id);
   }
 
-  console.log("\nbut not a rule that runs on every order");
+  // Adding a column cannot lose one — the validator refuses a FIELD_ADD
+// that drops or reorders anything — so it sits on the same side of the
+// line as a new section, which has always built automatically.
+console.log("\nand a new field, which loses nothing");
+{
+  const added = await tool(
+    "propose_change",
+    {
+      request: `In the section On Check ${stamp}, add a text field called Checked By. Keep every existing field.`,
+    },
+    31
+  );
+  check("it is built without asking", added.status === "built" || added.status === "partly built");
+  if (added.status !== "built" && added.status !== "partly built") {
+    console.log(`     → ${JSON.stringify(added).slice(0, 300)}`);
+  }
+  if (added.request_id) madeRequests.push(added.request_id);
+}
+
+console.log("\nbut not a rule that runs on every order");
   const ruled = await tool(
     "propose_change",
     {
@@ -205,6 +273,9 @@ try {
   // have quietly thrown away a design the merchant was still deciding
   // about.
   for (const id of madeRequests) await admin.from("build_requests").delete().eq("id", id);
+  // The thread this run caused. Left behind it piles up on a real
+  // account, which is how the request ceiling filled earlier today.
+  if (aiThreadId) await admin.from("conversations").delete().eq("id", aiThreadId);
   console.log("\nthe project is back as it was");
 }
 
