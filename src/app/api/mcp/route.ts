@@ -204,7 +204,7 @@ const TOOLS = [
         before: {
           type: "string",
           description:
-            "An ISO instant. Returns only requests raised before it — pass the `next_before` from the last answer to keep going back.",
+            "An ISO instant. Returns only requests raised before it. Take the `next_before` value from the last answer and send it here, as `before` — `next_before` is accepted too, because the two names are easy to mix up.",
         },
       },
     },
@@ -412,7 +412,21 @@ type RequestRow = {
   outcome: { applied?: unknown[]; errors?: string[] } | null;
 };
 
-const shapeRequest = (r: RequestRow, client: string | null) => {
+const shapeRequest = (
+  r: RequestRow,
+  client: string | null,
+  /**
+   * Sections that still exist, when the caller has looked them up.
+   *
+   * "Built" is a fact about the past. Whether the thing is still there
+   * is a different fact, and the answer used to imply the first meant
+   * the second: a merchant asked for a scan bar, was told it had been
+   * built weeks ago and was ready to use, and opened an app where the
+   * section had since been deleted. Undefined means nobody checked,
+   * and then nothing is claimed either way.
+   */
+  liveModules?: Set<string>
+) => {
   const state =
     r.status === "partly_built"
       ? "partly built"
@@ -450,6 +464,25 @@ const shapeRequest = (r: RequestRow, client: string | null) => {
       ? {
           built: r.outcome.applied ?? [],
           did_not_build: (r.outcome.errors ?? []).slice(0, 3),
+          ...(() => {
+            if (!liveModules) return {};
+            // Only a request that actually finished can claim this.
+            // The sentence below asserts "it was built", and a row
+            // that never got that far must not say so whatever else
+            // is in its outcome.
+            if (!r.built_at) return {};
+            const touched = (r.outcome.applied ?? [])
+              .map((a) => (a as { moduleId?: string }).moduleId)
+              .filter((m): m is string => typeof m === "string");
+            const gone = [...new Set(touched.filter((m) => !liveModules.has(m)))];
+            return gone.length
+              ? {
+                  no_longer_there: `The ${gone.length === 1 ? "section" : "sections"} this built ${
+                    gone.length === 1 ? "has" : "have"
+                  } since been deleted. It was built, and it is not there now — do not tell the merchant to go and look at it.`,
+                }
+              : {};
+          })(),
         }
       : {}),
     since: r.created_at,
@@ -1131,7 +1164,12 @@ export async function POST(req: Request) {
       }
 
       const limit = Math.min(Math.max(Number(args.limit ?? 20) || 20, 1), 50);
-      const before = String(args.before ?? "").trim();
+      // Both spellings. The answer hands back a key called
+      // `next_before` and the description said to pass it, so a client
+      // reading either one sends `next_before` — which this read as
+      // absent. No error, no cursor, the same page again: paging simply
+      // never advanced, and nothing anywhere said so.
+      const before = String(args.before ?? args.next_before ?? "").trim();
       const client = clientIdOf(req);
 
       let q = db
@@ -1152,6 +1190,24 @@ export async function POST(req: Request) {
 
       // One extra was asked for, purely to know whether there is more.
       const page = (rows ?? []).slice(0, limit);
+
+      // Which of the sections these builds made are still standing.
+      // Without this the history says "built" about something that has
+      // since been deleted, and the assistant reads that as "it is
+      // there" — which is exactly what happened.
+      const touched = [
+        ...new Set(
+          page.flatMap((r) =>
+            ((r.outcome?.applied ?? []) as Array<{ moduleId?: string }>)
+              .map((a) => a.moduleId)
+              .filter((m): m is string => typeof m === "string")
+          )
+        ),
+      ];
+      const { data: alive } = touched.length
+        ? await db.from("modules").select("id").in("id", touched)
+        : { data: [] as Array<{ id: string }> };
+      const liveModules = new Set((alive ?? []).map((m) => m.id));
       const more = (rows ?? []).length > limit;
       const half = page.filter((r) => r.status === "partly_built").length;
 
@@ -1161,7 +1217,7 @@ export async function POST(req: Request) {
           showing: page.length,
           ...(more
             ? {
-                more: "There are older ones. Pass next_before to see them.",
+                more: "There are older ones. Send the next_before value below as `before` to see them.",
                 next_before: page[page.length - 1]?.created_at,
               }
             : {}),
@@ -1173,7 +1229,7 @@ export async function POST(req: Request) {
           note: page.length
             ? "Newest first. Anything waiting for approval is not here — that is pending_changes."
             : "Nothing has been built in this app yet. Do not describe earlier work from memory.",
-          history: page.map((r) => shapeRequest(r as RequestRow, client)),
+          history: page.map((r) => shapeRequest(r as RequestRow, client, liveModules)),
         })
       );
     }

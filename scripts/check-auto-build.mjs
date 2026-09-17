@@ -107,6 +107,23 @@ const autoMade = [];
 const madeRequests = [];
 let aiThreadId = null;
 
+// Clear the day's ceiling of THIS check's own leavings before starting.
+//
+// The cleanup below un-counts the rows a run creates, but a run that
+// crashed, or one from before that cleanup existed, leaves its rows
+// counted for twenty-four hours. Four of them were enough to push the
+// fifth assertion here into "waiting for approval" — a red that was
+// entirely the test's own doing.
+//
+// Matched on the wording this file generates, so a real automatic
+// build the merchant actually wanted is never touched.
+await admin
+  .from("build_requests")
+  .update({ auto_built: false })
+  .eq("project_id", project.id)
+  .eq("auto_built", true)
+  .ilike("request", "%Check mu%");
+
 try {
   console.log("with the setting off");
   await setAuto(false);
@@ -282,6 +299,23 @@ console.log("\nbut not a rule that runs on every order");
       .eq("user_id", owner.user.id);
   }
   for (const id of made) await admin.from("modules").delete().eq("id", id);
+
+  // The section this run built is gone now, exactly as a merchant's
+  // would be if they deleted it. The history still says "built", which
+  // is true and was enough to send an assistant to tell the merchant to
+  // go and look at something that is not there. It has to say both.
+  if (made.length) {
+    const history = await tool("build_history", { project_id: project.id, limit: 20 }, 91);
+    const gone = (history?.history ?? []).filter((h) => h.no_longer_there);
+    check("a built section that was later deleted says so", gone.length > 0);
+    // The line says "it was built". Only a row that really finished
+    // may carry it — otherwise the answer invents a build.
+    check(
+      "and only a request that really finished carries it",
+      gone.every((h) => !!h.finished)
+    );
+  }
+
   // Not a merchant's automatic build — a check's. Left counted, it
   // spends the day's allowance on nothing.
   for (const id of autoMade) {

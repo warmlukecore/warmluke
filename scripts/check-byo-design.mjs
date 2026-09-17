@@ -380,6 +380,41 @@ try {
     /do not tell the merchant otherwise/i.test(empty?.note ?? "")
   );
 
+  // Paging through the history, which nothing checked and which was
+  // quietly broken: the answer hands back a key called `next_before`
+  // and the parameter is called `before`, so a client that sent the
+  // name it was given got no cursor, no error, and the same page for
+  // ever.
+  console.log("\nand the history can actually be paged");
+  {
+    const first = await tool("build_history", { project_id: project.id, limit: 1 }, 41);
+    check("one at a time", (first?.history ?? []).length === 1);
+    if (first?.next_before) {
+      const byRightName = await tool(
+        "build_history",
+        { project_id: project.id, limit: 1, before: first.next_before },
+        42
+      );
+      const a = first.history[0]?.request_id;
+      const b = byRightName?.history?.[0]?.request_id;
+      check("the next page is a different one", !!b && b !== a);
+
+      // The spelling the answer itself suggests. It used to be
+      // ignored, which is worse than refusing it.
+      const byTheOtherName = await tool(
+        "build_history",
+        { project_id: project.id, limit: 1, next_before: first.next_before },
+        43
+      );
+      check(
+        "and the name the answer gives works too",
+        byTheOtherName?.history?.[0]?.request_id === b
+      );
+    } else {
+      check("there is a cursor to page with", false);
+    }
+  }
+
   console.log("\nand none of it was charged for");
   check("the counter never moved", (await spent()) === 1);
 

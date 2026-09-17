@@ -434,6 +434,9 @@ try {
 
     const built = await approve(proposed.request_id);
     check("approving builds it", built?.status === "built" || built?.status === "partly built");
+    if (!(built?.status === "built" || built?.status === "partly built")) {
+      console.log("     \u2192", JSON.stringify(built).slice(0, 400));
+    }
     const afterBuild = await admin.from("modules").select("*", { count: "exact", head: true });
     check("and the section is really there", afterBuild.count > before.count);
 
