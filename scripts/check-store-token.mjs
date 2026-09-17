@@ -131,6 +131,19 @@ if (signedIn?.session) {
     .eq("project_id", project?.project_id ?? "00000000-0000-0000-0000-000000000000");
   check("the strip's own query is answered", !shown.error);
   check("and it comes back with a store", (shown.data ?? []).length > 0);
+
+  // The currency has to reach the browser, or money from the shop gets
+  // formatted in the project's currency instead — a dollar amount
+  // printed with a rupee sign, which looks entirely correct. The app
+  // reads this column to decide; ungranted, `store` is null and it
+  // silently falls back to the wrong one. That is exactly how
+  // webhook_error broke, and it broke in silence.
+  const money = await owner.from("stores").select("id, currency").limit(1);
+  check("the shop's own currency is readable", !money.error);
+  check(
+    "and it is a real currency code",
+    /^[A-Z]{3}$/.test((money.data ?? [])[0]?.currency ?? "")
+  );
 } else {
   console.log("\n  --    no owner session; the strip's query is not checked");
 }

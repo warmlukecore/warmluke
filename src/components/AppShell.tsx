@@ -1374,6 +1374,18 @@ export default function AppShell({
               locale={project?.locale}
               currency={storeBacked && store ? store.currency : project?.currency}
             >
+            {/* Said out loud, because the alternative is a merchant who
+                set this project to rupees looking at dollars and
+                assuming the app is broken. It is not: the number came
+                from Shopify in the shop's own currency, and relabelling
+                it without converting would be the actual bug. */}
+            {storeBacked && store && project?.currency && store.currency !== project.currency && (
+              <div className="mb-3 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs text-slate-400">
+                Amounts here are in <span className="text-slate-200">{store.currency}</span> —
+                that&rsquo;s how your Shopify store records them. Everything you build yourself
+                uses {project.currency}.
+              </div>
+            )}
             <GenericRenderer
               schema={schema.schema_json}
               records={records}
