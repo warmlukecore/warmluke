@@ -1621,6 +1621,7 @@ export default function AppShell({
       >
       <ChatPanel
         projectId={projectId}
+        autoBuild={project?.auto_build === true}
         width={chat.width}
         dragging={chat.dragging}
         onResizeStart={chat.onPointerDown}

@@ -245,6 +245,22 @@ export function storeOverlap(plan: AssistantPlan, store: StoreFacts | null): str
 }
 
 /**
+ * The change types the "build additions without asking me first"
+ * setting covers, and the only ones it may ever cover.
+ *
+ * It lives here rather than in the MCP route because the route is not
+ * the only place that has to agree with it: the card in the panel has
+ * to be able to say why a design is still asking when the setting is
+ * on. Two copies of this list would drift, and the merchant would be
+ * told a reason that was not the one the server used.
+ */
+export const BUILT_WITHOUT_ASKING = new Set([
+  "NEW_MODULE",
+  "RECORD_SEED",
+  "FIELD_ADD",
+]);
+
+/**
  * Describes a plan from the plan itself, never from the sentence the
  * assistant wrote next to it. A generated description cannot promise
  * something the plan does not do.

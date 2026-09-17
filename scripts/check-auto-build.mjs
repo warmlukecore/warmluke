@@ -231,13 +231,34 @@ console.log("\nthe screen describes what it actually does");
     new URL("../src/app/api/mcp/route.ts", import.meta.url),
     "utf8"
   );
-  const additive = /const ADDITIVE = new Set\(\[([^\]]*)\]\)/.exec(route)?.[1] ?? "";
+  const describe = readFileSync(
+    new URL("../src/lib/describe.ts", import.meta.url),
+    "utf8"
+  );
+  const panel = readFileSync(
+    new URL("../src/components/ChatPanel.tsx", import.meta.url),
+    "utf8"
+  );
+  const additive =
+    /export const BUILT_WITHOUT_ASKING = new Set\(\[([^\]]*)\]\)/.exec(describe)?.[1] ?? "";
   check("a new section is on the list", additive.includes("NEW_MODULE"));
   check("and so is a new field", additive.includes("FIELD_ADD"));
   check("and the settings screen says so too", /new fields added to a section/.test(settings));
   // A rule keeps writing to rows after it is built, so it is the one
   // addition that still asks.
   check("a rule is not on the list", !additive.includes("AUTOMATION_ADD"));
+
+  // One list, read by both. The card telling a merchant why a design
+  // is still asking has to be reading the list the server decided on
+  // — a second copy would drift and the reason would be a guess.
+  check("the server reads that one list", /ADDITIVE = BUILT_WITHOUT_ASKING/.test(route));
+  check("and so does the card", /BUILT_WITHOUT_ASKING/.test(panel));
+  // The card that made the setting look broken: it is on, and this
+  // one is still asking, and nothing said why.
+  check(
+    "a card that asks anyway says why",
+    /Waiting for you:/.test(panel) && /only builds things that are added/.test(panel)
+  );
 }
 
 console.log("\nand a new field, which loses nothing");

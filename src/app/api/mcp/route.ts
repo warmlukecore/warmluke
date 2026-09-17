@@ -15,7 +15,12 @@ import {
 import { blueprintAsText, runTurn, schemasFor } from "@/lib/engine";
 import { PLAN_FORMAT, WORKED_EXAMPLE, parseReply } from "@/lib/ai";
 import { vocabularyPrompt } from "@/lib/capabilities";
-import { describePlan, describeRules, type RuleRow } from "@/lib/describe";
+import {
+  BUILT_WITHOUT_ASKING,
+  describePlan,
+  describeRules,
+  type RuleRow,
+} from "@/lib/describe";
 import { applyPlans, logClientBuild } from "@/lib/apply";
 import { ALLOWED_ICONS } from "@/lib/types";
 import type { AssistantPlan, ModuleRow, ProjectRow, UiSchema } from "@/lib/types";
@@ -327,7 +332,7 @@ const AUTO_BUILDS_PER_DAY = 5;
 // Everything else still waits, because it edits what is already
 // there — or, for AUTOMATION_ADD, starts something that writes to
 // rows on its own afterwards.
-const ADDITIVE = new Set(["NEW_MODULE", "RECORD_SEED", "FIELD_ADD"]);
+const ADDITIVE = BUILT_WITHOUT_ASKING;
 
 /** What went in, in the words the panel already uses for a build. */
 function builtLine(

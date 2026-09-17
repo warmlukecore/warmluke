@@ -372,13 +372,31 @@ try {
 
   // The half that was actually going wrong: when nothing waits, the
   // answer has to be a plain no.
+  //
+  // Asked of the whole project this used to read "nothing is waiting
+  // at all", which is not this run's business and not true on a real
+  // account — the merchant's own AI had a design waiting, and the
+  // check failed on a fact about their day. It asks only about the
+  // rows it made.
   for (const r of made) await admin.from("build_requests").update({ status: "dismissed" }).eq("id", r);
   const empty = await tool("pending_changes", { project_id: project.id }, 7);
-  check("a dismissed design stops waiting", empty?.total === 0);
+  const stillWaiting = (empty?.waiting ?? []).map((w) => w.request_id);
   check(
-    "and the model is told not to claim otherwise",
-    /do not tell the merchant otherwise/i.test(empty?.note ?? "")
+    "a dismissed design stops waiting",
+    made.every((r) => !stillWaiting.includes(r))
   );
+  // The note only appears when nothing at all waits, which is the
+  // state this check can only claim when the account is quiet.
+  if (empty?.total === 0) {
+    check(
+      "and the model is told not to claim otherwise",
+      /do not tell the merchant otherwise/i.test(empty?.note ?? "")
+    );
+  } else {
+    console.log(
+      `  --    ${empty?.total} design(s) of the merchant's own are waiting, so the empty-note is not asked for`
+    );
+  }
 
   // Paging through the history, which nothing checked and which was
   // quietly broken: the answer hands back a key called `next_before`

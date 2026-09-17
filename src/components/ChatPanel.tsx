@@ -9,7 +9,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { watchRows } from "@/lib/live";
 import GenericRenderer from "@/components/GenericRenderer";
-import { describeAutomation, describePlan, type StoreFacts } from "@/lib/describe";
+import {
+  BUILT_WITHOUT_ASKING,
+  describeAutomation,
+  describePlan,
+  type StoreFacts,
+} from "@/lib/describe";
 import type { BuildOutcome } from "@/components/AppShell";
 import { storeOverview } from "@/lib/store-read";
 import { supabase } from "@/lib/supabase-client";
@@ -490,6 +495,7 @@ export default function ChatPanel({
   onApply,
   onBuild,
   onDiscard,
+  autoBuild,
 }: {
   /** Panel width above lg; below it the panel is a full-width drawer. */
   width: number;
@@ -524,6 +530,9 @@ export default function ChatPanel({
     requestText?: string
   ) => Promise<BuildOutcome>;
   onDiscard: (planId: string) => void;
+  /** Whether this project builds additions on its own, so a card that
+   *  is asking anyway can say why rather than look broken. */
+  autoBuild: boolean;
   /** Whose store to warn about, if this project has one connected. */
   projectId: string;
 }) {
@@ -570,6 +579,45 @@ export default function ChatPanel({
       outcome: { applied?: unknown[]; errors?: string[] } | null;
     }>
   >([]);
+
+  /**
+   * Why a design is still asking although the setting is on.
+   *
+   * The same three questions the server asks, in the same order, from
+   * the same list — see BUILT_WITHOUT_ASKING. It is worded for the
+   * merchant rather than for a model, because this one is read by a
+   * person looking at a button they thought they had turned off.
+   *
+   * ponytail: the day's ceiling is the one reason not derivable from
+   * the design, so a card held back by it says nothing here. Give the
+   * request a stored reason if that turns out to confuse anyone.
+   */
+  const whyItIsAsking = (r: {
+    plans: AssistantPlan[] | null;
+    unmet: string[] | null;
+  }): string | null => {
+    const plans = r.plans ?? [];
+    if (plans.length === 0) return null;
+    const heavy = plans.find((p) => !BUILT_WITHOUT_ASKING.has(p.changeType));
+    if (heavy) {
+      const target = modules.find((m) => m.id === heavy.targetModuleId);
+      return target
+        ? `this changes ${target.nav_label}, which you already have — the setting only builds things that are added.`
+        : "this changes something you already have — the setting only builds things that are added.";
+    }
+    if ((r.unmet?.length ?? 0) > 0) {
+      return "part of what was asked for is not in this design, so it is worth reading first.";
+    }
+    if (
+      plans.some(
+        (p) => (describePlan(p, modules, undefined, storeFacts).warnings ?? []).length > 0
+      )
+    ) {
+      return "the design carries a warning worth reading first.";
+    }
+    return null;
+  };
+
   const loadRequests = useCallback(async () => {
     const { data } = await supabase
       .from("build_requests")
@@ -1092,6 +1140,15 @@ export default function ChatPanel({
                     >
                       <span className="font-semibold">Not covered:</span>{" "}
                       {r.unmet.join(" · ")}
+                    </div>
+                  ) : null}
+                  {/* The setting is on and this is asking anyway. Without
+                      a reason here the card reads as the setting not
+                      working — which is exactly what it looked like. */}
+                  {!done && autoBuild && whyItIsAsking(r) ? (
+                    <div className="rounded-lg border border-amber-300 bg-amber-100/70 px-2 py-1.5 text-[11px] leading-relaxed text-amber-900">
+                      <span className="font-semibold">Waiting for you:</span>{" "}
+                      {whyItIsAsking(r)}
                     </div>
                   ) : null}
                 </div>
