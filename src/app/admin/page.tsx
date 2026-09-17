@@ -222,7 +222,16 @@ export default function Admin() {
                             draft: spend controls should never save just
                             because somebody clicked elsewhere. */}
                         <div className="flex items-center gap-1.5">
-                          <span className="text-slate-400">{r.turns_used} /</span>
+                          {/* What they have spent, and the ceiling it is
+                              spent against. With no cap the ceiling is
+                              kept but does not apply, and saying "22 / 10"
+                              beside "no cap" reads like a contradiction —
+                              so the slash only appears when it means
+                              something. */}
+                          <span className="tabular-nums text-slate-300">{r.turns_used}</span>
+                          <span className="text-slate-600">
+                            {r.turns_unlimited ? "used" : "/"}
+                          </span>
                           <input
                             type="number"
                             min={0}
@@ -248,7 +257,16 @@ export default function Admin() {
                               }
                             }}
                             disabled={busy === r.user_id}
-                            className="w-20 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-200 outline-none focus:border-blue-500 disabled:opacity-40"
+                            title={
+                              r.turns_unlimited
+                                ? "Kept for when unlimited is switched off"
+                                : "Designs this account may spend in total"
+                            }
+                            className={`w-20 rounded-lg border bg-slate-900 px-2 py-1 text-xs tabular-nums outline-none focus:border-blue-500 disabled:opacity-40 ${
+                              r.turns_unlimited
+                                ? "border-slate-800 text-slate-500"
+                                : "border-slate-700 text-slate-200"
+                            }`}
                           />
                           <button
                             type="button"
@@ -303,15 +321,20 @@ export default function Admin() {
                             }
                             className="inline-flex items-center gap-1.5 text-slate-400 disabled:opacity-40"
                           >
+                            {/* shrink-0, because this is a flex item with a
+                                label beside it: without it the track
+                                compresses, the knob keeps its 14px offset
+                                and slides out over the first letter of the
+                                word — which is exactly what it did. */}
                             <span
-                              className={`relative h-4 w-7 rounded-full border transition-colors ${
+                              className={`relative h-4 w-7 shrink-0 rounded-full border transition-colors ${
                                 r.turns_unlimited
                                   ? "border-emerald-400 bg-emerald-500"
                                   : "border-slate-600 bg-slate-800"
                               }`}
                             >
                               <span
-                                className={`absolute top-0.5 h-3 w-3 rounded-full transition-transform ${
+                                className={`absolute top-0.5 left-0 h-3 w-3 rounded-full transition-transform ${
                                   r.turns_unlimited
                                     ? "translate-x-3.5 bg-white"
                                     : "translate-x-0.5 bg-slate-400"
@@ -325,18 +348,27 @@ export default function Admin() {
                                 asked why an "unlimited" account still
                                 said "none left". It was off, and every
                                 number on the row was correct. */}
-                            <span className={r.turns_unlimited ? "text-emerald-400" : "text-slate-500"}>
+                            <span
+                              className={`whitespace-nowrap ${
+                                r.turns_unlimited ? "text-emerald-400" : "text-slate-500"
+                              }`}
+                            >
                               Unlimited {r.turns_unlimited ? "on" : "off"}
                             </span>
                           </button>
+                          {/* This was plain text, and plain text does not
+                              look like something you may click — the
+                              person who owns this screen asked to be
+                              given the ability they already had. */}
                           {r.turns_used > 0 && (
                             <button
                               type="button"
                               disabled={busy === r.user_id}
                               onClick={() => setPending({ kind: "reset", row: r })}
-                              className="text-slate-500 hover:text-amber-400 disabled:opacity-40"
+                              title={`Set used back to 0 for ${r.email}`}
+                              className="whitespace-nowrap rounded-lg border border-slate-700 px-2 py-1 text-slate-300 transition-colors hover:border-amber-700 hover:bg-amber-950/40 hover:text-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
                             >
-                              Reset used
+                              Reset used to 0
                             </button>
                           )}
                         </div>
