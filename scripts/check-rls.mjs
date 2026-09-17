@@ -230,5 +230,38 @@ try {
   console.log("\ntest users removed");
 }
 
+// And the wall covers the whole house.
+//
+// 0028 refused every write from a token carrying client_id by looping
+// over the tables that existed THEN. Six tables added afterwards had
+// none of it — including build_requests, where a client could write
+// its own approved_at and walk straight through the gate that exists
+// to stop exactly that.
+//
+// A loop fixes today. This asserts tomorrow: the next table added
+// without the three policies fails here instead of sitting open and
+// quiet until somebody goes looking.
+console.log("\nand no table is left outside the wall");
+{
+  const naked = await fetch(`${URL_}/rest/v1/rpc/abo_tables_missing_oauth_guard`, {
+    method: "POST",
+    headers: { apikey: SVC, Authorization: `Bearer ${SVC}`, "Content-Type": "application/json" },
+    body: "{}",
+  })
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+
+  // The function is the check's own business; if it is missing, say so
+  // rather than passing because nothing answered.
+  check("every table can be asked about", Array.isArray(naked));
+  check(
+    "and every one of them refuses writes from an AI's token",
+    Array.isArray(naked) && naked.length === 0
+  );
+  if (Array.isArray(naked) && naked.length > 0) {
+    for (const t of naked) console.log(`     ..    unguarded: ${t.tablename ?? t}`);
+  }
+}
+
 console.log(fails.length === 0 ? "\nall boundaries hold" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

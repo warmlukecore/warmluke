@@ -602,8 +602,10 @@ export async function POST(req: Request) {
   // than at the OAuth step so a merchant whose access is turned off
   // gets a sentence their assistant can read out, not a silent
   // failure to connect.
-  const { data: mcpOn } = await db.rpc("abo_feature", { p_name: "mcp" });
-  if (mcpOn === false) {
+  // Closed when it cannot be asked, not open. `=== false` treated an
+  // unreachable database as permission.
+  const { data: mcpOn, error: mcpGate } = await db.rpc("abo_feature", { p_name: "mcp" });
+  if (mcpGate || mcpOn === false) {
     return NextResponse.json(
       {
         jsonrpc: "2.0",
@@ -714,15 +716,26 @@ export async function POST(req: Request) {
       // The same counter as the chat box. Designing through their own
       // Claude still runs our engine on our key — a quota that only
       // watched the chat would have capped nothing.
-      const { data: allowance } = await db.rpc("abo_spend_turn");
+      // The error is read, which it was not: `if (turns && !turns.ok)`
+      // let a failed allowance call through as though the account had
+      // room, and the model then ran on our key for somebody we never
+      // managed to charge. The chat route has always thrown here; this
+      // one silently agreed.
+      const { data: allowance, error: spendErr } = await db.rpc("abo_spend_turn");
+      if (spendErr) throw new Error(spendErr.message);
       const turns = allowance as
         | { ok: boolean; used: number; free: number; spend_id?: string }
         | null;
-      if (turns && !turns.ok) {
+      if (!turns || !turns.ok) {
         return ok(
           id,
           text({
-            error: `This account has used all ${turns.free} free builds on Warmluke's own assistant.`,
+            // An allowance we could not read is not an allowance of
+            // zero, and saying "you have used all 0" would be a lie
+            // about the merchant rather than about us.
+            error: turns
+              ? `This account has used all ${turns.free} of its included Warmluke AI turns.`
+              : "Warmluke could not check this account's remaining AI turns, so it has not started a design.",
             // The old wording sent them to a paywall that does not
             // exist. What actually costs money is Warmluke doing the
             // designing; you doing it costs nothing, and that door is

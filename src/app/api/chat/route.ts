@@ -113,8 +113,16 @@ export async function POST(req: Request) {
     // only in the panel: a switch enforced by hidden UI is not a
     // switch. Their own AI is a separate switch and is unaffected;
     // so is approving a design that has already been made.
-    const { data: chatOn } = await client.rpc("abo_feature", { p_name: "chat" });
-    if (chatOn === false) {
+    // `=== false` let an ERROR through: a switch that cannot be read
+    // is not a switch that is on. The failure that matters is the
+    // database being unreachable or the function being renamed, and
+    // both used to end in the model running anyway — on our budget,
+    // for an account that may have been turned off precisely because
+    // of what it was doing.
+    const { data: chatOn, error: chatGate } = await client.rpc("abo_feature", {
+      p_name: "chat",
+    });
+    if (chatGate || chatOn === false) {
       return NextResponse.json(
         {
           error:
