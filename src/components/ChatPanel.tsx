@@ -531,8 +531,13 @@ export default function ChatPanel({
     chat: true,
     mcp: true,
   });
-  /** Included designs from our own model: how many, and how many are gone. */
-  const [turns, setTurns] = useState<{ free: number; used: number } | null>(null);
+  /** Included designs from our own model: the finite ceiling is kept
+   *  even while an admin has explicitly lifted it. */
+  const [turns, setTurns] = useState<{
+    free: number;
+    used: number;
+    unlimited: boolean;
+  } | null>(null);
   const [wantsPlan, setWantsPlan] = useState(false);
   /** Whether the connect-your-own-AI block is open, so the button
    *  offered when the included designs run out can open it. */
@@ -700,7 +705,11 @@ export default function ChatPanel({
       const row = data?.[0];
       setFeatures({ chat: row?.chat_enabled ?? true, mcp: row?.mcp_enabled ?? true });
       if (typeof row?.free_turns === "number") {
-        setTurns({ free: row.free_turns, used: row.turns_used ?? 0 });
+        setTurns({
+          free: row.free_turns,
+          used: row.turns_used ?? 0,
+          unlimited: row.turns_unlimited ?? false,
+        });
       }
     });
   }, []);
@@ -1701,7 +1710,7 @@ export default function ChatPanel({
       )}
 
       {/* Input */}
-      {turns && turns.used >= turns.free && features.chat ? (
+      {turns && !turns.unlimited && turns.used >= turns.free && features.chat ? (
         // Not a locked door with a price on it. What they can still
         // do is the larger half — reading their store never costs us
         // anything — so it is offered first, by name.

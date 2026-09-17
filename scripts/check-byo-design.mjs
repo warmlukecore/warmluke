@@ -47,11 +47,15 @@ const admin = createClient(
   env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
   env.ADAPTIVE_OS_SERVICE_ROLE_KEY
 );
-const { data: project } = await admin
+const { data: project, error: projectError } = await admin
   .from("projects")
   .select("id, auto_build")
+  .eq("owner_id", uid)
   .limit(1)
   .single();
+if (projectError || !project) {
+  throw new Error(`could not establish the owner's project before the check: ${projectError?.message ?? "none found"}`);
+}
 
 const tool = async (name, args, id = 1) => {
   const res = await fetch(`${APP}/api/mcp`, {
@@ -85,14 +89,23 @@ const spent = async () =>
   (await admin.from("account_settings").select("turns_used").eq("user_id", uid).single()).data
     .turns_used;
 
-const was = (
-  await admin.from("account_settings").select("free_turns, turns_used").eq("user_id", uid).single()
-).data;
+const { data: was, error: settingsError } = await admin
+  .from("account_settings")
+  .select("free_turns, turns_used, turns_unlimited")
+  .eq("user_id", uid)
+  .single();
+if (settingsError || !was) {
+  throw new Error(`could not snapshot the account before the check: ${settingsError?.message ?? "no settings row"}`);
+}
 const made = [];
 
 try {
   // The whole point is that it works when the counter is empty.
-  await admin.from("account_settings").update({ free_turns: 1, turns_used: 1 }).eq("user_id", uid);
+  const limited = await admin
+    .from("account_settings")
+    .update({ free_turns: 1, turns_used: 1, turns_unlimited: false })
+    .eq("user_id", uid);
+  if (limited.error) throw new Error(`could not establish the test allowance: ${limited.error.message}`);
   await admin.from("projects").update({ auto_build: false }).eq("id", project.id);
 
   console.log("the format is there to be read");
@@ -392,23 +405,91 @@ try {
   );
   if (!paid?.error) console.log(`     propose_change said: ${JSON.stringify(paid).slice(0, 300)}`);
 } finally {
-  await sweepOwnCalls(uid);
-  for (const id of made) await admin.from("build_requests").delete().eq("id", id);
-  await admin
-    .from("account_settings")
-    .update({ free_turns: was.free_turns, turns_used: was.turns_used })
-    .eq("user_id", uid);
-  await admin
-    .from("projects")
-    .update({ auto_build: project.auto_build === true })
-    .eq("id", project.id);
-  const back = (
-    await admin.from("account_settings").select("free_turns, turns_used").eq("user_id", uid).single()
-  ).data;
-  check(
-    "the account is back as it was",
-    back.free_turns === was.free_turns && back.turns_used === was.turns_used
+  // Restore real account state before disposable rows or rate-limit
+  // calls are cleaned up. Each cleanup is isolated, so a network error
+  // deleting one test request cannot skip the allowance restoration.
+  // The restore is read back and retried: a failed update must make the
+  // check fail loudly instead of leaving aaa@gmail.com at 49 / 1.
+  const cleanupProblems = [];
+  const restore = async (label, write, verify) => {
+    let last = "did not verify";
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const result = await write();
+        if (result?.error) {
+          last = result.error.message;
+          continue;
+        }
+        if (await verify()) return;
+        last = "the read-back did not match";
+      } catch (error) {
+        last = error instanceof Error ? error.message : String(error);
+      }
+    }
+    cleanupProblems.push(`${label}: ${last}`);
+  };
+
+  await restore(
+    "account allowance",
+    () =>
+      admin
+        .from("account_settings")
+        .update({
+          free_turns: was.free_turns,
+          turns_used: was.turns_used,
+          turns_unlimited: was.turns_unlimited,
+        })
+        .eq("user_id", uid),
+    async () => {
+      const { data, error } = await admin
+        .from("account_settings")
+        .select("free_turns, turns_used, turns_unlimited")
+        .eq("user_id", uid)
+        .single();
+      return (
+        !error &&
+        data?.free_turns === was.free_turns &&
+        data?.turns_used === was.turns_used &&
+        data?.turns_unlimited === was.turns_unlimited
+      );
+    }
   );
+
+  await restore(
+    "project auto-build state",
+    () =>
+      admin
+        .from("projects")
+        .update({ auto_build: project.auto_build === true })
+        .eq("id", project.id),
+    async () => {
+      const { data, error } = await admin
+        .from("projects")
+        .select("auto_build")
+        .eq("id", project.id)
+        .single();
+      return !error && data?.auto_build === (project.auto_build === true);
+    }
+  );
+
+  try {
+    await sweepOwnCalls(uid);
+  } catch (error) {
+    cleanupProblems.push(`MCP-call cleanup: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  for (const id of made.filter(Boolean)) {
+    try {
+      const removed = await admin.from("build_requests").delete().eq("id", id);
+      if (removed.error) cleanupProblems.push(`build request ${id}: ${removed.error.message}`);
+    } catch (error) {
+      cleanupProblems.push(`build request ${id}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  check("the account is back as it was", !cleanupProblems.some((x) => x.startsWith("account allowance:")));
+  if (cleanupProblems.length > 0) {
+    throw new Error(`cleanup failed after three attempts — ${cleanupProblems.join("; ")}`);
+  }
 }
 
 console.log(
