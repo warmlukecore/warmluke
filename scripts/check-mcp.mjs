@@ -409,6 +409,10 @@ try {
       );
     }
     check("the request is recorded", !!proposed?.request_id);
+    // Everything below this point leans on that id, so a failure here
+    // takes the whole block down with it. Say what came back instead
+    // of leaving eight reds with no cause between them.
+    if (!proposed?.request_id) console.log("     →", JSON.stringify(proposed).slice(0, 400));
     check("and it comes back with the design", (proposed?.design ?? "").length > 20);
     check("and it says nothing has changed yet", /nothing has changed/i.test(proposed?.note ?? ""));
     check("with somewhere for the merchant to go", /\/app\//.test(proposed?.open ?? ""));

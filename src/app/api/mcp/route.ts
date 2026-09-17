@@ -499,8 +499,9 @@ const text = (value: unknown): Json => ({
  *
  * Both doors end here — the one where Warmluke does the designing, and
  * the one where the merchant's own assistant does. They must agree
- * about approval and about the daily ceiling, and the only way to be
- * sure of that is for there to be one copy of it.
+ * about approval, and the only way to be sure of that is for there to
+ * be one copy of it. check-auto-scope leans on exactly that: it drives
+ * the free door, because the decision is the same one.
  */
 async function settleDesign(opts: {
   db: SupabaseClient;
