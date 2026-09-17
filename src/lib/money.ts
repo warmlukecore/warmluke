@@ -21,7 +21,23 @@ export interface Formatting {
   locale: string;
   currency: string;
   number: (n: number) => string;
-  money: (n: number) => string;
+  /** An imported row may carry its own source currency. */
+  money: (n: number, currency?: string | null) => string;
+  /**
+   * The same amount in the project's currency, said as an estimate —
+   * or null when there is nothing honest to say.
+   *
+   * Deliberately NOT what `money` returns. A shop's amounts are shown
+   * in the currency the shop recorded them in, because that is the
+   * number a merchant can look up in Shopify. One current rate applied
+   * to an old order produces a figure that was never true on any day,
+   * so it may sit underneath as a rough second opinion and must never
+   * stand in for the first.
+   *
+   * Null when: no rate is known, the row is already in the project's
+   * currency, or the rate on hand is for a different pair.
+   */
+  approx: (n: number, currency?: string | null) => string | null;
   date: (v: string) => string;
   time: (v: string) => string;
   percent: (n: number) => string;
@@ -31,18 +47,22 @@ export const DEFAULT_LOCALE = "en-IN";
 export const DEFAULT_CURRENCY = "INR";
 
 /**
- * Turns an amount in one currency into another before it is formatted.
+ * A rate for one pair, and the day it is from.
  *
- * Passed in rather than looked up, so the one place that renders money
- * is also the one place that converts it — a converter applied by each
- * caller is a converter half of them forget.
+ * Only ever used to annotate. Nothing here replaces a recorded amount.
  */
-export type Converter = { rate: number; from: string };
+export interface ApproxRate {
+  rate: number;
+  /** The currency this rate converts FROM. */
+  from: string;
+  /** The day the rate is quoted for, for the sentence beside it. */
+  asOf: string | null;
+}
 
 export function makeFormatting(
   locale: string,
   currency: string,
-  convert?: Converter | null
+  approxRate?: ApproxRate | null
 ): Formatting {
   // Intl throws on a malformed tag; a bad stored value must not blank
   // out every number on the page.
@@ -56,28 +76,47 @@ export function makeFormatting(
   })();
 
   const nf = new Intl.NumberFormat(safeLocale);
-  let cf: Intl.NumberFormat;
-  try {
-    cf = new Intl.NumberFormat(safeLocale, {
-      style: "currency",
-      currency,
-      maximumFractionDigits: 2,
-    });
-  } catch {
-    cf = new Intl.NumberFormat(DEFAULT_LOCALE, {
-      style: "currency",
-      currency: DEFAULT_CURRENCY,
-      maximumFractionDigits: 2,
-    });
-  }
+  const currencyFormatters = new Map<string, Intl.NumberFormat>();
+  const currencyFormatter = (requested?: string | null) => {
+    const code = requested || currency;
+    const existing = currencyFormatters.get(code);
+    if (existing) return existing;
+    try {
+      const made = new Intl.NumberFormat(safeLocale, {
+        style: "currency",
+        currency: code,
+        maximumFractionDigits: 2,
+      });
+      currencyFormatters.set(code, made);
+      return made;
+    } catch {
+      const fallback = new Intl.NumberFormat(DEFAULT_LOCALE, {
+        style: "currency",
+        currency: DEFAULT_CURRENCY,
+        maximumFractionDigits: 2,
+      });
+      currencyFormatters.set(code, fallback);
+      return fallback;
+    }
+  };
 
   return {
     locale: safeLocale,
     currency,
     number: (n) => nf.format(n),
-    // Converted first, formatted second. Rounding the amount and then
-    // converting it would round twice and drift.
-    money: (n) => cf.format(convert ? n * convert.rate : n),
+    // Imported money keeps the currency recorded with that row. The
+    // project's currency remains the default for rows created here.
+    money: (n, rowCurrency) => currencyFormatter(rowCurrency).format(n),
+    approx: (n, rowCurrency) => {
+      const source = rowCurrency || currency;
+      // Already their money, nothing to estimate.
+      if (source === currency) return null;
+      if (!approxRate || !Number.isFinite(approxRate.rate) || approxRate.rate <= 0) return null;
+      // A USD→INR rate says nothing about a EUR row. Two stores in two
+      // currencies is the case this exists to refuse.
+      if (approxRate.from !== source) return null;
+      return `≈ ${currencyFormatter(currency).format(n * approxRate.rate)}`;
+    },
     date: (v) => {
       const d = new Date(v);
       if (Number.isNaN(d.getTime())) return v;

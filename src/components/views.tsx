@@ -29,7 +29,15 @@ export function compare(a: unknown, b: unknown, type: SchemaColumn["type"]): num
   return String(a ?? "").localeCompare(String(b ?? ""));
 }
 
-export function Cell({ col, value }: { col: SchemaColumn; value: unknown }) {
+export function Cell({
+  col,
+  value,
+  currency,
+}: {
+  col: SchemaColumn;
+  value: unknown;
+  currency?: string | null;
+}) {
   const fmt = useFormat();
   const linkLabel = useLinkLabel();
   if (value === undefined || value === null || value === "") {
@@ -42,9 +50,19 @@ export function Cell({ col, value }: { col: SchemaColumn; value: unknown }) {
     }
     case "currency": {
       const n = Number(value);
+      if (Number.isNaN(n)) return <span className="font-medium tabular-nums">{String(value)}</span>;
+      // The shop's own number is the one that can be checked against
+      // Shopify, so it is the one in full size. The project-currency
+      // figure underneath is a rough conversion at today's rate and is
+      // marked as such — it is for a merchant who thinks in rupees,
+      // not for anything that has to add up.
+      const rough = fmt.approx(n, currency);
       return (
         <span className="font-medium tabular-nums">
-          {Number.isNaN(n) ? String(value) : fmt.money(n)}
+          {fmt.money(n, currency)}
+          {rough && (
+            <span className="block text-[11px] font-normal text-slate-400">{rough}</span>
+          )}
         </span>
       );
     }
@@ -140,7 +158,10 @@ function fieldText(
   if (col.type === "link") return linkLabel ? linkLabel(col.linkTo, v) : String(v);
   if (col.type === "currency") {
     const n = Number(v);
-    return Number.isNaN(n) ? String(v) : fmt.money(n);
+    const rowCurrency = col.currencyField ? rec.data?.[col.currencyField] : null;
+    return Number.isNaN(n)
+      ? String(v)
+      : fmt.money(n, typeof rowCurrency === "string" ? rowCurrency : null);
   }
   if (col.type === "number") {
     const n = Number(v);
@@ -286,7 +307,15 @@ export function TableView({
             >
               {columns.map((col) => (
                 <td key={col.field} className="px-4 py-2.5 align-middle">
-                  <Cell col={col} value={rec.data?.[col.field]} />
+                  <Cell
+                    col={col}
+                    value={rec.data?.[col.field]}
+                    currency={
+                      col.currencyField && typeof rec.data?.[col.currencyField] === "string"
+                        ? (rec.data[col.currencyField] as string)
+                        : null
+                    }
+                  />
                 </td>
               ))}
               {hasActions && (

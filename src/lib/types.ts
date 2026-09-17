@@ -12,6 +12,8 @@ export interface SchemaColumn {
   field: string;
   label: string;
   type: ColumnType;
+  /** For money imported with a per-row ISO currency code. */
+  currencyField?: string;
   /**
    * For type "link": the section this points at — a module id, or a
    * "#slug" when that section is created in the same batch. The record
@@ -202,6 +204,15 @@ export interface ProjectRow {
   locale: string;
   /** ISO 4217 code driving money formatting. */
   currency: string;
+  /**
+   * Whether the owner actually chose that currency.
+   *
+   * False means the column is holding its default, not an answer. An
+   * imported amount is shown in the shop's own currency either way;
+   * this decides whether a rough line in the project's currency is
+   * worth putting underneath it.
+   */
+  currency_set_by_user?: boolean;
   created_at: string;
 }
 

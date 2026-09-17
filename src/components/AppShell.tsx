@@ -118,16 +118,10 @@ export default function AppShell({
   // The connected store, so a section pointed at it knows where to read
   // from. Null for a project without one, which is the common case.
   const [store, setStore] = useState<{ id: string; currency: string } | null>(null);
-  /**
-   * What the shop's money is worth in the merchant's currency.
-   *
-   * Null until it is known, and null for ever if the rate cannot be
-   * had — in which case amounts stay in the shop's own currency, which
-   * is the truthful fallback. Nothing here guesses a rate.
-   */
-  const [fx, setFx] = useState<{ rate: number; as_of: string | null; stale?: boolean } | null>(
-    null
-  );
+  // A rate, only ever used to annotate. Imported amounts are rendered
+  // in the currency Shopify recorded them in; this is the rough second
+  // line underneath, for a merchant who thinks in their own money.
+  const [fx, setFx] = useState<{ rate: number; as_of: string | null; stale: boolean } | null>(null);
   const storeId = store?.id ?? null;
   const isOwner = !!project && !!userId && project.owner_id === userId;
   const [modules, setModules] = useState<ModuleRow[]>([]);
@@ -573,17 +567,20 @@ export default function AppShell({
   }, []);
 
   // What the shop's money is worth in the merchant's, fetched once the
-  // two are known to differ.
+  // two are known to differ. It no longer converts anything — it feeds
+  // the "≈ ₹…" note under each amount, and a missing rate simply means
+  // no note.
   //
-  // This effect was written and then silently lost to a bad edit: the
-  // state existed, the route existed, and nothing ever called it, so
-  // every mismatch fell into the "no rate" branch and the feature was
-  // dead in a way that still rendered. check-fx now asserts the call
+  // This effect was once silently lost to a bad edit: the state
+  // existed, the route existed, and nothing called it, so the feature
+  // was dead in a way that still rendered. check-fx asserts the call
   // exists, because arithmetic passing proves nothing about wiring.
   useEffect(() => {
     const from = store?.currency;
     const to = project?.currency;
-    if (!from || !to || from === to) {
+    // Nothing to annotate means nothing to fetch: no rate is asked for
+    // until a merchant has actually chosen a currency of their own.
+    if (!from || !to || from === to || project?.currency_set_by_user !== true) {
       setFx(null);
       return;
     }
@@ -591,8 +588,6 @@ export default function AppShell({
     apiFetch(`/api/fx?from=${from}&to=${to}&project=${projectId}`, null, "GET").then(
       ({ ok, data }) => {
         if (!live) return;
-        // A missing rate is not an error anybody needs shown: amounts
-        // stay in the shop's currency and the note says why.
         setFx(
           ok && typeof data.rate === "number" && Number.isFinite(data.rate) && data.rate > 0
             ? {
@@ -607,7 +602,7 @@ export default function AppShell({
     return () => {
       live = false;
     };
-  }, [store?.currency, project?.currency, projectId]);
+  }, [store?.currency, project?.currency, project?.currency_set_by_user, projectId]);
 
   useEffect(() => {
     supabase
@@ -1112,17 +1107,36 @@ export default function AppShell({
    * How money in the selected section should read.
    *
    * Decided once and used twice: the section itself, and the preview
-   * Luke shows inside the chat — which renders the SAME records. Left
-   * to the outer provider, that preview labelled the shop's dollars
-   * with the project's rupee sign, which is the one thing this whole
-   * feature exists to prevent.
+   * Luke shows inside the chat — which renders the SAME records. A
+   * store-backed section defaults to the shop's currency; an imported
+   * order can override it with the currency stored on that order.
    */
-  const sectionMoney =
-    storeBacked && store
-      ? fx && store.currency !== project?.currency
-        ? { currency: project?.currency, convert: { rate: fx.rate, from: store.currency } }
-        : { currency: store.currency, convert: null }
-      : { currency: project?.currency, convert: null };
+  const sectionMoneyCurrency = storeBacked && store ? store.currency : project?.currency;
+  // Offered only where it can be true: a store-backed section, a rate
+  // on hand, and the shop's currency being the one the rate is from.
+  const sectionApprox =
+    storeBacked &&
+    store &&
+    fx &&
+    // Only for a merchant who went and picked a currency. Everyone
+    // else is holding the INR default they were never asked about,
+    // and showing them a rupee estimate of their dollar shop is us
+    // answering a question nobody put.
+    project?.currency_set_by_user === true &&
+    store.currency !== project?.currency
+      ? { rate: fx.rate, from: store.currency, asOf: fx.as_of }
+      : null;
+  const recordedCurrencies =
+    loadedSource === "orders"
+      ? [
+          ...new Set(
+            records
+              .map((r) => r.data?.currency)
+              .filter((v): v is string => typeof v === "string" && v.length > 0)
+          ),
+        ].sort()
+      : [];
+  const hasMoneyColumns = schema?.schema_json.columns.some((c) => c.type === "currency") ?? false;
 
   // Nothing came back for this id, so there is nothing here for them.
   //
@@ -1469,53 +1483,44 @@ export default function AppShell({
               </div>
             </div>
           ) : schema ? (
-            // Money in a store-backed section is the store's money, and
-            // there are three states. Same currency: nothing to do.
-            // Different, with a rate: converted into the merchant's
-            // currency and labelled as converted. Different, with no
-            // rate: left in the shop's own currency, because printing
-            // $2,897 as ₹2,897 is right-looking and wrong.
+            // Shopify money stays in the currency Shopify recorded.
+            // The provider supplies the normal shop currency; an order
+            // whose own currency differs overrides it at the cell.
             <FormatProvider
               locale={project?.locale}
-              currency={sectionMoney.currency}
-              convert={sectionMoney.convert}
+              currency={sectionMoneyCurrency}
+              approxRate={sectionApprox}
             >
-            {/* Said out loud, because the alternative is a merchant who
-                set this project to rupees looking at dollars and
-                assuming the app is broken. It is not: the number came
-                from Shopify in the shop's own currency, and relabelling
-                it without converting would be the actual bug. */}
-            {storeBacked && store && project?.currency && store.currency !== project.currency && (
+            {storeBacked && store && project?.currency && hasMoneyColumns &&
+              (store.currency !== project.currency || recordedCurrencies.length > 1) && (
               <div className="mb-3 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs text-slate-400">
-                {fx ? (
+                {recordedCurrencies.length > 1 ? (
                   <>
-                    Your shop sells in <span className="text-slate-200">{store.currency}</span>.
-                    These amounts are converted to {project.currency} at{" "}
-                    <span className="text-slate-200">
-                      1 {store.currency} ={" "}
-                      {/* Two decimals reads as 0.00 for a currency
-                          worth a fraction of a rupee, while the
-                          multiplication quietly uses the real number.
-                          Show enough digits to mean something. */}
-                      {fx.rate < 0.01 ? fx.rate.toPrecision(3) : fx.rate.toFixed(2)}{" "}
-                      {project.currency}
-                    </span>
-                    {/* Said from what the rate actually is, not from
-                        what it usually is. Claiming "today's rate"
-                        over a rate that failed to refresh, or over
-                        Friday's rate on a Sunday, is the same kind of
-                        confident wrongness this whole feature exists
-                        to avoid. */}
-                    {fx.as_of ? ` — the rate from ${fx.as_of}` : ""}
-                    {fx.stale ? ", which we could not refresh today" : ""}. One rate is used for
-                    every order, including older ones, so these are what they would be worth at
-                    that rate — not what they were worth on the day of the order.
+                    Shopify recorded these orders in{" "}
+                    <span className="text-slate-200">{recordedCurrencies.join(" and ")}</span>.
+                    {" "}Each amount is shown in its recorded currency; currency totals are not
+                    combined. Your project default is {project.currency} and applies only to sections
+                    you create here.
                   </>
                 ) : (
                   <>
-                    Amounts here are in <span className="text-slate-200">{store.currency}</span> —
-                    that&rsquo;s how your Shopify store records them, and no conversion rate was
-                    available. Everything you build yourself uses {project.currency}.
+                    Shopify amounts are shown in{" "}
+                    <span className="text-slate-200">
+                      {recordedCurrencies[0] ?? store.currency}
+                    </span>
+                    , their recorded shop currency — the figure you can look up in Shopify.
+                    {sectionApprox ? (
+                      <>
+                        {" "}The smaller {project.currency} line under each one is a rough
+                        conversion at today&rsquo;s rate
+                        {fx?.as_of ? ` (${fx.as_of})` : ""}, applied to every order whatever day it
+                        was placed. Use it to get a feel for the size, never to reconcile: it will
+                        not match a Shopify payout, and totals built from it were never true on any
+                        single day.
+                      </>
+                    ) : null}
+                    {" "}Your project default is {project.currency} and applies to sections you
+                    create here.
                   </>
                 )}
               </div>
@@ -1554,8 +1559,8 @@ export default function AppShell({
       {isOwner && (
       <FormatProvider
         locale={project?.locale}
-        currency={sectionMoney.currency}
-        convert={sectionMoney.convert}
+        currency={sectionMoneyCurrency}
+        approxRate={sectionApprox}
       >
       <ChatPanel
         projectId={projectId}

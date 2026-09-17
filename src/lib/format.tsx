@@ -5,7 +5,7 @@ import {
   DEFAULT_CURRENCY,
   DEFAULT_LOCALE,
   makeFormatting,
-  type Converter,
+  type ApproxRate,
   type Formatting,
 } from "@/lib/money";
 
@@ -16,7 +16,7 @@ export {
   DEFAULT_CURRENCY,
   DEFAULT_LOCALE,
   makeFormatting,
-  type Converter,
+  type ApproxRate,
   type Formatting,
 };
 
@@ -27,17 +27,21 @@ const FormatContext = createContext<Formatting>(
 export function FormatProvider({
   locale,
   currency,
-  convert,
+  approxRate,
   children,
 }: {
   locale?: string | null;
   currency?: string | null;
-  convert?: Converter | null;
+  /** Lets an imported amount carry a rough note in the project's own
+   *  money. It never changes what `money` prints. */
+  approxRate?: ApproxRate | null;
   children: ReactNode;
 }) {
   const value = useMemo(
-    () => makeFormatting(locale || DEFAULT_LOCALE, currency || DEFAULT_CURRENCY, convert),
-    [locale, currency, convert?.rate, convert?.from]
+    () => makeFormatting(locale || DEFAULT_LOCALE, currency || DEFAULT_CURRENCY, approxRate),
+    // The object is rebuilt by the caller on every render, so depend on
+    // what is in it rather than on its identity.
+    [locale, currency, approxRate?.rate, approxRate?.from, approxRate?.asOf]
   );
   return <FormatContext.Provider value={value}>{children}</FormatContext.Provider>;
 }

@@ -100,6 +100,7 @@ export async function storeContextFor(
         number: o.order_number ?? "—",
         placed: o.placed_at,
         total: o.total,
+        currency: o.currency,
         status: o.financial_status,
       })),
       low: low.map((l) => ({

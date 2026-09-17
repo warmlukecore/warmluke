@@ -135,7 +135,27 @@ export default function GenericRenderer({
       const nums = rows
         .map((r) => Number(evalExpr(expr, r.data ?? {})))
         .filter((n) => !Number.isNaN(n));
-      if (nums.length === 0) return { ...s, display: s.format === "currency" ? fmt.money(0) : "0" };
+      const rowCurrencyFields = [
+        ...new Set(
+          columns
+            .filter((c) => c.type === "currency" && c.currencyField)
+            .map((c) => c.currencyField as string)
+        ),
+      ];
+      const currencies = new Set(
+        rows.flatMap((r) =>
+          rowCurrencyFields
+            .map((field) => r.data?.[field])
+            .filter((v): v is string => typeof v === "string" && v.length > 0)
+        )
+      );
+      if (s.format === "currency" && currencies.size > 1) {
+        return { ...s, display: "Mixed currencies" };
+      }
+      const rowCurrency = currencies.size === 1 ? [...currencies][0] : null;
+      if (nums.length === 0) {
+        return { ...s, display: s.format === "currency" ? fmt.money(0, rowCurrency) : "0" };
+      }
 
       const total = nums.reduce((a, b) => a + b, 0);
       const val =
@@ -148,7 +168,8 @@ export default function GenericRenderer({
               : Math.max(...nums);
       return {
         ...s,
-        display: s.format === "currency" ? fmt.money(val) : fmt.number(Math.round(val)),
+        display:
+          s.format === "currency" ? fmt.money(val, rowCurrency) : fmt.number(Math.round(val)),
       };
     });
   }, [features, filteredRecords, fmt]);

@@ -40,6 +40,10 @@ export default function ProjectSettings({
   const [locale, setLocale] = useState(project.locale ?? "en-IN");
   const [currency, setCurrency] = useState(project.currency ?? "INR");
   const [autoBuild, setAutoBuild] = useState(project.auto_build === true);
+  // Whether the currency below is an answer or just the column's
+  // default. Kept apart from the value itself, because "INR" cannot
+  // say which of the two it is.
+  const [chose, setChose] = useState(project.currency_set_by_user === true);
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +94,16 @@ export default function ProjectSettings({
     setError(null);
     const { ok, data } = await apiFetch(
       "/api/projects",
-      { id: project.id, name, locale, currency, auto_build: autoBuild },
+      {
+        id: project.id,
+        name,
+        locale,
+        currency,
+        // Sent every time, so choosing "Follow each shop" is a real
+        // answer and not merely the absence of one.
+        currency_set_by_user: chose,
+        auto_build: autoBuild,
+      },
       "PATCH"
     );
     setBusy(false);
@@ -158,31 +171,52 @@ export default function ProjectSettings({
 
           <div>
             <label className="mb-1 block text-[11px] font-medium tracking-wide text-slate-400 uppercase">
-              Money and dates
+              Locale and default currency
             </label>
             <select
-              value={`${locale}|${currency}`}
+              value={chose ? `${locale}|${currency}` : "default"}
               onChange={(e) => {
+                if (e.target.value === "default") {
+                  setChose(false);
+                  return;
+                }
                 const [l, c] = e.target.value.split("|");
+                setChose(true);
                 setLocale(l);
                 setCurrency(c);
               }}
               className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-blue-500"
             >
+              {/* Without this, a project that has never been touched
+                  showed "India — ₹" as though somebody had picked it,
+                  and there was no way back to not having picked. */}
+              <option value="default">Follow each shop — no second currency shown</option>
               {LOCALES.map((o) => (
                 <option key={o.locale} value={`${o.locale}|${o.currency}`}>
                   {o.label}
                 </option>
               ))}
-              {!LOCALES.some((o) => o.locale === locale && o.currency === currency) && (
+              {chose && !LOCALES.some((o) => o.locale === locale && o.currency === currency) && (
                 <option value={`${locale}|${currency}`}>
                   {locale} — {currency}
                 </option>
               )}
             </select>
             <div className="mt-1.5 text-[11px] text-slate-500">
-              Amounts look like {preview.money(123456.5)} · dates like{" "}
-              {preview.date("2026-03-14")}
+              {chose ? (
+                <>
+                  Amounts look like {preview.money(123456.5)} · dates like{" "}
+                  {preview.date("2026-03-14")}. Shopify amounts still show in Shopify&rsquo;s own
+                  currency, with a rough {currency} figure underneath at today&rsquo;s rate.
+                </>
+              ) : (
+                <>
+                  Shopify amounts show in whatever currency the shop recorded them in, and nothing
+                  else is put beside them. Pick a country above if you would also like a rough
+                  figure in your own currency — it is an estimate at today&rsquo;s rate, not
+                  something to reconcile against.
+                </>
+              )}
             </div>
           </div>
 

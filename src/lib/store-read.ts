@@ -177,7 +177,8 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "placed_at", label: "Placed", type: "date" },
       { field: "customer_name", label: "Customer", type: "text" },
       { field: "customer_phone", label: "Phone", type: "phone" },
-      { field: "total", label: "Total", type: "currency" },
+      { field: "total", label: "Total", type: "currency", currencyField: "currency" },
+      { field: "currency", label: "Currency", type: "text" },
       { field: "status", label: "Status", type: "badge" },
       { field: "fulfilment_status", label: "Fulfilment", type: "badge" },
     ],
@@ -191,6 +192,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
         customer_name: c?.name ?? null,
         customer_phone: c?.phone ?? null,
         total: r.total,
+        currency: r.currency,
         // A cancelled order keeps its last financial status, so showing
         // that alone would call a cancelled order "paid".
         status: r.cancelled_at ? "Cancelled" : (r.financial_status ?? null),

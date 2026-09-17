@@ -1,32 +1,19 @@
-// Turning a shop's money into the merchant's money.
+// Shopify money stays in the currency Shopify recorded.
 //
-// A shop selling in USD inside a project set to INR has to show one of
-// two things: the real number in dollars, or a converted number that
-// says it was converted. The third option — the dollar number wearing a
-// rupee sign — is the one that must never happen, because it is the
-// only one that looks completely correct while being wrong by a factor
-// of ninety-six.
+// This used to test a latest-rate converter that REPLACED the shop's
+// amounts. A current rate applied to historical orders produces
+// plausible numbers that cannot reconcile to Shopify, so the converted
+// figure is no longer the amount — it is a smaller line underneath,
+// marked as an estimate, and the recorded amount is what is shown.
 //
-// So this checks the arithmetic, and it checks the boundary: a rate
-// decides what every imported amount reads as, and this deployment
-// keeps no service-role key, so the server writes with exactly the
-// rights a browser has. If anyone could write a rate for anyone, one
-// merchant could make every other merchant's orders wrong.
+// The two properties that matter, and that this file exists to keep:
+// money() never converts, and the estimate only appears where it can
+// actually be true.
 //
-//   OWNER_PASSWORD=… node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-fx.mjs
+//   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-fx.mjs
 
-import { readFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
-import { createClient } from "@supabase/supabase-js";
+import { existsSync, readFileSync } from "node:fs";
 import { makeFormatting } from "../src/lib/money.ts";
-
-const env = Object.fromEntries(
-  readFileSync(new URL("../.env.local", import.meta.url), "utf8")
-    .split("\n")
-    .filter((l) => l.includes("=") && !l.trim().startsWith("#"))
-    .map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()])
-);
-const APP = process.env.APP_URL ?? "http://localhost:3100";
 
 const fails = [];
 const check = (name, cond) => {
@@ -34,141 +21,146 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
-// The check that would have caught this shipping dead.
-//
-// The arithmetic passed, the route answered curl, and the feature did
-// nothing in production — the effect that calls it had been lost to a
-// bad edit, so every mismatch fell into the "no rate" branch and the
-// page looked exactly as it had before. A check that only tests the
-// parts cannot notice that nothing joins them.
-console.log("the feature is actually wired up");
+console.log("source currencies stay attached to their amounts");
+{
+  const fmt = makeFormatting("en-IN", "INR");
+  check("project money still uses the project default", fmt.money(100).includes("₹"));
+  check(
+    "an imported dollar amount stays a dollar amount",
+    fmt.money(100, "USD").includes("$") && fmt.money(100, "USD").includes("100")
+  );
+  check(
+    "formatting never changes the numeric amount",
+    fmt.money(95.96, "USD").includes("95.96")
+  );
+}
+
+console.log("\nthe estimate is an estimate, and only where it can be true");
+{
+  const rate = { rate: 95.96, from: "USD", asOf: "2026-09-16" };
+  const fmt = makeFormatting("en-IN", "INR", rate);
+
+  // The whole point: the amount shown is still the shop's.
+  check("the recorded amount is untouched", fmt.money(100, "USD").includes("100"));
+  check("and still wears its own sign", fmt.money(100, "USD").includes("$"));
+
+  // 100 x 95.96 = 9,596.
+  const rough = fmt.approx(100, "USD");
+  check("the estimate is offered beside it", typeof rough === "string" && /9,596/.test(rough));
+  check("and is marked as approximate", (rough ?? "").startsWith("≈"));
+  check("in the project's money", (rough ?? "").includes("₹"));
+
+  // Fractions convert before rounding: 100.05 x 95.96 = 9,600.798.
+  check("fractions are not rounded first", /9,600\.80/.test(fmt.approx(100.05, "USD") ?? ""));
+
+  check("a row already in the project's money gets none", fmt.approx(100, "INR") === null);
+  check("nor does one with no currency of its own", fmt.approx(100) === null);
+  // A USD->INR rate says nothing about a euro. This is the two-stores
+  // case, and guessing here would be the whole bug in miniature.
+  check("nor a currency this rate says nothing about", fmt.approx(100, "EUR") === null);
+
+  const noRate = makeFormatting("en-IN", "INR");
+  check("with no rate at all there is no second line", noRate.approx(100, "USD") === null);
+  check("and the amount is unaffected", noRate.money(100, "USD").includes("100"));
+
+  for (const bad of [{ ...rate, rate: 0 }, { ...rate, rate: -1 }, { ...rate, rate: NaN }]) {
+    check(
+      `a rate of ${bad.rate} is refused`,
+      makeFormatting("en-IN", "INR", bad).approx(100, "USD") === null
+    );
+  }
+}
+
+console.log("\nand it is actually wired up");
 {
   const shell = readFileSync(new URL("../src/components/AppShell.tsx", import.meta.url), "utf8");
+  const storeRead = readFileSync(new URL("../src/lib/store-read.ts", import.meta.url), "utf8");
+  const views = readFileSync(new URL("../src/components/views.tsx", import.meta.url), "utf8");
+  const ai = readFileSync(new URL("../src/lib/ai.ts", import.meta.url), "utf8");
+  const renderer = readFileSync(
+    new URL("../src/components/GenericRenderer.tsx", import.meta.url),
+    "utf8"
+  );
+
+  // This effect was silently lost to a bad edit once before: the state
+  // existed, the route existed, nothing called it, and the feature was
+  // dead in a way that still rendered.
   check("something asks for a rate", /apiFetch\(`\/api\/fx/.test(shell));
-  check("and something does so with the answer", /setFx\(/.test(shell));
+  check("and does something with the answer", /setFx\(/.test(shell));
   check("only when the two currencies differ", /from === to/.test(shell));
-  // Written against what has to be true, not against how it is
-  // currently spelled: the rate must reach a converter somewhere. The
-  // first version matched the exact JSX and broke the moment the two
-  // call sites were given one shared decision.
-  check("and the rate reaches a converter", /convert:\s*\{\s*rate:\s*fx\.rate/.test(shell));
   check(
-    "which both the section and the chat preview use",
-    (shell.match(/convert=\{sectionMoney\.convert\}/g) ?? []).length >= 2
+    "the route it calls exists",
+    existsSync(new URL("../src/app/api/fx/route.ts", import.meta.url))
+  );
+  check("the rate reaches the formatter", /approxRate=\{sectionApprox\}/.test(shell));
+  check(
+    "in the section and the chat preview alike",
+    (shell.match(/approxRate=\{sectionApprox\}/g) ?? []).length >= 2
+  );
+  // The whole point of the flag: a project sitting on the untouched
+  // INR default has not asked for anything, and must not be shown a
+  // rupee estimate of a dollar shop.
+  check(
+    "and only once the owner has actually chosen a currency",
+    /project\?\.currency_set_by_user === true/.test(shell)
+  );
+  check(
+    "which is also what decides whether a rate is fetched at all",
+    /from === to \|\| project\?\.currency_set_by_user !== true/.test(shell)
+  );
+  check(
+    "and only for a store-backed section whose currency differs",
+    /store\.currency !== project\?\.currency/.test(shell)
   );
 
-  // A client-only module imported from a server one compiles in tsc
-  // and fails in next build, and the error says neither "Failed" nor
-  // "error TS" — which is how it was missed.
-  const fmt = readFileSync(new URL("../src/lib/format.tsx", import.meta.url), "utf8");
-  const money = readFileSync(new URL("../src/lib/money.ts", import.meta.url), "utf8");
-  check("the file with React in it says so", fmt.startsWith('"use client"'));
-  check("and the file without React does not", !money.includes('"use client"'));
-}
-
-console.log("\nthe arithmetic");
-{
-  const plain = makeFormatting("en-IN", "INR");
-  const converted = makeFormatting("en-IN", "INR", { rate: 95.96, from: "USD" });
-
-  check("without a rate, the number is untouched", plain.money(100).includes("100"));
-  // 100 dollars is about 9,596 rupees. The failure being guarded
-  // against is it reading as ₹100.
-  check("with one, the amount is actually converted", /9,596/.test(converted.money(100)));
-  check("and it is labelled in the merchant's currency", converted.money(100).includes("₹"));
-  check(
-    "a rate of one changes nothing",
-    makeFormatting("en-IN", "INR", { rate: 1, from: "USD" }).money(100) === plain.money(100)
+  const projects = readFileSync(
+    new URL("../src/app/api/projects/route.ts", import.meta.url),
+    "utf8"
   );
-  // 100.05 x 95.96 is 9,600.798. Rounding the amount BEFORE converting
-  // would give 9,596 — the same-looking answer that is four rupees out
-  // on one row and unbounded over a page of them.
+  // Taken from the form, never inferred. Inferring it from "a currency
+  // arrived in the payload" meant renaming the project switched on a
+  // rupee estimate, because the form posts every field at once.
   check(
-    "fractions are converted, not rounded first",
-    /9,600\.80/.test(makeFormatting("en-IN", "INR", { rate: 95.96, from: "USD" }).money(100.05))
+    "the choice is taken from the form, not guessed",
+    /patch\.currency_set_by_user = currency_set_by_user === true/.test(projects) &&
+      !/patch\.currency_set_by_user = true/.test(projects)
   );
+
+  const settings = readFileSync(
+    new URL("../src/components/ProjectSettings.tsx", import.meta.url),
+    "utf8"
+  );
+  // A project nobody has touched used to show "India — ₹" as though it
+  // had been picked, with no way back to not having picked.
+  check(
+    "the dropdown offers not choosing at all",
+    /<option value="default">/.test(settings)
+  );
+  check(
+    "and it is what an untouched project shows",
+    /value=\{chose \? `\$\{locale\}\|\$\{currency\}` : "default"\}/.test(settings)
+  );
+  check("the form sends the choice with every save", /currency_set_by_user: chose/.test(settings));
+
+  check("orders keep their recorded currency", /currency:\s*r\.currency/.test(storeRead));
+  check("the total names that currency field", /currencyField:\s*"currency"/.test(storeRead));
+  check("cells format with the row currency", /fmt\.money\(n, currency\)/.test(views));
+  check("and render the estimate under it", /fmt\.approx\(n, currency\)/.test(views));
+  check("assistant snapshots label each order from its row", /o\.currency \?\? store\.currency/.test(ai));
+  check(
+    "mixed-currency stats are refused rather than summed",
+    renderer.includes('display: "Mixed currencies"')
+  );
+  check(
+    "the section and chat preview share the same source-currency default",
+    (shell.match(/currency=\{sectionMoneyCurrency\}/g) ?? []).length >= 2
+  );
+
+  // The reader has to be told what the small number is, or it becomes
+  // a figure somebody quietly trusts.
+  check("the screen says the estimate is today's rate", /rough\s*\n?\s*conversion at today/.test(shell) || /rough conversion at today/.test(shell));
+  check("and says not to reconcile with it", /never to reconcile/.test(shell));
 }
 
-const anon = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
-);
-const { data: owner } = await anon.auth.signInWithPassword({
-  email: "aaa@gmail.com",
-  password: process.env.OWNER_PASSWORD ?? "",
-});
-if (!owner?.session) {
-  console.log("\nno OWNER_PASSWORD given — the rest is not checked");
-  process.exit(fails.length === 0 ? 0 : 1);
-}
-
-const admin = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.ADAPTIVE_OS_SERVICE_ROLE_KEY
-);
-const { data: project } = await admin.from("projects").select("id").limit(1).single();
-const ask = (q) =>
-  fetch(`${APP}/api/fx?${q}`, {
-    headers: { Authorization: `Bearer ${owner.session.access_token}` },
-  }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) }));
-
-console.log("\nasking for a rate");
-{
-  const got = await ask(`from=USD&to=INR&project=${project.id}`);
-  check("a real pair comes back", got.status === 200 && typeof got.body?.rate === "number");
-  check("with a sensible number", got.body?.rate > 0 && got.body?.rate < 100000);
-  // Without this the app cannot say how old the number is, and an
-  // unlabelled conversion is the thing being avoided.
-  check("and the day it is from", typeof got.body?.as_of === "string");
-
-  const same = await ask(`from=INR&to=INR&project=${project.id}`);
-  check("the same currency is not a conversion", same.body?.rate === 1 && same.body?.same === true);
-
-  const junk = await ask(`from=%27%3Bdrop&to=INR&project=${project.id}`);
-  check("a made-up code is refused", junk.status === 400);
-
-  const nowhere = await ask(`from=USD&to=ZZZ&project=${project.id}`);
-  check("a code nobody trades is refused, not invented", nowhere.status === 503);
-
-  const noProject = await ask("from=USD&to=INR");
-  check("and it will not answer without a project", noProject.status === 400);
-}
-
-console.log("\nand whose rate it is");
-{
-  const theirs = await ask("from=USD&to=INR&project=00000000-0000-0000-0000-000000000001");
-  check("another project's rate is refused", theirs.status === 403);
-
-  // The boundary that matters, because the function's own check is the
-  // only thing standing between one merchant and everybody else's
-  // numbers.
-  const forged = await anon.rpc("abo_fx_put", {
-    p_project: "00000000-0000-0000-0000-000000000001",
-    p_base: "USD",
-    p_quote: "INR",
-    p_rate: 1,
-    p_as_of: "2026-01-01",
-  });
-  check("and cannot be written by hand either", forged.error?.code === "42501");
-
-  const silly = await anon.rpc("abo_fx_put", {
-    p_project: project.id,
-    p_base: "USD",
-    p_quote: "INR",
-    p_rate: -1,
-    p_as_of: "2026-01-01",
-  });
-  check("a rate that is not a rate is refused", silly.error?.code === "22023");
-
-  const table = await anon.from("fx_rates").insert({
-    project_id: project.id,
-    base: "USD",
-    quote: "INR",
-    rate: 1,
-    as_of: "2026-01-01",
-  });
-  check("and the table itself is not writable", !!table.error);
-}
-
-console.log(fails.length === 0 ? "\nmoney means what it says" : `\n${fails.length} FAILED`);
+console.log(fails.length === 0 ? "\nmoney means what its source says" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

@@ -55,7 +55,7 @@ export async function PATCH(req: Request) {
   if (!auth) {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
   }
-  const { id, name, description, locale, currency, auto_build } = (await req
+  const { id, name, description, locale, currency, currency_set_by_user, auto_build } = (await req
     .json()
     .catch(() => ({}))) as {
     id?: string;
@@ -63,6 +63,7 @@ export async function PATCH(req: Request) {
     description?: string | null;
     locale?: string;
     currency?: string;
+    currency_set_by_user?: boolean;
     auto_build?: boolean;
   };
   if (!id) {
@@ -89,6 +90,14 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: `"${code}" isn't a currency code.` }, { status: 400 });
     }
     patch.currency = code;
+  }
+  // Whether that currency was CHOSEN is a separate fact, and only the
+  // form knows it. Inferring it from "a currency arrived" was wrong:
+  // the settings form posts every field at once, so renaming the
+  // project would have quietly switched on a rupee estimate of a
+  // dollar shop.
+  if (currency_set_by_user !== undefined) {
+    patch.currency_set_by_user = currency_set_by_user === true;
   }
   // Reachable only under the caller's own RLS, which is what keeps an
   // assistant from granting itself permission to skip approval: a

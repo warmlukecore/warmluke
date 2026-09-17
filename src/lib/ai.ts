@@ -332,7 +332,13 @@ HARD RULES:
 /** A few rows, read by the server before the model runs. */
 export type StoreSnapshot = {
   last_synced_at: string | null;
-  recent: Array<{ number: string; placed: string | null; total: number | null; status: string | null }>;
+  recent: Array<{
+    number: string;
+    placed: string | null;
+    total: number | null;
+    currency: string | null;
+    status: string | null;
+  }>;
   low: Array<{ product: string; variant: string | null; location: string | null; available: number }>;
 };
 
@@ -430,7 +436,7 @@ function storeBlock(store: StoreContext | null, projectCurrency: string): string
       lines.push(`  Most recent ${snap.recent.length} orders (newest first):`);
       for (const o of snap.recent) {
         lines.push(
-          `    ${o.number} · ${o.placed ?? "no date"} · ${o.total ?? "?"} ${store.currency} · ${o.status ?? "no status"}`
+          `    ${o.number} · ${o.placed ?? "no date"} · ${o.total ?? "?"} ${o.currency ?? store.currency} · ${o.status ?? "no status"}`
         );
       }
     } else {
