@@ -13,11 +13,7 @@ import { createClient } from "@supabase/supabase-js";
 import { signInAsCheckUser } from "./owner-session.mjs";
 
 const args = process.argv.slice(2);
-const envFile = args.includes("--env") ? args[args.indexOf("--env") + 1] : null;
-if (!envFile || envFile === ".env.local") {
-  console.log("say which project with --env, and not .env.local — this makes the check user an administrator there");
-  process.exit(2);
-}
+const envFile = args.includes("--env") ? args[args.indexOf("--env") + 1] : ".env.local";
 process.env.ENV_FILE = envFile;
 const env = Object.fromEntries(
   readFileSync(new URL(`../${envFile}`, import.meta.url), "utf8")
@@ -25,6 +21,14 @@ const env = Object.fromEntries(
     .filter((l) => l.includes("=") && !l.trim().startsWith("#"))
     .map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()])
 );
+// The file has to say so. A name was the first guard, and CI writes
+// the check project's values to a file called .env.local — so the
+// guard is what the file declares, which any env file can, and
+// production's never will.
+if (env.CHECK_PROJECT !== "1") {
+  console.log(`${envFile} does not declare CHECK_PROJECT=1 — this makes the check user an administrator of whatever project that file points at, so it refuses`);
+  process.exit(2);
+}
 const anon = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY);
 const admin = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
 
