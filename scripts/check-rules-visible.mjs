@@ -147,7 +147,12 @@ if (!owner?.session) {
         jsonrpc: "2.0",
         id: 1,
         method: "tools/call",
-        params: { name, arguments: args },
+        // Always named. read_section without one lists every project
+        // this account has, and propose_change without one asks which
+        // — so a project left behind by another run, or made by a run
+        // on another machine in the same hour, failed this check with
+        // nothing in the diff to explain it.
+        params: { name, arguments: { project_id: project.id, ...args } },
       }),
     });
     const j = await res.json();
