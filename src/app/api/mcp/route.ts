@@ -53,11 +53,24 @@ const VERSION_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
 type Json = Record<string, unknown>;
 type RpcRequest = { jsonrpc: "2.0"; id?: string | number | null; method: string; params?: Json };
 
+/**
+ * Appended to every tool that answers with data.
+ *
+ * A merchant asked their Claude for a report with charts. The numbers
+ * came back right and the charts came back empty: the artifact reached
+ * for a charting library from a CDN, and the sandbox it renders in
+ * does not load one. Nothing here can draw the chart — but the tool's
+ * own description is the one place the model reads before it starts,
+ * so it is the one place to say so.
+ */
+const RENDER_NOTE =
+  " If you show this in an artifact, draw charts as inline SVG — scripts from a CDN do not load there, and a chart that needs one comes out blank. If the merchant wants this to stay, build it as a section in Warmluke instead: propose_change or submit_design.";
+
 const TOOLS = [
   {
     name: "store_overview",
     description:
-      "What is in the merchant's connected Shopify store: the shop domain, its timezone and currency, when it last synced, and how many products, customers and orders are held.",
+      "What is in the merchant's connected Shopify store: the shop domain, its timezone and currency, when it last synced, and how many products, customers and orders are held." + RENDER_NOTE,
     inputSchema: {
       type: "object",
       properties: {
@@ -71,7 +84,7 @@ const TOOLS = [
   {
     name: "search_orders",
     description:
-      "Find orders in the connected store. A day is read in the store's own timezone, not the caller's — asking for yesterday in New York and getting UTC's yesterday would be a wrong answer.",
+      "Find orders in the connected store. A day is read in the store's own timezone, not the caller's — asking for yesterday in New York and getting UTC's yesterday would be a wrong answer." + RENDER_NOTE,
     inputSchema: {
       type: "object",
       properties: {
@@ -91,7 +104,7 @@ const TOOLS = [
   {
     name: "get_order",
     description:
-      "One order in full, with the items in it. Use this when the merchant asks about a particular order; search_orders lists many and deliberately leaves the contents out.",
+      "One order in full, with the items in it. Use this when the merchant asks about a particular order; search_orders lists many and deliberately leaves the contents out." + RENDER_NOTE,
     inputSchema: {
       type: "object",
       properties: {
@@ -107,7 +120,7 @@ const TOOLS = [
   {
     name: "search_store",
     description:
-      "Look through the store's products, customers, orders or stock levels. Read-only, and it only sees what has been synced from Shopify.",
+      "Look through the store's products, customers, orders or stock levels. Read-only, and it only sees what has been synced from Shopify." + RENDER_NOTE,
     inputSchema: {
       type: "object",
       properties: {
@@ -130,7 +143,7 @@ const TOOLS = [
   {
     name: "low_stock",
     description:
-      "Products running out: every variant at or below a number, lowest first, with the location it is short at. Ask with threshold 0 for what is already out of stock.",
+      "Products running out: every variant at or below a number, lowest first, with the location it is short at. Ask with threshold 0 for what is already out of stock." + RENDER_NOTE,
     inputSchema: {
       type: "object",
       properties: {
@@ -143,7 +156,7 @@ const TOOLS = [
   {
     name: "read_section",
     description:
-      "How a section in the merchant's Warmluke app is put together — its fields, its filters, its stats, where its rows come from — and its rows when it holds its own. Call it with no arguments to list the sections. Use this before guessing why something on screen behaves the way it does.",
+      "How a section in the merchant's Warmluke app is put together — its fields, its filters, its stats, where its rows come from — and its rows when it holds its own. Call it with no arguments to list the sections. Use this before guessing why something on screen behaves the way it does." + RENDER_NOTE,
     inputSchema: {
       type: "object",
       properties: {
@@ -592,10 +605,14 @@ async function settleDesign(opts: {
             p_request: requestId,
             p_op: "request_built",
             // What really happened, not that something happened. With
-            // errors in it the row lands as partly_built.
-            p_payload: { applied, errors },
+            // errors in it the row lands as partly_built. And that
+            // nobody tapped anything — inside the same write, because
+            // this used to be a second one straight at the table, and
+            // a connected client is not allowed to write at the table.
+            // For every build a real assistant made, it silently did
+            // not land, and the row read as approved by the merchant.
+            p_payload: { applied, errors, auto_built: true },
           });
-          await db.from("build_requests").update({ auto_built: true }).eq("id", requestId);
           // Written here, not by the browser. Nobody tapped anything —
           // that is the whole point of automatic builds — so if this
           // did not record it, the app would change and the merchant's
@@ -631,10 +648,15 @@ async function settleDesign(opts: {
         // The merchant looks at a card in Warmluke, not at the tool's
         // answer — and a card that asks with the setting on has to be
         // able to say why, or it reads as the setting not working.
-        await db
-          .from("build_requests")
-          .update({ outcome: { applied: [], errors } })
-          .eq("id", requestId);
+        // Through abo_build, not at the table: a client cannot write
+        // there, and this reason was never landing for the one kind
+        // of caller that produces it.
+        await db.rpc("abo_build", {
+          p_project: project.id,
+          p_request: requestId,
+          p_op: "request_outcome",
+          p_payload: { applied: [], errors },
+        });
       }
 
       return ok(
@@ -1227,8 +1249,13 @@ export async function POST(req: Request) {
       const requestId = String(args.request_id ?? "").trim();
       if (!requestId) return ok(id, text({ error: "Which request? Pass request_id." }));
 
+      // The reason goes in with the no. It used to be written at the
+      // table afterwards, which a client's token cannot do — so every
+      // refusal a real assistant relayed lost the merchant's words.
+      const reason = String(args.reason ?? "").trim();
       const { data: said, error: rErr } = await db.rpc("abo_reject_request", {
         p_request: requestId,
+        p_reason: reason || null,
       });
       if (rErr) return ok(id, text({ error: rErr.message }));
       const answer = said as
@@ -1244,18 +1271,6 @@ export async function POST(req: Request) {
             ...(answer?.status ? { it_is: answer.status } : {}),
           })
         );
-      }
-
-      // The merchant's words are worth keeping — they are what makes
-      // the decision recognisable in build_history a week later. Best
-      // effort: the refusal itself is already recorded and must not be
-      // undone by a failure to annotate it.
-      const reason = String(args.reason ?? "").trim();
-      if (reason) {
-        await db
-          .from("build_requests")
-          .update({ summary: reason.slice(0, 2000) })
-          .eq("id", requestId);
       }
 
       return ok(

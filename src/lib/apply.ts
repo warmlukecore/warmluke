@@ -182,58 +182,23 @@ export async function logClientBuild(
    */
   applied: unknown[] = []
 ): Promise<void> {
-  try {
-    const { data: found } = await client
-      .from("conversations")
-      .select("id")
-      .eq("project_id", projectId)
-      .eq("title", CLIENT_THREAD_TITLE)
-      .order("created_at", { ascending: true })
-      .limit(1);
-
-    let id = found?.[0]?.id as string | undefined;
-    if (!id) {
-      const { data: made } = await client
-        .from("conversations")
-        .insert({ project_id: projectId, title: CLIENT_THREAD_TITLE })
-        .select("id")
-        .single();
-      id = made?.id as string | undefined;
-    }
-    if (!id) return;
-
-    const short = asked.trim().length > 160 ? `${asked.trim().slice(0, 157)}…` : asked.trim();
-    // Stamped a millisecond apart, the same way persistTurn does it.
-    // Both rows in one insert share the default now(), so ordering by
-    // created_at is a coin flip — and it came up wrong: the panel
-    // showed the answer above the question it answered. The fix for
-    // this already existed twenty lines from here and I wrote the bug
-    // again rather than looking.
-    const t = Date.now();
-    await client.from("messages").insert([
-      // The shapes the panel reads back: a user turn from payload.text,
-      // an assistant turn from payload.message.
-      {
-        conversation_id: id,
-        role: "user",
-        content: short,
-        payload: { kind: "asked", text: short, via: "client" },
-        created_at: new Date(t).toISOString(),
-      },
-      {
-        conversation_id: id,
-        role: "assistant",
-        content: outcome,
-        payload: (() => {
-          const undo = undoableFrom(applied);
-          return { type: "applied", message: outcome, ...(undo.length ? { undo } : {}) };
-        })(),
-        created_at: new Date(t + 1).toISOString(),
-      },
-    ]);
-  } catch {
-    // Deliberately silent. See above.
-  }
+  // Through a function that runs as the definer, not at the table.
+  // This wrote conversations and messages directly with the caller's
+  // token, and a connected client's token may not insert into either —
+  // so for every build a real assistant made, the thread stayed empty
+  // and the catch below said nothing. The write lands the same for
+  // the owner and for a client now.
+  const undo = undoableFrom(applied);
+  const { error } = await client.rpc("abo_log_client_build", {
+    p_project: projectId,
+    p_asked: asked,
+    p_outcome: outcome,
+    p_undo: undo.length ? undo : null,
+  });
+  // Not thrown: a build that landed must not be reported as failed
+  // because its record did not. Not silent either — silence is how
+  // the empty thread went unnoticed.
+  if (error) console.error("logClientBuild:", error.message);
 }
 
 export type ApplyOutcome = {

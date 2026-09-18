@@ -115,6 +115,7 @@ try {
     request: `Add a section called Off Check ${stamp} with a single text field for a note. Nothing else.`,
   });
   check("the design waits for approval", off.status === "waiting for approval");
+  if (off.status !== "waiting for approval") console.log("     →", JSON.stringify(off).slice(0, 400));
   check("and nothing was built", (await sectionCount()) === before);
   if (off.request_id) madeRequests.push(off.request_id);
 
@@ -235,9 +236,12 @@ console.log("\nthe screen describes what it actually does");
   );
   // And the reason has to have been written down, or the card has
   // nothing to read.
+  // Through abo_build, because a client's token cannot write at the
+  // table and this reason was never landing for the one caller that
+  // produces it (0078).
   check(
     "a failed automatic build records its reason",
-    /\.update\(\{ outcome: \{ applied: \[\], errors \} \}\)/.test(route)
+    /p_op: "request_outcome"/.test(route) && !/\.update\(\{ outcome:/.test(route)
   );
 }
 
@@ -287,6 +291,7 @@ console.log("\nand a new field, which loses nothing");
     4
   );
   check("it is refused outright", /cannot be done from here/i.test(removal.error ?? ""));
+  if (!/cannot be done from here/i.test(removal.error ?? "")) console.log("     →", JSON.stringify(removal).slice(0, 400));
   check("and nothing was requested", !removal.request_id);
   if (removal.request_id) madeRequests.push(removal.request_id);
 
