@@ -32,6 +32,22 @@ const here = new URL(".", import.meta.url);
 const args = process.argv.slice(2);
 const tierWanted = args.includes("--tier") ? args[args.indexOf("--tier") + 1] : "all";
 const listOnly = args.includes("--list");
+// Which .env file the checks read. The check project's, in CI; the
+// laptop's, by default. Passed down as ENV_FILE, which every script
+// honours.
+const envFile = args.includes("--env") ? args[args.indexOf("--env") + 1] : process.env.ENV_FILE ?? ".env.local";
+process.env.ENV_FILE = envFile;
+let envKeys = new Set();
+try {
+  envKeys = new Set(
+    readFileSync(new URL(`../${envFile}`, here), "utf8")
+      .split("\n")
+      .filter((l) => l.includes("=") && !l.trim().startsWith("#"))
+      .map((l) => l.slice(0, l.indexOf("=")).trim())
+  );
+} catch {
+  // No file at all: the pure tier does not need one.
+}
 
 // The two that spend money and can disagree with themselves. Named
 // rather than inferred: what makes them different is not visible in
@@ -53,7 +69,12 @@ const classify = (name) => {
   // Checks that import from src/ run TypeScript through the hook the
   // rest of the scripts already use.
   const hook = /from "\.\.\/src\//.test(src);
-  return { name, tier, hook, needsServer };
+  // The management PAT is account-wide — it reaches production from
+  // anywhere it is held — so it never goes to CI. A check that needs
+  // it is skipped there, by name, rather than failing on a missing
+  // variable that looks like a bug.
+  const needsPat = /SUPABASE_ACCESS_TOKEN|api\.supabase\.com/.test(src);
+  return { name, tier, hook, needsServer, needsPat };
 };
 
 const checks = readdirSync(here)
@@ -86,7 +107,13 @@ if (chosen.some((c) => c.needsServer)) {
 // user, whose hourly request budget they would otherwise spend on each
 // other.
 const failed = [];
+const skipped = [];
 for (const c of chosen) {
+  if (c.needsPat && c.tier !== "pure" && envKeys.size > 0 && !envKeys.has("SUPABASE_ACCESS_TOKEN")) {
+    console.log(`skip  ${c.tier.padEnd(6)} ${c.name.padEnd(26)} (needs SUPABASE_ACCESS_TOKEN, not in ${envFile})`);
+    skipped.push(c.name);
+    continue;
+  }
   const cmd = c.hook
     ? ["--experimental-strip-types", "--import", new URL("./ts-hook.mjs", here).pathname, `scripts/${c.name}.mjs`]
     : [`scripts/${c.name}.mjs`];
@@ -106,7 +133,7 @@ for (const c of chosen) {
 
 console.log(
   failed.length === 0
-    ? `\n${chosen.length} ${tierWanted === "all" ? "" : tierWanted + " "}checks, all green`
+    ? `\n${chosen.length - skipped.length} ${tierWanted === "all" ? "" : tierWanted + " "}checks, all green${skipped.length ? ` (${skipped.length} skipped for want of a secret)` : ""}`
     : `\n${failed.length} of ${chosen.length} FAILED: ${failed.join(", ")}`
 );
 process.exit(failed.length === 0 ? 0 : 1);
