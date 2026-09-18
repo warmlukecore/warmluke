@@ -40,7 +40,14 @@ const MODEL = new Set(["check-mcp", "check-auto-build"]);
 
 const classify = (name) => {
   const src = readFileSync(new URL(`./${name}.mjs`, here), "utf8");
-  const needsDb = /createClient\(|api\.supabase\.com|owner-session|client-session/.test(src);
+  // A file that reads a secret's name needs the secret. check-rls and
+  // check-weakest make no client — they fetch PostgREST directly with
+  // the service-role key — and the first CI run called them pure and
+  // went red on "missing Supabase env". The name of the key is the
+  // surer signal.
+  const needsDb =
+    /createClient\(|api\.supabase\.com|owner-session|client-session/.test(src) ||
+    /ADAPTIVE_OS_SERVICE_ROLE_KEY|SUPABASE_ACCESS_TOKEN|OWNER_PASSWORD/.test(src);
   const needsServer = /APP_URL|localhost:3100/.test(src);
   const tier = MODEL.has(name) ? "model" : needsDb || needsServer ? "live" : "pure";
   // Checks that import from src/ run TypeScript through the hook the
