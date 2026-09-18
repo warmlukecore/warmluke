@@ -226,3 +226,9 @@ exception when others then
   -- the app calls run_scheduled_automations() manually.
   null;
 end $reg$;
+
+-- Added later, when a check started asking: a redefined function
+-- PostgREST is not told about is one the API keeps calling by its old
+-- signature. Idempotent, so appending it to an applied migration
+-- changes nothing that ran.
+NOTIFY pgrst, 'reload schema';
