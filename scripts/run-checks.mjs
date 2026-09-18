@@ -61,9 +61,16 @@ const classify = (name) => {
   // the service-role key — and the first CI run called them pure and
   // went red on "missing Supabase env". The name of the key is the
   // surer signal.
+  // Read from the env FILE means the check cannot run without it.
+  // Read from process.env means it degrades on its own —
+  // check-operator-parity runs its JavaScript half and says it is
+  // skipping the Postgres half — and calling that "live" took it out
+  // of CI altogether, which is a check lost to a rule about checks.
   const needsDb =
     /createClient\(|api\.supabase\.com|owner-session|client-session/.test(src) ||
-    /ADAPTIVE_OS_SERVICE_ROLE_KEY|SUPABASE_ACCESS_TOKEN|OWNER_PASSWORD/.test(src);
+    /env\.(ADAPTIVE_OS_SERVICE_ROLE_KEY|SUPABASE_ACCESS_TOKEN|OWNER_PASSWORD)|env\["(ADAPTIVE_OS_SERVICE_ROLE_KEY|SUPABASE_ACCESS_TOKEN)"\]/.test(
+      src.replace(/process\.env\.\w+/g, "")
+    );
   const needsServer = /APP_URL|localhost:3100/.test(src);
   const tier = MODEL.has(name) ? "model" : needsDb || needsServer ? "live" : "pure";
   // Checks that import from src/ run TypeScript through the hook the
@@ -73,7 +80,9 @@ const classify = (name) => {
   // anywhere it is held — so it never goes to CI. A check that needs
   // it is skipped there, by name, rather than failing on a missing
   // variable that looks like a bug.
-  const needsPat = /SUPABASE_ACCESS_TOKEN|api\.supabase\.com/.test(src);
+  const needsPat = /api\.supabase\.com|env\.SUPABASE_ACCESS_TOKEN|env\["SUPABASE_ACCESS_TOKEN"\]/.test(
+    src.replace(/process\.env\.\w+/g, "")
+  );
   // A check that wants a token handed to it on the command line is a
   // harness somebody drives by hand, not something a runner can start.
   const needsJwt = /process\.env\.ABO_JWT/.test(src);
