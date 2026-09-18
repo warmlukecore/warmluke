@@ -11,6 +11,7 @@ import {
   searchOrders,
   storeOverview,
   storeTableSchema,
+  STORE_TABLES,
 } from "@/lib/store-read";
 import { blueprintAsText, runTurn, schemasFor } from "@/lib/engine";
 import { PLAN_FORMAT, WORKED_EXAMPLE, parseReply } from "@/lib/ai";
@@ -1290,6 +1291,18 @@ export async function POST(req: Request) {
           ],
           store_backed_sections:
             "A section with source_table shows Shopify's own rows. Its columns are the store's — send newSchema as null and it is filled in. You cannot add a column of your own to one (an import would overwrite it), so express a flag as a stat or a filter over the columns that are there.",
+          // Named, because "the columns are the store's" told a client
+          // nothing it could type. It guessed Shopify's API names —
+          // total_price, created_at, fulfillment_status — and was
+          // refused seven times over for a section it had not built
+          // yet. These are the names, per table, and they do not
+          // change.
+          store_columns: Object.fromEntries(
+            Object.entries(STORE_TABLES).map(([table, spec]) => [
+              table,
+              spec.columns.map((c) => c.field),
+            ])
+          ),
           removing_a_section:
             "MODULE_DELETE is not accepted here at all. The merchant types the section's name in Warmluke to confirm that one.",
           vocabulary: vocabularyPrompt(),

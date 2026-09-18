@@ -163,6 +163,73 @@ try {
   check("it is not accepted", nonsense?.status === "not accepted");
   check("and it says what is wrong", Array.isArray(nonsense?.errors) && nonsense.errors.length > 0);
 
+  // The design a real merchant's Claude sent, verbatim. A dashboard
+  // over the store's orders, with every field named the way Shopify's
+  // API names it — total_price, created_at, fulfillment_status — and
+  // refused seven times over. Two things were wrong, and only one of
+  // them was the client's: the section did not exist yet, so its
+  // columns were looked up on whatever section was open instead of on
+  // the orders table; and the refusal named nothing it could type.
+  console.log("\na dashboard over the store's orders, in Shopify's words");
+  const dashboard = (financial, fulfilment, total, placed) => ({
+    request: `BYO dashboard ${stamp}`,
+    project_id: project.id,
+    plans: [
+      {
+        changeType: "NEW_MODULE",
+        targetModuleId: null,
+        newModule: { name: `dash-${stamp}`, nav_label: `Dash ${stamp}`, icon: "table", source_table: "orders" },
+        newSchema: null,
+        explanation: "All your orders, read-only and always in sync.",
+      },
+      {
+        changeType: "FEATURE_UPDATE",
+        targetModuleId: `#dash-${stamp}`,
+        features: {
+          defaultSort: { dir: "desc", field: placed },
+          filters: [
+            { field: financial, label: "Financial", options: ["PENDING", "PAID", "REFUNDED"] },
+            { field: fulfilment, label: "Fulfilment", options: ["UNFULFILLED", "FULFILLED"] },
+          ],
+          search: { enabled: true, fields: ["order_number"], placeholder: "Search order number…" },
+          stats: [
+            { label: "Total Orders", op: "count" },
+            { field: total, label: "Total Revenue", op: "sum" },
+          ],
+        },
+        explanation: "Search, filters and revenue on top of the synced orders.",
+      },
+    ],
+  });
+  const guessed = await tool(
+    "submit_design",
+    dashboard("financial_status", "fulfillment_status", "total_price", "created_at"),
+    23
+  );
+  check("Shopify's names are refused", guessed?.status === "not accepted");
+  const refusal = (guessed?.errors ?? []).join("\n");
+  check("and the refusal names the columns that exist", /This section's columns are:/.test(refusal));
+  check("including the one it wanted", /fulfilment_status/.test(refusal) && /placed_at/.test(refusal));
+  if (!/fulfilment_status/.test(refusal)) console.log("     →", refusal.slice(0, 400));
+
+  // design_format is where it should have read them in the first place.
+  const dfmt = await tool("design_format", { project_id: project.id }, 24);
+  const orderCols = dfmt?.store_columns?.orders ?? [];
+  check("design_format lists the store's columns by table", orderCols.includes("fulfilment_status"));
+  check("and all four tables", ["orders", "customers", "products", "inventory_levels"].every((t) => Array.isArray(dfmt?.store_columns?.[t])));
+
+  // With the real names, the same design holds — which it did not
+  // before either, because the section had no columns to be checked
+  // against until it existed.
+  const right = await tool(
+    "submit_design",
+    dashboard("status", "fulfilment_status", "total", "placed_at"),
+    25
+  );
+  check("and with Warmluke's names it is accepted", right?.status === "waiting for approval");
+  if (right?.status !== "waiting for approval") console.log("     →", JSON.stringify(right).slice(0, 400));
+  if (right?.request_id) made.push(right.request_id);
+
   // Free must not mean unchecked: the one operation a client may never
   // have is the one that cannot be undone.
   const deleting = await tool(

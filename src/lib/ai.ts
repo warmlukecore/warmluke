@@ -647,10 +647,20 @@ export function validateFeatures(
     return;
   }
   const f = features as FeatureSchema;
-  const hasField = (name: string) =>
-    RESERVED_FIELDS.has(name) ||
-    columns.some((c) => c.field === name) ||
-    !!pendingFields?.has(name);
+  // A miss is remembered so the answer can end by naming what IS
+  // there. A client that guessed Shopify's own names — total_price,
+  // created_at, fulfillment_status — was told each one did not exist
+  // and nothing else, which leaves it guessing again from the same
+  // place. The columns are listed once, at the end, not seven times.
+  let missed = false;
+  const hasField = (name: string) => {
+    const ok =
+      RESERVED_FIELDS.has(name) ||
+      columns.some((c) => c.field === name) ||
+      !!pendingFields?.has(name);
+    if (!ok) missed = true;
+    return ok;
+  };
   // Reading one is fine everywhere. Writing one is not a thing that
   // can happen: the value is recomputed on the next read, so a button
   // that sets it would appear to work and change nothing.
@@ -784,6 +794,10 @@ export function validateFeatures(
     if (f.scanMode.sequenceField && !hasField(f.scanMode.sequenceField)) {
       err(errors, `scanMode.sequenceField "${f.scanMode.sequenceField}" doesn't exist in the module schema.`);
     }
+  }
+  if (missed) {
+    const known = [...columns.map((c) => c.field), ...(pendingFields ?? [])];
+    err(errors, `This section's columns are: ${known.join(", ")}. Use these names exactly.`);
   }
 }
 
@@ -1709,6 +1723,14 @@ function parsePlans(
       const maker = (raw as AssistantPlan[]).find(
         (o) => o?.changeType === "NEW_MODULE" && o?.newModule?.name?.trim().toLowerCase() === slug
       );
+      // A section over a store table is told to send newSchema as
+      // null — the columns are the store's and are filled in later. So
+      // "later" has to be now, here: without this a dashboard over
+      // orders was checked against whatever section happened to be
+      // open, and every one of its fields, right or wrong, was refused
+      // as not existing.
+      const src = maker?.newModule?.source_table;
+      if (maker && isStoreTable(src)) return storeTableSchema(src);
       return maker?.newSchema ?? currentSchema;
     }
     if (typeof target === "string") {
