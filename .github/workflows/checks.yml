@@ -1,0 +1,65 @@
+# What runs on every push, with no secrets.
+#
+# The static job needs nothing that is not already public: the two
+# NEXT_PUBLIC values are shipped to every browser that opens the app,
+# so they live in repository variables, not secrets. It runs the type
+# check, the build, and every check that scripts/run-checks.mjs
+# classifies as pure — which it does by reading the files, so a new
+# check joins this on its next push without anyone listing it.
+#
+# The live tier (database + running server) and the model tier (paid,
+# non-deterministic) are deliberately not here. Live joins once it has
+# somewhere safe to point at that is not the production database.
+#
+# This does not stop a deploy: Vercel deploys main on push regardless.
+# It tells you, on the commit, whether it should have.
+
+name: checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm, because that is what node_modules/.pnpm says this repo
+      # installs with; the version is pinned so the runner and a laptop
+      # resolve the same lockfile the same way.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.3.4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: type check
+        run: pnpm exec tsc --noEmit
+
+      # Public values only. The build prerenders /admin, which makes a
+      # Supabase client at module load and refuses to without these;
+      # two of the pure checks read the same file.
+      - name: .env.local from public values
+        run: |
+          printf 'NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL=%s\nNEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY=%s\n' \
+            "${{ vars.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL }}" \
+            "${{ vars.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY }}" > .env.local
+
+      - name: build
+        run: pnpm build
+
+      - name: pure checks
+        run: node scripts/run-checks.mjs --tier pure
