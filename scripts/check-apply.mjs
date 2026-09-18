@@ -10,7 +10,7 @@
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { signInAsOwner } from "./owner-session.mjs";
+import { signInAsCheckUser, throwawayProject } from "./owner-session.mjs";
 
 const env = Object.fromEntries(
   readFileSync(new URL("../.env.local", import.meta.url), "utf8")
@@ -30,7 +30,7 @@ const client = createClient(
   env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
   env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
 );
-const owner = await signInAsOwner(client, env);
+const owner = await signInAsCheckUser(client, env);
 if (!owner.session) {
   console.log(`could not sign in as the owner — ${owner.why}`);
   process.exit(1);
@@ -42,12 +42,11 @@ const db = createClient(
   { global: { headers: { Authorization: `Bearer ${token}` } } }
 );
 
-const { data: projects } = await db.from("projects").select("id").limit(1);
-const projectId = projects?.[0]?.id;
-if (!projectId) {
-  console.log("no project on this account — nothing to check");
-  process.exit(0);
-}
+// A project for this run only. Every section this makes lands under
+// it, and it is removed at the end — the merchant's app is not touched.
+const admin = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
+const project = await throwawayProject(admin, owner.user.id, "apply");
+const projectId = project.id;
 
 const apply = (plans) =>
   fetch(`${APP}/api/apply`, {
@@ -304,5 +303,6 @@ console.log("\nthe receipt names what changed");
   check("none of them are gaps", !fails.some((f) => f.startsWith("a usable line")));
 }
 
+await project.remove();
 console.log(fails.length === 0 ? "\nevery write lands" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

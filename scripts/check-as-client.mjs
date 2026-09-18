@@ -17,6 +17,7 @@
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { signInAsClient } from "./client-session.mjs";
+import { throwawayProject } from "./owner-session.mjs";
 
 const env = Object.fromEntries(
   readFileSync(new URL("../.env.local", import.meta.url), "utf8")
@@ -46,12 +47,9 @@ if (!me.token) {
   process.exit(1);
 }
 const admin = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
-const { data: project } = await admin
-  .from("projects")
-  .select("id, auto_build")
-  .eq("owner_id", me.userId)
-  .limit(1)
-  .single();
+// The client is the check user's, so its builds land on a project
+// that exists for this run and is removed at the end.
+const project = await throwawayProject(admin, me.userId, "as-client");
 const setAuto = (on) => admin.from("projects").update({ auto_build: on }).eq("id", project.id);
 
 let n = 0;
@@ -207,7 +205,8 @@ try {
     if (mine.length === (msgs ?? []).length) await admin.from("conversations").delete().eq("id", thread.id);
   }
   await me.revoke(sql);
-  console.log("\nthe project is back as it was, and the client is gone");
+  await project.remove();
+  console.log("\nthe project is gone, and so is the client");
 }
 
 console.log(fails.length === 0 ? "\na connected assistant is held to the same rules" : `\n${fails.length} FAILED`);

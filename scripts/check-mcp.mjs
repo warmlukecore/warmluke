@@ -9,7 +9,7 @@
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { signInAsOwner } from "./owner-session.mjs";
+import { signInAsOwner, signInAsCheckUser, throwawayProject } from "./owner-session.mjs";
 
 const env = Object.fromEntries(
   readFileSync(new URL("../.env.local", import.meta.url), "utf8")
@@ -367,13 +367,17 @@ try {
   // the setting that skips approval has to be off while it runs. It
   // was on once and the check crashed on a request_id that was never
   // returned — a check that depends on a setting has to own it.
-  ({ data: projectRow } = await admin
-    .from("projects")
-    .select("id, auto_build")
-    .limit(1)
-    .single());
-  autoWas = projectRow.auto_build === true;
-  if (autoWas) await admin.from("projects").update({ auto_build: false }).eq("id", projectRow.id);
+  // Reads above were the merchant's — the store is theirs. Everything
+  // from here writes, so it is the check user's, on a project that
+  // exists for this run. auto_build starts off on a new project, which
+  // is what this section needs and no longer has to arrange.
+  const checker = await signInAsCheckUser(
+    createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY),
+    env
+  );
+  if (!checker.session) throw new Error(`no check user: ${checker.why}`);
+  const tc = checker.session.access_token;
+  projectRow = await throwawayProject(admin, checker.user.id, "mcp");
   // And the same goes for the free-build counter. Every run of this
   // check spends some, so after a few runs the account has none left
   // and the design it is about to ask for never happens. A check that
@@ -382,10 +386,10 @@ try {
     await admin
       .from("account_settings")
       .select("free_turns, turns_used")
-      .eq("user_id", owner.user.id)
+      .eq("user_id", checker.user.id)
       .single()
   ).data;
-  ownerId = owner.user.id;
+  ownerId = checker.user.id;
   await admin
     .from("account_settings")
     .update({ free_turns: (turnsWas?.turns_used ?? 0) + 20 })
@@ -393,9 +397,9 @@ try {
     // The whole point of the design: the merchant hears the plan
     // before anything is built, and hears it in words generated from
     // the plans rather than from the model's prose.
-    const before = await admin.from("modules").select("*", { count: "exact", head: true });
+    const before = await admin.from("modules").select("*", { count: "exact", head: true }).eq("project_id", projectRow.id);
     const ask = async (request) =>
-      toolText(await rpc("tools/call", { name: "propose_change", arguments: { request } }, t));
+      toolText(await rpc("tools/call", { name: "propose_change", arguments: { request, project_id: projectRow.id } }, tc));
     let proposed = await ask(
       "Add a section called Packing Checks with the order number, who packed it, and whether it is done."
     );
@@ -416,7 +420,7 @@ try {
     check("and it comes back with the design", (proposed?.design ?? "").length > 20);
     check("and it says nothing has changed yet", /nothing has changed/i.test(proposed?.note ?? ""));
     check("with somewhere for the merchant to go", /\/app\//.test(proposed?.open ?? ""));
-    const after = await admin.from("modules").select("*", { count: "exact", head: true });
+    const after = await admin.from("modules").select("*", { count: "exact", head: true }).eq("project_id", projectRow.id);
     check("no section was created", after.count === before.count);
 
     const { data: stored } = await admin
@@ -429,7 +433,7 @@ try {
 
     console.log("\napproving it, without leaving the conversation");
     const approve = async (request_id) =>
-      toolText(await rpc("tools/call", { name: "approve_change", arguments: { request_id } }, t));
+      toolText(await rpc("tools/call", { name: "approve_change", arguments: { request_id } }, tc));
 
     check(
       "an id that is not theirs builds nothing",
@@ -441,7 +445,7 @@ try {
     if (!(built?.status === "built" || built?.status === "partly built")) {
       console.log("     \u2192", JSON.stringify(built).slice(0, 400));
     }
-    const afterBuild = await admin.from("modules").select("*", { count: "exact", head: true });
+    const afterBuild = await admin.from("modules").select("*", { count: "exact", head: true }).eq("project_id", projectRow.id);
     check("and the section is really there", afterBuild.count > before.count);
 
     const again = await approve(proposed.request_id);
@@ -460,7 +464,7 @@ try {
       "an empty request is refused",
       /say what/i.test(
         toolText(
-          await rpc("tools/call", { name: "propose_change", arguments: { request: "   " } }, t)
+          await rpc("tools/call", { name: "propose_change", arguments: { request: "   ", project_id: projectRow.id } }, tc)
         )?.error ?? ""
       )
     );
@@ -479,9 +483,7 @@ try {
     check("an unknown shop is named, with what is available", Array.isArray(noSuchShop?.available));
   }
 } finally {
-  if (typeof autoWas === "boolean" && autoWas) {
-    await admin.from("projects").update({ auto_build: true }).eq("id", projectRow.id);
-  }
+  if (projectRow?.remove) await projectRow.remove();
   if (turnsWas && ownerId) {
     // The turns this check really spent stay spent; only the ceiling
     // it raised comes back down.

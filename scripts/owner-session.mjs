@@ -16,6 +16,7 @@
 // stops running.
 
 import { createClient } from "@supabase/supabase-js";
+import crypto from "node:crypto";
 
 export const OWNER_EMAIL = "aaa@gmail.com";
 
@@ -57,4 +58,83 @@ export async function signInAsOwner(client, env, email = OWNER_EMAIL) {
   });
   if (data?.session) return { session: data.session, user: data.session.user, how: "service-role link" };
   return { session: null, why: `the minted link would not verify: ${error?.message}` };
+}
+
+// ── The check user, and a project that exists only for one run ──────
+//
+// Every check that wrote anything signed in as the real owner and wrote
+// on their real project. The hourly request ceiling is per USER, so a
+// run's leftovers spent the merchant's own budget — for an hour after
+// a crashed check, their actual Claude was told "too many requests".
+// Killing an echoed browser token meant revoking every session the
+// merchant had. And a crashed run left rows in their real app.
+//
+// So: one account that exists for checks, and a project per run that
+// is deleted at the end. Deleting a project cascades everything under
+// it, which makes cleanup one line and makes leaving debris behind
+// impossible rather than merely careful.
+//
+// Checks that only READ the connected store keep signing in as the
+// real owner, because the store is theirs and reading it changes
+// nothing. Everything that writes goes here.
+
+export const CHECK_EMAIL = "check@warmluke.test";
+
+/** Signs `client` in as the check user, creating the account once. */
+export async function signInAsCheckUser(client, env) {
+  const key = env.ADAPTIVE_OS_SERVICE_ROLE_KEY;
+  if (!key) return { session: null, why: "no service-role key to make the check user with" };
+  const admin = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, key);
+  // Idempotent: a second run finds the user and moves on. Made with a
+  // random password nobody keeps — the session is minted, never typed.
+  const { error } = await admin.auth.admin.createUser({
+    email: CHECK_EMAIL,
+    password: `${crypto.randomUUID()}Aa1!`,
+    email_confirm: true,
+  });
+  if (error && !/already|exists|registered/i.test(error.message)) {
+    return { session: null, why: `could not make the check user: ${error.message}` };
+  }
+  const signed = await signInAsOwner(client, env, CHECK_EMAIL);
+  if (!signed.session) return signed;
+  // The settings row is made lazily by the app, on first use. A check
+  // that snapshots the account before using it found no row and died
+  // before its own cleanup ran — leaving a project behind for the next
+  // check to trip over. Made here, once, so the account is whole
+  // before any check looks at it.
+  await admin
+    .from("account_settings")
+    .upsert({ user_id: signed.user.id }, { onConflict: "user_id", ignoreDuplicates: true });
+  return signed;
+}
+
+/**
+ * A project for this run only. `remove()` deletes it, and with it every
+ * section, row, request, thread and rule under it.
+ */
+export async function throwawayProject(admin, ownerId, label) {
+  // A run that crashed before remove() leaves its project behind.
+  // Under the check user that harms nobody — but it should not pile
+  // up either, so anything of ours older than an hour goes first. An
+  // hour, not zero: two checks may run at once and must not delete
+  // each other's.
+  await admin
+    .from("projects")
+    .delete()
+    .eq("owner_id", ownerId)
+    .like("name", "check %")
+    .lt("created_at", new Date(Date.now() - 36e5).toISOString());
+  const { data, error } = await admin
+    .from("projects")
+    .insert({ owner_id: ownerId, name: `check ${label}` })
+    .select("id, auto_build")
+    .single();
+  if (error || !data) throw new Error(`could not make a project for the check: ${error?.message}`);
+  return {
+    id: data.id,
+    auto_build: data.auto_build,
+    async remove() {
+      await admin.from("projects").delete().eq("id", data.id);
+    },
+  };
 }

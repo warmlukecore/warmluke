@@ -16,7 +16,7 @@
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { signInAsOwner } from "./owner-session.mjs";
+import { signInAsCheckUser, throwawayProject } from "./owner-session.mjs";
 
 const env = Object.fromEntries(
   readFileSync(new URL("../.env.local", import.meta.url), "utf8")
@@ -36,7 +36,7 @@ const client = createClient(
   env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
   env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
 );
-const owner = await signInAsOwner(client, env);
+const owner = await signInAsCheckUser(client, env);
 if (!owner.session) {
   console.log(`could not sign in as the owner — ${owner.why}`);
   process.exit(1);
@@ -47,15 +47,8 @@ const admin = createClient(
   env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
   env.ADAPTIVE_OS_SERVICE_ROLE_KEY
 );
-const { data: project, error: projectError } = await admin
-  .from("projects")
-  .select("id, auto_build")
-  .eq("owner_id", uid)
-  .limit(1)
-  .single();
-if (projectError || !project) {
-  throw new Error(`could not establish the owner's project before the check: ${projectError?.message ?? "none found"}`);
-}
+// A project for this run only — the check user's, not the merchant's.
+const project = await throwawayProject(admin, uid, "byo-design");
 
 const tool = async (name, args, id = 1) => {
   const res = await fetch(`${APP}/api/mcp`, {
@@ -606,6 +599,7 @@ try {
     }
   }
 
+  await project.remove();
   check("the account is back as it was", !cleanupProblems.some((x) => x.startsWith("account allowance:")));
   if (cleanupProblems.length > 0) {
     throw new Error(`cleanup failed after three attempts — ${cleanupProblems.join("; ")}`);

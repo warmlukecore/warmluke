@@ -12,7 +12,7 @@
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { signInAsOwner } from "./owner-session.mjs";
+import { signInAsCheckUser, throwawayProject } from "./owner-session.mjs";
 
 const env = Object.fromEntries(
   readFileSync(new URL("../.env.local", import.meta.url), "utf8")
@@ -32,7 +32,7 @@ const client = createClient(
   env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
   env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
 );
-const owner = await signInAsOwner(client, env);
+const owner = await signInAsCheckUser(client, env);
 if (!owner.session) {
   console.log(`could not sign in as the owner — ${owner.why}`);
   process.exit(1);
@@ -42,11 +42,8 @@ const admin = createClient(
   env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
   env.ADAPTIVE_OS_SERVICE_ROLE_KEY
 );
-const { data: project } = await admin
-  .from("projects")
-  .select("id, auto_build")
-  .limit(1)
-  .single();
+// A project for this run only — the check user's, not the merchant's.
+const project = await throwawayProject(admin, owner.user.id, "auto-build");
 
 const setAuto = (on) => admin.from("projects").update({ auto_build: on }).eq("id", project.id);
 const sectionCount = async () =>
@@ -66,7 +63,10 @@ const tool = async (name, args, id = 1) => {
       Accept: "application/json, text/event-stream",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } }),
+    // Always named: the check user owns more than one project whenever
+    // two checks overlap or one crashed, and "which app?" is not the
+    // answer under test.
+    body: JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: { project_id: project.id, ...args } } }),
   });
   const j = await res.json();
   try {
@@ -353,7 +353,8 @@ console.log("\nand a new field, which loses nothing");
   // The thread this run caused. Left behind it piles up on a real
   // account, which is how the request ceiling filled earlier today.
   if (aiThreadId) await admin.from("conversations").delete().eq("id", aiThreadId);
-  console.log("\nthe project is back as it was");
+  await project.remove();
+  console.log("\nthe project is gone, and nothing of it is left");
 }
 
 console.log(fails.length === 0 ? "\nit builds only what it may" : `\n${fails.length} FAILED`);

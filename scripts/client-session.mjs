@@ -16,7 +16,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { createHash, randomBytes } from "node:crypto";
-import { signInAsOwner } from "./owner-session.mjs";
+import { signInAsOwner, signInAsCheckUser } from "./owner-session.mjs";
 
 const b64url = (buf) => Buffer.from(buf).toString("base64url");
 
@@ -28,12 +28,14 @@ const b64url = (buf) => Buffer.from(buf).toString("base64url");
  * deletes the registered client, and takes the management-API `sql`
  * function the checks already build.
  */
-export async function signInAsClient(env, app) {
+export async function signInAsClient(env, app, email = undefined) {
   const anon = createClient(
     env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
     env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
   );
-  const owner = await signInAsOwner(anon, env);
+  // The check user by default: a client that builds things must build
+  // them on a project that exists for the run, not the merchant's.
+  const owner = email ? await signInAsOwner(anon, env, email) : await signInAsCheckUser(anon, env);
   if (!owner.session) return { token: null, why: owner.why };
 
   const resource = await fetch(`${app}/.well-known/oauth-protected-resource`).then((r) => r.json());
