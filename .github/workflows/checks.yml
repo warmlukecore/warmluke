@@ -70,3 +70,59 @@ jobs:
 
       - name: pure checks
         run: node scripts/run-checks.mjs --tier pure
+
+  # The live tier: a database and a running server, on the check
+  # project — a blank copy of production with keys of its own that have
+  # never been anywhere but here. Production's keys are not in this
+  # repository's secrets and are not needed: what the checks prove is
+  # the code, and the code is the same.
+  #
+  # Two things are skipped here by name, not by crashing: the six
+  # checks that need the management PAT (account-wide, so it stays on
+  # a laptop), and the harness driven by hand with ABO_JWT.
+  live:
+    needs: static
+    # Secrets are not handed to pull requests from forks; on a public
+    # repository this job would only fail there, and say nothing.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12.3.4
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The check project's, and only these three. The build inlines
+      # the two public ones, so the built app points at the check
+      # project; the scripts read the third.
+      - name: .env.local for the check project
+        run: |
+          printf 'NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL=%s\nNEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY=%s\nADAPTIVE_OS_SERVICE_ROLE_KEY=%s\n' \
+            "${{ secrets.CHECK_SUPABASE_URL }}" \
+            "${{ secrets.CHECK_SUPABASE_ANON_KEY }}" \
+            "${{ secrets.CHECK_SUPABASE_SERVICE_ROLE_KEY }}" > .env.local
+
+      - name: build
+        run: pnpm build
+
+      - name: serve
+        run: |
+          (pnpm start > server.log 2>&1 &)
+          for i in $(seq 1 60); do curl -sf -o /dev/null http://localhost:3100/login && break; sleep 1; done
+          curl -sf -o /dev/null http://localhost:3100/login || { echo "server did not come up"; tail -30 server.log; exit 1; }
+
+      - name: live checks
+        run: node scripts/run-checks.mjs --tier live
+
+      - name: server log, when something went red
+        if: failure()
+        run: tail -60 server.log

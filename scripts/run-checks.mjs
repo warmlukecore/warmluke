@@ -74,7 +74,10 @@ const classify = (name) => {
   // it is skipped there, by name, rather than failing on a missing
   // variable that looks like a bug.
   const needsPat = /SUPABASE_ACCESS_TOKEN|api\.supabase\.com/.test(src);
-  return { name, tier, hook, needsServer, needsPat };
+  // A check that wants a token handed to it on the command line is a
+  // harness somebody drives by hand, not something a runner can start.
+  const needsJwt = /process\.env\.ABO_JWT/.test(src);
+  return { name, tier, hook, needsServer, needsPat, needsJwt };
 };
 
 const checks = readdirSync(here)
@@ -111,6 +114,11 @@ const skipped = [];
 for (const c of chosen) {
   if (c.needsPat && c.tier !== "pure" && envKeys.size > 0 && !envKeys.has("SUPABASE_ACCESS_TOKEN")) {
     console.log(`skip  ${c.tier.padEnd(6)} ${c.name.padEnd(26)} (needs SUPABASE_ACCESS_TOKEN, not in ${envFile})`);
+    skipped.push(c.name);
+    continue;
+  }
+  if (c.needsJwt && !process.env.ABO_JWT) {
+    console.log(`skip  ${c.tier.padEnd(6)} ${c.name.padEnd(26)} (driven by hand: set ABO_JWT to run it)`);
     skipped.push(c.name);
     continue;
   }

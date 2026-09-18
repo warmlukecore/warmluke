@@ -17,6 +17,7 @@
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
+import { signInAsCheckUser, throwawayProject } from "./owner-session.mjs";
 
 const env = Object.fromEntries(
   readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
@@ -34,7 +35,12 @@ const check = (name, cond) => {
 };
 
 const admin = createClient(URL_, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
-const { data: project } = await admin.from("projects").select("id").limit(1).single();
+// A project for this run only. The squat is staged under it, and the
+// project goes at the end — on a blank database there is no "first
+// project" to borrow, and there should never have been.
+const checker = await signInAsCheckUser(createClient(URL_, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY), env);
+if (!checker.session) throw new Error(`no check user: ${checker.why}`);
+const project = await throwawayProject(admin, checker.user.id, "second-merchant");
 
 const stamp = Date.now().toString(36);
 const DOMAIN = `squat-${stamp}.myshopify.com`;
@@ -203,6 +209,7 @@ try {
   );
 }
 
+await project.remove();
 console.log(
   fails.length === 0 ? "\na shop belongs to whoever proved it" : `\n${fails.length} FAILED`
 );

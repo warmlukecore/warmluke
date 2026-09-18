@@ -28,7 +28,10 @@ const { data: store } = await db
   .from("stores")
   .select("id, shop_domain, access_token, refresh_token, token_expires_at")
   .eq("status", "connected").maybeSingle();
-if (!store) { console.error("no connected store"); process.exit(1); }
+// Nothing to import from is nothing to check — the way "no project on
+// this account" is elsewhere. Exit 0 and say so: on a database with a
+// store this runs in full, on a blank one it must not read as broken.
+if (!store) { console.log("no connected store — nothing to check"); process.exit(0); }
 console.log(`store: ${store.shop_domain}\n`);
 
 // A resource Shopify refuses is reported, not thrown — one blocked scope

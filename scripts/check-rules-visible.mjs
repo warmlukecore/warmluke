@@ -15,6 +15,7 @@
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
+import { signInAsCheckUser, throwawayProject } from "./owner-session.mjs";
 import { describeRules } from "../src/lib/describe.ts";
 import { buildUserMessage } from "../src/lib/ai.ts";
 
@@ -90,7 +91,17 @@ console.log("\nand the designer is handed them");
 }
 
 // ── And through the door a connected assistant uses ─────────────
-const { data: project } = await admin.from("projects").select("id").limit(1).single();
+// The check user's, made for this run. It used to borrow whichever
+// project was first — none, on a blank database — and then sign in as
+// the real owner with a password from the environment, which nobody
+// had, so the half that reads through MCP was silently not checked.
+const client = createClient(
+  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
+  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
+);
+const owner = await signInAsCheckUser(client, env);
+if (!owner.session) throw new Error(`no check user: ${owner.why}`);
+const project = await throwawayProject(admin, owner.user.id, "rules-visible");
 // A section of the app's own, not one over the store: a rule belongs
 // to rows somebody keeps here. If this app has none, the check makes
 // one rather than skipping the half it exists to prove.
@@ -120,17 +131,8 @@ if (!section) {
   borrowedSection = made?.id ?? null;
 }
 
-const client = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
-);
-const { data: owner } = await client.auth.signInWithPassword({
-  email: "aaa@gmail.com",
-  password: process.env.OWNER_PASSWORD ?? "",
-});
-
 if (!owner?.session) {
-  console.log("\nno OWNER_PASSWORD given — read_section was not checked");
+  console.log("\ncould not sign in the check user — read_section was not checked");
 } else {
   const made = [];
   const tool = async (name, args) => {
@@ -229,6 +231,7 @@ if (!owner?.session) {
   }
 }
 
+await project.remove();
 console.log(
   fails.length === 0 ? "\nthe designer can see what already runs" : `\n${fails.length} FAILED`
 );

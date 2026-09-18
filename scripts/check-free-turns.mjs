@@ -12,6 +12,7 @@
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
+import { signInAsCheckUser, throwawayProject } from "./owner-session.mjs";
 
 const env = Object.fromEntries(
   readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
@@ -206,13 +207,14 @@ try {
 
 // ── Both doors spend the same purse ─────────────────────────────
 const owner = createClient(URL_, ANON);
-const { data: signedIn } = await owner.auth.signInWithPassword({
-  email: "aaa@gmail.com",
-  password: process.env.OWNER_PASSWORD ?? "",
-});
+// The check user, minted — not the real owner with a password nobody
+// had. This half was silently skipped on every run until now, on
+// production too: "no OWNER_PASSWORD given — the two doors were not
+// checked", exit 0.
+const signedIn = await signInAsCheckUser(owner, env);
 
 if (!signedIn?.session) {
-  console.log("\nno OWNER_PASSWORD given — the two doors were not checked");
+  console.log(`\ncould not sign in the check user — the two doors were not checked: ${signedIn?.why}`);
 } else {
   const token = signedIn.session.access_token;
   const uid = signedIn.user.id;
@@ -249,15 +251,27 @@ if (!signedIn?.session) {
     }
   };
 
+  // A project for this run. Both halves below used to borrow whichever
+  // project was first, which on a blank database is none.
+  var project = await throwawayProject(admin, signedIn.user.id, "free-turns");
+  // A store to read. What the assertions below prove is that reading
+  // the store stays free when the turns are gone — and a project made
+  // for this run has no store until one is put there. It goes with
+  // the project.
+  await admin.from("stores").insert({
+    project_id: project.id,
+    shop_domain: `turns-${Date.now().toString(36)}.myshopify.com`,
+    status: "connected",
+  });
   try {
     console.log("\nwith nothing left");
     await setAllowance(1, 1);
 
-    const { data: projects } = await admin.from("projects").select("id").limit(1);
+
     const chat = await fetch(`${APP}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ projectId: projects[0].id, message: "build me something" }),
+      body: JSON.stringify({ projectId: project.id, message: "build me something" }),
     });
     check("the chat refuses", chat.status === 402);
     check("and says why", (await chat.json()).out_of_turns === true);
@@ -307,7 +321,6 @@ if (!signedIn?.session) {
 // a turn on somebody else's app, which is ten more builds per person
 // invited, and the reply could not be saved afterwards anyway.
 {
-  const { data: project } = await admin.from("projects").select("id").limit(1).single();
   const st = Date.now();
   const mail = `member_${st}@example.com`;
   const pw = `pw_${st}_aA1!`;
@@ -355,6 +368,7 @@ if (!signedIn?.session) {
   }
 }
 
+if (typeof project !== "undefined") await project.remove();
 console.log(
   fails.length === 0 ? "\nit charges for the engine and nothing else" : `\n${fails.length} FAILED`
 );
