@@ -546,7 +546,9 @@ export default function ChatPanel({
   onDiscard: (planId: string) => void;
   /** Puts one build's changes back, by the id of the message offering
    *  it. Lives in the shell because the screen has to reload after. */
-  onUndo: (messageId: string) => Promise<{ message: string } | null>;
+  /** Absent for a member: the server refuses them anyway, and a button
+   *  that always says no is worse than none. */
+  onUndo?: (messageId: string) => Promise<{ message: string } | null>;
   /** Runs a way out of an error — Luke, a retry. Lives in the shell. */
   onFix: (action: FixAction) => void | Promise<void>;
   /** Whether this project builds on its own, so a card that is asking
@@ -724,6 +726,7 @@ export default function ChatPanel({
   const [undoing, setUndoing] = useState<string | null>(null);
 
   async function putItBack(messageId: string) {
+    if (!onUndo) return;
     setUndoing(messageId);
     try {
       await onUndo(messageId);
@@ -1413,7 +1416,7 @@ export default function ChatPanel({
                     read here first, and this is the moment they want
                     to say no. It names what goes back, because "undo"
                     on its own does not say how much. */}
-                {m.undo && (
+                {m.undo && onUndo && (
                   <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-emerald-200 pt-1.5">
                     <button
                       onClick={() => putItBack(m.undo!.messageId)}

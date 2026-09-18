@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase-client";
 import { describeAutomation } from "@/lib/describe";
-import { engineError, fixPrompt, type FixAction } from "@/lib/errors";
+import { asError, engineError, fixPrompt, type FixAction } from "@/lib/errors";
 import ErrorNote from "@/components/ErrorNote";
 import type { AutomationRow, AutomationRunRow, ModuleRow } from "@/lib/types";
 
@@ -107,11 +107,7 @@ export default function AutomationsPanel({
         </div>
 
         <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4 thin-scroll">
-          {error && (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-              {error}
-            </div>
-          )}
+          {error && <ErrorNote error={asError(error)} />}
 
           {loading && <div className="text-sm text-slate-400">Loading…</div>}
 

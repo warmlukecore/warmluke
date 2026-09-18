@@ -82,6 +82,58 @@ export async function putBack(
         continue;
       }
 
+      if (step.kind === "rows") {
+        // Only the rows nobody has touched. A seeded row that somebody
+        // has since typed into is their row now, and taking it away
+        // would be taking their work; updated_at moves on every edit
+        // — the app's and a rule's — and stays equal to created_at on
+        // a row nobody has.
+        const { data: rows } = await client
+          .from("records")
+          .select("id, created_at, updated_at")
+          .in("id", step.recordIds)
+          .eq("module_id", step.moduleId);
+        const present = rows ?? [];
+        const untouched = present.filter((r) => r.updated_at === r.created_at).map((r) => r.id);
+        const edited = present.length - untouched.length;
+        const gone = step.recordIds.length - present.length;
+        if (untouched.length > 0) {
+          const { error } = await client.from("records").delete().in("id", untouched).eq("module_id", step.moduleId);
+          if (error) throw new Error(error.message);
+        }
+        const parts = [`removed ${untouched.length} of ${step.recordIds.length}`];
+        if (edited) parts.push(`${edited} edited since and kept`);
+        if (gone) parts.push(`${gone} already gone`);
+        if (untouched.length > 0) done.push(`${step.what}: ${parts.join(", ")}`);
+        else couldNot.push(`${step.what} — ${parts.slice(1).join(", ") || "none of them are there"}`);
+        continue;
+      }
+
+      if (step.kind === "module") {
+        // Still as this build left it? A section renamed again since
+        // has a newer name than the one this would put back, and that
+        // one is not this build's to undo.
+        const { data: now } = await client
+          .from("modules")
+          .select("nav_label, icon, parent_id, sort_order")
+          .eq("id", step.moduleId)
+          .maybeSingle();
+        if (!now) {
+          couldNot.push(`${step.what} — the section is no longer there`);
+          continue;
+        }
+        const movedSince = Object.entries(step.set).some(
+          ([k, v]) => v !== undefined && String((now as Record<string, unknown>)[k] ?? "") !== String(v ?? "")
+        );
+        if (movedSince) {
+          couldNot.push(`${step.what} — the section has been changed again since, and that change is not this one's to undo`);
+          continue;
+        }
+        await write("module_update", { module_id: step.moduleId, ...step.was });
+        done.push(`put back ${step.what}`);
+        continue;
+      }
+
       // Still where this build left it?
       //
       // Putting back means writing what the section held BEFORE this
@@ -103,6 +155,10 @@ export async function putBack(
         .limit(1)
         .maybeSingle();
       const now = Number(latest?.version ?? 0);
+      if (now === 0) {
+        couldNot.push(`${step.what} — the section is no longer there`);
+        continue;
+      }
       if (now !== step.version) {
         couldNot.push(
           `${step.what} — the section has been changed ${now - step.version} time(s) since, and putting this back would undo those too`
@@ -564,11 +620,20 @@ async function validateAndApply(
 
   // ── MODULE_UPDATE ───────────────────────────────────────────
   if (plan.changeType === "MODULE_UPDATE") {
-    await write("module_update", {
-      module_id: plan.targetModuleId!,
-      ...(plan.moduleUpdate ?? {}),
-    });
-    return { ok: true, applied: { changeType: "MODULE_UPDATE", moduleId: plan.targetModuleId } };
+    const set = plan.moduleUpdate ?? {};
+    const changed = await write("module_update", { module_id: plan.targetModuleId!, ...set });
+    // What it said before, from the same statement that changed it,
+    // and what this build made it say — so an undo can put it back
+    // and can tell whether somebody moved it again since.
+    return {
+      ok: true,
+      applied: {
+        changeType: "MODULE_UPDATE",
+        moduleId: plan.targetModuleId,
+        was: (changed.was as Record<string, unknown> | undefined) ?? null,
+        set,
+      },
+    };
   }
 
   // ── FEATURE_UPDATE ──────────────────────────────────────────
@@ -596,8 +661,14 @@ async function validateAndApply(
   // ── RECORD_SEED ─────────────────────────────────────────────
   if (plan.changeType === "RECORD_SEED") {
     const rows = plan.newRecords ?? [];
-    await write("records_insert", { module_id: plan.targetModuleId!, rows });
-    return { ok: true, applied: { changeType: "RECORD_SEED", moduleId: plan.targetModuleId, seeded: rows.length } };
+    const made = await write("records_insert", { module_id: plan.targetModuleId!, rows });
+    // The ids, so an undo can remove exactly these — a count cannot be
+    // deleted from.
+    const recordIds = Array.isArray(made.ids) ? (made.ids as string[]) : [];
+    return {
+      ok: true,
+      applied: { changeType: "RECORD_SEED", moduleId: plan.targetModuleId, seeded: rows.length, recordIds },
+    };
   }
 
   // ── AUTOMATION_ADD ──────────────────────────────────────────

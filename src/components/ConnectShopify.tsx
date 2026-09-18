@@ -8,6 +8,8 @@
 // ─────────────────────────────────────────────────────────────
 
 import { useState } from "react";
+import ErrorNote from "@/components/ErrorNote";
+import { asError } from "@/lib/errors";
 import { apiFetch } from "@/lib/auth";
 
 /** Reasons the server can refuse, said the way the owner would ask. */
@@ -71,7 +73,7 @@ export default function ConnectShopify({
         spellCheck={false}
         className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
       />
-      {error && <div className="text-[11px] leading-relaxed text-rose-400">{error}</div>}
+      {error && <ErrorNote error={asError(error)} compact dark />}
       {/* Shown before the button, not after: an agreement a merchant
           only meets once they have already left for Shopify is not one. */}
       <p className="text-[11px] leading-relaxed text-slate-500">

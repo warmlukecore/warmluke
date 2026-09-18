@@ -15,7 +15,7 @@ import { apiFetch, takePendingPrompt } from "@/lib/auth";
 import GenericRenderer from "@/components/GenericRenderer";
 import ChatPanel, { type ChatMessage, nextChatId } from "@/components/ChatPanel";
 import { undoableFrom } from "@/lib/undo";
-import { engineError, fixPrompt, type FixAction } from "@/lib/errors";
+import { asError, engineError, fixPrompt, type FixAction } from "@/lib/errors";
 import VersionHistory from "@/components/VersionHistory";
 import AutomationsPanel from "@/components/AutomationsPanel";
 import { FormatProvider } from "@/lib/format";
@@ -776,7 +776,8 @@ export default function AppShell({
             {
               id: nextChatId(),
               role: "system",
-              text: `⚠️ ${(data.error as string) ?? "Luke could not be reached."}`,
+              text: `${(data.error as string) ?? "Luke could not be reached."}`,
+              error: asError((data.error as string) ?? "Luke could not be reached."),
             },
           ]);
           return;
@@ -790,7 +791,12 @@ export default function AppShell({
               id: nextChatId(),
               role: "system",
               text: (data.hint as string) ?? "Luke's reply failed validation.",
-              errors: data.errors as string[] | undefined,
+              error: {
+                kind: "system",
+                what: (data.hint as string) ?? "Luke's reply did not pass the checks.",
+                why: "Nothing was changed. Asking again usually works — it is a new answer each time.",
+                details: ((data.errors as string[] | undefined) ?? []).slice(0, 6),
+              },
             },
           ]);
           return;
@@ -1738,7 +1744,7 @@ export default function AppShell({
       <ChatPanel
         projectId={projectId}
         autoBuild={project?.auto_build === true}
-        onUndo={undoBuild}
+        onUndo={isOwner ? undoBuild : undefined}
         onFix={fixError}
         width={chat.width}
         dragging={chat.dragging}

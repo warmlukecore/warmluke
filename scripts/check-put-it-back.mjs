@@ -258,6 +258,63 @@ try {
   check("the newest one still goes back", (fine.body?.done ?? []).length > 0);
   if ((fine.body?.done ?? []).length === 0) show(fine.body);
 
+  // Rows a build seeded. Only the untouched ones go: a seeded row
+  // somebody has since typed into is their row now.
+  console.log("\nand rows it seeded come out, except the one somebody edited");
+  const seeded = await submit(`Put back ${stamp} — seed`, [
+    {
+      changeType: "RECORD_SEED",
+      targetModuleId: moduleId,
+      newRecords: [{ note: "one" }, { note: "two" }, { note: "three" }],
+      explanation: "Three example rows.",
+    },
+  ]);
+  check("the rows are built", isBuilt(seeded));
+  if (!isBuilt(seeded)) show(seeded);
+  const seedMsg = await lastBuildMessage();
+  const seedStep = (seedMsg?.payload?.undo ?? [])[0];
+  check("and offered back by id, all three", seedStep?.kind === "rows" && seedStep.recordIds?.length === 3);
+  // The merchant types into one of them.
+  await admin
+    .from("records")
+    .update({ data: { note: "two, but mine now" }, updated_at: new Date(Date.now() + 1000).toISOString() })
+    .eq("id", seedStep.recordIds[1]);
+  const seedBack = await undoCall(seedMsg.id);
+  check("putting them back is accepted", (seedBack.body?.done ?? []).length > 0);
+  if ((seedBack.body?.done ?? []).length === 0) show(seedBack.body);
+  const { data: left } = await admin.from("records").select("id, data").in("id", seedStep.recordIds);
+  check("two untouched rows are gone", (left ?? []).length === 1);
+  check("and the edited one is kept", (left ?? [])[0]?.data?.note === "two, but mine now");
+  check("and the line says so", /1 edited since and kept/.test((seedBack.body?.done ?? []).join(" ")));
+
+  // A section renamed, and put back — unless it was renamed again.
+  console.log("\nand a section's name comes back, unless it was renamed again");
+  const renamed = await submit(`Put back ${stamp} — rename`, [
+    { changeType: "MODULE_UPDATE", targetModuleId: moduleId, moduleUpdate: { nav_label: `Back ${stamp} renamed` }, explanation: "A better name." },
+  ]);
+  check("the rename is built", isBuilt(renamed));
+  if (!isBuilt(renamed)) show(renamed);
+  const renameMsg = await lastBuildMessage();
+  const renameStep = (renameMsg?.payload?.undo ?? [])[0];
+  check("and offered back with what it said before", renameStep?.kind === "module" && renameStep.was?.nav_label === `Back ${stamp}`);
+  const renameBack = await undoCall(renameMsg.id);
+  check("the old name is put back", (renameBack.body?.done ?? []).length > 0);
+  if ((renameBack.body?.done ?? []).length === 0) show(renameBack.body);
+  const { data: named } = await admin.from("modules").select("nav_label").eq("id", moduleId).single();
+  check("and the section says it", named?.nav_label === `Back ${stamp}`);
+  // Renamed twice: the first build's undo is not the second's to undo.
+  const again = await submit(`Put back ${stamp} — rename again`, [
+    { changeType: "MODULE_UPDATE", targetModuleId: moduleId, moduleUpdate: { nav_label: `Back ${stamp} second` }, explanation: "Another name." },
+  ]);
+  check("a second rename is built", isBuilt(again));
+  const secondMsg = await lastBuildMessage();
+  await submit(`Put back ${stamp} — rename third`, [
+    { changeType: "MODULE_UPDATE", targetModuleId: moduleId, moduleUpdate: { nav_label: `Back ${stamp} third` }, explanation: "A third." },
+  ]);
+  const staleRename = await undoCall(secondMsg.id);
+  check("undoing the second after a third is refused", (staleRename.body?.done ?? []).length === 0);
+  check("and says it was changed again since", /changed again since/.test((staleRename.body?.couldNot ?? []).join(" ")));
+
   console.log("\nand a message with nothing to put back is refused");
   const nothing = await undoCall(firstMsg.id);
   check("it is a plain no, not a crash", nothing.status === 400);
@@ -373,6 +430,22 @@ try {
     JSON.stringify(backAgain?.definition).includes("seen")
   );
   check("and it is still running", backAgain?.enabled === true);
+
+  // A section deleted after a build on it: the undo says so, not
+  // "changed -3 times since".
+  console.log("\nand an undo on a section that is gone says so");
+  const { data: lastSchemaMsg } = await admin
+    .from("messages")
+    .select("id, payload")
+    .eq("conversation_id", aiThreadId)
+    .eq("role", "assistant")
+    .order("created_at", { ascending: false });
+  const schemaMsg = (lastSchemaMsg ?? []).find((m) => (m.payload?.undo ?? []).some((u) => u.kind === "schema"));
+  await admin.from("modules").delete().eq("id", moduleId);
+  moduleId = null;
+  const orphan = schemaMsg ? await undoCall(schemaMsg.id) : { body: {} };
+  check("it is refused", (orphan.body?.done ?? []).length === 0);
+  check("and says the section is no longer there", /no longer there/.test((orphan.body?.couldNot ?? []).join(" ")));
 } finally {
   await setAuto(project.auto_build === true);
   const back = (await admin.from("projects").select("auto_build").eq("id", project.id).single()).data;

@@ -7,6 +7,8 @@
 // ─────────────────────────────────────────────────────────────
 
 import { useEffect, useState } from "react";
+import ErrorNote from "@/components/ErrorNote";
+import { asError } from "@/lib/errors";
 import { apiFetch } from "@/lib/auth";
 import { supabase } from "@/lib/supabase-client";
 import { STORE_TABLES } from "@/lib/store-read";
@@ -152,11 +154,7 @@ export default function ModuleSettings({
         </div>
 
         <div className="space-y-4 px-5 py-4">
-          {error && (
-            <div className="rounded-lg border border-rose-900 bg-rose-950/50 px-3 py-2 text-xs text-rose-300">
-              {error}
-            </div>
-          )}
+          {error && <ErrorNote error={asError(error)} dark />}
 
           <div>
             <label className="mb-1 block text-[11px] font-medium tracking-wide text-slate-400 uppercase">

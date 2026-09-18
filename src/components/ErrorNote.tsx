@@ -15,12 +15,19 @@ const TONE: Record<AppError["kind"], { box: string; mark: string; glyph: string 
   engine: { box: "border-amber-200 bg-amber-50 text-amber-900", mark: "text-amber-600", glyph: "⚠" },
   system: { box: "border-rose-200 bg-rose-50 text-rose-900", mark: "text-rose-600", glyph: "✕" },
 };
+// The settings modals are dark; the same note, in their palette.
+const DARK: Record<AppError["kind"], { box: string; mark: string; glyph: string }> = {
+  data: { box: "border-amber-900 bg-amber-950/50 text-amber-200", mark: "text-amber-400", glyph: "·" },
+  engine: { box: "border-amber-900 bg-amber-950/50 text-amber-200", mark: "text-amber-400", glyph: "⚠" },
+  system: { box: "border-rose-900 bg-rose-950/50 text-rose-300", mark: "text-rose-400", glyph: "✕" },
+};
 
 export default function ErrorNote({
   error,
   onFix,
   compact,
   onDismiss,
+  dark,
 }: {
   error: AppError;
   /** Runs one of the ways out. Absent, the buttons are not shown. */
@@ -29,9 +36,11 @@ export default function ErrorNote({
   compact?: boolean;
   /** Closes it. Absent, there is no ✕. */
   onDismiss?: () => void;
+  /** On a dark surface. */
+  dark?: boolean;
 }) {
   const [busy, setBusy] = useState<number | null>(null);
-  const tone = TONE[error.kind];
+  const tone = (dark ? DARK : TONE)[error.kind];
   const fixes = onFix ? (error.fix ?? []) : [];
 
   return (

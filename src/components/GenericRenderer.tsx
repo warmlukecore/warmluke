@@ -9,6 +9,8 @@
 // ─────────────────────────────────────────────────────────────
 
 import { filterOptions, matchesFilter } from "@/lib/filters";
+import ErrorNote from "@/components/ErrorNote";
+import { asError } from "@/lib/errors";
 import { useMemo, useState } from "react";
 import type { FeatureSchema, RecordRow, UiSchema, ViewSpec } from "@/lib/types";
 import RecordModal from "@/components/RecordModal";
@@ -321,8 +323,8 @@ export default function GenericRenderer({
           </div>
 
         {writeError && (
-          <div className="border-b border-rose-100 bg-rose-50 px-4 py-2 text-xs text-rose-700">
-            {writeError}
+          <div className="border-b border-rose-100 px-4 py-2">
+            <ErrorNote error={asError(writeError, "That didn't save.")} compact onDismiss={() => setWriteError(null)} />
           </div>
         )}
 

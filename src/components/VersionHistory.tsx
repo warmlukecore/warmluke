@@ -7,6 +7,8 @@
 // ─────────────────────────────────────────────────────────────
 
 import { useState } from "react";
+import ErrorNote from "@/components/ErrorNote";
+import { asError } from "@/lib/errors";
 import type { UiSchemaRow } from "@/lib/types";
 
 function formatDate(iso: string): string {
@@ -75,8 +77,8 @@ export default function VersionHistory({
 
         <div className="flex-1 overflow-y-auto p-4 thin-scroll">
           {error && (
-            <div className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">
-              {error}
+            <div className="mb-3">
+              <ErrorNote error={asError(error)} />
             </div>
           )}
           <ol className="space-y-2">
