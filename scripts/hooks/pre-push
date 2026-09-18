@@ -1,0 +1,34 @@
+#!/bin/sh
+# The checks CI cannot hold the key for, run here, where the key is.
+#
+# Six checks need the Supabase management PAT to run raw SQL as a
+# given role and roll it back — the security-boundary checks. The PAT
+# is account-wide: wherever it is held, production is reachable from
+# there. So it is not in GitHub's secrets, and CI skips those six by
+# name. This laptop already holds it, so they run here, before every
+# push, against the check project. Red means the push does not go.
+#
+# Nothing is named here. The runner reads the files and picks the ones
+# that need the PAT; a new one joins on its next push. If a server is
+# listening on 3100 the two that need one run too; otherwise they are
+# skipped and say so.
+#
+# Install once:   pnpm hooks        (git config core.hooksPath scripts/hooks)
+# Bypass once:    git push --no-verify
+set -e
+cd "$(git rev-parse --show-toplevel)"
+
+if [ ! -f .env.check.local ]; then
+  echo "pre-push: no .env.check.local on this machine." >&2
+  echo "          The checks that need the management PAT run here, against the check project," >&2
+  echo "          because that key must not go to CI. Make the file (see scripts/owner-session.mjs)" >&2
+  echo "          or, this once, push with --no-verify." >&2
+  exit 1
+fi
+
+# --no-server: the runner decides whether the server on 3100 can be
+# used for this env file — it has to be up AND built for the same
+# project — and skips what cannot run, saying why. Two of the six need
+# it; four are SQL alone and always run.
+echo "pre-push: the checks CI cannot run, on the check project"
+exec node scripts/run-checks.mjs --needs pat --env .env.check.local --no-server

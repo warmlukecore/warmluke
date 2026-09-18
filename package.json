@@ -12,7 +12,8 @@
     "check": "node scripts/run-checks.mjs",
     "check:pure": "node scripts/run-checks.mjs --tier pure",
     "check:live": "node scripts/run-checks.mjs --tier live",
-    "check:list": "node scripts/run-checks.mjs --list"
+    "check:list": "node scripts/run-checks.mjs --list",
+    "hooks": "git config core.hooksPath scripts/hooks"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",

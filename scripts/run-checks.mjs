@@ -32,6 +32,13 @@ const here = new URL(".", import.meta.url);
 const args = process.argv.slice(2);
 const tierWanted = args.includes("--tier") ? args[args.indexOf("--tier") + 1] : "all";
 const listOnly = args.includes("--list");
+// --needs pat: only the checks that need the management PAT — the
+// ones CI cannot hold the key for, run by the pre-push hook on the
+// machine that already has it. --no-server: when nothing is listening,
+// skip the ones that need a server and say so, rather than refusing
+// to run the ones that do not.
+const needsFilter = args.includes("--needs") ? args[args.indexOf("--needs") + 1] : null;
+const noServer = args.includes("--no-server");
 // Which .env file the checks read. The check project's, in CI; the
 // laptop's, by default. Passed down as ENV_FILE, which every script
 // honours.
@@ -97,6 +104,7 @@ const checks = readdirSync(here)
 const order = { pure: 0, live: 1, model: 2 };
 const chosen = checks
   .filter((c) => tierWanted === "all" || c.tier === tierWanted)
+  .filter((c) => !needsFilter || (needsFilter === "pat" ? c.needsPat : true))
   .sort((a, b) => order[a.tier] - order[b.tier] || a.name.localeCompare(b.name));
 
 if (listOnly) {
@@ -107,10 +115,47 @@ if (listOnly) {
 
 // Live checks need the server; say so once rather than fail forty times.
 const APP = process.env.APP_URL ?? "http://localhost:3100";
+let serverUp = true;
+let serverWhy = `needs a server at ${APP}; none is up`;
 if (chosen.some((c) => c.needsServer)) {
-  const up = await fetch(`${APP}/login`).then((r) => r.ok).catch(() => false);
-  if (!up) {
-    console.log(`the live checks need a server at ${APP} and there is none — start one, or run --tier pure`);
+  serverUp = await fetch(`${APP}/login`).then((r) => r.ok).catch(() => false);
+  // Up is not enough: the build on 3100 is inlined with one project's
+  // keys, and the env file names one project. When they differ, every
+  // check that talks to the server through the env file's session is
+  // talking to the wrong database — as-client's OAuth consent went to
+  // production's auth server with a session minted on the check
+  // project, and failed with "authorization not found". Compare the
+  // project the server names in its resource document with the one
+  // the env file names, and treat a mismatch as no server for this
+  // env, said out loud.
+  if (serverUp) {
+    const ref = (u) => {
+      try {
+        return new URL(u).hostname.split(".")[0];
+      } catch {
+        return null;
+      }
+    };
+    const served = await fetch(`${APP}/.well-known/oauth-protected-resource`)
+      .then((r) => r.json())
+      .then((d) => ref(d.authorization_servers?.[0]))
+      .catch(() => null);
+    let mine = null;
+    try {
+      const line = readFileSync(new URL(`../${envFile}`, here), "utf8")
+        .split("\n")
+        .find((l) => l.startsWith("NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL="));
+      mine = ref(line?.slice(line.indexOf("=") + 1).trim());
+    } catch {
+      // No env file; the pure tier does not have one.
+    }
+    if (served && mine && served !== mine) {
+      serverUp = false;
+      serverWhy = `the server at ${APP} is built for ${served}, but ${envFile} names ${mine}`;
+    }
+  }
+  if (!serverUp && !noServer) {
+    console.log(`the live checks that need a server cannot run: ${serverWhy} — start the right one, or pass --no-server`);
     process.exit(2);
   }
 }
@@ -123,6 +168,11 @@ const skipped = [];
 for (const c of chosen) {
   if (c.needsPat && c.tier !== "pure" && envKeys.size > 0 && !envKeys.has("SUPABASE_ACCESS_TOKEN")) {
     console.log(`skip  ${c.tier.padEnd(6)} ${c.name.padEnd(26)} (needs SUPABASE_ACCESS_TOKEN, not in ${envFile})`);
+    skipped.push(c.name);
+    continue;
+  }
+  if (c.needsServer && !serverUp) {
+    console.log(`skip  ${c.tier.padEnd(6)} ${c.name.padEnd(26)} (${serverWhy})`);
     skipped.push(c.name);
     continue;
   }
