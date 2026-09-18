@@ -88,6 +88,7 @@ const BULK_QUERIES: Record<Resource, string> = {
     id name createdAt updatedAt cancelledAt tags
     displayFinancialStatus displayFulfillmentStatus
     totalPriceSet { shopMoney { amount currencyCode } }
+    currentTotalPriceSet { shopMoney { amount currencyCode } }
     customer { id }
     lineItems { edges { node {
       id title quantity sku

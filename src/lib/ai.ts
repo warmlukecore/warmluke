@@ -6,7 +6,7 @@
 // the apply route re-validates everything under the caller's RLS.
 // ─────────────────────────────────────────────────────────────
 
-import { isStoreTable, storeTableSchema } from "@/lib/store-read";
+import { isStoreTable, storeTableSchema, STORE_TABLES } from "@/lib/store-read";
 // One definition, shared with the Shopify importer rather than copied.
 import { isTransient } from "@/lib/retry";
 import {
@@ -412,6 +412,12 @@ function storeBlock(store: StoreContext | null, projectCurrency: string): string
     lines.push(
       `Design on top of it. When what they want IS this data, build a section over it: NEW_MODULE with "source_table" set to the table. Never propose a section whose purpose is to re-enter this data by hand — if you build a separate list anyway, say plainly in "limitations" that it will not match their Shopify data, so they can decide.`
     );
+    // What a stat over the store's rows should be. Said by the table
+    // itself, so the merchant's own assistant reads the same words
+    // through design_format.
+    for (const t of Object.values(STORE_TABLES)) {
+      if (t.advice) lines.push(`${t.label}: ${t.advice}`);
+    }
   }
 
   const known = Object.entries(store.values ?? {}).filter(([, v]) => v.length > 0);

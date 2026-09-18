@@ -1318,6 +1318,14 @@ export async function POST(req: Request) {
               spec.columns.map((c) => c.field),
             ])
           ),
+          // What a stat over each table should be — the same words Luke
+          // reads, from the same place, so the two doors cannot disagree
+          // about what "revenue" means.
+          store_advice: Object.fromEntries(
+            Object.entries(STORE_TABLES)
+              .filter(([, spec]) => spec.advice)
+              .map(([table, spec]) => [table, spec.advice])
+          ),
           removing_a_section:
             "MODULE_DELETE is not accepted here at all. The merchant types the section's name in Warmluke to confirm that one.",
           vocabulary: vocabularyPrompt(),

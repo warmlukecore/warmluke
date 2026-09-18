@@ -367,6 +367,7 @@ query($n: Int!, $after: String) {
       id name createdAt updatedAt cancelledAt tags
       displayFinancialStatus displayFulfillmentStatus
       totalPriceSet { shopMoney { amount currencyCode } }
+      currentTotalPriceSet { shopMoney { amount currencyCode } }
       customer { id }
       lineItems(first: 100) {
         nodes {
@@ -388,6 +389,8 @@ export type GqlOrder = {
   id: string; name: string; createdAt: string; updatedAt: string; cancelledAt: string | null;
   tags: string[]; displayFinancialStatus: string | null; displayFulfillmentStatus: string | null;
   totalPriceSet: { shopMoney: { amount: string; currencyCode: string } };
+  /** What the order comes to today, after refunds. Absent on old bulk files. */
+  currentTotalPriceSet?: { shopMoney: { amount: string; currencyCode: string } } | null;
   customer: { id: string } | null;
   lineItems: { nodes: Array<{ id: string; title: string; quantity: number; sku: string | null;
     variant: { id: string } | null; product: { id: string } | null;
@@ -438,7 +441,13 @@ export async function saveOrders(
       nodes.map((o) => ({
         store_id: storeId, external_id: o.id, order_number: o.name,
         customer_id: o.customer ? (customerId.get(o.customer.id) ?? null) : null,
-        placed_at: o.createdAt, total: money(o.totalPriceSet),
+        placed_at: o.createdAt,
+        // Today's total, after refunds, under the name the webhook has
+        // always used for it — and the original beside it. This used
+        // to write the original as `total`, so the same order carried
+        // a different number depending on which road it last took.
+        total: money(o.currentTotalPriceSet ?? o.totalPriceSet),
+        total_original: money(o.totalPriceSet),
         currency: o.totalPriceSet?.shopMoney?.currencyCode ?? null,
         financial_status: o.displayFinancialStatus, fulfilment_status: o.displayFulfillmentStatus,
         cancelled_at: o.cancelledAt, tags: o.tags ?? [], source: "shopify", updated_at: o.updatedAt,

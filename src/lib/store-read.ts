@@ -155,6 +155,8 @@ export function dayRangeInZone(day: string, timeZone: string): { from: string; t
 export type StoreTable = "orders" | "customers" | "products" | "inventory_levels";
 
 type TableSpec = {
+  /** What a stat over this table should be — for whoever designs one. */
+  advice?: string;
   label: string;
   select: string;
   /** Column and direction the rows arrive in, newest or A-Z first. */
@@ -169,15 +171,25 @@ const one = <T,>(v: T | T[] | null | undefined): T | null =>
 export const STORE_TABLES: Record<StoreTable, TableSpec> = {
   orders: {
     label: "Shopify orders",
+    // What a stat over these rows should be, said once and read by both
+    // doors — Luke's prompt and design_format. A merchant's "revenue"
+    // was sum(total) over every row: unpaid COD orders, cancelled ones,
+    // refunds, all in. On a four-order store that is $4,942 where the
+    // money actually collected is $0.
+    advice:
+      'Money: `total` is what the order comes to today, after refunds; `total_original` is what it came to when placed. Do not sum `total` over every row and call it revenue — most of it may be unpaid. Revenue collected = sum(total) where financial_status = "PAID". Awaiting payment (COD) = sum(total) where financial_status = "PENDING". Cancelled = count where cancelled_at is not empty, kept out of both. Average order value = avg(total_original). When a merchant asks for one revenue number, show these apart and say which is which.',
     order: { field: "placed_at", ascending: false },
     select:
-      "id, order_number, placed_at, total, currency, financial_status, fulfilment_status, cancelled_at, tags, customers(name, phone)",
+      "id, order_number, placed_at, total, total_original, currency, financial_status, fulfilment_status, cancelled_at, tags, customers(name, phone)",
     columns: [
       { field: "order_number", label: "Order", type: "text" },
       { field: "placed_at", label: "Placed", type: "date" },
       { field: "customer_name", label: "Customer", type: "text" },
       { field: "customer_phone", label: "Phone", type: "phone" },
+      // What the order comes to today, after refunds — Shopify's own
+      // meaning of total — and what it came to when placed.
       { field: "total", label: "Total", type: "currency", currencyField: "currency" },
+      { field: "total_original", label: "Before refunds", type: "currency", currencyField: "currency" },
       { field: "currency", label: "Currency", type: "text" },
       { field: "status", label: "Status", type: "badge" },
       { field: "fulfilment_status", label: "Fulfilment", type: "badge" },
@@ -186,6 +198,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       const c = one(r.customers as { name?: string; phone?: string } | null);
       return {
         order_number: r.order_number,
+        total_original: r.total_original,
         // The date only — the renderer's date column shows a day, and
         // a full timestamp would render as a wall of digits.
         placed_at: typeof r.placed_at === "string" ? r.placed_at.slice(0, 10) : null,

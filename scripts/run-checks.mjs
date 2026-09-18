@@ -200,7 +200,7 @@ for (const c of chosen) {
 
 console.log(
   failed.length === 0
-    ? `\n${chosen.length - skipped.length} ${tierWanted === "all" ? "" : tierWanted + " "}checks, all green${skipped.length ? ` (${skipped.length} skipped for want of a secret)` : ""}`
+    ? `\n${chosen.length - skipped.length} ${tierWanted === "all" ? "" : tierWanted + " "}checks, all green${skipped.length ? ` (${skipped.length} skipped — each said why above)` : ""}`
     : `\n${failed.length} of ${chosen.length} FAILED: ${failed.join(", ")}`
 );
 process.exit(failed.length === 0 ? 0 : 1);
