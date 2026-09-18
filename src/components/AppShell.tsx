@@ -15,6 +15,7 @@ import { apiFetch, takePendingPrompt } from "@/lib/auth";
 import GenericRenderer from "@/components/GenericRenderer";
 import ChatPanel, { type ChatMessage, nextChatId } from "@/components/ChatPanel";
 import { undoableFrom } from "@/lib/undo";
+import { engineError, fixPrompt, type FixAction } from "@/lib/errors";
 import VersionHistory from "@/components/VersionHistory";
 import AutomationsPanel from "@/components/AutomationsPanel";
 import { FormatProvider } from "@/lib/format";
@@ -1107,13 +1108,24 @@ export default function AppShell({
         if (ok && data.applied) {
           const results = data.results as Array<Record<string, unknown>>;
           if (data.partial) {
+            const errors = (data.errors as string[] | undefined) ?? [];
             setChatMessages((prev) => [
               ...prev,
               {
                 id: nextChatId(),
                 role: "system",
-                text: `⚠️ Built ${results.length} of ${plans.length} — the rest stopped on an error.`,
-                errors: data.errors as string[] | undefined,
+                text: `Built ${results.length} of ${plans.length} — the rest did not fit.`,
+                error: engineError(
+                  `Built ${results.length} of ${plans.length} — the rest did not fit.`,
+                  errors,
+                  fixPrompt({
+                    what: requestText ?? "the rest of this design",
+                    tried: plans.slice(results.length),
+                    errors,
+                    ask: `The first ${results.length} of these are built and must be left alone. Give me a corrected design for only the rest, doing the same job.`,
+                  }),
+                  "What was built stays. Luke can correct the rest."
+                ),
               },
             ]);
           }
@@ -1153,13 +1165,19 @@ export default function AppShell({
           else if (selectedModuleId) await loadModuleData(selectedModuleId);
           return { applied: results, errors: (data.errors as string[]) ?? [] };
         } else {
+          const errors = (data.errors as string[] | undefined) ?? [];
           setChatMessages((prev) => [
             ...prev,
             {
               id: nextChatId(),
               role: "system",
-              text: "⚠️ The build stopped partway — nothing further was applied.",
-              errors: data.errors as string[] | undefined,
+              text: "Nothing was built.",
+              error: engineError(
+                "Nothing was built — the design did not fit.",
+                errors,
+                fixPrompt({ what: requestText ?? "this design", tried: plans, errors }),
+                "Your app is as it was."
+              ),
             },
           ]);
         }
@@ -1174,6 +1192,30 @@ export default function AppShell({
       }
     },
     [building, projectId, loadModules, loadModuleData, selectedModuleId, recordOutcome, planTitle]
+  );
+
+  /**
+   * Runs a way out of an error. Only the ones that need the shell —
+   * Luke, a retry; a scan bar's own fixes never leave the scan bar.
+   *
+   * Luke's answer is a design, and a design waits for a yes. A "fix"
+   * that applied itself would be an unreviewed change to the app,
+   * which is the one thing every error here is not allowed to become.
+   */
+  const fixError = useCallback(
+    async (action: FixAction) => {
+      if (action.type === "ask_luke") {
+        await loadModules();
+        setChatMessages((prev) => [
+          ...prev,
+          { id: nextChatId(), role: "system", text: "Asking Luke to correct it…" },
+        ]);
+        await runPrompt(action.prompt, { silent: true });
+      } else if (action.type === "retry" && selectedModuleId) {
+        await loadModuleData(selectedModuleId);
+      }
+    },
+    [loadModules, runPrompt, selectedModuleId, loadModuleData]
   );
 
   /**
@@ -1697,6 +1739,7 @@ export default function AppShell({
         projectId={projectId}
         autoBuild={project?.auto_build === true}
         onUndo={undoBuild}
+        onFix={fixError}
         width={chat.width}
         dragging={chat.dragging}
         onResizeStart={chat.onPointerDown}
@@ -1763,6 +1806,7 @@ export default function AppShell({
         <AutomationsPanel
           projectId={projectId}
           modules={modules}
+          onFix={fixError}
           onClose={() => {
             setRulesOpen(false);
             // A rule may have been switched off; reflect its effects.

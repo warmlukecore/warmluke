@@ -250,6 +250,7 @@ export default function GenericRenderer({
           // matched and updated that one, which is worse than no check.
           records={filteredRecords}
           onApply={(rec, set) => onUpdate!(rec.id, set)}
+          onCreate={onCreate}
         />
       )}
 

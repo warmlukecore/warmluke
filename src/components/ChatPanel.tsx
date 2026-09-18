@@ -10,6 +10,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { watchRows } from "@/lib/live";
 import GenericRenderer from "@/components/GenericRenderer";
 import { describeAutomation, describePlan, type StoreFacts } from "@/lib/describe";
+import { engineError, fixPrompt, type AppError, type FixAction } from "@/lib/errors";
+import ErrorNote from "@/components/ErrorNote";
 import type { BuildOutcome } from "@/components/AppShell";
 import { storeOverview } from "@/lib/store-read";
 import { supabase } from "@/lib/supabase-client";
@@ -35,6 +37,12 @@ export interface ChatMessage {
   /** Plain-language design awaiting the owner's approval. */
   blueprint?: Blueprint;
   errors?: string[];
+  /**
+   * An error with its ways out — see lib/errors. A system line that
+   * has one renders it instead of `text` + `errors`, which is what
+   * every failure used to be: a sentence and a list, and no button.
+   */
+  error?: AppError;
   /**
    * Asked through the merchant's own Claude rather than typed here.
    *
@@ -500,6 +508,7 @@ export default function ChatPanel({
   onBuild,
   onDiscard,
   onUndo,
+  onFix,
   autoBuild,
 }: {
   /** Panel width above lg; below it the panel is a full-width drawer. */
@@ -538,6 +547,8 @@ export default function ChatPanel({
   /** Puts one build's changes back, by the id of the message offering
    *  it. Lives in the shell because the screen has to reload after. */
   onUndo: (messageId: string) => Promise<{ message: string } | null>;
+  /** Runs a way out of an error — Luke, a retry. Lives in the shell. */
+  onFix: (action: FixAction) => void | Promise<void>;
   /** Whether this project builds on its own, so a card that is asking
    *  anyway can say why rather than look broken. */
   autoBuild: boolean;
@@ -1143,7 +1154,27 @@ export default function ChatPanel({
                   {/* The setting is on and this is asking anyway. Without
                       a reason here the card reads as the setting not
                       working — which is exactly what it looked like. */}
-                  {!done && autoBuild && whyItIsAsking(r) ? (
+                  {!done && (r.outcome?.errors?.length ?? 0) > 0 ? (
+                    // Tried on its own and did not go in. The errors
+                    // are the design's, so Luke can correct the design
+                    // — and the correction waits for a yes like any
+                    // other change.
+                    <ErrorNote
+                      compact
+                      onFix={onFix}
+                      error={engineError(
+                        autoBuild
+                          ? "It was tried on its own and did not go in."
+                          : "This could not be built as it is.",
+                        r.outcome!.errors!,
+                        fixPrompt({
+                          what: r.request,
+                          tried: r.plans,
+                          errors: r.outcome!.errors!,
+                        })
+                      )}
+                    />
+                  ) : !done && autoBuild && whyItIsAsking(r) ? (
                     <div className="rounded-lg border border-amber-300 bg-amber-100/70 px-2 py-1.5 text-[11px] leading-relaxed text-amber-900">
                       <span className="font-semibold">Waiting for you:</span>{" "}
                       {whyItIsAsking(r)}
@@ -1313,6 +1344,13 @@ export default function ChatPanel({
           }
 
           if (m.role === "system") {
+            if (m.error) {
+              return (
+                <div key={m.id}>
+                  <ErrorNote error={m.error} onFix={onFix} />
+                </div>
+              );
+            }
             return (
               <div
                 key={m.id}

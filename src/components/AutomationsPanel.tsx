@@ -9,6 +9,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase-client";
 import { describeAutomation } from "@/lib/describe";
+import { engineError, fixPrompt, type FixAction } from "@/lib/errors";
+import ErrorNote from "@/components/ErrorNote";
 import type { AutomationRow, AutomationRunRow, ModuleRow } from "@/lib/types";
 
 type RunSummary = { ok: boolean; at: string; detail: Record<string, unknown> | null };
@@ -17,9 +19,12 @@ export default function AutomationsPanel({
   projectId,
   modules,
   onClose,
+  onFix,
 }: {
   projectId: string;
   modules: ModuleRow[];
+  /** Hands a rule that stopped to Luke. Absent, the failure is only shown. */
+  onFix?: (action: FixAction) => void | Promise<void>;
   onClose: () => void;
 }) {
   const [rules, setRules] = useState<AutomationRow[]>([]);
@@ -167,14 +172,36 @@ export default function AutomationsPanel({
                       {run.detail && typeof run.detail.rows === "number" && (
                         <> · {run.detail.rows} row(s) changed</>
                       )}
-                      {run.detail && typeof run.detail.error === "string" && (
-                        <span className="text-rose-600"> · {run.detail.error}</span>
-                      )}
                     </>
                   ) : (
                     "Hasn't run yet"
                   )}
                 </div>
+                {/* A rule that stopped is a design that no longer fits
+                    its rows — a field renamed under it, most often. The
+                    correction is a rule of the same name, which
+                    replaces this one in place and keeps its history,
+                    and it waits for a yes like anything else Luke
+                    proposes. */}
+                {run && !run.ok && typeof run.detail?.error === "string" && (
+                  <div className="mt-1.5">
+                    <ErrorNote
+                      compact
+                      onFix={onFix}
+                      error={engineError(
+                        `“${rule.name}” stopped on its last run.`,
+                        [run.detail.error],
+                        fixPrompt({
+                          what: `the rule “${rule.name}”`,
+                          tried: rule.definition,
+                          errors: [run.detail.error],
+                          ask: `Correct this rule so it does the same job. Use the same name, “${rule.name}”, so it replaces the rule in place.`,
+                        }),
+                        "No rows were changed by it."
+                      )}
+                    />
+                  </div>
+                )}
               </div>
             );
           })}
