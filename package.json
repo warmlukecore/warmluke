@@ -2,13 +2,17 @@
   "name": "adaptive-os",
   "private": true,
   "version": "0.1.0",
-  "description": "Adaptive Business OS — schema-driven business app platform prototype",
+  "description": "Adaptive Business OS \u2014 schema-driven business app platform prototype",
   "scripts": {
     "dev": "next dev -p 3100",
     "build": "NODE_ENV=production next build",
     "start": "next start -p 3100",
     "typecheck": "tsc --noEmit",
-    "audit": "pnpm audit --audit-level=high"
+    "audit": "pnpm audit --audit-level=high",
+    "check": "node scripts/run-checks.mjs",
+    "check:pure": "node scripts/run-checks.mjs --tier pure",
+    "check:live": "node scripts/run-checks.mjs --tier live",
+    "check:list": "node scripts/run-checks.mjs --list"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",

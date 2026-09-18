@@ -27,24 +27,31 @@ concurrency:
 
 jobs:
   static:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moves to 26.04 on 2026-10-19 on its own.
+    # The OS under the build changes when somebody here changes it.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # pnpm, because that is what node_modules/.pnpm says this repo
       # installs with; the version is pinned so the runner and a laptop
       # resolve the same lockfile the same way.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 12.3.4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      # Four runtime dependencies, one of them Next.js, which has had
+      # real CVEs. The script already existed; it just never ran.
+      - name: audit
+        run: pnpm audit --audit-level=high
 
       - name: type check
         run: pnpm exec tsc --noEmit
