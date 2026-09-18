@@ -105,6 +105,13 @@ export async function signInAsCheckUser(client, env) {
   await admin
     .from("account_settings")
     .upsert({ user_id: signed.user.id }, { onConflict: "user_id", ignoreDuplicates: true });
+  // Every MCP call this account has ever made is a check's. The
+  // hourly ceiling on them is per user, so three full runs inside an
+  // hour — a laptop and two pushes — spent it, and the fourth run's
+  // read_section came back "too many requests" in CI with nothing in
+  // the diff to explain it. A run starts with the budget it would have
+  // on a fresh account.
+  await admin.from("mcp_calls").delete().eq("user_id", signed.user.id);
   return signed;
 }
 
