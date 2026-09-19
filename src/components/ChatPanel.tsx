@@ -86,7 +86,8 @@ function describeFeatures(f: NonNullable<AssistantPlan["features"]>): string[] {
   const out: string[] = [];
   if (f.search?.enabled) out.push(`🔍 Search${f.search.fields?.length ? ` over ${f.search.fields.join(", ")}` : ""}`);
   for (const fl of f.filters ?? []) out.push(`▦ Filter: ${fl.label} (${fl.options.join(" / ")})`);
-  for (const s of f.stats ?? []) out.push(`📊 Stat: ${s.label} (${s.op}${s.field ? ` of ${s.field}` : ""})`);
+  for (const s of f.stats ?? [])
+    out.push(`📊 Stat: ${s.label} (${s.op}${s.field ? ` of ${s.field}` : ""}${s.by ? ` by ${s.by}` : ""})`);
   if (f.defaultSort) out.push(`↕ Default sort: ${f.defaultSort.field} ${f.defaultSort.dir}`);
   if (out.length === 0) out.push("No features — plain table");
   return out;

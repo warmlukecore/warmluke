@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
 import { describePlan } from "@/lib/describe";
 import { apiFetch, takePendingPrompt } from "@/lib/auth";
-import GenericRenderer from "@/components/GenericRenderer";
+import GenericRenderer, { type StatRequest, type StatResult } from "@/components/GenericRenderer";
 import ChatPanel, { type ChatMessage, nextChatId } from "@/components/ChatPanel";
 import { undoableFrom } from "@/lib/undo";
 import { asError, engineError, fixPrompt, type FixAction } from "@/lib/errors";
@@ -527,6 +527,23 @@ export default function AppShell({
     if (!selectedModuleId) return;
     await loadModuleData(selectedModuleId, records.length + RECORD_PAGE);
   }, [selectedModuleId, records.length, loadModuleData]);
+
+  // Stat cards counted over the whole section, not the page. The
+  // function evaluates the same expressions the browser would, over
+  // every row, and narrows by the same search and filters.
+  const sectionStats = useCallback(
+    async (req: StatRequest): Promise<StatResult[]> => {
+      if (!selectedModuleId) return [];
+      const { data, error } = await supabase.rpc("abo_section_stats", {
+        p_module: selectedModuleId,
+        p_stats: req.stats,
+        p_scope: req.scope,
+      });
+      if (error) throw new Error(error.message);
+      return (data ?? []) as StatResult[];
+    },
+    [selectedModuleId]
+  );
 
   useEffect(() => {
     loadModules();
@@ -1713,6 +1730,7 @@ export default function AppShell({
               records={records}
               totalRecords={recordTotal}
               onLoadMore={records.length < recordTotal ? loadMoreRecords : undefined}
+              onStats={sectionStats}
               {...(storeBacked
                 ? // No write handlers at all, which is how the renderer
                   // already expresses read-only. The import owns these

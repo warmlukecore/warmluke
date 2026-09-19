@@ -149,7 +149,7 @@ console.log("\nand it is actually wired up");
   check("assistant snapshots label each order from its row", /o\.currency \?\? store\.currency/.test(ai));
   check(
     "mixed-currency stats are refused rather than summed",
-    renderer.includes('display: "Mixed currencies"')
+    renderer.includes('"Mixed currencies"')
   );
   check(
     "the section and chat preview share the same source-currency default",

@@ -87,13 +87,9 @@ export async function storeOverview(
   return { ...(store as StoreBrief), counts };
 }
 
-/** A bare column of the table's own select list — not one reached through a join. */
-function sortable(select: string, field: string): boolean {
-  return select
-    .replace(/\([^)]*\)/g, "")
-    .split(",")
-    .map((s) => s.trim())
-    .includes(field);
+/** A column the section shows. Every one of them is a column of the view. */
+function sortable(spec: TableSpec, field: string): boolean {
+  return spec.columns.some((c) => c.field === field);
 }
 
 export type StoreLeaders = {
@@ -219,13 +215,20 @@ type TableSpec = {
   /** What a stat over this table should be — for whoever designs one. */
   advice?: string;
   label: string;
+  /**
+   * The SQL view that holds this list in the shape the app shows
+   * (0087). The shape used to be made here, row by row, after the
+   * page was read — and a stat computed on the server had to see the
+   * same shape. One definition, in the database; this reads it.
+   */
+  view: string;
   select: string;
   /** Column and direction the rows arrive in, newest or A-Z first. */
   order: { field: string; ascending: boolean };
   columns: SchemaColumn[];
-  flatten: (row: Record<string, unknown>) => Record<string, unknown>;
 };
 
+/** PostgREST embeds a to-one relation as a one-element array or an object; either way, the one row. */
 const one = <T,>(v: T | T[] | null | undefined): T | null =>
   Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
 
@@ -239,9 +242,10 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     // money actually collected is $0.
     advice:
       'Money: `total` is what the order comes to today, after refunds; `total_original` is what it came to when placed. Do not sum `total` over every row and call it revenue — most of it may be unpaid. Revenue collected = sum(total) where financial_status = "PAID". Awaiting payment (COD) = sum(total) where financial_status = "PENDING". Cancelled = count where cancelled_at is not empty, kept out of both. Average order value = avg(total_original). When a merchant asks for one revenue number, show these apart and say which is which.',
+    view: "store_orders",
     order: { field: "placed_at", ascending: false },
     select:
-      "id, order_number, placed_at, total, total_original, currency, financial_status, fulfilment_status, cancelled_at, tags, customers(name, phone)",
+      "id, order_number, placed_at, customer_name, customer_phone, total, total_original, currency, status, fulfilment_status, financial_status, cancelled_at, tags",
     columns: [
       { field: "order_number", label: "Order", type: "text" },
       { field: "placed_at", label: "Placed", type: "date" },
@@ -255,29 +259,12 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "status", label: "Status", type: "badge" },
       { field: "fulfilment_status", label: "Fulfilment", type: "badge" },
     ],
-    flatten: (r) => {
-      const c = one(r.customers as { name?: string; phone?: string } | null);
-      return {
-        order_number: r.order_number,
-        total_original: r.total_original,
-        // The date only — the renderer's date column shows a day, and
-        // a full timestamp would render as a wall of digits.
-        placed_at: typeof r.placed_at === "string" ? r.placed_at.slice(0, 10) : null,
-        customer_name: c?.name ?? null,
-        customer_phone: c?.phone ?? null,
-        total: r.total,
-        currency: r.currency,
-        // A cancelled order keeps its last financial status, so showing
-        // that alone would call a cancelled order "paid".
-        status: r.cancelled_at ? "Cancelled" : (r.financial_status ?? null),
-        fulfilment_status: r.fulfilment_status ?? null,
-      };
-    },
   },
   customers: {
     advice:
       "Top buyers = sort by total_spent desc — Shopify's lifetime figure for the customer, over every customer, not this page. Repeat customers = count where orders_count >= 2. total_spent is empty for a customer not synced since it was added; it fills on the next import.",
     label: "Shopify customers",
+    view: "store_customers",
     order: { field: "name", ascending: true },
     select: "id, name, email, phone, city, orders_count, total_spent",
     columns: [
@@ -288,14 +275,6 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "orders_count", label: "Orders", type: "number" },
       { field: "total_spent", label: "Total spent", type: "currency" },
     ],
-    flatten: (r) => ({
-      name: r.name,
-      phone: r.phone,
-      email: r.email,
-      city: r.city,
-      orders_count: r.orders_count,
-      total_spent: r.total_spent,
-    }),
   },
   // A view, not a table: one row per product, summed from the order
   // lines of every uncancelled order (0084, 0086). Ranked on the
@@ -306,6 +285,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     advice:
       "Best sellers = sort by units desc (or revenue desc). One row per product, from every order that was not cancelled — paid or still awaiting payment (COD). revenue is the value of those orders, not what has been collected; a refund after the sale is not subtracted. units, revenue and orders are whole-store totals.",
     label: "Product sales",
+    view: "product_sales",
     order: { field: "units", ascending: false },
     select: "id, product_id, title, units, revenue, orders, last_sold, currency",
     columns: [
@@ -315,19 +295,12 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "orders", label: "Orders", type: "number" },
       { field: "last_sold", label: "Last sold", type: "date" },
     ],
-    flatten: (r) => ({
-      title: r.title,
-      units: r.units,
-      revenue: r.revenue,
-      orders: r.orders,
-      last_sold: r.last_sold,
-      currency: r.currency,
-    }),
   },
   products: {
     label: "Shopify products",
+    view: "store_products",
     order: { field: "title", ascending: true },
-    select: "id, title, handle, status, product_type, vendor, tags",
+    select: "id, title, product_type, vendor, handle, status, tags",
     columns: [
       { field: "title", label: "Product", type: "text" },
       { field: "product_type", label: "Category", type: "badge" },
@@ -336,22 +309,13 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "handle", label: "Handle", type: "text" },
       { field: "tags", label: "Tags", type: "text" },
     ],
-    flatten: (r) => ({
-      title: r.title,
-      product_type: r.product_type ?? null,
-      vendor: r.vendor ?? null,
-      handle: r.handle ?? null,
-      status: r.status,
-      // A text column renders a string; an array would print as
-      // "[object Object]" or a bracketed dump.
-      tags: Array.isArray(r.tags) && r.tags.length ? (r.tags as string[]).join(", ") : null,
-    }),
   },
   inventory_levels: {
     label: "Shopify stock",
     // Lowest stock first: the rows a merchant opens this for.
+    view: "store_inventory",
     order: { field: "available", ascending: true },
-    select: "id, available, location_name, updated_at, variants(sku, title, products(title))",
+    select: "id, product, variant, sku, location_name, available",
     columns: [
       { field: "product", label: "Product", type: "text" },
       { field: "variant", label: "Variant", type: "text" },
@@ -359,19 +323,6 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "location_name", label: "Location", type: "text" },
       { field: "available", label: "In stock", type: "number" },
     ],
-    flatten: (r) => {
-      const v = one(
-        r.variants as { sku?: string; title?: string; products?: unknown } | null
-      );
-      const p = one(v?.products as { title?: string } | null);
-      return {
-        product: p?.title ?? null,
-        variant: v?.title ?? null,
-        sku: v?.sku ?? null,
-        location_name: r.location_name || null,
-        available: r.available,
-      };
-    },
   },
 } as Record<StoreTable, TableSpec>;
 
@@ -382,7 +333,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
  * product title helps nobody.
  */
 const SEARCHABLE: Record<StoreTable, string[]> = {
-  orders: ["order_number", "financial_status", "fulfilment_status"],
+  orders: ["order_number", "customer_name", "financial_status", "fulfilment_status"],
   customers: ["name", "email", "phone", "city"],
   products: ["title", "handle", "status", "product_type", "vendor"],
   inventory_levels: ["location_name"],
@@ -420,15 +371,15 @@ export async function readStoreRows(
    * The section's own sort, applied here rather than after the page is
    * read. "Customers by total spent" cut from the first 200 names A-Z
    * is the biggest spenders whose names start early in the alphabet;
-   * the page has to be cut in the order the section asks for. Only a
-   * column of the table itself can be sorted on — a flattened one
-   * (customer_name on orders) falls back to the table's default.
+   * the page has to be cut in the order the section asks for. Any
+   * column the section shows can be sorted on; anything else falls
+   * back to the list's own order.
    */
   sort?: { field: string; dir: "asc" | "desc" } | null
 ): Promise<{ rows: Array<{ id: string; data: Record<string, unknown> }>; total: number }> {
   const spec = STORE_TABLES[table];
-  const ordered = sort && sortable(spec.select, sort.field) ? sort : null;
-  let query = db.from(table).select(spec.select, { count: "exact" }).eq("store_id", storeId);
+  const ordered = sort && sortable(spec, sort.field) ? sort : null;
+  let query = db.from(spec.view).select(spec.select, { count: "exact" }).eq("store_id", storeId);
   // Rows without the figure go last whichever way the sort runs: a
   // customer never synced since total_spent arrived is not the top
   // buyer, and not the bottom one either.
@@ -452,7 +403,7 @@ export async function readStoreRows(
   return {
     rows: (data ?? []).map((r) => {
       const row = r as unknown as Record<string, unknown>;
-      return { id: row.id as string, data: spec.flatten(row) };
+      return { id: row.id as string, data: row };
     }),
     total: count ?? 0,
   };

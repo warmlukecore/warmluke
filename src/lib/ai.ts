@@ -771,6 +771,15 @@ export function validateFeatures(
           }
         }
         if (st.where !== undefined) validateExpr(st.where, hasField, errors, "client");
+        if (st.by !== undefined && (typeof st.by !== "string" || !hasField(st.by))) {
+          err(errors, `Stat "${st.label}" groups by "${String(st.by)}", which isn't a field of this section.`);
+        }
+        if (
+          st.limit !== undefined &&
+          !(Number.isInteger(st.limit) && st.limit >= 1 && st.limit <= 20)
+        ) {
+          err(errors, `Stat "${st.label}" has limit ${String(st.limit)} — a whole number from 1 to 20.`);
+        }
       }
     }
   }

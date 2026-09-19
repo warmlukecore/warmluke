@@ -286,6 +286,8 @@ ${bullets(AUTOMATION_ACTION_TYPES.map((a) => [a, AUTOMATION_ACTIONS[a]]))}
 
 STAT AGGREGATIONS:
 ${bullets(STAT_OP_LIST.map((s) => [s, STAT_OPS[s]]))}
+  A stat runs over EVERY row of the section, not the page on screen. "where" may use today / days_since, so "this month's revenue" is sum of total where days_since(placed_at) <= 30.
+  "by" — group the rows by a field and show the top few, as a list in the card: "Sales by city" is { "op": "sum", "value": { "field": "total" }, "by": "city", "limit": 5 }. "Orders per customer" is op count, by customer_name. Use it whenever they ask "by", "per", "which X most".
 
 NOT POSSIBLE ON THIS PLATFORM — never design around these, never describe a workaround for them:
 ${NOT_SUPPORTED.map((n) => `  - ${n.label}`).join("\n")}`;

@@ -155,6 +155,10 @@ export interface FeatureSchema {
     format?: "number" | "currency";
     /** Only rows where this is true are counted. */
     where?: Expr;
+    /** Group rows by this field and show the top few: "sales by city". */
+    by?: string;
+    /** How many groups to show, 1–20. Default 5. */
+    limit?: number;
   }>;
   defaultSort?: { field: string; dir: "asc" | "desc" };
   /**

@@ -11,8 +11,29 @@
 import { filterOptions, matchesFilter } from "@/lib/filters";
 import ErrorNote from "@/components/ErrorNote";
 import { asError } from "@/lib/errors";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FeatureSchema, RecordRow, UiSchema, ViewSpec } from "@/lib/types";
+
+type StatSpec = NonNullable<FeatureSchema["stats"]>[number];
+/** What the server is asked: the cards as designed, and what the person is looking at. */
+export type StatRequest = {
+  stats: StatSpec[];
+  scope: {
+    search: string;
+    search_fields: string[];
+    filters: Record<string, string>;
+    computed: Array<{ field: string; expr: unknown }>;
+    currency_fields: string[];
+  };
+};
+/** One per stat: counted, not formatted. */
+export type StatResult = {
+  count: number;
+  value: number | null;
+  currencies: string[];
+  groups?: Array<{ key: string; value: number | null; count: number }>;
+};
+type StatCard = { label: string; display: string; groups?: Array<{ key: string; display: string }> };
 import RecordModal from "@/components/RecordModal";
 import ScanBar from "@/components/ScanBar";
 import {
@@ -44,6 +65,7 @@ export default function GenericRenderer({
   onCreate,
   onUpdate,
   onDelete,
+  onStats,
 }: {
   schema: UiSchema;
   records: RecordRow[];
@@ -56,6 +78,12 @@ export default function GenericRenderer({
   onCreate?: (data: Record<string, unknown>) => Promise<void>;
   onUpdate?: (recordId: string, data: Record<string, unknown>) => Promise<void>;
   onDelete?: (recordId: string) => Promise<void>;
+  /**
+   * Counts the stat cards on the server, over every row of the section
+   * rather than the page that loaded. Absent in previews, which have
+   * only the rows they were handed.
+   */
+  onStats?: (req: StatRequest) => Promise<StatResult[]>;
 }) {
   const fmt = useFormat();
   const total = totalRecords ?? records.length;
@@ -66,7 +94,7 @@ export default function GenericRenderer({
   const [saving, setSaving] = useState(false);
   const [busyRecordId, setBusyRecordId] = useState<string | null>(null);
   const [writeError, setWriteError] = useState<string | null>(null);
-  const columns = schema?.columns ?? [];
+  const columns = useMemo(() => schema?.columns ?? [], [schema]);
   const features: FeatureSchema | null =
     (schema as UiSchema & { features?: FeatureSchema | null })?.features ?? null;
 
@@ -121,60 +149,137 @@ export default function GenericRenderer({
     return rows;
   }, [rowsWithComputed, columns, features, search, filterValues, effectiveSort]);
 
-  const stats = useMemo(() => {
-    if (!features?.stats?.length) return [];
-    return features.stats.map((s) => {
-      let rows = filteredRecords;
-      if (s.where !== undefined) {
-        rows = rows.filter((r) => truthy(evalExpr(s.where, r.data ?? {})));
-      }
-      if (s.op === "count") return { ...s, display: fmt.number(rows.length) };
+  const rowCurrencyFields = useMemo(
+    () => [
+      ...new Set(
+        columns
+          .filter((c) => c.type === "currency" && c.currencyField)
+          .map((c) => c.currencyField as string)
+      ),
+    ],
+    [columns]
+  );
 
-      // "field" is the older shorthand; treat it as the expression { field }.
-      const expr = s.value ?? (s.field ? { field: s.field } : null);
-      if (!expr) return { ...s, display: "—" };
+  // A stat card from a result, whichever side counted it.
+  const cardFrom = (s: StatSpec, r: StatResult): StatCard => {
+    const shown = (val: number | null, currencies: string[]) =>
+      s.format === "currency"
+        ? currencies.length > 1
+          ? "Mixed currencies"
+          : fmt.money(val ?? 0, currencies[0] ?? null)
+        : fmt.number(Math.round(val ?? 0));
+    if (s.by) {
+      return {
+        label: s.label,
+        display: "",
+        groups: (r.groups ?? []).map((g) => ({
+          key: g.key || "(blank)",
+          display: s.op === "count" ? fmt.number(g.count) : shown(g.value, r.currencies),
+        })),
+      };
+    }
+    return {
+      label: s.label,
+      display: s.op === "count" ? fmt.number(r.count) : shown(r.value, r.currencies),
+    };
+  };
 
-      const nums = rows
-        .map((r) => Number(evalExpr(expr, r.data ?? {})))
+  // The browser's own count, over the rows it has. What every section
+  // used to show; now only previews, which have nothing else.
+  const localResult = (s: StatSpec, rows: RecordRow[]): StatResult => {
+    const matched =
+      s.where !== undefined ? rows.filter((r) => truthy(evalExpr(s.where, r.data ?? {}))) : rows;
+    const expr = s.value ?? (s.field ? { field: s.field } : null);
+    const agg = (rs: RecordRow[]): number | null => {
+      if (s.op === "count") return rs.length;
+      const nums = rs
+        .map((r) => Number(expr ? evalExpr(expr, r.data ?? {}) : 0))
         .filter((n) => !Number.isNaN(n));
-      const rowCurrencyFields = [
-        ...new Set(
-          columns
-            .filter((c) => c.type === "currency" && c.currencyField)
-            .map((c) => c.currencyField as string)
-        ),
-      ];
-      const currencies = new Set(
-        rows.flatMap((r) =>
+      if (nums.length === 0) return s.op === "sum" ? 0 : null;
+      const total = nums.reduce((a, b) => a + b, 0);
+      return s.op === "sum"
+        ? total
+        : s.op === "avg"
+          ? total / nums.length
+          : s.op === "min"
+            ? Math.min(...nums)
+            : Math.max(...nums);
+    };
+    const currencies = [
+      ...new Set(
+        matched.flatMap((r) =>
           rowCurrencyFields
-            .map((field) => r.data?.[field])
+            .map((f) => r.data?.[f])
             .filter((v): v is string => typeof v === "string" && v.length > 0)
         )
-      );
-      if (s.format === "currency" && currencies.size > 1) {
-        return { ...s, display: "Mixed currencies" };
-      }
-      const rowCurrency = currencies.size === 1 ? [...currencies][0] : null;
-      if (nums.length === 0) {
-        return { ...s, display: s.format === "currency" ? fmt.money(0, rowCurrency) : "0" };
-      }
+      ),
+    ];
+    if (!s.by) return { count: matched.length, value: agg(matched), currencies };
+    const buckets = new Map<string, RecordRow[]>();
+    for (const r of matched) {
+      const k = String(r.data?.[s.by] ?? "").trim();
+      buckets.set(k, [...(buckets.get(k) ?? []), r]);
+    }
+    const groups = [...buckets]
+      .map(([key, rs]) => ({ key, value: agg(rs), count: rs.length }))
+      .sort(
+        (a, b) =>
+          (b.value ?? -Infinity) - (a.value ?? -Infinity) || b.count - a.count || a.key.localeCompare(b.key)
+      )
+      .slice(0, Math.min(Math.max(s.limit ?? 5, 1), 20));
+    return { count: matched.length, value: null, currencies, groups };
+  };
 
-      const total = nums.reduce((a, b) => a + b, 0);
-      const val =
-        s.op === "sum"
-          ? total
-          : s.op === "avg"
-            ? total / nums.length
-            : s.op === "min"
-              ? Math.min(...nums)
-              : Math.max(...nums);
-      return {
-        ...s,
-        display:
-          s.format === "currency" ? fmt.money(val, rowCurrency) : fmt.number(Math.round(val)),
-      };
-    });
-  }, [features, filteredRecords, fmt]);
+  // Asked of the server whenever what the person is looking at changes,
+  // a beat after they stop typing.
+  const [serverStats, setServerStats] = useState<StatResult[] | null>(null);
+  const statsKey = JSON.stringify(features?.stats ?? null);
+  useEffect(() => {
+    if (!onStats || !features?.stats?.length) {
+      setServerStats(null);
+      return;
+    }
+    let live = true;
+    const searchFields = features.search?.enabled
+      ? (features.search.fields?.filter((f) => columns.some((c) => c.field === f)) ??
+        columns.map((c) => c.field))
+      : [];
+    const t = setTimeout(() => {
+      onStats({
+        stats: features.stats!,
+        scope: {
+          search: features.search?.enabled ? search.trim() : "",
+          search_fields: searchFields,
+          filters: filterValues,
+          computed: columns.filter((c) => c.compute).map((c) => ({ field: c.field, expr: c.compute })),
+          currency_fields: rowCurrencyFields,
+        },
+      })
+        .then((r) => {
+          if (live) setServerStats(r);
+        })
+        .catch(() => {
+          if (live) setServerStats(null);
+        });
+    }, 250);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+    // records: a row added or changed is a number that moved.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onStats, statsKey, search, filterValues, columns, records, rowCurrencyFields]);
+
+  const stats: StatCard[] = useMemo(() => {
+    if (!features?.stats?.length) return [];
+    if (onStats) {
+      return serverStats
+        ? features.stats.map((s, i) => cardFrom(s, serverStats[i] ?? { count: 0, value: null, currencies: [] }))
+        : features.stats.map((s) => ({ label: s.label, display: "…" }));
+    }
+    return features.stats.map((s) => cardFrom(s, localResult(s, filteredRecords)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [features, filteredRecords, fmt, onStats, serverStats, rowCurrencyFields]);
 
   if (columns.length === 0) {
     return (
@@ -266,9 +371,26 @@ export default function GenericRenderer({
               <div className="text-[11px] font-medium tracking-wide text-slate-500 uppercase">
                 {s.label}
               </div>
-              <div className="font-display mt-1 text-2xl font-semibold text-slate-900 tabular-nums">
-                {s.display}
-              </div>
+              {s.groups ? (
+                <div className="mt-1.5 space-y-0.5">
+                  {s.groups.length === 0 ? (
+                    <div className="text-sm text-slate-400">—</div>
+                  ) : (
+                    s.groups.map((g) => (
+                      <div key={g.key} className="flex items-baseline justify-between gap-2 text-sm">
+                        <span className="truncate text-slate-700">{g.key}</span>
+                        <span className="font-display font-semibold text-slate-900 tabular-nums">
+                          {g.display}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              ) : (
+                <div className="font-display mt-1 text-2xl font-semibold text-slate-900 tabular-nums">
+                  {s.display}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -369,7 +491,9 @@ export default function GenericRenderer({
         </div>
         {total > records.length && (
           <div className="border-t border-amber-100 bg-amber-50/70 px-4 py-1.5 text-[10px] text-amber-800">
-            Search, filters and the totals above cover the {records.length} rows loaded so far.
+            {onStats
+              ? `The totals above cover all ${fmt.number(total)} rows; the list below is the ${records.length} loaded so far.`
+              : `Search, filters and the totals above cover the ${records.length} rows loaded so far.`}
           </div>
         )}
       </div>

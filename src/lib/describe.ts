@@ -162,7 +162,8 @@ export function describeFeaturesFull(f: FeatureSchema, modules: ModuleRow[]): st
         ? "count of rows"
         : `${st.op} of ${exprText(st.value ?? (st.field ? { field: st.field } : undefined))}`;
     const cond = st.where ? `, where ${exprText(st.where)}` : "";
-    out.push(`Stat “${st.label}” — ${what}${cond}`);
+    const grouped = st.by ? `, by ${st.by} (top ${st.limit ?? 5})` : "";
+    out.push(`Stat “${st.label}” — ${what}${cond}${grouped}`);
   }
   if (f.defaultSort) out.push(`Sorted by ${f.defaultSort.field} ${f.defaultSort.dir}`);
   for (const a of f.actions ?? []) {
