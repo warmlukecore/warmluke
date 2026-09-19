@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getUserClient } from "@/lib/supabase-server";
 import {
@@ -18,6 +18,7 @@ import { PLAN_FORMAT, WORKED_EXAMPLE, parseReply } from "@/lib/ai";
 import { vocabularyPrompt } from "@/lib/capabilities";
 import { describePlan, describeRules, type RuleRow } from "@/lib/describe";
 import { applyPlans, logClientBuild } from "@/lib/apply";
+import { noteJudgement } from "@/lib/judge";
 import { ALLOWED_ICONS } from "@/lib/types";
 import type { AssistantPlan, ModuleRow, ProjectRow, UiSchema } from "@/lib/types";
 
@@ -568,6 +569,22 @@ async function settleDesign(opts: {
         p_unmet: unmet,
       });
       if (err) return ok(id, text({ error: err.message }));
+
+      // A second opinion on the design — Luke's or the assistant's own
+      // — taken after this answer has gone out, and written down where
+      // nothing reads it yet.
+      after(() =>
+        noteJudgement(db, {
+          projectId: project.id,
+          source: "mcp",
+          ref: requestId as string,
+          request,
+          plans,
+          modules: moduleList,
+          store,
+          unmet,
+        })
+      );
 
 
       if (automatic) {

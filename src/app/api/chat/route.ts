@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getUserClient } from "@/lib/supabase-server";
 import { MAX_REPAIR_ATTEMPTS, runTurn } from "@/lib/engine";
+import { noteJudgement } from "@/lib/judge";
 import type { ChatTurn } from "@/lib/ai";
 import type {
   AssistantReply,
@@ -347,7 +348,7 @@ export async function POST(req: Request) {
       };
     }
 
-    await persistTurn(
+    const replyId = await persistTurn(
       client,
       convId!,
       turn.userTurn,
@@ -356,6 +357,26 @@ export async function POST(req: Request) {
       turn.reply,
       turn.repairErrors
     );
+    // A second opinion on the design, taken after the reply has gone
+    // out and written down where nothing reads it yet. A clarify or
+    // an answer has no design to judge.
+    if (turn.reply.type === "plans" || turn.reply.type === "blueprint") {
+      const reply = turn.reply;
+      const store = turn.store;
+      after(() =>
+        noteJudgement(client, {
+          projectId: proj.id,
+          source: "chat",
+          ref: replyId,
+          request: message.trim(),
+          plans: reply.type === "blueprint" ? reply.blueprint.plans : reply.plans,
+          modules: moduleList,
+          columns: currentSchema?.columns,
+          store,
+          unmet: turn.unmet,
+        })
+      );
+    }
     // A thread is named after whatever was typed first, which is how
     // six of them end up called "hello". Once a design exists there is
     // something better to call it — and only then, because renaming on
@@ -384,12 +405,12 @@ async function persistTurn(
   reply: AssistantReply,
   /** Every validator message the model had to fix on the way here. */
   repairErrors: string[]
-) {
+): Promise<string | null> {
   // Both rows go in one insert, so the default now() gives them the
   // SAME created_at and "order by created_at" is a coin flip — the
   // reply came back above the question it answered. Stamp them apart.
   const t = Date.now();
-  const { error } = await client.from("messages").insert([
+  const { data, error } = await client.from("messages").insert([
     {
       conversation_id: conversationId,
       role: "user",
@@ -404,8 +425,10 @@ async function persistTurn(
       payload: repairErrors.length > 0 ? { ...reply, repairErrors } : reply,
       created_at: new Date(t + 1).toISOString(),
     },
-  ]);
+  ]).select("id, role");
   if (error) throw new Error(error.message);
+  // The reply's own row, so a judgement written later can point at it.
+  return (data?.find((r) => r.role === "assistant")?.id as string | undefined) ?? null;
 }
 
 /** Words that say nothing about what the thread is for. */

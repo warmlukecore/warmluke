@@ -88,6 +88,19 @@ await run(`
     recorded_only boolean not null default false
   );
   alter table public.abo_migrations enable row level security;
+  -- The wall 0028 builds, table by table, and check-rls asks every
+  -- public table about. The ledger is a table too: it had RLS and no
+  -- policies, which refuses everyone today, and no guard, which is
+  -- what refuses a client on the day a policy is added.
+  drop policy if exists "abo_migrations_oauth_no_insert" on public.abo_migrations;
+  create policy "abo_migrations_oauth_no_insert" on public.abo_migrations
+    as restrictive for insert to authenticated with check (not public.abo_is_oauth_client());
+  drop policy if exists "abo_migrations_oauth_no_update" on public.abo_migrations;
+  create policy "abo_migrations_oauth_no_update" on public.abo_migrations
+    as restrictive for update to authenticated using (not public.abo_is_oauth_client());
+  drop policy if exists "abo_migrations_oauth_no_delete" on public.abo_migrations;
+  create policy "abo_migrations_oauth_no_delete" on public.abo_migrations
+    as restrictive for delete to authenticated using (not public.abo_is_oauth_client());
   notify pgrst, 'reload schema';
 `);
 const done = new Set(await column("select version from public.abo_migrations"));

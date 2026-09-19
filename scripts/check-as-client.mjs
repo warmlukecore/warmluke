@@ -144,6 +144,23 @@ try {
   check("the merchant's thread records what the client built", (noted ?? []).some((m) => m.role === "user"));
   check("and what came of it", (noted ?? []).some((m) => m.role === "assistant" && m.content.startsWith("✅")));
 
+  // The judge's row is written through a definer function because a
+  // client cannot write at the table. Proven with a client's token, or
+  // it is only proven for the owner. Needs the server to hold the key;
+  // without it no row comes, and that is what "no key" means.
+  if (env.TYPESAFE_API_KEY) {
+    let judged = null;
+    for (let i = 0; i < 40 && !judged; i++) {
+      const { data } = await admin
+        .from("judgements").select("source, ref").eq("project_id", project.id).eq("ref", made?.request_id).maybeSingle();
+      judged = data;
+      if (!judged) await new Promise((r) => setTimeout(r, 500));
+    }
+    check("the judge's verdict on the client's design landed", judged?.source === "mcp");
+  } else {
+    console.log("  skip  no TYPESAFE_API_KEY — whether the judge writes for a client was not checked");
+  }
+
   const history = await tool("build_history", { limit: 10 });
   check(
     "build_history credits them to this assistant",

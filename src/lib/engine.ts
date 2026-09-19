@@ -24,6 +24,7 @@ import {
   type StoreContext,
 } from "@/lib/ai";
 import { describePlan, describeRules, type RuleRow } from "@/lib/describe";
+import { describeBuild } from "@/lib/judge";
 
 /**
  * How many rules the designer is shown.
@@ -343,12 +344,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   if (parsed.reply.type !== "clarify" && parsed.reply.type !== "answer") {
     const plans =
       parsed.reply.type === "blueprint" ? parsed.reply.blueprint.plans : parsed.reply.plans;
-    const built = plans
-      .map((pl) => {
-        const d = describePlan(pl, modules, currentSchema?.columns, store);
-        return [d.title, ...d.lines].join("\n  ");
-      })
-      .join("\n");
+    const built = describeBuild(plans, modules, currentSchema?.columns, store);
     const gaps = await findGaps(message.trim(), built, signal);
     const existing =
       parsed.reply.type === "blueprint" ? (parsed.reply.blueprint.unmet ?? []) : [];
