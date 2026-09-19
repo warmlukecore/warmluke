@@ -1643,7 +1643,7 @@ export async function POST(req: Request) {
         text({
           ...overview,
           ...leaders,
-          note: "top_customers is lifetime spend as Shopify reports it; best_sellers counts paid, uncancelled orders. Both cover the whole store.",
+          note: "top_customers is lifetime spend as Shopify reports it; best_sellers counts every uncancelled order, paid or not. Both cover the whole store.",
         })
       );
     }

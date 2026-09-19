@@ -3,10 +3,11 @@
 //
 // Three customers whose names sort the opposite way to their spend,
 // and a page of two: the page has to hold the two biggest spenders,
-// not the two earliest names. Then the sales view: a paid order
-// counts, a pending one and a cancelled one do not, a line whose
+// not the two earliest names. Then the sales view: an order counts
+// unless it was cancelled, a line whose
 // product is gone is still a row, and a product's title is today's,
-// not the one it sold under. Then the two lists Luke and a connected
+// not the one it sold under. A pending (cash on delivery) order is a
+// sale; a cancelled one is not. Then the two lists Luke and a connected
 // assistant answer from, and the webhook road for the spend figure.
 //
 //   node scripts/check-leaders.mjs
@@ -108,25 +109,26 @@ try {
       // Wax: 2 + 3 units across two paid orders, sold under its old title.
       { store_id: sid, order_id: paid1, product_id: wax.id, title: "Ski Wax", quantity: 2, price: 100 },
       { store_id: sid, order_id: paid2, product_id: wax.id, title: "Ski Wax", quantity: 3, price: 100 },
-      // Board: one paid unit; the pending and cancelled ones must not count.
+      // Board: one paid unit and two awaiting payment count; the
+      // cancelled ten do not.
       { store_id: sid, order_id: paid1, product_id: board.id, title: "Snowboard", quantity: 1, price: 9000 },
-      { store_id: sid, order_id: pending, product_id: board.id, title: "Snowboard", quantity: 10, price: 9000 },
+      { store_id: sid, order_id: pending, product_id: board.id, title: "Snowboard", quantity: 2, price: 9000 },
       { store_id: sid, order_id: cancelled, product_id: board.id, title: "Snowboard", quantity: 10, price: 9000 },
       // A product gone from Shopify: the line still knows what it sold.
       { store_id: sid, order_id: paid2, product_id: null, title: "Old Gloves", quantity: 4, price: 50 },
     ])
   );
 
-  console.log("\nwhat sold, from paid orders only");
+  console.log("\nwhat sold, from every order that was not cancelled");
   const sales = await readStoreRows(admin, sid, "product_sales", 10);
   const row = (t) => sales.rows.find((r) => r.data.title === t)?.data;
   check("one row per product, three products", sales.rows.length === 3 && sales.total === 3);
-  check("units and revenue add up across paid orders", row("Ski Wax (renamed)")?.units === 5 && Number(row("Ski Wax (renamed)")?.revenue) === 500);
+  check("units and revenue add up across orders", row("Ski Wax (renamed)")?.units === 5 && Number(row("Ski Wax (renamed)")?.revenue) === 500);
   check("and the title is today's, not the one it sold under", !!row("Ski Wax (renamed)") && !row("Ski Wax"));
-  check("a pending order and a cancelled one do not count", row("Snowboard")?.units === 1 && row("Snowboard")?.orders === 1);
+  check("a pending order counts, a cancelled one does not", row("Snowboard")?.units === 3 && row("Snowboard")?.orders === 2);
   check("a product gone from Shopify is still a row", row("Old Gloves")?.units === 4);
   check("the best seller comes first without asking", sales.rows[0]?.data.title === "Ski Wax (renamed)");
-  check("when it last sold is the latest paid order", String(row("Ski Wax (renamed)")?.last_sold).startsWith("2026-09-10"));
+  check("when it last sold is the latest uncancelled order", String(row("Ski Wax (renamed)")?.last_sold).startsWith("2026-09-10"));
   if (fails.length) show(sales.rows.map((r) => r.data));
   const byRevenue = await readStoreRows(admin, sid, "product_sales", 1, undefined, { field: "revenue", dir: "desc" });
   check("sorted by revenue it is the board", byRevenue.rows[0]?.data.title === "Snowboard");
@@ -139,6 +141,7 @@ try {
   check("with their orders and spend", leaders.top_customers[0]?.orders === 3 && leaders.top_customers[0]?.spent === 5000);
   check("the unsynced one is there, with no figure", leaders.top_customers.at(-1)?.spent === null);
   check("best sellers, most units first", leaders.best_sellers.map((b) => b.title).join(",") === "Ski Wax (renamed),Old Gloves,Snowboard");
+  check("the cancelled ten never appear", leaders.best_sellers.find((b) => b.title === "Snowboard")?.units === 3);
   check("in the shop's currency", leaders.best_sellers[0]?.currency === "INR" && leaders.best_sellers[0]?.revenue === 500);
 
   console.log("\nthe owner reads the view under their own rights");

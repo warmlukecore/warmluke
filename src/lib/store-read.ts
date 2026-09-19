@@ -99,7 +99,7 @@ function sortable(select: string, field: string): boolean {
 export type StoreLeaders = {
   /** Biggest spenders first, by Shopify's lifetime figure; those not yet synced follow, by orders. */
   top_customers: Array<{ name: string | null; orders: number; spent: number | null }>;
-  /** Most units first, from paid, uncancelled orders, all time. */
+  /** Most units first, from every uncancelled order, all time. */
   best_sellers: Array<{ title: string | null; units: number; revenue: number | null; currency: string | null }>;
 };
 
@@ -298,11 +298,13 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     }),
   },
   // A view, not a table: one row per product, summed from the order
-  // lines of paid, uncancelled orders (0084). Ranked on the server,
-  // so "best sellers" is over every sale, not the page that loaded.
+  // lines of every uncancelled order (0084, 0086). Ranked on the
+  // server, so "best sellers" is over every sale, not the page that
+  // loaded. Not paid-only: a cash-on-delivery shop has sales for days
+  // before Shopify calls any of them paid, and some it never marks.
   product_sales: {
     advice:
-      "Best sellers = sort by units desc (or revenue desc). One row per product, from PAID, uncancelled orders only — a product with no paid sale is not here at all, and a refund after the sale is not subtracted. units, revenue and orders are whole-store totals.",
+      "Best sellers = sort by units desc (or revenue desc). One row per product, from every order that was not cancelled — paid or still awaiting payment (COD). revenue is the value of those orders, not what has been collected; a refund after the sale is not subtracted. units, revenue and orders are whole-store totals.",
     label: "Product sales",
     order: { field: "units", ascending: false },
     select: "id, product_id, title, units, revenue, orders, last_sold, currency",
