@@ -206,6 +206,16 @@ export type StoreFacts = {
  * names, because they ask for "Stock" and mean inventory levels.
  */
 const STORE_TOPICS: Array<{ table: string; words: RegExp; noun: string }> = [
+  // Most specific first. "Order Items" names the order lines, and
+  // matched "orders" while this list began with them.
+  { table: "order_line_items", words: /\border (line )?items?\b|\bline items?\b/i, noun: "order lines" },
+  // Sales per product are a view over the order lines, so the count
+  // that says "you already have these" is the lines'.
+  {
+    table: "order_line_items",
+    words: /\bbest.?sellers?\b|\btop (selling )?products?\b|\bproduct sales\b|\bsales by product\b|\bunits sold\b/i,
+    noun: "product sales",
+  },
   { table: "orders", words: /\border(s)?\b|\bsales?\b/i, noun: "orders" },
   { table: "customers", words: /\bcustomer(s)?\b|\bbuyer(s)?\b|\bclient(s)?\b/i, noun: "customers" },
   {
@@ -214,7 +224,6 @@ const STORE_TOPICS: Array<{ table: string; words: RegExp; noun: string }> = [
     noun: "products",
   },
   { table: "inventory_levels", words: /\bstock\b|\binventory\b/i, noun: "stock levels" },
-  { table: "order_line_items", words: /\bline item(s)?\b/i, noun: "order lines" },
 ];
 
 /**

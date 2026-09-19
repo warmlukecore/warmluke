@@ -34,7 +34,7 @@ import { describeBuild } from "@/lib/judge";
  * raise it or group them when one actually has that many.
  */
 const RULES_IN_CONTEXT = 40;
-import { lowStock, searchOrders, storeOverview, storeValues } from "@/lib/store-read";
+import { lowStock, searchOrders, storeLeaders, storeOverview, storeValues } from "@/lib/store-read";
 import type { AssistantReply, FeatureSchema, ModuleRow, ProjectRow, UiSchema } from "@/lib/types";
 
 /**
@@ -71,13 +71,16 @@ export async function storeContextFor(
   //
   // ponytail: a fixed snapshot, not a tool loop. Move to real tools
   // when "find order #1042" becomes a question people actually ask.
-  const [recent, low] = await Promise.all([
+  const [recent, low, leaders] = await Promise.all([
     searchOrders(
       client,
       { id: storeRow.id as string, timezone: storeRow.timezone as string },
       { limit: 20 }
     ).catch(() => []),
     lowStock(client, storeRow.id as string, { threshold: 10, limit: 15 }).catch(() => []),
+    // Whole-store, unlike the two above: the questions these answer are
+    // rankings, and a ranking over the latest twenty rows is not one.
+    storeLeaders(client, storeRow.id as string).catch(() => ({ top_customers: [], best_sellers: [] })),
   ]);
   const values = await storeValues(client, storeRow.id as string);
   const { data: runs } = await client
@@ -97,6 +100,8 @@ export async function storeContextFor(
     values,
     snapshot: {
       last_synced_at: (storeRow.last_synced_at as string | null) ?? null,
+      top_customers: leaders.top_customers,
+      best_sellers: leaders.best_sellers,
       recent: recent.map((o) => ({
         number: o.order_number ?? "—",
         placed: o.placed_at,

@@ -82,6 +82,7 @@ const BULK_QUERIES: Record<Resource, string> = {
   } } } }`,
   customers: `{ customers { edges { node {
     id displayName email phone numberOfOrders tags updatedAt
+    amountSpent { amount currencyCode }
     defaultAddress { city zip }
   } } } }`,
   orders: `{ orders { edges { node {

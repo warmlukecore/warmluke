@@ -300,7 +300,8 @@ export interface AssistantPlan {
     /**
      * Rows come from the connected store instead of from records the
      * merchant types: "orders", "customers", "products",
-     * "inventory_levels". Read-only, and its columns are the store's.
+     * "inventory_levels", "product_sales". Read-only, and its columns
+     * are the store's.
      */
     source_table?: string | null;
   } | null;

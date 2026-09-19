@@ -461,7 +461,11 @@ export default function AppShell({
             supabase,
             storeId,
             sourceTable as StoreTable,
-            limit
+            limit,
+            undefined,
+            // Cut the page in the section's own order, or "Customers by
+            // total spent" is the top of the first two hundred names.
+            loadedSchema?.schema_json?.features?.defaultSort ?? null
           );
           setRecords(rows as unknown as RecordRow[]);
           setRecordTotal(total);

@@ -316,6 +316,7 @@ query($n: Int!, $after: String) {
     pageInfo { hasNextPage endCursor }
     nodes {
       id displayName email phone numberOfOrders tags updatedAt
+      amountSpent { amount currencyCode }
       defaultAddress { city zip }
     }
   }
@@ -324,6 +325,8 @@ query($n: Int!, $after: String) {
 export type GqlCustomer = {
   id: string; displayName: string | null; email: string | null; phone: string | null;
   numberOfOrders: string; tags: string[]; updatedAt: string;
+  /** Lifetime spend, Shopify's own figure. Absent on old bulk files. */
+  amountSpent?: { amount: string; currencyCode: string } | null;
   defaultAddress: { city: string | null; zip: string | null } | null;
 };
 
@@ -348,6 +351,7 @@ export async function saveCustomers(
         store_id: storeId, external_id: c.id, name: c.displayName, email: c.email,
         phone: c.phone, city: c.defaultAddress?.city ?? null, postal_code: c.defaultAddress?.zip ?? null,
         tags: c.tags ?? [], orders_count: Number(c.numberOfOrders ?? 0), updated_at: c.updatedAt,
+        total_spent: c.amountSpent?.amount ? Number(c.amountSpent.amount) : null,
       })),
       { onConflict: "store_id,external_id" }
     );

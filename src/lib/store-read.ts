@@ -87,6 +87,67 @@ export async function storeOverview(
   return { ...(store as StoreBrief), counts };
 }
 
+/** A bare column of the table's own select list — not one reached through a join. */
+function sortable(select: string, field: string): boolean {
+  return select
+    .replace(/\([^)]*\)/g, "")
+    .split(",")
+    .map((s) => s.trim())
+    .includes(field);
+}
+
+export type StoreLeaders = {
+  /** Biggest spenders first, by Shopify's lifetime figure; those not yet synced follow, by orders. */
+  top_customers: Array<{ name: string | null; orders: number; spent: number | null }>;
+  /** Most units first, from paid, uncancelled orders, all time. */
+  best_sellers: Array<{ title: string | null; units: number; revenue: number | null; currency: string | null }>;
+};
+
+/**
+ * The two lists a merchant asks for first — "who buys most", "what
+ * sells" — read over the whole store, so Luke and a connected
+ * assistant can answer rather than say "build a section".
+ */
+export async function storeLeaders(
+  db: SupabaseClient,
+  storeId: string,
+  limit = 5
+): Promise<StoreLeaders> {
+  const [c, p] = await Promise.all([
+    db
+      .from("customers")
+      .select("name, orders_count, total_spent")
+      .eq("store_id", storeId)
+      .gt("orders_count", 0)
+      .order("total_spent", { ascending: false, nullsFirst: false })
+      .order("orders_count", { ascending: false })
+      .limit(limit),
+    db
+      .from("product_sales")
+      .select("title, units, revenue, currency")
+      .eq("store_id", storeId)
+      .order("units", { ascending: false })
+      .limit(limit),
+  ]);
+  if (c.error) throw new Error(c.error.message);
+  if (p.error) throw new Error(p.error.message);
+  type C = { name: string | null; orders_count: number | null; total_spent: number | string | null };
+  type P = { title: string | null; units: number | null; revenue: number | string | null; currency: string | null };
+  return {
+    top_customers: ((c.data ?? []) as unknown as C[]).map((r) => ({
+      name: r.name,
+      orders: r.orders_count ?? 0,
+      spent: r.total_spent === null ? null : Number(r.total_spent),
+    })),
+    best_sellers: ((p.data ?? []) as unknown as P[]).map((r) => ({
+      title: r.title,
+      units: r.units ?? 0,
+      revenue: r.revenue === null ? null : Number(r.revenue),
+      currency: r.currency,
+    })),
+  };
+}
+
 /**
  * The start and end of a calendar day in a given time zone, as instants.
  *
@@ -152,7 +213,7 @@ export function dayRangeInZone(day: string, timeZone: string): { from: string; t
 // that must agree, written in two places, is how a section ends up
 // showing blank cells for fields the query never asked for.
 
-export type StoreTable = "orders" | "customers" | "products" | "inventory_levels";
+export type StoreTable = "orders" | "customers" | "products" | "inventory_levels" | "product_sales";
 
 type TableSpec = {
   /** What a stat over this table should be — for whoever designs one. */
@@ -214,15 +275,18 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     },
   },
   customers: {
+    advice:
+      "Top buyers = sort by total_spent desc — Shopify's lifetime figure for the customer, over every customer, not this page. Repeat customers = count where orders_count >= 2. total_spent is empty for a customer not synced since it was added; it fills on the next import.",
     label: "Shopify customers",
     order: { field: "name", ascending: true },
-    select: "id, name, email, phone, city, orders_count",
+    select: "id, name, email, phone, city, orders_count, total_spent",
     columns: [
       { field: "name", label: "Name", type: "text" },
       { field: "phone", label: "Phone", type: "phone" },
       { field: "email", label: "Email", type: "email" },
       { field: "city", label: "City", type: "text" },
       { field: "orders_count", label: "Orders", type: "number" },
+      { field: "total_spent", label: "Total spent", type: "currency" },
     ],
     flatten: (r) => ({
       name: r.name,
@@ -230,6 +294,32 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       email: r.email,
       city: r.city,
       orders_count: r.orders_count,
+      total_spent: r.total_spent,
+    }),
+  },
+  // A view, not a table: one row per product, summed from the order
+  // lines of paid, uncancelled orders (0084). Ranked on the server,
+  // so "best sellers" is over every sale, not the page that loaded.
+  product_sales: {
+    advice:
+      "Best sellers = sort by units desc (or revenue desc). One row per product, from PAID, uncancelled orders only — a product with no paid sale is not here at all, and a refund after the sale is not subtracted. units, revenue and orders are whole-store totals.",
+    label: "Product sales",
+    order: { field: "units", ascending: false },
+    select: "id, product_id, title, units, revenue, orders, last_sold, currency",
+    columns: [
+      { field: "title", label: "Product", type: "text" },
+      { field: "units", label: "Units sold", type: "number" },
+      { field: "revenue", label: "Revenue", type: "currency", currencyField: "currency" },
+      { field: "orders", label: "Orders", type: "number" },
+      { field: "last_sold", label: "Last sold", type: "date" },
+    ],
+    flatten: (r) => ({
+      title: r.title,
+      units: r.units,
+      revenue: r.revenue,
+      orders: r.orders,
+      last_sold: r.last_sold,
+      currency: r.currency,
     }),
   },
   products: {
@@ -294,6 +384,7 @@ const SEARCHABLE: Record<StoreTable, string[]> = {
   customers: ["name", "email", "phone", "city"],
   products: ["title", "handle", "status", "product_type", "vendor"],
   inventory_levels: ["location_name"],
+  product_sales: ["title"],
 };
 
 export const isStoreTable = (v: unknown): v is StoreTable =>
@@ -322,13 +413,25 @@ export async function readStoreRows(
    * never against every column, because a number typed into a search
    * box would otherwise match an id nobody asked about.
    */
-  q?: string
+  q?: string,
+  /**
+   * The section's own sort, applied here rather than after the page is
+   * read. "Customers by total spent" cut from the first 200 names A-Z
+   * is the biggest spenders whose names start early in the alphabet;
+   * the page has to be cut in the order the section asks for. Only a
+   * column of the table itself can be sorted on — a flattened one
+   * (customer_name on orders) falls back to the table's default.
+   */
+  sort?: { field: string; dir: "asc" | "desc" } | null
 ): Promise<{ rows: Array<{ id: string; data: Record<string, unknown> }>; total: number }> {
   const spec = STORE_TABLES[table];
-  let query = db
-    .from(table)
-    .select(spec.select, { count: "exact" })
-    .eq("store_id", storeId)
+  const ordered = sort && sortable(spec.select, sort.field) ? sort : null;
+  let query = db.from(table).select(spec.select, { count: "exact" }).eq("store_id", storeId);
+  // Rows without the figure go last whichever way the sort runs: a
+  // customer never synced since total_spent arrived is not the top
+  // buyer, and not the bottom one either.
+  if (ordered) query = query.order(ordered.field, { ascending: ordered.dir === "asc", nullsFirst: false });
+  query = query
     .order(spec.order.field, { ascending: spec.order.ascending })
     .limit(Math.min(Math.max(limit, 1), 500));
 

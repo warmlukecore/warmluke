@@ -9,6 +9,7 @@ import {
   orderDetail,
   readStoreRows,
   searchOrders,
+  storeLeaders,
   storeOverview,
   storeTableSchema,
   STORE_TABLES,
@@ -121,13 +122,13 @@ const TOOLS = [
   {
     name: "search_store",
     description:
-      "Look through the store's products, customers, orders or stock levels. Read-only, and it only sees what has been synced from Shopify." + RENDER_NOTE,
+      "Look through the store's products, customers, orders, stock levels or product sales (units and revenue per product — best sellers). Read-only, and it only sees what has been synced from Shopify." + RENDER_NOTE,
     inputSchema: {
       type: "object",
       properties: {
         table: {
           type: "string",
-          enum: ["products", "customers", "orders", "inventory_levels"],
+          enum: ["products", "customers", "orders", "inventory_levels", "product_sales"],
           description: "Which of the store's lists to look in.",
         },
         q: {
@@ -1634,7 +1635,17 @@ export async function POST(req: Request) {
     }
 
     if (name === "store_overview") {
-      return ok(id, text(await storeOverview(db, store.id)));
+      // Counts, and the two lists a merchant asks for first. Whole-store
+      // figures, unlike search_orders — say so when quoting them.
+      const [overview, leaders] = await Promise.all([storeOverview(db, store.id), storeLeaders(db, store.id)]);
+      return ok(
+        id,
+        text({
+          ...overview,
+          ...leaders,
+          note: "top_customers is lifetime spend as Shopify reports it; best_sellers counts paid, uncancelled orders. Both cover the whole store.",
+        })
+      );
     }
 
     if (name === "get_order") {
@@ -1663,7 +1674,7 @@ export async function POST(req: Request) {
           id,
           text({
             error: `"${table}" is not one of the store's lists.`,
-            available: ["products", "customers", "orders", "inventory_levels"],
+            available: ["products", "customers", "orders", "inventory_levels", "product_sales"],
           })
         );
       }
