@@ -150,7 +150,8 @@ const TOOLS = [
       properties: {
         table: {
           type: "string",
-          enum: ["products", "customers", "orders", "inventory_levels", "product_sales"],
+          // The lists are declared once, in store-read; this is that list.
+          enum: Object.keys(STORE_TABLES),
           description: "Which of the store's lists to look in.",
         },
         q: {
@@ -1720,7 +1721,7 @@ export async function POST(req: Request) {
           id,
           text({
             error: `"${table}" is not one of the store's lists.`,
-            available: ["products", "customers", "orders", "inventory_levels", "product_sales"],
+            available: Object.keys(STORE_TABLES),
           })
         );
       }

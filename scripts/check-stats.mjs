@@ -14,7 +14,7 @@ import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { signInAsCheckUser, throwawayProject } from "./owner-session.mjs";
 import { evalExpr, truthy } from "../src/lib/expr.ts";
-import { readStoreRows } from "../src/lib/store-read.ts";
+import { readStoreRows, STORE_TABLES } from "../src/lib/store-read.ts";
 
 const env = Object.fromEntries(
   readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
@@ -140,6 +140,18 @@ try {
   check("a blank value is its own group, not dropped", grouped[2]?.groups?.some((g) => g.key === "") && grouped[2]?.groups?.length === 4);
   check("the whole count still comes along", grouped[0]?.count === 250);
   if (fails.length) show(grouped);
+
+  console.log("\nthe list of store lists, in both languages");
+  // TypeScript declares the lists (STORE_TABLES); SQL guards the same
+  // list (abo_is_store_table, 0085). Two languages, one list each — a
+  // sixth table added to one and not the other fails here, not on a
+  // merchant's insert.
+  for (const t of Object.keys(STORE_TABLES)) {
+    const { data: known } = await admin.rpc("abo_is_store_table", { t });
+    check(`"${t}" is a store table to the database too`, known === true);
+  }
+  const { data: stranger } = await admin.rpc("abo_is_store_table", { t: "not_a_table" });
+  check("and a name that is not one is not", stranger === false);
 
   console.log("\nsomebody else's section");
   const { data: other, error: userErr } = await admin.auth.admin.createUser({
