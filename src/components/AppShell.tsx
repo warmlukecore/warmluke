@@ -797,13 +797,22 @@ export default function AppShell({
       setChatSteps([]);
       const controller = new AbortController();
       chatAbort.current = controller;
+      // What the turn did, kept with the reply it produced so the
+      // thread can say "read your store · thought it through · 14s"
+      // above it once the working line has gone.
+      const seen: TurnEvent[] = [];
+      const started = Date.now();
+      const trace = () => ({ steps: seen, ms: Date.now() - started });
 
       try {
         const { ok, data } = await apiStream(
           "/api/chat",
           { message: text, projectId, moduleId: selectedModuleId, conversationId },
           controller.signal,
-          (step) => setChatSteps((prev) => [...prev, step as TurnEvent])
+          (step) => {
+            seen.push(step as TurnEvent);
+            setChatSteps((prev) => [...prev, step as TurnEvent]);
+          }
         );
 
         if (data.conversationId && data.conversationId !== conversationId) {
@@ -852,6 +861,7 @@ export default function AppShell({
               role: "assistant",
               text: reply.message,
               questions: reply.questions,
+              trace: trace(),
             },
           ]);
           return;
@@ -865,6 +875,7 @@ export default function AppShell({
               role: "assistant",
               text: reply.message,
               blueprint: reply.blueprint,
+              trace: trace(),
             },
           ]);
           return;
@@ -875,7 +886,7 @@ export default function AppShell({
         if (reply.type === "answer") {
           setChatMessages((prev) => [
             ...prev,
-            { id: nextChatId(), role: "assistant", text: reply.message },
+            { id: nextChatId(), role: "assistant", text: reply.message, trace: trace() },
           ]);
           return;
         }
@@ -914,6 +925,7 @@ export default function AppShell({
                 workflow: [],
                 next: reply.next,
               },
+              trace: trace(),
             },
           ]);
           return;
@@ -921,7 +933,7 @@ export default function AppShell({
 
         setChatMessages((prev) => [
           ...prev,
-          { id: nextChatId(), role: "assistant", plan: plans[0] },
+          { id: nextChatId(), role: "assistant", plan: plans[0], trace: trace() },
         ]);
       } catch (e) {
         const aborted = (e as Error)?.name === "AbortError";
@@ -1012,7 +1024,7 @@ export default function AppShell({
       let doneText: string;
       switch (plan.changeType) {
         case "NEW_MODULE":
-          doneText = `✅ Module "${plan.newModule?.nav_label}" created — it's in your sidebar.`;
+          doneText = `✓ Module "${plan.newModule?.nav_label}" created — it's in your sidebar.`;
           setSelectedModuleId(result.moduleId as string);
           break;
         case "MODULE_DELETE":
@@ -1020,7 +1032,7 @@ export default function AppShell({
           setSelectedModuleId(null);
           break;
         case "MODULE_UPDATE":
-          doneText = "✅ Navigation updated.";
+          doneText = "✓ Navigation updated.";
           break;
         case "AUTOMATION_ADD":
           doneText = `⚡ Rule "${result.automationName as string}" is live — it runs on every change from now on.`;
@@ -1029,13 +1041,13 @@ export default function AppShell({
           doneText = `Rule "${result.automationName as string}" turned off.`;
           break;
         case "RECORD_SEED":
-          doneText = `✅ ${result.seeded as number} record(s) added.`;
+          doneText = `✓ ${result.seeded as number} record(s) added.`;
           break;
         default:
           // Was "Applied as schema v4", which is true and tells a shop
           // owner nothing. This branch is the commonest edit of all —
           // a field added, a column moved.
-          doneText = `✅ ${planTitle(plan)}.`;
+          doneText = `✓ ${planTitle(plan)}.`;
       }
       setChatMessages((prev) =>
         prev.map((m) => (m.id === planId ? { ...m, plan: undefined, text: doneText } : m))
@@ -1149,7 +1161,7 @@ export default function AppShell({
         {
           id: nextChatId(),
           role: "system",
-          text: `🏗️ Building ${plans.length} change${plans.length === 1 ? "" : "s"}…`,
+          text: `Building ${plans.length} change${plans.length === 1 ? "" : "s"}…`,
         },
       ]);
       try {
@@ -1193,7 +1205,7 @@ export default function AppShell({
           const offer = !data.partial && next?.length ? next : undefined;
           // With something to offer, the offer is the invitation; the
           // sentence stays for a build that had none.
-          const doneText = `✅ ${shown}${rest > 0 ? ` · and ${rest} more` : ""}.${offer ? "" : " Tell me what to change next."}`;
+          const doneText = `✓ ${shown}${rest > 0 ? ` · and ${rest} more` : ""}.${offer ? "" : " Tell me what to change next."}`;
           const bubbleId = nextChatId();
           setChatMessages((prev) => [
             ...prev,
