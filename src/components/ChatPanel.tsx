@@ -68,6 +68,43 @@ export interface ChatMessage {
    * made for the app as it was is stale.
    */
   next?: NextStep[];
+  /**
+   * What the turn did to arrive at this reply, as the server said it,
+   * and how long it took. Session only — a reloaded thread does not
+   * carry it, and does not need to.
+   */
+  trace?: { steps: TurnEvent[]; ms: number };
+}
+
+/**
+ * The steps a turn took, folded into one quiet line above the reply:
+ * "Read your store · thought it through · 14s", with every step behind
+ * a caret. The words are this panel's; the steps and the time are not.
+ */
+function TraceLine({ trace }: { trace: { steps: TurnEvent[]; ms: number } }) {
+  const parts: string[] = [];
+  const store = trace.steps.find((s) => s.step === "store");
+  if (store) parts.push(store.shop ? "Read your store" : "Read your app");
+  const tries = trace.steps.filter((s) => s.step === "model").length;
+  if (tries === 1) parts.push("thought it through");
+  else if (tries > 1) parts.push(`took ${tries} tries`);
+  if (trace.steps.some((s) => s.step === "gaps")) parts.push("checked for gaps");
+  if (parts.length === 0) return null;
+  const secs = Math.max(1, Math.round(trace.ms / 1000));
+  return (
+    <details className="group text-[11px] text-slate-400">
+      <summary className="cursor-pointer list-none select-none truncate hover:text-slate-600">
+        <span className="inline-block w-3.5 text-center group-open:hidden">▸</span>
+        <span className="hidden w-3.5 text-center group-open:inline-block">▾</span>
+        {parts.join(" · ")} · {secs}s
+      </summary>
+      <ul className="mt-0.5 space-y-0.5 pl-3.5 text-slate-300">
+        {trace.steps.map((s, i) => (
+          <li key={i} className="truncate">✓ {stepWords(s)}</li>
+        ))}
+      </ul>
+    </details>
+  );
 }
 
 let msgSeq = 0;
@@ -205,24 +242,23 @@ function ClarifyCard({
     onSubmit(composed);
   }
 
+  // Questions read as a message, not a form: Luke's line, then the
+  // questions numbered underneath, each with its example answers and a
+  // place to type. No header, no badge, no box around it.
   return (
-    <div className="overflow-hidden rounded-xl border border-violet-200 shadow-sm">
-      <div className="flex items-center justify-between bg-violet-50 px-3 py-2">
-        <span className="text-xs font-semibold text-violet-800">A few questions first</span>
-        <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-violet-700 uppercase">
-          Discovery
-        </span>
-      </div>
+    <div className="space-y-3">
+      <p className="text-[13px] leading-relaxed text-slate-700">{message}</p>
 
-      <div className="space-y-3 p-3">
-        <p className="text-xs text-slate-600">{message}</p>
-
-        {questions.map((q) => (
-          <div key={q.id} className="space-y-1.5">
-            <div className="text-xs font-medium text-slate-700">{q.question}</div>
-            {q.why && <div className="text-[11px] text-slate-400">{q.why}</div>}
+      <ol className="space-y-3">
+        {questions.map((q, n) => (
+          <li key={q.id} className="space-y-1.5">
+            <div className="text-[13px] leading-relaxed text-slate-700">
+              <span className="mr-1.5 text-slate-400">{n + 1}.</span>
+              {q.question}
+            </div>
+            {q.why && <div className="pl-5 text-[11px] text-slate-400">{q.why}</div>}
             {!done && (q.suggestions?.length ?? 0) > 0 && (
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-1.5 pl-5">
                 {q.suggestions!.map((sug) => {
                   const on = parts(q.id).includes(sug);
                   return (
@@ -232,11 +268,10 @@ function ClarifyCard({
                       aria-pressed={on}
                       className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
                         on
-                          ? "border-violet-400 bg-violet-100 font-medium text-violet-800"
-                          : "border-slate-200 text-slate-600 hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700"
+                          ? "border-slate-800 bg-slate-800 font-medium text-white"
+                          : "border-slate-200 text-slate-600 hover:border-slate-400 hover:text-slate-800"
                       }`}
                     >
-                      {on ? "✓ " : ""}
                       {sug}
                     </button>
                   );
@@ -244,31 +279,31 @@ function ClarifyCard({
               </div>
             )}
             {done ? (
-              <div className="rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs text-slate-500">
-                {shown(q.id) || "(skipped)"}
-              </div>
+              <div className="pl-5 text-xs text-slate-500">→ {shown(q.id) || "(skipped)"}</div>
             ) : (
-              <textarea
-                value={answers[q.id] ?? ""}
-                onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
-                rows={2}
-                placeholder="Pick any above, and/or add your own"
-                className="w-full resize-none rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
-              />
+              <div className="pl-5">
+                <textarea
+                  value={answers[q.id] ?? ""}
+                  onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
+                  rows={1}
+                  placeholder="Pick any above, or type your own"
+                  className="w-full resize-none rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                />
+              </div>
             )}
-          </div>
+          </li>
         ))}
+      </ol>
 
-        {!done && (
-          <button
-            onClick={submit}
-            disabled={answered.length === 0}
-            className="w-full rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700 disabled:opacity-40"
-          >
-            Send answers ({answered.length}/{questions.length})
-          </button>
-        )}
-      </div>
+      {!done && (
+        <button
+          onClick={submit}
+          disabled={answered.length === 0}
+          className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-40"
+        >
+          Send answers ({answered.length}/{questions.length})
+        </button>
+      )}
     </div>
   );
 }
@@ -298,16 +333,9 @@ function BlueprintCard({
   const [dropped, setDropped] = useState<Record<number, boolean>>({});
   // A blueprint lists every field, stat, button and rule. That is the
   // point — it IS what gets built — but a wall of it gets skimmed and
-  // then nothing is really approved. Show the gist, keep the rest one
-  // click away.
+  // then nothing is really approved. One line per thing, its detail
+  // behind a caret.
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
-  const PREVIEW_LINES = 2;
-  // A rule is two lines but one of them can be a 300-char sentence that
-  // wraps to four rows — counting lines alone misses the worst wall of
-  // text there is. Long lines get clamped to one row until expanded.
-  const LONG_LINE = 90;
-  const isOverwhelming = (lines: string[]) =>
-    lines.length > PREVIEW_LINES || lines.some((l) => l.length > LONG_LINE);
 
   // Dropping an optional section takes with it anything that pointed at
   // it, so the owner can never approve a rule aimed at nothing.
@@ -335,183 +363,132 @@ function BlueprintCard({
   const chosen = blueprint.plans.filter((p, i) => !dropped[i] && !referencesDropped(p));
   const hasOptional = blueprint.plans.some((p) => p.optional);
 
+  // A design reads as a message: what Luke said, what it would build
+  // as one line per thing with the detail behind a caret, what it does
+  // not cover, and two small actions. No header, no badge, no boxes.
+  // The platform's limits are not repeated on every design any more;
+  // they sit under the composer, one tap away, and a design that fails
+  // to meet something says so in its own "Not covered" line.
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-900/5">
-      <div className="flex items-center justify-between border-b border-slate-100 bg-gradient-to-r from-blue-50 to-violet-50 px-3.5 py-2.5">
-        <span className="text-xs font-semibold text-slate-800">Proposed design</span>
-        <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-blue-700 uppercase ring-1 ring-blue-200">
-          Blueprint
-        </span>
+    <div className="space-y-3">
+      <p className="text-[13px] leading-relaxed text-slate-700">{message}</p>
+      {blueprint.summary && blueprint.summary.trim() !== message.trim() && (
+        <p className="text-[13px] leading-relaxed text-slate-600">{blueprint.summary}</p>
+      )}
+
+      <div className="space-y-1">
+        {hasOptional && !done && (
+          <div className="text-[11px] text-slate-400">Untick anything you don&rsquo;t need.</div>
+        )}
+        {blueprint.plans.map((plan, i) => {
+          const summary = describePlan(plan, modules, currentColumns, storeFacts);
+          const off = dropped[i] || referencesDropped(plan);
+          const cascaded = !dropped[i] && off;
+          const hasDetail = summary.lines.length > 0;
+          const open = !!expanded[i];
+          const toggleDetail = () => hasDetail && setExpanded((p) => ({ ...p, [i]: !p[i] }));
+          return (
+            <div key={i} className={`flex items-start gap-1.5 ${off ? "opacity-50" : ""}`}>
+              {plan.optional && !done && !cascaded ? (
+                <input
+                  type="checkbox"
+                  checked={!dropped[i]}
+                  onChange={() => setDropped((prev) => ({ ...prev, [i]: !prev[i] }))}
+                  className="mt-1 h-3.5 w-3.5 shrink-0 accent-slate-800"
+                />
+              ) : (
+                <button
+                  onClick={toggleDetail}
+                  aria-expanded={open}
+                  aria-label={hasDetail ? (open ? "Hide detail" : "Show detail") : undefined}
+                  className={`mt-0.5 w-3.5 shrink-0 text-center text-[11px] ${
+                    hasDetail ? "text-slate-400 hover:text-slate-700" : "cursor-default text-slate-300"
+                  }`}
+                >
+                  {hasDetail ? (open ? "▾" : "▸") : "·"}
+                </button>
+              )}
+              <div className="min-w-0 flex-1">
+                <button
+                  onClick={toggleDetail}
+                  className={`text-left text-[13px] leading-relaxed text-slate-800 ${hasDetail ? "hover:text-slate-950" : "cursor-default"}`}
+                >
+                  {summary.title}
+                  {hasDetail && !open && (
+                    <span className="text-slate-400">
+                      {" "}· {summary.lines.length} detail{summary.lines.length === 1 ? "" : "s"}
+                    </span>
+                  )}
+                </button>
+                {plan.optional && (
+                  <span className="ml-1.5 rounded bg-amber-50 px-1 py-px text-[9px] font-semibold tracking-wide text-amber-700 uppercase">
+                    Optional
+                  </span>
+                )}
+                {cascaded && <span className="ml-1.5 text-[11px] text-slate-400">needs a section you removed</span>}
+                {plan.optional && plan.optionalWhy && (
+                  <div className="text-[11px] leading-relaxed text-amber-700">{plan.optionalWhy}</div>
+                )}
+                {/* Above the detail, not inside it: this changes whether
+                    the owner wants the section at all. */}
+                {summary.warnings?.map((w, k) => (
+                  <div key={k} className="mt-0.5 text-[11px] leading-relaxed text-amber-700">
+                    {w}
+                  </div>
+                ))}
+                {open && hasDetail && (
+                  <ul className="mt-1 space-y-0.5 border-l border-slate-200 pl-2.5">
+                    {summary.lines.map((line, j) => (
+                      <li key={j} className="text-[11px] leading-relaxed text-slate-500">
+                        {line}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      <div className="space-y-3.5 p-3.5">
-        <p className="text-xs text-slate-500">{message}</p>
-        <p className="rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2.5 text-xs leading-relaxed text-slate-700">
-          {blueprint.summary}
-        </p>
-
-        <div className="space-y-1.5">
-          <div className="flex items-baseline justify-between">
-            <span className="text-[10px] font-semibold tracking-widest text-slate-400 uppercase">
-              What gets built
-            </span>
-            {hasOptional && (
-              <span className="text-[10px] text-slate-400">untick anything you don&rsquo;t need</span>
-            )}
-          </div>
-
-          {blueprint.plans.map((plan, i) => {
-            const summary = describePlan(plan, modules, currentColumns, storeFacts);
-            const off = dropped[i] || referencesDropped(plan);
-            const cascaded = !dropped[i] && off;
-            return (
-              <div
-                key={i}
-                className={`rounded-lg border px-3 py-2.5 transition-colors ${
-                  off ? "border-slate-150 bg-slate-50 opacity-55" : "border-slate-200 bg-white"
-                }`}
-              >
-                <div className="flex items-start gap-2">
-                  {plan.optional && !done && !cascaded && (
-                    <input
-                      type="checkbox"
-                      checked={!dropped[i]}
-                      onChange={() => setDropped((prev) => ({ ...prev, [i]: !prev[i] }))}
-                      className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-blue-600"
-                    />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-xs font-semibold text-slate-800">{summary.title}</span>
-                      {plan.optional && (
-                        <span className="rounded bg-amber-100 px-1.5 py-px text-[9px] font-semibold tracking-wide text-amber-800 uppercase">
-                          Optional
-                        </span>
-                      )}
-                      {cascaded && (
-                        <span className="text-[10px] text-slate-400">needs a section you removed</span>
-                      )}
-                    </div>
-                    {plan.optional && plan.optionalWhy && (
-                      <div className="mt-0.5 text-[11px] leading-relaxed text-amber-700">
-                        {plan.optionalWhy}
-                      </div>
-                    )}
-                    {/* Above the field list, not below it: this changes
-                        whether the owner wants the section at all. */}
-                    {summary.warnings?.map((w, k) => (
-                      <div
-                        key={k}
-                        className="mt-1 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] leading-relaxed text-amber-800"
-                      >
-                        {w}
-                      </div>
-                    ))}
-                    {summary.lines.length > 0 && (
-                      <>
-                        <ul className="mt-1 space-y-0.5">
-                          {(expanded[i] ? summary.lines : summary.lines.slice(0, PREVIEW_LINES)).map(
-                            (line, j) => (
-                              <li
-                                key={j}
-                                className={`text-[11px] leading-relaxed text-slate-500 ${
-                                  expanded[i] ? "" : "truncate"
-                                }`}
-                              >
-                                {line}
-                              </li>
-                            )
-                          )}
-                        </ul>
-                        {isOverwhelming(summary.lines) && (
-                          <button
-                            onClick={() => setExpanded((p) => ({ ...p, [i]: !p[i] }))}
-                            className="mt-1 text-[11px] font-medium text-blue-600 transition-colors hover:text-blue-700"
-                          >
-                            {expanded[i]
-                              ? "Show less"
-                              : summary.lines.length > PREVIEW_LINES
-                                ? `Show all ${summary.lines.length} details`
-                                : "Show the full detail"}
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {blueprint.workflow.length > 0 && (
-          <div className="space-y-1.5">
-            <div className="text-[10px] font-semibold tracking-widest text-slate-400 uppercase">
-              How it flows
-            </div>
-            <ol className="space-y-1.5 border-l border-slate-150 pl-3">
-              {blueprint.workflow.map((w, i) => (
-                <li key={i} className="relative text-[11px] leading-relaxed text-slate-600">
-                  <span className="absolute -left-[17px] top-1 h-1.5 w-1.5 rounded-full bg-slate-300" />
-                  {w.step}
-                  {w.who && <span className="text-slate-400"> — {w.who}</span>}
-                </li>
-              ))}
-            </ol>
-          </div>
-        )}
-
-        {(blueprint.unmet?.length ?? 0) > 0 && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2">
-            <div className="text-[10px] font-semibold tracking-wide text-amber-900 uppercase">
-              Not covered by this
-            </div>
-            <ul className="mt-1 space-y-0.5">
-              {blueprint.unmet!.map((l, i) => (
-                <li key={i} className="text-[11px] leading-relaxed text-amber-800">
-                  {l}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* Shown on every design, from the engine's own registry. The
-            assistant is told to flag anything it cannot do, but a prompt
-            instruction is not a guarantee — it stayed silent about extra
-            staff logins on a design built for a team. The owner sees the
-            limits whether or not the model mentions them. */}
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-          <div className="text-[10px] font-semibold tracking-wide text-slate-500 uppercase">
-            What this platform can&rsquo;t do
-          </div>
-          <ul className="mt-1 space-y-0.5">
-            {NOT_SUPPORTED.map((n) => (
-              <li key={n.id} className="text-[11px] leading-relaxed text-slate-500">
-                {n.label}
+      {blueprint.workflow.length > 0 && (
+        <details className="group text-[11px]">
+          <summary className="cursor-pointer list-none select-none text-slate-400 hover:text-slate-600">
+            <span className="inline-block w-3.5 text-center group-open:hidden">▸</span>
+            <span className="hidden w-3.5 text-center group-open:inline-block">▾</span>
+            How it flows
+          </summary>
+          <ol className="mt-1 space-y-1 pl-3.5">
+            {blueprint.workflow.map((w, i) => (
+              <li key={i} className="leading-relaxed text-slate-500">
+                {w.step}
+                {w.who && <span className="text-slate-400"> — {w.who}</span>}
               </li>
             ))}
-          </ul>
-        </div>
+          </ol>
+        </details>
+      )}
 
-        {!done && (
-          <div className="flex gap-2 pt-0.5">
-            <button
-              onClick={() => onApprove(chosen)}
-              disabled={chosen.length === 0}
-              className="flex-1 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-40"
-            >
-              Build {chosen.length === 1 ? "this" : `these ${chosen.length}`}
-            </button>
-            <button
-              onClick={onAmend}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
-            >
-              Change
-            </button>
-          </div>
-        )}
-      </div>
+      {(blueprint.unmet?.length ?? 0) > 0 && (
+        <div className="text-[11px] leading-relaxed text-amber-700">
+          <span className="font-medium">Not covered:</span> {blueprint.unmet!.join(" · ")}
+        </div>
+      )}
+
+      {!done && (
+        <div className="flex items-center gap-3 pt-0.5">
+          <button
+            onClick={() => onApprove(chosen)}
+            disabled={chosen.length === 0}
+            className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-40"
+          >
+            Build {chosen.length === 1 ? "this" : `these ${chosen.length}`}
+          </button>
+          <button onClick={onAmend} className="text-xs text-slate-500 transition-colors hover:text-slate-800 hover:underline">
+            Change something
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -895,6 +872,8 @@ export default function ChatPanel({
   // twenty quiet seconds; a number that moves says the turn has not
   // died, and a number that reaches sixty says something has.
   const [stepSeconds, setStepSeconds] = useState(0);
+  // Whether the steps already taken are shown under the current one.
+  const [stepsOpen, setStepsOpen] = useState(false);
   useEffect(() => {
     if (!busy) return;
     setStepSeconds(0);
@@ -1356,7 +1335,7 @@ export default function ChatPanel({
       {/* Messages */}
       <div
         ref={listRef}
-        className="flex-1 space-y-3 overflow-y-auto px-4 py-4 thin-scroll"
+        className="flex-1 space-y-4 overflow-y-auto px-4 py-4 thin-scroll"
       >
         {/* Four invented problems used to sit here — a double-booked
             slot, parts coming off a job. They were written to show what
@@ -1364,7 +1343,7 @@ export default function ChatPanel({
             read as a product for somebody else. A prompt for their own
             words is the honest opening. */}
         {messages.length === 0 && (
-          <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
+          <div className="text-[13px] leading-relaxed text-slate-600">
             👋 Tell me the problem you&rsquo;re trying to solve — in your own words.
             I&rsquo;ll ask how you work, show you a plan, and only build once you
             approve it.
@@ -1405,100 +1384,98 @@ export default function ChatPanel({
                 </div>
               );
             }
+            // A line of what happened — building, stopped, discarded —
+            // in the margin's voice, not a box in the conversation.
             return (
-              <div
-                key={m.id}
-                className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
-              >
-                <div>{m.text}</div>
-                {m.errors && m.errors.length > 0 && (
-                  <ul className="mt-1 list-disc space-y-0.5 pl-4">
-                    {m.errors.map((e, i) => (
-                      <li key={i}>{e}</li>
-                    ))}
-                  </ul>
-                )}
+              <div key={m.id} className="flex items-start gap-1.5 text-[11px] leading-relaxed text-slate-400">
+                <span className="w-3.5 shrink-0 text-center">·</span>
+                <div className="min-w-0">
+                  <div className="break-words">{m.text}</div>
+                  {m.errors && m.errors.length > 0 && (
+                    <ul className="mt-0.5 list-disc space-y-0.5 pl-4">
+                      {m.errors.map((e, i) => (
+                        <li key={i}>{e}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
             );
           }
 
           if (m.questions) {
             return (
-              <ClarifyCard
-                key={m.id}
-                message={m.text ?? ""}
-                questions={m.questions}
-                done={!!resolvedCards[m.id] || answered || busy}
-                reply={messages[i + 1]?.role === "user" ? messages[i + 1].text : undefined}
-                onSubmit={(composed) => resolveCard(m.id, composed)}
-              />
+              <div key={m.id} className="space-y-1">
+                {m.trace && <TraceLine trace={m.trace} />}
+                <ClarifyCard
+                  message={m.text ?? ""}
+                  questions={m.questions}
+                  done={!!resolvedCards[m.id] || answered || busy}
+                  reply={messages[i + 1]?.role === "user" ? messages[i + 1].text : undefined}
+                  onSubmit={(composed) => resolveCard(m.id, composed)}
+                />
+              </div>
             );
           }
 
           if (m.blueprint) {
             return (
-              <BlueprintCard
-                key={m.id}
-                message={m.text ?? ""}
-                blueprint={m.blueprint}
-                modules={modules}
-                currentColumns={currentSchema?.columns}
-                storeFacts={storeFacts}
-                done={!!resolvedCards[m.id] || answered}
-                onApprove={(chosen) => {
-                  setResolvedCards((prev) => ({ ...prev, [m.id]: true }));
-                  onBuild(chosen, undefined, undefined, m.blueprint?.next);
-                }}
-                onAmend={() => {
-                  setInput("Change this in the blueprint: ");
-                  inputRef.current?.focus();
-                }}
-              />
+              <div key={m.id} className="space-y-1">
+                {m.trace && <TraceLine trace={m.trace} />}
+                <BlueprintCard
+                  message={m.text ?? ""}
+                  blueprint={m.blueprint}
+                  modules={modules}
+                  currentColumns={currentSchema?.columns}
+                  storeFacts={storeFacts}
+                  done={!!resolvedCards[m.id] || answered}
+                  onApprove={(chosen) => {
+                    setResolvedCards((prev) => ({ ...prev, [m.id]: true }));
+                    onBuild(chosen, undefined, undefined, m.blueprint?.next);
+                  }}
+                  onAmend={() => {
+                    setInput("Change this in the design: ");
+                    inputRef.current?.focus();
+                  }}
+                />
+              </div>
             );
           }
 
-          // confirmation bubble after apply/discard
+          // Luke talking: an answer, a receipt of a build, a line of
+          // history. Plain text, no bubble — the owner's words are the
+          // ones in a bubble; Luke's read like the page.
           if (!m.plan) {
             return (
-              <div key={m.id} className="rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-                <div className="break-words">{m.text}</div>
+              <div key={m.id} className="space-y-1">
+                {m.trace && <TraceLine trace={m.trace} />}
+                <div className="text-[13px] leading-relaxed break-words whitespace-pre-line text-slate-700">{m.text}</div>
                 {/* Under the build, which is where they find out it
                     happened — a change made with nobody watching is
                     read here first, and this is the moment they want
                     to say no. It names what goes back, because "undo"
                     on its own does not say how much. */}
                 {m.undo && onUndo && (
-                  <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-emerald-200 pt-1.5">
+                  <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-slate-400">
                     <button
                       onClick={() => putItBack(m.undo!.messageId)}
                       disabled={undoing !== null}
-                      className="rounded-lg border border-emerald-300 bg-white px-2 py-1 text-[10px] font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+                      className="text-slate-500 transition-colors hover:text-slate-800 hover:underline disabled:opacity-50"
                     >
-                      {undoing === m.undo.messageId ? "Putting it back…" : "↩️ Put it back"}
+                      {undoing === m.undo.messageId ? "Putting it back…" : "Put it back"}
                     </button>
-                    <span className="text-[10px] text-emerald-700/80">
-                      {m.undo.what.join(", ")}
-                    </span>
+                    <span>{m.undo.what.join(", ")}</span>
                   </div>
                 )}
-                {/* What the design said they could ask for next. Each
-                    is a real message: tapping it sends it, and it goes
-                    through every gate a typed one does. Only on the
-                    last thing in the thread — after a question or a
-                    put-back, an offer about the app as it was is stale. */}
+                {/* What the design said could come next — said, not
+                    offered as buttons: a row of options reads as the
+                    only things allowed, and the owner can ask for
+                    anything. Only on the last thing in the thread;
+                    after a question or a put-back, a suggestion about
+                    the app as it was is stale. */}
                 {m.next && m.next.length > 0 && i === messages.length - 1 && !busy && (
-                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 border-t border-emerald-200 pt-1.5">
-                    <span className="text-[10px] text-emerald-700/80">Next, you could ask for</span>
-                    {m.next.map((n) => (
-                      <button
-                        key={n.prompt}
-                        onClick={() => send(n.prompt)}
-                        title={n.prompt}
-                        className="rounded-full border border-emerald-300 bg-white px-2.5 py-1 text-[11px] text-emerald-800 transition-colors hover:bg-emerald-100"
-                      >
-                        {n.label}
-                      </button>
-                    ))}
+                  <div className="text-[11px] leading-relaxed text-slate-400">
+                    Next, if you like: {m.next.map((n) => n.label).join(" · ")}
                   </div>
                 )}
               </div>
@@ -1538,17 +1515,15 @@ export default function ChatPanel({
           }
 
           return (
-            <div key={m.id} className="overflow-hidden rounded-xl border border-slate-200 shadow-sm">
-              <div className="flex items-center justify-between bg-slate-50 px-3 py-2">
-                <span className="text-xs font-semibold text-slate-700">Proposed Change</span>
-                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-violet-700 uppercase">
-                  {plan.changeType.replace("_", " ")}
-                </span>
+            <div key={m.id} className="space-y-2.5">
+              {m.trace && <TraceLine trace={m.trace} />}
+              <div className="text-[11px] tracking-wide text-slate-400 uppercase">
+                Proposed change · {plan.changeType.replace("_", " ").toLowerCase()}
               </div>
 
-              <div className="space-y-3 p-3">
+              <div className="space-y-2.5">
                 {m.text ? (
-                  <p className="text-xs text-slate-600">{m.text}</p>
+                  <p className="text-[13px] leading-relaxed text-slate-700">{m.text}</p>
                 ) : (
                   <>
                     {/* Generated from the plan, not the sentence the
@@ -1735,18 +1710,18 @@ export default function ChatPanel({
                     </div>
                   </div>
                 ) : (
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-3">
                     <button
                       onClick={() => apply(plan, m.id)}
                       disabled={isPending}
-                      className="flex-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                      className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-50"
                     >
-                      {answered ? "Dealt with" : isPending ? "Applying…" : "Apply Change"}
+                      {answered ? "Dealt with" : isPending ? "Applying…" : "Apply this"}
                     </button>
                     <button
                       onClick={() => onDiscard(m.id)}
                       disabled={isPending}
-                      className="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                      className="text-xs text-slate-500 transition-colors hover:text-slate-800 hover:underline disabled:opacity-50"
                     >
                       Discard
                     </button>
@@ -1763,31 +1738,29 @@ export default function ChatPanel({
             entirely — the one place it must not be is on top of the
             thing it is asking about. */}
         {busy && (
-          <div className="space-y-1 text-xs text-slate-400">
-            {/* Each line is a step the server said it took, in the
-                order it said so. The last one is still running; the
-                ones above it are done. Nothing here is on a timer —
-                a turn that stalls shows a line that stays put, with
-                the seconds climbing beside it. */}
-            {(steps.length ? steps : [null]).map((step, i, all) => {
-              const active = i === all.length - 1;
-              const words = step ? stepWords(step) : "Working on it…";
-              return (
-                <div key={i} className={`flex items-center gap-2 ${active ? "" : "text-slate-300"}`}>
-                  {active ? (
-                    <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-blue-500" />
-                  ) : (
-                    <span className="w-2 shrink-0 text-center text-[10px] text-emerald-500">✓</span>
-                  )}
-                  <span className="min-w-0 truncate" title={words}>
-                    {words}
-                  </span>
-                  {active && stepSeconds >= 2 && (
-                    <span className="shrink-0 tabular-nums text-slate-300">{stepSeconds}s</span>
-                  )}
-                </div>
-              );
-            })}
+          <div className="text-[11px] text-slate-400">
+            {/* One line: the step the server is on right now, with the
+                seconds climbing beside it, and the steps already taken
+                behind a caret. Nothing here is on a timer — a turn
+                that stalls shows a line that stays put. */}
+            <button
+              onClick={() => setStepsOpen((o) => !o)}
+              className="flex max-w-full items-center gap-1.5 text-left hover:text-slate-600"
+            >
+              <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-slate-400" />
+              <span className="min-w-0 truncate">
+                {steps.length ? stepWords(steps[steps.length - 1]) : "Working on it…"}
+              </span>
+              {stepSeconds >= 2 && <span className="shrink-0 tabular-nums text-slate-300">{stepSeconds}s</span>}
+              {steps.length > 1 && <span className="shrink-0 text-slate-300">{stepsOpen ? "▾" : "▸"}</span>}
+            </button>
+            {stepsOpen && steps.length > 1 && (
+              <ul className="mt-1 space-y-0.5 pl-3 text-slate-300">
+                {steps.slice(0, -1).map((s, i) => (
+                  <li key={i} className="truncate">✓ {stepWords(s)}</li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
       </div>
@@ -2021,8 +1994,24 @@ export default function ChatPanel({
             {canStop ? "Stop" : busy ? "Building…" : "Send"}
           </button>
         </div>
-        <div className="mt-1.5 text-[10px] text-slate-400">
-          Asked, previewed, versioned, reversible — nothing applies without your approval.
+        <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 text-[10px] text-slate-400">
+          <span>Asked, previewed, versioned, reversible — nothing applies without your approval.</span>
+          {/* From the engine's own registry, one tap away rather than
+              repeated on every design. The assistant is told to flag
+              anything it cannot do, but a prompt instruction is not a
+              guarantee; the list is here whether or not it mentions it. */}
+          <details className="group">
+            <summary className="cursor-pointer list-none select-none hover:text-slate-600">
+              What Luke can&rsquo;t do
+              <span className="ml-0.5 group-open:hidden">▸</span>
+              <span className="ml-0.5 hidden group-open:inline">▾</span>
+            </summary>
+            <ul className="mt-1 space-y-0.5 pl-3">
+              {NOT_SUPPORTED.map((n) => (
+                <li key={n.id}>{n.label}</li>
+              ))}
+            </ul>
+          </details>
         </div>
       </div>
       )}
