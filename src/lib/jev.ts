@@ -15,7 +15,9 @@ export type JevAnswer = {
   probabilities?: Record<string, number>;
 };
 
-const MODEL = "jev-latest";
+// Which model answers. Read when asked, not when loaded, so a check can
+// point it elsewhere; "jev-latest" is what typesafe.ai serves by default.
+const model = () => process.env.TYPESAFE_MODEL || "jev-latest";
 
 export async function askJev(
   /** Names the caller in the log line, so "judge: HTTP 429" is not "route: HTTP 429". */
@@ -32,7 +34,7 @@ export async function askJev(
     const r = await fetch(process.env.TYPESAFE_API_URL || "https://api.typesafe.ai/v1/systemone", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: MODEL, state, questions }),
+      body: JSON.stringify({ model: model(), state, questions }),
       signal: ctrl.signal,
     });
     if (!r.ok) {
@@ -46,7 +48,7 @@ export async function askJev(
     }
     return {
       answers: j.answers as Record<string, JevAnswer | undefined>,
-      model: typeof j.model === "string" ? j.model : MODEL,
+      model: typeof j.model === "string" ? j.model : model(),
     };
   } catch (e) {
     console.error(`${tag}: ${e instanceof Error ? e.name : "failed"}`);
