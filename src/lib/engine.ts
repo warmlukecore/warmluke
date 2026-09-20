@@ -15,6 +15,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isStoreTable, storeTableSchema } from "@/lib/store-read";
 import {
+  asNextSteps,
   buildSystemPrompt,
   buildUserMessage,
   callAnthropicChat,
@@ -405,7 +406,15 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       parsed.reply.type === "blueprint" ? (parsed.reply.blueprint.unmet ?? []) : [];
     const seen = new Set(existing.map((u) => u.toLowerCase().trim()));
     unmet = [...existing, ...gaps.filter((g) => !seen.has(g.toLowerCase().trim()))].slice(0, 6);
-    if (parsed.reply.type === "blueprint") parsed.reply.blueprint.unmet = unmet;
+    // The gap pass may have added to what this design cannot do; a
+    // follow-up that offers one of those is dropped here, the same
+    // way the parser dropped the ones the model listed itself.
+    if (parsed.reply.type === "blueprint") {
+      parsed.reply.blueprint.unmet = unmet;
+      parsed.reply.blueprint.next = asNextSteps(parsed.reply.blueprint.next, unmet);
+    } else {
+      parsed.reply.next = asNextSteps(parsed.reply.next, unmet);
+    }
   }
 
   return { ok: true, reply: parsed.reply, raw, userTurn, repairs, repairErrors, store, unmet };

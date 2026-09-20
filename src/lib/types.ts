@@ -387,6 +387,21 @@ export interface Blueprint {
    * from its own registry.
    */
   unmet?: string[];
+  /**
+   * What the owner could ask for after this is built — up to two,
+   * written by the model from THEIR problem and THIS design, or none.
+   * Each is a real prompt; tapping one sends it, and it goes through
+   * every gate a typed message does. Never a canned line.
+   */
+  next?: NextStep[];
+}
+
+/** A follow-up the owner could send next, offered once a build lands. */
+export interface NextStep {
+  /** A few words, as a button. */
+  label: string;
+  /** The message they would send, in their own vocabulary. */
+  prompt: string;
 }
 
 export type AssistantReply =
@@ -400,12 +415,21 @@ export type AssistantReply =
    */
   | {
       type: "answer";
+      /**
+       * What was answered: a question about the store's rows (and
+       * only from the rows it was given), a question about Luke or
+       * this app, or plain conversation. Absent in replies stored
+       * before this existed, which were all about the store.
+       */
+      kind?: AnswerKind;
       message: string;
       grounding?: { kind: "store_snapshot"; last_synced_at: string | null; shop: string };
     }
   | { type: "clarify"; message: string; questions: ClarifyQuestion[] }
   | { type: "blueprint"; message: string; blueprint: Blueprint }
-  | { type: "plans"; message?: string; plans: AssistantPlan[] };
+  | { type: "plans"; message?: string; plans: AssistantPlan[]; next?: NextStep[] };
+
+export type AnswerKind = "store" | "product_help" | "conversation";
 
 export type ReplyType = AssistantReply["type"];
 
