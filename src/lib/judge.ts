@@ -21,6 +21,7 @@
 // assistant's summary of it, for the reason findGaps gives.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { askJev } from "@/lib/jev";
 import {
   AUTOMATION_ACTIONS,
   COLUMNS,
@@ -32,7 +33,6 @@ import {
 import { describePlan, type StoreFacts } from "@/lib/describe";
 import type { AssistantPlan, ModuleRow } from "@/lib/types";
 
-const MODEL = "jev-latest";
 const TIMEOUT_MS = 4000;
 /** findGaps caps unmet at 6; one question each is the whole list. */
 const MAX_UNMET = 6;
@@ -134,47 +134,21 @@ export async function judgeDesign(
   });
 
   const t0 = Date.now();
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const r = await fetch(process.env.TYPESAFE_API_URL || "https://api.typesafe.ai/v1/systemone", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: MODEL, state, questions }),
-      signal: ctrl.signal,
-    });
-    if (!r.ok) {
-      console.error(`judge: HTTP ${r.status}`);
-      return null;
-    }
-    const j = (await r.json()) as {
-      model?: unknown;
-      answers?: Record<string, { noul?: unknown } | undefined>;
-    };
-    const p = (name: string) => {
-      const v = j.answers?.[name]?.noul;
-      return typeof v === "number" && v >= 0 && v <= 1 ? v : null;
-    };
-    const addresses = p("addresses");
-    const scores = unmet.map((_, i) => p(`unmet_${i}`));
-    // An answer with a hole in it is not an answer. Half a verdict
-    // written down reads later like a whole one.
-    if (addresses === null || scores.some((s) => s === null)) {
-      console.error("judge: the answer did not have the shape asked for");
-      return null;
-    }
-    return {
-      model: typeof j.model === "string" ? j.model : MODEL,
-      ms: Date.now() - t0,
-      addresses,
-      unmet: scores as number[],
-    };
-  } catch (e) {
-    console.error(`judge: ${e instanceof Error ? e.name : "failed"}`);
+  const got = await askJev("judge", state, questions, timeoutMs);
+  if (!got) return null;
+  const p = (name: string) => {
+    const v = got.answers[name]?.noul;
+    return typeof v === "number" && v >= 0 && v <= 1 ? v : null;
+  };
+  const addresses = p("addresses");
+  const scores = unmet.map((_, i) => p(`unmet_${i}`));
+  // An answer with a hole in it is not an answer. Half a verdict
+  // written down reads later like a whole one.
+  if (addresses === null || scores.some((s) => s === null)) {
+    console.error("judge: the answer did not have the shape asked for");
     return null;
-  } finally {
-    clearTimeout(timer);
   }
+  return { model: got.model, ms: Date.now() - t0, addresses, unmet: scores as number[] };
 }
 
 /**

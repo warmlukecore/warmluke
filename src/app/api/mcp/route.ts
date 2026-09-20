@@ -20,6 +20,8 @@ import { vocabularyPrompt } from "@/lib/capabilities";
 import { describePlan, describeRules, type RuleRow } from "@/lib/describe";
 import { applyPlans, logClientBuild } from "@/lib/apply";
 import { noteJudgement } from "@/lib/judge";
+import { routeQuestion } from "@/lib/route";
+import { fetchSlice } from "@/lib/slice";
 import { ALLOWED_ICONS } from "@/lib/types";
 import type { AssistantPlan, ModuleRow, ProjectRow, UiSchema } from "@/lib/types";
 
@@ -69,6 +71,26 @@ const RENDER_NOTE =
   " If you show this in an artifact, draw charts as inline SVG — scripts from a CDN do not load there, and a chart that needs one comes out blank. If the merchant wants this to stay, build it as a section in Warmluke instead: propose_change or submit_design.";
 
 const TOOLS = [
+  {
+    name: "ask_store",
+    description:
+      "Start here for a question about the shop: who buys most, what sold this month, is #1004 paid, stock of something, how many orders this week. Reads the question, picks the right list and time span, and returns those rows with a line saying what they are. When it cannot tell, it says so and names the tool to use instead." +
+      RENDER_NOTE,
+    inputSchema: {
+      type: "object",
+      properties: {
+        question: {
+          type: "string",
+          description: "The merchant's question, in their own words — English or Hinglish.",
+        },
+        shop_domain: {
+          type: "string",
+          description: "Which store, when the account has more than one. Optional.",
+        },
+      },
+      required: ["question"],
+    },
+  },
   {
     name: "store_overview",
     description:
@@ -1630,6 +1652,30 @@ export async function POST(req: Request) {
         text({
           error: `No connected store called "${wanted}".`,
           available: stores.map((s) => s.shop_domain),
+        })
+      );
+    }
+
+    if (name === "ask_store") {
+      const question = String(args.question ?? "").trim();
+      if (!question) return ok(id, text({ error: "What do you want to know? Pass question." }));
+      const route = await routeQuestion(question);
+      if (!route) {
+        return ok(
+          id,
+          text({
+            could_not_route: true,
+            note: "That did not read as a question about one of the store's lists, or not clearly enough. Use store_overview, search_orders, get_order or search_store — or ask again naming the list (orders, customers, products, stock, sales) and the span.",
+          })
+        );
+      }
+      const slice = await fetchSlice(db, store, route);
+      return ok(
+        id,
+        text({
+          read_as: { list: route.list, window: route.window, month: route.month, kind: route.kind },
+          ...(slice ?? { what: "nothing matched", rows: [], total: 0 }),
+          note: "These rows were chosen from how the question read. Quote them; if they do not fit the question, use the specific tool instead of guessing.",
         })
       );
     }

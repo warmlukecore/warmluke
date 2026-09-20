@@ -35,6 +35,8 @@ import { describeBuild } from "@/lib/judge";
  */
 const RULES_IN_CONTEXT = 40;
 import { lowStock, searchOrders, storeLeaders, storeOverview, storeValues } from "@/lib/store-read";
+import { routeQuestion } from "@/lib/route";
+import { fetchSlice } from "@/lib/slice";
 import type { AssistantReply, FeatureSchema, ModuleRow, ProjectRow, UiSchema } from "@/lib/types";
 
 /**
@@ -48,7 +50,14 @@ export const MAX_REPAIR_ATTEMPTS = 2;
 /** The connected store, as the prompt needs to hear about it. */
 export async function storeContextFor(
   client: SupabaseClient,
-  projectId: string
+  projectId: string,
+  /**
+   * What the merchant just typed. Read by a router while the store is
+   * read, so that a question about August or about one customer gets
+   * the rows it needs and not only the fixed snapshot. Absent, or not
+   * a question the router is sure of, nothing changes.
+   */
+  question?: string
 ): Promise<StoreContext | null> {
   // Through the caller's own client, so a project without a store — or
   // a member who cannot see it — simply gets null.
@@ -71,7 +80,7 @@ export async function storeContextFor(
   //
   // ponytail: a fixed snapshot, not a tool loop. Move to real tools
   // when "find order #1042" becomes a question people actually ask.
-  const [recent, low, leaders] = await Promise.all([
+  const [recent, low, leaders, routed] = await Promise.all([
     searchOrders(
       client,
       { id: storeRow.id as string, timezone: storeRow.timezone as string },
@@ -81,7 +90,18 @@ export async function storeContextFor(
     // Whole-store, unlike the two above: the questions these answer are
     // rankings, and a ranking over the latest twenty rows is not one.
     storeLeaders(client, storeRow.id as string).catch(() => ({ top_customers: [], best_sellers: [] })),
+    question ? routeQuestion(question) : Promise.resolve(null),
   ]);
+  // The rows the question needs, when it read as one. A read that fails
+  // is the fixed snapshot alone, which is what every turn had before.
+  const slice = routed
+    ? await fetchSlice(client, { id: storeRow.id as string, timezone: storeRow.timezone as string }, routed).catch(
+        (e: unknown) => {
+          console.error(`slice: ${e instanceof Error ? e.message : "failed"}`);
+          return null;
+        }
+      )
+    : null;
   const values = await storeValues(client, storeRow.id as string);
   const { data: runs } = await client
     .from("import_runs")
@@ -102,6 +122,12 @@ export async function storeContextFor(
       last_synced_at: (storeRow.last_synced_at as string | null) ?? null,
       top_customers: leaders.top_customers,
       best_sellers: leaders.best_sellers,
+      slice: slice
+        ? {
+            read_as: { list: routed!.list, window: routed!.window, kind: routed!.kind, month: routed!.month },
+            ...slice,
+          }
+        : undefined,
       recent: recent.map((o) => ({
         number: o.order_number ?? "—",
         placed: o.placed_at,
@@ -250,7 +276,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     signal,
   } = input;
 
-  const store = await storeContextFor(client, project.id);
+  const store = await storeContextFor(client, project.id, message);
   // What already runs on this app. Left out, the designer proposes a
   // rule that exists, or tells the merchant no rule exists when one
   // fires every morning. It goes in the user turn rather than the

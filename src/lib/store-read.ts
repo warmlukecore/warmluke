@@ -336,7 +336,7 @@ const SEARCHABLE: Record<StoreTable, string[]> = {
   orders: ["order_number", "customer_name", "financial_status", "fulfilment_status"],
   customers: ["name", "email", "phone", "city"],
   products: ["title", "handle", "status", "product_type", "vendor"],
-  inventory_levels: ["location_name"],
+  inventory_levels: ["product", "variant", "sku", "location_name"],
   product_sales: ["title"],
 };
 
@@ -366,7 +366,8 @@ export async function readStoreRows(
    * never against every column, because a number typed into a search
    * box would otherwise match an id nobody asked about.
    */
-  q?: string,
+  /** One term, or several — a row matching any of them is a hit. */
+  q?: string | string[],
   /**
    * The section's own sort, applied here rather than after the page is
    * read. "Customers by total spent" cut from the first 200 names A-Z
@@ -375,7 +376,9 @@ export async function readStoreRows(
    * column the section shows can be sorted on; anything else falls
    * back to the list's own order.
    */
-  sort?: { field: string; dir: "asc" | "desc" } | null
+  sort?: { field: string; dir: "asc" | "desc" } | null,
+  /** Only rows whose `field` (a YYYY-MM-DD day) falls in from..to, inclusive. */
+  between?: { field: string; from: string; to: string } | null
 ): Promise<{ rows: Array<{ id: string; data: Record<string, unknown> }>; total: number }> {
   const spec = STORE_TABLES[table];
   const ordered = sort && sortable(spec, sort.field) ? sort : null;
@@ -388,13 +391,18 @@ export async function readStoreRows(
     .order(spec.order.field, { ascending: spec.order.ascending })
     .limit(Math.min(Math.max(limit, 1), 500));
 
-  const needle = q?.trim();
-  if (needle) {
+  // Commas and parentheses end an or() clause early, so a search for
+  // "Shirt, blue" would silently become a search for "Shirt".
+  const terms = (Array.isArray(q) ? q : [q ?? ""])
+    .map((t) => t.replace(/[,()]/g, " ").trim())
+    .filter(Boolean)
+    .slice(0, 20);
+  if (terms.length) {
     const fields = SEARCHABLE[table];
-    // Commas and parentheses end an or() clause early, so a search for
-    // "Shirt, blue" would silently become a search for "Shirt".
-    const safe = needle.replace(/[,()]/g, " ").trim();
-    if (safe) query = query.or(fields.map((f) => `${f}.ilike.%${safe}%`).join(","));
+    query = query.or(terms.flatMap((t) => fields.map((f) => `${f}.ilike.%${t}%`)).join(","));
+  }
+  if (between && sortable(spec, between.field)) {
+    query = query.gte(between.field, between.from).lte(between.field, between.to);
   }
 
   const { data, count, error } = await query;
