@@ -92,6 +92,8 @@ try {
   check("a lookup finds by any of the words", s?.rows.length === 1 && s?.rows[0]?.name === "Aarav Singh" && /Aarav/.test(s.what));
   s = await S({ list: "orders", kind: "lookup", needles: ["#2", "paid"] });
   check("an order by its number", s?.rows.length === 1 && s?.rows[0]?.order_number === "#2");
+  s = await S({ list: "customers", kind: "ranking", window: "this_week" });
+  check("customers over a span are that span's orders, with names, to rank from", s?.rows.length === 3 && s?.rows[0]?.order_number === "#3" && "customer_name" in s.rows[0] && /rank or count customers/.test(s.what));
   s = await S({ list: "orders", kind: "total", window: "this_week" });
   check("orders in the last seven days, and not the one from forty days ago", s?.rows.length === 3 && s?.total === 3 && /last 7 days/.test(s.what));
   s = await S({ list: "orders", kind: "ranking", window: "all" });

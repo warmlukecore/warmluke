@@ -127,6 +127,22 @@ export async function fetchSlice(
     return { what: `products sold${when}, most units first`, rows, total: rows.length };
   }
 
+  // "August ka top buyer": the customers list carries lifetime spend,
+  // not August's. What answers that is August's orders, each with its
+  // customer's name — fifty rows Luke can rank by name itself.
+  if (route.list === "customers" && span && route.kind !== "lookup") {
+    const { rows, total } = await readStoreRows(db, store.id, "orders", ROWS, undefined, { field: "total", dir: "desc" }, {
+      field: "placed_at",
+      from: span.fromDay,
+      to: span.toDay,
+    });
+    return {
+      what: `orders placed${when}, biggest first, each with its customer — rank or count customers from these`,
+      rows: strip(rows),
+      total,
+    };
+  }
+
   if (route.list === "stock" && route.kind !== "lookup") {
     const low = await lowStock(db, store.id, { threshold: 10, limit: ROWS });
     return { what: "stock running low (under 10), lowest first", rows: low, total: null };
