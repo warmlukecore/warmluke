@@ -76,6 +76,8 @@ export default function StoreStrip({
     ["customers", "customers", "Customers", "users"],
     ["products", "products", "Products", "package"],
     ["inventory_levels", "inventory", "Stock", "box"],
+    // Summed from the orders, so it exists once orders do.
+    ["product_sales", "orders", "Best sellers", "target"],
   ];
   const missing = WANTED.filter(
     ([table, progressKey]) =>

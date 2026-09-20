@@ -46,8 +46,18 @@ export default function Privacy() {
 
         <Section title="What we do not do">
           <p>
-            We do not send store data to AI model providers. The assistant that builds apps
-            sees what the merchant types to it, not the contents of their store.
+            The assistant that builds apps and answers questions runs on Anthropic&rsquo;s
+            models. It is sent what the merchant types, the structure of their app, and the
+            store rows a question needs to be answered from &mdash; the latest orders, what is
+            running low, the top customers and best sellers, and the rows for the question
+            asked. It is never sent the store as a whole, and nothing sent is used to train a
+            model.
+          </p>
+          <p>
+            A second, smaller model (Jev, by Typesafe) reads a request before and after the
+            assistant works: what kind of question it is, and whether a design does what was
+            asked. It is sent the request and a description of the design &mdash; never store
+            rows.
           </p>
           <p>We do not sell data, and we do not use it to advertise to anyone.</p>
         </Section>

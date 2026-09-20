@@ -1452,6 +1452,21 @@ export function validatePlan(
         }
         const added = incomingFields.filter((f) => !existingFields.includes(f));
         if (added.length === 0) err(errors, "FIELD_ADD didn't add any new column.");
+        // A section over the store owns none of its columns: the next
+        // import writes the store's shape back over it. The prompt said
+        // so; the validator let it through, and a design that adds a
+        // "Delivery Partner" column to Orders passed every gate and
+        // built a field nothing could ever fill. Only a computed column
+        // — worked out from the store's own fields — can be added.
+        if (target?.source_table) {
+          const typed = columns.filter((c) => added.includes(c.field) && !c.compute).map((c) => c.field);
+          if (typed.length > 0) {
+            err(
+              errors,
+              `"${target.nav_label}" shows the store's rows, so a field to type into cannot be stored on it — the next import would overwrite it. Make ${typed.map((f) => `"${f}"`).join(", ")} a COMPUTED column (with "compute", from the store's own fields), or keep it in a section of your own and say so in "unmet".`
+            );
+          }
+        }
       } else {
         err(errors, "newSchema is required for FIELD_ADD.");
       }

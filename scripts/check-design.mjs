@@ -20,6 +20,7 @@
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-design.mjs
 
 import { parseReply, PLAN_FORMAT, WORKED_EXAMPLE } from "../src/lib/ai.ts";
+import { storeTableSchema } from "../src/lib/store-read.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -430,6 +431,38 @@ console.log("\nand a compute cannot read a column below it");
   );
   // Rows are filled in top to bottom, so this would always read blank.
   check("it is refused rather than silently reading blank", !got.ok);
+}
+
+// ── A section over the store keeps the store's shape ─────────
+// The prompt said a typed column cannot be stored on one; the validator
+// let it through, and "Delivery Partner" on Orders passed every gate.
+console.log("\na section over the store keeps the store's shape");
+{
+  const ORD = "22222222-2222-2222-2222-222222222222";
+  const mods = [...modules, { ...modules[0], id: ORD, name: "orders", nav_label: "Orders", route: "/orders", source_table: "orders" }];
+  const ordersSchema = storeTableSchema("orders");
+  const look = (id) => (id === ORD ? ordersSchema : schemas(id));
+  const plan = (col) => ({
+    changeType: "FIELD_ADD",
+    targetModuleId: ORD,
+    newSchema: { columns: [...ordersSchema.columns, col] },
+    explanation: "One more column on the orders list.",
+  });
+  const typed = parseReply(
+    JSON.stringify({ plans: [plan({ field: "delivery_partner", label: "Delivery Partner", type: "text" })] }),
+    mods, null, null, look
+  );
+  check("a field to type into is refused, and told what to do instead", !typed.ok && typed.errors.some((e) => /cannot be stored/.test(e) && /COMPUTED/.test(e)));
+  const computed = parseReply(
+    JSON.stringify({ plans: [plan({ field: "big", label: "Big order", type: "boolean", compute: { op: ">=", args: [{ field: "total" }, { const: 5000 }] } })] }),
+    mods, null, null, look
+  );
+  check("a computed column is welcome", computed.ok);
+  const own = parseReply(
+    JSON.stringify({ plans: [{ changeType: "FIELD_ADD", targetModuleId: MOD, newSchema: { columns: [...jobsSchema.columns, { field: "note", label: "Note", type: "text" }] }, explanation: "A note on each job." }] }),
+    modules, null, null, schemas
+  );
+  check("and a section of their own still takes a typed field", own.ok);
 }
 
 console.log(fails.length === 0 ? "\na design says what it means" : `\n${fails.length} FAILED`);

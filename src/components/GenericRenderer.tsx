@@ -387,7 +387,11 @@ export default function GenericRenderer({
                   )}
                 </div>
               ) : (
-                <div className="font-display mt-1 text-2xl font-semibold text-slate-900 tabular-nums">
+                <div
+                  className={`font-display mt-1 font-semibold text-slate-900 tabular-nums ${
+                    s.display.length > 9 ? "text-lg" : "text-2xl"
+                  }`}
+                >
                   {s.display}
                 </div>
               )}
