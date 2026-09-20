@@ -176,12 +176,20 @@ check(
     )
   )
 );
+// A section over the store needs a store. The scenario brings its
+// own, inside the transaction that is rolled back: this used to lean
+// on whichever project happened to be oldest having one left behind
+// by an earlier run, and passed or failed by what a crash had left.
+const withStore = `
+  insert into public.stores (project_id, shop_domain, status, currency, timezone)
+  values ('${row.project_id}', 'door-${Date.now().toString(36)}.myshopify.com', 'connected', 'INR', 'Asia/Kolkata');
+`;
 check(
   "one of the four is built",
   !failed(
     await scenario(
       null,
-      "",
+      withStore,
       mk(
         "null::uuid",
         "module_insert",
