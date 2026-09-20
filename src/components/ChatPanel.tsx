@@ -23,6 +23,7 @@ import type {
   Blueprint,
   ClarifyQuestion,
   ModuleRow,
+  NextStep,
   RecordRow,
   TurnEvent,
   UiSchema,
@@ -60,6 +61,13 @@ export interface ChatMessage {
    * build, and the section may have moved on twice since.
    */
   undo?: { messageId: string; what: string[] };
+  /**
+   * What the design offered to do next, on the receipt of its build.
+   * Shown only while this is the last thing in the thread: once
+   * anything else has happened — a question, a put-back — an offer
+   * made for the app as it was is stale.
+   */
+  next?: NextStep[];
 }
 
 let msgSeq = 0;
@@ -571,7 +579,8 @@ export default function ChatPanel({
   onBuild: (
     plans: AssistantPlan[],
     requestId?: string,
-    requestText?: string
+    requestText?: string,
+    next?: NextStep[]
   ) => Promise<BuildOutcome>;
   onDiscard: (planId: string) => void;
   /** Puts one build's changes back, by the id of the message offering
@@ -1438,7 +1447,7 @@ export default function ChatPanel({
                 done={!!resolvedCards[m.id] || answered}
                 onApprove={(chosen) => {
                   setResolvedCards((prev) => ({ ...prev, [m.id]: true }));
-                  onBuild(chosen);
+                  onBuild(chosen, undefined, undefined, m.blueprint?.next);
                 }}
                 onAmend={() => {
                   setInput("Change this in the blueprint: ");
@@ -1470,6 +1479,26 @@ export default function ChatPanel({
                     <span className="text-[10px] text-emerald-700/80">
                       {m.undo.what.join(", ")}
                     </span>
+                  </div>
+                )}
+                {/* What the design said they could ask for next. Each
+                    is a real message: tapping it sends it, and it goes
+                    through every gate a typed one does. Only on the
+                    last thing in the thread — after a question or a
+                    put-back, an offer about the app as it was is stale. */}
+                {m.next && m.next.length > 0 && i === messages.length - 1 && !busy && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 border-t border-emerald-200 pt-1.5">
+                    <span className="text-[10px] text-emerald-700/80">Next, you could ask for</span>
+                    {m.next.map((n) => (
+                      <button
+                        key={n.prompt}
+                        onClick={() => send(n.prompt)}
+                        title={n.prompt}
+                        className="rounded-full border border-emerald-300 bg-white px-2.5 py-1 text-[11px] text-emerald-800 transition-colors hover:bg-emerald-100"
+                      >
+                        {n.label}
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>

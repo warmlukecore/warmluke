@@ -21,6 +21,7 @@ import {
   type ChangeType,
   type FeatureSchema,
   type ModuleRow,
+  type NextStep,
   type SchemaColumn,
   type ViewSpec,
   type UiSchema,
@@ -213,12 +214,16 @@ ${vocabularyPrompt()}
 
 You reply with ONLY a single valid JSON object. No markdown, no code fences, no commentary outside the JSON. It must be one of four shapes:
 
-(0) ANSWER — they asked a question about their shop rather than for something to be built:
+(0) ANSWER — they asked you something, or said something, rather than asking for a change:
 {
   "type": "answer",
+  "kind": "store" | "product_help" | "conversation",
   "message": "your reply, in plain sentences"
 }
-Use this ONLY for a question, and only from what is printed under WHAT YOU MAY ANSWER FROM. Quote the rows you used and say when the data was last brought from Shopify. If the answer is not in those rows, say so and say what you would need — do not estimate, do not average, do not describe a trend from a handful of latest rows. Never use this shape to design or build anything; if they want something built, use (1), (2) or (3).
+"store" — a question about their shop's data. Answer ONLY from what is printed under WHAT YOU MAY ANSWER FROM. Quote the rows you used and say when the data was last brought from Shopify. If the answer is not in those rows, say so and say what you would need — do not estimate, do not average, do not describe a trend from a handful of latest rows.
+"product_help" — a question about you or this app: what you can build for them, how a section or rule of theirs works, what a button does. Answer from the capability block and from CONTEXT — what actually exists here — and nothing else. Never quote store rows here, never promise anything in the NOT POSSIBLE list, never describe the platform beyond what the capability block says.
+"conversation" — a greeting, thanks, small talk, "who are you". One or two sentences, then ask what they are stuck on today.
+Never use this shape to design or build anything; if they want something built, use (1), (2) or (3). A message that asks a question AND asks for a change is (1), (2) or (3), with the question answered first in "message".
 
 (1) ASK — you need to understand their process before designing anything:
 {
@@ -237,7 +242,8 @@ Use this ONLY for a question, and only from what is printed under WHAT YOU MAY A
     "summary": "2-3 sentences: what this does for them, in their words",
     "plans": [ <plan>, <plan>, ... ],
     "workflow": [ { "step": "what happens in their day", "who": "which person does it" } ],
-    "unmet": [ "quote back, in the owner's OWN words, anything they asked for that these plans do not do" ]
+    "unmet": [ "quote back, in the owner's OWN words, anything they asked for that these plans do not do" ],
+    "next": [ { "label": "a few words, as a button", "prompt": "the exact message they would send you to ask for it" } ]
   }
 }
 
@@ -253,8 +259,13 @@ Use this ONLY for a question, and only from what is printed under WHAT YOU MAY A
 {
   "type": "plans",
   "message": "one short line",
-  "plans": [ <plan>, <plan>, ... ]
+  "plans": [ <plan>, <plan>, ... ],
+  "next": [ { "label": "…", "prompt": "…" } ]
 }
+
+WHAT COMES NEXT — "next" in (2) and (3):
+- Zero to two things the owner could ask you for AFTER this is built — a rule, a view, a field, a section — that follow from THEIR stated problem and THIS design. Each "prompt" is the message they would send you, in their vocabulary, naming their own sections and fields.
+- Never something these plans already do, never something in the NOT POSSIBLE list, never generic ("add filters", "add an automation"). If nothing genuinely follows, leave "next" out. None is the normal answer.
 
 WHICH SHAPE TO USE — follow this strictly:
 - The request is a small, unambiguous edit to something that already exists ("add a search bar", "rename this section", "put status first", "add 5 demo rows") → go straight to "plans". Never interrogate someone over a one-line tweak.
@@ -315,7 +326,7 @@ HARD RULES:
 - UI_CHANGE only references fields that exist in the module's current schema (in CONTEXT).
 - NEW_MODULE demo rows: EXACT field names, matching types.
 - Labels and demo data must use the owner's own vocabulary, not generic business-speak.
-- NEVER describe what this platform can or cannot do, and never propose a workaround for something in the NOT POSSIBLE list. You do not get to characterise the engine — the interface does that, from its own record of what exists.
+- NEVER describe what this platform can or cannot do inside a design, and never propose a workaround for something in the NOT POSSIBLE list. You do not get to characterise the engine — the interface does that, from its own record of what exists. The one place you may say what you can do is a "product_help" answer, and there only in the capability block's own words.
 - The owner's stated PROBLEM is the test. If your plans do not actually address it, that goes in "unmet" too. Showing information is not the same as catching a mistake: a calendar makes bookings visible, it does not detect a clash. If they said they only find out later, they need a rule that tells them — build one with count_matching, or say plainly that this design does not.
 - If the owner names equipment they already own — a scanner, a label printer, a weighing machine — the design either uses it or blueprint.unmet says plainly that it does not. They mentioned it because it is part of the answer; quietly designing around it hands them back the manual process they came to replace.
 - If the owner asked for something this design does not do, put THEIR OWN WORDS for it in blueprint.unmet — a quote of the request, not an explanation. Wrong: "Scan mode can only match one row, so you'll see a filtered list and tap one". Right: "one barcode shared across colour and size variants".
@@ -1568,6 +1579,33 @@ function asStringArray(v: unknown, max: number): string[] {
   return v.filter((x): x is string => typeof x === "string" && x.trim().length > 0).slice(0, max);
 }
 
+/**
+ * The follow-ups a design offers, kept only where they are whole and
+ * not a trap: at most two, each with a label and a prompt, none the
+ * same twice, and none that names something in `unmet` — a next step
+ * that is one of the things this design could not do would send the
+ * owner straight into a refusal. Nothing is invented in their place:
+ * none is a normal answer, and undefined is how it is said.
+ */
+export function asNextSteps(v: unknown, unmet: string[]): NextStep[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const cannot = unmet.map((u) => u.toLowerCase().trim()).filter((u) => u.length >= 8);
+  const out: NextStep[] = [];
+  const seen = new Set<string>();
+  for (const item of v) {
+    if (!isPlainObject(item)) continue;
+    const label = typeof item.label === "string" ? item.label.trim().slice(0, 40) : "";
+    const prompt = typeof item.prompt === "string" ? item.prompt.trim() : "";
+    if (!label || !prompt || prompt.length > 400) continue;
+    const key = prompt.toLowerCase();
+    if (seen.has(key) || cannot.some((u) => key.includes(u))) continue;
+    seen.add(key);
+    out.push({ label, prompt });
+    if (out.length === 2) break;
+  }
+  return out.length ? out : undefined;
+}
+
 function parseClarify(obj: Record<string, unknown>): ParsedReply {
   const rawQuestions = Array.isArray(obj.questions) ? obj.questions : [];
   const questions: ClarifyQuestion[] = [];
@@ -1678,6 +1716,7 @@ function parseBlueprint(
         plans,
         workflow,
         unmet: asStringArray(bp.unmet, 6),
+        next: asNextSteps(bp.next, asStringArray(bp.unmet, 6)),
       },
     },
   };
@@ -1837,6 +1876,7 @@ function parsePlans(
       type: "plans",
       message: typeof obj.message === "string" ? obj.message : undefined,
       plans,
+      next: asNextSteps(obj.next, []),
     },
   };
 }
@@ -1871,8 +1911,15 @@ export function parseReply(
     case "answer": {
       const message = typeof parsed.message === "string" ? parsed.message.trim() : "";
       if (!message) return { ok: false, errors: ["Luke answered with nothing."] };
+      // What kind of answer, so the caller knows whether to attach a
+      // store receipt. A reply from before kinds existed said nothing
+      // and was always about the store.
+      const kind = parsed.kind === undefined ? "store" : parsed.kind;
+      if (kind !== "store" && kind !== "product_help" && kind !== "conversation") {
+        return { ok: false, errors: ['An answer must say which "kind" it is: "store", "product_help" or "conversation".'] };
+      }
       // grounding is attached by the caller, which knows what it read.
-      return { ok: true, reply: { type: "answer", message } };
+      return { ok: true, reply: { type: "answer", kind, message } };
     }
     case "clarify":
       return parseClarify(parsed);

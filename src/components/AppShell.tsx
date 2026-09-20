@@ -35,6 +35,7 @@ import { resizeHandleClass, useResizable } from "@/lib/useResizable";
 import type {
   AssistantPlan,
   AssistantReply,
+  NextStep,
   ProjectRow,
   ModuleRow,
   RecordRow,
@@ -281,6 +282,12 @@ export default function AppShell({
           // a reload — which is where it matters, because a change
           // made without anyone watching is one they find later.
           const undoSteps = (p as { undo?: Array<{ what: string }> }).undo ?? [];
+          // The follow-ups offered with that build, kept the same way.
+          // Only ever shown on the last message of the thread, so a
+          // build that has since been put back offers nothing stale.
+          const next = ((p as { next?: unknown }).next as NextStep[] | undefined)?.filter(
+            (n) => typeof n?.label === "string" && typeof n?.prompt === "string"
+          );
           rebuilt.push({
             id: m.id,
             role: "assistant",
@@ -288,6 +295,7 @@ export default function AppShell({
             ...(undoSteps.length
               ? { undo: { messageId: m.id, what: undoSteps.map((u) => u.what) } }
               : {}),
+            ...(next?.length ? { next } : {}),
           });
         }
       }
@@ -325,7 +333,9 @@ export default function AppShell({
       text: string,
       role: "assistant" | "user" = "assistant",
       /** What the build applied, so the message can offer to put it back. */
-      applied: unknown[] = []
+      applied: unknown[] = [],
+      /** What the design offered to do next, kept with the receipt. */
+      next?: NextStep[]
     ): Promise<string | null> => {
       let id = conversationIdRef.current ?? conversationId;
       if (!id) {
@@ -355,7 +365,12 @@ export default function AppShell({
           payload:
             role === "user"
               ? { kind: "asked", text, via: "client" }
-              : { type: "applied", message: text, ...(undo.length ? { undo } : {}) },
+              : {
+                  type: "applied",
+                  message: text,
+                  ...(undo.length ? { undo } : {}),
+                  ...(next?.length ? { next } : {}),
+                },
         })
         .select("id")
         .single();
@@ -897,6 +912,7 @@ export default function AppShell({
                 // card is honest about showing nothing rather than
                 // inventing steps.
                 workflow: [],
+                next: reply.next,
               },
             },
           ]);
@@ -1100,7 +1116,9 @@ export default function AppShell({
     async (
       plans: AssistantPlan[],
       requestId?: string,
-      requestText?: string
+      requestText?: string,
+      /** What the design offered to do next; shown once the build lands. */
+      next?: NextStep[]
     ): Promise<BuildOutcome> => {
       if (plans.length === 0 || building) return { applied: [], errors: [] };
       setBuilding(true);
@@ -1169,17 +1187,23 @@ export default function AppShell({
           const titles = plans.slice(0, results.length).map(planTitle);
           const shown = titles.slice(0, 3).join(" · ");
           const rest = titles.length - 3;
-          const doneText = `✅ ${shown}${rest > 0 ? ` · and ${rest} more` : ""}. Tell me what to change next.`;
+          // The follow-ups the design offered are only offered when all
+          // of it landed: a suggestion built on a part that did not is
+          // a suggestion about something that is not there.
+          const offer = !data.partial && next?.length ? next : undefined;
+          // With something to offer, the offer is the invitation; the
+          // sentence stays for a build that had none.
+          const doneText = `✅ ${shown}${rest > 0 ? ` · and ${rest} more` : ""}.${offer ? "" : " Tell me what to change next."}`;
           const bubbleId = nextChatId();
           setChatMessages((prev) => [
             ...prev,
-            { id: bubbleId, role: "assistant", text: doneText },
+            { id: bubbleId, role: "assistant", text: doneText, ...(offer ? { next: offer } : {}) },
           ]);
           // Only a design of Luke's own belongs in the open thread;
           // one raised by their assistant is recorded by the server,
           // in the thread that collects those.
           if (!requestId) {
-            const writtenId = await recordOutcome(doneText, "assistant", results);
+            const writtenId = await recordOutcome(doneText, "assistant", results, offer);
             // Put it back needs the row's id, not this session's, so
             // the offer is attached once the row exists.
             const undo = undoableFrom(results);

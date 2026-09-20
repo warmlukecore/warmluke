@@ -66,6 +66,27 @@ console.log("a reply that is an answer");
     null
   );
   check("and grounding the model sent is dropped", forged.ok && forged.reply.grounding === undefined);
+
+  // What kind of answer. A reply from before kinds existed said
+  // nothing and was always about the store; a kind the contract does
+  // not name is a malformed reply, not a new kind.
+  check("an answer with no kind is about the store", good.ok && good.reply.kind === "store");
+  const help = parseReply(
+    JSON.stringify({ type: "answer", kind: "product_help", message: "I can build sections, rules and views." }),
+    [],
+    null,
+    null
+  );
+  check("a question about Luke is its own kind", help.ok && help.reply.kind === "product_help");
+  const hello = parseReply(
+    JSON.stringify({ type: "answer", kind: "conversation", message: "Hi — what are you stuck on today?" }),
+    [],
+    null,
+    null
+  );
+  check("and so is a greeting", hello.ok && hello.reply.kind === "conversation");
+  const made = parseReply(JSON.stringify({ type: "answer", kind: "oracle", message: "..." }), [], null, null);
+  check("a kind the contract does not name is refused", made.ok === false);
 }
 
 console.log("\nand a build is still a build");
@@ -92,6 +113,13 @@ console.log("\nwhat the prompt says when no store is connected");
   check("it says so plainly", /NO CONNECTED STORE/.test(prompt));
   check("and forbids guessing at it", /do not estimate/i.test(prompt));
   check("the answer shape is offered", /"type": "answer"/.test(prompt));
+  check(
+    "with its three kinds, and what each may draw on",
+    /"product_help" — a question about you or this app/.test(prompt) &&
+      /"conversation" — a greeting/.test(prompt) &&
+      /Never quote store rows here/.test(prompt)
+  );
+  check("and a follow-up is offered only where one genuinely follows", /None is the normal answer/.test(prompt));
 }
 
 console.log("\nand what it says when one is");

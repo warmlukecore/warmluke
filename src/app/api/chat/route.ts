@@ -354,8 +354,9 @@ export async function POST(req: Request) {
         // read — and before the row is stored, so the thread keeps the
         // receipt rather than only this response carrying it. The model
         // is never asked to attest that it looked; an assertion from
-        // the thing being checked is not a check.
-        if (turn.reply.type === "answer") {
+        // the thing being checked is not a check. Only an answer about
+        // the store gets one: a greeting read no rows.
+        if (turn.reply.type === "answer" && turn.reply.kind === "store") {
           turn.reply.grounding = {
             kind: "store_snapshot",
             last_synced_at: turn.store?.snapshot?.last_synced_at ?? null,
