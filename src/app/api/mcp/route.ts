@@ -553,8 +553,10 @@ async function settleDesign(opts: {
   unmet: string[];
   request: string;
   store: Parameters<typeof blueprintAsText>[2];
+  /** Told once the request row is written, so the caller can stop treating the turn as refundable. */
+  charged?: () => void;
 }) {
-  const { db, id, origin, project, moduleList, plans, design, unmet, request, store } = opts;
+  const { db, id, origin, project, moduleList, plans, design, unmet, request, store, charged } = opts;
 
       // ── Does this one get to skip the merchant? ──────────────
       //
@@ -593,6 +595,7 @@ async function settleDesign(opts: {
         p_unmet: unmet,
       });
       if (err) return ok(id, text({ error: err.message }));
+      charged?.();
 
       // A second opinion on the design — Luke's or the assistant's own
       // — taken after this answer has gone out, and written down where
@@ -911,72 +914,86 @@ export async function POST(req: Request) {
         );
       }
 
-      const turn = await runTurn({
-        client: db,
-        project,
-        modules: moduleList,
-        message: request,
-        // This tool cannot build. The design it hands back is the
-        // showing, so plain plans are a perfectly good answer — in the
-        // chat they would mean building before anyone had seen a plan.
-        plansAllowed: true,
-        signal: req.signal,
-      });
-      if (!turn.ok) {
-        await db.rpc("abo_refund_turn", { p_spend: turns?.spend_id ?? null });
-        return ok(
+      // The turn that may still be given back. Cleared only once the
+      // design has been written down for the merchant; every other way
+      // out — questions, a validator that gave up, a question mistaken
+      // for a request, a throw anywhere after the charge — hands it
+      // back in `finally`. The chat route settles the same way.
+      let refundable: string | null = turns.spend_id ?? null;
+      try {
+        const turn = await runTurn({
+          client: db,
+          project,
+          modules: moduleList,
+          message: request,
+          // This tool cannot build. The design it hands back is the
+          // showing, so plain plans are a perfectly good answer — in
+          // the chat they would mean building before anyone had seen a
+          // plan.
+          plansAllowed: true,
+          signal: req.signal,
+        });
+        if (!turn.ok) {
+          return ok(
+            id,
+            text({
+              error: "Warmluke could not turn that into a design it trusts.",
+              detail: turn.errors.slice(0, 3),
+              note: "Say it again with more about how they actually work, and what should happen when.",
+            })
+          );
+        }
+
+        // Questions come back unanswered rather than guessed at. The
+        // merchant is already in this conversation, so they answer
+        // here and the request comes back complete — no trip to the
+        // app to fill in what could have been asked out loud. The
+        // note says nothing has been requested; charging a design for
+        // it would make that sentence false.
+        if (turn.reply.type === "clarify") {
+          return ok(
+            id,
+            text({
+              status: "needs answers",
+              note: "Nothing has been requested yet. Ask the merchant these, then call propose_change again with their answers included.",
+              message: turn.reply.message,
+              questions: turn.reply.questions,
+            })
+          );
+        }
+
+        // An answer is a reply to a question, and nobody asked one
+        // here: this path exists to design a change. Refusing beats
+        // settling a design that has no plans in it.
+        if (turn.reply.type === "answer") {
+          return ok(id, text({ error: "That reads as a question, not a change to make." }));
+        }
+
+        const design = blueprintAsText(turn.reply, moduleList, turn.store, turn.unmet);
+        const plans =
+          turn.reply.type === "blueprint" ? turn.reply.blueprint.plans : turn.reply.plans;
+
+        return await settleDesign({
+          db,
           id,
-          text({
-            error: "Warmluke could not turn that into a design it trusts.",
-            detail: turn.errors.slice(0, 3),
-            note: "Say it again with more about how they actually work, and what should happen when.",
-          })
-        );
+          origin: new URL(req.url).origin,
+          project,
+          moduleList,
+          plans,
+          design,
+          unmet: turn.unmet ?? [],
+          request,
+          store: turn.store,
+          // Charged the moment the request row exists — that is what
+          // the merchant gets for the turn. A row that would not
+          // insert is our failure, and the turn comes back.
+          charged: () => {
+            refundable = null;
+          },
+        });
+      } finally {
+        if (refundable) await db.rpc("abo_refund_turn", { p_spend: refundable });
       }
-
-      // Questions come back unanswered rather than guessed at. The
-      // merchant is already in this conversation, so they answer here
-      // and the request comes back complete — no trip to the app to
-      // fill in what could have been asked out loud.
-      if (turn.reply.type === "clarify") {
-        // The note below says nothing has been requested. Charging a
-        // design for it made that sentence false — and a design that
-        // needed one round of questions cost two of the ten.
-        await db.rpc("abo_refund_turn", { p_spend: turns?.spend_id ?? null });
-        return ok(
-          id,
-          text({
-            status: "needs answers",
-            note: "Nothing has been requested yet. Ask the merchant these, then call propose_change again with their answers included.",
-            message: turn.reply.message,
-            questions: turn.reply.questions,
-          })
-        );
-      }
-
-      // An answer is a reply to a question, and nobody asked one here:
-      // this path exists to design a change. Refusing beats settling a
-      // design that has no plans in it.
-      if (turn.reply.type === "answer") {
-        return ok(id, text({ error: "That reads as a question, not a change to make." }));
-      }
-
-      const design = blueprintAsText(turn.reply, moduleList, turn.store, turn.unmet);
-      const plans =
-        turn.reply.type === "blueprint" ? turn.reply.blueprint.plans : turn.reply.plans;
-
-      return settleDesign({
-        db,
-        id,
-        origin: new URL(req.url).origin,
-        project,
-        moduleList,
-        plans,
-        design,
-        unmet: turn.unmet ?? [],
-        request,
-        store: turn.store,
-      });
     }
 
     if (name === "read_section") {

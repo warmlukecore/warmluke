@@ -13,6 +13,8 @@
 // Needs a running dev server and ABO_JWT. Costs model calls, so it is
 // a before-you-change-the-prompt check, not a per-commit one.
 
+import { readTurn } from "./turn-lines.mjs";
+
 const BASE = process.env.ABO_BASE ?? "http://localhost:3100";
 const JWT = process.env.ABO_JWT;
 if (!JWT) {
@@ -20,13 +22,15 @@ if (!JWT) {
   process.exit(1);
 }
 
+// A chat turn arrives in lines now, the reply last; readTurn hands
+// back that last line, and a plain JSON body as itself.
 const post = async (path, body) => {
   const r = await fetch(`${BASE}${path}`, {
     method: "POST",
     headers: { "content-type": "application/json", Authorization: `Bearer ${JWT}` },
     body: JSON.stringify(body),
   });
-  return r.json();
+  return (await readTurn(r)).data;
 };
 
 /**

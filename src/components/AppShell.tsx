@@ -11,7 +11,7 @@ import { watchRows } from "@/lib/live";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
 import { describePlan } from "@/lib/describe";
-import { apiFetch, takePendingPrompt } from "@/lib/auth";
+import { apiFetch, apiStream, takePendingPrompt } from "@/lib/auth";
 import GenericRenderer, { type StatRequest, type StatResult } from "@/components/GenericRenderer";
 import ChatPanel, { type ChatMessage, nextChatId } from "@/components/ChatPanel";
 import { undoableFrom } from "@/lib/undo";
@@ -38,6 +38,7 @@ import type {
   ProjectRow,
   ModuleRow,
   RecordRow,
+  TurnEvent,
   UiSchema,
   UiSchemaRow,
 } from "@/lib/types";
@@ -183,6 +184,9 @@ export default function AppShell({
   chatWidthRef.current = chat.width;
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatBusy, setChatBusy] = useState(false);
+  // What the running turn has done so far, as the server said it.
+  // Empty between turns, and while a build is being applied.
+  const [chatSteps, setChatSteps] = useState<TurnEvent[]>([]);
   const chatAbort = useRef<AbortController | null>(null);
   // One thread per builder session: the server replays it so the
   // assistant remembers what it already asked.
@@ -775,15 +779,16 @@ export default function AppShell({
         setChatMessages((prev) => [...prev, { id: nextChatId(), role: "user", text }]);
       }
       setChatBusy(true);
+      setChatSteps([]);
       const controller = new AbortController();
       chatAbort.current = controller;
 
       try {
-        const { ok, data } = await apiFetch(
+        const { ok, data } = await apiStream(
           "/api/chat",
           { message: text, projectId, moduleId: selectedModuleId, conversationId },
-          "POST",
-          controller.signal
+          controller.signal,
+          (step) => setChatSteps((prev) => [...prev, step as TurnEvent])
         );
 
         if (data.conversationId && data.conversationId !== conversationId) {
@@ -923,6 +928,7 @@ export default function AppShell({
       } finally {
         chatAbort.current = null;
         setChatBusy(false);
+        setChatSteps([]);
       }
     },
     [chatBusy, building, projectId, selectedModuleId, conversationId, loadModules, loadThread]
@@ -1781,6 +1787,7 @@ export default function AppShell({
         records={records}
         messages={chatMessages}
         busy={chatBusy || building}
+        steps={chatSteps}
         canStop={chatBusy}
         threads={threads}
         conversationId={conversationId}

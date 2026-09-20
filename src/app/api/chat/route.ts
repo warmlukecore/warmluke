@@ -11,6 +11,7 @@ import type {
   MessageRow,
   ModuleRow,
   ProjectRow,
+  TurnEvent,
   UiSchema,
   UiSchemaRow,
 } from "@/lib/types";
@@ -90,7 +91,12 @@ const MAX_TURNS_PER_HOUR = 60;
  * POST /api/chat — body: { message, projectId, moduleId?, conversationId? }
  * Runs under the caller's RLS: they can only ever touch their own project's
  * data. Persists the thread so the assistant can ask, then design, then
- * build. Returns { conversationId, reply } or { errors } — never applies.
+ * build. Never applies.
+ *
+ * Refusals — not signed in, switched off, out of turns — come back as
+ * JSON with a status. A turn that runs comes back as lines of JSON
+ * (application/x-ndjson): each step as it happens, then one last line
+ * holding { conversationId, reply } or { errors, hint } or { error }.
  */
 export async function POST(req: Request) {
   try {
@@ -283,113 +289,171 @@ export async function POST(req: Request) {
       );
     }
 
-    const turn = await runTurn({
-      client,
-      project: proj,
-      modules: moduleList,
-      message,
-      history,
-      currentSchema,
-      currentFeatures,
-      blueprintShown,
-      moduleId: moduleId ?? null,
-      signal: req.signal,
-    });
-
-    if (!turn.ok) {
-      // Our engine could not produce something it trusts. Charging
-      // for that is charging for our own failure.
-      // The id is what proves this is the server undoing its own
-      // failure. It stays in this request and is never sent back.
-      await client.rpc("abo_refund_turn", { p_spend: turns?.spend_id ?? null });
-      return NextResponse.json(
-        {
-          conversationId: convId,
-          repairs: turn.repairs,
-          errors: turn.errors,
-          hint: `The assistant tried ${MAX_REPAIR_ATTEMPTS + 1} times and its plan still failed validation, so nothing was changed. Try rephrasing your request.`,
-        },
-        { status: 200 }
-      );
-    }
-
-    // Only a turn that produced a design counts.
+    // From here the answer arrives in lines — what the turn is doing,
+    // then the reply. Everything above answers in one piece with a
+    // status code, and still does; a stream is committed to 200 the
+    // moment it opens, so whatever goes wrong after this point is said
+    // in its last line instead.
     //
-    // The card shown when the counter runs out says "Asking about your
-    // store still works" — and asking is what had been using it up.
-    // Every question answered, and every question the assistant asked
-    // BACK, spent one of the ten, so a single design that needed one
-    // round of clarifying cost two or three. Refunded here rather than
-    // never charged, because the charge has to happen before the model
-    // runs: a client in a loop pays for its own stop.
-    if (turn.reply.type !== "plans" && turn.reply.type !== "blueprint") {
-      await client.rpc("abo_refund_turn", { p_spend: turns?.spend_id ?? null });
-    }
+    // The turn that may still be given back. Cleared only once a
+    // design has been written down. Every other way out — a reply that
+    // is not a design, a validator that gave up, a throw anywhere after
+    // the charge — hands it back in `finally`. It used to be two
+    // refunds on two named paths, and a throw between them (the model
+    // down, the row that would not insert) kept the turn: charged for
+    // our own failure. One place now, so a new exit cannot forget.
+    //
+    // The id is what proves this is the server undoing its own spend.
+    // It stays in this request and is never sent back.
+    let refundable: string | null = turns?.spend_id ?? null;
+    // Stops the model call when the browser goes: the request's own
+    // signal when the connection drops, the stream's cancel when the
+    // reader lets go. Either is enough; both are wired.
+    const halt = new AbortController();
+    req.signal.addEventListener("abort", () => halt.abort());
 
-    if (isNewConversation) {
-      const { data: created, error: convErr } = await client
-        .from("conversations")
-        .insert({ project_id: projectId, title: message.trim().slice(0, TITLE_MAX) })
-        .select("id")
-        .single();
-      if (convErr) throw new Error(convErr.message);
-      convId = created.id as string;
-    }
-
-    // Written here, by the server, from what the server actually read —
-    // and before the row is stored, so the thread keeps the receipt
-    // rather than only this response carrying it. The model is never
-    // asked to attest that it looked; an assertion from the thing
-    // being checked is not a check.
-    if (turn.reply.type === "answer") {
-      turn.reply.grounding = {
-        kind: "store_snapshot",
-        last_synced_at: turn.store?.snapshot?.last_synced_at ?? null,
-        shop: turn.store?.shop_domain ?? "",
-      };
-    }
-
-    const replyId = await persistTurn(
-      client,
-      convId!,
-      turn.userTurn,
-      message.trim(),
-      turn.raw,
-      turn.reply,
-      turn.repairErrors
-    );
-    // A second opinion on the design, taken after the reply has gone
-    // out and written down where nothing reads it yet. A clarify or
-    // an answer has no design to judge.
-    if (turn.reply.type === "plans" || turn.reply.type === "blueprint") {
-      const reply = turn.reply;
-      const store = turn.store;
-      after(() =>
-        noteJudgement(client, {
-          projectId: proj.id,
-          source: "chat",
-          ref: replyId,
-          request: message.trim(),
-          plans: reply.type === "blueprint" ? reply.blueprint.plans : reply.plans,
+    const work = async (tell: (event: TurnEvent) => void): Promise<Record<string, unknown>> => {
+      try {
+        tell({ step: "accepted" });
+        const turn = await runTurn({
+          client,
+          project: proj,
           modules: moduleList,
-          columns: currentSchema?.columns,
-          store,
-          unmet: turn.unmet,
-        })
-      );
-    }
-    // A thread is named after whatever was typed first, which is how
-    // six of them end up called "hello". Once a design exists there is
-    // something better to call it — and only then, because renaming on
-    // every turn would move a thread the owner was looking for.
-    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
-    if (isNewConversation || looksLikeAGreeting(message)) {
-      const named = titleFor(turn.reply);
-      if (named) patch.title = named;
-    }
-    await client.from("conversations").update(patch).eq("id", convId);
+          message,
+          history,
+          currentSchema,
+          currentFeatures,
+          blueprintShown,
+          moduleId: moduleId ?? null,
+          signal: halt.signal,
+          onEvent: tell,
+        });
 
-    return NextResponse.json({ conversationId: convId, reply: turn.reply, repairs: turn.repairs });
+        if (!turn.ok) {
+          // Our engine could not produce something it trusts. Charging
+          // for that is charging for our own failure.
+          return {
+            conversationId: convId,
+            repairs: turn.repairs,
+            errors: turn.errors,
+            hint: `The assistant tried ${MAX_REPAIR_ATTEMPTS + 1} times and its plan still failed validation, so nothing was changed. Try rephrasing your request.`,
+          };
+        }
+
+        if (isNewConversation) {
+          const { data: created, error: convErr } = await client
+            .from("conversations")
+            .insert({ project_id: projectId, title: message.trim().slice(0, TITLE_MAX) })
+            .select("id")
+            .single();
+          if (convErr) throw new Error(convErr.message);
+          convId = created.id as string;
+        }
+
+        // Written here, by the server, from what the server actually
+        // read — and before the row is stored, so the thread keeps the
+        // receipt rather than only this response carrying it. The model
+        // is never asked to attest that it looked; an assertion from
+        // the thing being checked is not a check.
+        if (turn.reply.type === "answer") {
+          turn.reply.grounding = {
+            kind: "store_snapshot",
+            last_synced_at: turn.store?.snapshot?.last_synced_at ?? null,
+            shop: turn.store?.shop_domain ?? "",
+          };
+        }
+
+        const replyId = await persistTurn(
+          client,
+          convId!,
+          turn.userTurn,
+          message.trim(),
+          turn.raw,
+          turn.reply,
+          turn.repairErrors
+        );
+
+        // Only a turn that produced a design, and got it written down,
+        // counts.
+        //
+        // The card shown when the counter runs out says "Asking about
+        // your store still works" — and asking is what had been using
+        // it up. Every question answered, and every question the
+        // assistant asked BACK, spent one of the ten, so a single
+        // design that needed one round of clarifying cost two or
+        // three. Charged only here rather than never charged, because
+        // the charge has to happen before the model runs: a client in
+        // a loop pays for its own stop.
+        if (turn.reply.type === "plans" || turn.reply.type === "blueprint") {
+          refundable = null;
+          // A second opinion on the design, taken after the reply has
+          // gone out and written down where nothing reads it yet. A
+          // clarify or an answer has no design to judge.
+          const reply = turn.reply;
+          const store = turn.store;
+          after(() =>
+            noteJudgement(client, {
+              projectId: proj.id,
+              source: "chat",
+              ref: replyId,
+              request: message.trim(),
+              plans: reply.type === "blueprint" ? reply.blueprint.plans : reply.plans,
+              modules: moduleList,
+              columns: currentSchema?.columns,
+              store,
+              unmet: turn.unmet,
+            })
+          );
+        }
+        // A thread is named after whatever was typed first, which is
+        // how six of them end up called "hello". Once a design exists
+        // there is something better to call it — and only then, because
+        // renaming on every turn would move a thread the owner was
+        // looking for.
+        const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+        if (isNewConversation || looksLikeAGreeting(message)) {
+          const named = titleFor(turn.reply);
+          if (named) patch.title = named;
+        }
+        await client.from("conversations").update(patch).eq("id", convId);
+
+        return { conversationId: convId, reply: turn.reply, repairs: turn.repairs };
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : "Unknown error" };
+      } finally {
+        if (refundable) await client.rpc("abo_refund_turn", { p_spend: refundable });
+      }
+    };
+
+    // One JSON object per line. Lines with a `step` are the turn
+    // talking; the last line, without one, is what the route used to
+    // return whole.
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const line = (o: unknown) => {
+          try {
+            controller.enqueue(encoder.encode(`${JSON.stringify(o)}\n`));
+          } catch {
+            // The reader has gone. The work goes on: a reply the model
+            // finished is saved to the thread either way, and the turn
+            // is settled either way.
+          }
+        };
+        line(await work(line));
+        try {
+          controller.close();
+        } catch {
+          /* already closed by the reader */
+        }
+      },
+      cancel() {
+        halt.abort();
+      },
+    });
+    return new Response(stream, {
+      headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" },
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json({ error: msg }, { status: 500 });
