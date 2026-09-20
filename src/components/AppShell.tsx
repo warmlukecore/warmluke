@@ -41,6 +41,7 @@ import type {
   UiSchema,
   UiSchemaRow,
 } from "@/lib/types";
+import { TITLE_MAX } from "@/lib/types";
 
 /**
  * Rows are fetched a page at a time. Search, filters and stats run over
@@ -326,7 +327,7 @@ export default function AppShell({
       if (!id) {
         const { data: made } = await supabase
           .from("conversations")
-          .insert({ project_id: projectId, title: text.replace(/^[^\w]+/, "").slice(0, 80) })
+          .insert({ project_id: projectId, title: text.replace(/^[^\w]+/, "").slice(0, TITLE_MAX) })
           .select("id")
           .single();
         if (!made) return null;

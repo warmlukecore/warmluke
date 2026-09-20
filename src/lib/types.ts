@@ -467,6 +467,9 @@ export function badgeColorFor(value: string): string {
 
 // ── Sidebar icon whitelist ───────────────────────────────────
 
+/** The most a thread title holds. Three places cut one; they cut the same. */
+export const TITLE_MAX = 80;
+
 export const ALLOWED_ICONS = [
   "shopping-cart",
   "package",

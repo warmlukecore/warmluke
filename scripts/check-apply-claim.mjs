@@ -14,6 +14,7 @@
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
+import { OWNER_EMAIL } from "./owner-session.mjs";
 
 const env = Object.fromEntries(
   readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
@@ -34,7 +35,7 @@ const client = createClient(
   env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
 );
 const { data: owner } = await client.auth.signInWithPassword({
-  email: "aaa@gmail.com",
+  email: OWNER_EMAIL,
   password: process.env.OWNER_PASSWORD ?? "",
 });
 if (!owner?.session) {

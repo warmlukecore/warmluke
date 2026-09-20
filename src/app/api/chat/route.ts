@@ -4,6 +4,7 @@ import { getUserClient } from "@/lib/supabase-server";
 import { MAX_REPAIR_ATTEMPTS, runTurn } from "@/lib/engine";
 import { noteJudgement } from "@/lib/judge";
 import type { ChatTurn } from "@/lib/ai";
+import { TITLE_MAX } from "@/lib/types";
 import type {
   AssistantReply,
   FeatureSchema,
@@ -328,7 +329,7 @@ export async function POST(req: Request) {
     if (isNewConversation) {
       const { data: created, error: convErr } = await client
         .from("conversations")
-        .insert({ project_id: projectId, title: message.trim().slice(0, 80) })
+        .insert({ project_id: projectId, title: message.trim().slice(0, TITLE_MAX) })
         .select("id")
         .single();
       if (convErr) throw new Error(convErr.message);
@@ -448,5 +449,5 @@ function titleFor(reply: AssistantReply): string | null {
         ? reply.message
         : null;
   const line = from?.split(/[.\n]/)[0]?.trim();
-  return line && line.length > 3 ? line.slice(0, 80) : null;
+  return line && line.length > 3 ? line.slice(0, TITLE_MAX) : null;
 }
