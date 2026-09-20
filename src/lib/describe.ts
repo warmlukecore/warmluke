@@ -367,3 +367,79 @@ function describePlanBody(
       return { title: plan.changeType, lines: [] };
   }
 }
+
+// ── What a connected assistant asked for ────────────────────────
+//
+// Luke reads the app's structure fresh every turn, so a section the
+// owner's Claude built is visible to it — but not why, or that it was
+// their Claude that asked. These lines carry that: the request, whether
+// it was built, what failed, what has since gone. One line each, newest
+// first, and short: five of them are a paragraph, not a page.
+
+/** A build request row, as the prompt needs to read it. */
+export type RequestRow = {
+  id: string;
+  request: string;
+  status: string;
+  summary: string | null;
+  plans: AssistantPlan[] | null;
+  outcome: { applied?: Array<{ changeType?: string; moduleId?: string }>; errors?: string[] } | null;
+  client_id: string | null;
+  created_at: string;
+  built_at: string | null;
+};
+
+/** How much of a request is quoted. Enough to recognise it by. */
+const REQUEST_CHARS = 160;
+
+/** "3 minutes ago", "2 hours ago", "4 days ago" — the thread has no calendar. */
+function ago(iso: string, now: Date): string {
+  const minutes = Math.round(Math.max(0, now.getTime() - new Date(iso).getTime()) / 60000);
+  if (minutes < 2) return "just now";
+  if (minutes < 60) return `${minutes} minutes ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 36) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+export function describeRequests(rows: RequestRow[], modules: ModuleRow[], now = new Date()): string[] {
+  return rows.map((r) => {
+    const asked = (r.request ?? "").replace(/\s+/g, " ").trim();
+    const quote = asked.length > REQUEST_CHARS ? `${asked.slice(0, REQUEST_CHARS - 1)}…` : asked;
+    const via = r.client_id ? ` via ${r.client_id}` : "";
+    const plans = Array.isArray(r.plans) ? r.plans : [];
+    const titles = plans.map((p) => describePlan(p, modules).title);
+    const applied = r.outcome?.applied ?? [];
+    const errors = r.outcome?.errors ?? [];
+    // A section it created that is not here any more was put back, or
+    // deleted, since. Said, so "that section" is not described as live.
+    const gone = plans
+      .filter((p) => p.changeType === "NEW_MODULE" && p.newModule && !modules.some((m) => m.name === p.newModule!.name))
+      .map((p) => p.newModule!.nav_label);
+
+    switch (r.status) {
+      case "built":
+      case "partly_built": {
+        const head = `${r.status === "built" ? "built" : "partly built"} ${ago(r.built_at ?? r.created_at, now)}${via}: "${quote}"`;
+        // Plans apply in order, so what landed is the first however-many.
+        const done = titles.slice(0, applied.length || titles.length);
+        const parts: string[] = [];
+        if (done.length) parts.push(`built: ${done.join("; ")}`);
+        if (errors.length) parts.push(`did not build ${errors.length} of ${plans.length || errors.length}: ${errors[0].slice(0, 120)}`);
+        if (gone.length) parts.push(`since removed: ${gone.join(", ")}`);
+        return parts.length ? `${head} → ${parts.join(" · ")}` : head;
+      }
+      case "pending":
+        return `pending ${ago(r.created_at, now)}${via} — not built, waiting for the owner's yes: "${quote}"${titles.length ? ` (would: ${titles.join("; ")})` : ""}`;
+      case "opened":
+        return `opened in Luke ${ago(r.created_at, now)}${via} — being designed here, not built: "${quote}"`;
+      case "building":
+        return `building now${via}: "${quote}"`;
+      case "dismissed":
+        return `dismissed ${ago(r.created_at, now)}${via} — turned down, not built: "${quote}"`;
+      default:
+        return `${r.status} ${ago(r.created_at, now)}${via}: "${quote}"`;
+    }
+  });
+}

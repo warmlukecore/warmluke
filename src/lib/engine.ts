@@ -24,7 +24,7 @@ import {
   type ChatTurn,
   type StoreContext,
 } from "@/lib/ai";
-import { describePlan, describeRules, type RuleRow } from "@/lib/describe";
+import { describePlan, describeRequests, describeRules, type RequestRow, type RuleRow } from "@/lib/describe";
 import { describeBuild } from "@/lib/judge";
 
 /**
@@ -255,6 +255,45 @@ export async function schemasFor(
   return byModule;
 }
 
+/** How far back, and how many, of a connected assistant's requests Luke is told about. */
+const REQUESTS_DAYS = 14;
+const REQUESTS_IN_CONTEXT = 5;
+
+/**
+ * What the owner's own connected assistant asked this app for lately,
+ * newest first, as lines for the prompt.
+ *
+ * Luke reads the app's structure fresh every turn, so a section their
+ * Claude built is visible to it — but not why it was built, or that it
+ * was their Claude that asked. "Change what my AI just added" landed
+ * in a thread that had never heard of it. The request rows hold that
+ * intent: what was asked, whether it was built, what failed. Read
+ * through the caller's own client, so RLS decides what they may see;
+ * a project with none, or a read that fails, is simply no block.
+ */
+export async function recentRequests(
+  client: SupabaseClient,
+  projectId: string,
+  modules: ModuleRow[],
+  now = new Date()
+): Promise<string[]> {
+  try {
+    const since = new Date(now.getTime() - REQUESTS_DAYS * 86400000).toISOString();
+    const { data, error } = await client
+      .from("build_requests")
+      .select("id, request, status, summary, plans, outcome, client_id, created_at, built_at")
+      .eq("project_id", projectId)
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(REQUESTS_IN_CONTEXT);
+    if (error) throw new Error(error.message);
+    return describeRequests((data ?? []) as RequestRow[], modules, now);
+  } catch (e) {
+    console.error(`requests: ${e instanceof Error ? e.message : "failed"}`);
+    return [];
+  }
+}
+
 /** Each section's columns in one line, for the model to read. */
 function columnLines(modules: ModuleRow[], schemas: Map<string, UiSchema>): string[] {
   return modules.map((m) => {
@@ -300,12 +339,17 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // rule that exists, or tells the merchant no rule exists when one
   // fires every morning. It goes in the user turn rather than the
   // system prompt because that prompt is cached across projects.
-  const { data: ruleRows } = await client
-    .from("automations")
-    .select("id, name, enabled, module_id, definition")
-    .eq("project_id", project.id)
-    .order("created_at", { ascending: true })
-    .limit(RULES_IN_CONTEXT);
+  // Beside it, what the owner's own connected assistant asked for
+  // lately: the one piece of intent that lives outside this thread.
+  const [{ data: ruleRows }, requests] = await Promise.all([
+    client
+      .from("automations")
+      .select("id, name, enabled, module_id, definition")
+      .eq("project_id", project.id)
+      .order("created_at", { ascending: true })
+      .limit(RULES_IN_CONTEXT),
+    recentRequests(client, project.id, modules),
+  ]);
   const rules = describeRules((ruleRows ?? []) as RuleRow[], modules);
 
   // Every section's columns, so a design that touches one the caller
@@ -320,7 +364,8 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     currentSchema ?? (moduleId ? schemas.get(moduleId) ?? null : null),
     currentFeatures,
     rules,
-    columnLines(modules, schemas)
+    columnLines(modules, schemas),
+    requests
   );
 
   // The rejected attempt and its errors stay in the turns sent to the

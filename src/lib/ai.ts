@@ -577,7 +577,13 @@ export function buildUserMessage(
    * only way to name one through MCP, where nothing is open — left it
    * guessing at fields or asking the merchant to list them.
    */
-  sectionColumns: string[] = []
+  sectionColumns: string[] = [],
+  /**
+   * What the owner's own connected assistant asked for lately, one
+   * line each, newest first. The intent behind sections that appear
+   * in the lists above without this thread ever asking for them.
+   */
+  requests: string[] = []
 ): string {
   // "null (no module selected)" read as "you cannot see any schemas",
   // and the model answered a request to put a rule on a named section
@@ -604,7 +610,18 @@ ${featuresCtx}
 CONTEXT — rules already running on this app. Do not propose one that
 is already here; to change a rule, remove it and add the new one.
 ${rules.length ? rules.map((r) => `- ${r}`).join("\n") : "none"}
-
+${
+  requests.length
+    ? `
+CONTEXT — what the owner's own connected assistant (their Claude or
+ChatGPT) asked this app for lately, newest first. When they say "that
+change", "what my AI built" or "the section Claude added", this is what
+they mean. Anything it built is in the lists above if it still exists;
+a pending one has not been built; a dismissed one was turned down.
+${requests.map((r) => `- ${r}`).join("\n")}
+`
+    : ""
+}
 USER REQUEST:
 ${userRequest}`;
 }
