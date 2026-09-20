@@ -48,20 +48,33 @@ console.log("a turn that designed nothing is not an included design");
   const chat = readFileSync(new URL("../src/app/api/chat/route.ts", import.meta.url), "utf8");
   const mcp = readFileSync(new URL("../src/app/api/mcp/route.ts", import.meta.url), "utf8");
 
+  // The turn is refundable from the moment it is spent, and stops
+  // being so in exactly one place: once a design has been written
+  // down. Everything else — a question, a validator that gave up, a
+  // throw — falls through to one `finally` that gives it back. So a
+  // new kind of reply is free by default and has to be argued into
+  // costing something, and a new way to fail cannot forget the refund.
   check(
-    "the chat gives it back when no design came out",
-    /reply\.type !== "plans" && turn\.reply\.type !== "blueprint"[\s\S]{0,300}abo_refund_turn/.test(chat)
+    "the chat charges only once a design is written down",
+    /persistTurn\([\s\S]{0,1200}reply\.type === "plans" \|\| turn\.reply\.type === "blueprint"\) \{\s*refundable = null/.test(chat)
   );
-  // Written against the absence of a design rather than a list of
-  // reply types, so a new kind of reply is free by default and has to
-  // be argued into costing something.
   check(
-    "stated as what it is not, so a new reply type is free by default",
-    !/reply\.type === "answer"[\s\S]{0,120}abo_refund_turn/.test(chat)
+    "stated as what a design is, so a new reply type is free by default",
+    !/reply\.type === "answer"[\s\S]{0,120}refundable = null/.test(chat)
   );
   check(
-    "and propose_change gives it back when it only asked questions",
-    /reply\.type === "clarify"\) \{[\s\S]{0,300}abo_refund_turn/.test(mcp)
+    "and every other way out gives it back in one place",
+    /finally \{\s*if \(refundable\) await client\.rpc\("abo_refund_turn"/.test(chat)
+  );
+  check(
+    "propose_change charges only once the request row exists",
+    /abo_mcp_propose[\s\S]{0,600}charged\?\.\(\)/.test(mcp) &&
+      /finally \{\s*if \(refundable\) await db\.rpc\("abo_refund_turn"/.test(mcp)
+  );
+  check(
+    "and questions, refusals and throws all fall through to it",
+    !/reply\.type === "clarify"\) \{[\s\S]{0,400}(abo_refund_turn|refundable = null)/.test(mcp) &&
+      !/reply\.type === "answer"\) \{[\s\S]{0,200}(abo_refund_turn|refundable = null)/.test(mcp)
   );
   // Both still charge up front. A client in a loop has to pay for its
   // own stop, or the cap caps nothing.

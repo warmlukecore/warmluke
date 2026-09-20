@@ -62,6 +62,70 @@ export async function apiFetch(
   return { ok: res.ok, status: res.status, data: json };
 }
 
+/**
+ * apiFetch for a route that answers in lines (application/x-ndjson):
+ * each line with a `step` goes to `onStep` as it arrives; the last
+ * line, without one, is the answer and comes back exactly as apiFetch
+ * would have returned it. A refusal that came back as plain JSON is
+ * returned as plain JSON, so the caller need not know which it got.
+ */
+export async function apiStream(
+  path: string,
+  body: unknown,
+  signal: AbortSignal | undefined,
+  onStep: (step: Record<string, unknown>) => void
+): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  const res = await fetch(path, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.body || !res.headers.get("content-type")?.includes("x-ndjson")) {
+    const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    return { ok: res.ok, status: res.status, data: json };
+  }
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "";
+  let last: Record<string, unknown> | null = null;
+  const take = (raw: string) => {
+    const line = raw.trim();
+    if (!line) return;
+    let obj: Record<string, unknown>;
+    try {
+      obj = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      return;
+    }
+    if ("step" in obj) onStep(obj);
+    else last = obj;
+  };
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += value;
+    let nl: number;
+    while ((nl = buffer.indexOf("\n")) >= 0) {
+      take(buffer.slice(0, nl));
+      buffer = buffer.slice(nl + 1);
+    }
+  }
+  take(buffer);
+  // A stream that ended without its last line did not finish: the
+  // server went away mid-turn. Said so, rather than shown as a reply
+  // that failed its checks.
+  return {
+    ok: res.ok,
+    status: res.status,
+    data: last ?? { error: "The connection dropped before Luke finished. Nothing was changed." },
+  };
+}
+
 /** Pending first prompt saved before auth so signup → build is seamless. */
 export function savePendingPrompt(text: string) {
   try {

@@ -24,6 +24,7 @@ import type {
   ClarifyQuestion,
   ModuleRow,
   RecordRow,
+  TurnEvent,
   UiSchema,
 } from "@/lib/types";
 
@@ -63,6 +64,30 @@ export interface ChatMessage {
 
 let msgSeq = 0;
 export const nextChatId = () => `m${++msgSeq}`;
+
+/**
+ * A step of the turn, in words. The facts in it — which store, what
+ * was read, which attempt, how many problems — are the server's; only
+ * the phrasing is this panel's.
+ */
+function stepWords(step: TurnEvent): string {
+  const n = (count: number, one: string) => `${count} ${one}${count === 1 ? "" : "s"}`;
+  switch (step.step) {
+    case "accepted":
+      return "Luke has it";
+    case "store":
+      if (!step.shop) return "No store connected — working from the app alone";
+      return step.read ? `Read ${step.shop}: ${step.read}` : `Read ${step.shop}`;
+    case "context":
+      return `Read ${n(step.sections, "section")} and ${n(step.rules, "rule")}`;
+    case "model":
+      return step.attempt === 1 ? "Thinking it through…" : `Trying again (${step.attempt} of ${step.of})…`;
+    case "checked":
+      return step.problems === 0 ? "Checked the reply" : `Found ${n(step.problems, "problem")} — sending it back`;
+    case "gaps":
+      return "Checking what the design misses…";
+  }
+}
 
 const ICON_GLYPHS: Record<string, string> = {
   "shopping-cart": "🛒",
@@ -504,6 +529,7 @@ export default function ChatPanel({
   onDeleteThread,
   onStop,
   canStop,
+  steps = [],
   onSend,
   onApply,
   onBuild,
@@ -536,6 +562,9 @@ export default function ChatPanel({
    *  interrupted halfway, and there is nothing to abort during it. */
   canStop: boolean;
   busy: boolean;
+  /** What the running turn has done so far, oldest first. Empty until
+   *  the server has taken the turn, and while a build is applied. */
+  steps?: TurnEvent[];
   onSend: (text: string) => Promise<void> | void;
   onApply: (plan: AssistantPlan, planId: string) => void;
   /** Applies an approved blueprint's plans directly, with no model round trip. */
@@ -851,7 +880,19 @@ export default function ChatPanel({
   // build that just landed opens below the fold.
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
-  }, [messages.length, requests.length, busy]);
+  }, [messages.length, requests.length, busy, steps.length]);
+
+  // How long the current step has been running. A model call is
+  // twenty quiet seconds; a number that moves says the turn has not
+  // died, and a number that reaches sixty says something has.
+  const [stepSeconds, setStepSeconds] = useState(0);
+  useEffect(() => {
+    if (!busy) return;
+    setStepSeconds(0);
+    const started = Date.now();
+    const t = setInterval(() => setStepSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [busy, steps.length]);
 
   function send(text?: string) {
     const content = (text ?? input).trim();
@@ -1693,9 +1734,31 @@ export default function ChatPanel({
             entirely — the one place it must not be is on top of the
             thing it is asking about. */}
         {busy && (
-          <div className="flex items-center gap-2 text-xs text-slate-400">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
-            Working on it…
+          <div className="space-y-1 text-xs text-slate-400">
+            {/* Each line is a step the server said it took, in the
+                order it said so. The last one is still running; the
+                ones above it are done. Nothing here is on a timer —
+                a turn that stalls shows a line that stays put, with
+                the seconds climbing beside it. */}
+            {(steps.length ? steps : [null]).map((step, i, all) => {
+              const active = i === all.length - 1;
+              const words = step ? stepWords(step) : "Working on it…";
+              return (
+                <div key={i} className={`flex items-center gap-2 ${active ? "" : "text-slate-300"}`}>
+                  {active ? (
+                    <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-blue-500" />
+                  ) : (
+                    <span className="w-2 shrink-0 text-center text-[10px] text-emerald-500">✓</span>
+                  )}
+                  <span className="min-w-0 truncate" title={words}>
+                    {words}
+                  </span>
+                  {active && stepSeconds >= 2 && (
+                    <span className="shrink-0 tabular-nums text-slate-300">{stepSeconds}s</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

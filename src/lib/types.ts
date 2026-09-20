@@ -409,6 +409,29 @@ export type AssistantReply =
 
 export type ReplyType = AssistantReply["type"];
 
+/**
+ * What a turn is doing, said as it happens.
+ *
+ * Each one is sent the moment that step actually starts or ends, with
+ * what it found — never on a timer, never before the fact. The chat
+ * route streams them ahead of the reply so the panel can show the
+ * work instead of a dot; the panel puts words to them, and only the
+ * words are its own.
+ */
+export type TurnEvent =
+  /** The turn has been charged and is running. */
+  | { step: "accepted" }
+  /** The store was read. `read` names the rows a routed question pulled, when it did. */
+  | { step: "store"; shop: string | null; read: string | null }
+  /** Every section's columns and the rules were read. */
+  | { step: "context"; sections: number; rules: number }
+  /** The model is being asked, for the n-th time of at most `of`. */
+  | { step: "model"; attempt: number; of: number }
+  /** The validator has spoken: no problems, or this many going back to the model. */
+  | { step: "checked"; problems: number }
+  /** A design came out; the pass that finds what it misses is running. */
+  | { step: "gaps" };
+
 // ── Conversation persistence ─────────────────────────────────
 
 export interface ConversationRow {

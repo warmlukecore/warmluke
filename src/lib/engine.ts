@@ -37,7 +37,7 @@ const RULES_IN_CONTEXT = 40;
 import { lowStock, searchOrders, storeLeaders, storeOverview, storeValues } from "@/lib/store-read";
 import { routeQuestion } from "@/lib/route";
 import { fetchSlice } from "@/lib/slice";
-import type { AssistantReply, FeatureSchema, ModuleRow, ProjectRow, UiSchema } from "@/lib/types";
+import type { AssistantReply, FeatureSchema, ModuleRow, ProjectRow, TurnEvent, UiSchema } from "@/lib/types";
 
 /**
  * Validation errors are the assistant's own mistakes — a bad column
@@ -172,6 +172,12 @@ export type TurnInput = {
   /** Module context for the turn, when the owner is looking at one. */
   moduleId?: string | null;
   signal?: AbortSignal;
+  /**
+   * Told each step as it happens, so a caller that can stream has
+   * something true to show while the model thinks. Absent, nothing is
+   * said — the MCP tool answers in one piece and never asks.
+   */
+  onEvent?: (event: TurnEvent) => void;
 };
 
 export type TurnResult =
@@ -274,9 +280,21 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     plansAllowed = blueprintShown,
     moduleId = null,
     signal,
+    onEvent,
   } = input;
+  // Said after the fact, with what was found. A listener that throws
+  // must not take the turn down with it: the work is the point, the
+  // narration is not.
+  const tell = (event: TurnEvent) => {
+    try {
+      onEvent?.(event);
+    } catch {
+      /* the caller's problem, not the turn's */
+    }
+  };
 
   const store = await storeContextFor(client, project.id, message);
+  tell({ step: "store", shop: store?.shop_domain ?? null, read: store?.snapshot?.slice?.what ?? null });
   // What already runs on this app. Left out, the designer proposes a
   // rule that exists, or tells the merchant no rule exists when one
   // fires every morning. It goes in the user turn rather than the
@@ -292,6 +310,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // Every section's columns, so a design that touches one the caller
   // did not have open is both checked and readable.
   const schemas = await schemasFor(client, modules);
+  tell({ step: "context", sections: modules.length, rules: (ruleRows ?? []).length });
 
   const system = buildSystemPrompt(modules, project.name, project.locale, project.currency, store);
   const userTurn = buildUserMessage(
@@ -316,6 +335,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   const repairErrors: string[] = [];
 
   for (let attempt = 0; attempt <= MAX_REPAIR_ATTEMPTS; attempt++) {
+    tell({ step: "model", attempt: attempt + 1, of: MAX_REPAIR_ATTEMPTS + 1 });
     raw = await callAnthropicChat(system, [...history, ...attemptTurns], signal);
     parsed = parseReply(raw, modules, currentSchema, currentFeatures, (mid) =>
       schemas.get(mid) ?? null
@@ -336,6 +356,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       };
     }
 
+    // What the validator actually said — zero problems, or this many on
+    // their way back to the model. Not "checked" because time passed.
+    tell({ step: "checked", problems: parsed.ok ? 0 : parsed.errors.length });
     if (parsed.ok) break;
 
     repairs = attempt + 1;
@@ -376,6 +399,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     const plans =
       parsed.reply.type === "blueprint" ? parsed.reply.blueprint.plans : parsed.reply.plans;
     const built = describeBuild(plans, modules, currentSchema?.columns, store);
+    tell({ step: "gaps" });
     const gaps = await findGaps(message.trim(), built, signal);
     const existing =
       parsed.reply.type === "blueprint" ? (parsed.reply.blueprint.unmet ?? []) : [];
