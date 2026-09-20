@@ -1944,7 +1944,10 @@ export async function callAnthropicChat(
     throw new Error("ANTHROPIC_API_KEY is not set — add it to .env.local.");
   }
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  // Where the messages call goes. Read when called, like the model, so
+  // a local run can point the same request at another host that speaks
+  // this API — testing without spending Anthropic credit.
+  const res = await fetch(process.env.ANTHROPIC_API_URL || "https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "content-type": "application/json",
