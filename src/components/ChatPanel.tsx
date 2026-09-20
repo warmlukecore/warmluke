@@ -886,6 +886,8 @@ export default function ChatPanel({
     const content = (text ?? input).trim();
     if (!content || busy) return;
     setInput("");
+    // Back to one row once the words have gone.
+    if (inputRef.current) inputRef.current.style.height = "auto";
     onSend(content);
   }
 
@@ -1969,29 +1971,44 @@ export default function ChatPanel({
         </div>
       ) : (
       <div className="border-t border-slate-100 p-3">
-        <div className="flex items-end gap-2">
+        {/* One quiet box: the words inside it, the send inside it. A
+            thick ring and a labelled button made the composer the
+            loudest thing on the panel, and the conversation should be. */}
+        <div className="flex items-end gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm transition-colors focus-within:border-slate-400">
           <textarea
             ref={inputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              // Grows with what is typed, up to a few lines, and
+              // shrinks back; a fixed two rows was mostly empty.
+              e.target.style.height = "auto";
+              e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 send();
               }
             }}
-            rows={2}
-            placeholder="Describe a change — or a whole new section…"
-            className="max-h-32 flex-1 resize-none rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            rows={1}
+            placeholder="Ask Luke to build or change something"
+            className="max-h-40 flex-1 resize-none bg-transparent py-0.5 text-[13px] leading-6 text-slate-800 outline-none placeholder:text-slate-400"
           />
           <button
             onClick={() => (canStop ? onStop() : send())}
             disabled={busy && !canStop ? true : !canStop && !input.trim()}
-            className={`rounded-xl px-3 py-2 text-sm font-medium text-white transition-colors disabled:opacity-40 ${
-              canStop ? "bg-slate-700 hover:bg-slate-800" : "bg-blue-600 hover:bg-blue-700"
-            }`}
+            aria-label={canStop ? "Stop" : "Send"}
+            title={canStop ? "Stop" : busy ? "Building…" : "Send"}
+            className="mb-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white transition-colors hover:bg-slate-700 disabled:opacity-30"
           >
-            {canStop ? "Stop" : busy ? "Building…" : "Send"}
+            {canStop ? (
+              <span className="block h-2.5 w-2.5 rounded-[2px] bg-white" aria-hidden />
+            ) : (
+              <span className="text-sm leading-none" aria-hidden>
+                ↑
+              </span>
+            )}
           </button>
         </div>
         <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 text-[10px] text-slate-400">
