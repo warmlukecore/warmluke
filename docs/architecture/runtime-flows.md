@@ -99,12 +99,18 @@ sequenceDiagram
         MCP->>DB: Atomically stamp approval / claim request
         MCP->>DB: applyPlans through abo_build
         MCP->>DB: Record outcome and client-build history
+        DB-->>M: Realtime signal on the thread and the built section
         MCP-->>C: Build result
     else merchant rejects
         C->>MCP: reject_change(request_id, reason)
         MCP->>DB: Record rejection
     end
 ```
+
+Client-build history is written server-side into a per-project thread titled "Changes
+from your AI", which also advances that conversation's `updated_at`. An open browser is
+subscribed to `conversations` for the project, so the request and its receipt appear in
+the chat panel as the build lands rather than at the next refresh.
 
 The OAuth token includes a `client_id`. Restrictive policies refuse its direct table
 writes. Security-definer functions allow only narrowly defined request, approval, and

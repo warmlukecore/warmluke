@@ -81,7 +81,30 @@ records or change the application's design.
 `src/lib/live.ts` wraps Supabase channels. The shell and panels subscribe to relevant
 tables so externally initiated changes are reflected in the open application. Realtime
 is an invalidation mechanism: after a signal, the browser reloads authoritative rows;
-it does not reconstruct complex state from event payloads alone.
+it does not reconstruct complex state from event payloads alone. The changed row is
+handed to the callback only so it can decide *what* to reload.
+
+Published tables are `modules`, `ui_schemas`, `records`, `build_requests`, and
+`conversations`. Subscriptions:
+
+| Subscriber | Table | Reload |
+| --- | --- | --- |
+| Shell | `modules` | Section list |
+| Shell | `records` | Open section's rows |
+| Shell | `ui_schemas` | Open section's design |
+| Shell | `conversations` | Thread list, and the affected thread |
+| Chat panel | `build_requests` | Pending request queue |
+
+Every writer of a message advances its conversation's `updated_at`, so one subscription
+on `conversations` covers the built-in assistant, external-assistant builds, and undo.
+When the signalled thread is the open one, the shell reloads it in place. When it is a
+different thread — in practice the one external builds are filed in — the shell opens it,
+which is what a manual refresh would have done, unless a turn is in flight or the thread
+on screen ends in a card still awaiting the merchant's answer.
+
+Commerce tables are deliberately not published; a store-backed section refreshes when the
+tab regains focus instead, because publishing every webhook row is not free on a large
+catalogue.
 
 ## Marketing and onboarding
 

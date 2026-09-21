@@ -6,10 +6,10 @@ Every `scripts/check-*.mjs` file is a check. `scripts/run-checks.mjs` discovers 
 the directory, classifies them from their dependencies, and executes them sequentially.
 There is no manually maintained test list to forget to update.
 
-At this documentation checkpoint there are 64 checks:
+At this documentation checkpoint there are 65 checks:
 
 - 18 pure
-- 44 live
+- 45 live
 - 2 model
 
 Use `pnpm check:list` for the current count and classification.

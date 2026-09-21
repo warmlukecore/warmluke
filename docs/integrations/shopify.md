@@ -86,6 +86,11 @@ Paged GraphQL children have explicit limits. If a page reaches a child limit, it
 treated as possibly truncated and is not saved before switching to bulk. This avoids
 replacing a complete local family with a silently truncated page.
 
+A resource with no bulk query (`bulk: null`) has nowhere better to go, so its page is
+saved as it came and its limits are set to the largest Shopify allows. `refunds` is that
+case: refund line items are a connection inside a list, which Shopify refuses to export
+in bulk, so refund units are paged over the refunded orders instead.
+
 Resources import in dependency order so products/customers exist before order references
 are resolved. Upserts also tolerate webhook data arriving before its parent import.
 
