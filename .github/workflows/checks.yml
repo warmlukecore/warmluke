@@ -155,3 +155,64 @@ jobs:
       - name: server log, when something went red
         if: failure()
         run: tail -60 server.log
+
+  # Production, after the checks that could have stopped it.
+  #
+  # Vercel's own git integration deploys main on push, in parallel
+  # with the jobs above rather than after them — so a commit could go
+  # live and only afterwards be told it was broken, and one did.
+  # It also missed commits outright twice in one day, passing checks
+  # and never deploying.
+  #
+  # This job is the answer to both: the deploy happens once, here,
+  # when the checks have passed, and a red deploy is a red commit.
+  # It builds from the git commit rather than uploading a copy, so
+  # what runs in production is what is in this repository.
+  #
+  # Two identifiers below rather than repository variables: a team id
+  # and a project id are names, not secrets, and inlining them means
+  # one thing to configure instead of three.
+  deploy:
+    needs: [static, live]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: deploy this commit to production
+        env:
+          TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          TEAM: team_VkD2EYIcYFQlGRuynsnjn4pW
+          PROJECT: prj_eQ2739Vaeux1vp8KUsv0vqSlAY39
+        run: |
+          set -euo pipefail
+          # Absent until somebody adds it. Saying so and passing is
+          # right: without it Vercel's git integration is still
+          # deploying, so a red job here would be a lie about the app.
+          if [ -z "${TOKEN}" ]; then
+            echo "No VERCEL_TOKEN in this repository's secrets."
+            echo "Vercel's git integration is still deploying main on its own."
+            exit 0
+          fi
+
+          id=$(curl -fsS -X POST \
+            "https://api.vercel.com/v13/deployments?teamId=$TEAM&forceNew=1&skipAutoDetectionConfirmation=1" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"name\":\"warmluke\",\"project\":\"$PROJECT\",\"target\":\"production\",\"gitSource\":{\"type\":\"github\",\"org\":\"warmlukecore\",\"repo\":\"warmluke\",\"ref\":\"main\",\"sha\":\"$GITHUB_SHA\"}}" \
+            | jq -r .id)
+          echo "deployment $id, from ${GITHUB_SHA:0:7}"
+
+          # Waited for, not fired and forgotten. A build that fails on
+          # Vercel has to turn this job red, or the commit reads as
+          # deployed when nothing was.
+          for _ in $(seq 1 90); do
+            state=$(curl -fsS "https://api.vercel.com/v13/deployments/$id?teamId=$TEAM" \
+              -H "Authorization: Bearer $TOKEN" | jq -r .readyState)
+            case "$state" in
+              READY) echo "ready"; exit 0 ;;
+              ERROR|CANCELED) echo "deployment $state"; exit 1 ;;
+              *) echo "  $state"; sleep 10 ;;
+            esac
+          done
+          echo "still not ready after fifteen minutes"
+          exit 1
