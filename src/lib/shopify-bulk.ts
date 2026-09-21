@@ -65,6 +65,8 @@ type BulkOp = {
 
 /** Starts one, and hands back its id. */
 export async function startBulk(shop: string, token: string, resource: Resource): Promise<string> {
+  const bulk = SHOPIFY_RESOURCES[resource].bulk;
+  if (!bulk) throw new ShopifyError("bulk_refused", `${resource} has no bulk export; it is paged instead.`);
   const data = await graphql<{
     bulkOperationRunQuery: {
       bulkOperation: { id: string } | null;
@@ -84,7 +86,7 @@ export async function startBulk(shop: string, token: string, resource: Resource)
          userErrors { field message }
        }
      }`,
-    { q: SHOPIFY_RESOURCES[resource].bulk }
+    { q: bulk.query }
   );
   const { bulkOperation, userErrors } = data.bulkOperationRunQuery;
   if (!bulkOperation) {
@@ -225,7 +227,8 @@ async function writeLines(
   lines: Line[]
 ): Promise<number> {
   const spec = SHOPIFY_RESOURCES[resource];
-  const rows = spec.assemble(lines);
+  if (!spec.bulk) throw new ShopifyError("bulk_refused", `${resource} has no bulk export; it is paged instead.`);
+  const rows = spec.bulk.assemble(lines);
   for (let i = 0; i < rows.length; i += BATCH) {
     await spec.save(db, storeId, rows.slice(i, i + BATCH));
   }

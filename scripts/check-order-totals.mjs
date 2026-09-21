@@ -77,6 +77,16 @@ try {
       name: "#9001", created_at: "2026-09-14T10:00:00Z", updated_at: "2026-09-15T12:00:00Z",
       financial_status: "partially_refunded", fulfillment_status: "fulfilled",
       total_price: "597.00", current_total_price: "547.00", currency: "USD", tags: "",
+      line_items: [{ id: 1, title: "A thing", variant_title: "Blue", sku: "X", quantity: 2, price: "298.50" }],
+      // A refund raises orders/updated, and the payload carries every
+      // refund the order has — this road used to write none of them.
+      refunds: [
+        {
+          id: 77, created_at: "2026-09-15T11:00:00Z",
+          transactions: [{ kind: "refund", status: "success", amount: "50.00" }],
+          refund_line_items: [{ quantity: 1, subtotal: "50.00" }],
+        },
+      ],
     },
   });
   check("the webhook is accepted", !error);
@@ -84,6 +94,13 @@ try {
   const hooked = await row(`gid://shopify/Order/${stamp}1`);
   check("and lands on the same total", Number(hooked?.total) === 547);
   check("and the same original", Number(hooked?.total_original) === 597);
+  const { data: hookedLines } = await admin.from("order_line_items").select("variant_title").eq("store_id", store.id);
+  check("the line kept its variant", (hookedLines ?? []).some((l) => l.variant_title === "Blue"));
+  const { data: hookedRefunds } = await admin.from("refunds").select("amount, quantity, external_id").eq("store_id", store.id);
+  check("the refund landed by webhook", (hookedRefunds ?? []).length === 1);
+  check("with what was given back", Number(hookedRefunds?.[0]?.amount) === 50);
+  check("and how many units", hookedRefunds?.[0]?.quantity === 1);
+  check("on the Shopify id, so the import lands on the same row", hookedRefunds?.[0]?.external_id === "gid://shopify/Refund/77");
 
   console.log("\nan order that was never refunded");
   await saveOrders(admin, store.id, [

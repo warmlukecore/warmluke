@@ -346,7 +346,7 @@ query($n: Int!, $after: String) {
       customer { id }
       lineItems(first: 100) {
         nodes {
-          id title quantity sku
+          id title variantTitle quantity sku
           variant { id }
           product { id }
           originalUnitPriceSet { shopMoney { amount } }
@@ -367,7 +367,7 @@ export type GqlOrder = {
   /** What the order comes to today, after refunds. Absent on old bulk files. */
   currentTotalPriceSet?: { shopMoney: { amount: string; currencyCode: string } } | null;
   customer: { id: string } | null;
-  lineItems: { nodes: Array<{ id: string; title: string; quantity: number; sku: string | null;
+  lineItems: { nodes: Array<{ id: string; title: string; variantTitle?: string | null; quantity: number; sku: string | null;
     variant: { id: string } | null; product: { id: string } | null;
     originalUnitPriceSet: { shopMoney: { amount: string } } | null }> };
   refunds: Array<{ id: string; createdAt: string; totalRefundedSet: { shopMoney: { amount: string } } | null }>;
@@ -429,7 +429,7 @@ export async function saveOrders(
       store_id: storeId, order_id: orderId.get(o.id)!, external_id: l.id,
       product_id: l.product ? (productId.get(l.product.id) ?? null) : null,
       variant_id: l.variant ? (variantId.get(l.variant.id) ?? null) : null,
-      title: l.title, sku: l.sku, quantity: l.quantity,
+      title: l.title, variant_title: l.variantTitle ?? null, sku: l.sku, quantity: l.quantity,
       price: l.originalUnitPriceSet?.shopMoney?.amount ? Number(l.originalUnitPriceSet.shopMoney.amount) : null,
     }))
   ).filter((l) => l.order_id);
@@ -448,6 +448,9 @@ export async function saveOrders(
     (o.refunds ?? []).map((r) => ({
       store_id: storeId, order_id: orderId.get(o.id)!, external_id: r.id,
       amount: r.totalRefundedSet?.shopMoney?.amount ? Number(r.totalRefundedSet.shopMoney.amount) : null,
+      // No quantity: that is the refunds pass's to write (below). A
+      // row this creates starts at the column's default and is filled
+      // in there; a row that already has one keeps it.
       refunded_at: r.createdAt,
     }))
   ).filter((r) => r.order_id);
@@ -460,6 +463,67 @@ export async function saveOrders(
       .upsert(refunds, { onConflict: "store_id,external_id" });
     if (re) throw new Error(re.message);
   }
+}
+
+// ── Refunds, with how many units went back ──────────────────────
+// A refund's line items are a connection inside a list, which a bulk
+// query is refused for ("a connection field within a list field").
+// So they come by their own page, over only the orders that have a
+// refund — a small slice of any store, cheap to page even where the
+// orders themselves went bulk.
+export const REFUNDED = "financial_status:partially_refunded OR financial_status:refunded";
+
+export const REFUNDS_QUERY = `
+query($n: Int!, $after: String) {
+  orders(first: $n, after: $after, sortKey: UPDATED_AT, query: "${REFUNDED}") {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      id
+      refunds(first: 50) {
+        id createdAt
+        totalRefundedSet { shopMoney { amount } }
+        refundLineItems(first: 250) { nodes { quantity } }
+      }
+    }
+  }
+}`;
+
+export type GqlRefundedOrder = {
+  id: string;
+  refunds: Array<{
+    id: string; createdAt: string; totalRefundedSet: { shopMoney: { amount: string } } | null;
+    refundLineItems: { nodes: Array<{ quantity: number }> };
+  }>;
+};
+
+/** Writes the refunds of a batch of orders — amount, when, and how many units. */
+export async function saveRefunds(
+  db: SupabaseClient, storeId: string, nodes: GqlRefundedOrder[]
+): Promise<void> {
+  const withRefunds = nodes.filter((o) => (o.refunds ?? []).length > 0);
+  if (withRefunds.length === 0) return;
+
+  const { data: known } = await db
+    .from("orders").select("id, external_id").eq("store_id", storeId)
+    .in("external_id", withRefunds.map((o) => o.id));
+  const orderId = new Map((known ?? []).map((r) => [r.external_id as string, r.id as string]));
+
+  // An order not imported yet is nothing to hang a refund on. The
+  // orders pass writes the refund itself when it gets there, and this
+  // pass fills the units in on its next run.
+  const refunds = withRefunds.flatMap((o) => {
+    const id = orderId.get(o.id);
+    if (!id) return [];
+    return o.refunds.map((r) => ({
+      store_id: storeId, order_id: id, external_id: r.id,
+      amount: r.totalRefundedSet?.shopMoney?.amount ? Number(r.totalRefundedSet.shopMoney.amount) : null,
+      quantity: (r.refundLineItems?.nodes ?? []).reduce((n, x) => n + (x.quantity ?? 0), 0),
+      refunded_at: r.createdAt,
+    }));
+  });
+  if (refunds.length === 0) return;
+  const { error } = await db.from("refunds").upsert(refunds, { onConflict: "store_id,external_id" });
+  if (error) throw new Error(error.message);
 }
 
 // ── Stock on hand ───────────────────────────────────────────────

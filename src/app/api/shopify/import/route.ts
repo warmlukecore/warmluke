@@ -348,7 +348,7 @@ async function advance(
     // store with a few hundred rows finishes before a bulk operation
     // would even have been queued.
     const count = await countOf(shop, token, resource);
-    if (count > BULK_THRESHOLD) {
+    if (count > BULK_THRESHOLD && SHOPIFY_RESOURCES[resource].bulk) {
       const id = await startBulk(shop, token, resource);
       return { imported: 0, cursor: `bulk:${id}`, hasNext: true };
     }

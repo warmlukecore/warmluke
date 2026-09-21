@@ -30,13 +30,17 @@ import {
   ORDERS_QUERY,
   PAGE,
   PRODUCTS_QUERY,
+  REFUNDED,
+  REFUNDS_QUERY,
   saveCustomers,
   saveInventory,
   saveOrders,
   saveProducts,
+  saveRefunds,
   type GqlCustomer,
   type GqlOrder,
   type GqlProduct,
+  type GqlRefundedOrder,
   type GqlStock,
   type StoreToken,
 } from "@/lib/shopify-import";
@@ -57,19 +61,29 @@ export type ResourceSpec = {
   /** The paged query: takes $n and $after, returns pageInfo and nodes under `root`. */
   page: string;
   root: string;
-  /** The bulk query: the same fields, no pagination arguments. */
-  bulk: string;
+  /**
+   * The bulk export: the same fields as the page with no pagination
+   * arguments, and how the flattened file is put back into the nodes
+   * the saver expects. Null for a resource Shopify refuses to export
+   * in bulk — a connection inside a list is one — which then pages
+   * whatever its size.
+   */
+  bulk: { query: string; assemble: (lines: BulkLine[]) => unknown[] } | null;
   /**
    * Children a page may lose to its limit. A page holding exactly the
    * limit is treated as cut and the resource goes the bulk way, which
-   * asks for children with no limit at all.
+   * asks for children with no limit at all. With no bulk road to take,
+   * the page is saved as it came — so such a resource asks for the
+   * most Shopify allows.
    */
   children: readonly ChildLimit[];
-  /** Puts a bulk file's flattened lines back into the nodes the saver expects. */
-  assemble: (lines: BulkLine[]) => unknown[];
   /** Writes a batch of nodes, from a page or a bulk file alike. */
   save: (db: SupabaseClient, storeId: string, nodes: unknown[]) => Promise<void>;
-  /** Webhook topics that keep it fresh between imports. Each has a handler in abo_shopify_webhook. */
+  /**
+   * Webhook topics that keep it fresh between imports. Each has a
+   * handler in abo_shopify_webhook. Empty when another resource's
+   * topics already carry it.
+   */
   webhooks: readonly string[];
   /** The tables it writes, the parent first. */
   tables: readonly string[];
@@ -114,17 +128,19 @@ export const SHOPIFY_RESOURCES = {
     count: "{ productsCount { count } }",
     page: PRODUCTS_QUERY,
     root: "products",
-    bulk: `{ products { edges { node {
+    bulk: {
+      query: `{ products { edges { node {
     id title handle status productType vendor tags updatedAt
     variants { edges { node { id title sku barcode price updatedAt inventoryItem { id } } } }
   } } } }`,
+      assemble: (lines) =>
+        withChildren<GqlProduct>(
+          lines,
+          (p) => ({ ...(p as unknown as GqlProduct), variants: { nodes: [] } }),
+          (p, child) => p.variants.nodes.push(child as never)
+        ),
+    },
     children: [{ path: ["variants", "nodes"], limit: 100 }],
-    assemble: (lines) =>
-      withChildren<GqlProduct>(
-        lines,
-        (p) => ({ ...(p as unknown as GqlProduct), variants: { nodes: [] } }),
-        (p, child) => p.variants.nodes.push(child as never)
-      ),
     save: (db, storeId, nodes) => saveProducts(db, storeId, nodes as GqlProduct[]),
     webhooks: ["PRODUCTS_CREATE", "PRODUCTS_UPDATE", "PRODUCTS_DELETE"],
     tables: ["products", "variants"],
@@ -136,13 +152,15 @@ export const SHOPIFY_RESOURCES = {
     count: "{ customersCount { count } }",
     page: CUSTOMERS_QUERY,
     root: "customers",
-    bulk: `{ customers { edges { node {
+    bulk: {
+      query: `{ customers { edges { node {
     id displayName email phone numberOfOrders tags updatedAt
     amountSpent { amount currencyCode }
     defaultAddress { city zip }
   } } } }`,
+      assemble: parentsOnly,
+    },
     children: [],
-    assemble: parentsOnly,
     save: (db, storeId, nodes) => saveCustomers(db, storeId, nodes as GqlCustomer[]),
     webhooks: ["CUSTOMERS_CREATE", "CUSTOMERS_UPDATE", "CUSTOMERS_DELETE"],
     tables: ["customers"],
@@ -154,41 +172,43 @@ export const SHOPIFY_RESOURCES = {
     count: "{ ordersCount { count } }",
     page: ORDERS_QUERY,
     root: "orders",
-    bulk: `{ orders { edges { node {
+    bulk: {
+      query: `{ orders { edges { node {
     id name createdAt updatedAt cancelledAt tags
     displayFinancialStatus displayFulfillmentStatus
     totalPriceSet { shopMoney { amount currencyCode } }
     currentTotalPriceSet { shopMoney { amount currencyCode } }
     customer { id }
     lineItems { edges { node {
-      id title quantity sku
+      id title variantTitle quantity sku
       variant { id }
       product { id }
       originalUnitPriceSet { shopMoney { amount } }
     } } }
     refunds { id createdAt totalRefundedSet { shopMoney { amount } } }
   } } } }`,
+      // refunds is a plain list, not a connection, so the file carries
+      // it inside the order itself and never as separate child lines.
+      // Blanking it threw away every refund the export had handed over.
+      // The file does not label which connection a child came from:
+      // refunds carry an amount, line items carry a quantity.
+      assemble: (lines) =>
+        withChildren<GqlOrder>(
+          lines,
+          (o) => {
+            const parent = o as unknown as GqlOrder;
+            return { ...parent, lineItems: { nodes: [] }, refunds: parent.refunds ?? [] };
+          },
+          (o, child) => {
+            if ("totalRefundedSet" in child) o.refunds.push(child as never);
+            else o.lineItems.nodes.push(child as never);
+          }
+        ),
+    },
     children: [
       { path: ["lineItems", "nodes"], limit: 100 },
       { path: ["refunds"], limit: 20 },
     ],
-    // refunds is a plain list, not a connection, so the file carries
-    // it inside the order itself and never as separate child lines.
-    // Blanking it threw away every refund the export had handed over.
-    // The file does not label which connection a child came from:
-    // refunds carry an amount, line items carry a quantity.
-    assemble: (lines) =>
-      withChildren<GqlOrder>(
-        lines,
-        (o) => {
-          const parent = o as unknown as GqlOrder;
-          return { ...parent, lineItems: { nodes: [] }, refunds: parent.refunds ?? [] };
-        },
-        (o, child) => {
-          if ("totalRefundedSet" in child) o.refunds!.push(child as never);
-          else o.lineItems.nodes.push(child as never);
-        }
-      ),
     save: (db, storeId, nodes) => saveOrders(db, storeId, nodes as GqlOrder[]),
     webhooks: ["ORDERS_CREATE", "ORDERS_UPDATED", "ORDERS_CANCELLED", "ORDERS_PAID", "ORDERS_FULFILLED"],
     tables: ["orders", "order_line_items", "refunds"],
@@ -201,36 +221,61 @@ export const SHOPIFY_RESOURCES = {
     count: "{ productVariantsCount { count } }",
     page: INVENTORY_QUERY,
     root: "productVariants",
-    bulk: `{ productVariants { edges { node {
+    bulk: {
+      query: `{ productVariants { edges { node {
     id
     inventoryItem { id inventoryLevels { edges { node {
       quantities(names: ["available"]) { quantity }
       location { id name }
     } } } }
   } } } }`,
-    children: [{ path: ["inventoryItem", "inventoryLevels", "nodes"], limit: 10 }],
-    // Levels hang off the variant or off its inventory item depending
-    // on how Shopify flattened the file, so both are resolved.
-    assemble: (lines) => {
-      const parents = new Map<string, GqlStock>();
-      const order: string[] = [];
-      const viaItem = new Map<string, string>();
-      for (const l of lines) {
-        if (!l.__parentId) {
-          const item = l.inventoryItem as { id?: string } | undefined;
-          parents.set(l.id!, { id: l.id!, inventoryItem: { inventoryLevels: { nodes: [] } } });
-          order.push(l.id!);
-          if (item?.id) viaItem.set(item.id, l.id!);
-          continue;
+      // Levels hang off the variant or off its inventory item depending
+      // on how Shopify flattened the file, so both are resolved.
+      assemble: (lines) => {
+        const parents = new Map<string, GqlStock>();
+        const order: string[] = [];
+        const viaItem = new Map<string, string>();
+        for (const l of lines) {
+          if (!l.__parentId) {
+            const item = l.inventoryItem as { id?: string } | undefined;
+            parents.set(l.id!, { id: l.id!, inventoryItem: { inventoryLevels: { nodes: [] } } });
+            order.push(l.id!);
+            if (item?.id) viaItem.set(item.id, l.id!);
+            continue;
+          }
+          const ownerId = parents.has(l.__parentId) ? l.__parentId : viaItem.get(l.__parentId);
+          if (ownerId) parents.get(ownerId)!.inventoryItem!.inventoryLevels.nodes.push(l as never);
         }
-        const ownerId = parents.has(l.__parentId) ? l.__parentId : viaItem.get(l.__parentId);
-        if (ownerId) parents.get(ownerId)!.inventoryItem!.inventoryLevels.nodes.push(l as never);
-      }
-      return order.map((id) => parents.get(id)!);
+        return order.map((id) => parents.get(id)!);
+      },
     },
+    children: [{ path: ["inventoryItem", "inventoryLevels", "nodes"], limit: 10 }],
     save: (db, storeId, nodes) => saveInventory(db, storeId, nodes as GqlStock[]),
     webhooks: ["INVENTORY_LEVELS_UPDATE", "INVENTORY_LEVELS_CONNECT"],
     tables: ["inventory_levels"],
+    drift: false,
+  },
+  refunds: {
+    label: "refunds",
+    scopes: ["read_orders"],
+    // Only the orders that have one: a small slice of any store, cheap
+    // to page even where the orders themselves went bulk.
+    count: `{ ordersCount(query: "${REFUNDED}") { count } }`,
+    page: REFUNDS_QUERY,
+    root: "orders",
+    // A refund's line items are a connection inside a list, which a
+    // bulk query is refused for. So this pages, whatever the size, and
+    // its page asks for the most Shopify allows.
+    bulk: null,
+    children: [
+      { path: ["refunds"], limit: 50 },
+      { path: ["refunds", "*", "refundLineItems", "nodes"], limit: 250 },
+    ],
+    save: (db, storeId, nodes) => saveRefunds(db, storeId, nodes as GqlRefundedOrder[]),
+    // Carried by the orders topics: a refund raises orders/updated,
+    // whose payload holds every refund the order has.
+    webhooks: [],
+    tables: ["refunds"],
     drift: false,
   },
 } as const satisfies Record<string, ResourceSpec>;
@@ -270,13 +315,17 @@ export function scopesFor(env = process.env): string[] {
 /** Every webhook topic any resource listens for. */
 export const WEBHOOK_TOPICS: readonly string[] = RESOURCES.flatMap((r) => SHOPIFY_RESOURCES[r].webhooks);
 
-const dig = (node: unknown, path: readonly string[]): unknown[] | null => {
-  let cur: unknown = node;
+/** Every list found at `path` below `node`. A "*" step looks inside each element of a list. */
+const listsAt = (node: unknown, path: readonly string[]): unknown[][] => {
+  let cur: unknown[] = [node];
   for (const step of path) {
-    if (cur === null || typeof cur !== "object") return null;
-    cur = (cur as Record<string, unknown>)[step];
+    cur = cur.flatMap((n) => {
+      if (n === null || typeof n !== "object") return [];
+      if (step === "*") return Array.isArray(n) ? n : [];
+      return [(n as Record<string, unknown>)[step]];
+    });
   }
-  return Array.isArray(cur) ? cur : null;
+  return cur.filter(Array.isArray) as unknown[][];
 };
 
 /**
@@ -294,7 +343,7 @@ const dig = (node: unknown, path: readonly string[]): unknown[] | null => {
  */
 export function childrenWereCut(resource: Resource, nodes: unknown[]): boolean {
   return SHOPIFY_RESOURCES[resource].children.some(({ path, limit }) =>
-    nodes.some((n) => (dig(n, path)?.length ?? 0) >= limit)
+    nodes.some((n) => listsAt(n, path).some((list) => list.length >= limit))
   );
 }
 
@@ -329,7 +378,8 @@ export async function importPage(
   >(store.shop_domain, token, spec.page, { n: PAGE, after });
   const { nodes, pageInfo } = data[spec.root];
   if (nodes.length === 0) return { imported: 0, cursor: pageInfo.endCursor, hasNext: false };
-  if (childrenWereCut(resource, nodes)) return { imported: 0, cursor: after, hasNext: true, cut: true };
+  // A cut is only worth reporting where there is a bulk road to take.
+  if (spec.bulk && childrenWereCut(resource, nodes)) return { imported: 0, cursor: after, hasNext: true, cut: true };
   await spec.save(db, store.id, nodes);
   return { imported: nodes.length, cursor: pageInfo.endCursor, hasNext: pageInfo.hasNextPage };
 }

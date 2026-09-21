@@ -15,6 +15,7 @@
 
 import { createServer } from "node:http";
 import { ingestSlice } from "../src/lib/shopify-bulk.ts";
+import { SHOPIFY_RESOURCES } from "../src/lib/shopify-resources.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -231,6 +232,7 @@ console.log("\nan order keeps its lines and its refunds apart");
     {
       id: "gid://shopify/LineItem/1",
       title: "A thing",
+      variantTitle: "Blue",
       quantity: 2,
       sku: "X",
       originalUnitPriceSet: { shopMoney: { amount: "25.00" } },
@@ -242,9 +244,40 @@ console.log("\nan order keeps its lines and its refunds apart");
   await readAll(db, "orders", file.url);
   check("the order is written", (written.orders ?? []).length === 1);
   check("its line is a line", (written.order_line_items ?? []).length === 1);
+  check("the line kept its variant", written.order_line_items[0].variant_title === "Blue");
   check("and its refund is a refund", (written.refunds ?? []).length === 1);
   check("the refund kept its amount", written.refunds[0].amount === 25);
+  check("and left the units alone for the refunds pass", !("quantity" in written.refunds[0]));
   await file.stop();
+}
+
+console.log("\nhow many units went back comes by its own page");
+{
+  // A refund's line items are a connection inside a list, and Shopify
+  // refuses that in a bulk query outright. So refunds are a resource
+  // of their own with no bulk road, paged over the refunded orders.
+  check("refunds have no bulk road", SHOPIFY_RESOURCES.refunds.bulk === null);
+  check("and page only the orders with one", /financial_status:refunded/.test(SHOPIFY_RESOURCES.refunds.page));
+  // The orders pass has been: the refund's order is already here.
+  const { db, written } = recorder({ orders: [{ external_id: "gid://shopify/Order/1" }] });
+  await SHOPIFY_RESOURCES.refunds.save(db, "store-1", [
+    {
+      id: "gid://shopify/Order/1",
+      refunds: [
+        {
+          id: "gid://shopify/Refund/1",
+          createdAt: "2026-01-02T00:00:00Z",
+          totalRefundedSet: { shopMoney: { amount: "25.00" } },
+          refundLineItems: { nodes: [{ quantity: 2 }, { quantity: 1 }] },
+        },
+      ],
+    },
+    // Never imported: nothing to hang its refund on, so it waits.
+    { id: "gid://shopify/Order/9", refunds: [{ id: "gid://shopify/Refund/9", createdAt: "2026-01-02T00:00:00Z", totalRefundedSet: null, refundLineItems: { nodes: [{ quantity: 4 }] } }] },
+  ]);
+  check("the refund lands on its order", (written.refunds ?? []).length === 1 && written.refunds[0].order_id === "orders-0");
+  check("with the units summed", written.refunds[0].quantity === 3);
+  check("and the amount", written.refunds[0].amount === 25);
 }
 
 // ── A page that lost children ───────────────────────────────────
@@ -267,15 +300,21 @@ console.log("\nan order keeps its lines and its refunds apart");
     childrenWereCut("products", [product(2), product(100), product(3)])
   );
 
-  const order = (lines, refunds = 0) => ({
+  const order = (lines, refunds = 0, refundLines = 0) => ({
     lineItems: { nodes: Array.from({ length: lines }, (_, i) => ({ id: `l${i}` })) },
-    refunds: Array.from({ length: refunds }, (_, i) => ({ id: `r${i}` })),
+    refunds: Array.from({ length: refunds }, (_, i) => ({
+      id: `r${i}`,
+      refundLineItems: { nodes: Array.from({ length: refundLines }, (_, j) => ({ id: `rl${j}` })) },
+    })),
   });
   check("an ordinary order is left alone", !childrenWereCut("orders", [order(5, 1)]));
   check("a hundred lines is not", childrenWereCut("orders", [order(100)]));
   // Refunds are a plain list with its own smaller limit, and were the
   // one child that could never be asked for a pageInfo.
   check("and twenty refunds is not", childrenWereCut("orders", [order(3, 20)]));
+  check("a refund of a few units is left alone", !childrenWereCut("refunds", [order(0, 1, 4)]));
+  check("one of two hundred and fifty lines is not", childrenWereCut("refunds", [order(0, 1, 250)]));
+  check("nor an order with fifty refunds", childrenWereCut("refunds", [order(0, 50)]));
 
   const stocked = (places) => ({
     inventoryItem: {
