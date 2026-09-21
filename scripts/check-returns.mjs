@@ -79,12 +79,13 @@ const orphan = SHOPIFY_RESOURCES.returns.bulk.assemble([{ id: "line-z", __parent
 check("an orphaned line is dropped rather than thrown over", orphan.length === 0);
 
 console.log("\nand a page at its limit is known to be cut");
-const atLimit = { id: ORDER_A, returns: { nodes: Array.from({ length: 20 }, (_, i) => ({ id: `r${i}`, returnLineItems: { nodes: [] } })) } };
-check("twenty returns on one order means go bulk", childrenWereCut("returns", [atLimit]));
-const deepLimit = { id: ORDER_A, returns: { nodes: [{ id: "r", returnLineItems: { nodes: Array.from({ length: 50 }, (_, i) => ({ id: `l${i}` })) } }] } };
+const [byReturn, byLine] = SHOPIFY_RESOURCES.returns.children.map((c) => c.limit);
+const atLimit = { id: ORDER_A, returns: { nodes: Array.from({ length: byReturn }, (_, i) => ({ id: `r${i}`, returnLineItems: { nodes: [] } })) } };
+check(`${byReturn} returns on one order means go bulk`, childrenWereCut("returns", [atLimit]));
+const deepLimit = { id: ORDER_A, returns: { nodes: [{ id: "r", returnLineItems: { nodes: Array.from({ length: byLine }, (_, i) => ({ id: `l${i}` })) } }] } };
 // The one a single-level check would miss: the lines are two lists
 // down, inside each return.
-check("fifty lines inside one return does too", childrenWereCut("returns", [deepLimit]));
+check(`${byLine} lines inside one return does too`, childrenWereCut("returns", [deepLimit]));
 const small = { id: ORDER_A, returns: { nodes: [{ id: "r", returnLineItems: { nodes: [{ id: "l" }] } }] } };
 check("and a small one does not", !childrenWereCut("returns", [small]));
 

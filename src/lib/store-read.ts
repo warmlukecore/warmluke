@@ -66,6 +66,7 @@ export const COUNTED = [
   "discounts",
   "returns",
   "return_line_items",
+  "payouts",
   "inventory_levels",
 ] as const;
 
@@ -240,6 +241,7 @@ export type StoreTable =
   | "discounts"
   | "returns"
   | "return_reasons"
+  | "payouts"
   | "fulfillments"
   | "transactions"
   | "locations"
@@ -496,6 +498,27 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "items", label: "What", type: "text" },
     ],
   },
+  payouts: {
+    // The only list here that says what reached the bank. Everything
+    // else says what a customer was charged, which is a different
+    // number and always a larger one.
+    advice:
+      'One row per Shopify Payments payout. net is what Shopify actually sent to the bank and is the number to reconcile against a statement — it is NOT revenue, and it is not the same as the Orders total, because fees, refunds and timing all sit between them. state is "In the bank" (done), "On its way", "Failed" or "Cancelled"; only "In the bank" has really arrived. kind is "Paid out" or "Taken back" — NEVER add the two together, a "Taken back" row is money leaving. fees is everything Shopify kept across all its fee categories, which is what "what did Shopify charge me" means. charges_gross is what customers paid in that payout and refunds_gross is what went back out of it. This list is empty for any shop not using Shopify Payments, which is normal and not a sync problem.',
+    label: "Shopify payouts",
+    what: 'one row per payout to the bank — when, how much actually arrived, and what Shopify kept; what "payouts", "what did I get paid", "Shopify fees", "settlement" and "reconcile my bank" mean',
+    section: { label: "Payouts", icon: "banknote", importedWith: "payouts" },
+    view: "store_payouts",
+    order: { field: "issued_at", ascending: false },
+    select: "id, issued_at, state, kind, net, currency, charges_gross, refunds_gross, fees, adjustments_gross",
+    columns: [
+      { field: "issued_at", label: "Date", type: "date" },
+      { field: "state", label: "State", type: "badge" },
+      { field: "kind", label: "Direction", type: "text" },
+      { field: "net", label: "Reached the bank", type: "currency", currencyField: "currency" },
+      { field: "charges_gross", label: "Customers paid", type: "currency", currencyField: "currency" },
+      { field: "fees", label: "Shopify kept", type: "currency", currencyField: "currency" },
+    ],
+  },
   returns: {
     // What refunds never said: why it came back, and whether it is
     // finished. days_open is the column that makes this worth
@@ -704,6 +727,7 @@ const SEARCHABLE: Record<StoreTable, string[]> = {
   discounts: ["title", "codes", "state", "method", "takes_off", "summary"],
   returns: ["name", "order_number", "customer_name", "state", "reasons", "items"],
   return_reasons: ["title", "sku", "reason"],
+  payouts: ["state", "kind", "currency"],
   product_sales: ["title"],
   order_line_items: ["order_number", "sku", "title", "customer_name"],
   refunds: ["order_number", "customer_name"],

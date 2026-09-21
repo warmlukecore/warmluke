@@ -1281,6 +1281,15 @@ export async function saveDiscounts(
 // deprecated — "Use returnReasonDefinition instead. This field will
 // be removed in the future" — and a field that disappears takes the
 // whole query with it, not just one column.
+//
+// Five returns and twenty lines, not twenty and fifty. Shopify
+// prices a query before running it and refuses anything over 1000;
+// three levels of connection multiply, and the generous version
+// cost 1598 and was refused outright — on every store, empty or
+// not, because the price is set by what is asked for and not by
+// what comes back. This costs 716. An order with more than five
+// returns, or a return with more than twenty lines, trips the child
+// limits below and goes the bulk way, which has no limits at all.
 export const RETURNING =
   "return_status:return_requested OR return_status:in_progress OR return_status:returned";
 
@@ -1317,10 +1326,10 @@ query($n: Int!, $after: String) {
     pageInfo { hasNextPage endCursor }
     nodes {
       id
-      returns(first: 20) {
+      returns(first: 5) {
         nodes {
           id name status totalQuantity createdAt closedAt
-          returnLineItems(first: 50) {
+          returnLineItems(first: 20) {
             nodes {
               id quantity refundedQuantity returnReasonNote
               returnReasonDefinition { handle name }
@@ -1454,4 +1463,101 @@ export async function saveReturns(
   if (lines.length === 0) return;
   const { error: wrote } = await db.from("return_line_items").insert(lines);
   if (wrote) throw new Error(wrote.message);
+}
+
+// ── Payouts ─────────────────────────────────────────────────────
+// Orders say what customers were charged. Transactions say what the
+// gateway captured. Neither says what Shopify actually sent to the
+// bank, on what day, with what taken out — the number the merchant
+// reconciles against their statement.
+//
+// Not a top-level list: payouts hang off the shop's Shopify Payments
+// account, and a shop without one has no account at all rather than
+// an empty list. That is the ordinary case for most of the world,
+// so it is a normal answer here and not a failure.
+//
+// gross is deliberately not asked for: Shopify deprecates it in
+// favour of net.
+export const PAYOUTS_QUERY = `
+query($n: Int!, $after: String) {
+  shopifyPaymentsAccount {
+    payouts(first: $n, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        id status transactionType issuedAt
+        net { amount currencyCode }
+        summary {
+          chargesGross { amount }
+          chargesFee { amount }
+          refundsFeeGross { amount }
+          refundsFee { amount }
+          adjustmentsGross { amount }
+          adjustmentsFee { amount }
+          reservedFundsGross { amount }
+          reservedFundsFee { amount }
+          retriedPayoutsGross { amount }
+          retriedPayoutsFee { amount }
+          advanceGross { amount }
+          advanceFees { amount }
+        }
+      }
+    }
+  }
+}`;
+
+type Money = { amount?: string | null } | null | undefined;
+
+export type GqlPayout = {
+  id: string;
+  status?: string | null;
+  transactionType?: string | null;
+  issuedAt?: string | null;
+  net?: { amount?: string | null; currencyCode?: string | null } | null;
+  summary?: {
+    chargesGross?: Money; chargesFee?: Money;
+    refundsFeeGross?: Money; refundsFee?: Money;
+    adjustmentsGross?: Money; adjustmentsFee?: Money;
+    reservedFundsGross?: Money; reservedFundsFee?: Money;
+    retriedPayoutsGross?: Money; retriedPayoutsFee?: Money;
+    advanceGross?: Money; advanceFees?: Money;
+  } | null;
+};
+
+/** Writes a batch of payouts. */
+export async function savePayouts(
+  db: SupabaseClient, storeId: string, nodes: GqlPayout[]
+): Promise<void> {
+  if (nodes.length === 0) return;
+  const n = (m: Money) => (m?.amount != null ? Number(m.amount) : null);
+
+  const { error } = await db.from("payouts").upsert(
+    nodes.map((p) => {
+      const s = p.summary ?? {};
+      return {
+        store_id: storeId,
+        external_id: p.id,
+        status: p.status ? p.status.toUpperCase() : null,
+        // DEPOSIT or WITHDRAWAL. Kept apart because adding the two
+        // reports money arriving that in fact left.
+        kind: p.transactionType ? p.transactionType.toUpperCase() : null,
+        issued_at: p.issuedAt ?? null,
+        net: n(p.net),
+        currency: p.net?.currencyCode ?? null,
+        charges_gross: n(s.chargesGross),
+        charges_fee: n(s.chargesFee),
+        refunds_gross: n(s.refundsFeeGross),
+        refunds_fee: n(s.refundsFee),
+        adjustments_gross: n(s.adjustmentsGross),
+        adjustments_fee: n(s.adjustmentsFee),
+        reserved_gross: n(s.reservedFundsGross),
+        reserved_fee: n(s.reservedFundsFee),
+        retried_gross: n(s.retriedPayoutsGross),
+        retried_fee: n(s.retriedPayoutsFee),
+        advance_gross: n(s.advanceGross),
+        advance_fee: n(s.advanceFees),
+      };
+    }),
+    { onConflict: "store_id,external_id" }
+  );
+  if (error) throw new Error(error.message);
 }

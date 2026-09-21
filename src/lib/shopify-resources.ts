@@ -35,6 +35,7 @@ import {
   INVENTORY_QUERY,
   LOCATIONS_QUERY,
   ORDERS_QUERY,
+  PAYOUTS_QUERY,
   PAGE,
   PRODUCTS_QUERY,
   REFUNDED,
@@ -50,6 +51,7 @@ import {
   saveInventory,
   saveLocations,
   saveOrders,
+  savePayouts,
   saveProducts,
   saveRefunds,
   saveReturns,
@@ -61,6 +63,7 @@ import {
   type GqlFulfilledOrder,
   type GqlLocation,
   type GqlOrder,
+  type GqlPayout,
   type GqlProduct,
   type GqlRefundedOrder,
   type GqlReturningOrder,
@@ -393,9 +396,11 @@ export const SHOPIFY_RESOURCES = {
         return order.map((id) => orders.get(id)!);
       },
     },
+    // Matching what the page asks for. Small because the query is
+    // priced before it runs: see the note on RETURNS_QUERY.
     children: [
-      { path: ["returns", "nodes"], limit: 20 },
-      { path: ["returns", "nodes", "*", "returnLineItems", "nodes"], limit: 50 },
+      { path: ["returns", "nodes"], limit: 5 },
+      { path: ["returns", "nodes", "*", "returnLineItems", "nodes"], limit: 20 },
     ],
     save: (db, storeId, nodes) => saveReturns(db, storeId, nodes as GqlReturningOrder[]),
     // Eight topics, one meaning: the state of a return changed.
@@ -407,6 +412,34 @@ export const SHOPIFY_RESOURCES = {
     // Not compared. The pass counts ORDERS in a returning state and
     // the table holds returns, so the two were never the same number
     // — the mistake stock already taught.
+    drift: false,
+  },
+  payouts: {
+    label: "payouts",
+    scopes: ["read_shopify_payments_payouts"],
+    // There is no payoutsCount in Shopify's schema. This asks the
+    // cheapest valid question instead and the count comes back zero,
+    // which is harmless: the count only ever chooses between paging
+    // and bulk, and there is no bulk road here to choose.
+    count: "{ shopifyPaymentsAccount { id } }",
+    page: PAYOUTS_QUERY,
+    // Two steps down. A shop with no Shopify Payments account has no
+    // payouts connection at all, and importPage reads that as zero
+    // rows rather than an error.
+    root: "shopifyPaymentsAccount.payouts",
+    // No bulk road: a bulk operation has to start from a top-level
+    // connection, and this one hangs off an object.
+    bulk: null,
+    children: [],
+    save: (db, storeId, nodes) => savePayouts(db, storeId, nodes as GqlPayout[]),
+    // Shopify publishes no payout webhook — checked against its own
+    // topic list, which has DISCOUNTS_*, RETURNS_* and DISPUTES_*
+    // and nothing here. So these go stale between imports.
+    webhooks: [],
+    tables: ["payouts"],
+    // Never compared: a payout is not something a merchant can
+    // delete, so a drop could only ever be our own mistake, and the
+    // count above is deliberately zero anyway.
     drift: false,
   },
   orders: {
@@ -629,9 +662,6 @@ export const isResource = (v: unknown): v is Resource =>
  * has to be deleted from here when its resource is written.
  */
 export const PLANNED_SCOPES = [
-  // Shopify's own payouts, for reconciling against a bank statement.
-  // Only useful to a shop actually using Shopify Payments.
-  "read_shopify_payments_payouts",
 ] as const;
 
 /** Every read scope any resource needs, once each, in resource order. Read-only by construction. */
@@ -717,6 +747,33 @@ export function childrenWereCut(resource: Resource, nodes: unknown[]): boolean {
  * back only the first hundred. The bulk route is about to fetch the
  * whole thing anyway; a page left untouched is still right.
  */
+/**
+ * The page a resource's root names, which is not always at the top.
+ *
+ * Most lists are one step down — `data.orders`. Payouts are two:
+ * they hang off the shop's Shopify Payments account, and a shop
+ * without one has no account object at all rather than an empty
+ * list. Null at any step is that case, and the caller reads it as
+ * zero rows instead of crashing on a property of null.
+ */
+export function pageAt(
+  data: unknown,
+  root: string
+): { pageInfo: { hasNextPage: boolean; endCursor: string }; nodes: unknown[] } | null {
+  let node: unknown = data;
+  for (const step of root.split(".")) {
+    if (node === null || typeof node !== "object") return null;
+    node = (node as Record<string, unknown>)[step];
+  }
+  if (node === null || typeof node !== "object") return null;
+  const page = node as { pageInfo?: unknown; nodes?: unknown };
+  // A page without its two halves is not a page. Shopify has never
+  // sent one, and reading it as zero rows beats reading `undefined`
+  // as a length.
+  if (!Array.isArray(page.nodes) || !page.pageInfo) return null;
+  return page as { pageInfo: { hasNextPage: boolean; endCursor: string }; nodes: unknown[] };
+}
+
 export async function importPage(
   db: SupabaseClient,
   store: StoreToken,
@@ -736,7 +793,12 @@ export async function importPage(
   const data = await graphql<
     Record<string, { pageInfo: { hasNextPage: boolean; endCursor: string }; nodes: unknown[] }>
   >(store.shop_domain, token, spec.page, { n: PAGE, after });
-  const { nodes, pageInfo } = data[spec.root];
+  const at = pageAt(data, spec.root);
+  // Null the whole way down is a real answer, not a failure: a shop
+  // with no Shopify Payments has no account object to hang payouts
+  // off, which is most shops in most countries.
+  if (!at) return { imported: 0, cursor: null, hasNext: false };
+  const { nodes, pageInfo } = at;
   if (nodes.length === 0) return { imported: 0, cursor: pageInfo.endCursor, hasNext: false };
   // A cut is only worth reporting where there is a bulk road to take.
   if (spec.bulk && childrenWereCut(resource, nodes)) return { imported: 0, cursor: after, hasNext: true, cut: true };
