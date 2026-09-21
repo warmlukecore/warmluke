@@ -24,7 +24,7 @@ import { noteJudgement } from "@/lib/judge";
 import { routeQuestion } from "@/lib/route";
 import { fetchSlice } from "@/lib/slice";
 import { ALLOWED_ICONS } from "@/lib/types";
-import type { AssistantPlan, ModuleRow, ProjectRow, UiSchema } from "@/lib/types";
+import type { AssistantPlan, ModuleRow, NextStep, ProjectRow, UiSchema } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -564,11 +564,31 @@ async function settleDesign(opts: {
   design: string | null;
   unmet: string[];
   request: string;
+  /**
+   * What the design offered to do after this one, in the merchant's
+   * words. Luke has produced these since follow-ups were added and
+   * this door threw them away, so a build through their own
+   * assistant ended in silence while the same build in the app ended
+   * with two things worth doing next.
+   */
+  next?: NextStep[];
   store: Parameters<typeof blueprintAsText>[2];
   /** Told once the request row is written, so the caller can stop treating the turn as refundable. */
   charged?: () => void;
 }) {
-  const { db, id, origin, project, moduleList, plans, design, unmet, request, store, charged } = opts;
+  const { db, id, origin, project, moduleList, plans, design, unmet, next, request, store, charged } = opts;
+  // Offered, never done from here: each is a sentence the merchant
+  // might say, not a button this can press. Not named `after`, which
+  // is next/server's — shadowing it turns the judge below into a
+  // type error, and would have turned it into silence.
+  const followUps = (next ?? []).filter((n) => n?.label && n?.prompt).slice(0, 2);
+  const whatNext = followUps.length
+    ? {
+        next_steps: followUps.map((n) => ({ say: n.label, as: n.prompt })),
+        next_steps_note:
+          "Offer these in their own words and wait. Each is another change, so it needs proposing and approving like this one did.",
+      }
+    : {};
 
       // ── Does this one get to skip the merchant? ──────────────
       //
@@ -683,7 +703,8 @@ async function settleDesign(opts: {
             id,
             text({
               status: errors.length ? "partly built" : "built",
-              note: "This app builds without waiting for approval. Tell the merchant what was built — it is already live and shows in their panel.",
+              note: "This app builds without waiting for approval. Tell the merchant what was built — it is already live and shows in their panel. They can carry on here, or open Warmluke and ask Luke inside it; both reach the same app.",
+              ...whatNext,
               // Named even though nobody has to approve it. An
               // automatic build was the one answer that came back
               // without an id, so an assistant that built something
@@ -729,6 +750,7 @@ async function settleDesign(opts: {
           note: "Nothing has changed yet. Read this design back to the merchant word for word. If they approve, call approve_change with the request_id. If they leave it and come back later, check pending_changes rather than trusting this id — they may have dealt with it in Warmluke.",
           request_id: requestId,
           design,
+          ...whatNext,
           ...(gone.length
             ? {
                 cannot_be_approved_from_here: `This removes ${gone.join(", ")}, and removal takes every row in it. It is waiting in Warmluke, where the merchant types the section's name to confirm. Do not call approve_change for it — say plainly that this one they have to confirm themselves.`,
@@ -1004,6 +1026,7 @@ export async function POST(req: Request) {
           plans,
           design,
           unmet: turn.unmet ?? [],
+          next: turn.reply.type === "blueprint" ? turn.reply.blueprint.next : turn.reply.next,
           request,
           store: turn.store,
           // Charged the moment the request row exists — that is what
@@ -1706,7 +1729,7 @@ export async function POST(req: Request) {
           ...(errors.length ? { not_built: errors.slice(0, 3) } : {}),
           note: errors.length
             ? "Some of it went in and some did not. Tell the merchant exactly which, and what is still missing."
-            : "It is live in their app now.",
+            : "It is live in their app now. They can keep going here, or open Warmluke and ask Luke inside it — both reach the same app, and anything built either way shows in the panel as it happens.",
           open: `${origin}/app/${reqRow.project_id}`,
         })
       );
