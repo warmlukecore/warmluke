@@ -17,7 +17,12 @@ export type Watch = {
   table: string;
   /** PostgREST filter, e.g. `project_id=eq.<uuid>`. */
   filter?: string;
-  onChange: () => void;
+  /**
+   * The row as it now stands, when the change carried one — an insert
+   * or an update. A caller that only needs to know something moved
+   * ignores it; one deciding WHICH thread to reload cannot.
+   */
+  onChange: (row?: Record<string, unknown>) => void;
 };
 
 /**
@@ -35,16 +40,20 @@ export function watchRows(channelName: string, watches: Watch[]): () => void {
   // One build writes a section, its columns and its rows in quick
   // succession. Reloading on each would run three round trips and
   // repaint three times to arrive at the same screen.
-  const pending = new Map<() => void, ReturnType<typeof setTimeout>>();
-  const coalesce = (fn: () => void) => {
-    clearTimeout(pending.get(fn));
-    pending.set(
-      fn,
-      setTimeout(() => {
+  type Row = Record<string, unknown> | undefined;
+  const pending = new Map<Watch["onChange"], { timer: ReturnType<typeof setTimeout>; row: Row }>();
+  const coalesce = (fn: Watch["onChange"], row: Row) => {
+    clearTimeout(pending.get(fn)?.timer);
+    pending.set(fn, {
+      // The newest wins. Three writes in a burst are one reload, and
+      // the row it reloads should be the last state, not the first.
+      row,
+      timer: setTimeout(() => {
+        const last = pending.get(fn);
         pending.delete(fn);
-        fn();
-      }, 150)
-    );
+        fn(last?.row);
+      }, 150),
+    });
   };
 
   for (const w of watches) {
@@ -58,14 +67,16 @@ export function watchRows(channelName: string, watches: Watch[]): () => void {
         table: w.table,
         ...(w.filter ? { filter: w.filter } : {}),
       } as never,
-      (() => coalesce(w.onChange)) as never
+      // A delete carries no new row, which is why this is optional.
+      (((p: { new?: Record<string, unknown> }) =>
+        coalesce(w.onChange, p?.new)) as unknown) as never
     );
   }
 
   channel.subscribe();
 
   return () => {
-    for (const t of pending.values()) clearTimeout(t);
+    for (const t of pending.values()) clearTimeout(t.timer);
     pending.clear();
     supabase.removeChannel(channel);
   };

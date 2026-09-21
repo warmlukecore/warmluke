@@ -96,6 +96,20 @@ function withStoreColumns(row: UiSchemaRow, sourceTable: string | null | undefin
   } as UiSchemaRow;
 }
 
+/** A message the server wrote, as opposed to one this screen put up a moment ago. */
+const STORED_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Whether the thread ends on something still asking the merchant a
+ * question. Opening another thread over the top of one would take the
+ * decision away mid-thought.
+ */
+function awaitingAnswer(messages: ChatMessage[]): boolean {
+  const last = messages[messages.length - 1];
+  if (!last || last.role !== "assistant") return false;
+  return !!last.blueprint || !!last.plan || !!last.questions;
+}
+
 /** What a build did, for whoever has to write it down. */
 export type BuildOutcome = {
   applied: Array<Record<string, unknown>>;
@@ -248,6 +262,11 @@ export default function AppShell({
       const rebuilt: ChatMessage[] = [];
       for (const m of json.messages ?? []) {
         const p = m.payload as (AssistantReply & { kind?: string; text?: string }) | null;
+        // Retired by an edit: the merchant corrected this prompt, so
+        // it and what it drew are history rather than the thread's
+        // current business. Kept — a record that drops the wrong turn
+        // cannot explain the right one.
+        const retired = (p as { superseded?: boolean } | null)?.superseded === true;
         if (m.role === "user") {
           rebuilt.push({
             id: m.id,
@@ -256,6 +275,7 @@ export default function AppShell({
             // Kept across a reload, or the thread would claim they
             // typed it here.
             viaClient: (p as { via?: string } | null)?.via === "client",
+            superseded: retired,
           });
           continue;
         }
@@ -297,6 +317,12 @@ export default function AppShell({
               : {}),
             ...(next?.length ? { next } : {}),
           });
+        }
+        // Every branch above pushes exactly one, so this marks the
+        // reply that has just been rebuilt.
+        if (retired) {
+          const last = rebuilt[rebuilt.length - 1];
+          if (last) last.superseded = true;
         }
       }
       setChatMessages(rebuilt);
@@ -598,6 +624,63 @@ export default function AppShell({
         : []),
     ]);
   }, [projectId, selectedModuleId, loadModules, loadModuleData]);
+
+  // Read inside a subscription that is set up once, so the values it
+  // sees have to be current rather than whatever they were then.
+  const busyRef = useRef(false);
+  busyRef.current = chatBusy || building;
+  const chatMessagesRef = useRef<ChatMessage[]>([]);
+  chatMessagesRef.current = chatMessages;
+
+  /**
+   * A thread that moves while they are watching it.
+   *
+   * A build approved inside their own Claude is written server-side:
+   * the request and the receipt go into "Changes from your AI" by
+   * abo_log_client_build. Sections appeared at once and the card in
+   * the queue appeared at once, because both are published to
+   * realtime — and the conversation explaining them sat still until
+   * somebody refreshed. So the app changed under the merchant with no
+   * word about why.
+   *
+   * Every writer of a message bumps its thread's updated_at, which
+   * makes one subscription the whole signal.
+   */
+  useEffect(() => {
+    return watchRows(`threads:${projectId}`, [
+      {
+        table: "conversations",
+        filter: `project_id=eq.${projectId}`,
+        onChange: (row) => {
+          // A new thread belongs in the picker whether or not it is
+          // the one being read.
+          loadThread().catch(() => {});
+          const id = typeof row?.id === "string" ? row.id : null;
+          // Their own turn, mid-flight: the panel is already showing
+          // it, and reloading under a stream would replace what is
+          // being written with what happens to be saved.
+          if (!id || busyRef.current) return;
+          const open = conversationIdRef.current;
+          if (id === open) {
+            loadThread(id).catch(() => {});
+            return;
+          }
+          // Another thread — in practice the one their assistant's
+          // builds are filed in. Opening it is what a refresh does
+          // anyway; the only question is whether they are in the
+          // middle of something here. A card still waiting on an
+          // answer is; finished history is not.
+          if (!awaitingAnswer(chatMessagesRef.current)) {
+            loadThread(id).catch(() => {});
+          }
+        },
+      },
+    ]);
+    // Deliberately not depending on the busy flags or the messages:
+    // they are read through refs above, and listing them here would
+    // tear down and rebuild the channel on every keystroke of every
+    // reply.
+  }, [projectId, loadThread]);
 
   // A Shopify-backed section, when they come back to this tab.
   //
@@ -960,6 +1043,44 @@ export default function AppShell({
       }
     },
     [chatBusy, building, projectId, selectedModuleId, conversationId, loadModules, loadThread]
+  );
+
+  /**
+   * Corrects a prompt they have already sent.
+   *
+   * The mistake is retired, not erased: it and everything answered
+   * after it stay in the thread, marked, because a conversation that
+   * quietly loses the wrong question cannot explain the right one.
+   * Then the corrected words run as an ordinary turn.
+   */
+  const editPrompt = useCallback(
+    async (messageId: string, text: string) => {
+      const said = text.trim();
+      if (!said || chatBusy || building) return;
+      // Saved messages only. A bubble put on screen a moment ago has
+      // a client id and nothing behind it to retire; running the
+      // corrected turn is the whole of what is wanted.
+      if (STORED_ID.test(messageId)) {
+        const { error } = await supabase.rpc("abo_supersede_from", { p_message: messageId });
+        if (error) {
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              id: nextChatId(),
+              role: "system",
+              text: `Couldn't retire the earlier version — ${error.message}. Nothing was sent.`,
+            },
+          ]);
+          return;
+        }
+      }
+      setChatMessages((prev) => {
+        const at = prev.findIndex((m) => m.id === messageId);
+        return at < 0 ? prev : prev.map((m, i) => (i >= at ? { ...m, superseded: true } : m));
+      });
+      await runPrompt(said);
+    },
+    [chatBusy, building, runPrompt]
   );
 
   // Apply-time validation failures are the assistant's problem, not the
@@ -1825,6 +1946,7 @@ export default function AppShell({
         onPickThread={loadThread}
         onDeleteThread={deleteThread}
         onSend={runPrompt}
+        onEditPrompt={editPrompt}
         onApply={applyPlan}
         onBuild={buildApproved}
         onDiscard={discardPlan}

@@ -56,12 +56,23 @@ export async function POST(req: Request) {
     const line = done.length
       ? `↩️ Put back — ${done.join(", ")}.${couldNot.length ? ` The rest could not be: ${couldNot.join("; ")}.` : ""}`
       : `Nothing could be put back: ${couldNot.join("; ")}.`;
+    const thread = (msg as { conversation_id?: string }).conversation_id;
     await client.from("messages").insert({
-      conversation_id: (msg as { conversation_id?: string }).conversation_id,
+      conversation_id: thread,
       role: "assistant",
       content: line,
       payload: { type: "applied", message: line },
     });
+    // The thread moved, and a panel open elsewhere learns about it
+    // from that — every other writer of a message says so too, and a
+    // put-back the second tab never hears about is the same stale
+    // screen by another road.
+    if (thread) {
+      await client
+        .from("conversations")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", thread);
+    }
 
     return NextResponse.json({ done, couldNot, message: line });
   } catch (e) {

@@ -53,6 +53,12 @@ export interface ChatMessage {
    */
   viaClient?: boolean;
   /**
+   * Corrected by a later edit. The bubble stays — it is what was
+   * actually asked — but it is no longer the live question, and
+   * neither is what it drew.
+   */
+  superseded?: boolean;
+  /**
    * What this build changed that can be put back, and the id of the
    * stored message holding it.
    *
@@ -516,6 +522,7 @@ export default function ChatPanel({
   canStop,
   steps = [],
   onSend,
+  onEditPrompt,
   onApply,
   onBuild,
   onDiscard,
@@ -551,6 +558,12 @@ export default function ChatPanel({
    *  the server has taken the turn, and while a build is applied. */
   steps?: TurnEvent[];
   onSend: (text: string) => Promise<void> | void;
+  /**
+   * Corrects a prompt already sent and runs it again. The shell owns
+   * it because retiring the old exchange is a write, and because the
+   * turn it starts is the same one the box starts.
+   */
+  onEditPrompt?: (messageId: string, text: string) => void | Promise<void>;
   onApply: (plan: AssistantPlan, planId: string) => void;
   /** Applies an approved blueprint's plans directly, with no model round trip. */
   onBuild: (
@@ -574,6 +587,9 @@ export default function ChatPanel({
   projectId: string;
 }) {
   const [input, setInput] = useState("");
+  /** The bubble being corrected, and the words as they stand. */
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
   // The connected store, so an approval card can say when a section
   // would sit beside data the project already holds. Loaded once per
   // panel, and null for a project without a store.
@@ -1359,21 +1375,82 @@ export default function ChatPanel({
           // clarify and blueprint looking live again.
           const answered = i < messages.length - 1;
           if (m.role === "user") {
+            const editing = editingId === m.id;
+            const send = () => {
+              const said = editText.trim();
+              if (!said || busy) return;
+              setEditingId(null);
+              void onEditPrompt?.(m.id, said);
+            };
             return (
-              <div key={m.id} className="flex flex-col items-end">
+              <div key={m.id} className="group flex flex-col items-end">
                 {m.viaClient && (
                   <div className="mb-0.5 pr-1 text-[10px] tracking-wide text-slate-400 uppercase">
                     Asked through your AI
                   </div>
                 )}
-                {/* break-words, because a request is not always made of
-                    words: "(Pending/Packed/Verified/Discrepancy)" is one
-                    unbreakable token, and without this it ran straight
-                    off the right edge of the panel and was cut in half.
-                    Same for a pasted URL or a list of SKUs. */}
-                <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-blue-600 px-3 py-2 text-sm break-words text-white">
-                  {m.text}
-                </div>
+                {editing ? (
+                  <div className="w-full max-w-[85%] rounded-2xl rounded-br-sm border border-slate-300 bg-white p-2">
+                    <textarea
+                      autoFocus
+                      rows={2}
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          send();
+                        }
+                        if (e.key === "Escape") setEditingId(null);
+                      }}
+                      className="w-full resize-none bg-transparent text-sm break-words text-slate-900 outline-none"
+                    />
+                    <div className="mt-1 flex items-center justify-end gap-3 text-[11px]">
+                      <button
+                        onClick={() => setEditingId(null)}
+                        className="text-slate-500 hover:text-slate-700"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={send}
+                        disabled={!editText.trim() || busy}
+                        className="font-medium text-blue-600 hover:text-blue-700 disabled:text-slate-300"
+                      >
+                        Send again
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className={`flex max-w-[85%] items-start gap-2 ${m.superseded ? "opacity-45" : ""}`}>
+                    {/* Their own words only. A request their assistant
+                        made was never typed here, and editing it would
+                        put words in Claude's mouth. */}
+                    {onEditPrompt && !m.viaClient && !m.superseded && !busy && (
+                      <button
+                        onClick={() => {
+                          setEditingId(m.id);
+                          setEditText(m.text ?? "");
+                        }}
+                        aria-label="Edit this message and send it again"
+                        className="mt-2 shrink-0 text-[11px] text-slate-400 opacity-0 transition group-hover:opacity-100 focus:opacity-100 hover:text-slate-600"
+                      >
+                        Edit
+                      </button>
+                    )}
+                    {/* break-words, because a request is not always made of
+                        words: "(Pending/Packed/Verified/Discrepancy)" is one
+                        unbreakable token, and without this it ran straight
+                        off the right edge of the panel and was cut in half.
+                        Same for a pasted URL or a list of SKUs. */}
+                    <div className="rounded-2xl rounded-br-sm bg-blue-600 px-3 py-2 text-sm break-words text-white">
+                      {m.text}
+                    </div>
+                  </div>
+                )}
+                {m.superseded && !editing && (
+                  <div className="mt-0.5 pr-1 text-[10px] text-slate-400">replaced by an edit</div>
+                )}
               </div>
             );
           }
