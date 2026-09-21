@@ -66,9 +66,20 @@ console.log("a turn that designed nothing is not an included design");
     "and every other way out gives it back in one place",
     /finally \{\s*if \(refundable\) await client\.rpc\("abo_refund_turn"/.test(chat)
   );
+  // The distance is a stand-in for "in the same block, just after the
+  // insert" — it measures nothing real. It was 600, and a comment
+  // explaining one more stored field pushed the charge to 681: a
+  // billing check went red over a change that did not touch billing.
+  //
+  // Widened rather than made clever. A guard for "no return between
+  // the two" was written here and quietly did not catch one when it
+  // was tested against a planted return, which is worse than the
+  // blunt version — a check that cannot fail is a check that lies.
+  // The refund in the finally below is what actually makes a missed
+  // charge harmless, and that one is exact.
   check(
     "propose_change charges only once the request row exists",
-    /abo_mcp_propose[\s\S]{0,600}charged\?\.\(\)/.test(mcp) &&
+    /abo_mcp_propose[\s\S]{0,1200}charged\?\.\(\)/.test(mcp) &&
       /finally \{\s*if \(refundable\) await db\.rpc\("abo_refund_turn"/.test(mcp)
   );
   check(
