@@ -98,9 +98,14 @@ Model-tier checks are paid and non-deterministic, so they are not push gates.
 
 ## Deployment
 
-The repository is linked to Vercel. The production build is `pnpm build`, and the server
-expects the same runtime environment variables documented in
-[Environment reference](../reference/environment.md).
+The repository is linked to Vercel, but pushing to `main` does not deploy it. The
+`deploy` job in `.github/workflows/checks.yml` does, after both check tiers have passed:
+it asks the Vercel API to build that commit from GitHub and waits for the result, so a
+failed build turns the commit red. `vercel.json` turns off the git integration for `main`
+only, leaving previews on other branches alone.
+
+The production build is `pnpm build`, and the server expects the same runtime environment
+variables documented in [Environment reference](../reference/environment.md).
 
 Before deployment:
 
@@ -111,9 +116,14 @@ Before deployment:
 - verify Shopify scopes before enabling extended order history;
 - review security-header changes against the installed Next.js 16 documentation.
 
-Vercel deployment and GitHub checks are separate systems; a failed check does not
-necessarily cancel a deployment. Treat a red commit as unsuitable for promotion even if
-the hosting provider has built it.
+They used to be separate systems, and both directions failed on 2026-09-21: a commit
+went live while its run was cancelled by the next push, and two commits passed every
+check and were never deployed at all. A run on `main` is no longer cancelled by the push
+after it, and the deploy is a job rather than a side effect of pushing.
+
+To deploy by hand when that job is in the way, `vercel --prod --yes` from a clean tree
+still works. The deploy token is team-scoped, so the Vercel CLI cannot authenticate with
+it; the job uses the REST API directly.
 
 ## Operational recovery
 
