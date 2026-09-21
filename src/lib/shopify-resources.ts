@@ -193,6 +193,7 @@ export const SHOPIFY_RESOURCES = {
       originalUnitPriceSet { shopMoney { amount } }
     } } }
     refunds { id createdAt totalRefundedSet { shopMoney { amount } } }
+    transactions { id kind status gateway processedAt test amountSet { shopMoney { amount currencyCode } } }
   } } } }`,
       // refunds is a plain list, not a connection, so the file carries
       // it inside the order itself and never as separate child lines.
@@ -215,10 +216,23 @@ export const SHOPIFY_RESOURCES = {
     children: [
       { path: ["lineItems", "nodes"], limit: 100 },
       { path: ["refunds"], limit: 20 },
+      // A plain list like refunds, so the export carries it inside
+      // the order and the assembler needs to know nothing about it.
+      { path: ["transactions"], limit: 30 },
     ],
     save: (db, storeId, nodes) => saveOrders(db, storeId, nodes as GqlOrder[]),
-    webhooks: ["ORDERS_CREATE", "ORDERS_UPDATED", "ORDERS_CANCELLED", "ORDERS_PAID", "ORDERS_FULFILLED"],
-    tables: ["orders", "order_line_items", "refunds"],
+    webhooks: [
+      "ORDERS_CREATE",
+      "ORDERS_UPDATED",
+      "ORDERS_CANCELLED",
+      "ORDERS_PAID",
+      "ORDERS_FULFILLED",
+      // Money moves without the order changing: a cash-on-delivery
+      // order is collected days later and the order itself says the
+      // same thing before and after.
+      "ORDER_TRANSACTIONS_CREATE",
+    ],
+    tables: ["orders", "order_line_items", "refunds", "order_transactions"],
     drift: true,
   },
   inventory: {

@@ -29,7 +29,7 @@ Current resources:
 | --- | --- | --- | --- |
 | `products` | Products and variants | Page or bulk | Product create/update/delete |
 | `customers` | Customer profile and spend | Page or bulk | Customer create/update/delete |
-| `orders` | Orders, lines, totals, refunds | Page or bulk | Order create/update/cancel/pay/fulfil |
+| `orders` | Orders, lines, totals, refunds, transactions | Page or bulk | Order create/update/cancel/pay/fulfil, transaction create |
 | `inventory` | Variant/location stock | Page or bulk | Inventory level update/connect |
 | `refunds` | Refund amount and units | Paged | Carried by order updates |
 | `fulfillments` | Shipments and tracking | Page or bulk | Fulfillment create/update plus order payloads |

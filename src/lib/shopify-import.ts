@@ -359,6 +359,10 @@ query($n: Int!, $after: String) {
         id createdAt
         totalRefundedSet { shopMoney { amount } }
       }
+      transactions(first: 30) {
+        id kind status gateway processedAt test
+        amountSet { shopMoney { amount currencyCode } }
+      }
     }
   }
 }`;
@@ -378,6 +382,21 @@ export type GqlOrder = {
     variant: { id: string } | null; product: { id: string } | null;
     originalUnitPriceSet: { shopMoney: { amount: string } } | null }> };
   refunds: Array<{ id: string; createdAt: string; totalRefundedSet: { shopMoney: { amount: string } } | null }>;
+  /**
+   * The money itself, as opposed to what the order says about it.
+   *
+   * An order reads PAID or PENDING; a transaction says what actually
+   * moved, when, through which gateway, and whether it succeeded. On
+   * a cash-on-delivery store every order sits at PENDING with a
+   * SALE/PENDING transaction against it until the courier is paid,
+   * and no status on the order can tell you that apart from money in
+   * the bank. Absent on old bulk files.
+   */
+  transactions?: Array<{
+    id: string; kind: string; status: string; gateway: string | null;
+    processedAt: string | null; test: boolean;
+    amountSet: { shopMoney: { amount: string; currencyCode: string } } | null;
+  }> | null;
 };
 
 /** Writes a batch of orders, their lines and refunds. */
@@ -474,6 +493,26 @@ export async function saveOrders(
       .from("refunds")
       .upsert(refunds, { onConflict: "store_id,external_id" });
     if (re) throw new Error(re.message);
+  }
+
+  const paid = nodes.flatMap((o) =>
+    (o.transactions ?? []).map((t) => ({
+      store_id: storeId, order_id: orderId.get(o.id)!, external_id: t.id,
+      kind: t.kind, status: t.status, gateway: t.gateway ?? null,
+      amount: t.amountSet?.shopMoney?.amount ? Number(t.amountSet.shopMoney.amount) : null,
+      currency: t.amountSet?.shopMoney?.currencyCode ?? null,
+      // A test transaction is not money. Kept rather than dropped, so
+      // a merchant looking for the one they made can find it, and
+      // excluded from every total by the list that reads them.
+      test: t.test === true,
+      processed_at: t.processedAt,
+    }))
+  ).filter((t) => t.order_id);
+  if (paid.length > 0) {
+    const { error: te } = await db
+      .from("order_transactions")
+      .upsert(paid, { onConflict: "store_id,external_id" });
+    if (te) throw new Error(te.message);
   }
 }
 

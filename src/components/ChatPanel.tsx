@@ -168,6 +168,7 @@ const ICON_GLYPHS: Record<string, string> = {
   wrench: "🔧",
   globe: "🌐",
   truck: "🚚",
+  banknote: "💵",
   wallet: "👛",
   target: "🎯",
   table: "📋",

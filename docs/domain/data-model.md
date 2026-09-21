@@ -113,12 +113,13 @@ both columns and allowed states.
 | `orders` | Order identity, timestamps, gross/current totals, statuses, payment/discount/shipping facts |
 | `order_line_items` | Quantity, product/variant links, SKU, and unit price |
 | `refunds` | Refunded amount, units, and timestamp |
+| `order_transactions` | What money actually did: kind, status, gateway, amount, and whether it was a test |
 | `fulfillments` | Shipment status, carrier, tracking, and delivery timestamps |
 | `shopify_data_requests` | Compliance request audit |
 | `shopify_redactions` | Tombstones that prevent deleted customer data from reappearing |
 
 Security-invoker views expose stable section shapes such as orders, customers, products,
-inventory, product sales, order items, refunds, variants, and fulfillments. The current
+inventory, product sales, order items, refunds, variants, fulfillments, and transactions. The current
 registry and view mapping in `store-read.ts` are authoritative for names exposed to the
 application.
 

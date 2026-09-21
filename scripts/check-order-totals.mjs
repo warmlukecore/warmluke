@@ -61,6 +61,14 @@ try {
       totalPriceSet: money("597.00"), currentTotalPriceSet: money("547.00"),
       customer: null, lineItems: { nodes: [] }, refunds: [],
       paymentGatewayNames: ["manual"], discountCodes: [], shippingAddress: { city: "Pune", provinceCode: "MH", countryCode: "IN" },
+      // Charged 597, 50 given back, and one test payment the
+      // merchant made themselves. Collected is 547, and only if the
+      // test one is left out.
+      transactions: [
+        { id: `gid://shopify/OrderTransaction/${stamp}A`, kind: "SALE", status: "SUCCESS", gateway: "razorpay", processedAt: "2026-09-14T10:01:00Z", test: false, amountSet: { shopMoney: { amount: "597.00", currencyCode: "USD" } } },
+        { id: `gid://shopify/OrderTransaction/${stamp}B`, kind: "REFUND", status: "SUCCESS", gateway: "razorpay", processedAt: "2026-09-15T11:00:00Z", test: false, amountSet: { shopMoney: { amount: "50.00", currencyCode: "USD" } } },
+        { id: `gid://shopify/OrderTransaction/${stamp}C`, kind: "SALE", status: "SUCCESS", gateway: "bogus", processedAt: "2026-09-14T09:00:00Z", test: true, amountSet: { shopMoney: { amount: "999.00", currencyCode: "USD" } } },
+      ],
     },
   ]);
   const imported = await row(`gid://shopify/Order/${stamp}1`);
@@ -68,6 +76,19 @@ try {
   check("and the original is kept beside it", Number(imported?.total_original) === 597);
   const { data: importedPlace } = await admin.from("orders").select("gateway, ship_city, ship_state").eq("store_id", store.id).eq("external_id", `gid://shopify/Order/${stamp}1`).single();
   check("what paid and where it went came across", importedPlace?.gateway === "manual" && importedPlace?.ship_city === "Pune" && importedPlace?.ship_state === "MH");
+
+  console.log("\nand the money itself, not what the order says about it");
+  const ledger = async () =>
+    (await admin.from("order_transactions").select("kind, status, amount, gateway, test").eq("store_id", store.id)).data ?? [];
+  let paid = await ledger();
+  check("every transaction landed", paid.length === 3);
+  // The whole reason this list exists. financial_status says
+  // PARTIALLY_REFUNDED and nothing more; these say what moved.
+  const collected = (rows) =>
+    rows.filter((t) => !t.test && t.status === "SUCCESS" && ["SALE", "CAPTURE"].includes(t.kind)).reduce((n, t) => n + Number(t.amount), 0) -
+    rows.filter((t) => !t.test && t.status === "SUCCESS" && t.kind === "REFUND").reduce((n, t) => n + Number(t.amount), 0);
+  check("collected is the sale less the refund", collected(paid) === 547);
+  check("and the test payment is not money", paid.some((t) => t.test) && collected(paid) !== 1546);
 
   console.log("\nthe same order, by the webhook road");
   // The webhook function is called as the app calls it, with REST's
@@ -124,6 +145,27 @@ try {
   let shipped = await shipments();
   check("the shipment landed with the order", shipped.length === 1 && shipped[0].external_id === "gid://shopify/Fulfillment/501");
   check("with its courier and number", shipped[0]?.carrier === "Delhivery" && shipped[0]?.tracking_number === "DL123");
+
+  console.log("\nmoney arriving later, by its own topic");
+  // Cash on delivery: the courier pays in days after the order, and
+  // the order itself does not change at all. Without this topic the
+  // copy would never learn the money came.
+  const { error: te } = await admin.rpc("abo_shopify_upsert_transaction", {
+    p_shop: shop,
+    p_tx: {
+      id: 9001, order_id: hookId, kind: "capture", status: "success",
+      gateway: "cash_on_delivery", amount: "547.00", currency: "USD", test: false,
+      processed_at: "2026-09-20T18:00:00Z",
+    },
+  });
+  check("the webhook is accepted", !te);
+  if (te) console.log("     →", te.message);
+  paid = await ledger();
+  const late = paid.find((t) => t.gateway === "cash_on_delivery");
+  check("it landed on the order", !!late);
+  // REST whispers "capture", GraphQL shouts "CAPTURE". A stat that
+  // filtered on one spelling would miss whichever road wrote the row.
+  check("and reads the same as the import road", late?.kind === "CAPTURE" && late?.status === "SUCCESS");
 
   console.log("\na tracking update, by its own topic");
   const { error: fe } = await admin.rpc("abo_shopify_upsert_fulfillment", {

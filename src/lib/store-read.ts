@@ -55,6 +55,7 @@ export const COUNTED = [
   "orders",
   "order_line_items",
   "refunds",
+  "order_transactions",
   "fulfillments",
   "inventory_levels",
 ] as const;
@@ -224,6 +225,7 @@ export function dayRangeInZone(day: string, timeZone: string): { from: string; t
 
 export type StoreTable =
   | "fulfillments"
+  | "transactions"
   | "orders"
   | "customers"
   | "products"
@@ -386,6 +388,31 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "quantity", label: "Qty", type: "number" },
     ],
   },
+  transactions: {
+    // The one that changes every money answer. Without it "revenue"
+    // is read off financial_status, which on a cash-on-delivery
+    // store says PENDING for weeks after the customer has paid the
+    // courier, and says PAID the moment a gateway authorises money
+    // that has not landed.
+    advice:
+      'Money that actually moved, one row per transaction. Collected = sum(amount) where status = "SUCCESS" and kind in ("SALE", "CAPTURE"), minus sum(amount) where status = "SUCCESS" and kind = "REFUND". Never count a row where test is true — those are the merchant\'s own test payments. status "PENDING" is money not collected yet, which is what cash on delivery looks like before the courier pays in; "FAILURE" and "ERROR" are money that never arrived. kind "AUTHORIZATION" is a hold, not a payment. Do not add this up with the orders list\'s total: one is what was charged, this is what was received, and on a COD store they are different for weeks.',
+    label: "Shopify transactions",
+    what: 'one row per payment or refund on an order — when, how much, which gateway, and whether it succeeded; what "money collected", "how much actually came in", "COD collected", "settled", "failed payments" and "what matches my payout" mean',
+    section: { label: "Payments", icon: "banknote", importedWith: "orders" },
+    view: "store_transactions",
+    order: { field: "processed_at", ascending: false },
+    select:
+      "id, order_id, order_number, processed_at, customer_name, kind, status, gateway, amount, currency, test",
+    columns: [
+      { field: "order_number", label: "Order", type: "text" },
+      { field: "processed_at", label: "When", type: "date" },
+      { field: "customer_name", label: "Customer", type: "text" },
+      { field: "kind", label: "Kind", type: "badge" },
+      { field: "status", label: "Status", type: "badge" },
+      { field: "gateway", label: "Through", type: "text" },
+      { field: "amount", label: "Amount", type: "currency", currencyField: "currency" },
+    ],
+  },
   fulfillments: {
     advice:
       "One row per shipment; an order can have more than one. Delivered = shipment_status = DELIVERED. On the way = IN_TRANSIT or OUT_FOR_DELIVERY. A shipment with no tracking_number went out without one. Shipped on a day = shipped_at.",
@@ -464,6 +491,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
 const SEARCHABLE: Record<StoreTable, string[]> = {
   orders: ["order_number", "customer_name", "financial_status", "fulfilment_status", "gateway", "ship_city", "ship_state"],
   fulfillments: ["order_number", "customer_name", "carrier", "tracking_number", "shipment_status"],
+  transactions: ["order_number", "customer_name", "gateway", "kind", "status"],
   customers: ["name", "email", "phone", "city"],
   products: ["title", "handle", "status", "product_type", "vendor"],
   inventory_levels: ["product", "variant", "sku", "location_name"],
