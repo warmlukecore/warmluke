@@ -46,7 +46,18 @@ callers should not grow a second hard-coded resource list.
 domain. It creates or updates a pending store with a ten-minute OAuth state, then returns
 Shopify's authorization URL.
 
-The requested scopes are the unique union of resource scopes. `read_all_orders` is added
+The requested scopes are the unique union of resource scopes, plus
+`PLANNED_SCOPES`: reads asked for before the resource that will use them
+exists. Adding a scope makes every connected store reconnect, so they are
+asked for once while there is one store rather than once per pack. A planned
+scope must leave that list when its resource claims it, and `check-shopify`
+fails if the same scope is declared in both places.
+
+Reconnecting does not interrupt a working store. The install route refreshes
+the OAuth nonce and leaves a connected store connected, because the old token
+stays valid until the callback replaces it and `abo_shopify_connect` matches
+on the nonce rather than the status. A merchant who opens the consent screen
+and closes the tab loses nothing. `read_all_orders` is added
 only when `SHOPIFY_READ_ALL_ORDERS=true`, because requesting it before Shopify approves
 the application fails authorization rather than granting a reduced set.
 

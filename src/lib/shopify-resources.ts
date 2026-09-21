@@ -444,9 +444,39 @@ export const RESOURCES = Object.keys(SHOPIFY_RESOURCES) as Resource[];
 export const isResource = (v: unknown): v is Resource =>
   typeof v === "string" && Object.prototype.hasOwnProperty.call(SHOPIFY_RESOURCES, v);
 
+/**
+ * Scopes asked for before the resource that will use them exists.
+ *
+ * The rule everywhere else is that a scope comes from the resource
+ * that needs it. This is the one exception, and it earns it: adding
+ * a scope means every connected store has to reconnect, and the
+ * cheapest moment to do that is while there is one store and it is
+ * ours. At fifty merchants the same change is fifty interruptions
+ * and fifty people wondering why.
+ *
+ * So the reads for what is coming are asked for once, now, and each
+ * resource lands later against a token that already has them.
+ *
+ * Every one of these is a read. The list shrinks as the resources
+ * arrive: check-shopify fails if a name here is one a resource
+ * already asks for, so a scope cannot end up declared twice, and it
+ * has to be deleted from here when its resource is written.
+ */
+export const PLANNED_SCOPES = [
+  // Returns: the journey a refund is the end of.
+  "read_returns",
+  // Orders made by hand — the phone, WhatsApp, a wholesale customer.
+  "read_draft_orders",
+  // The campaigns behind the codes already on an order.
+  "read_discounts",
+  // Shopify's own payouts, for reconciling against a bank statement.
+  // Only useful to a shop actually using Shopify Payments.
+  "read_shopify_payments_payouts",
+] as const;
+
 /** Every read scope any resource needs, once each, in resource order. Read-only by construction. */
 export const SHOPIFY_SCOPES: readonly string[] = [
-  ...new Set(RESOURCES.flatMap((r) => SHOPIFY_RESOURCES[r].scopes)),
+  ...new Set([...RESOURCES.flatMap((r) => SHOPIFY_RESOURCES[r].scopes), ...PLANNED_SCOPES]),
 ];
 
 /**

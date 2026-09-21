@@ -18,6 +18,7 @@ import {
 } from "../src/lib/shopify.ts";
 import {
   EXTENDED_ORDER_HISTORY_SCOPE,
+  PLANNED_SCOPES,
   RESOURCES,
   SHOPIFY_RESOURCES,
   SHOPIFY_SCOPES,
@@ -82,6 +83,16 @@ console.log("\neach resource is declared once, and the rest is derived from it")
 check("every resource asks for at least one scope", RESOURCES.every((r) => SHOPIFY_RESOURCES[r].scopes.length > 0));
 check("every scope a resource asks for is in the install", RESOURCES.every((r) => SHOPIFY_RESOURCES[r].scopes.every((s) => SHOPIFY_SCOPES.includes(s))));
 check("no scope is asked for twice", new Set(SHOPIFY_SCOPES).size === SHOPIFY_SCOPES.length);
+// Asked for ahead of the resource that will use them, so that every
+// merchant reconnects once rather than once per pack. The moment a
+// resource claims one, it must leave this list — two declarations of
+// the same scope is how one of them goes stale.
+const claimed = new Set(RESOURCES.flatMap((r) => SHOPIFY_RESOURCES[r].scopes));
+for (const s of PLANNED_SCOPES) {
+  check(`"${s}" is still waiting for its resource`, !claimed.has(s));
+}
+check("every planned scope is a read", PLANNED_SCOPES.every((s) => s.startsWith("read_")));
+check("and is in what the install asks for", PLANNED_SCOPES.every((s) => SHOPIFY_SCOPES.includes(s)));
 check("every resource writes at least one table", RESOURCES.every((r) => SHOPIFY_RESOURCES[r].tables.length > 0));
 check("a resource with no bulk road still has a page", RESOURCES.every((r) => SHOPIFY_RESOURCES[r].bulk || SHOPIFY_RESOURCES[r].page.includes("$after")));
 

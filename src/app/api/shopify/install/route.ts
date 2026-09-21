@@ -58,11 +58,7 @@ export async function POST(req: Request) {
   }
 
   const state = newOAuthState();
-  const row = {
-    project_id: projectId,
-    provider: "shopify",
-    shop_domain: domain,
-    status: "pending",
+  const nonce = {
     oauth_state: state,
     oauth_state_expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
   };
@@ -71,14 +67,37 @@ export async function POST(req: Request) {
   // nonce replaces the old one.
   const { data: existing } = await auth.client
     .from("stores")
-    .select("id")
+    .select("id, status")
     .eq("project_id", projectId)
     .eq("shop_domain", domain)
     .maybeSingle();
 
+  // A working store stays working while they are away.
+  //
+  // This used to set status to "pending" before sending them to
+  // Shopify, so a merchant who opened the consent screen and closed
+  // the tab came back to an app that had gone blind: every read
+  // answers "that store isn't connected yet" until they finish a
+  // reconnect they may not know they started. The old token is still
+  // good until the callback replaces it, and abo_shopify_connect
+  // finds the row by its nonce rather than by its status, so there is
+  // nothing to gain by breaking it in the meantime.
+  //
+  // Pending is still right for a store that was never connected: it
+  // has no token to keep.
+  const reconnecting = existing?.status === "connected";
   const { error } = existing
-    ? await auth.client.from("stores").update(row).eq("id", existing.id)
-    : await auth.client.from("stores").insert(row);
+    ? await auth.client
+        .from("stores")
+        .update(reconnecting ? nonce : { ...nonce, status: "pending" })
+        .eq("id", existing.id)
+    : await auth.client.from("stores").insert({
+        project_id: projectId,
+        provider: "shopify",
+        shop_domain: domain,
+        status: "pending",
+        ...nonce,
+      });
 
   if (error) {
     // The project is theirs and the row is not, so the shop is taken —

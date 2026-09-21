@@ -115,7 +115,23 @@ try {
     console.log("\n  skip  no TYPESAFE_API_KEY — the engine and the tool were not asked a real question");
   } else {
     console.log("\nthe engine, asked a question and asked for a build");
-    const asked = await storeContextFor(client, project.id, "who is my top buyer?");
+    // Asked twice before it is called a failure.
+    //
+    // The router answers over the network with a three second budget,
+    // and askJev turns everything — a timeout, an outage, a reply it
+    // could not read — into the same null that low confidence gives.
+    // So a slow afternoon at the other end looked exactly like this
+    // question having stopped routing, and turned a whole CI run red
+    // for a reason that had nothing to do with the commit.
+    //
+    // Twice, not more: a question this plain routes on the first or
+    // second ask, and anything that needs a third is a regression
+    // worth seeing.
+    let asked = await storeContextFor(client, project.id, "who is my top buyer?");
+    if (!asked?.snapshot?.slice) {
+      console.log("  ..    no route the first time; asking once more");
+      asked = await storeContextFor(client, project.id, "who is my top buyer?");
+    }
     check("a question brings its rows into the snapshot", asked?.snapshot?.slice?.read_as?.list === "customers" && asked?.snapshot?.slice?.rows?.[0]?.name === "Bhavna Mehta");
     if (!asked?.snapshot?.slice) show(asked?.snapshot);
     const build = await storeContextFor(client, project.id, "make me a returns section with a reason and refund amount");
