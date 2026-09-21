@@ -64,6 +64,8 @@ export const COUNTED = [
   "draft_orders",
   "draft_order_line_items",
   "discounts",
+  "returns",
+  "return_line_items",
   "inventory_levels",
 ] as const;
 
@@ -236,6 +238,8 @@ export type StoreTable =
   | "drafts"
   | "draft_order_items"
   | "discounts"
+  | "returns"
+  | "return_reasons"
   | "fulfillments"
   | "transactions"
   | "locations"
@@ -492,6 +496,46 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "items", label: "What", type: "text" },
     ],
   },
+  returns: {
+    // What refunds never said: why it came back, and whether it is
+    // finished. days_open is the column that makes this worth
+    // opening — a return agreed and forgotten is money still owed.
+    advice:
+      'One row per return. state is "Asked for" (the customer requested it), "Agreed, not back yet", "Done", "Refused" or "Cancelled". days_open counts from the day it was asked for and is empty once it is finished — a list of what is still open is state in ("Asked for", "Agreed, not back yet") sorted by days_open. quantity is how many units are coming back; refunded_quantity is how many have actually been paid for, and the gap between them is money the merchant still owes. Do NOT add these to the Refunds list: a refund is the money going out and a return is the goods coming back, and most returns produce exactly one refund, so counting both double-counts the event. reasons are Shopify\'s own labels, quoted as-is. For "what comes back most often", use the Return reasons list instead, which groups by product.',
+    label: "Shopify returns",
+    what: 'one row per return — which order, who, what is coming back, why, and how long it has been open; what "returns", "RMA", "what is coming back", "why do people return" and "open returns" mean',
+    section: { label: "Returns", icon: "rotate-ccw", importedWith: "returns" },
+    view: "store_returns",
+    order: { field: "requested_at", ascending: false },
+    select:
+      "id, name, order_number, customer_name, state, quantity, refunded_quantity, reasons, items, requested_at, days_open, closed_at",
+    columns: [
+      { field: "name", label: "Return", type: "text" },
+      { field: "order_number", label: "Order", type: "text" },
+      { field: "customer_name", label: "Customer", type: "text" },
+      { field: "state", label: "State", type: "badge" },
+      { field: "quantity", label: "Units", type: "number" },
+      { field: "reasons", label: "Why", type: "text" },
+      { field: "days_open", label: "Days open", type: "number" },
+    ],
+  },
+  return_reasons: {
+    advice:
+      'One row per product and reason, counted over every return. This is the list that answers "why do things come back": sort by units_returned. A product high on this list with one dominant reason is usually a listing problem — the wrong size chart, a misleading photo — not a customer problem, and that is the sentence worth saying. returns is how many separate returns it appeared in, units_returned is how many items. "Not given" means the customer chose no reason.',
+    label: "Shopify return reasons",
+    what: 'one row per product and reason — what comes back most and why; what "why do people return things", "problem products" and "return reasons" mean',
+    section: { label: "Return reasons", icon: "rotate-ccw", importedWith: "returns" },
+    view: "return_reasons",
+    order: { field: "units_returned", ascending: false },
+    select: "store_id, title, sku, reason, units_returned, returns",
+    columns: [
+      { field: "title", label: "Product", type: "text" },
+      { field: "sku", label: "SKU", type: "text" },
+      { field: "reason", label: "Why", type: "text" },
+      { field: "units_returned", label: "Units", type: "number" },
+      { field: "returns", label: "Returns", type: "number" },
+    ],
+  },
   discounts: {
     // The campaign behind a code an order already carries. Two
     // numbers worth adding up, and Shopify's own sentence for
@@ -658,6 +702,8 @@ const SEARCHABLE: Record<StoreTable, string[]> = {
   draft_order_items: ["draft", "title", "sku"],
   // The code is what a merchant types when they are hunting one.
   discounts: ["title", "codes", "state", "method", "takes_off", "summary"],
+  returns: ["name", "order_number", "customer_name", "state", "reasons", "items"],
+  return_reasons: ["title", "sku", "reason"],
   product_sales: ["title"],
   order_line_items: ["order_number", "sku", "title", "customer_name"],
   refunds: ["order_number", "customer_name"],

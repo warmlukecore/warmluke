@@ -1263,3 +1263,195 @@ export async function saveDiscounts(
   const { error } = await db.from("discounts").upsert(rows, { onConflict: "store_id,external_id" });
   if (error) throw new Error(error.message);
 }
+
+// ── Returns ─────────────────────────────────────────────────────
+// Refunds (0091) are the money going back. This is everything before
+// that: the customer asking, the merchant agreeing, the goods coming
+// back, and why. The reason is the part no refund carries, and it is
+// the part that tells a merchant a listing is wrong rather than a
+// customer is difficult.
+//
+// Reached through the order, because Shopify has no top-level
+// returns list — checked against the schema, not assumed. Unlike
+// refunds, a bulk export IS accepted: refunds are a list field on
+// Order and returns are a connection, and the restriction is on
+// connections inside lists.
+//
+// returnReason is deliberately not asked for. Shopify marks it
+// deprecated — "Use returnReasonDefinition instead. This field will
+// be removed in the future" — and a field that disappears takes the
+// whole query with it, not just one column.
+export const RETURNING =
+  "return_status:return_requested OR return_status:in_progress OR return_status:returned";
+
+/**
+ * A line of a return, as both concrete shapes leave it.
+ *
+ * returnLineItems is an interface with two implementations, and only
+ * one of them, ReturnLineItem, reaches back to what was bought. An
+ * UnverifiedReturnLineItem — a line the merchant has not matched to a
+ * fulfilment yet — carries quantities and a reason and nothing else,
+ * so its title, SKU and product are null here. Checked against the
+ * schema: it has no line item field at all to ask for.
+ */
+export type GqlReturnLine = {
+  id?: string | null;
+  quantity?: number | null;
+  refundedQuantity?: number | null;
+  returnReasonNote?: string | null;
+  returnReasonDefinition?: { handle?: string | null; name?: string | null } | null;
+  fulfillmentLineItem?: {
+    lineItem?: {
+      id?: string | null;
+      title?: string | null;
+      sku?: string | null;
+      variant?: { id?: string | null } | null;
+      product?: { id?: string | null } | null;
+    } | null;
+  } | null;
+};
+
+export const RETURNS_QUERY = `
+query($n: Int!, $after: String) {
+  orders(first: $n, after: $after, sortKey: UPDATED_AT, query: "${RETURNING}") {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      id
+      returns(first: 20) {
+        nodes {
+          id name status totalQuantity createdAt closedAt
+          returnLineItems(first: 50) {
+            nodes {
+              id quantity refundedQuantity returnReasonNote
+              returnReasonDefinition { handle name }
+              ... on ReturnLineItem {
+                fulfillmentLineItem { lineItem { id title sku variant { id } product { id } } }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}`;
+
+export type GqlReturningOrder = {
+  id: string;
+  returns: {
+    nodes: Array<{
+      id: string;
+      name?: string | null;
+      status?: string | null;
+      totalQuantity?: number | null;
+      createdAt?: string | null;
+      closedAt?: string | null;
+      returnLineItems: { nodes: GqlReturnLine[] };
+    }>;
+  };
+};
+
+/** Writes a batch of returns and what is coming back in them. */
+export async function saveReturns(
+  db: SupabaseClient, storeId: string, nodes: GqlReturningOrder[]
+): Promise<void> {
+  if (nodes.length === 0) return;
+
+  // An order carrying no return is not a mistake: the filter asks for
+  // orders in a returning state, and one can leave that state between
+  // the count and the page.
+  const withReturns = nodes.filter((o) => (o.returns?.nodes ?? []).length > 0);
+  if (withReturns.length === 0) return;
+
+  const { data: orders } = await db
+    .from("orders")
+    .select("id, external_id")
+    .eq("store_id", storeId)
+    .in("external_id", withReturns.map((o) => o.id));
+  const orderId = new Map((orders ?? []).map((r) => [r.external_id as string, r.id as string]));
+
+  const rows = withReturns.flatMap((o) => {
+    // Skipped rather than invented. A return whose order has not been
+    // imported yet would need an order_id there is no honest value
+    // for, and the next pass brings both.
+    const parent = orderId.get(o.id);
+    if (!parent) return [];
+    return o.returns.nodes.map((r) => ({
+      store_id: storeId,
+      order_id: parent,
+      external_id: r.id,
+      name: r.name ?? null,
+      status: r.status ? r.status.toUpperCase() : null,
+      quantity: r.totalQuantity ?? null,
+      // When the customer asked, which is what "open for nine days"
+      // counts from.
+      requested_at: r.createdAt ?? null,
+      closed_at: r.closedAt ?? null,
+      updated_at: new Date().toISOString(),
+    }));
+  });
+  if (rows.length === 0) return;
+
+  const { data: saved, error } = await db
+    .from("returns")
+    .upsert(rows, { onConflict: "store_id,external_id" })
+    .select("id, external_id");
+  if (error) throw new Error(error.message);
+  const returnId = new Map((saved ?? []).map((r) => [r.external_id as string, r.id as string]));
+
+  const lineNodes = withReturns
+    .flatMap((o) => o.returns.nodes)
+    .filter((r) => returnId.has(r.id));
+  const allLines = lineNodes.flatMap((r) => r.returnLineItems?.nodes ?? []);
+  const productIds = [...new Set(allLines
+    .map((l) => l.fulfillmentLineItem?.lineItem?.product?.id).filter(Boolean) as string[])];
+  const variantIds = [...new Set(allLines
+    .map((l) => l.fulfillmentLineItem?.lineItem?.variant?.id).filter(Boolean) as string[])];
+  const [prods, vars] = await Promise.all([
+    productIds.length
+      ? db.from("products").select("id, external_id").eq("store_id", storeId).in("external_id", productIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; external_id: string }> }),
+    variantIds.length
+      ? db.from("variants").select("id, external_id").eq("store_id", storeId).in("external_id", variantIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; external_id: string }> }),
+  ]);
+  const productId = new Map((prods.data ?? []).map((r) => [r.external_id, r.id]));
+  const variantId = new Map((vars.data ?? []).map((r) => [r.external_id, r.id]));
+
+  // Replaced rather than merged: a line dropped from a return in
+  // Shopify has to disappear here, the same as an order's lines.
+  const ids = lineNodes.map((r) => returnId.get(r.id)!);
+  const { error: cleared } = await db.from("return_line_items").delete().in("return_id", ids);
+  if (cleared) throw new Error(cleared.message);
+
+  const lines = lineNodes.flatMap((r) =>
+    (r.returnLineItems?.nodes ?? []).map((l) => {
+      const item = l.fulfillmentLineItem?.lineItem;
+      const def = l.returnReasonDefinition;
+      return {
+        store_id: storeId,
+        return_id: returnId.get(r.id)!,
+        external_id: l.id ?? null,
+        // All null for an unverified line: it has nothing pointing
+        // back at what was bought, which is a real state and not a
+        // gap in the import.
+        product_id: item?.product?.id ? (productId.get(item.product.id) ?? null) : null,
+        variant_id: item?.variant?.id ? (variantId.get(item.variant.id) ?? null) : null,
+        title: item?.title ?? null,
+        sku: item?.sku ?? null,
+        quantity: l.quantity ?? null,
+        // How much of it has actually been paid back. The gap is a
+        // return agreed and not yet settled.
+        refunded_quantity: l.refundedQuantity ?? null,
+        // The merchant-facing label Shopify shows, falling back to the
+        // handle when a shop has not named its own reason. Stored as
+        // it comes: it is already in words, unlike the enum it
+        // replaced.
+        reason: def?.name ?? def?.handle ?? null,
+        reason_note: l.returnReasonNote ?? null,
+      };
+    })
+  );
+  if (lines.length === 0) return;
+  const { error: wrote } = await db.from("return_line_items").insert(lines);
+  if (wrote) throw new Error(wrote.message);
+}

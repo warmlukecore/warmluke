@@ -39,6 +39,8 @@ import {
   PRODUCTS_QUERY,
   REFUNDED,
   REFUNDS_QUERY,
+  RETURNING,
+  RETURNS_QUERY,
   saveCarts,
   saveCollections,
   saveCustomers,
@@ -50,6 +52,7 @@ import {
   saveOrders,
   saveProducts,
   saveRefunds,
+  saveReturns,
   type GqlCart,
   type GqlCollection,
   type GqlCustomer,
@@ -60,6 +63,7 @@ import {
   type GqlOrder,
   type GqlProduct,
   type GqlRefundedOrder,
+  type GqlReturningOrder,
   type GqlStock,
   type StoreToken,
 } from "@/lib/shopify-import";
@@ -338,6 +342,73 @@ export const SHOPIFY_RESOURCES = {
     tables: ["discounts"],
     drift: true,
   },
+  returns: {
+    label: "returns",
+    scopes: ["read_returns"],
+    // Only the orders in a returning state, the same shape refunds
+    // uses: a small slice of any store, cheap to page even where the
+    // orders themselves went bulk.
+    count: `{ ordersCount(query: "${RETURNING}") { count } }`,
+    page: RETURNS_QUERY,
+    root: "orders",
+    // Accepted, unlike refunds — and the difference is worth naming.
+    // Shopify refuses a connection inside a LIST field, which is
+    // what refundLineItems is. returns is a connection, so its own
+    // connection of lines exports fine. Run against the real shop
+    // rather than reasoned about.
+    bulk: {
+      query: `{ orders(query: "${RETURNING}") { edges { node {
+    id
+    returns { edges { node {
+      id name status totalQuantity createdAt closedAt
+      returnLineItems { edges { node {
+        id quantity refundedQuantity returnReasonNote
+        returnReasonDefinition { handle name }
+        ... on ReturnLineItem { fulfillmentLineItem { lineItem { id title sku variant { id } product { id } } } }
+      } } }
+    } } }
+  } } } }`,
+      // Three deep: an order, its returns, and their lines. The file
+      // is flat, so a line arrives under the return it belongs to and
+      // a return under its order, and both have to be put back.
+      assemble: (lines) => {
+        const orders = new Map<string, GqlReturningOrder>();
+        const order: string[] = [];
+        const returnOf = new Map<string, GqlReturningOrder["returns"]["nodes"][number]>();
+        for (const l of lines) {
+          if (!l.__parentId) {
+            orders.set(l.id!, { ...(l as unknown as GqlReturningOrder), returns: { nodes: [] } });
+            order.push(l.id!);
+            continue;
+          }
+          const parentOrder = orders.get(l.__parentId);
+          if (parentOrder) {
+            const ret = { ...(l as unknown as GqlReturningOrder["returns"]["nodes"][number]), returnLineItems: { nodes: [] } };
+            parentOrder.returns.nodes.push(ret);
+            returnOf.set(l.id!, ret);
+            continue;
+          }
+          returnOf.get(l.__parentId)?.returnLineItems.nodes.push(l as never);
+        }
+        return order.map((id) => orders.get(id)!);
+      },
+    },
+    children: [
+      { path: ["returns", "nodes"], limit: 20 },
+      { path: ["returns", "nodes", "*", "returnLineItems", "nodes"], limit: 50 },
+    ],
+    save: (db, storeId, nodes) => saveReturns(db, storeId, nodes as GqlReturningOrder[]),
+    // Eight topics, one meaning: the state of a return changed.
+    webhooks: [
+      "RETURNS_REQUEST", "RETURNS_APPROVE", "RETURNS_DECLINE", "RETURNS_CANCEL",
+      "RETURNS_CLOSE", "RETURNS_REOPEN", "RETURNS_PROCESS", "RETURNS_UPDATE",
+    ],
+    tables: ["returns", "return_line_items"],
+    // Not compared. The pass counts ORDERS in a returning state and
+    // the table holds returns, so the two were never the same number
+    // — the mistake stock already taught.
+    drift: false,
+  },
   orders: {
     label: "orders",
     scopes: ["read_orders"],
@@ -558,8 +629,6 @@ export const isResource = (v: unknown): v is Resource =>
  * has to be deleted from here when its resource is written.
  */
 export const PLANNED_SCOPES = [
-  // Returns: the journey a refund is the end of.
-  "read_returns",
   // Shopify's own payouts, for reconciling against a bank statement.
   // Only useful to a shop actually using Shopify Payments.
   "read_shopify_payments_payouts",
