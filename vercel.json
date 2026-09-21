@@ -1,0 +1,25 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "git": {
+    "comment": [
+      "main is not deployed by pushing to it.",
+      "",
+      "Vercel's git integration deploys on push, which happens in parallel with the",
+      "checks rather than after them: a commit could be live before anything had said",
+      "whether it should be, and one was. It also missed two commits outright in a",
+      "single day, passing checks and never deploying, so production sat quietly",
+      "behind the repository twice.",
+      "",
+      "The deploy job in .github/workflows/checks.yml owns it now. It runs after both",
+      "check tiers, asks Vercel to build this exact commit from GitHub, and waits for",
+      "the answer, so a failed build turns the commit red. Previews on other branches",
+      "are untouched: only main is listed here.",
+      "",
+      "If that job ever needs to be bypassed, `vercel --prod --yes` from a clean tree",
+      "still works and is how production was recovered the two times this broke."
+    ],
+    "deploymentEnabled": {
+      "main": false
+    }
+  }
+}
