@@ -38,7 +38,17 @@ export async function listStores(db: SupabaseClient): Promise<StoreBrief[]> {
   return (data ?? []) as StoreBrief[];
 }
 
-const COUNTED = [
+/**
+ * The tables a store's copy is counted over, parent and child alike.
+ *
+ * Hand-kept rather than read off SHOPIFY_RESOURCES, and deliberately:
+ * this file is imported by the chat panel, and the registry reaches
+ * lib/shopify, which reaches node:crypto. A type-only import cannot
+ * carry the values. So check-shopify proves the two agree instead —
+ * a resource that gains a table nobody counts fails there, which is
+ * the same guarantee one import later.
+ */
+export const COUNTED = [
   "products",
   "variants",
   "customers",

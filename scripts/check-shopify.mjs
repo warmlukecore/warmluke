@@ -24,6 +24,7 @@ import {
   WEBHOOK_TOPICS,
   scopesFor,
 } from "../src/lib/shopify-resources.ts";
+import { COUNTED } from "../src/lib/store-read.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -83,6 +84,15 @@ check("every scope a resource asks for is in the install", RESOURCES.every((r) =
 check("no scope is asked for twice", new Set(SHOPIFY_SCOPES).size === SHOPIFY_SCOPES.length);
 check("every resource writes at least one table", RESOURCES.every((r) => SHOPIFY_RESOURCES[r].tables.length > 0));
 check("a resource with no bulk road still has a page", RESOURCES.every((r) => SHOPIFY_RESOURCES[r].bulk || SHOPIFY_RESOURCES[r].page.includes("$after")));
+
+// store-read cannot import the registry — the chat panel imports it,
+// and the registry reaches node:crypto — so the two lists are kept
+// apart and made to agree here. A resource that gains a table nobody
+// counts shows a store as smaller than it is, and drift is measured
+// off those counts.
+const written = [...new Set(RESOURCES.flatMap((r) => SHOPIFY_RESOURCES[r].tables))];
+for (const t of written) check(`"${t}" is counted in a store's copy`, COUNTED.includes(t));
+for (const t of COUNTED) check(`"${t}" is a table some resource writes`, written.includes(t));
 check("no topic is listened for twice", new Set(WEBHOOK_TOPICS).size === WEBHOOK_TOPICS.length);
 check("a child limit names a real path", RESOURCES.every((r) => SHOPIFY_RESOURCES[r].children.every((c) => c.path.length > 0 && c.limit > 0)));
 
