@@ -31,12 +31,12 @@ through owner-scoped RPCs and the built-in chat settings UI.
 | Tool | Purpose | Mutates state? |
 | --- | --- | ---: |
 | `ask_store` | Route a natural-language store question to the relevant list/window | No |
-| `store_overview` | Store identity, timezone, currency, sync time, and counts | No |
+| `store_overview` | Store identity, timezone, currency, sync time, counts, and whether any resource is still importing | No |
 | `search_orders` | Filter orders by date, status, or customer/order search | No |
 | `get_order` | Read one order with its items | No |
 | `search_store` | Read a supported canonical store list | No |
 | `low_stock` | Read inventory at or below a threshold | No |
-| `read_section` | List/inspect generated sections and owner-managed rows | No |
+| `read_section` | List/inspect generated sections and owner-managed rows; with `history`, the section's version history instead | No |
 | `propose_change` | Run Warmluke's design engine and create an approval request | Creates a request only |
 | `pending_changes` | Read requests currently awaiting a decision | No |
 | `build_history` | Read completed, partial, or dismissed build history | No |
@@ -95,7 +95,11 @@ route does not attempt an unauthorized direct table update after building.
 
 - MCP does not expose arbitrary SQL or arbitrary URLs.
 - Store data is read-only.
-- A connected client cannot delete a module.
+- A connected client cannot *build* a module deletion, though it may propose one. The
+  request waits in the application, where the owner types the section's name to confirm.
+  Auto-build never applies such a design, `approve_change` refuses it, and `abo_build`
+  refuses `module_delete` to any client token regardless. `check-removals` holds all
+  three, because what it protects is the absence of a path.
 - A request cannot authorize a different plan supplied at approval time.
 - The client cannot approve/reject another client's request.
 - A design may contain at most six plans in one application batch.

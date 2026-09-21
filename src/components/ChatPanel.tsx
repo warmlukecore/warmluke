@@ -113,6 +113,21 @@ function TraceLine({ trace }: { trace: { steps: TurnEvent[]; ms: number } }) {
   );
 }
 
+/**
+ * The sections a design would remove, by the name that has to be
+ * typed to confirm each one.
+ *
+ * A removal takes every row with it and does not come back, so it is
+ * the one change this card will not build on a single tap — the same
+ * confirmation the section's own settings ask for. Their assistant
+ * can propose one; only this can let it through.
+ */
+const removalsIn = (plans: AssistantPlan[] | null): string[] =>
+  (plans ?? [])
+    .filter((p) => p.changeType === "MODULE_DELETE")
+    .map((p) => p.deleteConfirmName ?? "")
+    .filter(Boolean);
+
 let msgSeq = 0;
 export const nextChatId = () => `m${++msgSeq}`;
 
@@ -590,6 +605,9 @@ export default function ChatPanel({
   /** The bubble being corrected, and the words as they stand. */
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
+  /** The request asking to remove a section, and the name typed back. */
+  const [confirmFor, setConfirmFor] = useState<string | null>(null);
+  const [confirmText, setConfirmText] = useState("");
   // The connected store, so an approval card can say when a section
   // would sit beside data the project already holds. Loaded once per
   // panel, and null for a project without a store.
@@ -769,6 +787,12 @@ export default function ChatPanel({
 
   async function buildRequest(r: { id: string; request: string; plans: AssistantPlan[] | null }) {
     if (!r.plans?.length) return;
+    // Typed, not tapped. Their assistant may ask for a section to go;
+    // it may not be the thing that makes it go.
+    const removing = removalsIn(r.plans);
+    if (removing.length && confirmText.trim() !== removing.join(", ")) return;
+    setConfirmFor(null);
+    setConfirmText("");
     // This tap is the yes. Recording it here is what lets the merchant
     // approve from inside Claude too: their AI can only build a
     // request somebody stamped, and it cannot stamp its own.
@@ -1245,13 +1269,55 @@ export default function ChatPanel({
               {!done && (
               <div className="mt-1.5 flex items-center gap-1.5">
                 {r.plans?.length ? (
-                  <button
-                    onClick={() => buildRequest(r)}
-                    disabled={busy}
-                    className="rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-amber-700 disabled:opacity-40"
-                  >
-                    Build it
-                  </button>
+                  removalsIn(r.plans).length ? (
+                    confirmFor === r.id ? (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          autoFocus
+                          value={confirmText}
+                          onChange={(e) => setConfirmText(e.target.value)}
+                          placeholder={removalsIn(r.plans).join(", ")}
+                          aria-label={`Type ${removalsIn(r.plans).join(", ")} to confirm removing it`}
+                          className="w-36 rounded-lg border border-amber-300 px-2 py-1 text-[10px] text-amber-900 outline-none placeholder:text-amber-400"
+                        />
+                        <button
+                          onClick={() => buildRequest(r)}
+                          disabled={busy || confirmText.trim() !== removalsIn(r.plans).join(", ")}
+                          className="rounded-lg bg-rose-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-rose-700 disabled:opacity-40"
+                        >
+                          Remove it
+                        </button>
+                        <button
+                          onClick={() => {
+                            setConfirmFor(null);
+                            setConfirmText("");
+                          }}
+                          className="text-[10px] text-amber-700 hover:underline"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setConfirmFor(r.id);
+                          setConfirmText("");
+                        }}
+                        disabled={busy}
+                        className="rounded-lg border border-rose-300 px-2 py-1 text-[10px] font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-40"
+                      >
+                        Remove a section…
+                      </button>
+                    )
+                  ) : (
+                    <button
+                      onClick={() => buildRequest(r)}
+                      disabled={busy}
+                      className="rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-amber-700 disabled:opacity-40"
+                    >
+                      Build it
+                    </button>
+                  )
                 ) : null}
                 {features.chat && (
                   <button

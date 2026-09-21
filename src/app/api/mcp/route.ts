@@ -192,6 +192,11 @@ const TOOLS = [
       type: "object",
       properties: {
         section: { type: "string", description: "The section's name, as listed." },
+        history: {
+          type: "boolean",
+          description:
+            "Return how this section has changed instead of its rows: every version, newest first, with when it was made, who by, and the fields it held. Use it to answer \"what did this look like before?\" and to propose putting it back.",
+        },
         limit: { type: "number", description: "Up to 200. Defaults to 50." },
         project_id: { type: "string", description: "Which app, when they have more than one." },
       },
@@ -574,19 +579,24 @@ async function settleDesign(opts: {
       const autoReason = plans.length === 0 ? "there is nothing to build" : null;
       const wantsAuto = project.auto_build === true;
 
+      // A design that removes a section is now proposed like any
+       // other, and built like no other.
+       //
+       // It used to be refused here outright, so "delete the Variants
+       // section" was a dead end: no request, no card, nothing for the
+       // merchant to act on but a sentence telling them to go and find
+       // it themselves. The refusal was aimed at the right thing —
+       // removal takes every row and does not come back, and the one
+       // confirmation that guards it is typing the section's name,
+       // which a chat window cannot ask for. But refusing the REQUEST
+       // was never what protected them; refusing the BUILD is.
+       //
+       // So it waits in Warmluke, where that name is typed. Never
+       // automatically, whatever the project's setting says, and
+       // approve_change still refuses it.
       const gone = removals(plans);
-      if (gone.length) {
-        return ok(
-          id,
-          text({
-            error: "Removing a section cannot be done from here.",
-            note: `Tell the merchant to open Warmluke, choose the section, and type its name (${gone.join(", ")}) to confirm. Nothing has been requested or changed.`,
-            open: `${origin}/app/${project.id}`,
-          })
-        );
-      }
 
-      const automatic = wantsAuto && autoReason === null;
+      const automatic = wantsAuto && autoReason === null && gone.length === 0;
       // Why an automatic build did not happen, when it was meant to.
       let autoFailed: string[] = [];
 
@@ -718,6 +728,11 @@ async function settleDesign(opts: {
           note: "Nothing has changed yet. Read this design back to the merchant word for word. If they approve, call approve_change with the request_id. If they leave it and come back later, check pending_changes rather than trusting this id — they may have dealt with it in Warmluke.",
           request_id: requestId,
           design,
+          ...(gone.length
+            ? {
+                cannot_be_approved_from_here: `This removes ${gone.join(", ")}, and removal takes every row in it. It is waiting in Warmluke, where the merchant types the section's name to confirm. Do not call approve_change for it — say plainly that this one they have to confirm themselves.`,
+              }
+            : {}),
           // When the merchant has asked for automatic builds, say why
           // this one still needs them. Otherwise they are left
           // wondering why the setting did nothing.
@@ -1073,6 +1088,36 @@ export async function POST(req: Request) {
           text({
             error: `No section called "${args.section}".`,
             sections: sections.map((m) => m.nav_label),
+          })
+        );
+      }
+
+      // How it got to be this way, when that is what was asked.
+      //
+      // Versions are appended and never rewritten, so this is the
+      // real history — including a version put back, which appears as
+      // a new one holding what the old one held. Without it an
+      // assistant asked "put Orders back to how it was on Friday" had
+      // nothing to read and could only guess at what Friday held.
+      if (args.history === true) {
+        const { data: versions } = await db
+          .from("ui_schemas")
+          .select("version, created_by, change_description, created_at, schema_json")
+          .eq("module_id", section.id)
+          .order("version", { ascending: false })
+          .limit(30);
+        return ok(
+          id,
+          text({
+            section: section.nav_label,
+            versions: (versions ?? []).map((v) => ({
+              version: v.version,
+              on: v.created_at,
+              by: v.created_by === "ai" ? "Warmluke" : "the merchant",
+              what_changed: v.change_description ?? null,
+              fields: ((v.schema_json as UiSchema | null)?.columns ?? []).map((c) => c.field),
+            })),
+            note: "Putting one back is an ordinary change: propose_change describing the version to restore. Nothing is overwritten — restoring version 3 writes a new version holding what 3 held.",
           })
         );
       }
@@ -1575,7 +1620,7 @@ export async function POST(req: Request) {
           id,
           text({
             error: "This design removes a section, which cannot be built from here.",
-            note: `In Warmluke, open the section and type its name (${goneNow.join(", ")}) to confirm. Nothing has changed.`,
+            note: `It is waiting in Warmluke as a card. The merchant opens it there and types the section's name (${goneNow.join(", ")}) to confirm — that typing is the whole safeguard, which is why it cannot happen through a chat approval. Nothing has changed.`,
           })
         );
       }
@@ -1729,13 +1774,29 @@ export async function POST(req: Request) {
     if (name === "store_overview") {
       // Counts, and the two lists a merchant asks for first. Whole-store
       // figures, unlike search_orders — say so when quoting them.
-      const [overview, leaders] = await Promise.all([storeOverview(db, store.id), storeLeaders(db, store.id)]);
+      const [overview, leaders, runs] = await Promise.all([
+        storeOverview(db, store.id),
+        storeLeaders(db, store.id),
+        // Whether the copy is finished. A count read off a store that
+        // is still importing is a true count of what has arrived and
+        // a wrong answer to "how many do I have" — and there was no
+        // way to tell the two apart from here.
+        db.from("import_runs").select("resource, status, imported").eq("store_id", store.id),
+      ]);
+      const progress = (runs.data ?? []) as Array<{ resource: string; status: string; imported: number }>;
+      const unfinished = progress.filter((r) => r.status !== "done").map((r) => r.resource);
       return ok(
         id,
         text({
           ...overview,
           ...leaders,
+          importing: Object.fromEntries(progress.map((r) => [r.resource, { status: r.status, imported: r.imported }])),
           note: "top_customers is lifetime spend as Shopify reports it; best_sellers counts every uncancelled order, paid or not. Both cover the whole store.",
+          ...(unfinished.length
+            ? {
+                still_importing: `${unfinished.join(", ")} have not finished coming across. Say the counts are what has arrived so far, not the whole store.`,
+              }
+            : {}),
         })
       );
     }
