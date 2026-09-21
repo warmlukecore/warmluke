@@ -282,6 +282,29 @@ if (!signedIn?.session) {
 
   // A project for this run. Both halves below used to borrow whichever
   // project was first, which on a blank database is none.
+  // Removed even if this file dies on the way out.
+  //
+  // The removal used to be one line before the exit, which is fine
+  // until something raises before reaching it. That happened twice in
+  // one afternoon, and each time the project and its store were left
+  // behind — so the NEXT run read "more than one store is connected"
+  // and went red, blaming a commit that had nothing to do with it. A
+  // fixture that outlives its check is worse than no fixture.
+  //
+  // `var` above is hoisted, so this reads it whenever it fires.
+  for (const death of ["uncaughtException", "unhandledRejection"]) {
+    process.on(death, async (e) => {
+      console.log(`\n${death}: ${e instanceof Error ? e.message : e}`);
+      try {
+        if (typeof project !== "undefined") await project.remove();
+        console.log("the throwaway project is gone");
+      } catch (nope) {
+        console.log(`and could not be removed: ${nope instanceof Error ? nope.message : nope}`);
+      }
+      process.exit(1);
+    });
+  }
+
   var project = await throwawayProject(admin, signedIn.user.id, "free-turns");
   // A store to read. What the assertions below prove is that reading
   // the store stays free when the turns are gone — and a project made
@@ -397,7 +420,19 @@ if (!signedIn?.session) {
   }
 }
 
-if (typeof project !== "undefined") await project.remove();
+// Removed whatever happened above, including a throw.
+//
+// This used to be a plain line before the exit, which is fine until
+// something raises on the way to it. Twice today a run died mid-way
+// and left its project and store behind, and the next run read "more
+// than one store is connected" and went red — blaming a commit that
+// had nothing to do with it. A fixture that outlives its check is
+// worse than no fixture.
+try {
+  if (typeof project !== "undefined") await project.remove();
+} catch (e) {
+  console.log(`could not remove the throwaway project: ${e instanceof Error ? e.message : e}`);
+}
 console.log(
   fails.length === 0 ? "\nit charges for the engine and nothing else" : `\n${fails.length} FAILED`
 );
