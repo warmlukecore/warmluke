@@ -14,6 +14,7 @@ import {
   storeTableSchema,
   STORE_TABLES,
 } from "@/lib/store-read";
+import { RESOURCES, SHOPIFY_RESOURCES } from "@/lib/shopify-resources";
 import { blueprintAsText, runTurn, schemasFor, storeFactsFor } from "@/lib/engine";
 import { PLAN_FORMAT, WORKED_EXAMPLE, parseReply } from "@/lib/ai";
 import { vocabularyPrompt } from "@/lib/capabilities";
@@ -1784,7 +1785,31 @@ export async function POST(req: Request) {
         db.from("import_runs").select("resource, status, imported").eq("store_id", store.id),
       ]);
       const progress = (runs.data ?? []) as Array<{ resource: string; status: string; imported: number }>;
+      const ranOf = (r: string) => progress.find((p) => p.resource === r);
       const unfinished = progress.filter((r) => r.status !== "done").map((r) => r.resource);
+
+      // Rows held here that Shopify did not hand back on the last
+      // full pass. The import route has worked this out since it was
+      // written and shown it to the browser; a connected assistant
+      // asked "is anything missing?" had no way to know, and said no.
+      //
+      // Only once every resource has finished. Part way through,
+      // "more here than came back" is just the part that has not
+      // arrived yet, and reporting it would cry wolf on every store
+      // mid-import. Stock is excluded by the resource itself: its
+      // pass counts variants while its table holds one row per
+      // location, so the two were never comparable.
+      const settled = RESOURCES.every((r) => ranOf(r)?.status === "done");
+      const held = (overview?.counts ?? {}) as Record<string, number>;
+      const drift = Object.fromEntries(
+        RESOURCES.filter((r) => SHOPIFY_RESOURCES[r].drift)
+          .map((r) => {
+            const holding = held[SHOPIFY_RESOURCES[r].tables[0]] ?? 0;
+            return [r, { holding, came_back: ranOf(r)?.imported ?? 0 }] as const;
+          })
+          .filter(([, v]) => v.holding > v.came_back)
+      );
+
       return ok(
         id,
         text({
@@ -1795,6 +1820,16 @@ export async function POST(req: Request) {
           ...(unfinished.length
             ? {
                 still_importing: `${unfinished.join(", ")} have not finished coming across. Say the counts are what has arrived so far, not the whole store.`,
+              }
+            : {}),
+          ...(settled && Object.keys(drift).length
+            ? {
+                not_in_shopify_any_more: drift,
+                // Never deleted here, and the reason is worth saying:
+                // a pass that came back short looks exactly like a
+                // deletion, and a wrong delete does not come back.
+                drift_note:
+                  "These are held here and did not come back from Shopify on the last full pass — most likely removed there while a webhook was not delivered. Nothing has been deleted. Tell the merchant the number and offer a recheck from the app rather than guessing which rows.",
               }
             : {}),
         })
