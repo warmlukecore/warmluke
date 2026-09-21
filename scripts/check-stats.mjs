@@ -146,9 +146,13 @@ try {
   // list (abo_is_store_table, 0085). Two languages, one list each — a
   // sixth table added to one and not the other fails here, not on a
   // merchant's insert.
-  for (const t of Object.keys(STORE_TABLES)) {
+  for (const [t, spec] of Object.entries(STORE_TABLES)) {
     const { data: known } = await admin.rpc("abo_is_store_table", { t });
     check(`"${t}" is a store table to the database too`, known === true);
+    // And the view that holds it is the same view in both languages:
+    // the stats function reads whichever the database names.
+    const { data: view } = await admin.rpc("abo_store_view", { t });
+    check(`  and its view is ${spec.view} to both`, view === spec.view);
   }
   const { data: stranger } = await admin.rpc("abo_is_store_table", { t: "not_a_table" });
   check("and a name that is not one is not", stranger === false);

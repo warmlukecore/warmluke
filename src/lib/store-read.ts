@@ -209,7 +209,13 @@ export function dayRangeInZone(day: string, timeZone: string): { from: string; t
 // that must agree, written in two places, is how a section ends up
 // showing blank cells for fields the query never asked for.
 
-export type StoreTable = "orders" | "customers" | "products" | "inventory_levels" | "product_sales";
+export type StoreTable =
+  | "orders"
+  | "customers"
+  | "products"
+  | "inventory_levels"
+  | "product_sales"
+  | "order_line_items";
 
 type TableSpec = {
   /** What a stat over this table should be — for whoever designs one. */
@@ -226,6 +232,19 @@ type TableSpec = {
   /** Column and direction the rows arrive in, newest or A-Z first. */
   order: { field: string; ascending: boolean };
   columns: SchemaColumn[];
+  /**
+   * What this list is, in one sentence, and which of a merchant's
+   * phrases mean it. Read by the design prompt and handed to a
+   * connected assistant, so neither carries its own copy of the list —
+   * a copy is how a table went missing from the prompt for a week.
+   */
+  what: string;
+  /**
+   * The section this list becomes when the store connects: its name in
+   * the sidebar, its icon, and which import's rows say it has anything
+   * to show (lines and sales come in with the orders).
+   */
+  section: { label: string; icon: string; importedWith: "orders" | "customers" | "products" | "inventory" };
 };
 
 /** PostgREST embeds a to-one relation as a one-element array or an object; either way, the one row. */
@@ -235,6 +254,8 @@ const one = <T,>(v: T | T[] | null | undefined): T | null =>
 export const STORE_TABLES: Record<StoreTable, TableSpec> = {
   orders: {
     label: "Shopify orders",
+    what: 'one row per order — number, customer, total, paid / pending / cancelled, fulfilment; what "our orders", "revenue", "COD pending" and "how much did we sell" mean',
+    section: { label: "Orders", icon: "shopping-cart", importedWith: "orders" },
     // What a stat over these rows should be, said once and read by both
     // doors — Luke's prompt and design_format. A merchant's "revenue"
     // was sum(total) over every row: unpaid COD orders, cancelled ones,
@@ -264,6 +285,8 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     advice:
       "Top buyers = sort by total_spent desc — Shopify's lifetime figure for the customer, over every customer, not this page. Repeat customers = count where orders_count >= 2. total_spent is empty for a customer not synced since it was added; it fills on the next import.",
     label: "Shopify customers",
+    what: 'one row per customer — name, phone, email, city, orders placed, lifetime spend; "top buyers" is this list with defaultSort total_spent desc, "repeat customers" a count stat on it where orders_count >= 2',
+    section: { label: "Customers", icon: "users", importedWith: "customers" },
     view: "store_customers",
     order: { field: "name", ascending: true },
     select: "id, name, email, phone, city, orders_count, total_spent",
@@ -285,6 +308,9 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     advice:
       "Best sellers = sort by units desc (or revenue desc). One row per product, from every order that was not cancelled — paid or still awaiting payment (COD). revenue is the value of those orders, not what has been collected; a refund after the sale is not subtracted. units, revenue and orders are whole-store totals.",
     label: "Product sales",
+    what: 'one row per product with units sold and order value from every uncancelled order; what "best sellers", "top products" and "which product sells most" mean',
+    // Summed from the orders, so it exists once orders do.
+    section: { label: "Best sellers", icon: "target", importedWith: "orders" },
     view: "product_sales",
     order: { field: "units", ascending: false },
     select: "id, product_id, title, units, revenue, orders, last_sold, currency",
@@ -296,8 +322,37 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "last_sold", label: "Last sold", type: "date" },
     ],
   },
+  order_line_items: {
+    // The lines inside the orders — one row per SKU per order. Asked
+    // for as "which SKUs were in each order" and, until this existed,
+    // answerable only with a list typed in by hand next to the real one.
+    advice:
+      "One row per SKU per order, from every order. Units of a SKU = sum(quantity) where sku = X. A cancelled order's lines are still here with status Cancelled — keep them out of a count with where status != Cancelled. line_total is quantity × price at the time; it is not what was collected.",
+    label: "Shopify order items",
+    what: 'one row per SKU per order — order number, product, variant, SKU, quantity, price; what "which SKUs were in each order", "a SKU list for my orders" and "order items" mean. Never build a hand-typed list of order lines beside it',
+    // The lines come in with the orders.
+    section: { label: "Order items", icon: "receipt", importedWith: "orders" },
+    view: "store_order_items",
+    order: { field: "placed_at", ascending: false },
+    select:
+      "id, order_id, order_number, placed_at, customer_name, title, variant_title, sku, quantity, price, line_total, currency, status",
+    columns: [
+      { field: "order_number", label: "Order", type: "text" },
+      { field: "placed_at", label: "Placed", type: "date" },
+      { field: "customer_name", label: "Customer", type: "text" },
+      { field: "title", label: "Product", type: "text" },
+      { field: "variant_title", label: "Variant", type: "text" },
+      { field: "sku", label: "SKU", type: "text" },
+      { field: "quantity", label: "Qty", type: "number" },
+      { field: "price", label: "Price", type: "currency", currencyField: "currency" },
+      { field: "line_total", label: "Line total", type: "currency", currencyField: "currency" },
+      { field: "status", label: "Status", type: "badge" },
+    ],
+  },
   products: {
     label: "Shopify products",
+    what: 'one row per product in the catalogue — title, category, vendor, status, tags; what "our products" and "the catalogue" mean',
+    section: { label: "Products", icon: "package", importedWith: "products" },
     view: "store_products",
     order: { field: "title", ascending: true },
     select: "id, title, product_type, vendor, handle, status, tags",
@@ -312,6 +367,8 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
   },
   inventory_levels: {
     label: "Shopify stock",
+    what: 'one row per variant per location — product, variant, SKU, location, available; what "stock", "inventory" and "running low" mean',
+    section: { label: "Stock", icon: "box", importedWith: "inventory" },
     // Lowest stock first: the rows a merchant opens this for.
     view: "store_inventory",
     order: { field: "available", ascending: true },
@@ -338,6 +395,7 @@ const SEARCHABLE: Record<StoreTable, string[]> = {
   products: ["title", "handle", "status", "product_type", "vendor"],
   inventory_levels: ["product", "variant", "sku", "location_name"],
   product_sales: ["title"],
+  order_line_items: ["order_number", "sku", "title", "customer_name"],
 };
 
 export const isStoreTable = (v: unknown): v is StoreTable =>

@@ -1370,6 +1370,12 @@ export async function POST(req: Request) {
           // refused seven times over for a section it had not built
           // yet. These are the names, per table, and they do not
           // change.
+          // What each list is, in the same words Luke reads — so a
+          // client asked for "a SKU list for my orders" finds the list
+          // that already is one, instead of building a hand-typed copy.
+          store_lists: Object.fromEntries(
+            Object.entries(STORE_TABLES).map(([table, spec]) => [table, spec.what])
+          ),
           store_columns: Object.fromEntries(
             Object.entries(STORE_TABLES).map(([table, spec]) => [
               table,

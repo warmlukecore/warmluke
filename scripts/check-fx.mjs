@@ -159,7 +159,8 @@ console.log("\nand it is actually wired up");
   // The reader has to be told what the small number is, or it becomes
   // a figure somebody quietly trusts.
   check("the screen says the estimate is today's rate", /rough\s*\n?\s*conversion at today/.test(shell) || /rough conversion at today/.test(shell));
-  check("and says not to reconcile with it", /never to reconcile/.test(shell));
+  // The note is one short line now; the promise in it is the same.
+  check("and says not to reconcile with it", /never to reconcile|not for\s+reconciling/.test(shell));
 }
 
 console.log(fails.length === 0 ? "\nmoney means what its source says" : `\n${fails.length} FAILED`);
