@@ -145,6 +145,22 @@ if (signedIn?.session) {
     "and it is a real currency code",
     /^[A-Z]{3}$/.test((money.data ?? [])[0]?.currency ?? "")
   );
+
+  // The same trap again, one column later. granted_scopes is what
+  // answers "did that reconnect actually take?", and ungranted it
+  // would not merely be absent — PostgREST refuses the whole row over
+  // one column nobody granted, so a screen asking for it shows no
+  // store at all. That is the webhook_error failure exactly.
+  const scopes = await owner.from("stores").select("id, granted_scopes").limit(1);
+  check("what the grant gave is readable", !scopes.error);
+  // Null is allowed and means unknown: a store connected before the
+  // column existed has not been renewed yet. A list, when there is
+  // one, is a list of scope names.
+  const gave = (scopes.data ?? [])[0]?.granted_scopes ?? null;
+  check(
+    "and it is either unknown or a list of scopes",
+    gave === null || (Array.isArray(gave) && gave.every((s) => typeof s === "string" && s.length > 0))
+  );
 } else {
   console.log("\n  --    no owner session; the strip's query is not checked");
 }

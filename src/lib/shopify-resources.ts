@@ -494,6 +494,24 @@ export function scopesFor(env = process.env): string[] {
     : [...SHOPIFY_SCOPES];
 }
 
+/**
+ * What the install asks for that this token was never given.
+ *
+ * `granted` is stores.granted_scopes: the list Shopify reported when it
+ * handed the token over. Null means the grant predates that column, so
+ * nothing is known about it — and an unknown grant reports nothing
+ * missing rather than everything, because the store in front of you is
+ * demonstrably working and sending its owner to reconnect for scopes
+ * they may already hold is worse than staying quiet.
+ */
+export function missingScopes(
+  granted: readonly string[] | null | undefined,
+  env = process.env
+): string[] {
+  if (!granted || granted.length === 0) return [];
+  return scopesFor(env).filter((s) => !granted.includes(s));
+}
+
 /** Every webhook topic any resource listens for. */
 export const WEBHOOK_TOPICS: readonly string[] = RESOURCES.flatMap((r) => SHOPIFY_RESOURCES[r].webhooks);
 

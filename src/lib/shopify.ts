@@ -137,6 +137,22 @@ export type TokenGrant = {
   refresh_token_expires_in?: number;
 };
 
+/**
+ * The scopes a grant came with, as a list.
+ *
+ * Shopify reports them in one comma-separated string. Null, never an
+ * empty array, when there is nothing to report: a store whose grant was
+ * never recorded has an unknown list, and a caller that cannot tell
+ * unknown from empty will decide the token is allowed nothing.
+ */
+export function grantedScopes(scope: string | null | undefined): string[] | null {
+  const list = (scope ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return list.length ? list : null;
+}
+
 async function postOAuth(shop: string, body: Record<string, string>): Promise<TokenGrant> {
   const res = await fetch(`https://${normalizeShopDomain(shop)}/admin/oauth/access_token`, {
     method: "POST",

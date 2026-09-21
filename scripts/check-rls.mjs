@@ -166,6 +166,9 @@ try {
         // refresh token and both lifetimes alongside the access token.
         p_refresh_token: "shprt_test", p_expires_in: 3600,
         p_refresh_expires_in: 7776000,
+        // And what the grant came with, so a reconnect that granted
+        // less than the last one shows as less.
+        p_scopes: ["read_orders", "read_products"],
       }),
     }).then((r) => r.json());
 

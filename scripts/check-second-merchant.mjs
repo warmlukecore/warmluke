@@ -65,7 +65,7 @@ const pending = async (state) => {
   return { id: data?.id, error };
 };
 
-const connect = (state, shop) =>
+const connect = (state, shop, scopes = ["read_orders", "read_products"]) =>
   admin.rpc("abo_shopify_connect", {
     p_state: state,
     p_shop: shop,
@@ -76,6 +76,10 @@ const connect = (state, shop) =>
     p_refresh_token: null,
     p_expires_in: 3600,
     p_refresh_expires_in: null,
+    // What Shopify said it granted, which is not always what was
+    // asked for. Recorded so a reconnect can be told apart from a
+    // reconnect that never happened.
+    p_scopes: scopes,
   });
 
 try {
@@ -98,6 +102,31 @@ try {
 
   const right = await connect(`state-a-${stamp}`, DOMAIN);
   check("the shop it does name connects", right.data === project.id);
+
+  // What the grant came with, kept. Without this the only way to know
+  // whether a reconnect widened a token was to make a call and read
+  // the refusal — so a reconnect that never happened looked exactly
+  // like one that did, for as long as nobody asked Shopify.
+  const grant = (
+    await admin.from("stores").select("granted_scopes").eq("id", mine.id).single()
+  ).data;
+  check("and the scopes it came with are kept", String(grant?.granted_scopes) === "read_orders,read_products");
+
+  // The case this column exists for: connecting again with less than
+  // last time has to show as less. Merging with what was there would
+  // hide exactly the reconnect that did not take.
+  await admin
+    .from("stores")
+    .update({
+      oauth_state: `state-again-${stamp}`,
+      oauth_state_expires_at: new Date(Date.now() + 600_000).toISOString(),
+    })
+    .eq("id", mine.id);
+  await connect(`state-again-${stamp}`, DOMAIN, ["read_orders"]);
+  const narrower = (
+    await admin.from("stores").select("granted_scopes").eq("id", mine.id).single()
+  ).data;
+  check("a narrower reconnect replaces them rather than adding to them", String(narrower?.granted_scopes) === "read_orders");
 
   console.log("\nand only one of them ends up holding the shop");
   const loser = await connect(`state-b-${stamp}`, DOMAIN);

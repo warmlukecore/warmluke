@@ -4,6 +4,7 @@ import {
   ShopifyError,
   exchangeCodeForToken,
   fetchShopContext,
+  grantedScopes,
   normalizeShopDomain,
   verifyCallbackHmac,
   webhookAddress,
@@ -70,6 +71,11 @@ export async function GET(req: Request) {
       p_refresh_token: grant.refresh_token ?? null,
       p_expires_in: grant.expires_in ?? null,
       p_refresh_expires_in: grant.refresh_token_expires_in ?? null,
+      // What Shopify actually gave, which is not always what the
+      // install asked for. Read from the grant and kept, so that
+      // "did that reconnect take?" is a fact in the row rather than
+      // something only a refused API call can reveal.
+      p_scopes: grantedScopes(grant.scope),
     });
     if (error) return back("save_failed");
     if (!projectId) return back("expired");

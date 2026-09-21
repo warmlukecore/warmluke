@@ -11,6 +11,7 @@ import { createHmac } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import {
   authorizeUrl,
+  grantedScopes,
   normalizeShopDomain,
   verifyCallbackHmac,
   verifyWebhookHmac,
@@ -18,6 +19,7 @@ import {
 } from "../src/lib/shopify.ts";
 import {
   EXTENDED_ORDER_HISTORY_SCOPE,
+  missingScopes,
   PLANNED_SCOPES,
   RESOURCES,
   SHOPIFY_RESOURCES,
@@ -126,6 +128,55 @@ check("the dispatcher was found", defines.length > 0 && handled.size > 0);
 for (const t of WEBHOOK_TOPICS) check(`${t} has a handler`, handled.has(wire(t)));
 const subscribed = new Set(WEBHOOK_TOPICS.map(wire));
 for (const t of handled) check(`${t} is subscribed`, subscribed.has(t));
+
+console.log("\nwhat a grant came with is read from the grant");
+// Shopify reports the granted scopes as one comma-separated string,
+// and how it spaces them is not ours to rely on.
+check("a plain list is split", String(grantedScopes("read_orders,read_products")) === "read_orders,read_products");
+check("spaces around the commas are dropped", String(grantedScopes(" read_orders , read_products ")) === "read_orders,read_products");
+check("a single scope is a list of one", grantedScopes("read_orders")?.length === 1);
+// Null, never [], for every shape of nothing: a store whose grant was
+// never recorded is unknown, and a caller that reads [] as "granted
+// nothing" will refuse a token that works.
+check("an empty string is unknown, not empty", grantedScopes("") === null);
+check("undefined is unknown", grantedScopes(undefined) === null);
+check("a string of only commas is unknown", grantedScopes(" , , ") === null);
+
+console.log("\nand what is missing is measured against it");
+check("an unknown grant reports nothing missing", missingScopes(null).length === 0);
+check("an empty grant is treated as unknown too", missingScopes([]).length === 0);
+check("a full grant reports nothing missing", missingScopes(scopesFor({}), {}).length === 0);
+// The case this exists for: a token from before the scopes were added.
+const older = scopesFor({}).filter((s) => !PLANNED_SCOPES.includes(s));
+check("a grant from before the new scopes names them", PLANNED_SCOPES.every((s) => missingScopes(older, {}).includes(s)));
+check("and names nothing the token already holds", missingScopes(older, {}).every((s) => !older.includes(s)));
+// A grant wider than the install asked for is a reconnect from a
+// deployment that asked for more, not a fault.
+check("a wider grant reports nothing missing", missingScopes([...scopesFor({}), "read_themes"], {}).length === 0);
+check("the flag-gated scope counts once it is asked for", missingScopes(scopesFor({}), { SHOPIFY_READ_ALL_ORDERS: "true" }).includes(EXTENDED_ORDER_HISTORY_SCOPE));
+
+console.log("\nand the callback and the function agree on the arguments");
+// PostgREST refuses an rpc call naming a parameter the function does
+// not have, and it refuses it at runtime, in the one request nobody
+// can retry — the merchant is already back from Shopify with a code
+// that is spent. Nothing else in the build compares these two.
+const CONNECT = "create or replace function public.abo_shopify_connect(";
+const connectIn = migrations.filter((f) =>
+  readFileSync(new URL(`../supabase/migrations/${f}`, import.meta.url), "utf8").toLowerCase().includes(CONNECT)
+);
+const connectSql = readFileSync(new URL(`../supabase/migrations/${connectIn.at(-1)}`, import.meta.url), "utf8");
+const signature = connectSql.slice(connectSql.toLowerCase().indexOf(CONNECT)).split(") returns")[0];
+const declared = new Set([...signature.matchAll(/^\s*(p_[a-z_]+)\s+\S/gm)].map((m) => m[1]));
+const routeSrc = readFileSync(new URL("../src/app/api/shopify/callback/route.ts", import.meta.url), "utf8")
+  // Comments first: a parameter named in prose is not one passed.
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/\/\/[^\n]*/g, "");
+const call = routeSrc.slice(routeSrc.indexOf('rpc("abo_shopify_connect"'));
+const passed = new Set([...call.slice(0, call.indexOf("});")).matchAll(/\b(p_[a-z_]+)\s*:/g)].map((m) => m[1]));
+check("the function was found", declared.size > 0);
+check("the call was found", passed.size > 0);
+for (const p of passed) check(`${p} is a parameter of the function`, declared.has(p));
+for (const p of declared) check(`${p} is passed by the callback`, passed.has(p));
 
 console.log("\na callback has to be signed by Shopify");
 const SECRET = "shpss_test_secret";

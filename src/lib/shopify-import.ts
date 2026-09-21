@@ -18,6 +18,7 @@ import { isTransient } from "@/lib/retry";
 import {
   SHOPIFY_API_VERSION,
   ShopifyError,
+  grantedScopes,
   refreshAccessToken,
   tokenNeedsRefresh,
 } from "@/lib/shopify";
@@ -78,6 +79,7 @@ export async function ensureFreshToken(
   // stops working — storing only the access token would mean the next
   // renewal fails and the merchant is asked to reconnect for nothing.
   const now = Date.now();
+  const renewed = grantedScopes(grant.scope);
   await db
     .from("stores")
     .update({
@@ -93,6 +95,12 @@ export async function ensureFreshToken(
             ).toISOString(),
           }
         : {}),
+      // A renewal reports the same scopes the connect did, which is
+      // what fills this in for a store connected before the column
+      // existed — without asking anybody to reconnect for it. Omitted
+      // rather than nulled when the response is silent about them:
+      // writing null would erase a list the connect had recorded.
+      ...(renewed ? { granted_scopes: renewed } : {}),
     })
     .eq("id", store.id);
 
