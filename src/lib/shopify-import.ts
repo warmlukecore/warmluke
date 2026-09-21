@@ -222,7 +222,7 @@ query($n: Int!, $after: String) {
     nodes {
       id title handle status productType vendor tags updatedAt
       variants(first: 100) {
-        nodes { id title sku barcode price updatedAt inventoryItem { id } }
+        nodes { id title sku barcode price updatedAt inventoryItem { id tracked unitCost { amount } } }
       }
     }
   }
@@ -238,7 +238,13 @@ export type GqlProduct = {
       price: string; updatedAt: string;
       // Carried so a stock webhook, which names the item and not the
       // variant, can find the row it belongs to.
-      inventoryItem?: { id: string } | null;
+      //
+      // unitCost is what the merchant paid for it, and the only thing
+      // in the whole import that turns "what did we sell" into "what
+      // did we make". Empty until they enter it in Shopify, which
+      // many never do — so a margin is offered when it is there and
+      // never guessed when it is not.
+      inventoryItem?: { id: string; tracked?: boolean; unitCost?: { amount: string } | null } | null;
     }>;
   };
 };
@@ -278,6 +284,10 @@ export async function saveProducts(
       store_id: storeId, product_id: byExternal.get(p.id) ?? null, external_id: v.id,
       title: v.title, sku: v.sku, barcode: v.barcode,
       price: v.price ? Number(v.price) : null,
+      cost: v.inventoryItem?.unitCost?.amount ? Number(v.inventoryItem.unitCost.amount) : null,
+      // A variant Shopify does not count stock for reads zero
+      // everywhere, which looks like "out of stock" and is not.
+      tracked: v.inventoryItem?.tracked ?? null,
       inventory_item_id: v.inventoryItem?.id ?? null,
       updated_at: v.updatedAt,
     }))
@@ -650,7 +660,10 @@ query($n: Int!, $after: String) {
       id
       inventoryItem {
         inventoryLevels(first: 10) {
-          nodes { quantities(names: ["available"]) { quantity } location { id name } }
+          nodes {
+            quantities(names: ["available", "on_hand", "committed", "incoming"]) { name quantity }
+            location { id name }
+          }
         }
       }
     }
@@ -661,10 +674,27 @@ export type GqlStock = {
   id: string;
   inventoryItem: {
     inventoryLevels: {
-      nodes: Array<{ quantities: Array<{ quantity: number }>; location: { id?: string; name: string } }>;
+      nodes: Array<{
+        /**
+         * Asked for by name and read back by name.
+         *
+         * Shopify returns them in the order asked, but nothing
+         * promises that, and this used to take quantities[0] as
+         * "available". One more name in the query and the shop's
+         * available stock would quietly have become its committed
+         * stock, with every low-stock answer wrong and nothing
+         * saying so.
+         */
+        quantities: Array<{ name?: string; quantity: number }>;
+        location: { id?: string; name: string };
+      }>;
     };
   } | null;
 };
+
+/** One named quantity, or zero. Never by position — see GqlStock. */
+const qty = (list: Array<{ name?: string; quantity: number }> | undefined, name: string): number =>
+  list?.find((q) => q.name === name)?.quantity ?? 0;
 
 /** Writes a batch of stock levels. */
 export async function saveInventory(
@@ -681,7 +711,14 @@ export async function saveInventory(
       store_id: storeId, variant_id: variantId.get(v.id) ?? null,
       location_id: l.location?.id ?? null,
       location_name: l.location?.name ?? "",
-      available: l.quantities?.[0]?.quantity ?? 0,
+      available: qty(l.quantities, "available"),
+      // What is physically there, what is spoken for by orders not
+      // yet shipped, and what is on its way. "Available" is on_hand
+      // minus committed, so a shop can have stock and be unable to
+      // sell it, which is the thing a merchant most wants warning of.
+      on_hand: qty(l.quantities, "on_hand"),
+      committed: qty(l.quantities, "committed"),
+      incoming: qty(l.quantities, "incoming"),
       updated_at: new Date().toISOString(),
     }))
   ).filter((l) => l.variant_id);

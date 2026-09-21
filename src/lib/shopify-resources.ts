@@ -135,7 +135,7 @@ export const SHOPIFY_RESOURCES = {
     bulk: {
       query: `{ products { edges { node {
     id title handle status productType vendor tags updatedAt
-    variants { edges { node { id title sku barcode price updatedAt inventoryItem { id } } } }
+    variants { edges { node { id title sku barcode price updatedAt inventoryItem { id tracked unitCost { amount } } } } }
   } } } }`,
       assemble: (lines) =>
         withChildren<GqlProduct>(
@@ -246,7 +246,7 @@ export const SHOPIFY_RESOURCES = {
       query: `{ productVariants { edges { node {
     id
     inventoryItem { id inventoryLevels { edges { node {
-      quantities(names: ["available"]) { quantity }
+      quantities(names: ["available", "on_hand", "committed", "incoming"]) { name quantity }
       location { id name }
     } } } }
   } } } }`,

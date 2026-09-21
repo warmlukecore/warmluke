@@ -435,17 +435,23 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
   },
   variants: {
     label: "Shopify variants",
-    what: 'one row per variant — product, variant, SKU, barcode, price; what "SKUs", "price list", "barcodes" and "variants" mean',
     section: { label: "Variants", icon: "scan-line", importedWith: "products" },
     view: "store_variants",
     order: { field: "product", ascending: true },
-    select: "id, product_id, product, variant, sku, barcode, price, currency",
+    select: "id, product_id, product, variant, sku, barcode, price, currency, cost, margin, margin_pct, tracked",
+    advice:
+      'Cost is what the merchant paid, straight from Shopify, and is EMPTY until they enter it there — null is "unknown", never zero. Profit per unit = margin (price - cost); margin_pct is the same as a percentage of price. Only count rows where cost is not empty, and say how many were left out, because averaging a margin over rows with no cost reports a profit nobody made. tracked = false means Shopify does not count stock for it, so its zeroes are not shortages.',
+    what: 'one row per variant of a product — product, variant, SKU, barcode, price, cost and margin; what "price list", "variants", "barcodes", "what did it cost us" and "profit per item" mean',
+
     columns: [
       { field: "product", label: "Product", type: "text" },
       { field: "variant", label: "Variant", type: "text" },
       { field: "sku", label: "SKU", type: "text" },
       { field: "barcode", label: "Barcode", type: "text" },
       { field: "price", label: "Price", type: "currency", currencyField: "currency" },
+      { field: "cost", label: "Cost", type: "currency", currencyField: "currency" },
+      { field: "margin", label: "Margin", type: "currency", currencyField: "currency" },
+      { field: "margin_pct", label: "Margin %", type: "number" },
     ],
   },
   products: {
@@ -466,18 +472,27 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
   },
   inventory_levels: {
     label: "Shopify stock",
-    what: 'one row per variant per location — product, variant, SKU, location, available; what "stock", "inventory" and "running low" mean',
+    what: 'one row per variant per location — product, variant, SKU, location, what can be sold, what is on the shelf, what is promised and what is coming; what "stock", "inventory", "running low", "reserved" and "when is it back" mean',
     section: { label: "Stock", icon: "box", importedWith: "inventory" },
-    // Lowest stock first: the rows a merchant opens this for.
+    // The distinction that makes this list worth reading. Everything
+    // here used to be one number called "available", and a shop with
+    // three hundred on the shelf, all of them promised to orders not
+    // yet shipped, read the same as a shop with none.
+    advice:
+      'available is what can still be SOLD: on_hand minus committed, as Shopify works it out. on_hand is what is physically there, committed is what is already promised to orders not yet shipped, incoming is what is on its way. "Running low" and "out of stock" mean available, never on_hand. stock_state says which case a row is in, including "Not tracked" — a variant Shopify does not count stock for reads zero everywhere and is not a shortage, so leave those out of any low-stock answer and say you did.',
     view: "store_inventory",
     order: { field: "available", ascending: true },
-    select: "id, product, variant, sku, location_name, available",
+    select: "id, product, variant, sku, location_name, available, on_hand, committed, incoming, stock_state",
     columns: [
       { field: "product", label: "Product", type: "text" },
       { field: "variant", label: "Variant", type: "text" },
       { field: "sku", label: "SKU", type: "text" },
       { field: "location_name", label: "Location", type: "text" },
-      { field: "available", label: "In stock", type: "number" },
+      { field: "available", label: "Can sell", type: "number" },
+      { field: "on_hand", label: "On shelf", type: "number" },
+      { field: "committed", label: "Promised", type: "number" },
+      { field: "incoming", label: "Coming", type: "number" },
+      { field: "stock_state", label: "State", type: "badge" },
     ],
   },
 } as Record<StoreTable, TableSpec>;
@@ -494,7 +509,7 @@ const SEARCHABLE: Record<StoreTable, string[]> = {
   transactions: ["order_number", "customer_name", "gateway", "kind", "status"],
   customers: ["name", "email", "phone", "city"],
   products: ["title", "handle", "status", "product_type", "vendor"],
-  inventory_levels: ["product", "variant", "sku", "location_name"],
+  inventory_levels: ["product", "variant", "sku", "location_name", "stock_state"],
   product_sales: ["title"],
   order_line_items: ["order_number", "sku", "title", "customer_name"],
   refunds: ["order_number", "customer_name"],
