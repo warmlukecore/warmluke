@@ -1,0 +1,152 @@
+# Domain and data model
+
+## Two storage models
+
+Warmluke deliberately uses two kinds of business data.
+
+### Adaptive application data
+
+Owner-defined sections vary by business. Their rows use `records.data` JSONB and their
+shape lives in a versioned UI schema. This permits a clinic, repair shop, warehouse, or
+agency to use the same runtime without database migrations for every new field.
+
+### Canonical commerce data
+
+Shopify data has one shared meaning and must be queryable consistently. Products,
+customers, orders, inventory, refunds, and shipments therefore use fixed relational
+tables and security-invoker views. Generated sections point to those views through
+`modules.source_table` instead of copying commerce rows into `records`.
+
+## Core relationship model
+
+```mermaid
+erDiagram
+    AUTH_USER ||--o{ PROJECT : owns
+    AUTH_USER ||--o{ PROJECT_MEMBER : claims
+    PROJECT ||--o{ PROJECT_MEMBER : grants
+    PROJECT ||--o{ MODULE : contains
+    MODULE ||--o{ MODULE : nests
+    MODULE ||--o{ UI_SCHEMA : versions
+    MODULE ||--o{ RECORD : stores
+    PROJECT ||--o{ AUTOMATION : defines
+    AUTOMATION ||--o{ AUTOMATION_RUN : records
+    PROJECT ||--o{ CONVERSATION : has
+    CONVERSATION ||--o{ MESSAGE : contains
+    PROJECT ||--o{ BUILD_REQUEST : receives
+    PROJECT ||--o{ STORE : connects
+    STORE ||--o{ IMPORT_RUN : tracks
+    STORE ||--o{ PRODUCT : owns
+    PRODUCT ||--o{ VARIANT : has
+    VARIANT ||--o{ INVENTORY_LEVEL : stocks
+    STORE ||--o{ CUSTOMER : owns
+    STORE ||--o{ ORDER : owns
+    ORDER ||--o{ ORDER_LINE_ITEM : contains
+    ORDER ||--o{ REFUND : has
+    ORDER ||--o{ FULFILLMENT : ships
+```
+
+## Adaptive application tables
+
+| Table | Purpose | Important behavior |
+| --- | --- | --- |
+| `projects` | Tenant and generated application | Owner, name, locale, currency, auto-build setting |
+| `project_members` | Staff seats | Claimed with a secret token; one seat per user/project |
+| `modules` | Navigable application sections | Per-project slug, ordering, one-level nesting, optional store source |
+| `records` | Owner-managed rows | JSONB data; project/module scoped; update timestamp supports safe undo |
+| `ui_schemas` | Append-only module designs | Versioned schema JSON, author, and change description |
+| `automations` | Declarative business rules | Optional module scope, enabled state, expression/action definition |
+| `automation_runs` | Automation execution history | Success flag, triggering record, and details |
+
+### UI schema
+
+A `UiSchema` contains columns plus optional features. A column defines a field, label,
+type, optional currency source, link target, and optional computed expression. Features
+may define a view, search, filters, section statistics, default sort, row actions, and
+scan mode.
+
+The latest version per module is current. Earlier versions remain available for history
+and restoration. Store-backed sections derive their ordinary columns from the canonical
+store view and retain only their added computed columns and presentation features.
+
+### Automation definition
+
+An automation has one trigger and one or more actions:
+
+- triggers: record created, record updated, or scheduled;
+- actions: set fields on self/matching rows or create a record in another module.
+
+The TypeScript contract includes a webhook action for historical compatibility, but the
+platform capability registry advertises only implemented/accepted actions. Treat
+`capabilities.ts` and validator behavior as the supported surface.
+
+Expressions are trees of literals, current-row fields, prior values, target-row values,
+and closed-set operators. PostgreSQL evaluates automations; the browser evaluates
+computed columns, guards, and local display behavior where allowed.
+
+## Conversation and build tables
+
+| Table | Purpose |
+| --- | --- |
+| `conversations` | Owner-only built-in assistant threads |
+| `messages` | Original model content plus structured reply/build/undo payloads |
+| `build_requests` | Designs originating from MCP clients, including status, exact plans, approval, outcome, and source client |
+| `judgements` | Asynchronous design-quality observations; never an authorization decision |
+| `mcp_calls` | Per-user/client usage accounting and throttling |
+| `account_settings` | Feature switches, turn allowances, and superadmin state |
+| `admin_account_audit` | Audit trail for administrator account changes |
+
+Build request state evolved across migrations. Current code recognizes `pending`,
+`opened`, `building`, `dismissed`, `built`, and `partly_built`. Do not
+derive the current state machine from migration `0029` alone; later migrations extend
+both columns and allowed states.
+
+## Commerce tables and views
+
+| Table | Meaning |
+| --- | --- |
+| `stores` | One provider account per project, OAuth token lifecycle, shop context, sync state |
+| `import_runs` | Cursor/bulk-operation progress for each resource |
+| `products` | Shopify products |
+| `variants` | Product variants, SKU/barcode/price and inventory item identity |
+| `inventory_levels` | Available quantity per variant/location |
+| `customers` | Customer identity, contact, location, spend, and order count |
+| `orders` | Order identity, timestamps, gross/current totals, statuses, payment/discount/shipping facts |
+| `order_line_items` | Quantity, product/variant links, SKU, and unit price |
+| `refunds` | Refunded amount, units, and timestamp |
+| `fulfillments` | Shipment status, carrier, tracking, and delivery timestamps |
+| `shopify_data_requests` | Compliance request audit |
+| `shopify_redactions` | Tombstones that prevent deleted customer data from reappearing |
+
+Security-invoker views expose stable section shapes such as orders, customers, products,
+inventory, product sales, order items, refunds, variants, and fulfillments. The current
+registry and view mapping in `store-read.ts` are authoritative for names exposed to the
+application.
+
+## Supporting tables
+
+- `fx_rates`: project-scoped currency conversion cache.
+- `landing_events`: rate-limited marketing attribution and conversion events.
+- `app_secrets`: server-side integration secrets used by database verification paths.
+- `abo_migrations`: repository-managed migration ledger created by the migration runner.
+
+The browser and server currently assume at most one active store per project and use
+single-row queries. The database uniquely claims a connected shop domain globally but
+does not enforce uniqueness on `stores.project_id`; treat the one-store rule as a current
+application invariant and a schema seam, not a relational guarantee.
+
+## Ownership and deletion
+
+- Deleting a project cascades its generated application, conversations, build requests,
+  connected store, and commerce data.
+- Deleting a module cascades its records and schema versions; the UI requires explicit
+  name confirmation and reports dependent child sections/records first.
+- Disconnecting a store deletes imported local commerce data but does not change Shopify.
+- Compliance redaction is destructive by contract and records tombstones so later
+  imports cannot recreate erased personal data.
+
+## Migration source of truth
+
+To reconstruct a new database, apply `supabase/schema.sql` as version `0001`, then every
+`supabase/migrations/NNNN_*.sql` in numeric order. Never edit an already-applied
+migration to change production behavior; add the next numbered migration and update the
+checks that prove its invariant.

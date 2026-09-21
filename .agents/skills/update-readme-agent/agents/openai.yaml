@@ -1,0 +1,7 @@
+interface:
+  display_name: "Update README Agent"
+  short_description: "Refresh docs from repository changes"
+  default_prompt: "Use $update-readme-agent to review changes since the last checkpoint and update the repository documentation."
+
+policy:
+  allow_implicit_invocation: true
