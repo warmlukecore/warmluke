@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase-client";
 import { apiFetch } from "@/lib/auth";
+import { STORE_TABLES } from "@/lib/store-read";
 import ConnectShopify from "@/components/ConnectShopify";
 
 type Progress = Record<string, { imported: number; status: string }>;
@@ -70,18 +71,14 @@ export default function StoreStrip({
   const [makingSections, setMakingSections] = useState(false);
   const [offerDismissed, setOfferDismissed] = useState(false);
 
-  /** The store tables worth a section: rows imported, none built yet. */
-  const WANTED: Array<[string, string, string, string]> = [
-    ["orders", "orders", "Orders", "shopping-cart"],
-    ["customers", "customers", "Customers", "users"],
-    ["products", "products", "Products", "package"],
-    ["inventory_levels", "inventory", "Stock", "box"],
-    // Summed from the orders, so it exists once orders do.
-    ["product_sales", "orders", "Best sellers", "target"],
-  ];
-  const missing = WANTED.filter(
-    ([table, progressKey]) =>
-      !existingSources.includes(table) && (progress[progressKey]?.imported ?? 0) > 0
+  /**
+   * The store lists worth a section: rows imported, none built yet.
+   * Read from the one declaration of the store's lists, so a list
+   * added there is offered here without anyone remembering to.
+   */
+  const missing = Object.entries(STORE_TABLES).filter(
+    ([table, spec]) =>
+      !existingSources.includes(table) && (progress[spec.section.importedWith]?.imported ?? 0) > 0
   );
 
   /**
@@ -98,14 +95,14 @@ export default function StoreStrip({
     setMakingSections(true);
     setError(null);
     const failed: string[] = [];
-    for (const [table, , label, icon] of missing) {
+    for (const [table, spec] of missing) {
       const { ok, data } = await apiFetch("/api/modules", {
         projectId,
-        nav_label: label,
-        icon,
+        nav_label: spec.section.label,
+        icon: spec.section.icon,
         source_table: table,
       });
-      if (!ok) failed.push(label);
+      if (!ok) failed.push(spec.section.label);
     }
     setMakingSections(false);
     onSectionsCreated();
@@ -348,7 +345,7 @@ export default function StoreStrip({
             {makingSections
               ? "Building…"
               : existingSources.length
-                ? `Add ${missing.map(([, , l]) => l).join(", ")}`
+                ? `Add ${missing.map(([, spec]) => spec.section.label).join(", ")}`
                 : "Show them in the app"}
           </button>
           <button

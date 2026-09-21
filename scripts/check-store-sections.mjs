@@ -23,8 +23,9 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
-console.log("only the four store tables are accepted");
-for (const t of ["orders", "customers", "products", "inventory_levels"]) {
+console.log("only the store's lists are accepted");
+// From the one declaration, so a list added there is covered here.
+for (const t of Object.keys(STORE_TABLES)) {
   check(`${t} is one`, isStoreTable(t));
 }
 // The column names a table that then gets queried, so anything not on

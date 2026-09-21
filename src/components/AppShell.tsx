@@ -1736,34 +1736,27 @@ export default function AppShell({
             >
             {storeBacked && store && project?.currency && hasMoneyColumns &&
               (store.currency !== project.currency || recordedCurrencies.length > 1) && (
-              <div className="mb-3 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs text-slate-400">
+              // One quiet line, not a notice: the fact fits in a sentence,
+              // and a box of it above every store section read as a warning.
+              <div className="mb-2 text-[11px] leading-snug text-blue-400">
                 {recordedCurrencies.length > 1 ? (
                   <>
-                    Shopify recorded these orders in{" "}
-                    <span className="text-slate-200">{recordedCurrencies.join(" and ")}</span>.
-                    {" "}Each amount is shown in its recorded currency; currency totals are not
-                    combined. Your project default is {project.currency} and applies only to sections
-                    you create here.
+                    Shopify recorded these orders in {recordedCurrencies.join(" and ")}; each amount
+                    is shown as recorded, never combined. Sections you create here use{" "}
+                    {project.currency}.
                   </>
                 ) : (
                   <>
-                    Shopify amounts are shown in{" "}
-                    <span className="text-slate-200">
-                      {recordedCurrencies[0] ?? store.currency}
-                    </span>
-                    , their recorded shop currency — the figure you can look up in Shopify.
+                    Amounts are in {recordedCurrencies[0] ?? store.currency}, as Shopify recorded
+                    them
                     {sectionApprox ? (
                       <>
-                        {" "}The smaller {project.currency} line under each one is a rough
-                        conversion at today&rsquo;s rate
-                        {fx?.as_of ? ` (${fx.as_of})` : ""}, applied to every order whatever day it
-                        was placed. Use it to get a feel for the size, never to reconcile: it will
-                        not match a Shopify payout, and totals built from it were never true on any
-                        single day.
+                        ; the smaller {project.currency} figure is a rough conversion at today&rsquo;s
+                        rate{fx?.as_of ? ` (${fx.as_of})` : ""}, for a feel of the size, not for
+                        reconciling
                       </>
                     ) : null}
-                    {" "}Your project default is {project.currency} and applies to sections you
-                    create here.
+                    . Sections you create here use {project.currency}.
                   </>
                 )}
               </div>
