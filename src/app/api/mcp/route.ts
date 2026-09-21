@@ -94,7 +94,7 @@ const TOOLS = [
   {
     name: "store_overview",
     description:
-      "What is in the merchant's connected Shopify store: the shop domain, its timezone and currency, when it last synced, and how many products, customers and orders are held." + RENDER_NOTE,
+      "What is in the merchant's connected Shopify store: the shop domain, its timezone and currency, when it last synced, and how many rows it holds of each list Shopify fills." + RENDER_NOTE,
     inputSchema: {
       type: "object",
       properties: {
@@ -143,8 +143,14 @@ const TOOLS = [
   },
   {
     name: "search_store",
+    // Named from the one declaration of the lists rather than by hand.
+    // This sentence is how the client learns a list exists at all, and
+    // it had gone on naming five while the enum below offered nine —
+    // so shipments and refunds were searchable and never searched.
     description:
-      "Look through the store's products, customers, orders, stock levels or product sales (units and revenue per product — best sellers). Read-only, and it only sees what has been synced from Shopify." + RENDER_NOTE,
+      `Look through any of the store's lists: ${Object.values(STORE_TABLES)
+        .map((spec) => spec.section.label)
+        .join(", ")}. Read-only, and it only sees what has been synced from Shopify.` + RENDER_NOTE,
     inputSchema: {
       type: "object",
       properties: {
