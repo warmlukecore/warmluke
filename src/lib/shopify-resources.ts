@@ -25,6 +25,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   CUSTOMERS_QUERY,
   ensureFreshToken,
+  FULFILLED,
+  FULFILLMENTS_QUERY,
   graphql,
   INVENTORY_QUERY,
   ORDERS_QUERY,
@@ -33,11 +35,13 @@ import {
   REFUNDED,
   REFUNDS_QUERY,
   saveCustomers,
+  saveFulfillments,
   saveInventory,
   saveOrders,
   saveProducts,
   saveRefunds,
   type GqlCustomer,
+  type GqlFulfilledOrder,
   type GqlOrder,
   type GqlProduct,
   type GqlRefundedOrder,
@@ -179,6 +183,9 @@ export const SHOPIFY_RESOURCES = {
     totalPriceSet { shopMoney { amount currencyCode } }
     currentTotalPriceSet { shopMoney { amount currencyCode } }
     customer { id }
+    paymentGatewayNames
+    discountCodes
+    shippingAddress { city provinceCode countryCode }
     lineItems { edges { node {
       id title variantTitle quantity sku
       variant { id }
@@ -276,6 +283,32 @@ export const SHOPIFY_RESOURCES = {
     // whose payload holds every refund the order has.
     webhooks: [],
     tables: ["refunds"],
+    drift: false,
+  },
+  fulfillments: {
+    label: "shipments",
+    scopes: ["read_orders"],
+    count: `{ ordersCount(query: "${FULFILLED}") { count } }`,
+    page: FULFILLMENTS_QUERY,
+    root: "orders",
+    // Lists of scalars only, so bulk is allowed; the file has no
+    // child lines, each order carries its shipments inline.
+    bulk: {
+      query: `{ orders(query: "${FULFILLED}") { edges { node {
+    id
+    fulfillments(first: 25) {
+      id status displayStatus createdAt updatedAt deliveredAt
+      trackingInfo(first: 5) { company number url }
+    }
+  } } } }`,
+      assemble: parentsOnly,
+    },
+    children: [{ path: ["fulfillments"], limit: 25 }],
+    save: (db, storeId, nodes) => saveFulfillments(db, storeId, nodes as GqlFulfilledOrder[]),
+    // The order payload carries them too, and the order handler writes
+    // them; these two catch a tracking number added after the fact.
+    webhooks: ["FULFILLMENTS_CREATE", "FULFILLMENTS_UPDATE"],
+    tables: ["fulfillments"],
     drift: false,
   },
 } as const satisfies Record<string, ResourceSpec>;

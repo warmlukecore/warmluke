@@ -45,6 +45,7 @@ const COUNTED = [
   "orders",
   "order_line_items",
   "refunds",
+  "fulfillments",
   "inventory_levels",
 ] as const;
 
@@ -212,6 +213,7 @@ export function dayRangeInZone(day: string, timeZone: string): { from: string; t
 // showing blank cells for fields the query never asked for.
 
 export type StoreTable =
+  | "fulfillments"
   | "orders"
   | "customers"
   | "products"
@@ -258,7 +260,7 @@ const one = <T,>(v: T | T[] | null | undefined): T | null =>
 export const STORE_TABLES: Record<StoreTable, TableSpec> = {
   orders: {
     label: "Shopify orders",
-    what: 'one row per order — number, customer, total, paid / pending / cancelled, fulfilment; what "our orders", "revenue", "COD pending" and "how much did we sell" mean',
+    what: 'one row per order — number, customer, total, paid / pending / cancelled, fulfilment, what paid (COD or the gateway), discount codes, shipping city and state; what "our orders", "revenue", "COD pending", "how much did we sell" and "orders by city" mean',
     section: { label: "Orders", icon: "shopping-cart", importedWith: "orders" },
     // What a stat over these rows should be, said once and read by both
     // doors — Luke's prompt and design_format. A merchant's "revenue"
@@ -266,11 +268,11 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     // refunds, all in. On a four-order store that is $4,942 where the
     // money actually collected is $0.
     advice:
-      'Money: `total` is what the order comes to today, after refunds; `total_original` is what it came to when placed. Do not sum `total` over every row and call it revenue — most of it may be unpaid. Revenue collected = sum(total) where financial_status = "PAID". Awaiting payment (COD) = sum(total) where financial_status = "PENDING". Cancelled = count where cancelled_at is not empty, kept out of both. Average order value = avg(total_original). When a merchant asks for one revenue number, show these apart and say which is which.',
+      'Money: `total` is what the order comes to today, after refunds; `total_original` is what it came to when placed. Do not sum `total` over every row and call it revenue — most of it may be unpaid. Revenue collected = sum(total) where financial_status = "PAID". Awaiting payment (COD) = sum(total) where financial_status = "PENDING". Cancelled = count where cancelled_at is not empty, kept out of both. Average order value = avg(total_original). When a merchant asks for one revenue number, show these apart and say which is which. COD vs prepaid: `gateway` is what paid — "Cash on Delivery (COD)" for COD, otherwise the payment provider. Orders by place = group by ship_city or ship_state.',
     view: "store_orders",
     order: { field: "placed_at", ascending: false },
     select:
-      "id, order_number, placed_at, customer_name, customer_phone, total, total_original, currency, status, fulfilment_status, financial_status, cancelled_at, tags",
+      "id, order_number, placed_at, customer_name, customer_phone, total, total_original, currency, status, fulfilment_status, financial_status, cancelled_at, tags, gateway, discount_codes, ship_city, ship_state, ship_country",
     columns: [
       { field: "order_number", label: "Order", type: "text" },
       { field: "placed_at", label: "Placed", type: "date" },
@@ -283,6 +285,10 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "currency", label: "Currency", type: "text" },
       { field: "status", label: "Status", type: "badge" },
       { field: "fulfilment_status", label: "Fulfilment", type: "badge" },
+      { field: "gateway", label: "Payment", type: "badge" },
+      { field: "ship_city", label: "City", type: "text" },
+      { field: "ship_state", label: "State", type: "text" },
+      { field: "discount_codes", label: "Discounts", type: "text" },
     ],
   },
   customers: {
@@ -370,6 +376,26 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "quantity", label: "Qty", type: "number" },
     ],
   },
+  fulfillments: {
+    advice:
+      "One row per shipment; an order can have more than one. Delivered = shipment_status = DELIVERED. On the way = IN_TRANSIT or OUT_FOR_DELIVERY. A shipment with no tracking_number went out without one. Shipped on a day = shipped_at.",
+    label: "Shopify shipments",
+    what: 'one row per shipment — order number, customer, courier, tracking number, shipment status, shipped and delivered day; what "shipments", "tracking numbers", "delivery partner", "courier" and "where is the order" mean',
+    section: { label: "Shipments", icon: "truck", importedWith: "fulfillments" },
+    view: "store_fulfillments",
+    order: { field: "shipped_at", ascending: false },
+    select:
+      "id, order_id, order_number, customer_name, carrier, tracking_number, tracking_url, shipment_status, status, shipped_at, delivered_at",
+    columns: [
+      { field: "order_number", label: "Order", type: "text" },
+      { field: "shipped_at", label: "Shipped", type: "date" },
+      { field: "customer_name", label: "Customer", type: "text" },
+      { field: "carrier", label: "Courier", type: "text" },
+      { field: "tracking_number", label: "Tracking", type: "text" },
+      { field: "shipment_status", label: "Status", type: "badge" },
+      { field: "delivered_at", label: "Delivered", type: "date" },
+    ],
+  },
   variants: {
     label: "Shopify variants",
     what: 'one row per variant — product, variant, SKU, barcode, price; what "SKUs", "price list", "barcodes" and "variants" mean',
@@ -426,7 +452,8 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
  * product title helps nobody.
  */
 const SEARCHABLE: Record<StoreTable, string[]> = {
-  orders: ["order_number", "customer_name", "financial_status", "fulfilment_status"],
+  orders: ["order_number", "customer_name", "financial_status", "fulfilment_status", "gateway", "ship_city", "ship_state"],
+  fulfillments: ["order_number", "customer_name", "carrier", "tracking_number", "shipment_status"],
   customers: ["name", "email", "phone", "city"],
   products: ["title", "handle", "status", "product_type", "vendor"],
   inventory_levels: ["product", "variant", "sku", "location_name"],

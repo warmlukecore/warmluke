@@ -207,6 +207,7 @@ export type StoreFacts = {
  * names, because they ask for "Stock" and mean inventory levels.
  */
 const STORE_TOPICS: Array<{ table: string; words: RegExp; noun: string }> = [
+  { table: "fulfillments", words: /\bshipments?\b|\btracking\b|\bcouriers?\b|\bdelivery partners?\b|\bfulfil+ments?\b|\bdispatch(ed|es)?\b/i, noun: "shipments" },
   // Most specific first. "Order Items" names the order lines, and
   // matched "orders" while this list began with them.
   { table: "order_line_items", words: /\border (line )?items?\b|\bline items?\b/i, noun: "order lines" },

@@ -60,24 +60,39 @@ try {
       displayFinancialStatus: "PARTIALLY_REFUNDED", displayFulfillmentStatus: "FULFILLED",
       totalPriceSet: money("597.00"), currentTotalPriceSet: money("547.00"),
       customer: null, lineItems: { nodes: [] }, refunds: [],
+      paymentGatewayNames: ["manual"], discountCodes: [], shippingAddress: { city: "Pune", provinceCode: "MH", countryCode: "IN" },
     },
   ]);
   const imported = await row(`gid://shopify/Order/${stamp}1`);
   check("total is what it comes to today", Number(imported?.total) === 547);
   check("and the original is kept beside it", Number(imported?.total_original) === 597);
+  const { data: importedPlace } = await admin.from("orders").select("gateway, ship_city, ship_state").eq("store_id", store.id).eq("external_id", `gid://shopify/Order/${stamp}1`).single();
+  check("what paid and where it went came across", importedPlace?.gateway === "manual" && importedPlace?.ship_city === "Pune" && importedPlace?.ship_state === "MH");
 
   console.log("\nthe same order, by the webhook road");
   // The webhook function is called as the app calls it, with REST's
   // shape. Both roads must land on the same numbers.
+  const hookId = Number(`${stamp}1`.replace(/\D/g, "").slice(-9) || 1);
   const { error } = await admin.rpc("abo_shopify_upsert_order", {
     p_shop: shop,
     p_order: {
-      id: Number(`${stamp}1`.replace(/\D/g, "").slice(-9) || 1),
+      id: hookId,
       admin_graphql_api_id: `gid://shopify/Order/${stamp}1`,
       name: "#9001", created_at: "2026-09-14T10:00:00Z", updated_at: "2026-09-15T12:00:00Z",
       financial_status: "partially_refunded", fulfillment_status: "fulfilled",
       total_price: "597.00", current_total_price: "547.00", currency: "USD", tags: "",
       line_items: [{ id: 1, title: "A thing", variant_title: "Blue", sku: "X", quantity: 2, price: "298.50" }],
+      payment_gateway_names: ["Cash on Delivery (COD)"],
+      discount_codes: [{ code: "WELCOME10", amount: "50.00", type: "fixed_amount" }],
+      shipping_address: { city: "Pune", province_code: "MH", country_code: "IN" },
+      // A shipment rides inside the order on this road too.
+      fulfillments: [
+        {
+          id: 501, status: "success", shipment_status: "in_transit",
+          tracking_company: "Delhivery", tracking_number: "DL123", tracking_url: "https://t/DL123",
+          created_at: "2026-09-15T09:00:00Z", updated_at: "2026-09-15T09:00:00Z",
+        },
+      ],
       // A refund raises orders/updated, and the payload carries every
       // refund the order has — this road used to write none of them.
       refunds: [
@@ -101,6 +116,30 @@ try {
   check("with what was given back", Number(hookedRefunds?.[0]?.amount) === 50);
   check("and how many units", hookedRefunds?.[0]?.quantity === 1);
   check("on the Shopify id, so the import lands on the same row", hookedRefunds?.[0]?.external_id === "gid://shopify/Refund/77");
+  const { data: hookedOrder } = await admin.from("orders").select("gateway, discount_codes, ship_city, ship_state, ship_country").eq("store_id", store.id).eq("external_id", `gid://shopify/Order/${hookId}`).single();
+  check("what paid, by webhook", hookedOrder?.gateway === "Cash on Delivery (COD)");
+  check("the code used", hookedOrder?.discount_codes?.[0] === "WELCOME10");
+  check("and where it went", hookedOrder?.ship_city === "Pune" && hookedOrder?.ship_state === "MH" && hookedOrder?.ship_country === "IN");
+  const shipments = async () => (await admin.from("fulfillments").select("external_id, carrier, tracking_number, shipment_status, delivered_at").eq("store_id", store.id)).data ?? [];
+  let shipped = await shipments();
+  check("the shipment landed with the order", shipped.length === 1 && shipped[0].external_id === "gid://shopify/Fulfillment/501");
+  check("with its courier and number", shipped[0]?.carrier === "Delhivery" && shipped[0]?.tracking_number === "DL123");
+
+  console.log("\na tracking update, by its own topic");
+  const { error: fe } = await admin.rpc("abo_shopify_upsert_fulfillment", {
+    p_shop: shop,
+    p_f: {
+      id: 501, order_id: hookId, status: "success", shipment_status: "delivered",
+      tracking_company: "Delhivery", tracking_numbers: ["DL123", "DL124"], tracking_urls: ["https://t/DL123"],
+      created_at: "2026-09-15T09:00:00Z", updated_at: "2026-09-17T09:00:00Z",
+    },
+  });
+  check("the webhook is accepted", !fe);
+  if (fe) console.log("     →", fe.message);
+  shipped = await shipments();
+  check("it is the same shipment", shipped.length === 1);
+  check("now delivered", shipped[0]?.shipment_status === "DELIVERED" && !!shipped[0]?.delivered_at);
+  check("with every parcel's number", shipped[0]?.tracking_number === "DL123, DL124");
 
   console.log("\nan order that was never refunded");
   await saveOrders(admin, store.id, [

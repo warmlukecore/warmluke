@@ -344,6 +344,9 @@ query($n: Int!, $after: String) {
       totalPriceSet { shopMoney { amount currencyCode } }
       currentTotalPriceSet { shopMoney { amount currencyCode } }
       customer { id }
+      paymentGatewayNames
+      discountCodes
+      shippingAddress { city provinceCode countryCode }
       lineItems(first: 100) {
         nodes {
           id title variantTitle quantity sku
@@ -367,6 +370,10 @@ export type GqlOrder = {
   /** What the order comes to today, after refunds. Absent on old bulk files. */
   currentTotalPriceSet?: { shopMoney: { amount: string; currencyCode: string } } | null;
   customer: { id: string } | null;
+  /** What paid: "Cash on Delivery (COD)", or the provider. The first is the one that did. */
+  paymentGatewayNames?: string[] | null;
+  discountCodes?: string[] | null;
+  shippingAddress?: { city: string | null; provinceCode: string | null; countryCode: string | null } | null;
   lineItems: { nodes: Array<{ id: string; title: string; variantTitle?: string | null; quantity: number; sku: string | null;
     variant: { id: string } | null; product: { id: string } | null;
     originalUnitPriceSet: { shopMoney: { amount: string } } | null }> };
@@ -404,6 +411,11 @@ export async function saveOrders(
         currency: o.totalPriceSet?.shopMoney?.currencyCode ?? null,
         financial_status: o.displayFinancialStatus, fulfilment_status: o.displayFulfillmentStatus,
         cancelled_at: o.cancelledAt, tags: o.tags ?? [], source: "shopify", updated_at: o.updatedAt,
+        gateway: o.paymentGatewayNames?.[0] ?? null,
+        discount_codes: o.discountCodes ?? [],
+        ship_city: o.shippingAddress?.city ?? null,
+        ship_state: o.shippingAddress?.provinceCode ?? null,
+        ship_country: o.shippingAddress?.countryCode ?? null,
       })),
       { onConflict: "store_id,external_id" }
     )
@@ -523,6 +535,70 @@ export async function saveRefunds(
   });
   if (refunds.length === 0) return;
   const { error } = await db.from("refunds").upsert(refunds, { onConflict: "store_id,external_id" });
+  if (error) throw new Error(error.message);
+}
+
+// ── Shipments ───────────────────────────────────────────────────
+// Shopify calls them fulfillments. They come by their own pass over
+// the orders that have one, so a store whose token cannot read them
+// loses this list and nothing else.
+export const FULFILLED = "fulfillment_status:shipped OR fulfillment_status:partial";
+
+export const FULFILLMENTS_QUERY = `
+query($n: Int!, $after: String) {
+  orders(first: $n, after: $after, sortKey: UPDATED_AT, query: "${FULFILLED}") {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      id
+      fulfillments(first: 25) {
+        id status displayStatus createdAt updatedAt deliveredAt
+        trackingInfo(first: 5) { company number url }
+      }
+    }
+  }
+}`;
+
+export type GqlFulfilledOrder = {
+  id: string;
+  fulfillments: Array<{
+    id: string; status: string; displayStatus: string | null;
+    createdAt: string; updatedAt: string; deliveredAt: string | null;
+    trackingInfo: Array<{ company: string | null; number: string | null; url: string | null }>;
+  }>;
+};
+
+/** Writes the shipments of a batch of orders — courier, tracking, status. */
+export async function saveFulfillments(
+  db: SupabaseClient, storeId: string, nodes: GqlFulfilledOrder[]
+): Promise<void> {
+  const shipped = nodes.filter((o) => (o.fulfillments ?? []).length > 0);
+  if (shipped.length === 0) return;
+
+  const { data: known } = await db
+    .from("orders").select("id, external_id").eq("store_id", storeId)
+    .in("external_id", shipped.map((o) => o.id));
+  const orderId = new Map((known ?? []).map((r) => [r.external_id as string, r.id as string]));
+
+  // An order not imported yet is nothing to hang a shipment on; the
+  // next pass finds it there.
+  const rows = shipped.flatMap((o) => {
+    const id = orderId.get(o.id);
+    if (!id) return [];
+    return o.fulfillments.map((f) => {
+      const tracking = f.trackingInfo ?? [];
+      return {
+        store_id: storeId, order_id: id, external_id: f.id,
+        status: f.status ?? null, shipment_status: f.displayStatus ?? null,
+        carrier: tracking.find((t) => t.company)?.company ?? null,
+        // Several parcels under one shipment carry several numbers.
+        tracking_number: tracking.map((t) => t.number).filter(Boolean).join(", ") || null,
+        tracking_url: tracking.find((t) => t.url)?.url ?? null,
+        shipped_at: f.createdAt, delivered_at: f.deliveredAt ?? null, updated_at: f.updatedAt,
+      };
+    });
+  });
+  if (rows.length === 0) return;
+  const { error } = await db.from("fulfillments").upsert(rows, { onConflict: "store_id,external_id" });
   if (error) throw new Error(error.message);
 }
 

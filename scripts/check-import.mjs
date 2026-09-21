@@ -55,7 +55,7 @@ for (const resource of RESOURCES) {
 }
 
 console.log("\nwhat landed:");
-for (const t of ["products", "variants", "customers", "orders", "order_line_items", "refunds", "inventory_levels"]) {
+for (const t of ["products", "variants", "customers", "orders", "order_line_items", "refunds", "fulfillments", "inventory_levels"]) {
   const { count } = await db.from(t).select("*", { count: "exact", head: true }).eq("store_id", store.id);
   console.log(`  ${t.padEnd(18)} ${count}`);
 }

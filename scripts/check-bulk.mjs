@@ -216,6 +216,9 @@ console.log("\nan order keeps its lines and its refunds apart");
       displayFulfillmentStatus: "FULFILLED",
       totalPriceSet: { shopMoney: { amount: "50.00", currencyCode: "USD" } },
       customer: null,
+      paymentGatewayNames: ["Cash on Delivery (COD)", "gift_card"],
+      discountCodes: ["WELCOME10"],
+      shippingAddress: { city: "Pune", provinceCode: "MH", countryCode: "IN" },
       // Inline, because refunds is a plain list and not a connection:
       // the export writes it inside the order and never as separate
       // __parentId lines. The reader used to blank this and wait for
@@ -243,11 +246,46 @@ console.log("\nan order keeps its lines and its refunds apart");
   const { db, written } = recorder();
   await readAll(db, "orders", file.url);
   check("the order is written", (written.orders ?? []).length === 1);
+  check("what paid is the first gateway", written.orders[0].gateway === "Cash on Delivery (COD)");
+  check("and where it went", written.orders[0].ship_city === "Pune" && written.orders[0].ship_state === "MH");
+  check("and the code used", written.orders[0].discount_codes[0] === "WELCOME10");
   check("its line is a line", (written.order_line_items ?? []).length === 1);
   check("the line kept its variant", written.order_line_items[0].variant_title === "Blue");
   check("and its refund is a refund", (written.refunds ?? []).length === 1);
   check("the refund kept its amount", written.refunds[0].amount === 25);
   check("and left the units alone for the refunds pass", !("quantity" in written.refunds[0]));
+  await file.stop();
+}
+
+console.log("\nshipments come by their own file, inline in their orders");
+{
+  const rows = [
+    {
+      id: "gid://shopify/Order/1",
+      fulfillments: [
+        {
+          id: "gid://shopify/Fulfillment/1",
+          status: "SUCCESS",
+          displayStatus: "IN_TRANSIT",
+          createdAt: "2026-01-03T00:00:00Z",
+          updatedAt: "2026-01-04T00:00:00Z",
+          deliveredAt: null,
+          // Two parcels, one shipment.
+          trackingInfo: [
+            { company: "Delhivery", number: "DL1", url: "https://t/DL1" },
+            { company: "Delhivery", number: "DL2", url: null },
+          ],
+        },
+      ],
+    },
+  ];
+  const file = await serve(jsonl(rows));
+  const { db, written } = recorder({ orders: [{ external_id: "gid://shopify/Order/1" }] });
+  await readAll(db, "fulfillments", file.url);
+  check("the shipment lands on its order", (written.fulfillments ?? []).length === 1 && written.fulfillments[0].order_id === "orders-0");
+  check("with its courier", written.fulfillments[0].carrier === "Delhivery");
+  check("every parcel's number", written.fulfillments[0].tracking_number === "DL1, DL2");
+  check("and where it stands", written.fulfillments[0].shipment_status === "IN_TRANSIT");
   await file.stop();
 }
 
@@ -315,6 +353,9 @@ console.log("\nhow many units went back comes by its own page");
   check("a refund of a few units is left alone", !childrenWereCut("refunds", [order(0, 1, 4)]));
   check("one of two hundred and fifty lines is not", childrenWereCut("refunds", [order(0, 1, 250)]));
   check("nor an order with fifty refunds", childrenWereCut("refunds", [order(0, 50)]));
+  const shipped = (n) => ({ fulfillments: Array.from({ length: n }, (_, i) => ({ id: `f${i}` })) });
+  check("an order with two shipments is left alone", !childrenWereCut("fulfillments", [shipped(2)]));
+  check("one with twenty-five is not", childrenWereCut("fulfillments", [shipped(25)]));
 
   const stocked = (places) => ({
     inventoryItem: {
