@@ -215,7 +215,7 @@ export const SHOPIFY_RESOURCES = {
     drift: true,
   },
   inventory: {
-    label: "inventory",
+    label: "stock levels",
     // The level names its location, which is the locations scope.
     scopes: ["read_inventory", "read_locations"],
     count: "{ productVariantsCount { count } }",

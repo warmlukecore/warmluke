@@ -25,9 +25,11 @@ export async function POST(req: Request) {
   const auth = await getUserClient(req);
   if (!auth) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
 
-  const { projectId, recheck } = (await req.json().catch(() => ({}))) as {
+  const { projectId, recheck, status } = (await req.json().catch(() => ({}))) as {
     projectId?: string;
     recheck?: boolean;
+    /** Only say where things stand; read nothing from Shopify. */
+    status?: boolean;
   };
   if (!projectId) return NextResponse.json({ error: "projectId is required." }, { status: 400 });
 
@@ -64,6 +66,17 @@ export async function POST(req: Request) {
     .eq("store_id", store.id);
 
   const byResource = new Map((runs ?? []).map((r) => [r.resource as Resource, r]));
+
+  // The strip asks this on mount, to decide whether to keep going or
+  // to count what is held. The answer names every resource there is,
+  // so a resource added to the registry is walked without the strip
+  // knowing its name.
+  if (status) {
+    return NextResponse.json({
+      done: RESOURCES.every((r) => byResource.get(r)?.status === "done"),
+      progress: summarise(runs ?? []),
+    });
+  }
 
   // Reading Shopify over again, from the start.
   //
@@ -387,11 +400,13 @@ const COUNTED = Object.fromEntries(
   RESOURCES.filter((r) => SHOPIFY_RESOURCES[r].drift).map((r) => [r, SHOPIFY_RESOURCES[r].tables[0]])
 );
 
+/** Where each resource stands, with what to call it and which table holds it. */
 function summarise(runs: Array<{ resource?: string; imported?: number; status?: string }>) {
   return Object.fromEntries(
     RESOURCES.map((r) => {
       const run = runs.find((x) => x?.resource === r);
-      return [r, { imported: run?.imported ?? 0, status: run?.status ?? "pending" }];
+      const spec = SHOPIFY_RESOURCES[r];
+      return [r, { imported: run?.imported ?? 0, status: run?.status ?? "pending", label: spec.label, holds: spec.tables[0] }];
     })
   );
 }

@@ -20,14 +20,12 @@ import { apiFetch } from "@/lib/auth";
 import { STORE_TABLES } from "@/lib/store-read";
 import ConnectShopify from "@/components/ConnectShopify";
 
-type Progress = Record<string, { imported: number; status: string }>;
-
-const LABELS: Record<string, string> = {
-  products: "products",
-  customers: "customers",
-  orders: "orders",
-  inventory: "stock levels",
-};
+/**
+ * Where each resource stands, as the import route reports it: what to
+ * call it and which table holds it come from the server's one list of
+ * resources, so nothing here has to know their names.
+ */
+type Progress = Record<string, { imported: number; status: string; label?: string; holds?: string }>;
 
 /** A page is 50 rows, so this stops at 20,000 of any one resource.
  *  ponytail: bounded so a cursor bug cannot spin forever; move the loop
@@ -162,17 +160,16 @@ export default function StoreStrip({
   // carried across. Webhooks have been adding rows ever since without
   // touching that number, so the header said "21 products" over a
   // section listing 26. A merchant reads this as what they have.
-  const countHeld = useCallback(async (storeId: string) => {
-    const of = async (table: string) =>
+  const countHeld = useCallback(async (storeId: string, of: Progress) => {
+    const count = async (table: string) =>
       (await supabase.from(table).select("id", { count: "exact", head: true }).eq("store_id", storeId))
         .count ?? 0;
-    const [products, customers, orders, inventory] = await Promise.all([
-      of("products"),
-      of("customers"),
-      of("orders"),
-      of("inventory_levels"),
-    ]);
-    if (!cancelled.current) setHeld({ products, customers, orders, inventory });
+    const counted = await Promise.all(
+      Object.entries(of)
+        .filter(([, p]) => p.holds)
+        .map(async ([key, p]) => [key, await count(p.holds!)] as const)
+    );
+    if (!cancelled.current) setHeld(Object.fromEntries(counted));
   }, []);
 
   useEffect(() => {
@@ -186,22 +183,19 @@ export default function StoreStrip({
       if (!row || cancelled.current) return;
       setStore(row);
 
-      const { data: runs } = await supabase
-        .from("import_runs")
-        .select("resource, status, imported")
-        .eq("store_id", row.id);
-      const seen: Progress = {};
-      for (const r of runs ?? []) {
-        seen[r.resource as string] = { imported: r.imported as number, status: r.status as string };
-      }
+      // Asked of the route rather than read off import_runs: the route
+      // knows every resource there is, and this used to check four
+      // names it had by heart — so a fifth resource, still pending,
+      // would never have started.
+      const { data } = await apiFetch("/api/shopify/import", { projectId, status: true });
+      const seen = (data?.progress as Progress | undefined) ?? {};
       if (cancelled.current) return;
       setProgress(seen);
 
       // Nothing has finished yet, or something is part way through.
       // Either way the merchant is waiting on it, so start.
-      const unfinished = Object.keys(LABELS).some((k) => (seen[k]?.status ?? "pending") !== "done");
-      if (row.status === "connected" && unfinished) pump();
-      else await countHeld(row.id);
+      if (row.status === "connected" && !data?.done) pump();
+      else await countHeld(row.id, seen);
     })();
     return () => {
       cancelled.current = true;
@@ -213,7 +207,7 @@ export default function StoreStrip({
   useEffect(() => {
     if (!store?.id || running) return;
     const refresh = () => {
-      if (document.visibilityState === "visible") countHeld(store.id);
+      if (document.visibilityState === "visible") countHeld(store.id, progress);
     };
     document.addEventListener("visibilitychange", refresh);
     window.addEventListener("focus", refresh);
@@ -221,7 +215,7 @@ export default function StoreStrip({
       document.removeEventListener("visibilitychange", refresh);
       window.removeEventListener("focus", refresh);
     };
-  }, [store?.id, running, countHeld]);
+  }, [store?.id, running, countHeld, progress]);
 
   // No store on this project. The builder screen used to say nothing
   // about Shopify at all, so the only way to find the connect button
@@ -255,10 +249,10 @@ export default function StoreStrip({
     );
   }
 
-  const counts = Object.entries(LABELS)
+  const counts = Object.entries(progress)
     // While importing, the running total is the point. Once it is done,
     // what matters is what the store holds.
-    .map(([key, label]) => [(running ? progress[key]?.imported : held?.[key]) ?? progress[key]?.imported ?? 0, label] as const)
+    .map(([key, p]) => [(running ? p.imported : held?.[key]) ?? p.imported ?? 0, p.label ?? key] as const)
     .filter(([n]) => n > 0)
     .map(([n, label]) => `${n.toLocaleString()} ${label}`);
 
@@ -321,7 +315,7 @@ export default function StoreStrip({
               {Object.entries(drift)
                 .map(
                   ([resource, d]) =>
-                    `${d.holding - d.imported} ${LABELS[resource] ?? resource} no longer in Shopify`
+                    `${d.holding - d.imported} ${progress[resource]?.label ?? resource} no longer in Shopify`
                 )
                 .join(" · ")}
             </span>
