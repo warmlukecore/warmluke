@@ -11,8 +11,15 @@
 # non-deterministic) are deliberately not here. Live joins once it has
 # somewhere safe to point at that is not the production database.
 #
-# This does not stop a deploy: Vercel deploys main on push regardless.
-# It tells you, on the commit, whether it should have.
+# This does not stop a deploy: Vercel deploys main on push regardless,
+# in parallel with this rather than after it. So these jobs tell you,
+# on the commit, whether it should have — which is not the same thing
+# as stopping it, and is worth saying out loud rather than implying.
+#
+# Making the deploy wait means taking it off Vercel's git integration
+# and giving it to a job here that needs both of the jobs below. That
+# needs a deploy token in this repository's secrets, which is the
+# merchant's call, so it is written down rather than done quietly.
 
 name: checks
 
@@ -23,7 +30,15 @@ on:
 
 concurrency:
   group: checks-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancelled on a branch, never on main.
+  #
+  # A pull request pushed twice in a minute has nothing to learn from
+  # the first run. main does: Vercel deploys every commit on its own,
+  # so a run cancelled by the next push leaves a commit that is LIVE
+  # and was never checked. That happened to 266402e — cancelled by the
+  # push after it, deployed anyway, and the only evidence it was fine
+  # is that the next commit's run passed.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   static:
