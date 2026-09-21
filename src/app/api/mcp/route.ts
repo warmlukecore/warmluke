@@ -630,6 +630,10 @@ async function settleDesign(opts: {
         // this visible while the details fold away: everything else
         // can be rebuilt from the plans, this cannot.
         p_unmet: unmet,
+        // And the follow-ups, for the same reason. With auto-build
+        // off the build happens in approve_change hours later, and
+        // nothing there could have known what this design offered.
+        p_next: followUps.length ? followUps : null,
       });
       if (err) return ok(id, text({ error: err.message }));
       charged?.();
@@ -1606,11 +1610,19 @@ export async function POST(req: Request) {
       // RLS already limits this to the merchant's own requests.
       const { data: rows } = await db
         .from("build_requests")
-        .select("id, project_id, request, plans, summary, status")
+        .select("id, project_id, request, plans, summary, status, next")
         .eq("id", requestId)
         .limit(1);
       const reqRow = rows?.[0] as
-        | { id: string; project_id: string; request: string; plans: AssistantPlan[] | null; summary: string | null; status: string }
+        | {
+            id: string;
+            project_id: string;
+            request: string;
+            plans: AssistantPlan[] | null;
+            summary: string | null;
+            status: string;
+            next: NextStep[] | null;
+          }
         | undefined;
       if (!reqRow) return ok(id, text({ error: "No such request on this account." }));
       if (reqRow.status === "built") {
@@ -1730,6 +1742,19 @@ export async function POST(req: Request) {
           note: errors.length
             ? "Some of it went in and some did not. Tell the merchant exactly which, and what is still missing."
             : "It is live in their app now. They can keep going here, or open Warmluke and ask Luke inside it — both reach the same app, and anything built either way shows in the panel as it happens.",
+          // What this design said was worth doing next, written down
+          // when it was proposed. Only on a build that worked: after
+          // a partial one the next thing to do is the missing half.
+          ...(!errors.length && reqRow.next?.length
+            ? {
+                next_steps: reqRow.next
+                  .filter((n) => n?.label && n?.prompt)
+                  .slice(0, 2)
+                  .map((n) => ({ say: n.label, as: n.prompt })),
+                next_steps_note:
+                  "Offer these in their own words and wait. Each is another change, so it needs proposing and approving like this one did.",
+              }
+            : {}),
           open: `${origin}/app/${reqRow.project_id}`,
         })
       );
