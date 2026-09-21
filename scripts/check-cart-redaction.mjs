@@ -131,6 +131,65 @@ try {
     .eq("store_id", store.id)
     .eq("external_id", byId);
   check("and the customer row went with them", (stillCustomer ?? 0) === 0);
+
+  // ── And the second table that names a person ──────────────────
+  // A draft order carries a name and an address exactly as a cart
+  // does, and 0103 points both at one trigger. A table added to the
+  // erasure in code and not in the tombstone check is how a
+  // redaction starts reporting a success it did not perform.
+  console.log("\nand a draft order is a place a person is kept too");
+  const goneD = `goned-${stamp}@example.test`;
+  const staysD = `staysd-${stamp}@example.test`;
+  const draft = (external, email, customerExternal = null) => ({
+    store_id: store.id,
+    external_id: external,
+    customer_external_id: customerExternal,
+    name_on_draft: "A Person",
+    email,
+    name: `#D${external.slice(-2)}`,
+    status: "OPEN",
+    total: 598.0,
+    currency: "USD",
+    drafted_at: "2026-09-21T10:00:00Z",
+  });
+  const drafts = async () =>
+    (await admin.from("draft_orders").select("external_id, email").eq("store_id", store.id)).data ?? [];
+
+  await admin.from("draft_orders").insert([
+    draft(`gid://shopify/DraftOrder/${stamp}A`, goneD),
+    draft(`gid://shopify/DraftOrder/${stamp}B`, staysD),
+  ]);
+  check("both drafts are here to begin with", (await drafts()).length === 2);
+
+  const { error: e4 } = await admin.rpc("abo_shopify_customer_redact_email", {
+    p_shop: shop,
+    p_email: goneD,
+  });
+  check("an erasure by email is accepted", !e4);
+  if (e4) console.log("     →", e4.message);
+  const leftDrafts = await drafts();
+  check("their draft is gone", !leftDrafts.some((d) => d.email === goneD));
+  check("and the other person's is untouched", leftDrafts.some((d) => d.email === staysD));
+  // The trigger, on the new table: the next import must not undo it.
+  const { error: e5 } = await admin
+    .from("draft_orders")
+    .insert(draft(`gid://shopify/DraftOrder/${stamp}A`, goneD));
+  check("writing it again raises nothing", !e5);
+  check("and it is still gone", !(await drafts()).some((d) => d.email === goneD));
+
+  // By id, for a draft made before that person was ever a customer
+  // row — the case a join through customers would have missed.
+  const draftPerson = `gid://shopify/Customer/${stamp}2`;
+  await admin.from("draft_orders").insert(draft(`gid://shopify/DraftOrder/${stamp}C`, null, draftPerson));
+  const { error: e6 } = await admin.rpc("abo_shopify_customer_redact", {
+    p_shop: shop,
+    p_customer: draftPerson,
+  });
+  check("an erasure by id is accepted", !e6);
+  if (e6) console.log("     →", e6.message);
+  const afterId = await drafts();
+  check("the draft naming them by id is gone", !afterId.some((d) => d.external_id.endsWith(`${stamp}C`)));
+  check("and the unrelated draft is still here", afterId.some((d) => d.email === staysD));
 } finally {
   await admin.from("projects").delete().eq("id", project.id);
   console.log("\nthe project is gone");

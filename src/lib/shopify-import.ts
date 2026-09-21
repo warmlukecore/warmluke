@@ -977,3 +977,176 @@ export async function saveInventory(
     if (error) throw new Error(error.message);
   }
 }
+
+// ── Draft orders ────────────────────────────────────────────────
+// The sale that did not start in the storefront: a quote sent over
+// WhatsApp, an order taken on the phone, a basket built for somebody
+// standing in the shop. Open ones are money not yet taken; completed
+// ones became real orders, and the link back is what stops the same
+// sale being counted twice.
+export const DRAFT_ORDERS_QUERY = `
+query($n: Int!, $after: String) {
+  draftOrders(first: $n, after: $after) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      id name status email tags
+      createdAt updatedAt completedAt invoiceUrl
+      totalPriceSet { shopMoney { amount currencyCode } }
+      subtotalPriceSet { shopMoney { amount } }
+      totalTaxSet { shopMoney { amount } }
+      totalShippingPriceSet { shopMoney { amount } }
+      customer { id displayName email }
+      order { id }
+      lineItems(first: 50) {
+        nodes {
+          id title sku quantity
+          variant { id }
+          product { id }
+          originalUnitPriceSet { shopMoney { amount } }
+          discountedUnitPriceSet { shopMoney { amount } }
+        }
+      }
+    }
+  }
+}`;
+
+/** One line of a draft. Custom items carry no product and no variant. */
+export type GqlDraftLine = {
+  id?: string | null;
+  title?: string | null;
+  sku?: string | null;
+  quantity?: number | null;
+  variant?: { id?: string | null } | null;
+  product?: { id?: string | null } | null;
+  originalUnitPriceSet?: { shopMoney: { amount: string } } | null;
+  discountedUnitPriceSet?: { shopMoney: { amount: string } } | null;
+};
+
+export type GqlDraftOrder = {
+  id: string;
+  name?: string | null;
+  status?: string | null;
+  email?: string | null;
+  tags?: string[] | null;
+  createdAt: string;
+  updatedAt?: string | null;
+  completedAt?: string | null;
+  invoiceUrl?: string | null;
+  totalPriceSet?: { shopMoney: { amount: string; currencyCode: string } } | null;
+  subtotalPriceSet?: { shopMoney: { amount: string } } | null;
+  totalTaxSet?: { shopMoney: { amount: string } } | null;
+  totalShippingPriceSet?: { shopMoney: { amount: string } } | null;
+  customer?: { id?: string | null; displayName?: string | null; email?: string | null } | null;
+  /** The order it became. Null while it is still a draft. */
+  order?: { id?: string | null } | null;
+  lineItems: { nodes: GqlDraftLine[] };
+};
+
+/** Writes a batch of draft orders and the lines on them. */
+export async function saveDraftOrders(
+  db: SupabaseClient, storeId: string, nodes: GqlDraftOrder[]
+): Promise<void> {
+  if (nodes.length === 0) return;
+
+  // The two things a draft points at that we may already hold. Both
+  // are optional: a draft can name somebody who is not a customer
+  // yet, and an open one has become no order at all.
+  const customerIds = [...new Set(nodes.map((d) => d.customer?.id).filter(Boolean) as string[])];
+  const orderIds = [...new Set(nodes.map((d) => d.order?.id).filter(Boolean) as string[])];
+  const [people, orders] = await Promise.all([
+    customerIds.length
+      ? db.from("customers").select("id, external_id").eq("store_id", storeId).in("external_id", customerIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; external_id: string }> }),
+    orderIds.length
+      ? db.from("orders").select("id, external_id").eq("store_id", storeId).in("external_id", orderIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; external_id: string }> }),
+  ]);
+  const customerId = new Map((people.data ?? []).map((r) => [r.external_id, r.id]));
+  const orderId = new Map((orders.data ?? []).map((r) => [r.external_id, r.id]));
+  const money = (m?: { shopMoney: { amount: string } } | null) =>
+    m?.shopMoney?.amount != null ? Number(m.shopMoney.amount) : null;
+
+  const { data: saved, error } = await db
+    .from("draft_orders")
+    .upsert(
+      nodes.map((d) => ({
+        store_id: storeId,
+        external_id: d.id,
+        name: d.name ?? null,
+        // Uppercase on both roads, so a draft does not change shape
+        // depending on whether an import or a webhook last wrote it.
+        status: d.status ? d.status.toUpperCase() : null,
+        customer_id: d.customer?.id ? (customerId.get(d.customer.id) ?? null) : null,
+        customer_external_id: d.customer?.id ?? null,
+        name_on_draft: d.customer?.displayName ?? null,
+        // The draft's own address first: a merchant can put one on a
+        // draft that has no customer attached at all.
+        email: d.email ?? d.customer?.email ?? null,
+        total: money(d.totalPriceSet),
+        subtotal: money(d.subtotalPriceSet),
+        tax: money(d.totalTaxSet),
+        shipping: money(d.totalShippingPriceSet),
+        currency: d.totalPriceSet?.shopMoney?.currencyCode ?? null,
+        tags: d.tags ?? [],
+        invoice_url: d.invoiceUrl ?? null,
+        order_id: d.order?.id ? (orderId.get(d.order.id) ?? null) : null,
+        order_external_id: d.order?.id ?? null,
+        drafted_at: d.createdAt,
+        completed_at: d.completedAt ?? null,
+        updated_at: d.updatedAt ?? d.createdAt,
+      })),
+      { onConflict: "store_id,external_id" }
+    )
+    .select("id, external_id");
+  if (error) throw new Error(error.message);
+
+  // Whatever came back, which is not always everything sent: the
+  // redaction trigger drops a draft naming somebody erased, and its
+  // lines must not be written either.
+  const draftId = new Map((saved ?? []).map((r) => [r.external_id as string, r.id as string]));
+  const kept = nodes.filter((d) => draftId.has(d.id));
+  if (kept.length === 0) return;
+
+  // Products and variants the lines point at. A custom item points at
+  // neither — #D1 in the dev store is one — and is still a real line
+  // on a real draft, so it is written with both left null.
+  const productIds = [...new Set(kept.flatMap((d) => d.lineItems?.nodes ?? []).map((l) => l.product?.id).filter(Boolean) as string[])];
+  const variantIds = [...new Set(kept.flatMap((d) => d.lineItems?.nodes ?? []).map((l) => l.variant?.id).filter(Boolean) as string[])];
+  const [prods, vars] = await Promise.all([
+    productIds.length
+      ? db.from("products").select("id, external_id").eq("store_id", storeId).in("external_id", productIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; external_id: string }> }),
+    variantIds.length
+      ? db.from("variants").select("id, external_id").eq("store_id", storeId).in("external_id", variantIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; external_id: string }> }),
+  ]);
+  const productId = new Map((prods.data ?? []).map((r) => [r.external_id, r.id]));
+  const variantId = new Map((vars.data ?? []).map((r) => [r.external_id, r.id]));
+
+  // Replaced rather than merged, the same as an order's lines: a line
+  // the merchant removed in Shopify has to disappear here too, and an
+  // upsert alone would leave it behind for ever.
+  const ids = kept.map((d) => draftId.get(d.id)!);
+  const { error: cleared } = await db.from("draft_order_line_items").delete().in("draft_order_id", ids);
+  if (cleared) throw new Error(cleared.message);
+
+  const lines = kept.flatMap((d) =>
+    (d.lineItems?.nodes ?? []).map((l) => ({
+      store_id: storeId,
+      draft_order_id: draftId.get(d.id)!,
+      external_id: l.id ?? null,
+      product_id: l.product?.id ? (productId.get(l.product.id) ?? null) : null,
+      variant_id: l.variant?.id ? (variantId.get(l.variant.id) ?? null) : null,
+      title: l.title ?? null,
+      sku: l.sku ?? null,
+      quantity: l.quantity ?? null,
+      // What it is actually being sold for. The original price is
+      // what it would have cost; a draft discounted by hand is the
+      // ordinary reason a merchant makes one.
+      price: money(l.discountedUnitPriceSet) ?? money(l.originalUnitPriceSet),
+    }))
+  );
+  if (lines.length === 0) return;
+  const { error: wrote } = await db.from("draft_order_line_items").insert(lines);
+  if (wrote) throw new Error(wrote.message);
+}

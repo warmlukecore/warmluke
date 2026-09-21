@@ -26,6 +26,7 @@ import {
   CARTS_QUERY,
   COLLECTIONS_QUERY,
   CUSTOMERS_QUERY,
+  DRAFT_ORDERS_QUERY,
   ensureFreshToken,
   FULFILLED,
   FULFILLMENTS_QUERY,
@@ -40,6 +41,7 @@ import {
   saveCarts,
   saveCollections,
   saveCustomers,
+  saveDraftOrders,
   saveFulfillments,
   saveInventory,
   saveLocations,
@@ -49,6 +51,7 @@ import {
   type GqlCart,
   type GqlCollection,
   type GqlCustomer,
+  type GqlDraftOrder,
   type GqlFulfilledOrder,
   type GqlLocation,
   type GqlOrder,
@@ -242,6 +245,49 @@ export const SHOPIFY_RESOURCES = {
     // moment somebody finishes it, so Shopify's count falls while
     // ours stands until the next full pass — real, and not a loss.
     drift: false,
+  },
+  drafts: {
+    label: "draft orders",
+    scopes: ["read_draft_orders"],
+    count: "{ draftOrdersCount { count } }",
+    page: DRAFT_ORDERS_QUERY,
+    root: "draftOrders",
+    // A connection inside a connection, like products and variants,
+    // so Shopify exports it. Tried against the real shop before this
+    // was written down: refunds looked the same and were refused.
+    bulk: {
+      query: `{ draftOrders { edges { node {
+    id name status email tags
+    createdAt updatedAt completedAt invoiceUrl
+    totalPriceSet { shopMoney { amount currencyCode } }
+    subtotalPriceSet { shopMoney { amount } }
+    totalTaxSet { shopMoney { amount } }
+    totalShippingPriceSet { shopMoney { amount } }
+    customer { id displayName email }
+    order { id }
+    lineItems { edges { node {
+      id title sku quantity
+      variant { id }
+      product { id }
+      originalUnitPriceSet { shopMoney { amount } }
+      discountedUnitPriceSet { shopMoney { amount } }
+    } } }
+  } } } }`,
+      assemble: (lines) =>
+        withChildren<GqlDraftOrder>(
+          lines,
+          (d) => ({ ...(d as unknown as GqlDraftOrder), lineItems: { nodes: [] } }),
+          (d, child) => d.lineItems.nodes.push(child as never)
+        ),
+    },
+    children: [{ path: ["lineItems", "nodes"], limit: 50 }],
+    save: (db, storeId, nodes) => saveDraftOrders(db, storeId, nodes as GqlDraftOrder[]),
+    webhooks: ["DRAFT_ORDERS_CREATE", "DRAFT_ORDERS_UPDATE", "DRAFT_ORDERS_DELETE"],
+    tables: ["draft_orders", "draft_order_line_items"],
+    // Compared, unlike carts: a completed draft stays a draft order in
+    // Shopify, so the count does not fall on its own and a drop really
+    // does mean one was deleted there.
+    drift: true,
   },
   orders: {
     label: "orders",
@@ -465,8 +511,6 @@ export const isResource = (v: unknown): v is Resource =>
 export const PLANNED_SCOPES = [
   // Returns: the journey a refund is the end of.
   "read_returns",
-  // Orders made by hand — the phone, WhatsApp, a wholesale customer.
-  "read_draft_orders",
   // The campaigns behind the codes already on an order.
   "read_discounts",
   // Shopify's own payouts, for reconciling against a bank statement.

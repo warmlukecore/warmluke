@@ -1,4 +1,5 @@
-// What a connected store's token is actually allowed to do.
+// What Shopify says about a connected store: what its token may do,
+// and whether the webhooks this app asks for are real.
 //
 // Not a check — it needs a real store and a real Shopify, so it runs
 // by hand. It exists because "did that reconnect take?" had no cheap
@@ -20,7 +21,7 @@ import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { SHOPIFY_API_VERSION } from "../src/lib/shopify.ts";
 import { ensureFreshToken } from "../src/lib/shopify-import.ts";
-import { missingScopes, scopesFor } from "../src/lib/shopify-resources.ts";
+import { missingScopes, scopesFor, WEBHOOK_TOPICS } from "../src/lib/shopify-resources.ts";
 
 const env = Object.fromEntries(
   readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
@@ -72,9 +73,45 @@ for (const store of stores) {
   console.log(`  the install asks for ${asked.length}; still missing ${short.length}${short.length ? ": " + short.join(", ") : ""}`);
   if (short.length) console.log("  → a reconnect that finishes is what grants these. Starting one is not enough.");
 
-  // Worth saying out loud: it means a reconnect happened somewhere
-  // this deployment did not write down, or the renewal has not run.
-  if (live && recorded && [...recorded].sort().join(",") !== live.join(",")) {
-    console.log("  → what we recorded disagrees with Shopify. Shopify is right.");
+  // Which ones differ, not merely that some do. Shopify's own two
+  // answers — the grant and access_scopes.json — do not always agree
+  // to the letter, and "they disagree" with no names attached sends
+  // somebody hunting a bug that is not here.
+  if (live && recorded) {
+    const held = new Set(recorded);
+    const onlyLive = live.filter((sc) => !held.has(sc));
+    const onlyOurs = [...recorded].filter((sc) => !live.includes(sc)).sort();
+    if (onlyLive.length || onlyOurs.length) {
+      console.log("  the two answers differ. Shopify's is the one that counts:");
+      if (onlyLive.length) console.log(`     Shopify has, we did not record: ${onlyLive.join(", ")}`);
+      if (onlyOurs.length) console.log(`     we recorded, Shopify does not list: ${onlyOurs.join(", ")}`);
+      const matters = [...onlyOurs, ...onlyLive].filter((sc) => asked.includes(sc));
+      console.log(matters.length
+        ? `     of those, these are ones the install asks for: ${matters.join(", ")}`
+        : "     none of them is a scope this app asks for, so nothing here is broken.");
+    }
+  }
+
+  // And the topics, against the enum Shopify actually publishes. A
+  // topic misspelled in WEBHOOK_TOPICS is not an error anyone sees:
+  // the subscription fails, the store stops being kept fresh, and
+  // the only trace is one line in stores.webhook_error. Asked here
+  // rather than in a check because a check has no real Shopify.
+  try {
+    const token = await ensureFreshToken(admin, store);
+    const r = await fetch(`https://${store.shop_domain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
+      method: "POST",
+      headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: '{ __type(name: "WebhookSubscriptionTopic") { enumValues(includeDeprecated: false) { name } } }',
+      }),
+    });
+    const real = new Set((((await r.json()).data?.__type?.enumValues) ?? []).map((v) => v.name));
+    if (real.size === 0) throw new Error("Shopify named no topics");
+    const invented = WEBHOOK_TOPICS.filter((t) => !real.has(t));
+    console.log(`  webhooks     : ${WEBHOOK_TOPICS.length} asked for, ${invented.length} that Shopify does not have`);
+    for (const t of invented) console.log(`     → ${t} is not a topic. Its subscription will fail and this list will go stale.`);
+  } catch (e) {
+    console.log(`  could not check the topics: ${e instanceof Error ? e.message : e}`);
   }
 }

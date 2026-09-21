@@ -61,6 +61,8 @@ export const COUNTED = [
   "collections",
   "collection_products",
   "abandoned_checkouts",
+  "draft_orders",
+  "draft_order_line_items",
   "inventory_levels",
 ] as const;
 
@@ -230,6 +232,8 @@ export function dayRangeInZone(day: string, timeZone: string): { from: string; t
 export type StoreTable =
   | "carts"
   | "collections"
+  | "drafts"
+  | "draft_order_items"
   | "fulfillments"
   | "transactions"
   | "locations"
@@ -486,6 +490,47 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "items", label: "What", type: "text" },
     ],
   },
+  drafts: {
+    // The sale that did not come through the storefront. Two states
+    // that must never be added together: open is money still owed,
+    // completed is money already counted as an order.
+    advice:
+      'One row per draft order — a quote or an order the merchant built by hand, for the phone, WhatsApp or a wholesale customer. state is "Open" (not paid, not an order yet), "Invoice sent" (the customer has the link) or "Became an order". NEVER add these totals to the Orders list: a draft that became an order is the SAME sale counted in both places, so any figure covering both must exclude state = "Became an order". "What is in the pipeline" = sum(total) where state is "Open" or "Invoice sent". became_order is the order number it turned into, so a merchant can look it up. invoice_url is Shopify\'s own pay link and is the point of an open draft. Money splits the same way as an order: total = subtotal + shipping + tax.',
+    label: "Shopify draft orders",
+    what: 'one row per draft order — the quotes and by-hand orders: who for, how much, open or already an order, and the link to pay; what "quotes", "draft orders", "pipeline", "phone orders", "wholesale" and "unpaid invoices" mean',
+    section: { label: "Draft orders", icon: "file-text", importedWith: "drafts" },
+    view: "store_draft_orders",
+    order: { field: "drafted_at", ascending: false },
+    select:
+      "id, name, drafted_at, state, customer_name, email, total, subtotal, tax, shipping, currency, tags, became_order, invoice_url, items, completed_at",
+    columns: [
+      { field: "name", label: "Draft", type: "text" },
+      { field: "drafted_at", label: "Made", type: "date" },
+      { field: "customer_name", label: "For", type: "text" },
+      { field: "state", label: "State", type: "text" },
+      { field: "total", label: "Total", type: "currency", currencyField: "currency" },
+      { field: "items", label: "Items", type: "number" },
+      { field: "became_order", label: "Order", type: "text" },
+    ],
+  },
+  draft_order_items: {
+    advice:
+      'One row per line on a draft order. custom_item = true is a line the merchant typed rather than picked from the catalogue, so it matches no product and no SKU — leaving those out of a total under-counts a real quote. line_total = quantity x price. price is what it is actually being sold for, after any by-hand discount, which is the ordinary reason a draft exists.',
+    label: "Shopify draft order items",
+    what: 'one row per line inside a draft order — what was quoted, how many and at what price; what "what is in that quote" and "what did we offer them" mean',
+    section: { label: "Draft order items", icon: "list", importedWith: "drafts" },
+    view: "store_draft_order_items",
+    order: { field: "draft", ascending: false },
+    select: "id, draft, title, sku, quantity, price, line_total, custom_item",
+    columns: [
+      { field: "draft", label: "Draft", type: "text" },
+      { field: "title", label: "Item", type: "text" },
+      { field: "sku", label: "SKU", type: "text" },
+      { field: "quantity", label: "Qty", type: "number" },
+      { field: "price", label: "Price", type: "currency" },
+      { field: "line_total", label: "Line", type: "currency" },
+    ],
+  },
   collections: {
     advice:
       'One row per collection the merchant has made. products_count is Shopify\'s own number for the whole collection; products_here is how many of them this copy holds, and they differ while a large collection is still coming across — say both rather than the smaller one. To answer "what is in X", read the products list and filter its `collections` column, which names every collection a product belongs to.',
@@ -582,6 +627,10 @@ const SEARCHABLE: Record<StoreTable, string[]> = {
   locations: ["name", "place", "state"],
   collections: ["title", "handle"],
   carts: ["customer_name", "email", "items"],
+  // The draft's own number is what a merchant quotes down the phone,
+  // so it is searched first.
+  drafts: ["name", "customer_name", "email", "state", "became_order", "tags"],
+  draft_order_items: ["draft", "title", "sku"],
   product_sales: ["title"],
   order_line_items: ["order_number", "sku", "title", "customer_name"],
   refunds: ["order_number", "customer_name"],
