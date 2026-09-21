@@ -26,6 +26,17 @@ if [ ! -f .env.check.local ]; then
   exit 1
 fi
 
+# The pure tier first. CI runs it too, but only after the push — so a
+# check that reads a sentence out of a source file went red on GitHub,
+# on a commit already on main, over a line that had been shortened.
+# It takes a minute here and needs nothing; red means the push does
+# not go, and main stays green commit by commit. Run as CI runs it,
+# with no keys: two pure checks make one real call to the decision
+# model when a key is in reach, and a model that is slow tonight must
+# not hold a push that CI would have passed.
+echo "pre-push: the pure checks, as CI runs them"
+node scripts/run-checks.mjs --tier pure --env .env.example
+
 # --no-server: the runner decides whether the server on 3100 can be
 # used for this env file — it has to be up AND built for the same
 # project — and skips what cannot run, saying why. Two of the six need
