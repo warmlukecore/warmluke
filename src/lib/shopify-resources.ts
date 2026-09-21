@@ -23,6 +23,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  COLLECTIONS_QUERY,
   CUSTOMERS_QUERY,
   ensureFreshToken,
   FULFILLED,
@@ -35,6 +36,7 @@ import {
   PRODUCTS_QUERY,
   REFUNDED,
   REFUNDS_QUERY,
+  saveCollections,
   saveCustomers,
   saveFulfillments,
   saveInventory,
@@ -42,6 +44,7 @@ import {
   saveOrders,
   saveProducts,
   saveRefunds,
+  type GqlCollection,
   type GqlCustomer,
   type GqlFulfilledOrder,
   type GqlLocation,
@@ -151,6 +154,35 @@ export const SHOPIFY_RESOURCES = {
     save: (db, storeId, nodes) => saveProducts(db, storeId, nodes as GqlProduct[]),
     webhooks: ["PRODUCTS_CREATE", "PRODUCTS_UPDATE", "PRODUCTS_DELETE"],
     tables: ["products", "variants"],
+    drift: true,
+  },
+  collections: {
+    label: "collections",
+    scopes: ["read_products"],
+    count: "{ collectionsCount { count } }",
+    page: COLLECTIONS_QUERY,
+    root: "collections",
+    bulk: {
+      query: `{ collections { edges { node {
+    id title handle sortOrder updatedAt
+    productsCount { count }
+    products { edges { node { id } } }
+  } } } }`,
+      assemble: (lines) =>
+        withChildren<GqlCollection>(
+          lines,
+          (c) => ({ ...(c as unknown as GqlCollection), products: { nodes: [] } }),
+          (c, child) => c.products.nodes.push(child as never)
+        ),
+    },
+    // A collection with more than a hundred products loses the rest
+    // on the paged road, and a half-read collection is worse than
+    // none: "what is in the sale" would answer with a hundred of two
+    // hundred and look complete.
+    children: [{ path: ["products", "nodes"], limit: 100 }],
+    save: (db, storeId, nodes) => saveCollections(db, storeId, nodes as GqlCollection[]),
+    webhooks: ["COLLECTIONS_CREATE", "COLLECTIONS_UPDATE", "COLLECTIONS_DELETE"],
+    tables: ["collections", "collection_products"],
     drift: true,
   },
   customers: {

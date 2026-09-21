@@ -298,6 +298,86 @@ export async function saveProducts(
   }
 }
 
+// ── Collections ─────────────────────────────────────────────────
+// A merchant groups their catalogue and then asks about the groups:
+// what is in the sale, which collection this product sits in, how
+// many are in each. None of that could be answered from a copy that
+// held products and nothing about how they are arranged.
+export const COLLECTIONS_QUERY = `
+query($n: Int!, $after: String) {
+  collections(first: $n, after: $after) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      id title handle sortOrder updatedAt
+      productsCount { count }
+      products(first: 100) { nodes { id } }
+    }
+  }
+}`;
+
+export type GqlCollection = {
+  id: string; title: string; handle: string;
+  sortOrder?: string | null; updatedAt?: string | null;
+  productsCount?: { count: number } | null;
+  /** Which products are in it. Cut at a limit on the paged road. */
+  products: { nodes: Array<{ id: string }> };
+};
+
+/** Writes a batch of collections and what is in them. */
+export async function saveCollections(
+  db: SupabaseClient, storeId: string, nodes: GqlCollection[]
+): Promise<void> {
+  if (nodes.length === 0) return;
+
+  const { data: saved, error } = await db
+    .from("collections")
+    .upsert(
+      nodes.map((c) => ({
+        store_id: storeId, external_id: c.id, title: c.title, handle: c.handle,
+        sort_order: c.sortOrder ?? null,
+        // Shopify's own count, which is the whole collection even when
+        // this page carried only the first hundred of it.
+        products_count: c.productsCount?.count ?? null,
+        updated_at: c.updatedAt ?? new Date().toISOString(),
+      })),
+      { onConflict: "store_id,external_id" }
+    )
+    .select("id, external_id");
+  if (error) throw new Error(error.message);
+  const collectionId = new Map((saved ?? []).map((r) => [r.external_id as string, r.id as string]));
+
+  // Products may not be imported yet: a membership pointing at one we
+  // do not hold is dropped rather than invented, and the next pass
+  // picks it up once the product is there.
+  const productIds = [...new Set(nodes.flatMap((c) => c.products.nodes.map((p) => p.id)))];
+  const { data: prows } = productIds.length
+    ? await db.from("products").select("id, external_id").eq("store_id", storeId).in("external_id", productIds)
+    : { data: [] };
+  const productId = new Map((prows ?? []).map((r) => [r.external_id as string, r.id as string]));
+
+  const links = nodes.flatMap((c) =>
+    c.products.nodes
+      .map((p) => ({
+        store_id: storeId,
+        collection_id: collectionId.get(c.id)!,
+        product_id: productId.get(p.id) ?? null,
+      }))
+      .filter((l) => l.collection_id && l.product_id)
+  );
+
+  // Replaced per collection, not merged: a product taken out of a
+  // collection in Shopify has to leave it here too, and no key would
+  // notice its absence.
+  const touched = nodes.map((c) => collectionId.get(c.id)).filter(Boolean) as string[];
+  if (touched.length > 0) {
+    await db.from("collection_products").delete().in("collection_id", touched);
+  }
+  if (links.length > 0) {
+    const { error: le } = await db.from("collection_products").insert(links);
+    if (le) throw new Error(le.message);
+  }
+}
+
 // ── Customers ───────────────────────────────────────────────────
 // Name, email, phone and postcode are protected customer data. Where
 // Shopify withholds them the row still lands with what it did give, so

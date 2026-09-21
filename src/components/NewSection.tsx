@@ -30,6 +30,7 @@ const ICON_GLYPHS: Record<string, string> = {
   truck: "🚚",
   banknote: "💵",
   "map-pin": "📍",
+  layers: "🗂️",
   wallet: "👛",
   target: "🎯",
   "scan-line": "🔎",

@@ -107,6 +107,8 @@ both columns and allowed states.
 | `stores` | One provider account per project, OAuth token lifecycle, shop context, sync state |
 | `import_runs` | Cursor/bulk-operation progress for each resource |
 | `products` | Shopify products |
+| `collections` | Merchant-made groupings, with Shopify's own count of what is in each |
+| `collection_products` | Which products belong to which collection |
 | `variants` | Product variants, SKU/barcode/price, unit cost and whether Shopify tracks their stock |
 | `inventory_levels` | Per variant/location: available to sell, on hand, committed to orders, and incoming |
 | `locations` | Each place the shop stocks or ships from, whether it is open, and where it is; kept when Shopify removes one |

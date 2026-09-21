@@ -58,6 +58,8 @@ export const COUNTED = [
   "order_transactions",
   "fulfillments",
   "locations",
+  "collections",
+  "collection_products",
   "inventory_levels",
 ] as const;
 
@@ -225,6 +227,7 @@ export function dayRangeInZone(day: string, timeZone: string): { from: string; t
 // showing blank cells for fields the query never asked for.
 
 export type StoreTable =
+  | "collections"
   | "fulfillments"
   | "transactions"
   | "locations"
@@ -460,13 +463,29 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "margin_pct", label: "Margin %", type: "number" },
     ],
   },
+  collections: {
+    advice:
+      'One row per collection the merchant has made. products_count is Shopify\'s own number for the whole collection; products_here is how many of them this copy holds, and they differ while a large collection is still coming across — say both rather than the smaller one. To answer "what is in X", read the products list and filter its `collections` column, which names every collection a product belongs to.',
+    label: "Shopify collections",
+    what: 'one row per collection — its name, its handle, how it is ordered, and how many products are in it; what "collections", "categories", "the sale", "groups" and "what is in X" mean',
+    section: { label: "Collections", icon: "layers", importedWith: "collections" },
+    view: "store_collections",
+    order: { field: "title", ascending: true },
+    select: "id, title, handle, sort_order, products_count, products_here",
+    columns: [
+      { field: "title", label: "Collection", type: "text" },
+      { field: "handle", label: "Handle", type: "text" },
+      { field: "products_count", label: "In Shopify", type: "number" },
+      { field: "products_here", label: "Here", type: "number" },
+    ],
+  },
   products: {
     label: "Shopify products",
-    what: 'one row per product in the catalogue — title, category, vendor, status, tags; what "our products" and "the catalogue" mean',
+    what: 'one row per product in the catalogue — title, category, vendor, status, tags, and the collections it belongs to; what "our products", "the catalogue" and "what is in the sale" mean',
     section: { label: "Products", icon: "package", importedWith: "products" },
     view: "store_products",
     order: { field: "title", ascending: true },
-    select: "id, title, product_type, vendor, handle, status, tags",
+    select: "id, title, product_type, vendor, handle, status, tags, collections",
     columns: [
       { field: "title", label: "Product", type: "text" },
       { field: "product_type", label: "Category", type: "badge" },
@@ -474,6 +493,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "status", label: "Status", type: "badge" },
       { field: "handle", label: "Handle", type: "text" },
       { field: "tags", label: "Tags", type: "text" },
+      { field: "collections", label: "Collections", type: "text" },
     ],
   },
   locations: {
@@ -534,9 +554,10 @@ const SEARCHABLE: Record<StoreTable, string[]> = {
   fulfillments: ["order_number", "customer_name", "carrier", "tracking_number", "shipment_status"],
   transactions: ["order_number", "customer_name", "gateway", "kind", "status"],
   customers: ["name", "email", "phone", "city"],
-  products: ["title", "handle", "status", "product_type", "vendor"],
+  products: ["title", "handle", "status", "product_type", "vendor", "collections"],
   inventory_levels: ["product", "variant", "sku", "location_name", "stock_state"],
   locations: ["name", "place", "state"],
+  collections: ["title", "handle"],
   product_sales: ["title"],
   order_line_items: ["order_number", "sku", "title", "customer_name"],
   refunds: ["order_number", "customer_name"],

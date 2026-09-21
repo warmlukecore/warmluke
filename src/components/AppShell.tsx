@@ -68,6 +68,7 @@ const ICONS: Record<string, string> = {
   truck: "🚚",
   banknote: "💵",
   "map-pin": "📍",
+  layers: "🗂️",
   wallet: "👛",
   target: "🎯",
   table: "📋",
