@@ -128,6 +128,22 @@ const removalsIn = (plans: AssistantPlan[] | null): string[] =>
     .map((p) => p.deleteConfirmName ?? "")
     .filter(Boolean);
 
+/**
+ * How long ago, in the fewest words that are still true.
+ *
+ * "Last used 21/09/2026, 15:49:33" is a timestamp, not an answer. The
+ * question behind it is whether this assistant is still in use.
+ */
+function since(iso: string): string {
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return days === 1 ? "yesterday" : `${days} days ago`;
+}
+
 let msgSeq = 0;
 export const nextChatId = () => `m${++msgSeq}`;
 
@@ -1003,9 +1019,50 @@ export default function ChatPanel({
     if (features.mcp) loadClients();
   }, [features.mcp, loadClients]);
 
-  async function revoke(client: { client_id: string; name: string }) {
-    setRevoking(client.client_id);
-    await supabase.rpc("abo_oauth_revoke", { p_client: client.client_id });
+  /**
+   * One row per assistant, not per registration.
+   *
+   * Claude registers itself afresh every time the connector is added,
+   * so a merchant who set it up on a laptop and again on a phone had
+   * five identical rows called "Claude", each with its own Disconnect
+   * and nothing to tell them apart. The list read as five strangers
+   * holding keys. They are one assistant that has knocked five times.
+   *
+   * Grouped by name here rather than in SQL: the consents are real and
+   * separate, revoking still works one at a time, and this is only how
+   * they are shown.
+   */
+  const assistants = useMemo(() => {
+    const by = new Map<string, typeof clients>();
+    for (const c of clients) {
+      const list = by.get(c.name);
+      if (list) list.push(c);
+      else by.set(c.name, [c]);
+    }
+    return [...by.entries()]
+      .map(([name, list]) => ({
+        name,
+        ids: list.map((c) => c.client_id),
+        // The newest of them: one assistant, whichever registration
+        // it happened to use last.
+        lastCall: list
+          .map((c) => c.last_call)
+          .filter((d): d is string => !!d)
+          .sort()
+          .at(-1) ?? null,
+        calls24h: list.reduce((n, c) => n + Number(c.calls_24h ?? 0), 0),
+        count: list.length,
+      }))
+      .sort((a, b) => (b.lastCall ?? "").localeCompare(a.lastCall ?? ""));
+  }, [clients]);
+
+  async function revoke(assistant: { name: string; ids: string[] }) {
+    setRevoking(assistant.name);
+    // Every registration it made, or the row comes back with one
+    // fewer and the merchant taps Disconnect again and again.
+    for (const client_id of assistant.ids) {
+      await supabase.rpc("abo_oauth_revoke", { p_client: client_id });
+    }
     setRevoking(null);
     loadClients();
   }
@@ -2001,22 +2058,38 @@ export default function ChatPanel({
             {mcpUrl}
           </code>
 
-          {clients.length > 0 && (
+          {assistants.length > 0 && (
             <div className="mt-3 space-y-1.5">
               <div className="text-[10px] font-semibold tracking-widest text-slate-400 uppercase">
                 Connected
               </div>
-              {clients.map((c) => (
+              {assistants.map((c) => (
                 <div
-                  key={c.client_id}
+                  key={c.name}
                   className="flex items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[11px] font-medium text-slate-700">{c.name}</div>
+                    <div className="flex items-center gap-1.5">
+                      {/* Working, as opposed to merely allowed. A key
+                          that has not been used in a month looks the
+                          same as one in use, and only one of those is
+                          worth keeping. */}
+                      <span
+                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                          c.calls24h > 0 ? "bg-emerald-500" : "bg-slate-300"
+                        }`}
+                      />
+                      <div className="truncate text-[11px] font-medium text-slate-700">{c.name}</div>
+                    </div>
                     <div className="text-[10px] text-slate-400">
-                      {c.last_call
-                        ? `Last used ${new Date(c.last_call).toLocaleString()} · ${c.calls_24h} today`
+                      {c.lastCall
+                        ? `${c.calls24h > 0 ? "Working" : "Quiet"} · last used ${since(c.lastCall)}${
+                            c.calls24h > 0 ? ` · ${c.calls24h} today` : ""
+                          }`
                         : "Connected, not used yet"}
+                      {/* Said once, here, because otherwise five rows
+                          appear and look like five separate grants. */}
+                      {c.count > 1 && ` · ${c.count} connections, disconnected together`}
                     </div>
                   </div>
                   {/* Worth a pause — the assistant stops mid-sentence
@@ -2024,7 +2097,7 @@ export default function ChatPanel({
                       browser confirm box is somebody else's chrome
                       appearing in the middle of our app. The second
                       click is the confirmation. */}
-                  {confirmRevoke === c.client_id ? (
+                  {confirmRevoke === c.name ? (
                     <span className="flex shrink-0 items-center gap-1.5 text-[10px]">
                       <span className="text-slate-500">Sure?</span>
                       <button
@@ -2045,11 +2118,11 @@ export default function ChatPanel({
                     </span>
                   ) : (
                     <button
-                      onClick={() => setConfirmRevoke(c.client_id)}
-                      disabled={revoking === c.client_id}
+                      onClick={() => setConfirmRevoke(c.name)}
+                      disabled={revoking === c.name}
                       className="shrink-0 text-[10px] font-medium text-rose-600 hover:underline disabled:opacity-40"
                     >
-                      {revoking === c.client_id ? "…" : "Disconnect"}
+                      {revoking === c.name ? "…" : "Disconnect"}
                     </button>
                   )}
                 </div>
