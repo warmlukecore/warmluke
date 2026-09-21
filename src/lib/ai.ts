@@ -1960,6 +1960,68 @@ export interface ChatTurn {
  * Sends the whole conversation, not just the latest turn — that history
  * is what lets the assistant ask, then remember, then design.
  */
+// ── When the model is not there ─────────────────────────────────
+//
+// A provider's refusal used to reach the chat as it came: a status
+// code and three hundred characters of somebody else's JSON, with
+// "credit balance" in it. The merchant cannot do anything with that,
+// and should not have to read it. What they need is one sentence:
+// what happened, that nothing changed, and whether trying again is
+// any use. The raw answer goes to the server log under one prefix,
+// so it can be alerted on.
+
+export type ModelErrorKind = "billing" | "auth" | "busy" | "down" | "refused" | "empty" | "unset";
+type Provider = "anthropic" | "gemini";
+
+const MODEL_ERROR_WORDS: Record<ModelErrorKind, string> = {
+  billing: "Luke is paused: its model account needs topping up on our side. Nothing was changed.",
+  auth: "Luke's model key was refused. That is on our side. Nothing was changed.",
+  busy: "Luke's model is busy right now. Nothing was changed — try again in a minute.",
+  down: "Luke could not reach its model. Nothing was changed — try again in a minute.",
+  refused: "Luke's model would not take this turn. Nothing was changed — try rephrasing, or try again.",
+  empty: "Luke's model answered with nothing. Nothing was changed — try again.",
+  unset: "Luke has no model key set on this server. Nothing was changed.",
+};
+
+export class ModelError extends Error {
+  readonly kind: ModelErrorKind;
+  readonly provider: Provider;
+  readonly status: number;
+  constructor(kind: ModelErrorKind, provider: Provider, status: number, raw: string) {
+    super(MODEL_ERROR_WORDS[kind]);
+    this.name = "ModelError";
+    this.kind = kind;
+    this.provider = provider;
+    this.status = status;
+    console.error(`[model] ${provider} ${status} ${kind}: ${raw.replace(/\s+/g, " ").slice(0, 300)}`);
+  }
+}
+
+/** What a provider's status and body mean, in one word. */
+export function modelError(provider: Provider, status: number, raw: string): ModelError {
+  const kind: ModelErrorKind =
+    status === 401 || status === 403
+      ? "auth"
+      : status === 402 || (status === 400 && /credit|billing|balance|insufficient|quota/i.test(raw))
+        ? "billing"
+        : status === 429 || /overload|high load|throttl|rate limit/i.test(raw)
+          ? "busy"
+          : status === 0 || status >= 500
+            ? "down"
+            : "refused";
+  return new ModelError(kind, provider, status, raw);
+}
+
+/** The call itself, with a dropped connection read as the model being down. A stop stays a stop. */
+async function reach(provider: Provider, call: () => Promise<Response>): Promise<Response> {
+  try {
+    return await call();
+  } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") throw e;
+    throw modelError(provider, 0, e instanceof Error ? e.message : String(e));
+  }
+}
+
 export async function callAnthropicChat(
   /** One block, or [constant, variable] — only the first is cached. */
   system: string | [string, string],
@@ -2005,13 +2067,13 @@ export async function callAnthropicChat(
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY is not set — add it to .env.local.");
+    throw new ModelError("unset", "anthropic", 0, "ANTHROPIC_API_KEY is not set");
   }
 
   // Where the messages call goes. Read when called, like the model, so
   // a local run can point the same request at another host that speaks
   // this API — testing without spending Anthropic credit.
-  const res = await fetch(process.env.ANTHROPIC_API_URL || "https://api.anthropic.com/v1/messages", {
+  const res = await reach("anthropic", () => fetch(process.env.ANTHROPIC_API_URL || "https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -2033,19 +2095,16 @@ export async function callAnthropicChat(
       messages: turns,
     }),
     signal,
-  });
+  }));
 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Anthropic API error ${res.status}: ${body.slice(0, 300)}`);
-  }
+  if (!res.ok) throw modelError("anthropic", res.status, await res.text());
 
   const data = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
   const text = (data.content ?? [])
     .filter((b) => b.type === "text")
     .map((b) => b.text ?? "")
     .join("");
-  if (!text) throw new Error("Anthropic returned an empty response.");
+  if (!text) throw new ModelError("empty", "anthropic", res.status, "empty content");
   return text;
 }
 
@@ -2131,11 +2190,11 @@ async function callGemini(
 ): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error(`ANTHROPIC_MODEL is "${model}" but GEMINI_API_KEY is not set.`);
+    throw new ModelError("unset", "gemini", 0, `ANTHROPIC_MODEL is "${model}" but GEMINI_API_KEY is not set`);
   }
   const systemText = (Array.isArray(system) ? system : [system]).join("\n\n");
 
-  const res = await fetch(
+  const res = await reach("gemini", () => fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
       method: "POST",
@@ -2150,12 +2209,9 @@ async function callGemini(
       }),
       signal,
     }
-  );
+  ));
 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Gemini API error ${res.status}: ${body.slice(0, 300)}`);
-  }
+  if (!res.ok) throw modelError("gemini", res.status, await res.text());
 
   const data = (await res.json()) as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
@@ -2163,6 +2219,6 @@ async function callGemini(
   const text = (data.candidates?.[0]?.content?.parts ?? [])
     .map((p) => p.text ?? "")
     .join("");
-  if (!text) throw new Error("Gemini returned an empty response.");
+  if (!text) throw new ModelError("empty", "gemini", res.status, "empty candidates");
   return text;
 }
