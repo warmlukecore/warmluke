@@ -182,6 +182,10 @@ export const SHOPIFY_RESOURCES = {
     displayFinancialStatus displayFulfillmentStatus
     totalPriceSet { shopMoney { amount currencyCode } }
     currentTotalPriceSet { shopMoney { amount currencyCode } }
+    currentSubtotalPriceSet { shopMoney { amount } }
+    currentTotalTaxSet { shopMoney { amount } }
+    currentTotalDiscountsSet { shopMoney { amount } }
+    totalShippingPriceSet { shopMoney { amount } }
     customer { id }
     paymentGatewayNames
     discountCodes

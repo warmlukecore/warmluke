@@ -19,7 +19,8 @@ import { blueprintAsText, runTurn, schemasFor, storeFactsFor } from "@/lib/engin
 import { PLAN_FORMAT, WORKED_EXAMPLE, parseReply } from "@/lib/ai";
 import { vocabularyPrompt } from "@/lib/capabilities";
 import { describePlan, describeRules, seededCopies, type RuleRow } from "@/lib/describe";
-import { applyPlans, logClientBuild } from "@/lib/apply";
+import { applyPlans, logClientBuild, putBack } from "@/lib/apply";
+import { undoableFrom } from "@/lib/undo";
 import { noteJudgement } from "@/lib/judge";
 import { routeQuestion } from "@/lib/route";
 import { fetchSlice } from "@/lib/slice";
@@ -275,6 +276,21 @@ const TOOLS = [
           type: "string",
           description:
             "Why, in the merchant's own words. Kept with the request so they recognise the decision later. Optional.",
+        },
+      },
+      required: ["request_id"],
+    },
+  },
+  {
+    name: "undo_build",
+    description:
+      "Put back a build this assistant made. Reverses what that build recorded — a section's fields and settings, a renamed section, a rule, rows it seeded — and says what it could not put back. A section this build CREATED is never removed by an undo: that takes every row with it, and the merchant removes it in Warmluke by typing its name. Use build_history to find the request_id. Read back what came off, in their words.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        request_id: {
+          type: "string",
+          description: "The id of the build to reverse, from build_history or approve_change.",
         },
       },
       required: ["request_id"],
@@ -1601,6 +1617,123 @@ export async function POST(req: Request) {
         request,
         store: null,
       });
+    }
+
+    if (name === "undo_build") {
+      const requestId = String(args.request_id ?? "").trim();
+      if (!requestId) return ok(id, text({ error: "Which build? Pass request_id." }));
+
+      // Theirs to see by row-level security, and this assistant's to
+      // reverse by the client the token names — the same rule
+      // abo_reject_request applies: an app token may act on any of
+      // their requests, a connected client only on the ones it
+      // raised. Another assistant's build is not its business.
+      const me = clientIdOf(req);
+      const { data: rows } = await db
+        .from("build_requests")
+        .select("id, project_id, request, status, outcome, client_id, built_at")
+        .eq("id", requestId)
+        .limit(1);
+      const target = rows?.[0] as
+        | {
+            id: string;
+            project_id: string;
+            request: string;
+            status: string;
+            outcome: { applied?: unknown[] } | null;
+            client_id: string | null;
+            built_at: string | null;
+          }
+        | undefined;
+      if (!target) return ok(id, text({ error: "No such build on this account." }));
+      if (me !== null && target.client_id !== me) {
+        return ok(
+          id,
+          text({
+            error: "That build was not made through this assistant, so it cannot be put back from here.",
+            note: "The merchant can put it back themselves: its receipt in Warmluke has a \"Put it back\" link.",
+            open: `${new URL(req.url).origin}/app/${target.project_id}`,
+          })
+        );
+      }
+      if (!["built", "partly_built"].includes(target.status)) {
+        return ok(
+          id,
+          text({
+            error: `That request is "${target.status}", so there is nothing built to put back.`,
+          })
+        );
+      }
+
+      const steps = undoableFrom(target.outcome?.applied ?? []);
+      if (steps.length === 0) {
+        return ok(
+          id,
+          text({
+            status: "nothing to put back",
+            // The commonest case by far, and the honest reason for it.
+            note: "This build made something new rather than changing something that already existed — most likely a section. Putting that back means deleting it and every row in it, which Warmluke asks the merchant to confirm by typing the section's name. Offer that instead of an undo, and do not call approve_change for it.",
+            open: `${new URL(req.url).origin}/app/${target.project_id}`,
+          })
+        );
+      }
+      const what = steps.map((u) => u.what);
+
+      // An undo writes, and a client writes only against a request
+      // somebody approved. So it raises one, exactly as a build does,
+      // and the same switch decides whether it needs a person.
+      const { data: undoId, error: raised } = await db.rpc("abo_mcp_propose", {
+        p_project: target.project_id,
+        p_request: `Put back: ${target.request}`,
+        p_plans: [],
+        p_summary: `Puts back ${what.join(", ")}.`,
+        p_unmet: [],
+      });
+      if (raised) return ok(id, text({ error: raised.message }));
+
+      const { data: nod } = await db.rpc("abo_approve_request", { p_request: undoId });
+      if (!(nod as { approved?: boolean } | null)?.approved) {
+        return ok(
+          id,
+          text({
+            status: "waiting for the merchant",
+            would_put_back: what,
+            note: "This app asks before it changes anything, and an undo is a change. Tell them the fastest way is the build's own receipt in Warmluke, which has a \"Put it back\" link on it.",
+            open: `${new URL(req.url).origin}/app/${target.project_id}`,
+          })
+        );
+      }
+
+      // Under the request just approved, because that is the only
+      // door a client has. The steps themselves are the ones the
+      // build wrote down at the time, not worked out now.
+      const { done, couldNot } = await putBack(db, target.project_id, steps, undoId as string);
+
+      await db.rpc("abo_build", {
+        p_project: target.project_id,
+        p_request: undoId,
+        p_op: "request_built",
+        p_payload: { applied: [], errors: couldNot, auto_built: true },
+      });
+      const line = done.length
+        ? `↩️ Put back — ${done.join(", ")}.${couldNot.length ? ` The rest could not be: ${couldNot.join("; ")}.` : ""}`
+        : `Nothing could be put back: ${couldNot.join("; ")}.`;
+      // In their thread, like every other change made from outside
+      // the browser, so the app shows it as it happens.
+      await logClientBuild(db, target.project_id, `Put back: ${target.request}`, line);
+
+      return ok(
+        id,
+        text({
+          status: done.length ? "put back" : "nothing could be put back",
+          put_back: done,
+          ...(couldNot.length ? { could_not: couldNot } : {}),
+          note: done.length
+            ? "Read back exactly what came off. Anything under could_not is still there and has to be dealt with in Warmluke."
+            : "Nothing changed. Say why, in their words.",
+          open: `${new URL(req.url).origin}/app/${target.project_id}`,
+        })
+      );
     }
 
     if (name === "approve_change") {

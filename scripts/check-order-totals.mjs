@@ -61,6 +61,11 @@ try {
       totalPriceSet: money("597.00"), currentTotalPriceSet: money("547.00"),
       customer: null, lineItems: { nodes: [] }, refunds: [],
       paymentGatewayNames: ["manual"], discountCodes: [], shippingAddress: { city: "Pune", provinceCode: "MH", countryCode: "IN" },
+      // 2650 of goods, 100 postage, 147 tax, 50 given away.
+      currentSubtotalPriceSet: money("2650.00"),
+      currentTotalTaxSet: money("147.00"),
+      currentTotalDiscountsSet: money("50.00"),
+      totalShippingPriceSet: money("100.00"),
       // Charged 597, 50 given back, and one test payment the
       // merchant made themselves. Collected is 547, and only if the
       // test one is left out.
@@ -76,6 +81,16 @@ try {
   check("and the original is kept beside it", Number(imported?.total_original) === 597);
   const { data: importedPlace } = await admin.from("orders").select("gateway, ship_city, ship_state").eq("store_id", store.id).eq("external_id", `gid://shopify/Order/${stamp}1`).single();
   check("what paid and where it went came across", importedPlace?.gateway === "manual" && importedPlace?.ship_city === "Pune" && importedPlace?.ship_state === "MH");
+
+  console.log("\nwhat the total is made of");
+  const parts = async (ext) =>
+    (await admin.from("orders").select("total, subtotal, tax, shipping, discount").eq("store_id", store.id).eq("external_id", ext).single()).data;
+  const made = await parts(`gid://shopify/Order/${stamp}1`);
+  check("the goods, the postage, the tax and the giveaway all landed",
+    Number(made?.subtotal) === 2650 && Number(made?.shipping) === 100 && Number(made?.tax) === 147 && Number(made?.discount) === 50);
+  // The reason the parts exist at all: the headline number is not
+  // what the merchant earned on goods.
+  check("and they are not the same as the total", Number(made?.total) === 547 && Number(made?.subtotal) !== Number(made?.total));
 
   console.log("\nand the money itself, not what the order says about it");
   const ledger = async () =>
@@ -104,6 +119,12 @@ try {
       total_price: "597.00", current_total_price: "547.00", currency: "USD", tags: "",
       line_items: [{ id: 1, title: "A thing", variant_title: "Blue", sku: "X", quantity: 2, price: "298.50" }],
       payment_gateway_names: ["Cash on Delivery (COD)"],
+      // REST spells them flat, in snake case, and puts shipping only
+      // inside a money set.
+      current_subtotal_price: "2650.00",
+      current_total_tax: "147.00",
+      current_total_discounts: "50.00",
+      total_shipping_price_set: { shop_money: { amount: "100.00" } },
       discount_codes: [{ code: "WELCOME10", amount: "50.00", type: "fixed_amount" }],
       shipping_address: { city: "Pune", province_code: "MH", country_code: "IN" },
       // A shipment rides inside the order on this road too.
@@ -141,6 +162,9 @@ try {
   check("what paid, by webhook", hookedOrder?.gateway === "Cash on Delivery (COD)");
   check("the code used", hookedOrder?.discount_codes?.[0] === "WELCOME10");
   check("and where it went", hookedOrder?.ship_city === "Pune" && hookedOrder?.ship_state === "MH" && hookedOrder?.ship_country === "IN");
+  const hookedParts = await parts(`gid://shopify/Order/${hookId}`);
+  check("the parts read the same by webhook",
+    Number(hookedParts?.subtotal) === 2650 && Number(hookedParts?.tax) === 147 && Number(hookedParts?.discount) === 50 && Number(hookedParts?.shipping) === 100);
   const shipments = async () => (await admin.from("fulfillments").select("external_id, carrier, tracking_number, shipment_status, delivered_at").eq("store_id", store.id)).data ?? [];
   let shipped = await shipments();
   check("the shipment landed with the order", shipped.length === 1 && shipped[0].external_id === "gid://shopify/Fulfillment/501");
@@ -195,6 +219,22 @@ try {
   ]);
   const plain = await row(`gid://shopify/Order/${stamp}2`);
   check("has the same number twice", Number(plain?.total) === 1299 && Number(plain?.total_original) === 1299);
+
+  console.log("\nan order from before these fields were read");
+  await saveOrders(admin, store.id, [
+    {
+      id: `gid://shopify/Order/${stamp}4`, name: "#9004",
+      createdAt: "2026-09-14T10:00:00Z", updatedAt: "2026-09-14T10:00:00Z", cancelledAt: null, tags: [],
+      displayFinancialStatus: "PAID", displayFulfillmentStatus: "FULFILLED",
+      totalPriceSet: money("500.00"), currentTotalPriceSet: money("500.00"),
+      customer: null, lineItems: { nodes: [] }, refunds: [],
+    },
+  ]);
+  const silent = await parts(`gid://shopify/Order/${stamp}4`);
+  // The distinction the whole column set turns on. A shop that
+  // charges no tax says zero; a file that never mentioned tax says
+  // nothing, and reporting the second as the first invents a fact.
+  check("says nothing rather than zero", silent?.tax === null && silent?.subtotal === null && silent?.shipping === null);
 
   console.log("\nan old bulk file, before Shopify sent the current total");
   await saveOrders(admin, store.id, [

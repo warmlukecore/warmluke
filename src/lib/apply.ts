@@ -55,9 +55,21 @@ const writer =
 export async function putBack(
   client: Db,
   projectId: string,
-  steps: UndoStep[]
+  steps: UndoStep[],
+  /**
+   * The approved request these writes run under, for a caller that
+   * needs one.
+   *
+   * The owner needs none: abo_build lets them write against their own
+   * project outright. A connected assistant may only write against a
+   * request somebody approved, which is the whole shape of that door
+   * — so undoing from Claude means raising a request and having it
+   * approved first, exactly like building does. Null keeps the
+   * owner's path as it was.
+   */
+  requestId: string | null = null
 ): Promise<{ done: string[]; couldNot: string[] }> {
-  const write = writer(client, projectId, null);
+  const write = writer(client, projectId, requestId);
   const done: string[] = [];
   const couldNot: string[] = [];
 

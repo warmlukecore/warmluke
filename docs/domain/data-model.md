@@ -107,10 +107,10 @@ both columns and allowed states.
 | `stores` | One provider account per project, OAuth token lifecycle, shop context, sync state |
 | `import_runs` | Cursor/bulk-operation progress for each resource |
 | `products` | Shopify products |
-| `variants` | Product variants, SKU/barcode/price and inventory item identity |
-| `inventory_levels` | Available quantity per variant/location |
+| `variants` | Product variants, SKU/barcode/price, unit cost and whether Shopify tracks their stock |
+| `inventory_levels` | Per variant/location: available to sell, on hand, committed to orders, and incoming |
 | `customers` | Customer identity, contact, location, spend, and order count |
-| `orders` | Order identity, timestamps, gross/current totals, statuses, payment/discount/shipping facts |
+| `orders` | Order identity, timestamps, gross/current totals and their parts (goods, tax, shipping, discount), statuses, payment/discount/shipping facts |
 | `order_line_items` | Quantity, product/variant links, SKU, and unit price |
 | `refunds` | Refunded amount, units, and timestamp |
 | `order_transactions` | What money actually did: kind, status, gateway, amount, and whether it was a test |

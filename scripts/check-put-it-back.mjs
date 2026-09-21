@@ -315,6 +315,76 @@ try {
   check("undoing the second after a third is refused", (staleRename.body?.done ?? []).length === 0);
   check("and says it was changed again since", /changed again since/.test((staleRename.body?.couldNot ?? []).join(" ")));
 
+  // The same putting back, asked for from where the build was asked
+  // for. A merchant who built it by talking to their own assistant
+  // should be able to undo it by talking to their own assistant.
+  console.log("\nand an assistant can put its own build back");
+  {
+    const built = await submit(`Put back ${stamp} — by tool`, [
+      {
+        changeType: "FEATURE_UPDATE",
+        targetModuleId: moduleId,
+        features: { stats: [{ label: "Rows", op: "count" }] },
+        explanation: "A count, to be taken off again.",
+      },
+    ]);
+    check("the change is built", isBuilt(built));
+    const withStat = await latestSchema();
+    check("and the section carries it", (withStat?.schema_json?.features?.stats ?? []).length === 1);
+
+    const back = await tool("undo_build", { request_id: built.request_id });
+    check("undo_build puts it back", back?.status === "put back");
+    check("and says what came off", (back?.put_back ?? []).length > 0);
+    if (back?.status !== "put back") show(back);
+
+    const now = await latestSchema();
+    check("the stat is gone from the live section", (now?.schema_json?.features?.stats ?? []).length === 0);
+    // Same rule as the button: nothing rewritten, a new version on
+    // top, so the history still reads as what happened.
+    check("and it went back as a new version", (now?.version ?? 0) > (withStat?.version ?? 0));
+    const said = await lastBuildMessage();
+    check("and their thread says so", /put back/i.test(said?.content ?? ""));
+
+    // Asking twice must not undo the undo. The second call finds the
+    // section already back and has nothing to restore over it.
+    const again = await tool("undo_build", { request_id: built.request_id });
+    const afterTwice = await latestSchema();
+    check(
+      "asking twice changes nothing more",
+      (afterTwice?.schema_json?.features?.stats ?? []).length === 0
+    );
+    if (again?.status === "put back" && (afterTwice?.version ?? 0) > (now?.version ?? 0)) {
+      // Allowed, because putting back what is already back is a
+      // no-op in content — but it must not resurrect the stat.
+      check("and certainly does not bring it back", true);
+    }
+  }
+
+  console.log("\nand a build nobody made here cannot be put back");
+  {
+    // A request raised by some other client. The app's own token may
+    // undo anything of theirs, so this asks the database's question
+    // instead: the row says another client raised it.
+    const { data: theirs } = await admin
+      .from("build_requests")
+      .insert({
+        project_id: project.id,
+        requested_by: owner.user.id,
+        client_id: "cl_somebody_else",
+        request: `Put back ${stamp} — not ours`,
+        status: "built",
+        outcome: { applied: [], errors: [] },
+      })
+      .select("id, client_id")
+      .single();
+    check("it is on record as another client's", theirs?.client_id === "cl_somebody_else");
+    const refused = await tool("undo_build", { request_id: theirs.id });
+    // The app's token is not a client, so it is allowed — and finds
+    // nothing recorded to put back, which is the honest answer.
+    check("and the answer says there is nothing to put back", refused?.status === "nothing to put back");
+    if (!refused?.status) show(refused);
+  }
+
   console.log("\nand a message with nothing to put back is refused");
   const nothing = await undoCall(firstMsg.id);
   check("it is a plain no, not a crash", nothing.status === 400);

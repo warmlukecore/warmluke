@@ -272,7 +272,7 @@ const one = <T,>(v: T | T[] | null | undefined): T | null =>
 export const STORE_TABLES: Record<StoreTable, TableSpec> = {
   orders: {
     label: "Shopify orders",
-    what: 'one row per order — number, customer, total, paid / pending / cancelled, fulfilment, what paid (COD or the gateway), discount codes, shipping city and state; what "our orders", "revenue", "COD pending", "how much did we sell" and "orders by city" mean',
+    what: 'one row per order — number, customer, total and what it is made of (goods, shipping, tax, discount), paid / pending / cancelled, fulfilment, what paid (COD or the gateway), discount codes, shipping city and state; what "our orders", "revenue", "COD pending", "how much did we sell", "how much was tax", "what did we charge for delivery" and "orders by city" mean',
     section: { label: "Orders", icon: "shopping-cart", importedWith: "orders" },
     // What a stat over these rows should be, said once and read by both
     // doors — Luke's prompt and design_format. A merchant's "revenue"
@@ -280,11 +280,11 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     // refunds, all in. On a four-order store that is $4,942 where the
     // money actually collected is $0.
     advice:
-      'Money: `total` is what the order comes to today, after refunds; `total_original` is what it came to when placed. Do not sum `total` over every row and call it revenue — most of it may be unpaid. Revenue collected = sum(total) where financial_status = "PAID". Awaiting payment (COD) = sum(total) where financial_status = "PENDING". Cancelled = count where cancelled_at is not empty, kept out of both. Average order value = avg(total_original). When a merchant asks for one revenue number, show these apart and say which is which. COD vs prepaid: `gateway` is what paid — "Cash on Delivery (COD)" for COD, otherwise the payment provider. Orders by place = group by ship_city or ship_state.',
+      'Money: `total` is what the order comes to today, after refunds; `total_original` is what it came to when placed. Do not sum `total` over every row and call it revenue — most of it may be unpaid. Revenue collected = sum(total) where financial_status = "PAID". Awaiting payment (COD) = sum(total) where financial_status = "PENDING". Cancelled = count where cancelled_at is not empty, kept out of both. Average order value = avg(total_original). When a merchant asks for one revenue number, show these apart and say which is which. COD vs prepaid: `gateway` is what paid — "Cash on Delivery (COD)" for COD, otherwise the payment provider. Orders by place = group by ship_city or ship_state. What the total is made of: total = subtotal + shipping + tax, with discount already taken off subtotal. `tax` is owed to a tax authority and is NEVER the merchant\'s income; `shipping` is what the customer was charged for delivery, usually paid straight out again; `subtotal` is the goods. So "what did we actually earn on goods" is sum(subtotal), not sum(total). Any of these can be empty on an order imported before they were read — that means unknown, not zero, so leave those rows out of a total and say how many.',
     view: "store_orders",
     order: { field: "placed_at", ascending: false },
     select:
-      "id, order_number, placed_at, customer_name, customer_phone, total, total_original, currency, status, fulfilment_status, financial_status, cancelled_at, tags, gateway, discount_codes, ship_city, ship_state, ship_country",
+      "id, order_number, placed_at, customer_name, customer_phone, total, total_original, currency, status, fulfilment_status, financial_status, cancelled_at, tags, gateway, discount_codes, ship_city, ship_state, ship_country, subtotal, tax, shipping, discount",
     columns: [
       { field: "order_number", label: "Order", type: "text" },
       { field: "placed_at", label: "Placed", type: "date" },
@@ -294,6 +294,10 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       // meaning of total — and what it came to when placed.
       { field: "total", label: "Total", type: "currency", currencyField: "currency" },
       { field: "total_original", label: "Before refunds", type: "currency", currencyField: "currency" },
+      { field: "subtotal", label: "Goods", type: "currency", currencyField: "currency" },
+      { field: "shipping", label: "Shipping", type: "currency", currencyField: "currency" },
+      { field: "tax", label: "Tax", type: "currency", currencyField: "currency" },
+      { field: "discount", label: "Discount", type: "currency", currencyField: "currency" },
       { field: "currency", label: "Currency", type: "text" },
       { field: "status", label: "Status", type: "badge" },
       { field: "fulfilment_status", label: "Fulfilment", type: "badge" },

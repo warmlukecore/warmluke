@@ -353,6 +353,10 @@ query($n: Int!, $after: String) {
       displayFinancialStatus displayFulfillmentStatus
       totalPriceSet { shopMoney { amount currencyCode } }
       currentTotalPriceSet { shopMoney { amount currencyCode } }
+      currentSubtotalPriceSet { shopMoney { amount } }
+      currentTotalTaxSet { shopMoney { amount } }
+      currentTotalDiscountsSet { shopMoney { amount } }
+      totalShippingPriceSet { shopMoney { amount } }
       customer { id }
       paymentGatewayNames
       discountCodes
@@ -383,6 +387,19 @@ export type GqlOrder = {
   totalPriceSet: { shopMoney: { amount: string; currencyCode: string } };
   /** What the order comes to today, after refunds. Absent on old bulk files. */
   currentTotalPriceSet?: { shopMoney: { amount: string; currencyCode: string } } | null;
+  /**
+   * What the total is made of, as it stands today.
+   *
+   * total = subtotal + shipping + tax, with the discount already
+   * taken off the subtotal. Without the parts, "we sold 4,942" is the
+   * only sentence possible, and it silently includes tax the merchant
+   * owes somebody else and postage they paid a courier for. All four
+   * are absent on a bulk file written before this.
+   */
+  currentSubtotalPriceSet?: { shopMoney: { amount: string } } | null;
+  currentTotalTaxSet?: { shopMoney: { amount: string } } | null;
+  currentTotalDiscountsSet?: { shopMoney: { amount: string } } | null;
+  totalShippingPriceSet?: { shopMoney: { amount: string } } | null;
   customer: { id: string } | null;
   /** What paid: "Cash on Delivery (COD)", or the provider. The first is the one that did. */
   paymentGatewayNames?: string[] | null;
@@ -437,6 +454,12 @@ export async function saveOrders(
         // a different number depending on which road it last took.
         total: money(o.currentTotalPriceSet ?? o.totalPriceSet),
         total_original: money(o.totalPriceSet),
+        // Null, not zero, when the field never came: an old bulk file
+        // saying nothing about tax is not a shop that charges none.
+        subtotal: money(o.currentSubtotalPriceSet),
+        tax: money(o.currentTotalTaxSet),
+        discount: money(o.currentTotalDiscountsSet),
+        shipping: money(o.totalShippingPriceSet),
         currency: o.totalPriceSet?.shopMoney?.currencyCode ?? null,
         financial_status: o.displayFinancialStatus, fulfilment_status: o.displayFulfillmentStatus,
         cancelled_at: o.cancelledAt, tags: o.tags ?? [], source: "shopify", updated_at: o.updatedAt,
