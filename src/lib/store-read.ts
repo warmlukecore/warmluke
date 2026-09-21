@@ -15,6 +15,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SchemaColumn } from "@/lib/types";
+import type { Resource } from "@/lib/shopify-resources";
 
 export type StoreBrief = {
   id: string;
@@ -247,7 +248,7 @@ type TableSpec = {
    * the sidebar, its icon, and which import's rows say it has anything
    * to show (lines and sales come in with the orders).
    */
-  section: { label: string; icon: string; importedWith: "orders" | "customers" | "products" | "inventory" };
+  section: { label: string; icon: string; importedWith: Resource };
 };
 
 /** PostgREST embeds a to-one relation as a one-element array or an object; either way, the one row. */

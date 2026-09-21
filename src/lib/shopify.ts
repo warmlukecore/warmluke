@@ -11,28 +11,10 @@
 
 import { createHmac, timingSafeEqual, randomUUID } from "node:crypto";
 
-/** Read-only. The assistant reads a store; it never writes to Shopify. */
-export const SHOPIFY_SCOPES = [
-  "read_orders",
-  "read_products",
-  "read_customers",
-  "read_inventory",
-  "read_locations",
-] as const;
-
-/**
- * Orders older than Shopify's default window, which needs Shopify's
- * approval on the app before it can be asked for at all — requesting it
- * unapproved fails the whole authorization, not just that one scope. Set
- * the flag once the grant comes through.
- */
-export const EXTENDED_ORDER_HISTORY_SCOPE = "read_all_orders";
-
-export function scopesFor(env = process.env): string[] {
-  return env.SHOPIFY_READ_ALL_ORDERS === "true"
-    ? [...SHOPIFY_SCOPES, EXTENDED_ORDER_HISTORY_SCOPE]
-    : [...SHOPIFY_SCOPES];
-}
+// Which scopes to ask for is a sum over the resources the store
+// imports, so it is declared with them: scopesFor in lib/shopify-resources.
+// This file stays free of local imports on purpose — everything that
+// reads Shopify imports it.
 
 // Kept in step with the version set on the app in Shopify.
 export const SHOPIFY_API_VERSION = "2026-07";
@@ -129,10 +111,12 @@ export function authorizeUrl(opts: {
   clientId: string;
   redirectUri: string;
   state: string;
+  /** From scopesFor(): every read the resources need, and nothing else. */
+  scopes: readonly string[];
 }): string {
   const u = new URL(`https://${normalizeShopDomain(opts.shop)}/admin/oauth/authorize`);
   u.searchParams.set("client_id", opts.clientId);
-  u.searchParams.set("scope", scopesFor().join(","));
+  u.searchParams.set("scope", opts.scopes.join(","));
   u.searchParams.set("redirect_uri", opts.redirectUri);
   u.searchParams.set("state", opts.state);
   return u.toString();

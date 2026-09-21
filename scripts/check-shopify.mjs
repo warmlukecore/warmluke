@@ -8,16 +8,22 @@
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-shopify.mjs
 
 import { createHmac } from "node:crypto";
+import { readFileSync, readdirSync } from "node:fs";
 import {
-  EXTENDED_ORDER_HISTORY_SCOPE,
-  SHOPIFY_SCOPES,
   authorizeUrl,
   normalizeShopDomain,
-  scopesFor,
   verifyCallbackHmac,
   verifyWebhookHmac,
   tokenNeedsRefresh,
 } from "../src/lib/shopify.ts";
+import {
+  EXTENDED_ORDER_HISTORY_SCOPE,
+  RESOURCES,
+  SHOPIFY_RESOURCES,
+  SHOPIFY_SCOPES,
+  WEBHOOK_TOPICS,
+  scopesFor,
+} from "../src/lib/shopify-resources.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -52,13 +58,14 @@ const url = new URL(
     clientId: "test-client",
     redirectUri: "https://warmluke.vercel.app/api/shopify/callback",
     state: "abc-123",
+    scopes: scopesFor({}),
   })
 );
 check("it points at the merchant's own store", url.host === "carefone.myshopify.com");
 check("it carries the state back", url.searchParams.get("state") === "abc-123");
 check("every scope is a read", SHOPIFY_SCOPES.every((s) => s.startsWith("read_")));
 check("no write scope is requested", !url.searchParams.get("scope")?.includes("write_"));
-check("a bad shop cannot build a URL", refuses(() => authorizeUrl({ shop: "evil.com", clientId: "x", redirectUri: "y", state: "z" })));
+check("a bad shop cannot build a URL", refuses(() => authorizeUrl({ shop: "evil.com", clientId: "x", redirectUri: "y", state: "z", scopes: [] })));
 
 console.log("\nthe scope Shopify has to approve stays out until it has");
 // Asking for an unapproved scope fails the whole authorization, not
@@ -69,6 +76,35 @@ check("it is absent when the flag is off", !scopesFor({ SHOPIFY_READ_ALL_ORDERS:
 check("it appears once the flag is on", scopesFor({ SHOPIFY_READ_ALL_ORDERS: "true" }).includes(EXTENDED_ORDER_HISTORY_SCOPE));
 check("the other scopes are unaffected", SHOPIFY_SCOPES.every((sc) => scopesFor({}).includes(sc)));
 check("the authorize URL never carries it by default", !url.searchParams.get("scope")?.includes(EXTENDED_ORDER_HISTORY_SCOPE));
+
+console.log("\neach resource is declared once, and the rest is derived from it");
+check("every resource asks for at least one scope", RESOURCES.every((r) => SHOPIFY_RESOURCES[r].scopes.length > 0));
+check("every scope a resource asks for is in the install", RESOURCES.every((r) => SHOPIFY_RESOURCES[r].scopes.every((s) => SHOPIFY_SCOPES.includes(s))));
+check("no scope is asked for twice", new Set(SHOPIFY_SCOPES).size === SHOPIFY_SCOPES.length);
+check("every resource writes at least one table", RESOURCES.every((r) => SHOPIFY_RESOURCES[r].tables.length > 0));
+check("every resource keeps itself fresh", RESOURCES.every((r) => SHOPIFY_RESOURCES[r].webhooks.length > 0));
+check("no topic is listened for twice", new Set(WEBHOOK_TOPICS).size === WEBHOOK_TOPICS.length);
+check("a child limit names a real path", RESOURCES.every((r) => SHOPIFY_RESOURCES[r].children.every((c) => c.path.length > 0 && c.limit > 0)));
+
+// A topic subscribed in TypeScript and unhandled in SQL is a webhook
+// that arrives, is signed, and is dropped on the floor — the store goes
+// stale on exactly the events it asked to hear about. The database's
+// dispatcher is the latest migration that defines it.
+console.log("\nevery topic a resource listens for lands somewhere in the database");
+const DEFINES = "create or replace function public.abo_shopify_webhook(";
+const migrations = readdirSync(new URL("../supabase/migrations", import.meta.url)).filter((f) => f.endsWith(".sql")).sort();
+const defines = migrations.filter((f) =>
+  readFileSync(new URL(`../supabase/migrations/${f}`, import.meta.url), "utf8").includes(DEFINES)
+);
+const dispatcher = readFileSync(new URL(`../supabase/migrations/${defines.at(-1)}`, import.meta.url), "utf8");
+const fn = dispatcher.slice(dispatcher.indexOf(DEFINES));
+const handled = new Set([...fn.matchAll(/'([a-z_]+\/[a-z_]+)'/g)].map((m) => m[1]));
+// ORDERS_CREATE on the wire is orders/create in the header Shopify sends.
+const wire = (t) => t.toLowerCase().replace(/_([a-z]+)$/, "/$1");
+check("the dispatcher was found", defines.length > 0 && handled.size > 0);
+for (const t of WEBHOOK_TOPICS) check(`${t} has a handler`, handled.has(wire(t)));
+const subscribed = new Set(WEBHOOK_TOPICS.map(wire));
+for (const t of handled) check(`${t} is subscribed`, subscribed.has(t));
 
 console.log("\na callback has to be signed by Shopify");
 const SECRET = "shpss_test_secret";

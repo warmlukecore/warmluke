@@ -102,16 +102,10 @@ export async function ensureFreshToken(
 /** One page. Small enough to finish, large enough not to crawl. */
 export const PAGE = 50;
 
-export const RESOURCES = ["products", "customers", "orders", "inventory"] as const;
-export type Resource = (typeof RESOURCES)[number];
-
-type Page<T> = {
-  nodes: T[];
-  cursor: string | null;
-  hasNext: boolean;
-  /** Set when an importer found the cut itself and wrote nothing. */
-  cut?: boolean;
-};
+// Which resources there are, how each is counted, paged, bulk-exported,
+// kept fresh and written: src/lib/shopify-resources.ts, declared once.
+// This file holds the queries and the savers those declarations point
+// at — the shape of each resource, not the list of them.
 
 /**
  * How many times a page is attempted before the failure is real.
@@ -221,7 +215,7 @@ const money = (m?: { shopMoney?: { amount?: string } } | null) =>
   m?.shopMoney?.amount ? Number(m.shopMoney.amount) : null;
 
 // ── Products and their variants ─────────────────────────────────
-const PRODUCTS_QUERY = `
+export const PRODUCTS_QUERY = `
 query($n: Int!, $after: String) {
   products(first: $n, after: $after) {
     pageInfo { hasNextPage endCursor }
@@ -248,18 +242,6 @@ export type GqlProduct = {
     }>;
   };
 };
-
-async function importProducts(
-  db: SupabaseClient, storeId: string, shop: string, token: string, after: string | null
-): Promise<Page<unknown>> {
-  const data = await graphql<{ products: { pageInfo: { hasNextPage: boolean; endCursor: string }; nodes: GqlProduct[] } }>(
-    shop, token, PRODUCTS_QUERY, { n: PAGE, after }
-  );
-  const { nodes, pageInfo } = data.products;
-  if (nodes.length === 0) return { nodes, cursor: pageInfo.endCursor, hasNext: false };
-  await saveProducts(db, storeId, nodes);
-  return { nodes, cursor: pageInfo.endCursor, hasNext: pageInfo.hasNextPage };
-}
 
 /**
  * Writes a batch of products and their variants.
@@ -310,7 +292,7 @@ export async function saveProducts(
 // Name, email, phone and postcode are protected customer data. Where
 // Shopify withholds them the row still lands with what it did give, so
 // counts and order links stay right and only the contact is missing.
-const CUSTOMERS_QUERY = `
+export const CUSTOMERS_QUERY = `
 query($n: Int!, $after: String) {
   customers(first: $n, after: $after) {
     pageInfo { hasNextPage endCursor }
@@ -329,17 +311,6 @@ export type GqlCustomer = {
   amountSpent?: { amount: string; currencyCode: string } | null;
   defaultAddress: { city: string | null; zip: string | null } | null;
 };
-
-async function importCustomers(
-  db: SupabaseClient, storeId: string, shop: string, token: string, after: string | null
-): Promise<Page<unknown>> {
-  const data = await graphql<{ customers: { pageInfo: { hasNextPage: boolean; endCursor: string }; nodes: GqlCustomer[] } }>(
-    shop, token, CUSTOMERS_QUERY, { n: PAGE, after }
-  );
-  const { nodes, pageInfo } = data.customers;
-  await saveCustomers(db, storeId, nodes);
-  return { nodes, cursor: pageInfo.endCursor, hasNext: pageInfo.hasNextPage };
-}
 
 /** Writes a batch of customers. Shared with the bulk importer. */
 export async function saveCustomers(
@@ -363,7 +334,7 @@ export async function saveCustomers(
 // Line items keep the title and SKU as they were when bought. A product
 // renamed or deleted next year must not rewrite what somebody actually
 // received last month.
-const ORDERS_QUERY = `
+export const ORDERS_QUERY = `
 query($n: Int!, $after: String) {
   orders(first: $n, after: $after, sortKey: CREATED_AT) {
     pageInfo { hasNextPage endCursor }
@@ -401,28 +372,6 @@ export type GqlOrder = {
     originalUnitPriceSet: { shopMoney: { amount: string } } | null }> };
   refunds: Array<{ id: string; createdAt: string; totalRefundedSet: { shopMoney: { amount: string } } | null }>;
 };
-
-async function importOrders(
-  db: SupabaseClient, storeId: string, shop: string, token: string, after: string | null
-): Promise<Page<unknown>> {
-  const data = await graphql<{ orders: { pageInfo: { hasNextPage: boolean; endCursor: string }; nodes: GqlOrder[] } }>(
-    shop, token, ORDERS_QUERY, { n: PAGE, after }
-  );
-  const { nodes, pageInfo } = data.orders;
-  if (nodes.length === 0) return { nodes, cursor: pageInfo.endCursor, hasNext: false };
-  // Checked BEFORE saving, not after. saveOrders replaces an order's
-  // lines rather than merging them — it has to, or a line deleted in
-  // Shopify would live here for ever — so writing a page whose orders
-  // were cut at a hundred lines deletes the real lines and puts back
-  // only the first hundred. The bulk route is about to fetch the whole
-  // thing anyway; if starting it fails, an order left untouched is
-  // still right, and one already truncated is not.
-  if (childrenWereCut("orders", nodes)) {
-    return { nodes: [], cursor: after, hasNext: true, cut: true };
-  }
-  await saveOrders(db, storeId, nodes);
-  return { nodes, cursor: pageInfo.endCursor, hasNext: pageInfo.hasNextPage };
-}
 
 /** Writes a batch of orders, their lines and refunds. */
 export async function saveOrders(
@@ -514,7 +463,7 @@ export async function saveOrders(
 }
 
 // ── Stock on hand ───────────────────────────────────────────────
-const INVENTORY_QUERY = `
+export const INVENTORY_QUERY = `
 query($n: Int!, $after: String) {
   productVariants(first: $n, after: $after) {
     pageInfo { hasNextPage endCursor }
@@ -537,17 +486,6 @@ export type GqlStock = {
     };
   } | null;
 };
-
-async function importInventory(
-  db: SupabaseClient, storeId: string, shop: string, token: string, after: string | null
-): Promise<Page<unknown>> {
-  const data = await graphql<{ productVariants: { pageInfo: { hasNextPage: boolean; endCursor: string }; nodes: GqlStock[] } }>(
-    shop, token, INVENTORY_QUERY, { n: PAGE, after }
-  );
-  const { nodes, pageInfo } = data.productVariants;
-  await saveInventory(db, storeId, nodes);
-  return { nodes, cursor: pageInfo.endCursor, hasNext: pageInfo.hasNextPage };
-}
 
 /** Writes a batch of stock levels. */
 export async function saveInventory(
@@ -573,84 +511,4 @@ export async function saveInventory(
     const { error } = await db.from("inventory_levels").upsert(levels, { onConflict: "store_id,variant_id,location_id" });
     if (error) throw new Error(error.message);
   }
-}
-
-const IMPORTERS: Record<Resource, typeof importProducts> = {
-  products: importProducts,
-  customers: importCustomers,
-  orders: importOrders,
-  inventory: importInventory,
-};
-
-/**
- * One page of one resource, then say whether there is more.
- *
- * Resources run in the order listed: an order's customer and variant
- * links can only be made once those rows exist, and a later pass fills
- * in anything that arrived out of sequence.
- */
-/**
- * How many of each child a page is allowed to carry.
- *
- * These are limits, not sizes. A product with more than a hundred
- * variants, an order with more than a hundred lines, a variant stocked
- * in more than ten places — the paged route asks for that many and
- * Shopify stops there, silently, and the rest was simply lost. Nothing
- * said so: the import reported the product imported.
- *
- * The bulk route has no such limits (it asks for `variants { edges }`
- * with no `first`), so the cure is to notice and go that way instead
- * of writing a paginator for every child.
- *
- * ponytail: a page holding exactly the limit is treated as truncated
- * even when it is merely full. That costs one unnecessary bulk run on
- * a store where some product has exactly a hundred variants, and buys
- * not having to ask Shopify a second question per child.
- */
-const CHILD_LIMIT = { variants: 100, lineItems: 100, refunds: 20, levels: 10 } as const;
-
-/** Whether a page lost children to those limits. */
-export function childrenWereCut(resource: Resource, nodes: unknown[]): boolean {
-  if (resource === "products") {
-    return (nodes as GqlProduct[]).some(
-      (p) => (p.variants?.nodes?.length ?? 0) >= CHILD_LIMIT.variants
-    );
-  }
-  if (resource === "orders") {
-    return (nodes as GqlOrder[]).some(
-      (o) =>
-        (o.lineItems?.nodes?.length ?? 0) >= CHILD_LIMIT.lineItems ||
-        (o.refunds?.length ?? 0) >= CHILD_LIMIT.refunds
-    );
-  }
-  if (resource === "inventory") {
-    return (nodes as GqlStock[]).some(
-      (v) => (v.inventoryItem?.inventoryLevels?.nodes?.length ?? 0) >= CHILD_LIMIT.levels
-    );
-  }
-  return false;
-}
-
-export async function importPage(
-  db: SupabaseClient, store: StoreToken,
-  resource: Resource, after: string | null
-): Promise<{
-  imported: number;
-  cursor: string | null;
-  hasNext: boolean;
-  /** This page lost children to a limit; only bulk can carry them. */
-  cut?: boolean;
-}> {
-  // Renewed here rather than by each caller: every path into Shopify
-  // goes through this function, so one caller cannot forget.
-  const token = await ensureFreshToken(db, store);
-  const page = await IMPORTERS[resource](db, store.id, store.shop_domain, token, after);
-  return {
-    imported: page.nodes.length,
-    cursor: page.cursor,
-    hasNext: page.hasNext,
-    // An importer that saw the cut before writing says so itself and
-    // hands back no nodes; the rest are judged on what they returned.
-    cut: page.cut ?? childrenWereCut(resource, page.nodes),
-  };
 }

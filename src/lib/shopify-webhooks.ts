@@ -25,21 +25,10 @@ import { graphql } from "@/lib/shopify-import";
  * from the app's own settings and refuses to let an app subscribe to
  * them itself.
  */
-export const WEBHOOK_TOPICS = [
-  "ORDERS_CREATE",
-  "ORDERS_UPDATED",
-  "ORDERS_CANCELLED",
-  "ORDERS_PAID",
-  "ORDERS_FULFILLED",
-  "PRODUCTS_CREATE",
-  "PRODUCTS_UPDATE",
-  "PRODUCTS_DELETE",
-  "CUSTOMERS_CREATE",
-  "CUSTOMERS_UPDATE",
-  "CUSTOMERS_DELETE",
-  "INVENTORY_LEVELS_UPDATE",
-  "INVENTORY_LEVELS_CONNECT",
-] as const;
+// Each resource names its own topics beside its queries, so a resource
+// added there is subscribed here without anyone remembering to.
+export { WEBHOOK_TOPICS } from "@/lib/shopify-resources";
+import { WEBHOOK_TOPICS } from "@/lib/shopify-resources";
 
 const CREATE = `
 mutation($topic: WebhookSubscriptionTopic!, $url: URL!) {

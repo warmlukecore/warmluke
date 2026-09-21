@@ -13,25 +13,15 @@
 // matters on a serverless runtime.
 //
 // The file is JSONL, one object per line, children flattened out and
-// tied to their parent by __parentId. Reassembling them here means the
-// same node shapes the paged importer produces, so both write through
-// the same savers in lib/shopify-import.
+// tied to their parent by __parentId. Each resource says, in
+// lib/shopify-resources, how its file is put back into the shapes its
+// saver expects — so both routes write through the same savers.
 // ─────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ShopifyError } from "@/lib/shopify";
-import {
-  graphql,
-  saveCustomers,
-  saveInventory,
-  saveOrders,
-  saveProducts,
-  type GqlCustomer,
-  type GqlOrder,
-  type GqlProduct,
-  type GqlStock,
-  type Resource,
-} from "@/lib/shopify-import";
+import { graphql } from "@/lib/shopify-import";
+import { SHOPIFY_RESOURCES, type BulkLine as Line, type Resource } from "@/lib/shopify-resources";
 
 /**
  * Above this many rows, paging is the wrong tool. Below it, a bulk
@@ -55,58 +45,15 @@ const MAX_SLICE = 32 * 1024 * 1024;
 const BATCH = 250;
 
 /** Counting is one cheap query and decides which importer to use. */
-const COUNTS: Record<Resource, string> = {
-  products: "{ productsCount { count } }",
-  customers: "{ customersCount { count } }",
-  orders: "{ ordersCount { count } }",
-  inventory: "{ productVariantsCount { count } }",
-};
-
 export async function countOf(shop: string, token: string, resource: Resource): Promise<number> {
   const data = await graphql<Record<string, { count: number } | null>>(
     shop,
     token,
-    COUNTS[resource]
+    SHOPIFY_RESOURCES[resource].count
   );
   const first = Object.values(data)[0];
   return first?.count ?? 0;
 }
-
-// The same fields the paged queries ask for. Bulk forbids pagination
-// arguments and returns every node, so the only difference is what is
-// missing here.
-const BULK_QUERIES: Record<Resource, string> = {
-  products: `{ products { edges { node {
-    id title handle status productType vendor tags updatedAt
-    variants { edges { node { id title sku barcode price updatedAt inventoryItem { id } } } }
-  } } } }`,
-  customers: `{ customers { edges { node {
-    id displayName email phone numberOfOrders tags updatedAt
-    amountSpent { amount currencyCode }
-    defaultAddress { city zip }
-  } } } }`,
-  orders: `{ orders { edges { node {
-    id name createdAt updatedAt cancelledAt tags
-    displayFinancialStatus displayFulfillmentStatus
-    totalPriceSet { shopMoney { amount currencyCode } }
-    currentTotalPriceSet { shopMoney { amount currencyCode } }
-    customer { id }
-    lineItems { edges { node {
-      id title quantity sku
-      variant { id }
-      product { id }
-      originalUnitPriceSet { shopMoney { amount } }
-    } } }
-    refunds { id createdAt totalRefundedSet { shopMoney { amount } } }
-  } } } }`,
-  inventory: `{ productVariants { edges { node {
-    id
-    inventoryItem { id inventoryLevels { edges { node {
-      quantities(names: ["available"]) { quantity }
-      location { id name }
-    } } } }
-  } } } }`,
-};
 
 type BulkOp = {
   id: string;
@@ -137,7 +84,7 @@ export async function startBulk(shop: string, token: string, resource: Resource)
          userErrors { field message }
        }
      }`,
-    { q: BULK_QUERIES[resource] }
+    { q: SHOPIFY_RESOURCES[resource].bulk }
   );
   const { bulkOperation, userErrors } = data.bulkOperationRunQuery;
   if (!bulkOperation) {
@@ -169,9 +116,6 @@ export async function pollBulk(shop: string, token: string, id: string): Promise
   );
   return data.node;
 }
-
-/** A line of the file: an object, plus where it hangs if it is a child. */
-type Line = Record<string, unknown> & { id?: string; __parentId?: string };
 
 /**
  * Reads one slice of the file and writes what it finds.
@@ -270,10 +214,9 @@ function hasWholeFamily(text: string): boolean {
 }
 
 /**
- * Reassembles the flattened file into the shapes the savers expect.
- *
- * Shopify writes a child after its parent, and the batching below is
- * why a million-row file costs the same memory as a thousand-row one.
+ * Puts the flattened file back into the shapes the saver expects and
+ * writes it in batches — which is why a million-row file costs the
+ * same memory as a thousand-row one.
  */
 async function writeLines(
   db: SupabaseClient,
@@ -281,89 +224,10 @@ async function writeLines(
   resource: Resource,
   lines: Line[]
 ): Promise<number> {
-  if (resource === "customers") {
-    const rows = lines.filter((l) => !l.__parentId) as unknown as GqlCustomer[];
-    for (let i = 0; i < rows.length; i += BATCH) {
-      await saveCustomers(db, storeId, rows.slice(i, i + BATCH));
-    }
-    return rows.length;
-  }
-
-  if (resource === "products") {
-    const parents = new Map<string, GqlProduct>();
-    const order: string[] = [];
-    for (const l of lines) {
-      if (!l.__parentId) {
-        const p = { ...(l as unknown as GqlProduct), variants: { nodes: [] } };
-        parents.set(l.id!, p);
-        order.push(l.id!);
-      } else {
-        // Always present: a slice never ends mid-family.
-        parents.get(l.__parentId)?.variants.nodes.push(l as never);
-      }
-    }
-    const rows = order.map((id) => parents.get(id)!);
-    for (let i = 0; i < rows.length; i += BATCH) {
-      await saveProducts(db, storeId, rows.slice(i, i + BATCH));
-    }
-    return rows.length;
-  }
-
-  if (resource === "orders") {
-    const parents = new Map<string, GqlOrder>();
-    const order: string[] = [];
-    for (const l of lines) {
-      if (!l.__parentId) {
-        // refunds is a plain list, not a connection, so the file
-        // carries it inside the order itself and never as separate
-        // __parentId lines. Blanking it here threw away every refund
-        // the export had already handed us.
-        const parent = l as unknown as GqlOrder;
-        parents.set(l.id!, {
-          ...parent,
-          lineItems: { nodes: [] },
-          refunds: parent.refunds ?? [],
-        });
-        order.push(l.id!);
-        continue;
-      }
-      const parent = parents.get(l.__parentId);
-      if (!parent) continue;
-      // Refunds carry an amount; line items carry a quantity. The file
-      // does not label which connection a child came from.
-      if ("totalRefundedSet" in l) parent.refunds!.push(l as never);
-      else parent.lineItems.nodes.push(l as never);
-    }
-    const rows = order.map((id) => parents.get(id)!);
-    for (let i = 0; i < rows.length; i += BATCH) {
-      await saveOrders(db, storeId, rows.slice(i, i + BATCH));
-    }
-    return rows.length;
-  }
-
-  // Inventory. Levels hang off the variant or off its inventory item
-  // depending on how Shopify flattened it, so both are resolved.
-  const parents = new Map<string, GqlStock>();
-  const order: string[] = [];
-  const viaItem = new Map<string, string>();
-  for (const l of lines) {
-    if (!l.__parentId) {
-      const item = l.inventoryItem as { id?: string } | undefined;
-      const v: GqlStock = {
-        id: l.id!,
-        inventoryItem: { inventoryLevels: { nodes: [] } },
-      };
-      parents.set(l.id!, v);
-      order.push(l.id!);
-      if (item?.id) viaItem.set(item.id, l.id!);
-      continue;
-    }
-    const ownerId = parents.has(l.__parentId) ? l.__parentId : viaItem.get(l.__parentId);
-    if (ownerId) parents.get(ownerId)!.inventoryItem!.inventoryLevels.nodes.push(l as never);
-  }
-  const rows = order.map((id) => parents.get(id)!);
+  const spec = SHOPIFY_RESOURCES[resource];
+  const rows = spec.assemble(lines);
   for (let i = 0; i < rows.length; i += BATCH) {
-    await saveInventory(db, storeId, rows.slice(i, i + BATCH));
+    await spec.save(db, storeId, rows.slice(i, i + BATCH));
   }
   return rows.length;
 }

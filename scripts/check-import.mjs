@@ -9,7 +9,7 @@
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { RESOURCES, importPage } from "../src/lib/shopify-import.ts";
+import { RESOURCES, importPage } from "../src/lib/shopify-resources.ts";
 
 const env = Object.fromEntries(
   readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")

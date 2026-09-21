@@ -254,7 +254,7 @@ console.log("\nan order keeps its lines and its refunds apart");
 // sends the whole resource that way rather than finishing a walk that
 // is already missing rows.
 {
-  const { childrenWereCut } = await import("../src/lib/shopify-import.ts");
+  const { childrenWereCut } = await import("../src/lib/shopify-resources.ts");
   const product = (variants) => ({
     id: "gid://shopify/Product/1",
     variants: { nodes: Array.from({ length: variants }, (_, i) => ({ id: `v${i}` })) },

@@ -1,12 +1,7 @@
 import { NextResponse } from "next/server";
 import { getUserClient } from "@/lib/supabase-server";
-import {
-  RESOURCES,
-  ensureFreshToken,
-  importPage,
-  type Resource,
-  type StoreToken,
-} from "@/lib/shopify-import";
+import { ensureFreshToken, type StoreToken } from "@/lib/shopify-import";
+import { RESOURCES, SHOPIFY_RESOURCES, importPage, type Resource } from "@/lib/shopify-resources";
 import { BULK_THRESHOLD, countOf, ingestSlice, pollBulk, startBulk } from "@/lib/shopify-bulk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ShopifyError } from "@/lib/shopify";
@@ -382,24 +377,15 @@ async function advance(
 }
 
 /**
- * Which of our tables holds each resource, for counting what we keep.
- *
- * Inventory is deliberately absent. A pass counts what Shopify returned
- * per page, and for stock those pages are VARIANTS — one variant can
- * hold a level at every location it is stocked in, so a store with two
- * locations reports more rows than variants and looks permanently two
- * short. It said exactly that about this store on the first run, and
- * the two "missing" levels were a product sitting in a second shop.
- *
- * Comparing a count of variants with a count of levels was never going
- * to answer the question. Stock drift needs the ids compared, not the
- * totals; until then saying nothing beats crying wolf every time.
+ * Which of our tables holds each resource, for counting what we keep:
+ * the parent table of every resource that says its rows can be compared
+ * with what a pass brought back. Each resource decides that for itself
+ * (`drift` in lib/shopify-resources); stock says no, because a pass
+ * counts variants and the table holds one row per location.
  */
-const COUNTED: Record<string, string> = {
-  products: "products",
-  customers: "customers",
-  orders: "orders",
-};
+const COUNTED = Object.fromEntries(
+  RESOURCES.filter((r) => SHOPIFY_RESOURCES[r].drift).map((r) => [r, SHOPIFY_RESOURCES[r].tables[0]])
+);
 
 function summarise(runs: Array<{ resource?: string; imported?: number; status?: string }>) {
   return Object.fromEntries(

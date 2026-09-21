@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getUserClient } from "@/lib/supabase-server";
 import { ShopifyError, authorizeUrl, newOAuthState, normalizeShopDomain } from "@/lib/shopify";
+import { scopesFor } from "@/lib/shopify-resources";
 
 export const runtime = "nodejs";
 
@@ -107,6 +108,7 @@ export async function POST(req: Request) {
       clientId,
       redirectUri: `${new URL(req.url).origin}/api/shopify/callback`,
       state,
+      scopes: scopesFor(),
     }),
   });
 }
