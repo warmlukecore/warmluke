@@ -60,6 +60,7 @@ export const COUNTED = [
   "locations",
   "collections",
   "collection_products",
+  "abandoned_checkouts",
   "inventory_levels",
 ] as const;
 
@@ -227,6 +228,7 @@ export function dayRangeInZone(day: string, timeZone: string): { from: string; t
 // showing blank cells for fields the query never asked for.
 
 export type StoreTable =
+  | "carts"
   | "collections"
   | "fulfillments"
   | "transactions"
@@ -463,6 +465,27 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "margin_pct", label: "Margin %", type: "number" },
     ],
   },
+  carts: {
+    // The one list in the app whose rows are worth money on their
+    // own: each is a person who nearly bought, and a link that takes
+    // them back to the exact basket they left.
+    advice:
+      'One row per basket somebody filled and did not finish. recovery_url is Shopify\'s own link back to that exact basket — it is the point of the list, so show it. "Not signed in" in customer_name means they never gave a name; those have no email either and cannot be chased. Biggest missed sales = sort by total. A basket disappears from here once it is finished or Shopify clears it, so a count of these is what is open right now, not a running total of everyone who ever left.',
+    label: "Shopify abandoned carts",
+    what: 'one row per basket left at the checkout — who, what was in it, how much, and a link back to it; what "abandoned carts", "lost sales", "who nearly bought" and "recover" mean',
+    section: { label: "Abandoned carts", icon: "shopping-cart", importedWith: "carts" },
+    view: "store_abandoned_checkouts",
+    order: { field: "started_at", ascending: false },
+    select: "id, started_at, customer_name, email, total, currency, item_count, items, recovery_url",
+    columns: [
+      { field: "started_at", label: "Left", type: "date" },
+      { field: "customer_name", label: "Who", type: "text" },
+      { field: "email", label: "Email", type: "text" },
+      { field: "total", label: "Worth", type: "currency", currencyField: "currency" },
+      { field: "item_count", label: "Items", type: "number" },
+      { field: "items", label: "What", type: "text" },
+    ],
+  },
   collections: {
     advice:
       'One row per collection the merchant has made. products_count is Shopify\'s own number for the whole collection; products_here is how many of them this copy holds, and they differ while a large collection is still coming across — say both rather than the smaller one. To answer "what is in X", read the products list and filter its `collections` column, which names every collection a product belongs to.',
@@ -558,6 +581,7 @@ const SEARCHABLE: Record<StoreTable, string[]> = {
   inventory_levels: ["product", "variant", "sku", "location_name", "stock_state"],
   locations: ["name", "place", "state"],
   collections: ["title", "handle"],
+  carts: ["customer_name", "email", "items"],
   product_sales: ["title"],
   order_line_items: ["order_number", "sku", "title", "customer_name"],
   refunds: ["order_number", "customer_name"],

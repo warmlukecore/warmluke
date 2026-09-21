@@ -298,6 +298,83 @@ export async function saveProducts(
   }
 }
 
+// ── Carts nobody finished ───────────────────────────────────────
+// The shop's near misses: somebody filled a basket, reached the
+// checkout and left. Shopify keeps them, with a link that takes that
+// person back to their own basket, and the copy has never held one —
+// so the most answerable question in retail, "who nearly bought",
+// could not be asked here at all.
+//
+// These carry an email, which makes them personal data. Everything
+// about redaction that applies to a customer applies to these: the
+// tombstone, the trigger that refuses a redacted person coming back,
+// and the lock the two share. See migration 0101.
+export const CARTS_QUERY = `
+query($n: Int!, $after: String) {
+  abandonedCheckouts(first: $n, after: $after) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      id abandonedCheckoutUrl createdAt updatedAt
+      totalPriceSet { shopMoney { amount currencyCode } }
+      customer { id displayName email }
+      lineItems(first: 20) { nodes { title quantity } }
+    }
+  }
+}`;
+
+export type GqlCart = {
+  id: string;
+  abandonedCheckoutUrl?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+  totalPriceSet?: { shopMoney: { amount: string; currencyCode: string } } | null;
+  customer?: { id?: string | null; displayName?: string | null; email?: string | null } | null;
+  lineItems: { nodes: Array<{ title: string; quantity: number }> };
+};
+
+/** Writes a batch of abandoned carts. */
+export async function saveCarts(
+  db: SupabaseClient, storeId: string, nodes: GqlCart[]
+): Promise<void> {
+  if (nodes.length === 0) return;
+
+  // Linked to the customer row when we hold one, and still written
+  // when we do not: a cart left by somebody who never finished an
+  // order is exactly the case where there is no customer yet.
+  const externalIds = [...new Set(nodes.map((c) => c.customer?.id).filter(Boolean) as string[])];
+  const { data: known } = externalIds.length
+    ? await db.from("customers").select("id, external_id").eq("store_id", storeId).in("external_id", externalIds)
+    : { data: [] };
+  const customerId = new Map((known ?? []).map((r) => [r.external_id as string, r.id as string]));
+
+  const rows = nodes.map((c) => {
+    const items = c.lineItems?.nodes ?? [];
+    return {
+      store_id: storeId, external_id: c.id,
+      customer_id: c.customer?.id ? (customerId.get(c.customer.id) ?? null) : null,
+      // Kept beside the link, because a redaction names a person by
+      // Shopify's id and this is the only place a cart carries it.
+      customer_external_id: c.customer?.id ?? null,
+      name: c.customer?.displayName ?? null,
+      email: c.customer?.email ?? null,
+      total: c.totalPriceSet?.shopMoney?.amount ? Number(c.totalPriceSet.shopMoney.amount) : null,
+      currency: c.totalPriceSet?.shopMoney?.currencyCode ?? null,
+      recovery_url: c.abandonedCheckoutUrl ?? null,
+      item_count: items.reduce((n, i) => n + (i.quantity ?? 0), 0),
+      // A summary rather than a table of its own. What a merchant
+      // wants from a basket nobody finished is what was nearly
+      // bought, not a normalised record of a thing that never
+      // happened.
+      items: items.map((i) => (i.quantity > 1 ? `${i.title} ×${i.quantity}` : i.title)).join(", ") || null,
+      started_at: c.createdAt,
+      updated_at: c.updatedAt ?? c.createdAt,
+    };
+  });
+
+  const { error } = await db.from("abandoned_checkouts").upsert(rows, { onConflict: "store_id,external_id" });
+  if (error) throw new Error(error.message);
+}
+
 // ── Collections ─────────────────────────────────────────────────
 // A merchant groups their catalogue and then asks about the groups:
 // what is in the sale, which collection this product sits in, how

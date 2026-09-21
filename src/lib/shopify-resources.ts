@@ -23,6 +23,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  CARTS_QUERY,
   COLLECTIONS_QUERY,
   CUSTOMERS_QUERY,
   ensureFreshToken,
@@ -36,6 +37,7 @@ import {
   PRODUCTS_QUERY,
   REFUNDED,
   REFUNDS_QUERY,
+  saveCarts,
   saveCollections,
   saveCustomers,
   saveFulfillments,
@@ -44,6 +46,7 @@ import {
   saveOrders,
   saveProducts,
   saveRefunds,
+  type GqlCart,
   type GqlCollection,
   type GqlCustomer,
   type GqlFulfilledOrder,
@@ -204,6 +207,41 @@ export const SHOPIFY_RESOURCES = {
     webhooks: ["CUSTOMERS_CREATE", "CUSTOMERS_UPDATE", "CUSTOMERS_DELETE"],
     tables: ["customers"],
     drift: true,
+  },
+  carts: {
+    label: "abandoned carts",
+    // No new scope: read_orders covers a checkout that never became
+    // one, which is why this arrives without anybody reconnecting.
+    scopes: ["read_orders"],
+    count: "{ abandonedCheckoutsCount { count } }",
+    page: CARTS_QUERY,
+    root: "abandonedCheckouts",
+    // A connection inside a connection, like products and variants,
+    // so the export flattens the items out and they come back as
+    // children. Tested against the real shop rather than assumed:
+    // refunds looked the same and Shopify refused it.
+    bulk: {
+      query: `{ abandonedCheckouts { edges { node {
+    id abandonedCheckoutUrl createdAt updatedAt
+    totalPriceSet { shopMoney { amount currencyCode } }
+    customer { id displayName email }
+    lineItems { edges { node { title quantity } } }
+  } } } }`,
+      assemble: (lines) =>
+        withChildren<GqlCart>(
+          lines,
+          (c) => ({ ...(c as unknown as GqlCart), lineItems: { nodes: [] } }),
+          (c, child) => c.lineItems.nodes.push(child as never)
+        ),
+    },
+    children: [{ path: ["lineItems", "nodes"], limit: 20 }],
+    save: (db, storeId, nodes) => saveCarts(db, storeId, nodes as GqlCart[]),
+    webhooks: ["CHECKOUTS_CREATE", "CHECKOUTS_UPDATE", "CHECKOUTS_DELETE"],
+    tables: ["abandoned_checkouts"],
+    // Deliberately not compared. A cart stops being abandoned the
+    // moment somebody finishes it, so Shopify's count falls while
+    // ours stands until the next full pass — real, and not a loss.
+    drift: false,
   },
   orders: {
     label: "orders",

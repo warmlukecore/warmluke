@@ -113,6 +113,7 @@ both columns and allowed states.
 | `inventory_levels` | Per variant/location: available to sell, on hand, committed to orders, and incoming |
 | `locations` | Each place the shop stocks or ships from, whether it is open, and where it is; kept when Shopify removes one |
 | `customers` | Customer identity, contact, location, spend, and order count |
+| `abandoned_checkouts` | Baskets left at the checkout, with the recovery link. Holds personal data, so redaction erases it and a trigger refuses it back |
 | `orders` | Order identity, timestamps, gross/current totals and their parts (goods, tax, shipping, discount), statuses, payment/discount/shipping facts |
 | `order_line_items` | Quantity, product/variant links, SKU, and unit price |
 | `refunds` | Refunded amount, units, and timestamp |

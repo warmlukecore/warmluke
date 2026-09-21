@@ -39,6 +39,13 @@ Members join through an unguessable invitation token. The token, not an email ad
 proves possession; this matters because an auto-confirmed email alone is not a trusted
 invitation claim.
 
+Personal data lives in two tables, not one: `customers` and
+`abandoned_checkouts`. A redaction erases both, by customer id and by email
+alike, and a trigger on each refuses a redacted person on the way back in, so
+the next import cannot undo an erasure. `check-cart-redaction` holds that,
+including the case a join through `customers` would miss: a basket left by
+somebody who never became a customer row.
+
 ## OAuth-client write wall
 
 Supabase OAuth access tokens otherwise behave like ordinary user sessions. Migration
