@@ -26,6 +26,7 @@ import {
   CARTS_QUERY,
   COLLECTIONS_QUERY,
   CUSTOMERS_QUERY,
+  DISCOUNTS_QUERY,
   DRAFT_ORDERS_QUERY,
   ensureFreshToken,
   FULFILLED,
@@ -41,6 +42,7 @@ import {
   saveCarts,
   saveCollections,
   saveCustomers,
+  saveDiscounts,
   saveDraftOrders,
   saveFulfillments,
   saveInventory,
@@ -51,6 +53,7 @@ import {
   type GqlCart,
   type GqlCollection,
   type GqlCustomer,
+  type GqlDiscount,
   type GqlDraftOrder,
   type GqlFulfilledOrder,
   type GqlLocation,
@@ -289,6 +292,52 @@ export const SHOPIFY_RESOURCES = {
     // does mean one was deleted there.
     drift: true,
   },
+  discounts: {
+    label: "discounts",
+    scopes: ["read_discounts"],
+    count: "{ discountNodesCount { count } }",
+    page: DISCOUNTS_QUERY,
+    root: "discountNodes",
+    // The codes are a connection inside a connection, so Shopify
+    // exports them as children — run for real against the shop, and
+    // the file came back with one line per code under its campaign.
+    // Which matters more here than elsewhere: a bulk-code campaign
+    // has thousands, and the paged road below would keep twenty.
+    bulk: {
+      query: `{ discountNodes { edges { node {
+    id
+    discount {
+      __typename
+      ... on DiscountCodeBasic { title status summary startsAt endsAt usageLimit appliesOncePerCustomer asyncUsageCount createdAt codes { edges { node { code } } } customerGets { value { __typename ... on DiscountPercentage { percentage } ... on DiscountAmount { amount { amount currencyCode } } } } }
+      ... on DiscountCodeBxgy { title status summary startsAt endsAt usageLimit asyncUsageCount createdAt codes { edges { node { code } } } }
+      ... on DiscountCodeFreeShipping { title status summary startsAt endsAt usageLimit appliesOncePerCustomer asyncUsageCount createdAt codes { edges { node { code } } } }
+      ... on DiscountCodeApp { title status startsAt endsAt usageLimit asyncUsageCount createdAt codes { edges { node { code } } } }
+      ... on DiscountAutomaticBasic { title status summary startsAt endsAt createdAt customerGets { value { __typename ... on DiscountPercentage { percentage } ... on DiscountAmount { amount { amount currencyCode } } } } }
+      ... on DiscountAutomaticBxgy { title status summary startsAt endsAt createdAt }
+      ... on DiscountAutomaticFreeShipping { title status summary startsAt endsAt createdAt }
+      ... on DiscountAutomaticApp { title status startsAt endsAt createdAt }
+    }
+  } } } }`,
+      assemble: (lines) =>
+        withChildren<GqlDiscount>(
+          lines,
+          (d) => {
+            const node = d as unknown as GqlDiscount;
+            // The codes hang off the discount, not off the node, so
+            // the list the children go into has to exist before the
+            // first child arrives — an automatic discount has none
+            // and must still end up with an empty list, not undefined.
+            return { ...node, discount: { ...(node.discount ?? {}), codes: { nodes: [] } } };
+          },
+          (d, child) => d.discount!.codes!.nodes.push(child as never)
+        ),
+    },
+    children: [{ path: ["discount", "codes", "nodes"], limit: 20 }],
+    save: (db, storeId, nodes) => saveDiscounts(db, storeId, nodes as GqlDiscount[]),
+    webhooks: ["DISCOUNTS_CREATE", "DISCOUNTS_UPDATE", "DISCOUNTS_DELETE"],
+    tables: ["discounts"],
+    drift: true,
+  },
   orders: {
     label: "orders",
     scopes: ["read_orders"],
@@ -511,8 +560,6 @@ export const isResource = (v: unknown): v is Resource =>
 export const PLANNED_SCOPES = [
   // Returns: the journey a refund is the end of.
   "read_returns",
-  // The campaigns behind the codes already on an order.
-  "read_discounts",
   // Shopify's own payouts, for reconciling against a bank statement.
   // Only useful to a shop actually using Shopify Payments.
   "read_shopify_payments_payouts",

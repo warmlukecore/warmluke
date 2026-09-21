@@ -1150,3 +1150,116 @@ export async function saveDraftOrders(
   const { error: wrote } = await db.from("draft_order_line_items").insert(lines);
   if (wrote) throw new Error(wrote.message);
 }
+
+// ── Discounts ───────────────────────────────────────────────────
+// An order has carried the codes typed at the checkout since 0092.
+// This is what those codes were: how much came off, when the campaign
+// ran, how many people used it, whether it is still running.
+//
+// Shopify keeps eight concrete types under one union. Asking each for
+// only what it has is why the fragments below differ — the two App
+// types carry no summary, and only the basic ones carry a value that
+// is a single number. What the rest of a rule does is in Shopify's
+// own sentence rather than rebuilt here.
+export const DISCOUNTS_QUERY = `
+query($n: Int!, $after: String) {
+  discountNodes(first: $n, after: $after) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      id
+      discount {
+        __typename
+        ... on DiscountCodeBasic { title status summary startsAt endsAt usageLimit appliesOncePerCustomer asyncUsageCount createdAt codes(first: 20) { nodes { code } } customerGets { value { __typename ... on DiscountPercentage { percentage } ... on DiscountAmount { amount { amount currencyCode } } } } }
+        ... on DiscountCodeBxgy { title status summary startsAt endsAt usageLimit asyncUsageCount createdAt codes(first: 20) { nodes { code } } }
+        ... on DiscountCodeFreeShipping { title status summary startsAt endsAt usageLimit appliesOncePerCustomer asyncUsageCount createdAt codes(first: 20) { nodes { code } } }
+        ... on DiscountCodeApp { title status startsAt endsAt usageLimit asyncUsageCount createdAt codes(first: 20) { nodes { code } } }
+        ... on DiscountAutomaticBasic { title status summary startsAt endsAt createdAt customerGets { value { __typename ... on DiscountPercentage { percentage } ... on DiscountAmount { amount { amount currencyCode } } } } }
+        ... on DiscountAutomaticBxgy { title status summary startsAt endsAt createdAt }
+        ... on DiscountAutomaticFreeShipping { title status summary startsAt endsAt createdAt }
+        ... on DiscountAutomaticApp { title status startsAt endsAt createdAt }
+      }
+    }
+  }
+}`;
+
+type GqlDiscountValue = {
+  __typename?: string;
+  percentage?: number | null;
+  amount?: { amount: string; currencyCode: string } | null;
+};
+
+export type GqlDiscount = {
+  id: string;
+  discount?: {
+    __typename?: string;
+    title?: string | null;
+    status?: string | null;
+    summary?: string | null;
+    startsAt?: string | null;
+    endsAt?: string | null;
+    createdAt?: string | null;
+    usageLimit?: number | null;
+    appliesOncePerCustomer?: boolean | null;
+    asyncUsageCount?: number | null;
+    codes?: { nodes: Array<{ code: string }> } | null;
+    customerGets?: { value?: GqlDiscountValue | null } | null;
+  } | null;
+};
+
+/**
+ * The type name, split into the two things worth filtering on.
+ *
+ * DiscountCodeBasic → CODE and BASIC; DiscountAutomaticFreeShipping →
+ * AUTOMATIC and FREE_SHIPPING. Read off the name rather than listed,
+ * so a ninth type Shopify adds arrives as itself instead of as null.
+ */
+export function splitDiscountType(typename?: string | null): { method: string | null; kind: string | null } {
+  if (!typename?.startsWith("Discount")) return { method: null, kind: null };
+  const rest = typename.slice("Discount".length);
+  const method = rest.startsWith("Code") ? "CODE" : rest.startsWith("Automatic") ? "AUTOMATIC" : null;
+  if (!method) return { method: null, kind: null };
+  const tail = rest.slice(method === "CODE" ? 4 : 9);
+  // FreeShipping → FREE_SHIPPING, Bxgy → BXGY.
+  const kind = tail.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toUpperCase() || null;
+  return { method, kind };
+}
+
+/** Writes a batch of discounts. */
+export async function saveDiscounts(
+  db: SupabaseClient, storeId: string, nodes: GqlDiscount[]
+): Promise<void> {
+  if (nodes.length === 0) return;
+
+  const rows = nodes.map((n) => {
+    const d = n.discount ?? {};
+    const { method, kind } = splitDiscountType(d.__typename);
+    const value = d.customerGets?.value;
+    return {
+      store_id: storeId,
+      external_id: n.id,
+      title: d.title ?? null,
+      method,
+      kind,
+      status: d.status ? d.status.toUpperCase() : null,
+      summary: d.summary ?? null,
+      codes: (d.codes?.nodes ?? []).map((c) => c.code).filter(Boolean),
+      // Shopify reports 0.8 for 80% off. Stored as whole percents,
+      // because a column called percent_off holding 0.8 is a bug in
+      // every report that formats it.
+      percent_off: typeof value?.percentage === "number" ? Number((value.percentage * 100).toFixed(2)) : null,
+      amount_off: value?.amount?.amount != null ? Number(value.amount.amount) : null,
+      currency: value?.amount?.currencyCode ?? null,
+      // Null is no limit. Zero would be a campaign nobody can use.
+      usage_limit: d.usageLimit ?? null,
+      times_used: d.asyncUsageCount ?? null,
+      once_per_customer: d.appliesOncePerCustomer ?? null,
+      starts_at: d.startsAt ?? null,
+      ends_at: d.endsAt ?? null,
+      made_at: d.createdAt ?? null,
+      updated_at: new Date().toISOString(),
+    };
+  });
+
+  const { error } = await db.from("discounts").upsert(rows, { onConflict: "store_id,external_id" });
+  if (error) throw new Error(error.message);
+}

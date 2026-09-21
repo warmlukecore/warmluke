@@ -63,6 +63,7 @@ export const COUNTED = [
   "abandoned_checkouts",
   "draft_orders",
   "draft_order_line_items",
+  "discounts",
   "inventory_levels",
 ] as const;
 
@@ -234,6 +235,7 @@ export type StoreTable =
   | "collections"
   | "drafts"
   | "draft_order_items"
+  | "discounts"
   | "fulfillments"
   | "transactions"
   | "locations"
@@ -490,6 +492,29 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "items", label: "What", type: "text" },
     ],
   },
+  discounts: {
+    // The campaign behind a code an order already carries. Two
+    // numbers worth adding up, and Shopify's own sentence for
+    // everything a rule can do that a number cannot say.
+    advice:
+      'One row per discount campaign. state is "Running", "Not started" or "Finished" — a merchant asking what is live means state = "Running". method is "Code" (the customer types it) or "Automatic" (it just applies), and codes is empty for automatic ones, which is correct, not missing. takes_off is the headline: "80% off", an amount off, or "Free shipping". A buy-X-get-Y campaign has no single number and takes_off is empty for it — read summary instead, which is Shopify\'s own description of the rule and is always the safest thing to quote. times_used is how many orders used it; uses_left is what remains of a usage_limit, and is empty when there is no limit, which is NOT the same as none left. percent_off is whole percents, so 80 means 80%. To connect a campaign to money, match codes against the discount_codes column on Orders.',
+    label: "Shopify discounts",
+    what: 'one row per discount or promotion — the code, what it takes off, when it runs and how often it has been used; what "our discounts", "promo codes", "which offer is live", "did the sale work" and "coupon usage" mean',
+    section: { label: "Discounts", icon: "tag", importedWith: "discounts" },
+    view: "store_discounts",
+    order: { field: "starts_at", ascending: false },
+    select:
+      "id, title, state, method, codes, takes_off, summary, times_used, usage_limit, uses_left, once_per_customer, starts_at, ends_at, kind",
+    columns: [
+      { field: "title", label: "Discount", type: "text" },
+      { field: "codes", label: "Code", type: "text" },
+      { field: "state", label: "State", type: "badge" },
+      { field: "takes_off", label: "Takes off", type: "text" },
+      { field: "times_used", label: "Used", type: "number" },
+      { field: "starts_at", label: "From", type: "date" },
+      { field: "ends_at", label: "Until", type: "date" },
+    ],
+  },
   drafts: {
     // The sale that did not come through the storefront. Two states
     // that must never be added together: open is money still owed,
@@ -631,6 +656,8 @@ const SEARCHABLE: Record<StoreTable, string[]> = {
   // so it is searched first.
   drafts: ["name", "customer_name", "email", "state", "became_order", "tags"],
   draft_order_items: ["draft", "title", "sku"],
+  // The code is what a merchant types when they are hunting one.
+  discounts: ["title", "codes", "state", "method", "takes_off", "summary"],
   product_sales: ["title"],
   order_line_items: ["order_number", "sku", "title", "customer_name"],
   refunds: ["order_number", "customer_name"],
