@@ -1057,11 +1057,31 @@ export default function AppShell({
     async (messageId: string, text: string) => {
       const said = text.trim();
       if (!said || chatBusy || building) return;
-      // Saved messages only. A bubble put on screen a moment ago has
-      // a client id and nothing behind it to retire; running the
-      // corrected turn is the whole of what is wanted.
-      if (STORED_ID.test(messageId)) {
-        const { error } = await supabase.rpc("abo_supersede_from", { p_message: messageId });
+      // A bubble this session put on screen carries an id of this
+      // session's own, while the row behind it has a real one. Left
+      // unresolved the edit would look right until the next reload
+      // and then bring the mistake back, which is worse than not
+      // offering it. Matched on what they typed, which is what the
+      // turn stored beside it; the newest wins if they said the same
+      // thing twice.
+      let stored: string | null = STORED_ID.test(messageId) ? messageId : null;
+      const thread = conversationIdRef.current;
+      if (!stored && thread) {
+        const original = (chatMessagesRef.current.find((m) => m.id === messageId)?.text ?? "").trim();
+        if (original) {
+          const { data: found } = await supabase
+            .from("messages")
+            .select("id")
+            .eq("conversation_id", thread)
+            .eq("role", "user")
+            .eq("payload->>text", original)
+            .order("created_at", { ascending: false })
+            .limit(1);
+          stored = (found?.[0]?.id as string | undefined) ?? null;
+        }
+      }
+      if (stored) {
+        const { error } = await supabase.rpc("abo_supersede_from", { p_message: stored });
         if (error) {
           setChatMessages((prev) => [
             ...prev,
