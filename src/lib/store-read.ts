@@ -43,6 +43,7 @@ const COUNTED = [
   "customers",
   "orders",
   "order_line_items",
+  "refunds",
   "inventory_levels",
 ] as const;
 
@@ -215,7 +216,9 @@ export type StoreTable =
   | "products"
   | "inventory_levels"
   | "product_sales"
-  | "order_line_items";
+  | "order_line_items"
+  | "refunds"
+  | "variants";
 
 type TableSpec = {
   /** What a stat over this table should be — for whoever designs one. */
@@ -349,6 +352,38 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "status", label: "Status", type: "badge" },
     ],
   },
+  refunds: {
+    advice:
+      "Refunded total = sum(amount). Each refund belongs to its order; the orders list's total already has refunds taken off, so do not subtract these from it again.",
+    label: "Shopify refunds",
+    what: 'one row per refund — order number, day, customer, amount, quantity; what "refunds", "returns" and "money given back" mean',
+    section: { label: "Refunds", icon: "undo-2", importedWith: "orders" },
+    view: "store_refunds",
+    order: { field: "refunded_at", ascending: false },
+    select: "id, order_id, order_number, refunded_at, customer_name, amount, quantity, currency",
+    columns: [
+      { field: "order_number", label: "Order", type: "text" },
+      { field: "refunded_at", label: "Refunded", type: "date" },
+      { field: "customer_name", label: "Customer", type: "text" },
+      { field: "amount", label: "Amount", type: "currency", currencyField: "currency" },
+      { field: "quantity", label: "Qty", type: "number" },
+    ],
+  },
+  variants: {
+    label: "Shopify variants",
+    what: 'one row per variant — product, variant, SKU, barcode, price; what "SKUs", "price list", "barcodes" and "variants" mean',
+    section: { label: "Variants", icon: "scan-line", importedWith: "products" },
+    view: "store_variants",
+    order: { field: "product", ascending: true },
+    select: "id, product_id, product, variant, sku, barcode, price, currency",
+    columns: [
+      { field: "product", label: "Product", type: "text" },
+      { field: "variant", label: "Variant", type: "text" },
+      { field: "sku", label: "SKU", type: "text" },
+      { field: "barcode", label: "Barcode", type: "text" },
+      { field: "price", label: "Price", type: "currency", currencyField: "currency" },
+    ],
+  },
   products: {
     label: "Shopify products",
     what: 'one row per product in the catalogue — title, category, vendor, status, tags; what "our products" and "the catalogue" mean',
@@ -396,6 +431,8 @@ const SEARCHABLE: Record<StoreTable, string[]> = {
   inventory_levels: ["product", "variant", "sku", "location_name"],
   product_sales: ["title"],
   order_line_items: ["order_number", "sku", "title", "customer_name"],
+  refunds: ["order_number", "customer_name"],
+  variants: ["product", "variant", "sku", "barcode"],
 };
 
 export const isStoreTable = (v: unknown): v is StoreTable =>

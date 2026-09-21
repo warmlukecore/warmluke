@@ -217,6 +217,11 @@ const STORE_TOPICS: Array<{ table: string; words: RegExp; noun: string }> = [
     words: /\bbest.?sellers?\b|\btop (selling )?products?\b|\bproduct sales\b|\bsales by product\b|\bunits sold\b/i,
     noun: "product sales",
   },
+  // A list of SKUs is the order lines or the variants; either way the
+  // store has it.
+  { table: "order_line_items", words: /\bskus?\b/i, noun: "order lines" },
+  { table: "refunds", words: /\brefund(s|ed)?\b|\breturns?\b/i, noun: "refunds" },
+  { table: "variants", words: /\bvariants?\b|\bbarcodes?\b|\bprice list\b/i, noun: "variants" },
   { table: "orders", words: /\border(s)?\b|\bsales?\b/i, noun: "orders" },
   { table: "customers", words: /\bcustomer(s)?\b|\bbuyer(s)?\b|\bclient(s)?\b/i, noun: "customers" },
   {
@@ -442,4 +447,37 @@ export function describeRequests(rows: RequestRow[], modules: ModuleRow[], now =
         return `${r.status} ${ago(r.created_at, now)}${via}: "${quote}"`;
     }
   });
+}
+
+/**
+ * Rows made up beside the store's own.
+ *
+ * storeOverlap warns and lets the section through: a hand-kept list
+ * next to the Shopify one is the merchant's call. Filling that list
+ * with rows nobody typed is not — a connected assistant seeded four
+ * "example" order lines it had invented, and they sat beside the real
+ * orders looking like data. So the section may stand; the made-up
+ * rows may not. Said back with the list to build over instead.
+ */
+export function seededCopies(plans: AssistantPlan[], store: StoreFacts | null): string[] {
+  if (!store) return [];
+  const out: string[] = [];
+  for (const p of plans) {
+    if (p.changeType !== "NEW_MODULE" || !p.newModule || p.newModule.source_table) continue;
+    const overlap = storeOverlap(p, store);
+    if (!overlap.length) continue;
+    const seededHere =
+      (p.newRecords?.length ?? 0) > 0 ||
+      plans.some(
+        (q) =>
+          q.changeType === "RECORD_SEED" &&
+          q.targetModuleId === `#${p.newModule!.name}` &&
+          (q.newRecords?.length ?? 0) > 0
+      );
+    if (!seededHere) continue;
+    out.push(
+      `"${p.newModule.nav_label}" would be filled with rows you made up, beside the store's own. ${overlap[0]} Build it over the store's list instead — set "source_table" and send newRecords as null — or leave it empty for the owner to fill.`
+    );
+  }
+  return out;
 }

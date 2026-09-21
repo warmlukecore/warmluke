@@ -14,10 +14,10 @@ import {
   storeTableSchema,
   STORE_TABLES,
 } from "@/lib/store-read";
-import { blueprintAsText, runTurn, schemasFor } from "@/lib/engine";
+import { blueprintAsText, runTurn, schemasFor, storeFactsFor } from "@/lib/engine";
 import { PLAN_FORMAT, WORKED_EXAMPLE, parseReply } from "@/lib/ai";
 import { vocabularyPrompt } from "@/lib/capabilities";
-import { describePlan, describeRules, type RuleRow } from "@/lib/describe";
+import { describePlan, describeRules, seededCopies, type RuleRow } from "@/lib/describe";
 import { applyPlans, logClientBuild } from "@/lib/apply";
 import { noteJudgement } from "@/lib/judge";
 import { routeQuestion } from "@/lib/route";
@@ -1469,6 +1469,22 @@ export async function POST(req: Request) {
       }
       const plans =
         checked.reply.type === "blueprint" ? checked.reply.blueprint.plans : checked.reply.plans;
+
+      // Made-up rows beside the store's own are refused here as they
+      // are in Luke's own loop: a client once seeded four invented
+      // order lines into a copy of the order items, and they sat next
+      // to the real orders looking like data.
+      const copies = seededCopies(plans, await storeFactsFor(db, project.id));
+      if (copies.length) {
+        return ok(
+          id,
+          text({
+            status: "not accepted",
+            errors: copies,
+            note: "Nothing has been requested or changed. Build over the store's list (see store_lists in design_format), or leave the section empty for the merchant to fill.",
+          })
+        );
+      }
 
       // The dry run stops here. It reads the same state and runs the
       // same validator, and then goes no further: no request row, no

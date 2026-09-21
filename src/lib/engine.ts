@@ -24,7 +24,15 @@ import {
   type ChatTurn,
   type StoreContext,
 } from "@/lib/ai";
-import { describePlan, describeRequests, describeRules, type RequestRow, type RuleRow } from "@/lib/describe";
+import {
+  describePlan,
+  describeRequests,
+  describeRules,
+  seededCopies,
+  type RequestRow,
+  type RuleRow,
+  type StoreFacts,
+} from "@/lib/describe";
 import { describeBuild } from "@/lib/judge";
 
 /**
@@ -255,6 +263,24 @@ export async function schemasFor(
   return byModule;
 }
 
+/**
+ * The connected store as the overlap and seed checks need it: which
+ * shop, its currency, and how many of each list it holds. A fraction
+ * of storeContextFor, for a caller that has plans to check and no
+ * design to write.
+ */
+export async function storeFactsFor(client: SupabaseClient, projectId: string): Promise<StoreFacts | null> {
+  const { data: row } = await client
+    .from("stores")
+    .select("id, shop_domain, currency")
+    .eq("project_id", projectId)
+    .eq("status", "connected")
+    .maybeSingle();
+  if (!row) return null;
+  const overview = await storeOverview(client, row.id as string).catch(() => null);
+  return { shop_domain: row.shop_domain as string, currency: row.currency as string, counts: overview?.counts ?? {} };
+}
+
 /** How far back, and how many, of a connected assistant's requests Luke is told about. */
 const REQUESTS_DAYS = 14;
 const REQUESTS_IN_CONTEXT = 5;
@@ -400,6 +426,17 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           'You tried to create new sections before showing the owner a design. Reply with a "blueprint" instead so they can approve it first.',
         ],
       };
+    }
+
+    // Made-up rows beside the store's own: the one thing a hand-kept
+    // copy of a store list may not carry. Sent back like any other
+    // validation error, with the list to build over instead.
+    if (parsed.ok && parsed.reply.type !== "clarify" && parsed.reply.type !== "answer") {
+      const copies = seededCopies(
+        parsed.reply.type === "blueprint" ? parsed.reply.blueprint.plans : parsed.reply.plans,
+        store ? { shop_domain: store.shop_domain, currency: store.currency, counts: store.counts } : null
+      );
+      if (copies.length) parsed = { ok: false, errors: copies };
     }
 
     // What the validator actually said — zero problems, or this many on
