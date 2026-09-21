@@ -1442,7 +1442,7 @@ export async function POST(req: Request) {
               .map(([table, spec]) => [table, spec.advice])
           ),
           removing_a_section:
-            "MODULE_DELETE is not accepted here at all. The merchant types the section's name in Warmluke to confirm that one.",
+            "MODULE_DELETE may be proposed and can never be built from here. It removes every row in the section and does not come back, so the merchant confirms it in Warmluke by typing the section's name. Propose it if that is plainly what they asked for, tell them it is waiting there for them to confirm, and do not call approve_change for it.",
           vocabulary: vocabularyPrompt(),
         })
       );
