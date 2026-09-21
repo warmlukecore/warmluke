@@ -109,6 +109,7 @@ both columns and allowed states.
 | `products` | Shopify products |
 | `variants` | Product variants, SKU/barcode/price, unit cost and whether Shopify tracks their stock |
 | `inventory_levels` | Per variant/location: available to sell, on hand, committed to orders, and incoming |
+| `locations` | Each place the shop stocks or ships from, whether it is open, and where it is; kept when Shopify removes one |
 | `customers` | Customer identity, contact, location, spend, and order count |
 | `orders` | Order identity, timestamps, gross/current totals and their parts (goods, tax, shipping, discount), statuses, payment/discount/shipping facts |
 | `order_line_items` | Quantity, product/variant links, SKU, and unit price |

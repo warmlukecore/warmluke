@@ -57,6 +57,7 @@ export const COUNTED = [
   "refunds",
   "order_transactions",
   "fulfillments",
+  "locations",
   "inventory_levels",
 ] as const;
 
@@ -226,6 +227,7 @@ export function dayRangeInZone(day: string, timeZone: string): { from: string; t
 export type StoreTable =
   | "fulfillments"
   | "transactions"
+  | "locations"
   | "orders"
   | "customers"
   | "products"
@@ -474,6 +476,26 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "tags", label: "Tags", type: "text" },
     ],
   },
+  locations: {
+    // Stock has always named its location and never said what one
+    // was. "Why is this not selling" is often "the place holding it
+    // is switched off", which no list could answer before.
+    advice:
+      'One row per place the shop holds stock. state is "Open", "Switched off" or "Removed" — stock at a location that is not Open cannot be sold, which is the usual answer to "why does this show in stock but nobody can buy it". variants_stocked and units_available are counted from the stock list, so they are as fresh as the last import. A removed location keeps its rows on purpose: old orders and stock levels still name it.',
+    label: "Shopify locations",
+    what: 'one row per place the shop stocks or ships from — name, where it is, whether it is open, and how much sits there; what "our warehouses", "which branch", "locations" and "where is the stock" mean',
+    section: { label: "Locations", icon: "map-pin", importedWith: "locations" },
+    view: "store_locations",
+    order: { field: "name", ascending: true },
+    select: "id, name, state, place, zip, fulfills_online_orders, variants_stocked, units_available",
+    columns: [
+      { field: "name", label: "Location", type: "text" },
+      { field: "state", label: "State", type: "badge" },
+      { field: "place", label: "Where", type: "text" },
+      { field: "variants_stocked", label: "Variants", type: "number" },
+      { field: "units_available", label: "Units", type: "number" },
+    ],
+  },
   inventory_levels: {
     label: "Shopify stock",
     what: 'one row per variant per location — product, variant, SKU, location, what can be sold, what is on the shelf, what is promised and what is coming; what "stock", "inventory", "running low", "reserved" and "when is it back" mean',
@@ -514,6 +536,7 @@ const SEARCHABLE: Record<StoreTable, string[]> = {
   customers: ["name", "email", "phone", "city"],
   products: ["title", "handle", "status", "product_type", "vendor"],
   inventory_levels: ["product", "variant", "sku", "location_name", "stock_state"],
+  locations: ["name", "place", "state"],
   product_sales: ["title"],
   order_line_items: ["order_number", "sku", "title", "customer_name"],
   refunds: ["order_number", "customer_name"],

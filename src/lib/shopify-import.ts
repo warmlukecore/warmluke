@@ -674,6 +674,67 @@ export async function saveFulfillments(
   if (error) throw new Error(error.message);
 }
 
+// ── Where the stock sits ────────────────────────────────────────
+// Stock levels have always named their location, so the name was in
+// the copy — but only ever as a label on a quantity. Which locations
+// exist, which are switched off, and where they actually are was not
+// something the app could answer, and "how much is in the Pune
+// warehouse" needs the second half.
+export const LOCATIONS_QUERY = `
+query($n: Int!, $after: String) {
+  # Both flags on purpose. locationsCount counts every location a shop
+  # has ever had and takes no arguments, while this list hides the
+  # inactive and the legacy ones by default. This store has three and
+  # showed two: the third is a legacy warehouse still named by old
+  # stock rows. Left out, the drift report would say one location is
+  # missing from Shopify, for ever, and be wrong every time.
+  locations(first: $n, after: $after, includeInactive: true, includeLegacy: true) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      id name isActive fulfillsOnlineOrders
+      address { address1 city province provinceCode country countryCode zip }
+    }
+  }
+}`;
+
+export type GqlLocation = {
+  id: string;
+  name: string;
+  isActive: boolean;
+  fulfillsOnlineOrders?: boolean | null;
+  address?: {
+    address1?: string | null; city?: string | null;
+    province?: string | null; provinceCode?: string | null;
+    country?: string | null; countryCode?: string | null; zip?: string | null;
+  } | null;
+};
+
+/** Writes a batch of locations. */
+export async function saveLocations(
+  db: SupabaseClient, storeId: string, nodes: GqlLocation[]
+): Promise<void> {
+  if (nodes.length === 0) return;
+  const { error } = await db.from("locations").upsert(
+    nodes.map((l) => ({
+      store_id: storeId, external_id: l.id, name: l.name,
+      // A location switched off still holds stock and still appears
+      // on old orders, so it is kept and marked rather than dropped.
+      active: l.isActive ?? null,
+      fulfills_online_orders: l.fulfillsOnlineOrders ?? null,
+      address1: l.address?.address1 ?? null,
+      city: l.address?.city ?? null,
+      province: l.address?.province ?? null,
+      province_code: l.address?.provinceCode ?? null,
+      country: l.address?.country ?? null,
+      country_code: l.address?.countryCode ?? null,
+      zip: l.address?.zip ?? null,
+      updated_at: new Date().toISOString(),
+    })),
+    { onConflict: "store_id,external_id" }
+  );
+  if (error) throw new Error(error.message);
+}
+
 // ── Stock on hand ───────────────────────────────────────────────
 export const INVENTORY_QUERY = `
 query($n: Int!, $after: String) {

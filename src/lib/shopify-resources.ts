@@ -29,6 +29,7 @@ import {
   FULFILLMENTS_QUERY,
   graphql,
   INVENTORY_QUERY,
+  LOCATIONS_QUERY,
   ORDERS_QUERY,
   PAGE,
   PRODUCTS_QUERY,
@@ -37,11 +38,13 @@ import {
   saveCustomers,
   saveFulfillments,
   saveInventory,
+  saveLocations,
   saveOrders,
   saveProducts,
   saveRefunds,
   type GqlCustomer,
   type GqlFulfilledOrder,
+  type GqlLocation,
   type GqlOrder,
   type GqlProduct,
   type GqlRefundedOrder,
@@ -237,6 +240,34 @@ export const SHOPIFY_RESOURCES = {
       "ORDER_TRANSACTIONS_CREATE",
     ],
     tables: ["orders", "order_line_items", "refunds", "order_transactions"],
+    drift: true,
+  },
+  locations: {
+    label: "locations",
+    scopes: ["read_locations"],
+    count: "{ locationsCount { count } }",
+    page: LOCATIONS_QUERY,
+    root: "locations",
+    bulk: {
+      // Same two flags as the paged query, and for the same reason.
+      query: `{ locations(includeInactive: true, includeLegacy: true) { edges { node {
+    id name isActive fulfillsOnlineOrders
+    address { address1 city province provinceCode country countryCode zip }
+  } } } }`,
+      assemble: parentsOnly,
+    },
+    children: [],
+    save: (db, storeId, nodes) => saveLocations(db, storeId, nodes as GqlLocation[]),
+    webhooks: [
+      "LOCATIONS_CREATE",
+      "LOCATIONS_UPDATE",
+      // Switching one off is the event a merchant cares about: its
+      // stock stops being sellable and nothing else changes.
+      "LOCATIONS_ACTIVATE",
+      "LOCATIONS_DEACTIVATE",
+      "LOCATIONS_DELETE",
+    ],
+    tables: ["locations"],
     drift: true,
   },
   inventory: {

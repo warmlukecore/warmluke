@@ -185,6 +185,7 @@ const ICON_GLYPHS: Record<string, string> = {
   globe: "🌐",
   truck: "🚚",
   banknote: "💵",
+  "map-pin": "📍",
   wallet: "👛",
   target: "🎯",
   table: "📋",
