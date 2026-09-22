@@ -11,6 +11,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
@@ -78,26 +79,31 @@ export default function Reset() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-6 text-slate-100">
+    <div className="font-ui flex min-h-screen items-center justify-center bg-white px-6 text-ink">
       <div className="w-full max-w-sm">
         <Link href="/" className="mb-8 flex items-center justify-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 text-base font-bold text-white">
-            A
-          </div>
-          <span className="font-display text-lg font-semibold">Warmluke</span>
+          <Image
+            src="/images/logowarmluke.png"
+            alt=""
+            width={36}
+            height={36}
+            priority
+            className="h-9 w-9 rounded-xl object-cover"
+          />
+          <span className="font-serif text-lg font-semibold">Warmluke</span>
         </Link>
 
-        {ready === null && <p className="text-center text-sm text-slate-400">Checking the link…</p>}
+        {ready === null && <p className="text-center text-sm text-quiet">Checking the link…</p>}
 
         {ready === false && (
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-center">
-            <h1 className="font-display text-xl font-semibold">That link has expired</h1>
-            <p className="mt-2 text-sm leading-relaxed text-slate-400">
+          <div className="rounded-2xl border border-hair bg-white/60 p-6 text-center">
+            <h1 className="font-serif text-xl font-semibold">That link has expired</h1>
+            <p className="mt-2 text-sm leading-relaxed text-quiet">
               A reset link works once and lasts an hour. Ask for a fresh one.
             </p>
             <Link
               href="/forgot"
-              className="mt-5 inline-block text-sm font-medium text-blue-400 hover:text-blue-300"
+              className="mt-5 inline-block text-sm font-medium text-accent hover:text-blue-300"
             >
               Send another
             </Link>
@@ -106,13 +112,13 @@ export default function Reset() {
 
         {ready === true && (
           <>
-            <h1 className="font-display text-center text-2xl font-bold tracking-tight">
+            <h1 className="font-serif text-center text-2xl font-bold tracking-tight">
               Set a new password
             </h1>
 
             <form onSubmit={submit} className="mt-6 space-y-3">
               <div>
-                <label className="mb-1 block text-[11px] font-medium tracking-wide text-slate-400 uppercase">
+                <label className="mb-1 block text-[11px] font-medium tracking-wide text-quiet uppercase">
                   New password
                 </label>
                 <input
@@ -123,11 +129,11 @@ export default function Reset() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                  className="w-full rounded-lg border border-hair bg-white px-3 py-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-[11px] font-medium tracking-wide text-slate-400 uppercase">
+                <label className="mb-1 block text-[11px] font-medium tracking-wide text-quiet uppercase">
                   Again
                 </label>
                 <input
@@ -137,7 +143,7 @@ export default function Reset() {
                   value={again}
                   onChange={(e) => setAgain(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                  className="w-full rounded-lg border border-hair bg-white px-3 py-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
                 />
               </div>
 
@@ -146,7 +152,7 @@ export default function Reset() {
               <button
                 type="submit"
                 disabled={busy}
-                className="w-full rounded-xl bg-gradient-to-r from-blue-500 to-cyan-400 px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                className="w-full rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 {busy ? "Saving…" : "Save and sign in"}
               </button>

@@ -8,30 +8,55 @@
 // cannot tell what they agreed to has not really agreed to it.
 // ─────────────────────────────────────────────────────────────
 
+import Image from "next/image";
+import Link from "next/link";
+
 export const metadata = {
-  title: "Terms — Warmluke",
+  title: "Terms · Warmluke",
   description: "The agreement between Warmluke and a merchant who connects a store.",
 };
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="mt-8">
-      <h2 className="font-display text-lg font-semibold text-slate-100">{title}</h2>
-      <div className="mt-2 space-y-2 text-sm leading-relaxed text-slate-300">{children}</div>
+      <h2 className="font-serif text-lg font-semibold text-ink">{title}</h2>
+      <div className="mt-2 space-y-2 text-sm leading-relaxed text-neutral-700">{children}</div>
     </section>
   );
 }
 
 export default function Terms() {
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <main className="mx-auto w-full max-w-2xl px-4 py-14 sm:px-6">
-        <h1 className="font-display text-2xl font-bold tracking-tight">Terms</h1>
-        <p className="mt-2 text-sm text-slate-400">Last updated 14 September 2026.</p>
-        <p className="mt-4 text-sm leading-relaxed text-slate-300">
+    <div className="font-ui flex min-h-screen flex-col bg-white text-ink">
+      {/* The same way in and out as every other page. A legal page
+          with no navigation reads as a dead end, and this is the one
+          a merchant opens at the moment they are deciding whether to
+          trust us with their store. */}
+      <header className="border-b border-hair">
+        <div className="mx-auto flex w-full max-w-2xl items-center justify-between px-4 py-5 sm:px-6">
+          <Link href="/" className="flex items-center gap-2">
+            <Image
+              src="/images/logowarmluke.png"
+              alt=""
+              width={28}
+              height={28}
+              className="h-7 w-7 rounded-lg object-cover"
+            />
+            <span className="text-lg font-semibold tracking-tight">Warmluke</span>
+          </Link>
+          <Link href="/" className="text-sm text-quiet transition-colors hover:text-ink">
+            Back to the site
+          </Link>
+        </div>
+      </header>
+
+      <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-14 sm:px-6">
+        <h1 className="font-serif text-2xl font-bold tracking-tight">Terms</h1>
+        <p className="mt-2 text-sm text-quiet">Last updated 14 September 2026.</p>
+        <p className="mt-4 text-sm leading-relaxed text-neutral-700">
           Connecting a store to Warmluke means agreeing to what follows, together with
           the{" "}
-          <a className="text-blue-400 underline" href="/privacy">
+          <a className="text-accent underline" href="/privacy">
             privacy policy
           </a>
           .
@@ -49,7 +74,7 @@ export default function Terms() {
         <Section title="How we handle personal data">
           <p>
             Your customers&rsquo; personal data is processed only to run the app for
-            you — never to market to anyone, never sold, never sent to AI model
+            you. Never to market to anyone, never sold, never sent to AI model
             providers.
           </p>
           <p>
@@ -89,13 +114,27 @@ export default function Terms() {
           </p>
           <p>
             Questions, or anything above that is unclear:{" "}
-            <a className="text-blue-400 underline" href="mailto:dev.warmluke@gmail.com">
+            <a className="text-accent underline" href="mailto:dev.warmluke@gmail.com">
               dev.warmluke@gmail.com
             </a>
             .
           </p>
         </Section>
       </main>
+
+      <footer className="border-t border-hair py-8">
+        <div className="mx-auto flex w-full max-w-2xl flex-wrap items-center justify-between gap-3 px-4 text-xs text-neutral-400 sm:px-6">
+          <span>Warmluke. One intelligent operating layer for your ecommerce business.</span>
+          <span className="flex gap-4">
+            <Link href="/privacy" className="hover:text-ink">
+              Privacy
+            </Link>
+            <Link href="/" className="hover:text-ink">
+              Home
+            </Link>
+          </span>
+        </div>
+      </footer>
     </div>
   );
 }

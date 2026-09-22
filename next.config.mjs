@@ -44,6 +44,14 @@ const securityHeaders = [
       "script-src 'self' 'unsafe-inline'",
       `connect-src 'self' ${supabaseOrigin} ${supabaseSocket}`.trim(),
       "img-src 'self' data: blob: https:",
+      // The landing hero's film, which is served from here. Worth
+      // saying why the line exists at all: with no media-src this
+      // falls back to default-src 'self' and, while that happens to
+      // allow our own file, the day the video moves to a CDN the
+      // browser refuses it while every header still looks correct
+      // from curl. It fails silently — the hero simply never moves.
+      // check-csp-media holds this and the page together.
+      "media-src 'self'",
       // next/font self-hosts at build time, so no external font origin.
       "style-src 'self' 'unsafe-inline'",
       "font-src 'self' data:",

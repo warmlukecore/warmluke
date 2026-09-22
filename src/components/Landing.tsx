@@ -150,11 +150,11 @@ export function DemoForm({ variant }: { variant: string }) {
 
   if (state.ok) {
     return (
-      <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-8 text-center">
-        <div className="font-display text-xl font-semibold text-emerald-300">
-          Got it — we&apos;ll be in touch.
+      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-8 text-center">
+        <div className="font-serif text-xl text-emerald-800">
+          Got it. We&apos;ll be in touch.
         </div>
-        <p className="mt-2 text-sm text-slate-400">
+        <p className="mt-2 text-sm text-quiet">
           We&apos;ll write to set up a time that suits you.
         </p>
       </div>
@@ -175,37 +175,37 @@ export function DemoForm({ variant }: { variant: string }) {
         name="name"
         required
         placeholder="Your name"
-        className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm outline-none placeholder:text-slate-500 focus:border-blue-500/50"
+        className="rounded-xl border border-hair bg-white px-4 py-3 text-sm text-ink outline-none placeholder:text-neutral-400 focus:border-accent focus:ring-2 focus:ring-accent/20"
       />
       <input
         name="email"
         type="email"
         required
         placeholder="Work email"
-        className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm outline-none placeholder:text-slate-500 focus:border-blue-500/50"
+        className="rounded-xl border border-hair bg-white px-4 py-3 text-sm text-ink outline-none placeholder:text-neutral-400 focus:border-accent focus:ring-2 focus:ring-accent/20"
       />
       <input
         name="store"
         required
         placeholder="Your store URL"
-        className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm outline-none placeholder:text-slate-500 focus:border-blue-500/50 sm:col-span-2"
+        className="rounded-xl border border-hair bg-white px-4 py-3 text-sm text-ink outline-none placeholder:text-neutral-400 focus:border-accent focus:ring-2 focus:ring-accent/20 sm:col-span-2"
       />
       <textarea
         name="note"
         rows={3}
         placeholder="What would you ask Luke to fix first?"
-        className="resize-none rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm outline-none placeholder:text-slate-500 focus:border-blue-500/50 sm:col-span-2"
+        className="resize-none rounded-xl border border-hair bg-white px-4 py-3 text-sm text-ink outline-none placeholder:text-neutral-400 focus:border-accent focus:ring-2 focus:ring-accent/20 sm:col-span-2"
       />
       <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
         <button
           type="submit"
           disabled={pending}
           data-cta="book"
-          className="rounded-xl bg-gradient-to-r from-blue-500 to-cyan-400 px-6 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+          className="rounded-full bg-ink px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           {pending ? "Sending\u2026" : "Book a Demo"}
         </button>
-        {state.message && <span className="text-sm text-amber-300">{state.message}</span>}
+        {state.message && <span className="text-sm text-amber-700">{state.message}</span>}
       </div>
     </form>
   );

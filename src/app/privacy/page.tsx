@@ -9,26 +9,51 @@
 // page is wrong and has to change in the same commit.
 // ─────────────────────────────────────────────────────────────
 
+import Image from "next/image";
+import Link from "next/link";
+
 export const metadata = {
-  title: "Privacy — Warmluke",
+  title: "Privacy · Warmluke",
   description: "What Warmluke stores from a connected store, and how to get it back or gone.",
 };
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="mt-8">
-      <h2 className="font-display text-lg font-semibold text-slate-100">{title}</h2>
-      <div className="mt-2 space-y-2 text-sm leading-relaxed text-slate-300">{children}</div>
+      <h2 className="font-serif text-lg font-semibold text-ink">{title}</h2>
+      <div className="mt-2 space-y-2 text-sm leading-relaxed text-neutral-700">{children}</div>
     </section>
   );
 }
 
 export default function Privacy() {
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <main className="mx-auto w-full max-w-2xl px-4 py-14 sm:px-6">
-        <h1 className="font-display text-2xl font-bold tracking-tight">Privacy</h1>
-        <p className="mt-2 text-sm text-slate-400">Last updated 14 September 2026.</p>
+    <div className="font-ui flex min-h-screen flex-col bg-white text-ink">
+      {/* The same way in and out as every other page. A legal page
+          with no navigation reads as a dead end, and this is the one
+          a merchant opens at the moment they are deciding whether to
+          trust us with their store. */}
+      <header className="border-b border-hair">
+        <div className="mx-auto flex w-full max-w-2xl items-center justify-between px-4 py-5 sm:px-6">
+          <Link href="/" className="flex items-center gap-2">
+            <Image
+              src="/images/logowarmluke.png"
+              alt=""
+              width={28}
+              height={28}
+              className="h-7 w-7 rounded-lg object-cover"
+            />
+            <span className="text-lg font-semibold tracking-tight">Warmluke</span>
+          </Link>
+          <Link href="/" className="text-sm text-quiet transition-colors hover:text-ink">
+            Back to the site
+          </Link>
+        </div>
+      </header>
+
+      <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-14 sm:px-6">
+        <h1 className="font-serif text-2xl font-bold tracking-tight">Privacy</h1>
+        <p className="mt-2 text-sm text-quiet">Last updated 14 September 2026.</p>
 
         <Section title="What we store">
           <p>
@@ -38,8 +63,8 @@ export default function Privacy() {
           </p>
           <p>
             For customers that includes name, email, phone and address, because the work
-            merchants use this for — packing an order, finding a shipment, calling a buyer
-            about a COD order — cannot be done without them.
+            merchants use this for, like packing an order, finding a shipment or calling a
+            buyer about a COD order, cannot be done without them.
           </p>
           <p>We also store the store&rsquo;s access token, its timezone and its currency.</p>
         </Section>
@@ -77,7 +102,7 @@ export default function Privacy() {
         <Section title="Getting it back, or gone">
           <p>
             Disconnecting a store or uninstalling the app deletes everything we copied from
-            it — products, orders, customers and the access token — not just the link.
+            it: products, orders, customers and the access token, not just the link.
           </p>
           <p>
             A shopper&rsquo;s request to see or erase their data reaches us through
@@ -86,13 +111,27 @@ export default function Privacy() {
           </p>
           <p>
             Anything else:{" "}
-            <a className="text-blue-400 underline" href="mailto:dev.warmluke@gmail.com">
+            <a className="text-accent underline" href="mailto:dev.warmluke@gmail.com">
               dev.warmluke@gmail.com
             </a>
             .
           </p>
         </Section>
       </main>
+
+      <footer className="border-t border-hair py-8">
+        <div className="mx-auto flex w-full max-w-2xl flex-wrap items-center justify-between gap-3 px-4 text-xs text-neutral-400 sm:px-6">
+          <span>Warmluke. One intelligent operating layer for your ecommerce business.</span>
+          <span className="flex gap-4">
+            <Link href="/terms" className="hover:text-ink">
+              Terms
+            </Link>
+            <Link href="/" className="hover:text-ink">
+              Home
+            </Link>
+          </span>
+        </div>
+      </footer>
     </div>
   );
 }

@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase-client";
 
@@ -40,42 +41,47 @@ export default function Forgot() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-6 text-slate-100">
+    <div className="font-ui flex min-h-screen items-center justify-center bg-white px-6 text-ink">
       <div className="w-full max-w-sm">
         <Link href="/" className="mb-8 flex items-center justify-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 text-base font-bold text-white">
-            A
-          </div>
-          <span className="font-display text-lg font-semibold">Warmluke</span>
+          <Image
+            src="/images/logowarmluke.png"
+            alt=""
+            width={36}
+            height={36}
+            priority
+            className="h-9 w-9 rounded-xl object-cover"
+          />
+          <span className="font-serif text-lg font-semibold">Warmluke</span>
         </Link>
 
         {sent ? (
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-center">
-            <h1 className="font-display text-xl font-semibold">Check your email</h1>
-            <p className="mt-2 text-sm leading-relaxed text-slate-400">
-              If <span className="text-slate-300">{email.trim()}</span> has an account, a
+          <div className="rounded-2xl border border-hair bg-white/60 p-6 text-center">
+            <h1 className="font-serif text-xl font-semibold">Check your email</h1>
+            <p className="mt-2 text-sm leading-relaxed text-quiet">
+              If <span className="text-neutral-700">{email.trim()}</span> has an account, a
               link to set a new password is on its way. It works once, and expires in an
               hour.
             </p>
             <Link
               href="/login"
-              className="mt-5 inline-block text-sm font-medium text-blue-400 hover:text-blue-300"
+              className="mt-5 inline-block text-sm font-medium text-accent hover:text-blue-300"
             >
               Back to sign in
             </Link>
           </div>
         ) : (
           <>
-            <h1 className="font-display text-center text-2xl font-bold tracking-tight">
+            <h1 className="font-serif text-center text-2xl font-bold tracking-tight">
               Forgotten your password
             </h1>
-            <p className="mt-2 text-center text-sm text-slate-400">
+            <p className="mt-2 text-center text-sm text-quiet">
               We&rsquo;ll email you a link to set a new one.
             </p>
 
             <form onSubmit={submit} className="mt-6 space-y-3">
               <div>
-                <label className="mb-1 block text-[11px] font-medium tracking-wide text-slate-400 uppercase">
+                <label className="mb-1 block text-[11px] font-medium tracking-wide text-quiet uppercase">
                   Email
                 </label>
                 <input
@@ -85,7 +91,7 @@ export default function Forgot() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@company.com"
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                  className="w-full rounded-lg border border-hair bg-white px-3 py-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
                 />
               </div>
 
@@ -94,15 +100,15 @@ export default function Forgot() {
               <button
                 type="submit"
                 disabled={busy || !email.trim()}
-                className="w-full rounded-xl bg-gradient-to-r from-blue-500 to-cyan-400 px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                className="w-full rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 {busy ? "Sending…" : "Send the link"}
               </button>
             </form>
 
-            <p className="mt-5 text-center text-sm text-slate-400">
+            <p className="mt-5 text-center text-sm text-quiet">
               Remembered it?{" "}
-              <Link href="/login" className="font-medium text-blue-400 hover:text-blue-300">
+              <Link href="/login" className="font-medium text-accent hover:text-blue-300">
                 Sign in
               </Link>
             </p>

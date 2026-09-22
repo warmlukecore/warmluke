@@ -4,6 +4,57 @@
   --font-sans: var(--font-manrope), ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Roboto, sans-serif;
   --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
+
+  /* The landing and the way into the app. Separate names on purpose:
+     font-display is reached for in fifteen files inside the product,
+     and pointing it at a serif to restyle one page would have
+     restyled the whole thing. */
+  --font-serif: var(--font-instrument), ui-serif, Georgia, serif;
+  --font-ui: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  /* One indigo, named once. Every accent on the page reads it, so
+     changing the brand is changing this line. */
+  --color-accent: hsl(239 84% 67%);
+  --color-ink: hsl(210 14% 17%);
+  --color-quiet: hsl(184 5% 55%);
+  --color-hair: hsl(0 0% 90%);
+}
+
+/* The one shadow that makes the dashboard preview float. Kept out of
+   the components so the frosted panel and its twin cannot drift. */
+:root {
+  --shadow-dashboard: 0 25px 80px -12px rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.06);
+}
+
+/* Fade up, in CSS rather than a 50KB animation library — the project
+   runs on four dependencies and a marketing page is a poor reason to
+   make it five. Each element sets its own delay inline.
+
+   Honoured only when the visitor has not asked for less motion: an
+   animation that ignores that setting is not a nice touch, it is a
+   page somebody cannot use comfortably. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--rise-from, 16px));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rise {
+  animation: rise var(--rise-for, 0.6s) cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--rise-after, 0s);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
 }
 
 html,
