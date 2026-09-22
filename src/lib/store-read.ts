@@ -266,6 +266,23 @@ type TableSpec = {
    */
   view: string;
   select: string;
+  /**
+   * Shopify's own ids this list's rows carry, by the kind of thing
+   * each one names.
+   *
+   * A row somebody can see is a row somebody may want changed, and a
+   * change is aimed with Shopify's ids. The stock list answered
+   * "what is running low" with a product, a variant and four
+   * numbers — everything a person needs and nothing a change needs,
+   * so an assistant could see the problem and had no way to name the
+   * thing to correct.
+   *
+   * Declared here rather than remembered in a query: these columns
+   * are added to the select below whatever it says, and
+   * check-action-registry refuses an action whose ids no list can
+   * give.
+   */
+  gives?: Readonly<Record<string, string>>;
   /** Column and direction the rows arrive in, newest or A-Z first. */
   order: { field: string; ascending: boolean };
   columns: SchemaColumn[];
@@ -689,6 +706,8 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     view: "store_inventory",
     order: { field: "available", ascending: true },
     select: "id, product, variant, sku, location_name, available, on_hand, committed, incoming, stock_state",
+    // Setting a count is aimed at an inventory item at a location.
+    gives: { InventoryItem: "inventory_item_id", Location: "location_id" },
     columns: [
       { field: "product", label: "Product", type: "text" },
       { field: "variant", label: "Variant", type: "text" },
@@ -776,7 +795,15 @@ export async function readStoreRows(
 ): Promise<{ rows: Array<{ id: string; data: Record<string, unknown> }>; total: number }> {
   const spec = STORE_TABLES[table];
   const ordered = sort && sortable(spec, sort.field) ? sort : null;
-  let query = db.from(spec.view).select(spec.select, { count: "exact" }).eq("store_id", storeId);
+  // The declared select, plus the ids a change would be aimed with.
+  // Appended rather than written into each spec's select, so the two
+  // cannot drift and nobody has to remember the rule twice.
+  const wanted = [
+    ...spec.select.split(",").map((c) => c.trim()).filter(Boolean),
+    ...Object.values(spec.gives ?? {}),
+  ];
+  const selectWithIds = [...new Set(wanted)].join(", ");
+  let query = db.from(spec.view).select(selectWithIds, { count: "exact" }).eq("store_id", storeId);
   // Rows without the figure go last whichever way the sort runs: a
   // customer never synced since total_spent arrived is not the top
   // buyer, and not the bottom one either.

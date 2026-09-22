@@ -61,6 +61,20 @@ export interface StoreActionSpec {
   connector: "shopify";
   /** What the token must be allowed to do. */
   scopes: readonly string[];
+  /**
+   * The kinds of Shopify id a target carries, as they appear in a
+   * gid: "Order", "InventoryItem", "Location".
+   *
+   * Not decoration. An assistant can only ask for a change it can
+   * aim, and it aims with ids it read somewhere — so an action that
+   * needs a kind no reading list hands back is an action nobody can
+   * ever call. check-action-registry turns that into a failed
+   * check rather than a tool that silently never works.
+   *
+   * Empty means the targets can be anything taggable, which is what
+   * Shopify's own tags mutations accept.
+   */
+  needs: readonly string[];
   confirm: ConfirmLevel;
   /** One sentence for the card, built from the real numbers. */
   say: (targets: ActionTarget[], params: ActionParams) => string;
@@ -140,6 +154,7 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
     label: "Add a tag",
     connector: "shopify",
     scopes: ["write_orders", "write_customers", "write_products"],
+    needs: ["Order", "Product", "Customer"],
     confirm: "list",
     say: (targets, params) => `Tags ${kinds(targets)} "${tagsOf(params).join('", "')}"`,
     check: (targets, params) =>
@@ -160,6 +175,7 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
     label: "Remove a tag",
     connector: "shopify",
     scopes: ["write_orders", "write_customers", "write_products"],
+    needs: ["Order", "Product", "Customer"],
     confirm: "list",
     say: (targets, params) => `Takes "${tagsOf(params).join('", "')}" off ${kinds(targets)}`,
     check: (targets, params) =>
@@ -181,6 +197,7 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
     label: "Write a note on an order",
     connector: "shopify",
     scopes: ["write_orders"],
+    needs: ["Order"],
     confirm: "list",
     say: (targets, params) =>
       `Writes a note on ${count(targets.length, "order")}: "${String(params.note ?? "").slice(0, 60)}"`,
@@ -212,6 +229,7 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
     label: "Set a stock count",
     connector: "shopify",
     scopes: ["write_inventory"],
+    needs: ["InventoryItem", "Location"],
     confirm: "list",
     say: (targets) =>
       targets.length === 1

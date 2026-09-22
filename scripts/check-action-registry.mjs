@@ -13,7 +13,9 @@
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-action-registry.mjs
 
+import { readFileSync, readdirSync } from "node:fs";
 import { ACTIONS, ACTION_SCOPES, MOST_TARGETS, STORE_ACTIONS, actionSpec } from "../src/lib/store-actions.ts";
+import { STORE_TABLES } from "../src/lib/store-read.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -93,6 +95,71 @@ check("every scope is a write scope", ACTION_SCOPES.every((s) => s.startsWith("w
 check("and each is listed once", new Set(ACTION_SCOPES).size === ACTION_SCOPES.length);
 check("an unknown action has no spec", actionSpec("delete_everything") === null);
 check("and there is a ceiling on how much one change touches", MOST_TARGETS > 0 && MOST_TARGETS <= 500);
+
+// ── And something has to be able to aim it ──────────────────────
+//
+// An assistant asks for a change it can aim, and it aims with ids it
+// read somewhere. set_stock was declared, correct, checked and
+// impossible to call for a day: setting a count takes an inventory
+// item and a location, and the stock list handed back a product, a
+// variant and four numbers. Nothing was broken and nothing could
+// happen.
+//
+// So the two halves are declared and matched here: an action says
+// which kinds of id its targets carry, a list says which kinds its
+// rows give, and an action nobody can aim fails this.
+console.log("\nand every id an action needs, some list gives");
+{
+  const given = new Map();
+  for (const [table, spec] of Object.entries(STORE_TABLES)) {
+    for (const [kind, column] of Object.entries(spec.gives ?? {})) {
+      check(`${table} names a column for ${kind}`, typeof column === "string" && column.length > 0);
+      if (!given.has(kind)) given.set(kind, []);
+      given.get(kind).push({ table, column, view: spec.view });
+    }
+  }
+
+  for (const name of ACTIONS) {
+    const spec = STORE_ACTIONS[name];
+    check(`${name} says what it aims at`, Array.isArray(spec.needs));
+    for (const kind of spec.needs) {
+      // Tags take any taggable id, and the lists that carry those
+      // already hand back external_id. What must not pass is a kind
+      // that appears in no list at all.
+      const from = given.get(kind);
+      const fromExternal = ["Order", "Product", "Customer"].includes(kind);
+      check(
+        `${name}: a ${kind} id can be read from somewhere`,
+        (from && from.length > 0) || fromExternal
+      );
+    }
+  }
+
+  // And the column really is in the view. The declaration is in
+  // TypeScript and the view is in SQL, so this is the one place they
+  // are held against each other.
+  const migrations = readdirSync(new URL("../supabase/migrations", import.meta.url)).sort();
+  const newestDefining = (view) =>
+    migrations
+      .filter((f) =>
+        readFileSync(new URL(`../supabase/migrations/${f}`, import.meta.url), "utf8").includes(
+          `create or replace view public.${view} `
+        )
+      )
+      .pop();
+  for (const [kind, where] of given) {
+    for (const { table, column, view } of where) {
+      const file = newestDefining(view);
+      check(`${view} is defined by a migration`, !!file);
+      if (!file) continue;
+      const sql = readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), "utf8");
+      check(
+        `${view} really selects ${column} (${table} → ${kind})`,
+        new RegExp(`\\b${column}\\b`).test(sql)
+      );
+    }
+  }
+}
 
 console.log(fails.length === 0 ? "\nthe fifth entry will cost what the first did" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);
