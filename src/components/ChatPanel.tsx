@@ -10,6 +10,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { watchRows } from "@/lib/live";
 import GenericRenderer from "@/components/GenericRenderer";
 import { describeAutomation, describePlan, WAITING_BUTTONS, type StoreFacts } from "@/lib/describe";
+import { actionSpec } from "@/lib/store-actions";
+import { apiFetch } from "@/lib/auth";
 import { engineError, fixPrompt, type AppError, type FixAction } from "@/lib/errors";
 import ErrorNote from "@/components/ErrorNote";
 import type { BuildOutcome } from "@/components/AppShell";
@@ -682,6 +684,31 @@ export default function ChatPanel({
   >([]);
 
   /**
+   * Changes waiting to go out to the merchant's actual shop.
+   *
+   * Kept apart from the designs above, and shown apart, because they
+   * are a different yes: one builds a section in an app only they
+   * see, the other tags an order in a business. Everything about
+   * what a row means — what it does in words, whether it can be
+   * taken back, what has to be tapped — comes off the registry
+   * entry, so nothing here knows what any one change is called.
+   */
+  const [shopChanges, setShopChanges] = useState<
+    Array<{
+      id: string;
+      action: string;
+      summary: string;
+      status: string;
+      targets: Array<{ id: string }> | null;
+      created_at: string;
+      outcome: { done?: string[]; errors?: string[] } | null;
+      shop_domain?: string | null;
+    }>
+  >([]);
+  /** Which one is being sent right now, so it cannot be sent twice. */
+  const [sending, setSending] = useState<string | null>(null);
+
+  /**
    * Why a design is still asking although the setting is on.
    *
    * With the setting on there is only one answer left: it was tried
@@ -766,6 +793,70 @@ export default function ChatPanel({
       ]),
     [projectId, loadRequests]
   );
+
+  const loadShopChanges = useCallback(async () => {
+    const { data } = await supabase
+      .from("store_actions")
+      .select("id, action, summary, status, targets, created_at, outcome, store_id, stores(shop_domain)")
+      .eq("project_id", projectId)
+      // Waiting ones always; ones that really went out for a week,
+      // because this is the only place a merchant can see what
+      // Warmluke did to their shop. A dismissed one is neither: they
+      // said no, and a receipt for something that never happened is
+      // just the card refusing to leave.
+      .or(
+        `status.in.(pending,approved,running),and(status.in.(done,partly_done,failed),created_at.gte.${new Date(
+          Date.now() - 7 * 864e5
+        ).toISOString()})`
+      )
+      .order("created_at", { ascending: false })
+      .limit(20);
+    setShopChanges(
+      ((data ?? []) as Array<Record<string, unknown>>).map((a) => ({
+        id: a.id as string,
+        action: a.action as string,
+        summary: a.summary as string,
+        status: a.status as string,
+        targets: (a.targets ?? null) as Array<{ id: string }> | null,
+        created_at: a.created_at as string,
+        outcome: (a.outcome ?? null) as { done?: string[]; errors?: string[] } | null,
+        shop_domain:
+          (a.stores as { shop_domain?: string } | null)?.shop_domain ?? null,
+      }))
+    );
+  }, [projectId]);
+  useEffect(() => {
+    loadShopChanges();
+  }, [loadShopChanges]);
+  useEffect(
+    () =>
+      watchRows(`shop-changes:${projectId}`, [
+        { table: "store_actions", filter: `project_id=eq.${projectId}`, onChange: loadShopChanges },
+      ]),
+    [projectId, loadShopChanges]
+  );
+
+  /**
+   * The merchant's yes, and the change going out — one call, because
+   * it is one act. The panel never decides whether it is allowed;
+   * the route and the database do, and whatever they say is what is
+   * shown.
+   */
+  async function sendShopChange(id: string, what: "run" | "dismiss") {
+    setSending(id);
+    try {
+      const { ok, data } = await apiFetch("/api/store-actions", { actionId: id, do: what });
+      if (!ok) {
+        // Not a red box: the usual way to see this is a second tab,
+        // or a second tap on something already gone. Reloading shows
+        // what is really there, which is the answer either way.
+        console.warn("store change refused:", data?.error);
+      }
+    } finally {
+      setSending(null);
+      loadShopChanges();
+    }
+  }
 
   /** Hands one to the builder, as though the owner had typed it. */
   async function openRequest(r: { id: string; request: string }) {
@@ -999,9 +1090,13 @@ export default function ChatPanel({
   // Not "pending" — "wants you". A half-built section is nobody's
   // decision to make and so counted as nothing, which put it behind a
   // bell with no number on it: recorded, and still unknown to them.
-  const pendingCount = requests.filter(
-    (r) => r.status === "pending" || r.status === "partly_built"
-  ).length;
+  // Both kinds, because the bell, the tab and the line above the
+  // composer are all answering one question: is anything waiting on
+  // me. A merchant whose Claude asked for a tag and got no number
+  // anywhere would find it by accident or not at all.
+  const pendingCount =
+    requests.filter((r) => r.status === "pending" || r.status === "partly_built").length +
+    shopChanges.filter((a) => a.status === "pending").length;
   /**
    * Which ones are waiting, as one string.
    *
@@ -1011,10 +1106,10 @@ export default function ChatPanel({
    * turns up. A boolean would either nag after they had said no, or
    * go quiet for good.
    */
-  const waitingKey = requests
-    .filter((r) => r.status === "pending" || r.status === "partly_built")
-    .map((r) => r.id)
-    .join(",");
+  const waitingKey = [
+    ...requests.filter((r) => r.status === "pending" || r.status === "partly_built").map((r) => r.id),
+    ...shopChanges.filter((a) => a.status === "pending").map((a) => a.id),
+  ].join(",");
 
   // On the tab, not only in the panel. A merchant is not sitting here
   // when their assistant proposes something — they are in another tab,
@@ -1140,7 +1235,7 @@ export default function ChatPanel({
                 sat there through every reload, taller than the chat
                 and describing something already dealt with. Twice we
                 moved where it sat; what was wrong was what it was. */}
-            {requests.length > 0 && (
+            {(requests.length > 0 || shopChanges.length > 0) && (
               <button
                 onClick={() => {
                   setBellOpen((o) => !o);
@@ -1182,6 +1277,84 @@ export default function ChatPanel({
             )}
             {bellOpen && (
               <div className="absolute top-full right-0 z-50 mt-1 max-h-96 w-80 space-y-2 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg thin-scroll">
+        {/* Changes to the shop, above the designs. Not a different
+            colour — a different first line. The words are what say
+            this one leaves the building, and a second palette would
+            only be one more thing to learn. */}
+        {shopChanges.map((a) => {
+          const spec = actionSpec(a.action);
+          const waiting = a.status === "pending";
+          const going = a.status === "approved" || a.status === "running";
+          const busy = sending === a.id;
+          const touched = a.targets?.length ?? 0;
+          // Fails closed. An entry that asks for a word to be typed
+          // has nowhere here to type it, and running it anyway would
+          // skip the whole reason it asked.
+          const canRun = waiting && !!spec && spec.confirm === "list";
+          return (
+            <div
+              key={a.id}
+              className={`rounded-xl border px-2.5 py-2 ${
+                waiting || going ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-slate-50"
+              }`}
+            >
+              <div className="text-[10px] font-semibold tracking-widest text-amber-700">
+                IN YOUR SHOP{a.shop_domain ? ` · ${a.shop_domain}` : ""}
+              </div>
+              <div className="mt-1 text-[12px] leading-relaxed text-slate-800">{a.summary}</div>
+              <div className="mt-1 text-[10px] text-slate-500">
+                {touched > 0 ? `${touched} ${touched === 1 ? "thing" : "things"}` : "nothing named"}
+                {spec ? (spec.undo ? " · can be undone" : " · cannot be undone") : " · not recognised"}
+              </div>
+              {spec?.undoNote && !spec.undo && (
+                <div className="mt-1 text-[10px] leading-relaxed text-slate-500">{spec.undoNote}</div>
+              )}
+              {!spec && (
+                <div className="mt-1 text-[10px] leading-relaxed text-rose-700">
+                  Warmluke does not recognise this change, so it cannot be done from here.
+                </div>
+              )}
+              {spec && waiting && spec.confirm !== "list" && (
+                <div className="mt-1 text-[10px] leading-relaxed text-rose-700">
+                  This one has to be confirmed in a way this panel does not offer yet.
+                </div>
+              )}
+              {going && <div className="mt-1 text-[10px] text-amber-800">Going out to the shop…</div>}
+              {(a.status === "done" || a.status === "partly_done" || a.status === "failed") && (
+                <div className="mt-1 text-[10px] leading-relaxed text-slate-600">
+                  {a.status === "done"
+                    ? `Done · ${(a.outcome?.done ?? []).length} changed`
+                    : a.status === "partly_done"
+                      ? `Partly done · ${(a.outcome?.done ?? []).length} changed, ${(a.outcome?.errors ?? []).length} did not`
+                      : "Did not happen"}
+                  {(a.outcome?.errors ?? []).length > 0 && (
+                    <div className="mt-1 text-rose-700">{(a.outcome?.errors ?? [])[0]}</div>
+                  )}
+                </div>
+              )}
+              {waiting && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  {canRun && (
+                    <button
+                      onClick={() => sendShopChange(a.id, "run")}
+                      disabled={busy}
+                      className="rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-amber-700 disabled:opacity-40"
+                    >
+                      {busy ? "Sending…" : WAITING_BUTTONS.runStoreAction}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => sendShopChange(a.id, "dismiss")}
+                    disabled={busy}
+                    className="ml-auto text-[10px] text-amber-700 hover:underline disabled:opacity-40"
+                  >
+                    Not now
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
         {requests.map((r) => {
           const done = r.status === "built";
           const half = r.status === "partly_built";

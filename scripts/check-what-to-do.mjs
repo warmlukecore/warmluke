@@ -120,5 +120,23 @@ console.log("\nand every link goes to the thing, not to the front door");
   check("and the drawer opens with it on a phone", /get\("waiting"\)/.test(read("src/components/AppShell.tsx")));
 }
 
+console.log("\nand the panel is where those steps land");
+{
+  const panel = read("src/components/ChatPanel.tsx");
+  // The steps tell a merchant to open Warmluke and tap something. If
+  // the panel does not read the table, that sentence is a lie the
+  // moment it is said.
+  check("it reads the changes waiting for the shop", /from\("store_actions"\)/.test(panel));
+  check("and hears about new ones without a reload", /table: "store_actions"/.test(panel));
+  check("the count covers them too", /shopChanges\.filter\(\(a\) => a\.status === "pending"\)/.test(panel));
+  // Fails closed: an entry that wants a word typed has nowhere here
+  // to type it, and running it anyway would skip the only reason it
+  // asked for one.
+  check(
+    "and a change wanting a typed word gets no button",
+    /spec\.confirm === "list"/.test(panel)
+  );
+}
+
 console.log(fails.length === 0 ? "\nthe instructions match the app" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);
