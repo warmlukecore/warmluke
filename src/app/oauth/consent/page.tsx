@@ -138,11 +138,16 @@ function ConsentInner() {
   return (
     <Shell>
       <h1 className="font-display text-xl font-semibold text-white">
-        {name} wants to read your store
+        {name} wants access to your store
       </h1>
       <p className="mt-2 text-sm leading-relaxed text-slate-400">
         It will be able to see your Shopify products, customers and orders through
-        Warmluke. It cannot change anything in your store, or anything here.
+        Warmluke, and to ask for changes: to this app, and to your shop.
+      </p>
+      <p className="mt-2 text-sm leading-relaxed text-slate-400">
+        Asking is all it can do. A change to your shop waits for you to agree to it
+        here, every time, and it cannot agree for you. A change to this app waits the
+        same way, unless you have turned on automatic builds.
       </p>
 
       <ul className="mt-5 space-y-1.5">

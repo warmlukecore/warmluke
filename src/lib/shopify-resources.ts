@@ -21,6 +21,8 @@
 // that is code about one resource's shape. This file is the index.
 // ─────────────────────────────────────────────────────────────
 
+import { ACTION_SCOPES } from "@/lib/store-actions";
+
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   CARTS_QUERY,
@@ -677,11 +679,26 @@ export const SHOPIFY_SCOPES: readonly string[] = [
  */
 export const EXTENDED_ORDER_HISTORY_SCOPE = "read_all_orders";
 
-/** What the install asks Shopify for. */
+/**
+ * What the install asks Shopify for: the reads, and what the actions
+ * need to change anything.
+ *
+ * The writes are asked for now, before anything uses them, for the
+ * reason 924c2ba asked for the reads early — a new scope means every
+ * connected store reconnects, and there is one store today and it is
+ * ours. At fifty merchants the same change is fifty interruptions.
+ *
+ * Holding the permission is not the safeguard and was never meant to
+ * be. What stops a change reaching a shop is the account switch,
+ * which is off until somebody turns it on, and the merchant's own
+ * yes on the card — both of which are checked, and neither of which
+ * a reconnect can grant by accident.
+ */
 export function scopesFor(env = process.env): string[] {
+  const asked = [...new Set([...SHOPIFY_SCOPES, ...ACTION_SCOPES])];
   return env.SHOPIFY_READ_ALL_ORDERS === "true"
-    ? [...SHOPIFY_SCOPES, EXTENDED_ORDER_HISTORY_SCOPE]
-    : [...SHOPIFY_SCOPES];
+    ? [...asked, EXTENDED_ORDER_HISTORY_SCOPE]
+    : asked;
 }
 
 /**

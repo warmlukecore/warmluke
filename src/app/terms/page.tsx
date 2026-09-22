@@ -65,8 +65,19 @@ export default function Terms() {
         <Section title="What you are agreeing to">
           <p>
             You give Warmluke read access to the store you connect, so it can copy
-            products, stock, orders and customers and answer questions about them. We
-            read; we do not write anything back to your store.
+            products, stock, orders and customers and answer questions about them.
+          </p>
+          <p>
+            Warmluke can also change some things in your store: add or remove a tag,
+            write a note on an order, set a stock count. It never does so on its own.
+            Every change is shown to you first, in plain words, and nothing is sent
+            until you say yes to that exact change. An assistant you have connected can
+            ask for one; it cannot agree to one for you.
+          </p>
+          <p>
+            Anything else in your store, Warmluke does not touch. It does not refund,
+            cancel, fulfil, publish, reprice or message anyone. The app asks Shopify
+            only for what the changes above need, and Shopify refuses it the rest.
           </p>
           <p>You keep ownership of your data. Disconnecting the store deletes our copy.</p>
         </Section>

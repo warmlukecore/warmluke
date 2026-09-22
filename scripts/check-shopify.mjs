@@ -28,6 +28,7 @@ import {
   scopesFor,
 } from "../src/lib/shopify-resources.ts";
 import { COUNTED } from "../src/lib/store-read.ts";
+import { ACTION_SCOPES } from "../src/lib/store-actions.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -55,7 +56,7 @@ check("a leading hyphen is refused", refuses(() => normalizeShopDomain("-shop.my
 check("an empty domain is refused", refuses(() => normalizeShopDomain("")));
 check("an overlong domain is refused", refuses(() => normalizeShopDomain("a".repeat(260) + ".myshopify.com")));
 
-console.log("\nthe authorize URL asks for read access and nothing more");
+console.log("\nthe authorize URL asks for the reads, and only the writes an action needs");
 const url = new URL(
   authorizeUrl({
     shop: "carefone.myshopify.com",
@@ -67,8 +68,25 @@ const url = new URL(
 );
 check("it points at the merchant's own store", url.host === "carefone.myshopify.com");
 check("it carries the state back", url.searchParams.get("state") === "abc-123");
-check("every scope is a read", SHOPIFY_SCOPES.every((s) => s.startsWith("read_")));
-check("no write scope is requested", !url.searchParams.get("scope")?.includes("write_"));
+check("every resource scope is a read", SHOPIFY_SCOPES.every((s) => s.startsWith("read_")));
+// This used to say "no write scope is requested", and that was the
+// guarantee while the app could only read. It cannot say that any
+// more — so it says the stronger thing instead: the only writes
+// asked for are the ones an action in the registry declares, and
+// all of them are. A write scope nobody's action needs is
+// permission nobody can account for, and it would ride in on the
+// next reconnect without a line of code asking for it.
+const askedFor = (url.searchParams.get("scope") ?? "").split(",").filter(Boolean);
+const writesAsked = askedFor.filter((s) => s.startsWith("write_"));
+check(
+  "no write is asked for that no action needs",
+  writesAsked.every((s) => ACTION_SCOPES.includes(s))
+);
+check(
+  "and every write an action needs is asked for",
+  ACTION_SCOPES.every((s) => writesAsked.includes(s))
+);
+check("nothing is asked for that is neither a read nor an action's write", askedFor.every((s) => s.startsWith("read_") || ACTION_SCOPES.includes(s)));
 check("a bad shop cannot build a URL", refuses(() => authorizeUrl({ shop: "evil.com", clientId: "x", redirectUri: "y", state: "z", scopes: [] })));
 
 console.log("\nthe scope Shopify has to approve stays out until it has");
