@@ -47,6 +47,20 @@ check(
   "approving from chat still refuses",
   /This design removes a section, which cannot be built from here/.test(mcp)
 );
+// And says so about the WHOLE request. A merchant's assistant read
+// the refusal, saw one removal and one ordinary change in the same
+// design, and offered to approve "the other half" — which there is
+// no way to do: one request is one card and one yes. Both the
+// refusal and the note the assistant reads before it designs have to
+// say that, or the offer gets made again.
+check(
+  "and says the rest of the design waits with it",
+  /the_rest_of_this_design/.test(mcp) && /no part of it can be approved from here/.test(mcp)
+);
+check(
+  "and the design note says to propose the two apart",
+  /A request is approved whole or not at all/.test(mcp)
+);
 // Belt and braces, and the only one an attacker cannot argue with:
 // the database refuses the write whatever the route believes.
 check(

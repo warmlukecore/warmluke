@@ -239,7 +239,7 @@ Never use this shape to design or build anything; if they want something built, 
 (2) PROPOSE — you understand enough; put the design up for approval:
 {
   "type": "blueprint",
-  "message": "one short line",
+  "message": "one short line, in the future tense — see WRITING FOR THE OWNER",
   "blueprint": {
     "summary": "2-3 sentences: what this does for them, in their words",
     "plans": [ <plan>, <plan>, ... ],
@@ -260,7 +260,7 @@ Never use this shape to design or build anything; if they want something built, 
 (3) BUILD — emit the actual change plans:
 {
   "type": "plans",
-  "message": "one short line",
+  "message": "one short line, in the future tense — see WRITING FOR THE OWNER",
   "plans": [ <plan>, <plan>, ... ],
   "next": [ { "label": "…", "prompt": "…" } ]
 }
@@ -312,6 +312,7 @@ CHOOSING THE VIEW — this is a real design decision, make it deliberately:
 
 WRITING FOR THE OWNER:
 - "summary" describes what THEY told you, in their words. Never claim an outcome ("this will stop double-bookings", "saves you hours") — you cannot know that, and the design may not deliver it.
+- NOTHING YOU WRITE HAS HAPPENED YET. "message" and "summary" sit at the top of a card the owner has not approved, so write what this WOULD do — never "I have removed the duplicate section", "I've added a filter", "I updated Products". Their app is untouched until they say yes, and a sentence saying otherwise is read as a fact. The one thing you may say you have done is update the design itself.
 - Never describe a feature in prose. The interface renders every section, field, button and rule from the plans themselves, so a sentence about them can only ever contradict the thing.
 - "workflow" is their real-world process — people and steps as they happen in the world. Leave the scan step out of THIS LIST — the interface writes it itself from the scan bar in your plans, so yours is dropped. That applies to this list only: if they own a scanner, still build scanMode. Never say what the software shows, syncs, or who can see it: "appears on the calendar for everyone to see" is a claim about the platform, and a false one, because a project is used by its owner alone.
 - If anything the owner told you lands in the NOT POSSIBLE list — several people using it, messaging a customer, taking payment, photos — it MUST appear in "unmet" in their own words. Designing around it silently is the worst thing you can do: they will believe it is handled.
@@ -1901,6 +1902,27 @@ function parsePlans(
 }
 
 /**
+ * A change written as though it had already happened.
+ *
+ * Nothing in a reply has been built. The owner has not seen it yet,
+ * and on the MCP road this sentence is the first line of the design
+ * their own assistant reads back to them — so "I have removed the
+ * duplicate Product-2 section" tells them a section is gone while it
+ * is still sitting there, waiting for a confirmation they have not
+ * given. Two of the last twenty-six requests said it.
+ *
+ * The prompt asks for the future tense; this is what happens when it
+ * does not get it. Rejected rather than rewritten: the sentence is
+ * the model's to write, and a validator that edits prose is a
+ * validator nobody can predict.
+ *
+ * Updating the DESIGN really has happened by the time it is said, so
+ * that one is allowed through.
+ */
+const ALREADY_DONE =
+  /\bi(?:'ve|\u2019ve| have| had)?\s+(?:removed|added|updated|created|built|deleted|renamed|changed|fixed|moved|made)\b(?!\s+(?:the |this |a |your )?(?:design|blueprint|plan|plans|proposal))/i;
+
+/**
  * Parses the assistant's reply envelope: clarify (questions), blueprint
  * (design for approval), or plans (validated changes). Anything that
  * fails here never reaches the UI, let alone the database.
@@ -1943,9 +1965,26 @@ export function parseReply(
     case "clarify":
       return parseClarify(parsed);
     case "blueprint":
-      return parseBlueprint(parsed, modules, currentSchema, currentFeatures, schemas);
-    case "plans":
-      return parsePlans(parsed, modules, currentSchema, currentFeatures, schemas);
+    case "plans": {
+      // Both land on the approval card, and both put a sentence of
+      // the model's own above the description the engine writes.
+      const said = [
+        parsed.message,
+        isPlainObject(parsed.blueprint) ? parsed.blueprint.summary : null,
+      ].find((v): v is string => typeof v === "string" && ALREADY_DONE.test(v));
+      if (said) {
+        const hit = said.trim().slice(0, 90);
+        return {
+          ok: false,
+          errors: [
+            `You wrote this as though it had already happened: "${hit}". Nothing is built until the owner approves it, and they have not seen this yet. Say what it would do, not what you have done.`,
+          ],
+        };
+      }
+      return type === "blueprint"
+        ? parseBlueprint(parsed, modules, currentSchema, currentFeatures, schemas)
+        : parsePlans(parsed, modules, currentSchema, currentFeatures, schemas);
+    }
     default:
       return { ok: false, errors: ['The assistant\'s reply had no recognised "type".'] };
   }

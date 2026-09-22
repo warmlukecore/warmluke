@@ -1486,7 +1486,7 @@ export async function POST(req: Request) {
               .map(([table, spec]) => [table, spec.advice])
           ),
           removing_a_section:
-            "MODULE_DELETE may be proposed and can never be built from here. It removes every row in the section and does not come back, so the merchant confirms it in Warmluke by typing the section's name. Propose it if that is plainly what they asked for, tell them it is waiting there for them to confirm, and do not call approve_change for it.",
+            "MODULE_DELETE may be proposed and can never be built from here. It removes every row in the section and does not come back, so the merchant confirms it in Warmluke by typing the section's name. Propose it if that is plainly what they asked for, tell them it is waiting there for them to confirm, and do not call approve_change for it. A request is approved whole or not at all: put a removal in the same design as other changes and none of them can be built from here, so when they ask for a removal AND something else, propose them as two — the other one can then be approved in the conversation while the removal waits for them in Warmluke.",
           vocabulary: vocabularyPrompt(),
         })
       );
@@ -1785,11 +1785,23 @@ export async function POST(req: Request) {
 
       const goneNow = removals(reqRow.plans);
       if (goneNow.length) {
+        // The whole request, not the removal alone. One request is one
+        // card and one yes, so a design that removes a section and
+        // also adds a filter is refused entire — and an assistant that
+        // reads only the first line offers to build "the other half",
+        // which there is no way to do. Said here, in the refusal, in
+        // the numbers of this actual request.
+        const alsoWaiting = reqRow.plans.length - goneNow.length;
         return ok(
           id,
           text({
             error: "This design removes a section, which cannot be built from here.",
             note: `It is waiting in Warmluke as a card. The merchant opens it there and types the section's name (${goneNow.join(", ")}) to confirm — that typing is the whole safeguard, which is why it cannot happen through a chat approval. Nothing has changed.`,
+            ...(alsoWaiting > 0
+              ? {
+                  the_rest_of_this_design: `The other ${alsoWaiting} change${alsoWaiting === 1 ? "" : "s"} in this request wait${alsoWaiting === 1 ? "s" : ""} with it: one request is one card and one yes, so no part of it can be approved from here. If they want those now, propose them again on their own, without the removal.`,
+                }
+              : {}),
           })
         );
       }

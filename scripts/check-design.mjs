@@ -465,5 +465,51 @@ console.log("\na section over the store keeps the store's shape");
   check("and a section of their own still takes a typed field", own.ok);
 }
 
+// ── A design that says it has already happened ───────────────
+//
+// The sentence at the top of the approval card is the model's own,
+// and on the MCP road it is what the merchant's assistant reads back
+// to them word for word. One pending request said "I have removed
+// the duplicate Product-2 section" while the section was still
+// there, waiting for a confirmation nobody had given. The prompt now
+// asks for the future tense; this is the half that does not depend
+// on the model reading it.
+console.log("\na design that claims to have happened already");
+{
+  const good = { field: "note", label: "Note", type: "text" };
+  const one = (message) =>
+    parseReply(
+      JSON.stringify({
+        type: "plans",
+        message,
+        plans: [
+          {
+            changeType: "FIELD_ADD",
+            targetModuleId: MOD,
+            newSchema: { columns: [...jobsSchema.columns, good] },
+            explanation: "A note on each job.",
+          },
+        ],
+      }),
+      modules, null, null, schemas
+    );
+  const refused = (m) => {
+    const r = one(m);
+    return !r.ok && r.errors.some((e) => /already happened/.test(e));
+  };
+  // Both of the real ones, from production.
+  check('"I have removed the duplicate Product-2 section" is refused', refused("I have removed the duplicate Product-2 section and updated Products."));
+  check('"I have added the section Off Check" is refused', refused("I have added the section Off Check with a single text field."));
+  check('and "I made the change you asked for"', refused("I made the change you asked for."));
+  check('and "I\u2019ve updated Products"', refused("I\u2019ve updated Products with a status filter."));
+  // And the sentences that must still get through. A validator that
+  // fails these is one the model cannot satisfy.
+  check("a future-tense line passes", one("This adds a note field to Jobs.").ok);
+  check("so does a participle", one("Adding a Checked By field to Jobs.").ok);
+  check("so does amending the design, which really did happen", one("I have updated the design with your correction.").ok);
+  check('so does "I have two options here"', one("I have two options here; this is the simpler one.").ok);
+  check("and a sentence about their rows, not our work", one("Shows every order that has been paid.").ok);
+}
+
 console.log(fails.length === 0 ? "\na design says what it means" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);
