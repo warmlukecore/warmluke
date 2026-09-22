@@ -1327,18 +1327,28 @@ export default function ChatPanel({
                 )
               )}
               {!done && (
-              <div className="mt-1.5 flex items-center gap-1.5">
+              // Wrapping, because the confirm step puts five things on
+              // this row — a name to type, Remove it, Cancel, Change
+              // it first, Dismiss — and the panel is 300px at its
+              // narrowest. Without it the row ran off the side and
+              // took a horizontal scrollbar with it, so the button
+              // that says "Change it first" sat outside the card.
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                 {r.plans?.length ? (
                   removalsIn(r.plans).length ? (
                     confirmFor === r.id ? (
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                         <input
                           autoFocus
                           value={confirmText}
                           onChange={(e) => setConfirmText(e.target.value)}
                           placeholder={removalsIn(r.plans).join(", ")}
                           aria-label={`Type ${removalsIn(r.plans).join(", ")} to confirm removing it`}
-                          className="w-36 rounded-lg border border-amber-300 px-2 py-1 text-[10px] text-amber-900 outline-none placeholder:text-amber-400"
+                          // Shrinks rather than pushing the row wide:
+                          // the name being typed is short, and the
+                          // buttons beside it are what must stay
+                          // reachable.
+                          className="w-36 min-w-0 max-w-full flex-shrink rounded-lg border border-amber-300 px-2 py-1 text-[10px] text-amber-900 outline-none placeholder:text-amber-400"
                         />
                         <button
                           onClick={() => buildRequest(r)}
