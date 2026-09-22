@@ -40,14 +40,34 @@ const sql = async (query) => {
   return { status: res.status, body: await res.json().catch(() => null) };
 };
 
-const who = await sql(
-  `select id as project_id, owner_id from public.projects order by created_at limit 1`
-);
-const row = who.body?.[0];
+// A project of its own, not the oldest one lying about.
+//
+// This used to take `order by created_at limit 1` — whatever project
+// happened to be in the database. On an empty one it skipped
+// silently; during a full run it borrowed another check's project,
+// mid-use, and failed on state that check had left behind. Twice in
+// one day it reported six red assertions about the build door while
+// the door was fine.
+//
+// The owner is the check user, so the claims below are a real
+// person's. Removed at the end either way.
+const mine = await sql(`
+  with who as (
+    select id as user_id from auth.users where email = 'check@warmluke.test' limit 1
+  ), made as (
+    insert into public.projects (owner_id, name)
+    select user_id, 'check build-outcome ' || floor(extract(epoch from now()))::text from who
+    returning id, owner_id
+  )
+  select id as project_id, owner_id from made
+`);
+const row = mine.body?.[0];
 if (!row) {
-  console.log("no project to test against — nothing to check");
-  process.exit(0);
+  console.log("could not make a project to test against — is the check user there?");
+  process.exit(1);
 }
+const dropProject = () =>
+  sql(`delete from public.projects where id = '${row.project_id}'`);
 
 const stamp = Date.now().toString(36);
 const made = [];
@@ -127,6 +147,8 @@ try {
   );
   check("nothing this check raised is left behind", left.body?.[0]?.n === 0);
 }
+
+await dropProject();
 
 console.log(
   fails.length === 0 ? "\nthe record says what really happened" : `\n${fails.length} FAILED`

@@ -26,6 +26,8 @@
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { signInAsCheckUser, throwawayProject } from "./owner-session.mjs";
+import { runAction } from "../src/lib/run-action.ts";
+import { MOST_TARGETS, actionSpec } from "../src/lib/store-actions.ts";
 
 const env = Object.fromEntries(
   readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
@@ -55,7 +57,13 @@ const stamp = Date.now().toString(36);
 const feature = (on) =>
   admin.from("account_settings").update({ store_actions_enabled: on }).eq("user_id", me.user.id);
 
-const propose = (store, action = "tag_orders", params = { tag: "rush" }, summary = "Tags one order rush") =>
+// A real entry from the registry, not a name that reads like one.
+// This defaulted to "tag_orders" — which nothing declares — and
+// every run below failed as "Warmluke does not know how to do that"
+// while the assertions were looking for something else entirely.
+const REAL = "add_tags";
+
+const propose = (store, action = REAL, params = { tags: ["rush"] }, summary = "Tags one order rush") =>
   anon.rpc("abo_action_propose", {
     p_project: project.id,
     p_store: store,
@@ -80,7 +88,10 @@ try {
     .select("id")
     .single();
 
-  console.log("the switch is off until somebody turns it on");
+  console.log("the action this check leans on is really declared");
+check(`"${REAL}" is in the registry`, !!actionSpec(REAL));
+
+console.log("the switch is off until somebody turns it on");
   await feature(false);
   {
     const { data, error } = await propose(store.id);
@@ -154,7 +165,7 @@ try {
   {
     const { data: a } = await anon.rpc("abo_action_claim", { p_action: first });
     check("the first caller takes it", a?.claimed === true);
-    check("and is handed what to do", a?.action === "tag_orders" && a?.params?.tag === "rush");
+    check("and is handed what to do", a?.action === REAL && a?.params?.tags?.[0] === "rush");
     const { data: b } = await anon.rpc("abo_action_claim", { p_action: first });
     check("the second is told it is taken", b?.claimed === false);
     check("and what state it is in", b?.status === "running");
@@ -203,6 +214,66 @@ try {
     const { data: again } = await anon.rpc("abo_action_approve", { p_action: id });
     check("and a dismissed one cannot be approved afterwards", again?.approved === false);
   }
+  // ── And running one ───────────────────────────────────────────
+  //
+  // No write scope has been granted to this store — none exists to
+  // grant yet — so every run below stops at the scope guard before
+  // anything is sent anywhere. That is the point: these are the
+  // paths that must end tidily when the change cannot happen, and
+  // the worst of them is a row left saying "running" for ever while
+  // the merchant is told their change is on its way.
+  console.log("\nand running one always finishes the row");
+  {
+    const { data: id } = await propose(store.id);
+    await anon.rpc("abo_action_approve", { p_action: id });
+    const run = await runAction(anon, id);
+    check("it did not happen", run.status === "failed" && run.done.length === 0);
+    check("and says the store never allowed it", /write_orders/.test(run.errors.join(" ")));
+    check("and what to do about it", /reconnect/i.test(run.errors.join(" ")));
+    check("and that nothing changed", /nothing was changed/i.test(run.errors.join(" ")));
+    const { data: row } = await admin.from("store_actions").select("status, outcome, resolved_at").eq("id", id).single();
+    check("the row is finished, not left running", row.status === "failed" && !!row.resolved_at);
+    check("with the reason kept on it", (row.outcome?.errors ?? []).length === 1);
+
+    const again = await runAction(anon, id);
+    // It reports what the row says and touches nothing: no second
+    // attempt, no second outcome written over the first.
+    check("running it a second time changes nothing", again.done.length === 0 && again.errors.length === 0);
+    const { data: same } = await admin.from("store_actions").select("status").eq("id", id).single();
+    check("and the row is untouched", same.status === "failed");
+  }
+  {
+    const { data: id } = await propose(store.id);
+    const run = await runAction(anon, id);
+    check("one nobody approved is not run", run.status === "pending");
+    const { data: row } = await admin.from("store_actions").select("status").eq("id", id).single();
+    check("and stays waiting", row.status === "pending");
+  }
+  {
+    const { data: id } = await propose(store.id, "no_such_action", {}, "Something nobody declared");
+    await anon.rpc("abo_action_approve", { p_action: id });
+    const run = await runAction(anon, id);
+    check("an action nobody declared fails rather than throwing", run.status === "failed");
+    check("and says so plainly", /does not know how/i.test(run.errors.join(" ")));
+  }
+  {
+    // Proposed before the ceiling could refuse it, which is exactly
+    // why the executor checks again rather than trusting the row.
+    const many = Array.from({ length: MOST_TARGETS + 1 }, (_, i) => ({ id: `gid://shopify/Order/${i}` }));
+    const { data: id } = await anon.rpc("abo_action_propose", {
+      p_project: project.id,
+      p_store: store.id,
+      p_action: "add_tags",
+      p_targets: many,
+      p_params: { tags: ["rush"] },
+      p_summary: `Tags ${many.length} orders rush`,
+    });
+    await anon.rpc("abo_action_approve", { p_action: id });
+    const run = await runAction(anon, id);
+    check("too much at once is refused", run.status === "failed");
+    check("and the ceiling is named", new RegExp(String(MOST_TARGETS)).test(run.errors.join(" ")));
+  }
+
 } finally {
   const { error: sweepError, count: swept } = await admin
     .from("projects")
