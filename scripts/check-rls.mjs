@@ -219,6 +219,31 @@ try {
   check("outsider cannot insert into someone else's store",
     !(await X("orders", { method: "POST", body: JSON.stringify({ store_id: store.id, external_id: "x", total: 1 }) })).ok);
 
+  // The newest table naming a merchant's shop, and the only one that
+  // says what is about to be CHANGED there. A stranger reading it
+  // learns their business; a stranger writing one would be proposing
+  // changes to somebody else's store. Inserted with the service key
+  // because nobody may insert at this table — not even its owner,
+  // who goes through abo_action_propose.
+  const svc = api(SVC);
+  const act = (await svc("store_actions", {
+    method: "POST",
+    body: JSON.stringify({
+      project_id: proj.id, store_id: store.id, requested_by: owner.id,
+      action: "tag_orders", summary: "Tags one order", targets: [], params: {},
+    }),
+  })).json[0];
+  check("outsider sees no store action", (await X(`store_actions?id=eq.${act.id}`)).json.length === 0);
+  check("the owner does see their own", (await O(`store_actions?id=eq.${act.id}`)).json.length === 1);
+  check("and nobody writes one at the table",
+    !(await O("store_actions", {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: proj.id, store_id: store.id, requested_by: owner.id,
+        action: "tag_orders", summary: "By hand", targets: [], params: {},
+      }),
+    })).ok);
+
   console.log("\nan outsider is still shut out");
   check("outsider sees no project", (await X(`projects?id=eq.${proj.id}`)).json.length === 0);
   check("outsider sees no rows", (await X(`records?id=eq.${rec.id}`)).json.length === 0);

@@ -17,7 +17,7 @@
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { signInAsClient } from "./client-session.mjs";
-import { throwawayProject } from "./owner-session.mjs";
+import { signInAsCheckUser, throwawayProject } from "./owner-session.mjs";
 
 const env = Object.fromEntries(
   readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
@@ -207,6 +207,61 @@ try {
   const later = await tool("approve_change", { request_id: waiting?.request_id });
   check("approve_change builds it", isBuilt(later));
   if (!isBuilt(later)) show(later);
+
+  // ── And the one yes it may never give ─────────────────────────
+  //
+  // auto_build is on at this point, which is the whole danger: it is
+  // a standing yes to building sections in the merchant's own app,
+  // and a change to their live Shopify store must not inherit it.
+  // Tested with the same client token that just built something, so
+  // the difference is the rule and not the caller.
+  console.log("\nbut a change to the shop itself is never the client's to approve");
+  {
+    await admin
+      .from("account_settings")
+      .update({ store_actions_enabled: true })
+      .eq("user_id", me.userId);
+    const { data: store } = await admin
+      .from("stores")
+      .insert({
+        project_id: project.id,
+        shop_domain: `as-client-${stamp}.myshopify.com`,
+        status: "connected",
+      })
+      .select("id")
+      .single();
+    const owner = createClient(
+      env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
+      env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
+    );
+    await signInAsCheckUser(owner, env);
+    const { data: action } = await owner.rpc("abo_action_propose", {
+      p_project: project.id,
+      p_store: store.id,
+      p_action: "tag_orders",
+      p_targets: ["gid://shopify/Order/1"],
+      p_params: { tag: "rush" },
+      p_summary: "Tags one order rush",
+    });
+    check("a change to the store can be proposed", !!action);
+
+    const asClient = createClient(
+      env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
+      env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY,
+      { global: { headers: { Authorization: `Bearer ${me.token}` } } }
+    );
+    const { data: tried } = await asClient.rpc("abo_action_approve", { p_action: action });
+    check("the client cannot approve it, with auto-build on", tried?.approved === false);
+    check("and is told whose yes it needs", /merchant/i.test(tried?.reason ?? ""));
+    const { data: still } = await admin
+      .from("store_actions")
+      .select("status, approved_at")
+      .eq("id", action)
+      .single();
+    check("the row is untouched", still?.status === "pending" && still?.approved_at === null);
+
+    await admin.from("account_settings").update({ store_actions_enabled: false }).eq("user_id", me.userId);
+  }
 } finally {
   await setAuto(project.auto_build === true);
   const back = (await admin.from("projects").select("auto_build").eq("id", project.id).single()).data;
