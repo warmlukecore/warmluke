@@ -25,6 +25,7 @@ type Account = {
   email: string;
   chat_enabled: boolean;
   mcp_enabled: boolean;
+  store_actions_enabled: boolean;
   free_turns: number;
   turns_used: number;
   turns_unlimited: boolean;
@@ -80,7 +81,11 @@ export default function Admin() {
   // One switch at a time. They are independent — an account can have
   // both, either, or neither — so a single call setting the pair would
   // let a stale row overwrite the switch nobody touched.
-  async function setFeature(row: Account, feature: "chat" | "mcp", on: boolean) {
+  async function setFeature(
+    row: Account,
+    feature: "chat" | "mcp" | "store_actions",
+    on: boolean
+  ) {
     setBusy(row.user_id);
     setError(null);
     const { error: err } = await supabase.rpc("abo_admin_set_feature", {
@@ -170,6 +175,11 @@ export default function Admin() {
                   <th className="px-4 py-2.5 font-medium">Stores</th>
                   <th className="px-4 py-2.5 font-medium">Warmluke AI</th>
                   <th className="px-4 py-2.5 font-medium">Their own AI</th>
+                  {/* The one that reaches outside the building. Off for
+                      everybody until somebody here decides otherwise,
+                      which is why it needs a button rather than a row
+                      of SQL somebody remembers. */}
+                  <th className="px-4 py-2.5 font-medium">Change their shop</th>
                   <th className="px-4 py-2.5 font-medium">Included designs</th>
                 </tr>
               </thead>
@@ -198,8 +208,13 @@ export default function Admin() {
                     </td>
                     <td className="px-4 py-3 text-slate-400">{r.projects}</td>
                     <td className="px-4 py-3 text-slate-400">{r.stores}</td>
-                    {(["chat", "mcp"] as const).map((feature) => {
-                      const on = feature === "chat" ? r.chat_enabled : r.mcp_enabled;
+                    {(["chat", "mcp", "store_actions"] as const).map((feature) => {
+                      const on =
+                        feature === "chat"
+                          ? r.chat_enabled
+                          : feature === "mcp"
+                            ? r.mcp_enabled
+                            : r.store_actions_enabled;
                       return (
                         <td key={feature} className="px-4 py-3">
                           <button
@@ -207,7 +222,9 @@ export default function Admin() {
                             disabled={busy === r.user_id}
                             className={`rounded-lg px-2.5 py-1 text-xs transition-colors disabled:opacity-40 ${
                               on
-                                ? "bg-blue-600 text-white hover:bg-blue-700"
+                                ? feature === "store_actions"
+                                  ? "bg-amber-600 text-white hover:bg-amber-700"
+                                  : "bg-blue-600 text-white hover:bg-blue-700"
                                 : "border border-slate-700 text-slate-500 hover:bg-slate-800"
                             }`}
                           >

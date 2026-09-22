@@ -193,6 +193,33 @@ try {
     check("the other switch turns off on its own", seen?.mcp_enabled === false);
     check("without turning the first back on", seen?.chat_enabled === false);
 
+    // The third one, which is the only switch that lets anything
+    // reach a live shop. It starts off for everybody, including
+    // accounts that already have the other two — and it has to be
+    // reachable from here, or it is a column with no way in.
+    const listed = (await owner.rpc("abo_admin_accounts")).data ?? [];
+    const before = listed.find((a) => a.user_id === made.user.id);
+    check("changing their shop is off to begin with", before?.store_actions_enabled === false);
+    await owner.rpc("abo_admin_set_feature", {
+      p_user: made.user.id,
+      p_feature: "store_actions",
+      p_on: true,
+    });
+    const afterOn = ((await owner.rpc("abo_admin_accounts")).data ?? []).find(
+      (a) => a.user_id === made.user.id
+    );
+    check("and can be turned on from here", afterOn?.store_actions_enabled === true);
+    check("without disturbing the other two", afterOn?.chat_enabled === false && afterOn?.mcp_enabled === false);
+    await owner.rpc("abo_admin_set_feature", {
+      p_user: made.user.id,
+      p_feature: "store_actions",
+      p_on: false,
+    });
+    const afterOff = ((await owner.rpc("abo_admin_accounts")).data ?? []).find(
+      (a) => a.user_id === made.user.id
+    );
+    check("and off again", afterOff?.store_actions_enabled === false);
+
     // A name outside the two is refused rather than stored: the app
     // would then branch on something it has never seen.
     check(
