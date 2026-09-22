@@ -395,6 +395,68 @@ export type RequestRow = {
   built_at: string | null;
 };
 
+/**
+ * The words on the buttons a waiting design is finished with.
+ *
+ * Defined once and read in two places: the panel puts them on the
+ * buttons, and the answer a connected assistant reads out quotes
+ * them. They used to exist only as JSX, so every instruction about
+ * them was a second copy nobody would think to change — and an
+ * assistant telling a merchant to tap something that no longer says
+ * that is worse than saying nothing.
+ */
+export const WAITING_BUTTONS = {
+  build: "Build it",
+  openRemoval: "Remove a section…",
+  confirmRemoval: "Remove it",
+} as const;
+
+/**
+ * What the merchant actually does, in order, to finish this one.
+ *
+ * Every answer about a waiting design used to be written for the
+ * model — "tell them it is waiting in Warmluke" — so the best a
+ * connected assistant could relay was that something, somewhere,
+ * needed them. This is the other half: the link that opens on it,
+ * and the taps, in the words that are really on the buttons.
+ *
+ * Derived from the row, never from the kind of request it was: a
+ * removal earns two more steps because its plans say so, not
+ * because removals were special-cased here. Anything already
+ * settled returns nothing, so a caller cannot invent work that is
+ * not waiting.
+ */
+export function stepsToFinish(
+  r: Pick<RequestRow, "status" | "plans"> & { approved_at?: string | null },
+  link: string
+): string[] {
+  const settled = r.status === "built" || r.status === "dismissed" || r.status === "opened";
+  if (settled) return [];
+  const open = `Open ${link} — it opens with this in front of them`;
+  if (r.status === "building") {
+    return [`${open}. It is being applied now; nothing to tap.`];
+  }
+  if (r.status === "partly_built") {
+    return [
+      open,
+      "The card says which part did not build.",
+      "Ask for that part again as a new request — this one cannot be finished.",
+    ];
+  }
+  const gone = (r.plans ?? [])
+    .filter((p) => p.changeType === "MODULE_DELETE")
+    .map((p) => p.deleteConfirmName)
+    .filter((n): n is string => !!n);
+  return gone.length
+    ? [
+        open,
+        `Tap "${WAITING_BUTTONS.openRemoval}"`,
+        `Type exactly: ${gone.join(", ")}`,
+        `Tap "${WAITING_BUTTONS.confirmRemoval}"`,
+      ]
+    : [open, `Tap "${WAITING_BUTTONS.build}"`];
+}
+
 /** How much of a request is quoted. Enough to recognise it by. */
 const REQUEST_CHARS = 160;
 

@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { watchRows } from "@/lib/live";
 import GenericRenderer from "@/components/GenericRenderer";
-import { describeAutomation, describePlan, type StoreFacts } from "@/lib/describe";
+import { describeAutomation, describePlan, WAITING_BUTTONS, type StoreFacts } from "@/lib/describe";
 import { engineError, fixPrompt, type AppError, type FixAction } from "@/lib/errors";
 import ErrorNote from "@/components/ErrorNote";
 import type { BuildOutcome } from "@/components/AppShell";
@@ -563,6 +563,7 @@ export default function ChatPanel({
   onUndo,
   onFix,
   autoBuild,
+  onWaiting,
 }: {
   /** Panel width above lg; below it the panel is a full-width drawer. */
   width: number;
@@ -572,6 +573,16 @@ export default function ChatPanel({
   /** Drawer state below lg; the panel is always visible above it. */
   open: boolean;
   onClose: () => void;
+  /**
+   * How many things are waiting on the merchant, whenever it changes.
+   *
+   * The count is worked out here because the requests are loaded
+   * here, and the shell needs it for the button that opens this
+   * panel on a phone — where the panel starts shut, so the bell,
+   * the line above the composer and every other sign of it are
+   * behind a drawer nobody has a reason to open.
+   */
+  onWaiting?: (count: number) => void;
   modules: ModuleRow[];
   selectedModuleId: string | null;
   currentSchema: UiSchema | null;
@@ -1013,6 +1024,21 @@ export default function ChatPanel({
     showWaiting(pendingCount);
     return () => showWaiting(0);
   }, [pendingCount]);
+  useEffect(() => {
+    onWaiting?.(pendingCount);
+  }, [pendingCount, onWaiting]);
+
+  // Arrived from a link their assistant gave them. It names the
+  // request, and the only promise the link makes is that the thing
+  // is in front of them when they land — so the bell opens itself.
+  // The id is not looked up: if it was dealt with in the meantime
+  // the bell simply opens on whatever is there, which is the truth
+  // at that moment.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!new URLSearchParams(window.location.search).get("waiting")) return;
+    setBellOpen(true);
+  }, []);
   /** Requests that turned up just now, floating over the panel. */
   const [toasts, setToasts] = useState<string[]>([]);
   /** The set of waiting requests the line above the composer was cleared for. */
@@ -1370,7 +1396,7 @@ export default function ChatPanel({
                           disabled={busy || confirmText.trim() !== removalsIn(r.plans).join(", ")}
                           className="rounded-lg bg-rose-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-rose-700 disabled:opacity-40"
                         >
-                          Remove it
+                          {WAITING_BUTTONS.confirmRemoval}
                         </button>
                         <button
                           onClick={() => {
@@ -1391,7 +1417,7 @@ export default function ChatPanel({
                         disabled={busy}
                         className="rounded-lg border border-rose-300 px-2 py-1 text-[10px] font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-40"
                       >
-                        Remove a section…
+                        {WAITING_BUTTONS.openRemoval}
                       </button>
                     )
                   ) : (
@@ -1400,7 +1426,7 @@ export default function ChatPanel({
                       disabled={busy}
                       className="rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-amber-700 disabled:opacity-40"
                     >
-                      Build it
+                      {WAITING_BUTTONS.build}
                     </button>
                   )
                 ) : null}
@@ -2027,8 +2053,13 @@ export default function ChatPanel({
                     ✕
                   </button>
                 </div>
-                <div className="mt-2 flex items-center gap-1.5">
-                  {r.plans?.length ? (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  {/* Not offered for a design that removes a section.
+                      buildRequest refuses one until the name has been
+                      typed, and there is nowhere to type it here — so
+                      the button did nothing at all when it was
+                      tapped. "See it" opens the card that can. */}
+                  {r.plans?.length && !removalsIn(r.plans).length ? (
                     <button
                       onClick={() => {
                         setToasts((p) => p.filter((x) => x !== id));
@@ -2037,7 +2068,7 @@ export default function ChatPanel({
                       disabled={busy}
                       className="rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-amber-700 disabled:opacity-40"
                     >
-                      Build it
+                      {WAITING_BUTTONS.build}
                     </button>
                   ) : null}
                   <button

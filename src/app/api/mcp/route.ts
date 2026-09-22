@@ -18,7 +18,7 @@ import { RESOURCES, SHOPIFY_RESOURCES } from "@/lib/shopify-resources";
 import { blueprintAsText, runTurn, schemasFor, storeFactsFor } from "@/lib/engine";
 import { PLAN_FORMAT, WORKED_EXAMPLE, parseReply } from "@/lib/ai";
 import { vocabularyPrompt } from "@/lib/capabilities";
-import { describePlan, describeRules, seededCopies, type RuleRow } from "@/lib/describe";
+import { describePlan, describeRules, seededCopies, stepsToFinish, type RuleRow } from "@/lib/describe";
 import { applyPlans, logClientBuild, putBack } from "@/lib/apply";
 import { undoableFrom } from "@/lib/undo";
 import { noteJudgement } from "@/lib/judge";
@@ -373,6 +373,19 @@ const removals = (plans: AssistantPlan[]) =>
   plans.filter((p) => p.changeType === "MODULE_DELETE").map((p) => p.deleteConfirmName ?? "a section");
 
 /**
+ * Where the merchant goes, and what is in front of them when they
+ * land.
+ *
+ * Every answer here used to hand back the app's front door and leave
+ * them to find the thing: ten links, all of them /app/<id>, opening
+ * on a closed bell. With the request named, the panel opens on it —
+ * on a phone too, where the panel is a drawer that starts shut and
+ * nothing at all was visible.
+ */
+const openAt = (origin: string, projectId: string, requestId?: string | null) =>
+  `${origin}/app/${projectId}${requestId ? `?waiting=${requestId}` : ""}`;
+
+/**
  * There is no ceiling on automatic builds any more.
  *
  * There used to be five a day, against a client stuck in a loop. But
@@ -449,6 +462,8 @@ type RequestRow = {
   built_at?: string | null;
   client_id: string | null;
   outcome: { applied?: unknown[]; errors?: string[] } | null;
+  /** Only read where the query asks for them; what the merchant does next comes off these. */
+  plans?: AssistantPlan[] | null;
 };
 
 const shapeRequest = (
@@ -694,8 +709,12 @@ async function settleDesign(opts: {
               design,
               not_automatic_because:
                 approval?.reason ?? "the merchant has to approve this one in Warmluke",
-              note: "Nothing has changed yet. Read this design back to the merchant and tell them it is waiting in Warmluke — the bell in the assistant panel.",
-              open: `${origin}/app/${project.id}`,
+              note: "Nothing has changed yet. Read this design back to the merchant, then read them what_the_merchant_does — it is what actually finishes this.",
+              what_the_merchant_does: stepsToFinish(
+                { status: "pending", plans },
+                openAt(origin, project.id, requestId as string)
+              ),
+              open: openAt(origin, project.id, requestId as string),
             })
           );
         }
@@ -735,7 +754,18 @@ async function settleDesign(opts: {
               built: applied,
               ...(errors.length ? { not_built: errors.slice(0, 3) } : {}),
               design,
-              open: `${origin}/app/${project.id}`,
+              // Built already, so there is nothing to finish — but a
+              // half-built one has a card worth opening, and this
+              // says so or stays quiet, from the row itself.
+              ...(errors.length
+                ? {
+                    what_the_merchant_does: stepsToFinish(
+                      { status: "partly_built", plans },
+                      openAt(origin, project.id, requestId as string)
+                    ),
+                  }
+                : {}),
+              open: openAt(origin, project.id, requestId as string),
             })
           );
         }
@@ -786,7 +816,11 @@ async function settleDesign(opts: {
             : wantsAuto && autoReason
               ? { not_automatic_because: autoReason }
               : {}),
-          open: `${origin}/app/${project.id}`,
+          what_the_merchant_does: stepsToFinish(
+            { status: "pending", plans },
+            openAt(origin, project.id, requestId as string)
+          ),
+          open: openAt(origin, project.id, requestId as string),
         })
       );
     }
@@ -973,7 +1007,7 @@ export async function POST(req: Request) {
             note: "That counter is only for designs Warmluke writes. Write this one yourself instead: call design_format, then submit_design. It is checked by the same validator, goes to the merchant the same way, and does not touch the counter.",
             do_this_instead: "design_format",
             reading_still_works: "orders, stock, products, customers — and pending_changes says what, if anything, is still waiting to be approved",
-            open: `${new URL(req.url).origin}/app/${project.id}`,
+            open: openAt(new URL(req.url).origin, project.id),
           })
         );
       }
@@ -1255,7 +1289,10 @@ export async function POST(req: Request) {
       let q = db
         .from("build_requests")
         .select(
-          "id, project_id, request, summary, status, approved_at, created_at, client_id, outcome",
+          // plans, because what the merchant has to do to finish one
+          // is read off them: a design that removes a section takes
+          // two more taps and a name typed out.
+          "id, project_id, request, summary, status, approved_at, created_at, client_id, outcome, plans",
           { count: "exact" }
         )
         // partly_built is not waiting for anybody, but it is the one
@@ -1285,8 +1322,14 @@ export async function POST(req: Request) {
             : "Nothing is waiting for approval. Do not tell the merchant otherwise — anything from earlier in this conversation has since been built or dismissed.",
           waiting: rows.map((r) => {
             const shaped = shapeRequest(r as RequestRow, client);
+            const where = openAt(new URL(req.url).origin, r.project_id, r.id);
             return {
               ...shaped,
+              // The one tool whose whole job is "what is waiting"
+              // said nothing about where to go or what to press. Both
+              // come from the row, so neither can drift from it.
+              open: where,
+              what_the_merchant_does: stepsToFinish({ ...(r as RequestRow), plans: (r as RequestRow).plans ?? [] }, where),
               next_action:
                 r.status === "partly_built"
                   ? "Some of this was built and some was not. Tell the merchant exactly which, and ask for the missing part again as a new request — approve_change will not finish this one."
@@ -1652,7 +1695,7 @@ export async function POST(req: Request) {
           text({
             error: "That build was not made through this assistant, so it cannot be put back from here.",
             note: "The merchant can put it back themselves: its receipt in Warmluke has a \"Put it back\" link.",
-            open: `${new URL(req.url).origin}/app/${target.project_id}`,
+            open: openAt(new URL(req.url).origin, target.project_id),
           })
         );
       }
@@ -1673,7 +1716,7 @@ export async function POST(req: Request) {
             status: "nothing to put back",
             // The commonest case by far, and the honest reason for it.
             note: "This build made something new rather than changing something that already existed — most likely a section. Putting that back means deleting it and every row in it, which Warmluke asks the merchant to confirm by typing the section's name. Offer that instead of an undo, and do not call approve_change for it.",
-            open: `${new URL(req.url).origin}/app/${target.project_id}`,
+            open: openAt(new URL(req.url).origin, target.project_id),
           })
         );
       }
@@ -1699,7 +1742,7 @@ export async function POST(req: Request) {
             status: "waiting for the merchant",
             would_put_back: what,
             note: "This app asks before it changes anything, and an undo is a change. Tell them the fastest way is the build's own receipt in Warmluke, which has a \"Put it back\" link on it.",
-            open: `${new URL(req.url).origin}/app/${target.project_id}`,
+            open: openAt(new URL(req.url).origin, target.project_id),
           })
         );
       }
@@ -1731,7 +1774,7 @@ export async function POST(req: Request) {
           note: done.length
             ? "Read back exactly what came off. Anything under could_not is still there and has to be dealt with in Warmluke."
             : "Nothing changed. Say why, in their words.",
-          open: `${new URL(req.url).origin}/app/${target.project_id}`,
+          open: openAt(new URL(req.url).origin, target.project_id),
         })
       );
     }
@@ -1802,6 +1845,14 @@ export async function POST(req: Request) {
                   the_rest_of_this_design: `The other ${alsoWaiting} change${alsoWaiting === 1 ? "" : "s"} in this request wait${alsoWaiting === 1 ? "s" : ""} with it: one request is one card and one yes, so no part of it can be approved from here. If they want those now, propose them again on their own, without the removal.`,
                 }
               : {}),
+            // The refusal is the one answer that most needs them: it
+            // is where an assistant has just been told it cannot do
+            // this, and the merchant is the only one who can.
+            what_the_merchant_does: stepsToFinish(
+              reqRow,
+              openAt(new URL(req.url).origin, reqRow.project_id, reqRow.id)
+            ),
+            open: openAt(new URL(req.url).origin, reqRow.project_id, reqRow.id),
           })
         );
       }
@@ -1820,7 +1871,8 @@ export async function POST(req: Request) {
             error:
               "Warmluke needs the merchant's yes from inside their own app before this is built.",
             note: "Tell them it is waiting in Warmluke — the bell in the assistant panel. If they would rather you built these without asking each time, they can turn auto-build on for this app.",
-            open: `${new URL(req.url).origin}/app/${reqRow.project_id}`,
+            what_the_merchant_does: stepsToFinish(reqRow, openAt(new URL(req.url).origin, reqRow.project_id, reqRow.id)),
+            open: openAt(new URL(req.url).origin, reqRow.project_id, reqRow.id),
             reason: approval?.reason,
           })
         );
@@ -1900,7 +1952,18 @@ export async function POST(req: Request) {
                   "Offer these in their own words and wait. Each is another change, so it needs proposing and approving like this one did.",
               }
             : {}),
-          open: `${origin}/app/${reqRow.project_id}`,
+          // Half of it landed, so there is a card worth opening and
+          // a missing part to ask for again. A clean build returns
+          // nothing here, from the same function.
+          ...(errors.length
+            ? {
+                what_the_merchant_does: stepsToFinish(
+                  { status: "partly_built", plans: reqRow.plans },
+                  openAt(origin, reqRow.project_id, reqRow.id)
+                ),
+              }
+            : {}),
+          open: openAt(origin, reqRow.project_id, reqRow.id),
         })
       );
     }

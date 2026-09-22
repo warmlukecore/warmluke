@@ -151,6 +151,8 @@ function DashboardInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [projects, setProjects] = useState<ProjectRow[]>([]);
+  /** How many designs are waiting on the merchant, per project. */
+  const [waiting, setWaiting] = useState<Record<string, number>>({});
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [handoffStarted, setHandoffStarted] = useState(false);
@@ -235,6 +237,24 @@ function DashboardInner() {
     setStores(
       Object.fromEntries(((storeRows ?? []) as StoreRow[]).map((st) => [st.project_id, st]))
     );
+
+    // What their own AI is waiting on them for, per app.
+    //
+    // This page never asked. A merchant whose assistant proposed
+    // something in Claude signs in, lands here, and sees a list of
+    // apps that all look the same — the only sign of it is inside
+    // one of them, behind a panel. Counted here rather than joined
+    // in the card, so an app with nothing waiting renders exactly as
+    // it did.
+    const { data: waitingRows } = await supabase
+      .from("build_requests")
+      .select("project_id, status")
+      .in("status", ["pending", "partly_built"]);
+    const tally: Record<string, number> = {};
+    for (const w of (waitingRows ?? []) as Array<{ project_id: string }>) {
+      tally[w.project_id] = (tally[w.project_id] ?? 0) + 1;
+    }
+    setWaiting(tally);
   }, []);
 
   useEffect(() => {
@@ -415,6 +435,12 @@ function DashboardInner() {
                   <div className="font-display mt-3 pr-8 font-semibold group-hover:text-white">
                     {p.name}
                   </div>
+                  {waiting[p.id] > 0 && (
+                    <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-300">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                      {waiting[p.id]} waiting for you
+                    </div>
+                  )}
                   <div className="mt-1 text-xs text-slate-500">
                     Created{" "}
                     {new Date(p.created_at).toLocaleDateString(p.locale || "en-IN", {

@@ -161,6 +161,22 @@ export default function AppShell({
   // Below lg the three panes become drawers: the phone shows one at a time.
   const [navOpen, setNavOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  /**
+   * How many things their own AI is waiting on them for.
+   *
+   * Reported by the panel, which loads them. Above lg the panel is
+   * always on screen and the bell carries this; below it the panel
+   * is a shut drawer, so without this the button that opens it is
+   * the only thing on the page and says nothing.
+   */
+  const [waiting, setWaiting] = useState(0);
+  // A link from their assistant names the request it is about. The
+  // panel opens the bell on it; this is the half that gets the
+  // drawer open on a phone, where it starts shut.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("waiting")) setChatOpen(true);
+  }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [moduleSettingsFor, setModuleSettingsFor] = useState<ModuleRow | null>(null);
   // Which parents are open. Collapsed by default would hide a section
@@ -1820,9 +1836,15 @@ export default function AppShell({
             {isOwner && (
             <button
               onClick={() => setChatOpen(true)}
-              className="rounded-lg bg-gradient-to-br from-violet-500 to-blue-500 px-2.5 py-1.5 text-sm font-medium text-white shadow-sm lg:hidden"
+              aria-label={waiting > 0 ? `Luke — ${waiting} waiting for you` : "Luke"}
+              className="relative rounded-lg bg-gradient-to-br from-violet-500 to-blue-500 px-2.5 py-1.5 text-sm font-medium text-white shadow-sm lg:hidden"
             >
               ✦<span className="ml-1 hidden sm:inline">Luke</span>
+              {waiting > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-semibold text-white">
+                  {waiting}
+                </span>
+              )}
             </button>
             )}
           </div>
@@ -1954,6 +1976,7 @@ export default function AppShell({
         onResizeReset={chat.reset}
         open={chatOpen}
         onClose={() => setChatOpen(false)}
+        onWaiting={setWaiting}
         modules={modules}
         selectedModuleId={selectedModuleId}
         currentSchema={schema?.schema_json ?? null}
