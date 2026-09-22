@@ -19,7 +19,7 @@ import {
   cycleCss,
   headlineParts,
 } from "../src/lib/landing.ts";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 const fails = [];
 const check = (name, cond) => {
@@ -177,17 +177,27 @@ console.log("\nand no long dash reached the copy");
 // slipped back into new copy within an hour of the last sweep. The
 // pages a visitor meets before signing in are all here, comments
 // stripped first so the reasoning above a line can say what it likes.
+// Found, not listed. A list of nine files was written here first and
+// was already wrong: it missed the consent screen and the invite
+// page, both of which a merchant reads before they are inside, and
+// both of which had one. Every page under src/app is a page unless
+// it sits behind the login — that is the whole rule, and a page
+// added tomorrow is covered by it without anyone remembering.
+const BEHIND_THE_LOGIN = /^src\/app\/(app|admin|dashboard|api)\//;
+const pagesUnder = (dir) =>
+  readdirSync(new URL(`../${dir}`, import.meta.url), { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory()
+      ? pagesUnder(`${dir}/${e.name}`)
+      : e.name === "page.tsx"
+        ? [`${dir}/${e.name}`]
+        : []
+  );
 const COPY = [
-  "src/app/page.tsx",
+  ...pagesUnder("src/app").filter((f) => !BEHIND_THE_LOGIN.test(f)),
+  // The two files the landing page is actually written in.
   "src/lib/landing.ts",
   "src/components/Landing.tsx",
-  "src/app/terms/page.tsx",
-  "src/app/privacy/page.tsx",
-  "src/app/login/page.tsx",
-  "src/app/signup/page.tsx",
-  "src/app/forgot/page.tsx",
-  "src/app/reset/page.tsx",
-];
+].sort();
 for (const f of COPY) {
   const code = readFileSync(new URL(`../${f}`, import.meta.url), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "")

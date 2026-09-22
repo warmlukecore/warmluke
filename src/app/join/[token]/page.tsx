@@ -31,7 +31,7 @@ export default function JoinPage() {
         return;
       }
       if (!projectId) {
-        setError("This invite is no longer valid — ask for a fresh link.");
+        setError("This invite is no longer valid. Ask for a fresh link.");
         return;
       }
       router.replace(`/app/${projectId}`);

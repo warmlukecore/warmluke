@@ -142,7 +142,7 @@ function ConsentInner() {
       </h1>
       <p className="mt-2 text-sm leading-relaxed text-slate-400">
         It will be able to see your Shopify products, customers and orders through
-        Warmluke. It cannot change anything — in your store or here.
+        Warmluke. It cannot change anything in your store, or anything here.
       </p>
 
       <ul className="mt-5 space-y-1.5">

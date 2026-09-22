@@ -7,6 +7,20 @@ const projectDir = path.dirname(fileURLToPath(import.meta.url));
 // PostgREST and realtime all live there. Read from the environment so
 // a preview or a second project does not need this file edited — and
 // so nobody has to remember that it exists.
+/**
+ * Whether this process is serving a development build.
+ *
+ * It decides one thing below, and only one. React's development build
+ * calls eval() to rebuild stack traces across environments, so every
+ * page served by `next dev` opens with a console error saying so —
+ * noise that hides the errors worth reading, and the first thing
+ * anyone asks about after opening the console here.
+ *
+ * `next build` and `next start` both run with NODE_ENV=production, so
+ * what ships is unchanged: no eval there, whatever happens here.
+ */
+const dev = process.env.NODE_ENV !== "production";
+
 const supabase = process.env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL ?? "";
 const supabaseOrigin = supabase ? new URL(supabase).origin : "";
 const supabaseSocket = supabaseOrigin.replace(/^https:/, "wss:");
@@ -41,7 +55,7 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
+      `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""}`,
       `connect-src 'self' ${supabaseOrigin} ${supabaseSocket}`.trim(),
       "img-src 'self' data: blob: https:",
       // The landing hero's film, which is served from here. Worth

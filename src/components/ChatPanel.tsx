@@ -991,6 +991,19 @@ export default function ChatPanel({
   const pendingCount = requests.filter(
     (r) => r.status === "pending" || r.status === "partly_built"
   ).length;
+  /**
+   * Which ones are waiting, as one string.
+   *
+   * The line above the composer is dismissed against this rather
+   * than against a boolean: cleared once, it stays cleared for these
+   * requests and comes back by itself the moment a different one
+   * turns up. A boolean would either nag after they had said no, or
+   * go quiet for good.
+   */
+  const waitingKey = requests
+    .filter((r) => r.status === "pending" || r.status === "partly_built")
+    .map((r) => r.id)
+    .join(",");
 
   // On the tab, not only in the panel. A merchant is not sitting here
   // when their assistant proposes something — they are in another tab,
@@ -1002,6 +1015,8 @@ export default function ChatPanel({
   }, [pendingCount]);
   /** Requests that turned up just now, floating over the panel. */
   const [toasts, setToasts] = useState<string[]>([]);
+  /** The set of waiting requests the line above the composer was cleared for. */
+  const [noticeCleared, setNoticeCleared] = useState("");
   /** What was already waiting last time we looked. Null = never looked. */
   const seen = useRef<Set<string> | null>(null);
 
@@ -2142,6 +2157,36 @@ export default function ChatPanel({
             </div>
           )}
         </details>
+      )}
+
+      {/* What their own AI asked for, where they are already looking.
+          It is not a turn in the conversation — that was tried, and a
+          card that cannot be scrolled past is worse than a bell
+          nobody taps — and it is not a toast either, because a toast
+          only fires for something that arrives while the tab is
+          open, and the usual case is the opposite: they were in
+          Claude, and they come here afterwards. So: one line, above
+          the composer, outside the scroll, gone the moment they say
+          so. */}
+      {pendingCount > 0 && !bellOpen && waitingKey !== noticeCleared && (
+        <div className="flex items-center gap-2 border-t border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-900">
+          <span className="min-w-0 flex-1 truncate">
+            Your AI asked for {pendingCount} {pendingCount === 1 ? "change" : "changes"}
+          </span>
+          <button
+            onClick={() => setBellOpen(true)}
+            className="shrink-0 font-medium text-amber-800 underline underline-offset-2 hover:text-amber-950"
+          >
+            Open
+          </button>
+          <button
+            onClick={() => setNoticeCleared(waitingKey)}
+            aria-label="Hide this until something else arrives"
+            className="shrink-0 px-1 text-amber-500 hover:text-amber-800"
+          >
+            ✕
+          </button>
+        </div>
       )}
 
       {/* Input */}
