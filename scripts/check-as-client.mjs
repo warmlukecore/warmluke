@@ -260,7 +260,120 @@ try {
       .single();
     check("the row is untouched", still?.status === "pending" && still?.approved_at === null);
 
+    // ── Asking for one, through the tool ──────────────────────
+    //
+    // Everything below is the assistant's road: what it may ask for,
+    // what it is told when it asks wrongly, and what it is handed to
+    // read back. The store here has never recorded a granted scope,
+    // which is the state every store is in until write scopes exist
+    // — so proposing is allowed and running is not, and both halves
+    // are checked.
+    console.log("\nand the tool for it answers an assistant properly");
+    {
+      const nonsense = await tool("propose_store_action", {
+        action: "explode_the_shop",
+        targets: [{ id: "gid://shopify/Order/1" }],
+      });
+      check("an action nobody declared is refused", /no change called/i.test(nonsense?.error ?? ""));
+      check("and it is told what there is", Array.isArray(nonsense?.what_can_be_asked_for) && nonsense.what_can_be_asked_for.length > 0);
+      check(
+        "with whether each can be taken back",
+        (nonsense?.what_can_be_asked_for ?? []).every((c) => "can_be_taken_back" in c || "cannot_be_taken_back" in c)
+      );
+
+      const badIds = await tool("propose_store_action", {
+        action: "add_tags",
+        targets: ["1042", { id: "gid://shopify/Order/7" }],
+        params: { tags: ["rush"] },
+      });
+      check("a number instead of a Shopify id is refused", /cannot be acted on/i.test(badIds?.error ?? ""));
+      check("and the bad one is named back", (badIds?.these ?? []).some((t) => /1042/.test(t)));
+
+      const noTag = await tool("propose_store_action", {
+        action: "add_tags",
+        targets: [{ id: "gid://shopify/Order/7" }],
+        params: {},
+      });
+      check("a tag change with no tag is refused", /no tag/i.test(noTag?.error ?? ""));
+
+      const tooMany = await tool("propose_store_action", {
+        action: "add_tags",
+        targets: Array.from({ length: 500 }, (_, i) => ({ id: `gid://shopify/Order/${i + 1}` })),
+        params: { tags: ["rush"] },
+      });
+      check("too many at once is refused", /most one change may touch/i.test(tooMany?.error ?? ""));
+
+      const asked = await tool("propose_store_action", {
+        action: "add_tags",
+        targets: [{ id: "gid://shopify/Order/7" }, { id: "gid://shopify/Order/8" }],
+        params: { tags: ["rush"] },
+      });
+      check("a real one is accepted", !!asked?.action_id);
+      // The words on the card come off the registry, not off
+      // whatever the assistant said it was doing.
+      check("and the merchant reads what it really does", /^Tags 2 orders "rush"$/.test(asked?.changes ?? ""));
+      check("it says nothing changed yet", /waiting for the merchant/i.test(asked?.status ?? ""));
+      check("and that this one can be taken back", asked?.can_be_taken_back === true);
+      check("it hands over the steps", (asked?.what_the_merchant_does ?? []).some((x) => /Do it/.test(x)));
+      check("and a link that opens on it", (asked?.open ?? "").includes(asked?.action_id ?? "never"));
+
+      const listed = await tool("pending_changes", {});
+      const mineInList = (listed?.waiting_store_changes ?? []).find((w) => w.action_id === asked?.action_id);
+      check("it shows up in what is waiting", !!mineInList);
+      check("and is never the assistant's to approve", mineInList?.you_can_approve_it === false);
+
+      // The route the panel uses, driven with the merchant's own
+      // session: approve and run in one act.
+      const owner2 = createClient(
+        env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
+        env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
+      );
+      const ownerSession = await signInAsCheckUser(owner2, env);
+      const post = (body) =>
+        fetch(`${APP}/api/store-actions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${ownerSession.session.access_token}`,
+          },
+          body: JSON.stringify(body),
+        }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) }));
+
+      const ran = await post({ actionId: asked.action_id, do: "run" });
+      check("the merchant's yes reaches the shop road", ran.status === 200);
+      check("and it stops at the scopes nobody granted", /has not allowed|write_orders/i.test((ran.body?.errors ?? []).join(" ")));
+      check("with the row finished rather than left running", ran.body?.status === "failed");
+
+      const twice = await post({ actionId: asked.action_id, do: "run" });
+      check("a second yes is refused", twice.status === 409);
+      check("and says nothing went out", /nothing was sent/i.test(twice.body?.note ?? ""));
+
+      const gibberish = await post({ actionId: asked.action_id, do: "juggle" });
+      check("an instruction nobody wrote is refused", gibberish.status === 400);
+
+      const another = await tool("propose_store_action", {
+        action: "add_tags",
+        targets: [{ id: "gid://shopify/Order/9" }],
+        params: { tags: ["later"] },
+      });
+      const turned = await post({ actionId: another.action_id, do: "dismiss" });
+      check("turning one down works", turned.body?.dismissed === true);
+      const after = await post({ actionId: another.action_id, do: "run" });
+      check("and a dismissed one cannot then be run", after.status === 409);
+    }
+
     await admin.from("account_settings").update({ store_actions_enabled: false }).eq("user_id", me.userId);
+
+    console.log("\nand with the switch off, nothing may be asked for at all");
+    {
+      const off = await tool("propose_store_action", {
+        action: "add_tags",
+        targets: [{ id: "gid://shopify/Order/7" }],
+        params: { tags: ["rush"] },
+      });
+      check("the tool refuses outright", /not turned on/i.test(off?.error ?? ""));
+      check("and says what still works", /reading/i.test(off?.note ?? ""));
+    }
   }
 } finally {
   await setAuto(project.auto_build === true);

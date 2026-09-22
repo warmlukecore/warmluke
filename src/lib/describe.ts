@@ -409,6 +409,8 @@ export const WAITING_BUTTONS = {
   build: "Build it",
   openRemoval: "Remove a section…",
   confirmRemoval: "Remove it",
+  /** A change to the shop itself, which is a different kind of yes. */
+  runStoreAction: "Do it",
 } as const;
 
 /**
@@ -455,6 +457,49 @@ export function stepsToFinish(
         `Tap "${WAITING_BUTTONS.confirmRemoval}"`,
       ]
     : [open, `Tap "${WAITING_BUTTONS.build}"`];
+}
+
+/**
+ * What the merchant does to finish a change to their shop.
+ *
+ * The sibling of stepsToFinish, and deliberately a second function
+ * rather than a flag on the first: a design waits for a build inside
+ * Warmluke, and this waits to go out to a live Shopify store. They
+ * look alike on the card and are not the same promise, and a
+ * function that blurred them would be the place that stopped saying
+ * which one a merchant was agreeing to.
+ *
+ * The confirm level comes off the registry entry, so an action that
+ * one day needs a word typed gets that step here without this
+ * function learning its name.
+ */
+export function stepsToFinishAction(
+  row: { status: string; action: string },
+  link: string,
+  spec: { label: string; confirm: "list" | "typed" } | null
+): string[] {
+  const settled =
+    row.status === "done" ||
+    row.status === "partly_done" ||
+    row.status === "failed" ||
+    row.status === "dismissed";
+  if (settled) return [];
+  const open = `Open ${link} — it opens with this in front of them`;
+  if (row.status === "running") {
+    return [`${open}. It is being sent to the shop now; nothing to tap.`];
+  }
+  if (row.status === "approved") {
+    return [`${open}. They have already agreed to it; it runs by itself.`];
+  }
+  // An action nobody declared cannot be described, and saying "tap
+  // Do it" about one would be inventing a button for a change that
+  // will refuse itself the moment it runs.
+  if (!spec) {
+    return [open, "Warmluke does not recognise this change, so it cannot be done."];
+  }
+  return spec.confirm === "typed"
+    ? [open, "Type the word it asks for", `Tap "${WAITING_BUTTONS.runStoreAction}"`]
+    : [open, `Tap "${WAITING_BUTTONS.runStoreAction}"`];
 }
 
 /** How much of a request is quoted. Enough to recognise it by. */

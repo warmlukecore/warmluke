@@ -18,7 +18,21 @@ import { RESOURCES, SHOPIFY_RESOURCES } from "@/lib/shopify-resources";
 import { blueprintAsText, runTurn, schemasFor, storeFactsFor } from "@/lib/engine";
 import { PLAN_FORMAT, WORKED_EXAMPLE, parseReply } from "@/lib/ai";
 import { vocabularyPrompt } from "@/lib/capabilities";
-import { describePlan, describeRules, seededCopies, stepsToFinish, type RuleRow } from "@/lib/describe";
+import {
+  describePlan,
+  describeRules,
+  seededCopies,
+  stepsToFinish,
+  stepsToFinishAction,
+  type RuleRow,
+} from "@/lib/describe";
+import {
+  ACTIONS,
+  MOST_TARGETS,
+  STORE_ACTIONS,
+  actionSpec,
+  type ActionTarget,
+} from "@/lib/store-actions";
 import { applyPlans, logClientBuild, putBack } from "@/lib/apply";
 import { undoableFrom } from "@/lib/undo";
 import { noteJudgement } from "@/lib/judge";
@@ -71,6 +85,57 @@ type RpcRequest = { jsonrpc: "2.0"; id?: string | number | null; method: string;
  */
 const RENDER_NOTE =
   " If you show this in an artifact, draw charts as inline SVG — scripts from a CDN do not load there, and a chart that needs one comes out blank. If the merchant wants this to stay, build it as a section in Warmluke instead: propose_change or submit_design.";
+
+/**
+ * Everything that can be asked for, off the registry.
+ *
+ * Built here rather than written into the tool's description, so an
+ * action added tomorrow is offered tomorrow. It carries what each
+ * one needs and whether it can be taken back, because an assistant
+ * that knows a change is permanent asks differently.
+ */
+const ACTION_CATALOGUE = ACTIONS.map((a) => {
+  const spec = STORE_ACTIONS[a];
+  return {
+    action: a,
+    does: spec.label,
+    store_must_allow: spec.scopes,
+    ...(spec.undo
+      ? { can_be_taken_back: true }
+      : { cannot_be_taken_back: spec.undoNote ?? "This one cannot be undone." }),
+  };
+});
+
+/**
+ * What the assistant sent, as targets this can work with.
+ *
+ * A model asked for a tag on "1234" and on "gid://shopify/Order/1"
+ * in the same breath; both are the obvious thing to send and only
+ * one of them means anything to Shopify. Strings are lifted into
+ * objects, anything without a usable id is named back.
+ */
+function readTargets(given: unknown): { targets: ActionTarget[]; wrong: string[] } {
+  const list = Array.isArray(given) ? given : [];
+  const targets: ActionTarget[] = [];
+  const wrong: string[] = [];
+  for (const item of list) {
+    const t =
+      typeof item === "string"
+        ? { id: item }
+        : item && typeof item === "object"
+          ? ({ ...(item as Record<string, unknown>) } as ActionTarget)
+          : null;
+    const id = t && typeof t.id === "string" ? t.id.trim() : "";
+    if (!id) {
+      wrong.push(`${JSON.stringify(item).slice(0, 60)} has no id`);
+    } else if (!/^gid:\/\/shopify\/[A-Za-z]+\/\d+$/.test(id)) {
+      wrong.push(`"${id}" is not a Shopify id — they look like gid://shopify/Order/1234`);
+    } else {
+      targets.push({ ...t, id });
+    }
+  }
+  return { targets, wrong };
+}
 
 const TOOLS = [
   {
@@ -346,6 +411,34 @@ const TOOLS = [
         },
       },
       required: ["plans"],
+    },
+  },
+  {
+    name: "propose_store_action",
+    description:
+      "Ask for something to be changed IN the merchant's Shopify shop itself — a tag on some orders, a note, a stock count. Warmluke writes the sentence they will read, from the change, not from you. Nothing happens until they agree to it in Warmluke, and you cannot agree for them: a change to a live shop is theirs alone, whatever the app's auto-build setting says. Call it once per kind of change; the answer says what they have to do next. What can be asked for: " +
+      ACTION_CATALOGUE.map((c) => `${c.action} (${c.does})`).join(", ") + ".",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          description: `One of: ${ACTIONS.join(", ")}.`,
+        },
+        targets: {
+          type: "array",
+          items: { type: "object" },
+          description:
+            'What it changes. Each carries Shopify\'s own id — { "id": "gid://shopify/Order/1234" } — plus whatever that change needs for that one line, such as a quantity.',
+        },
+        params: {
+          type: "object",
+          description: 'What to set, the same for every target: { "tags": ["rush"] } or { "note": "…" }.',
+        },
+        shop_domain: { type: "string", description: "Which store, when there is more than one." },
+        project_id: { type: "string", description: "Which app, when they have more than one. Optional." },
+      },
+      required: ["action", "targets"],
     },
   },
   {
@@ -1307,6 +1400,35 @@ export async function POST(req: Request) {
 
       const rows = waiting ?? [];
       const total = count ?? rows.length;
+
+      // Changes to the shop wait in their own table and must not be
+      // silently missing from the one tool whose job is "what needs
+      // them". Kept as a separate list rather than mixed in: a design
+      // waiting to be built inside Warmluke and a change waiting to
+      // go out to a live shop are not the same yes, and an assistant
+      // reading one list would report them as if they were.
+      let actionQuery = db
+        .from("store_actions")
+        .select("id, project_id, store_id, action, summary, status, created_at")
+        .in("status", ["pending", "approved", "running"])
+        .order("created_at", { ascending: false })
+        .limit(SHOW_WAITING);
+      if (wanted) actionQuery = actionQuery.eq("project_id", wanted);
+      const { data: actionRows } = await actionQuery;
+      const shopChanges = (actionRows ?? []).map((a) => {
+        const spec = actionSpec(a.action);
+        const where = openAt(new URL(req.url).origin, a.project_id, a.id);
+        return {
+          action_id: a.id,
+          changes: a.summary,
+          state: a.status === "pending" ? "waiting for the merchant" : a.status,
+          // Said every time, because it is the thing an assistant is
+          // most likely to get wrong about these.
+          you_can_approve_it: false,
+          what_the_merchant_does: stepsToFinishAction(a, where, spec),
+          open: where,
+        };
+      });
       return ok(
         id,
         text({
@@ -1316,6 +1438,13 @@ export async function POST(req: Request) {
           showing: rows.length,
           ...(total > rows.length
             ? { has_more: `${total - rows.length} older ones are not listed here.` }
+            : {}),
+          ...(shopChanges.length
+            ? {
+                waiting_store_changes: shopChanges,
+                store_changes_note:
+                  "These change the merchant's Shopify shop, not their Warmluke app. None of them is yours to approve — read what_the_merchant_does and leave it with them.",
+              }
             : {}),
           note: total
             ? "Only the ones marked awaiting_approval need the merchant's yes. Anything marked partly built already happened and cannot be finished from here — say what is missing. Read a waiting one back and call approve_change with its request_id if they say so."
@@ -2000,6 +2129,124 @@ export async function POST(req: Request) {
         text({
           error: `No connected store called "${wanted}".`,
           available: stores.map((s) => s.shop_domain),
+        })
+      );
+    }
+
+    if (name === "propose_store_action") {
+      // Refused here as well as in SQL. The database is what makes it
+      // true; this is what makes it a sentence the assistant can read
+      // out instead of an error code.
+      const { data: allowed } = await db.rpc("abo_feature", { p_name: "store_actions" });
+      if (allowed !== true) {
+        return ok(
+          id,
+          text({
+            error: "Changing the shop from Warmluke is not turned on for this account.",
+            note: "Reading everything still works, and designs can still be proposed and built. Ask Warmluke to turn this on for them.",
+          })
+        );
+      }
+
+      const wantedAction = String(args.action ?? "").trim();
+      const spec = actionSpec(wantedAction);
+      if (!spec) {
+        return ok(
+          id,
+          text({
+            error: wantedAction
+              ? `There is no change called "${wantedAction}".`
+              : "Say which change to ask for.",
+            what_can_be_asked_for: ACTION_CATALOGUE,
+          })
+        );
+      }
+      // A second connector's actions will be in the same registry and
+      // must not be attempted down this road.
+      if (spec.connector !== "shopify") {
+        return ok(id, text({ error: `Nothing here can reach ${spec.connector} yet.` }));
+      }
+
+      const { targets, wrong } = readTargets(args.targets);
+      if (wrong.length) {
+        return ok(
+          id,
+          text({
+            error: "Some of what you named cannot be acted on.",
+            these: wrong.slice(0, 5),
+            note: "Shopify's own ids, as they come back from the reading tools.",
+          })
+        );
+      }
+      if (targets.length > MOST_TARGETS) {
+        return ok(
+          id,
+          text({
+            error: `That is ${targets.length} things at once, and ${MOST_TARGETS} is the most one change may touch.`,
+            note: "Ask for it in smaller pieces, so the merchant can read what they are agreeing to.",
+          })
+        );
+      }
+
+      const params = (args.params ?? {}) as Record<string, unknown>;
+      const wrongHow = spec.check(targets, params);
+      if (wrongHow) return ok(id, text({ error: wrongHow, what_can_be_asked_for: [ACTION_CATALOGUE.find((c) => c.action === wantedAction)] }));
+
+      // What the store has actually allowed, when anybody has recorded
+      // it. Null means nobody has looked since the grant, and refusing
+      // on that would lock out every store connected before the column
+      // existed — so the executor is left to find out instead.
+      const { data: grantRow } = await db
+        .from("stores")
+        .select("granted_scopes")
+        .eq("id", store.id)
+        .maybeSingle();
+      const granted = (grantRow?.granted_scopes ?? null) as string[] | null;
+      const short = granted ? spec.scopes.filter((sc) => !granted.includes(sc)) : [];
+      if (short.length) {
+        return ok(
+          id,
+          text({
+            error: `${store.shop_domain} has not allowed Warmluke to ${short.join(", ")}.`,
+            note: "Nothing was asked for. The merchant reconnects the store in Warmluke to grant it, and then this can be proposed.",
+            open: openAt(new URL(req.url).origin, store.project_id),
+          })
+        );
+      }
+
+      // The sentence on the card is written from the change itself,
+      // never from the assistant. Whatever it told the merchant this
+      // does, what they agree to is this line.
+      const summary = spec.say(targets, params);
+      const { data: actionId, error: proposeError } = await db.rpc("abo_action_propose", {
+        p_project: store.project_id,
+        p_store: store.id,
+        p_action: wantedAction,
+        p_targets: targets,
+        p_params: params,
+        p_summary: summary,
+      });
+      if (proposeError) return ok(id, text({ error: proposeError.message }));
+
+      const where = openAt(new URL(req.url).origin, store.project_id, actionId as string);
+      return ok(
+        id,
+        text({
+          status: "waiting for the merchant",
+          action_id: actionId,
+          shop: store.shop_domain,
+          changes: summary,
+          touches: targets.length,
+          ...(spec.undo
+            ? { can_be_taken_back: true }
+            : { cannot_be_taken_back: spec.undoNote ?? "This one cannot be undone." }),
+          note: "Nothing has changed in the shop. Read them what this does, then read them what_the_merchant_does — and do not offer to do it for them, because you cannot.",
+          what_the_merchant_does: stepsToFinishAction(
+            { status: "pending", action: wantedAction },
+            where,
+            spec
+          ),
+          open: where,
         })
       );
     }
