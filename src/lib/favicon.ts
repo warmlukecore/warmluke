@@ -8,48 +8,49 @@
 // tab they are not looking at. This is the same fact Slack puts on its
 // icon: there is something here for you.
 //
-// Drawn rather than shipped as files. Two states need two images, the
-// mark is a letter on a square, and a canvas is smaller than the build
-// step that would produce the PNGs.
+// It used to draw its own mark: a blue rounded square with a white W,
+// because there was no icon file to borrow and a canvas was smaller
+// than a build step. There is one now — the real logo, at
+// src/app/icon.png, which Next puts in the head of every page — so
+// the drawn one is gone. Two marks for one product is the kind of
+// thing nobody files a bug about and everybody notices.
+//
+// So this borrows whatever icon the page already has and adds the dot
+// to it. Nothing here knows the path: it reads the href out of the
+// head, which is the one Next generated, hash and all.
 //
 // Callers: src/components/ChatPanel.tsx.
 
-/** The blue the app uses for anything the owner can act on. */
-const MARK = "#2563eb";
+/** The red used for anything unread, here and in the bell. */
 const DOT = "#ef4444";
 
-let plain: string | null = null;
+/** The icon the page loaded with, so putting it back is exact. */
+let original: string | null = null;
+/** The same mark with the dot, drawn once. */
 let dotted: string | null = null;
+/** What the last call asked for, so a slow draw cannot land too late. */
+let wanted = false;
 
-function draw(withDot: boolean): string {
-  const size = 32;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return "";
+/**
+ * The page's own icon with a dot punched into the corner.
+ *
+ * Asynchronous, because the icon is a file and not a rectangle any
+ * more. The image is same-origin, so the canvas is not tainted and
+ * can be read back.
+ */
+function drawDot(src: string, then: (href: string) => void): void {
+  const img = new Image();
+  img.onload = () => {
+    const size = 32;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(img, 0, 0, size, size);
 
-  ctx.fillStyle = MARK;
-  // A rounded square, because a bare one reads as a broken image at
-  // sixteen pixels.
-  const r = 7;
-  ctx.beginPath();
-  ctx.moveTo(r, 0);
-  ctx.arcTo(size, 0, size, size, r);
-  ctx.arcTo(size, size, 0, size, r);
-  ctx.arcTo(0, size, 0, 0, r);
-  ctx.arcTo(0, 0, size, 0, r);
-  ctx.fill();
-
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 20px system-ui, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("W", size / 2, size / 2 + 1);
-
-  if (withDot) {
-    // Punched out of the corner first, so the dot reads as a dot at
-    // favicon size instead of smearing into the blue behind it.
+    // Punched out first, so the dot reads as a dot at sixteen pixels
+    // instead of smearing into whatever is behind it.
     ctx.globalCompositeOperation = "destination-out";
     ctx.beginPath();
     ctx.arc(size - 9, 9, 9, 0, Math.PI * 2);
@@ -60,9 +61,12 @@ function draw(withDot: boolean): string {
     ctx.beginPath();
     ctx.arc(size - 9, 9, 7, 0, Math.PI * 2);
     ctx.fill();
-  }
 
-  return canvas.toDataURL("image/png");
+    then(canvas.toDataURL("image/png"));
+  };
+  // A tab icon is not worth handling. The title already said it.
+  img.onerror = () => {};
+  img.src = src;
 }
 
 /**
@@ -80,22 +84,29 @@ export function showWaiting(count: number): void {
   document.title = count > 0 ? `(${count}) ${base}` : base;
 
   try {
-    if (count > 0) {
-      dotted = dotted ?? draw(true);
-    } else {
-      plain = plain ?? draw(false);
-    }
-    const href = count > 0 ? dotted : plain;
-    if (!href) return;
+    wanted = count > 0;
+    const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    // No icon in the head means nothing to borrow and nothing to put
+    // back. The title carries it alone, which it was always going to
+    // have to do in the browsers that ignore this.
+    if (!link) return;
+    original = original ?? link.href;
 
-    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-    if (!link) {
-      link = document.createElement("link");
-      link.rel = "icon";
-      document.head.appendChild(link);
+    if (!wanted) {
+      link.href = original;
+      return;
     }
-    link.type = "image/png";
-    link.href = href;
+    if (dotted) {
+      link.href = dotted;
+      return;
+    }
+    drawDot(original, (href) => {
+      dotted = href;
+      // It may have been read in the time the icon took to load.
+      if (!wanted) return;
+      const now = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+      if (now) now.href = href;
+    });
   } catch {
     // A tab icon is not worth an exception. The title already said it.
   }
