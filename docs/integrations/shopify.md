@@ -245,13 +245,24 @@ count. Nothing is added unasked.
 ## Overview
 
 A project with a store opens on **Overview**. Its figures come from
-`abo_store_overview(p_project)` (0113), a security-definer function that refuses anyone
-`abo_can_use` does not allow and counts over every order on the server: orders today, in 7
-and 30 days; collected (`PAID`) and awaiting (`PENDING`, mostly cash on delivery) per
-currency, never added across currencies; open work to fulfil; a 14-day series; stock by
-state; and customer and product counts. Days are the store's own, in its timezone, falling
-back to UTC for a zone Postgres does not know. Cancelled orders count towards nothing.
-`check-overview` builds rows to break each rule.
+`abo_store_overview(p_project, p_days = 30, p_chart_days = 14)` (0113, replaced by 0114),
+a security-definer function that refuses anyone `abo_can_use` does not allow and counts
+over every order on the server. It answers with the windows it used (`days`,
+`chart_days`), and the page labels from that answer, keeping no numbers of its own:
+
+- orders today, yesterday, and in the window;
+- collected (`PAID`) and awaiting (`PENDING`) per currency, never added across currencies,
+  with the payment method most of the unpaid orders wait on, from their `gateway`;
+- open work to fulfil, whenever it came in;
+- orders per day for the chart;
+- stock by state, and the tracked variants with nothing left to sell (`stock_watch`,
+  emptiest first), the rule behind the stock view's "Out of stock", "All promised" and
+  "Out, more coming";
+- customer and product counts.
+
+Days are the store's own, in its timezone, falling back to UTC for a zone Postgres does
+not know. Cancelled orders count towards nothing. A window outside 1 to 365 days, or a
+chart outside 1 to 90, is refused. `check-overview` builds rows to break each rule.
 
 ## Disconnect and compliance
 

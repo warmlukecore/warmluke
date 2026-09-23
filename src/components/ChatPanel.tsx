@@ -1238,14 +1238,19 @@ export default function ChatPanel({
                   </span>
                 )}
               </button>
-            <button
-              onClick={onNewThread}
-              title="New conversation"
-              aria-label="New conversation"
-              className="relative inline-flex h-8 min-w-8 items-center justify-center gap-1 rounded-control px-1.5 text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
-            >
-              <SquarePen aria-hidden size={16} strokeWidth={1.75} />
-            </button>
+            {/* A fresh conversation, the one before kept under History.
+                Offered once there is one to leave: on an empty thread it
+                would do nothing. */}
+            {messages.length > 0 && (
+              <button
+                onClick={onNewThread}
+                title="Start a new conversation (this one stays in History)"
+                aria-label="New conversation"
+                className="relative inline-flex h-8 min-w-8 items-center justify-center gap-1 rounded-control px-1.5 text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+              >
+                <SquarePen aria-hidden size={16} strokeWidth={1.75} />
+              </button>
+            )}
             {threads.length > 0 && (
               <button
                 onClick={() => {
