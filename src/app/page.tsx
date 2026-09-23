@@ -567,13 +567,15 @@ function Planet({ name, ready }: { name: string; ready: boolean }) {
   );
 }
 
-/** One ring of the hub, with its logos set round it. */
-function Ring({ names, inset, turn }: { names: typeof CONNECTORS; inset: string; turn: number }) {
+/** One ring of the hub, turning; each logo on it turns back so it stays upright. */
+function Ring({ names, inset, seconds, turn }: { names: typeof CONNECTORS; inset: string; seconds: number; turn: number }) {
   return (
-    <div className="absolute" style={{ inset }}>
+    <div className="orbit absolute" style={{ inset, "--orbit-for": `${seconds}s` } as React.CSSProperties}>
       {names.map((c, i) => (
         <div key={c.name} className="absolute -translate-x-1/2 -translate-y-1/2" style={onRing(i, names.length, turn)}>
-          <Planet name={c.name} ready={c.ready} />
+          <div className="orbit-back">
+            <Planet name={c.name} ready={c.ready} />
+          </div>
         </div>
       ))}
     </div>
@@ -591,8 +593,8 @@ function Hub() {
     <div aria-hidden="true" className="relative mx-auto aspect-square w-full max-w-[20rem] sm:max-w-[24rem]">
       <div className="absolute inset-[7%] rounded-full border border-dashed border-neutral-300" />
       <div className="absolute inset-[28%] rounded-full border border-hair bg-white/60" />
-      <Ring names={CONNECTORS.filter((c) => !c.ready)} inset="7%" turn={45} />
-      <Ring names={CONNECTORS.filter((c) => c.ready)} inset="28%" turn={-90} />
+      <Ring names={CONNECTORS.filter((c) => !c.ready)} inset="7%" seconds={120} turn={45} />
+      <Ring names={CONNECTORS.filter((c) => c.ready)} inset="28%" seconds={80} turn={-90} />
       <div className="absolute top-1/2 left-1/2 flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-3xl bg-white shadow-[var(--shadow-dashboard)]">
         <Image src="/images/logowarmluke.png" alt="" width={48} height={48} className="h-12 w-12 rounded-xl object-cover" />
       </div>

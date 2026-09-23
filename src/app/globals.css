@@ -146,6 +146,20 @@
   }
 }
 
+/* The landing's hub: logos going round, each turning back as it goes so
+   it stays upright. The ring sets --orbit-for and its logos inherit it. */
+@keyframes orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.orbit {
+  animation: orbit var(--orbit-for, 90s) linear infinite;
+}
+.orbit-back {
+  animation: orbit var(--orbit-for, 90s) linear infinite reverse;
+}
+
 /* A text caret, for a prompt that is being typed into. */
 @keyframes caret {
   50% {
@@ -186,6 +200,8 @@ html:has(dialog.wl-dialog[open]) {
 @media (prefers-reduced-motion: reduce) {
   .rise,
   .pop,
+  .orbit,
+  .orbit-back,
   .caret,
   dialog.wl-dialog[open],
   dialog.wl-dialog[open]::backdrop {
