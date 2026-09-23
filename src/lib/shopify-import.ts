@@ -80,29 +80,31 @@ export async function ensureFreshToken(
   // renewal fails and the merchant is asked to reconnect for nothing.
   const now = Date.now();
   const renewed = grantedScopes(grant.scope);
-  await db
-    .from("stores")
-    .update({
-      access_token: grant.access_token,
-      refresh_token: grant.refresh_token ?? store.refresh_token,
-      token_expires_at: grant.expires_in
-        ? new Date(now + grant.expires_in * 1000).toISOString()
-        : null,
-      ...(grant.refresh_token_expires_in
-        ? {
-            refresh_token_expires_at: new Date(
-              now + grant.refresh_token_expires_in * 1000
-            ).toISOString(),
-          }
-        : {}),
-      // A renewal reports the same scopes the connect did, which is
-      // what fills this in for a store connected before the column
-      // existed — without asking anybody to reconnect for it. Omitted
-      // rather than nulled when the response is silent about them:
-      // writing null would erase a list the connect had recorded.
-      ...(renewed ? { granted_scopes: renewed } : {}),
-    })
-    .eq("id", store.id);
+  // Through abo_store_renewed rather than an update on the row: the
+  // background worker holds a ticket for this store's data, not for
+  // the row itself, which names the project the store belongs to. The
+  // function keeps what the direct update did: a refresh token Shopify
+  // said nothing about is kept, and so are scopes a renewal did not
+  // list — a renewal reports the same scopes the connect did, which is
+  // what fills them in for a store connected before the column
+  // existed, and writing null would erase a list the connect recorded.
+  const { data: stored, error } = await db.rpc("abo_store_renewed", {
+    p_store: store.id,
+    p_access_token: grant.access_token,
+    p_refresh_token: grant.refresh_token ?? null,
+    p_token_expires_at: grant.expires_in ? new Date(now + grant.expires_in * 1000).toISOString() : null,
+    p_refresh_token_expires_at: grant.refresh_token_expires_in
+      ? new Date(now + grant.refresh_token_expires_in * 1000).toISOString()
+      : null,
+    p_scopes: renewed ?? null,
+  });
+  // The grant is already spent — Shopify retired the old refresh token
+  // when it issued this one — so this run carries on with the new
+  // token either way. Not keeping it strands the store at the next
+  // renewal, which is worth saying loudly.
+  if (error || stored !== true) {
+    console.error("could not store the renewed Shopify token:", error?.message ?? "not allowed");
+  }
 
   return grant.access_token;
 }

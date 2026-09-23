@@ -8,10 +8,11 @@
 // happened. This says the shop is attached, runs the import, and then
 // says what actually arrived.
 //
-// It is also the only thing that calls the import route. The route does
-// one page per request on purpose, so something has to keep asking; a
-// screen the merchant is already watching is the honest place to do it,
-// because the progress they see is the work itself rather than a guess.
+// The import itself runs on the server: this asks the database to send
+// it to the worker, and then only watches, so closing the tab stops
+// nothing. Where there is no worker — the database answers
+// "not_configured" — it does the work from here, a page per request,
+// the way it always did.
 // ─────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -27,13 +28,16 @@ import ConnectShopify from "@/components/ConnectShopify";
  */
 type Progress = Record<string, { imported: number; status: string; label?: string; holds?: string }>;
 
-/** A page is 50 rows, so this stops at 20,000 of any one resource.
- *  ponytail: bounded so a cursor bug cannot spin forever; move the loop
- *  to a background job when a real store outgrows it. */
+/** A page is 50 rows, so driving from here stops at 20,000 of any one
+ *  resource. Bounded so a cursor bug cannot spin forever; the worker
+ *  has no such ceiling, and this only runs where there is no worker. */
 const MAX_PAGES = 400;
 
 /** Consecutive stumbles the client rides out before it says so. */
 const IMPORT_RETRIES = 3;
+
+/** How often the strip asks where a server-side import has got to. */
+const WATCH_MS = 3000;
 
 export default function StoreStrip({
   projectId,
@@ -61,6 +65,8 @@ export default function StoreStrip({
     null
   );
   const [running, setRunning] = useState(false);
+  /** The server is doing the import, so closing the tab stops nothing. */
+  const [onServer, setOnServer] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   // Survives re-renders, and is flipped on unmount so a merchant who
@@ -109,15 +115,37 @@ export default function StoreStrip({
     }
   }
 
-  const pump = useCallback(async (recheck = false) => {
-    setRunning(true);
-    setError(null);
-    // Reading Shopify over from the start. Everything on this path is
-    // an upsert keyed on the Shopify id, so a second pass costs time
-    // and changes nothing that is already right.
-    if (recheck) {
-      await apiFetch("/api/shopify/import", { projectId, recheck: true });
+  /**
+   * The server is doing it: say where it stands until it is finished,
+   * or stops and needs the merchant. Nothing here does the work, so
+   * leaving the page costs the import nothing.
+   * ponytail: polls until done; a dead worker is re-sent by the tick
+   * within a minute, so there is no stall detection here.
+   */
+  const watch = useCallback(async () => {
+    while (!cancelled.current) {
+      const { data } = await apiFetch("/api/shopify/import", { projectId, status: true });
+      if (cancelled.current) return;
+      if (data?.progress) setProgress(data.progress as Progress);
+      const stopped = data?.stopped as { error?: string | null } | undefined;
+      if (stopped) {
+        setError(stopped.error ?? "The import stopped.");
+        return;
+      }
+      if (data?.done) {
+        // Asked once more as the owner, which reaches the finished
+        // branch: it reads nothing from Shopify and says what drifted.
+        const { data: last } = await apiFetch("/api/shopify/import", { projectId });
+        if (last?.progress) setProgress(last.progress as Progress);
+        setDrift((last?.drift as Record<string, { holding: number; imported: number }> | undefined) ?? null);
+        return;
+      }
+      await new Promise((r) => setTimeout(r, WATCH_MS));
     }
+  }, [projectId]);
+
+  /** The merchant's own tab does it, a page at a time: the way with no worker. */
+  const drive = useCallback(async () => {
     // A throttle or a dropped connection is Shopify asking for a
     // moment, not a merchant's problem to solve with a button. The
     // client tries again on its own a few times, waiting longer each
@@ -153,8 +181,34 @@ export default function StoreStrip({
       }
       if (data?.done) break;
     }
-    setRunning(false);
   }, [projectId]);
+
+  /**
+   * Start, check for changes, or try again — and then either watch the
+   * server do it or, where there is no worker, do it from here. Which
+   * one is the database's answer to the kick, not a guess made here.
+   */
+  const pump = useCallback(
+    async (mode: "start" | "recheck" | "retry" = "start") => {
+      setRunning(true);
+      setError(null);
+      setOnServer(false);
+      // Reading Shopify over from the start. Everything on this path is
+      // an upsert keyed on the Shopify id, so a second pass costs time
+      // and changes nothing that is already right.
+      if (mode === "recheck") await apiFetch("/api/shopify/import", { projectId, recheck: true });
+      if (mode === "retry") await apiFetch("/api/shopify/import", { projectId, retry: true });
+      const { data: k } = await apiFetch("/api/shopify/import", { projectId, kick: true });
+      if (k?.kicked === "sent" || k?.kicked === "busy") {
+        setOnServer(true);
+        await watch();
+      } else {
+        await drive();
+      }
+      setRunning(false);
+    },
+    [projectId, watch, drive]
+  );
 
   // The strip read import_runs.imported — how many the first import
   // carried across. Webhooks have been adding rows ever since without
@@ -265,7 +319,7 @@ export default function StoreStrip({
       {error ? (
         <span className="text-rose-600">
           {error}{" "}
-          <button onClick={() => pump()} className="underline hover:text-rose-700">
+          <button onClick={() => pump("retry")} className="underline hover:text-rose-700">
             Try again
           </button>
         </span>
@@ -274,6 +328,7 @@ export default function StoreStrip({
         // moving and roughly how far it has got.
         <span className="text-slate-500">
           Importing… {counts.length ? counts.join(" · ") : "starting"}
+          {onServer && <span className="text-slate-400"> · carries on if you close this tab</span>}
         </span>
       ) : counts.length ? (
         <span className="flex items-center gap-2 text-slate-500">
@@ -284,7 +339,7 @@ export default function StoreStrip({
               Nothing noticed, because once the import finished it
               stopped reading Shopify at all. */}
           <button
-            onClick={() => pump(true)}
+            onClick={() => pump("recheck")}
             className="text-[11px] text-slate-400 underline hover:text-slate-600"
             title="Read the store again from Shopify"
           >

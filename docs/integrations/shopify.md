@@ -83,14 +83,37 @@ An access token may expire after approximately an hour and is refreshed on deman
 refresh token has a longer lifetime. The dashboard treats a passed access-token expiry as
 normal; it asks for reconnection only when no usable refresh token remains.
 
-All Shopify GraphQL paths use `ensureFreshToken`. Token refresh writes through the
-owner-scoped database path and updates both expiry timestamps.
+All Shopify GraphQL paths use `ensureFreshToken`. Token refresh writes through
+`abo_store_renewed`, which the owner or the import ticket for that store may call, and
+updates both expiry timestamps.
 
 ## Import strategy
 
-The browser repeatedly calls `POST /api/shopify/import`. Each call advances one bounded
-piece of work and updates `import_runs`; a serverless request never attempts the whole
-store.
+The import runs on the server, with no tab open. `lib/import-step.ts` advances one
+bounded piece of work and updates `import_runs`; a serverless request never attempts the
+whole store. Two callers run that same step:
+
+- **The worker** (`POST /api/shopify/import/worker`). The database dispatches it with
+  `pg_net` when a store connects, every minute for stores with work left (`abo_import_tick`),
+  and once a day for every connected store (`abo_import_sweep`, which picks up resources
+  added to the registry later). It answers at once and works in `after()`, renewing its
+  ticket each step and handing over to a fresh ticket and request after about 200 seconds.
+- **The owner's browser**, only where the database has no worker address. `StoreStrip`
+  asks for a kick; `not_configured` means no worker, and it drives the steps itself.
+
+The worker has no key of its own. The database mints a random ticket bound to one store,
+stores only its hash in `import_leases`, and posts the ticket to the worker, which sends
+it as `x-import-ticket`. The `*_import_ticket` policies accept it for that store's rows in
+the importer's own tables, and `check-shopify` holds that list to the registry. A ticket
+lasts six minutes per renewal and at most thirty minutes in total. `check-import-worker`
+tries other stores, lapsed and guessed tickets, and tables outside the list.
+
+The switch is the vault secret `import_worker_url`. Without it nothing is dispatched and
+the browser drives the import as before, so clearing it is the rollback.
+
+A failure the worker hits records `attempts` and a `retry_at` doubling from a minute. It
+stops after `MOST_ATTEMPTS` and waits for the merchant's "Try again", which the status
+response reports as `stopped`.
 
 For each resource:
 

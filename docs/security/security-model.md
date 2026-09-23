@@ -7,13 +7,16 @@ handler checks improve behavior and error messages, but Row Level Security (RLS)
 narrow security-definer functions determine what a caller may ultimately read or write.
 
 There is no service-role key in the application runtime path. Administrative scripts and
-live checks may use privileged credentials against an explicitly selected project.
+live checks may use privileged credentials against an explicitly selected project. The
+background importer is no exception: it acts through a per-store ticket that the database
+mints and checks (see [Shopify integration](../integrations/shopify.md#import-strategy)).
 
 ## Identities
 
 | Identity | Token characteristic | Intended access |
 | --- | --- | --- |
 | Anonymous visitor | Supabase anon role | Public pages, bounded landing-event insert, verified OAuth/webhook RPCs |
+| Import worker | Anon role plus an `x-import-ticket` header | One store's importer tables, while the ticket is live |
 | Application user | Authenticated JWT without `client_id` | Owner or member access determined by project RLS |
 | OAuth AI client | Authenticated JWT with `client_id` | Reads under the owner identity; direct table writes refused |
 | Superadmin | Authenticated user with protected account setting | Narrow admin RPCs only; not a general service-role session |

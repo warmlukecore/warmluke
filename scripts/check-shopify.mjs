@@ -342,5 +342,46 @@ check("an already-expired token is renewed", tokenNeedsRefresh(at(-10), now));
 check("a store with no expiry is not called refreshable", !tokenNeedsRefresh(null, now));
 check("an unparseable expiry is not called refreshable", !tokenNeedsRefresh("whenever", now));
 
+// ── What an import ticket reaches is what the importer writes ─────
+//
+// The background worker writes with a ticket, and the policies that
+// accept it are listed by hand in SQL, because SQL cannot read the
+// registry. So the list is held to the registry here: a resource that
+// gains a table the worker cannot write would fail its import with
+// nobody watching, and a table on the list that no resource writes is
+// reach the worker was never meant to have.
+console.log("\nand an import ticket reaches exactly the tables the importer writes");
+{
+  const MARK = "_import_ticket";
+  const holding = readdirSync(new URL("../supabase/migrations", import.meta.url))
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .filter((f) => readFileSync(new URL(`../supabase/migrations/${f}`, import.meta.url), "utf8").includes(MARK));
+  check("a migration grants the ticket its tables", holding.length > 0);
+  const sql = holding.length
+    ? readFileSync(new URL(`../supabase/migrations/${holding.at(-1)}`, import.meta.url), "utf8")
+    : "";
+  const list = sql.match(/foreach t in array array\[([^\]]+)\]/);
+  const granted = new Set([...(list?.[1] ?? "").matchAll(/'([a-z_]+)'/g)].map((m) => m[1]));
+  const writes = new Set(RESOURCES.flatMap((r) => SHOPIFY_RESOURCES[r].tables));
+  writes.add("import_runs");
+  const missingGrant = [...writes].filter((t) => !granted.has(t));
+  const extraGrant = [...granted].filter((t) => !writes.has(t));
+  check(`every table the importer writes is granted${missingGrant.length ? `: missing ${missingGrant}` : ""}`, missingGrant.length === 0);
+  check(`and nothing else is${extraGrant.length ? `: ${extraGrant}` : ""}`, extraGrant.length === 0);
+  check("never the store row, its actions, or its privacy requests",
+    !["stores", "store_actions", "shopify_data_requests", "projects", "modules", "records"].some((t) => granted.has(t)));
+  check("the policies are for anon and a ticket only", /for all to anon/.test(sql) && !/to (authenticated|public)[^;]*abo_import_holds/.test(sql));
+
+  // The worker holds no secret: its authority is the ticket it is sent.
+  const worker = readFileSync(new URL("../src/app/api/shopify/import/worker/route.ts", import.meta.url), "utf8");
+  check("the worker uses the ticket client and nothing stronger", /ticketClient\(ticket\)/.test(worker) && !/SERVICE_ROLE|getUserClient/.test(worker));
+  check("and never writes the ticket to a log", !/console\.\w+\([^)]*ticket/.test(worker));
+  const src = readdirSync(new URL("../src", import.meta.url), { recursive: true })
+    .filter((f) => /\.(ts|tsx)$/.test(f))
+    .map((f) => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8"));
+  check("no code on the server reads a service-role key", !src.some((s) => /SERVICE_ROLE/.test(s)));
+}
+
 console.log(fails.length === 0 ? "\nevery guard holds" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

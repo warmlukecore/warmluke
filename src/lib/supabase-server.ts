@@ -10,6 +10,19 @@ const anonKey = process.env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY ?? "";
  * with auth.uid() = that user. Isolation is enforced by the database.
  * Returns null for invalid/expired tokens.
  */
+/**
+ * A client that is nobody, carrying one import ticket. Anon to the
+ * database, which accepts the x-import-ticket header for the one
+ * store the ticket was minted for (migration 0110) and for nothing
+ * else — no session, no user, no other store.
+ */
+export function ticketClient(ticket: string): SupabaseClient {
+  return createClient(url, anonKey, {
+    global: { headers: { "x-import-ticket": ticket } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
 export async function getUserClient(
   req: Request
 ): Promise<{ client: SupabaseClient; userId: string } | null> {

@@ -127,7 +127,7 @@ sequenceDiagram
     participant S as Shopify
     participant Callback as /api/shopify/callback
     participant DB as Supabase
-    participant Import as /api/shopify/import
+    participant Worker as /api/shopify/import/worker
 
     O->>UI: Enter store name or address
     UI->>Install: projectId + shop
@@ -140,19 +140,27 @@ sequenceDiagram
     Callback->>DB: Spend state and store tokens via abo_shopify_connect
     Callback->>S: Subscribe resource webhooks
     Callback->>DB: Record subscription errors, if any
+    DB->>DB: Store connected → mint a ticket for it (abo_import_dispatch)
+    DB->>Worker: pg_net: store + ticket
+    Worker-->>DB: 202, then works in after()
     Callback-->>UI: Redirect to project
-    loop bounded import requests
-        UI->>Import: Advance next resource
-        Import->>S: Count; page or bulk-export resource
-        Import->>DB: Upsert canonical commerce rows and progress
-        Import-->>UI: Cursor/status/import count
+    loop bounded steps, renewing the ticket
+        Worker->>S: Count; page or bulk-export resource
+        Worker->>DB: Upsert rows and progress as the ticket
     end
-    Import->>DB: Advance last_synced_at after completed pass
+    Worker->>DB: Hand over to a fresh ticket, or release when done/waiting/failed
+    Worker->>DB: Advance last_synced_at after completed pass
+    loop while the page is open
+        UI->>DB: Status (via /api/shopify/import)
+    end
 ```
 
 The importer chooses paging for smaller resources and Shopify bulk operations above the
-configured threshold. Each HTTP request performs bounded work so the process can run on
-a serverless platform and resume after interruption.
+configured threshold. Each step performs bounded work so the process can run on a
+serverless platform and resume after interruption. Every minute `abo_import_tick`
+re-dispatches stores with work left and nobody on them, so a crashed step or a lapsed
+ticket resumes from the last saved cursor. Where the database has no worker address,
+the dashboard drives the same step itself through `/api/shopify/import`.
 
 ## Shopify webhook update
 
