@@ -31,6 +31,7 @@ import StoreRecordDetail, { type DetailRow } from "@/components/StoreRecordDetai
 import StorePicker, { addStoreSections } from "@/components/StorePicker";
 import {
   CORE_STORE_TABLES,
+  CORE_STORE_WORDS,
   isStoreTable,
   readStoreRows,
   storeTableSchema,
@@ -1893,7 +1894,7 @@ export default function AppShell({
                   className="mb-1 flex w-full items-center gap-2.5 rounded-lg border border-dashed border-frame-line px-2.5 py-2 text-left text-[13px] leading-snug text-frame-fg-muted transition-colors hover:border-frame-fg-muted hover:text-white disabled:opacity-60"
                 >
                   <Plus aria-hidden size={14} strokeWidth={2} className="shrink-0" />
-                  {addingCore ? "Adding…" : "Add orders, products, customers and stock"}
+                  {addingCore ? "Adding…" : `Add ${CORE_STORE_WORDS}`}
                 </button>
               )}
             </>

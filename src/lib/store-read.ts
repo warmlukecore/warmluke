@@ -845,6 +845,12 @@ export async function readStoreRows(
  */
 export const CORE_STORE_TABLES: StoreTable[] = ["orders", "products", "customers", "inventory_levels"];
 
+/** "orders, products, customers and stock" — said from the list, so the words follow it. */
+export const CORE_STORE_WORDS = ((labels) =>
+  labels.length > 1 ? `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}` : (labels[0] ?? ""))(
+  CORE_STORE_TABLES.map((t) => STORE_TABLES[t].section.label.toLowerCase())
+);
+
 /**
  * What belongs to one row, by the column that points back at it: an
  * order's items, payments, shipments and refunds; a product's variants

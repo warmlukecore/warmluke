@@ -14,7 +14,7 @@ import { useEffect, useState } from "react";
 import { Check, Plus } from "lucide-react";
 import { apiFetch } from "@/lib/auth";
 import { supabase } from "@/lib/supabase-client";
-import { CORE_STORE_TABLES, STORE_TABLES, type StoreTable } from "@/lib/store-read";
+import { CORE_STORE_TABLES, CORE_STORE_WORDS, STORE_TABLES, type StoreTable } from "@/lib/store-read";
 import { Dialog } from "@/components/ui/Dialog";
 import { Icon } from "@/components/ui/Icon";
 import { button, note } from "@/components/ui/controls";
@@ -149,14 +149,14 @@ export default function StorePicker({
           <header className="flex items-center justify-between gap-3 border-b border-line bg-surface-subdued px-3 py-2.5">
             <div>
               <h3 className="text-[13px] font-semibold text-fg">What a store is run from</h3>
-              <p className="text-xs text-fg-muted">Orders, products, customers and stock.</p>
+              <p className="text-xs text-fg-muted">{CORE_STORE_WORDS.charAt(0).toUpperCase() + CORE_STORE_WORDS.slice(1)}.</p>
             </div>
             {missingCore.length > 0 && (
               <button onClick={() => add(missingCore, "core")} disabled={busy !== null} className={button("primary", "sm")}>
                 {busy === "core"
                   ? "Adding…"
                   : missingCore.length === CORE_STORE_TABLES.length
-                    ? "Add all four"
+                    ? `Add all ${CORE_STORE_TABLES.length}`
                     : `Add the other ${missingCore.length}`}
               </button>
             )}

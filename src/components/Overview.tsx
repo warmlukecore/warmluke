@@ -3,7 +3,7 @@
 // ─────────────────────────────────────────────────────────────
 // Overview — how the store is doing, on one screen.
 //
-// The numbers come from abo_store_overview (0113), counted over every
+// The numbers come from abo_store_overview (0114), counted over every
 // order on the server; a page of rows in the browser would be a wrong
 // total that looks right. Money is shown in the currency Shopify
 // recorded it in, each currency on its own line, and "today" is the
