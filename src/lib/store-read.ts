@@ -838,6 +838,86 @@ export async function readStoreRows(
   };
 }
 
+/**
+ * The four lists a store is run from, in the order the menu shows them.
+ * Offered together as soon as a store is in; everything else is added
+ * one at a time, because a merchant does not open nineteen sections.
+ */
+export const CORE_STORE_TABLES: StoreTable[] = ["orders", "products", "customers", "inventory_levels"];
+
+/**
+ * What belongs to one row, by the column that points back at it: an
+ * order's items, payments, shipments and refunds; a product's variants
+ * and sales. Declared once, so the detail view does not know a table
+ * name of its own.
+ */
+export const RELATED: Partial<Record<StoreTable, Array<{ table: StoreTable; by: string; title: string }>>> = {
+  orders: [
+    { table: "order_line_items", by: "order_id", title: "Items" },
+    { table: "transactions", by: "order_id", title: "Payments" },
+    { table: "fulfillments", by: "order_id", title: "Shipments" },
+    { table: "refunds", by: "order_id", title: "Refunds" },
+  ],
+  products: [
+    { table: "variants", by: "product_id", title: "Variants" },
+    { table: "product_sales", by: "product_id", title: "Sales" },
+  ],
+};
+
+/** Rows of `table` whose `by` column is `value`, in the list's own order and shape. */
+export async function readRelated(
+  db: SupabaseClient,
+  storeId: string,
+  table: StoreTable,
+  by: string,
+  value: string,
+  limit = 50
+): Promise<Array<{ id: string; data: Record<string, unknown> }>> {
+  const spec = STORE_TABLES[table];
+  const { data, error } = await db
+    .from(spec.view)
+    .select(spec.select)
+    .eq("store_id", storeId)
+    .eq(by, value)
+    .order(spec.order.field, { ascending: spec.order.ascending })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as unknown as Array<Record<string, unknown>>).map((row) => ({ id: row.id as string, data: row }));
+}
+
+/**
+ * A customer's most recent orders. The orders list names its customer
+ * but carries no customer id, so the ids come from the orders table
+ * itself (indexed on customer_id) and the rows from the list, in its
+ * shape.
+ */
+export async function ordersOfCustomer(
+  db: SupabaseClient,
+  storeId: string,
+  customerId: string,
+  limit = 20
+): Promise<Array<{ id: string; data: Record<string, unknown> }>> {
+  const { data: ids, error } = await db
+    .from("orders")
+    .select("id")
+    .eq("store_id", storeId)
+    .eq("customer_id", customerId)
+    .order("placed_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  const wanted = (ids ?? []).map((r) => (r as { id: string }).id);
+  if (wanted.length === 0) return [];
+  const spec = STORE_TABLES.orders;
+  const { data, error: e2 } = await db
+    .from(spec.view)
+    .select(spec.select)
+    .eq("store_id", storeId)
+    .in("id", wanted)
+    .order(spec.order.field, { ascending: spec.order.ascending });
+  if (e2) throw new Error(e2.message);
+  return ((data ?? []) as unknown as Array<Record<string, unknown>>).map((row) => ({ id: row.id as string, data: row }));
+}
+
 export type OrderSearch = {
   /** A calendar day in the store's own zone, YYYY-MM-DD. */
   day?: string;

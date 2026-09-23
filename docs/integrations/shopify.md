@@ -149,7 +149,10 @@ whole store. Two callers run that same step:
   added to the registry later). It answers at once and works in `after()`, renewing its
   ticket each step and handing over to a fresh ticket and request after about 200 seconds.
 - **The owner's browser**, only where the database has no worker address. `StoreStrip`
-  asks for a kick; `not_configured` means no worker, and it drives the steps itself.
+  (the store's line at the foot of the sidebar) asks for a kick; `not_configured` means no
+  worker, and it drives the steps itself. Only the owner's session asks: the import route
+  reads the store's token, which answers nobody else, so an invited member is shown the
+  store row's own status and no import controls.
 
 The worker has no key of its own. The database mints a random ticket bound to one store,
 stores only its hash in `import_leases`, and posts the ticket to the worker, which sends
@@ -200,6 +203,11 @@ to a deletion, and an incorrect delete is harder to recover from than a warning.
 `last_synced_at` advances to actual import completion or verified webhook time; merely
 asking for status never makes data appear fresh.
 
+The owner asks for a recheck with **Check** beside the store's status in the sidebar. The
+line says "Checking for updates" while it runs; a check that could not reach Shopify is
+said under a store that stays shown as connected, with a way to try again, and a drift or a
+missing webhook subscription is said the same way, with Reconnect.
+
 ## Webhooks
 
 `subscribeWebhooks` registers all topics derived from the resource registry. Ordinary
@@ -222,14 +230,36 @@ A module may set `source_table` to a supported store list. Such a section:
 - is read-only in the application;
 - uses the canonical store schema, plus optional computed columns;
 - supports display features and server-calculated section statistics;
-- cannot contain seeded/generated copies of Shopify rows.
+- cannot contain seeded/generated copies of Shopify rows;
+- opens a row, when tapped, in a read-only detail view (`StoreRecordDetail`) with what
+  belongs to it: an order's items, payments, shipments and refunds; a customer's orders; a
+  product's variants and sales (`RELATED` and `ordersOfCustomer` in `store-read.ts`).
 
 The valid table list and displayed schemas live in `src/lib/store-read.ts`.
+
+Once a store is in, the sidebar offers the four lists a store is run from (orders,
+products, customers, stock: `CORE_STORE_TABLES`) in one tap. Every other list is added one
+at a time from **Add from your store** (the + beside Store), which shows each list's row
+count. Nothing is added unasked.
+
+## Overview
+
+A project with a store opens on **Overview**. Its figures come from
+`abo_store_overview(p_project)` (0113), a security-definer function that refuses anyone
+`abo_can_use` does not allow and counts over every order on the server: orders today, in 7
+and 30 days; collected (`PAID`) and awaiting (`PENDING`, mostly cash on delivery) per
+currency, never added across currencies; open work to fulfil; a 14-day series; stock by
+state; and customer and product counts. Days are the store's own, in its timezone, falling
+back to UTC for a zone Postgres does not know. Cancelled orders count towards nothing.
+`check-overview` builds rows to break each rule.
 
 ## Disconnect and compliance
 
 Disconnecting deletes the local `stores` row and cascades imported data and stored
-tokens. It does not modify the Shopify shop and can be reconnected later.
+tokens. It does not modify the Shopify shop and can be reconnected later. The owner can do
+it from the project's card on the dashboard or from **Project settings → Store**, which
+also shows the connection, when it last synced, and a Reconnect; both ask first and say
+what is deleted.
 
 Compliance handlers support customer data requests, customer redaction, and shop
 redaction. Redactions remove covered local personal data and leave the minimum tombstone

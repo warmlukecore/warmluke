@@ -31,6 +31,7 @@ import {
   labelOf,
 } from "@/lib/onboarding";
 import { Search } from "lucide-react";
+import { ago } from "@/lib/when";
 
 type Account = {
   user_id: string;
@@ -61,18 +62,6 @@ type Account = {
 };
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-
-/** "3 days ago", "just now": when somebody was last here. */
-function since(iso: string | null | undefined, now: number): string {
-  if (!iso) return "never signed in";
-  const mins = Math.max(0, Math.round((now - Date.parse(iso)) / 60000));
-  if (mins < 2) return "just now";
-  if (mins < 60) return `${mins} min ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours} h ago`;
-  const days = Math.round(hours / 24);
-  return days === 1 ? "yesterday" : `${days} days ago`;
-}
 
 /** A link somebody typed, made safe to follow: https only, shown bare. */
 function siteLink(raw: string | null | undefined): { href: string; text: string } | null {
@@ -340,7 +329,7 @@ export default function Admin() {
                             <div className="text-[11px] text-fg-faint">
                               Joined {new Date(r.created_at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}
                               {" · "}
-                              {since(r.last_sign_in_at, now)}
+                              {ago(r.last_sign_in_at, now, "never signed in")}
                             </div>
                           </div>
                         </div>

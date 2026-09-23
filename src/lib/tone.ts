@@ -44,6 +44,10 @@ const KNOWN: Record<string, Known> = {
   REQUEST_DECLINED: { label: "Request declined", tone: "critical", progress: "incomplete" },
   FULFILLED: { label: "Fulfilled", tone: "neutral", progress: "complete" },
   RESTOCKED: { label: "Restocked", tone: "neutral", progress: "complete" },
+  // Products
+  ACTIVE: { label: "Active", tone: "success", progress: "complete" },
+  DRAFT: { label: "Draft", tone: "info", progress: "incomplete" },
+  ARCHIVED: { label: "Archived", tone: "neutral", progress: "complete" },
   // The orders view says this for a cancelled order, whatever it was paid.
   CANCELLED: { label: "Cancelled", tone: "neutral", progress: "complete" },
 };

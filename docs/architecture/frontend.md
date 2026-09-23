@@ -27,6 +27,20 @@ The shell loads current module data differently by source:
 - store-backed modules read a canonical store view through `store-read.ts` and combine
   its fixed columns with saved computed columns and presentation features.
 
+## Navigation
+
+The sidebar is grouped by where rows come from:
+
+- **Overview**, when the project has a store: the store's figures (`Overview.tsx`).
+- **Store**: sections whose `source_table` is a store list. When there are none yet, the
+  owner is offered orders, products, customers and stock in one tap; the + opens
+  `StorePicker` for any other list.
+- **Your sections**: what the merchant built, by hand or with Luke.
+
+Search covers both groups, and dragging reorders within a group only. The foot of the
+sidebar holds the store switcher and the store's status line (`StoreStrip`): connected
+and when it last synced, the import while it runs, and anything that needs the owner.
+
 ## Schema-driven renderer
 
 `GenericRenderer` receives rows and the latest `UiSchema`. It applies:
@@ -69,7 +83,8 @@ validates them again.
 
 ## Records and writes
 
-`RecordModal` derives its inputs from schema columns. Before `/api/records` writes a
+Store rows cannot be edited; tapping one opens `StoreRecordDetail`, a read-only view of
+the row and what belongs to it. `RecordModal` derives its inputs from schema columns. Before `/api/records` writes a
 row, the server reloads the latest schema and removes undeclared keys. Computed columns
 are not writable. Store-backed rows are read-only in the application.
 

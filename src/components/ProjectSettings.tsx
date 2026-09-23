@@ -19,9 +19,12 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Switch } from "@/components/ui/Switch";
 import { Group } from "@/components/ui/Group";
 import { button, field, hint, iconButton, iconButtonCritical, label, note } from "@/components/ui/controls";
-import { Check, Copy, Link2, Trash2, UserPlus } from "lucide-react";
+import { Check, Copy, ExternalLink, Link2, Trash2, UserPlus } from "lucide-react";
+import ConnectShopify from "@/components/ConnectShopify";
+import { storeStanding } from "@/lib/store-standing";
+import { ago } from "@/lib/when";
 
-type Tab = "general" | "ai" | "people";
+type Tab = "general" | "store" | "ai" | "people";
 
 /** Common choices; any valid code can still be typed in. */
 const LOCALES = [
@@ -33,6 +36,19 @@ const LOCALES = [
   { locale: "de-DE", currency: "EUR", label: "Germany — €, 123.456" },
 ];
 
+type ShopRow = {
+  id: string;
+  shop_domain: string;
+  status: string;
+  connected_at: string | null;
+  last_synced_at: string | null;
+  currency: string | null;
+  timezone: string | null;
+  webhook_error: string | null;
+  token_expires_at: string | null;
+  refresh_token_expires_at: string | null;
+};
+
 type MemberRow = { id: string; email: string | null; token: string; joined_at: string | null };
 
 export default function ProjectSettings({
@@ -40,11 +56,14 @@ export default function ProjectSettings({
   onSaved,
   onDeleted,
   onClose,
+  onStoreChanged,
 }: {
   project: ProjectRow;
   onSaved: (p: ProjectRow) => void;
   onDeleted: (id: string) => void;
   onClose: () => void;
+  /** The store was disconnected here; whatever shows it has to read it again. */
+  onStoreChanged?: () => void;
 }) {
   const [name, setName] = useState(project.name);
   const [locale, setLocale] = useState(project.locale ?? "en-IN");
@@ -64,6 +83,49 @@ export default function ProjectSettings({
   const [adding, setAdding] = useState(false);
   const [peopleError, setPeopleError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("general");
+  const [shop, setShop] = useState<ShopRow | null | undefined>(undefined);
+  const [shopError, setShopError] = useState<string | null>(null);
+  const [reconnecting, setReconnecting] = useState(false);
+  const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  // Read when the tab is first opened; not every visit to settings is about the store.
+  useEffect(() => {
+    if (tab !== "store" || shop !== undefined) return;
+    supabase
+      .from("stores")
+      .select("id, shop_domain, status, connected_at, last_synced_at, currency, timezone, webhook_error, token_expires_at, refresh_token_expires_at")
+      .eq("project_id", project.id)
+      .maybeSingle()
+      .then(({ data, error: e }) => {
+        if (e) {
+          setShopError("The store couldn\u2019t be read. Try again.");
+          setShop(null);
+          return;
+        }
+        setShop((data as ShopRow | null) ?? null);
+      });
+  }, [tab, shop, project.id]);
+
+  /**
+   * Disconnecting deletes the store row, and the cascade takes its
+   * products, orders, customers and access token with it — what /privacy
+   * and /terms promise. Asked plainly first, the same as on the dashboard.
+   */
+  async function disconnect() {
+    if (!shop || disconnecting) return;
+    setDisconnecting(true);
+    setShopError(null);
+    const { error: e } = await supabase.from("stores").delete().eq("id", shop.id);
+    setDisconnecting(false);
+    if (e) {
+      setShopError("That store couldn\u2019t be disconnected. Try again.");
+      return;
+    }
+    setShop(null);
+    setConfirmingDisconnect(false);
+    onStoreChanged?.();
+  }
 
   async function loadSeats() {
     const { data, error: e } = await supabase
@@ -173,6 +235,7 @@ export default function ProjectSettings({
 
   const tabs: Array<{ id: Tab; text: string; count?: number }> = [
     { id: "general", text: "General" },
+    { id: "store", text: "Store" },
     { id: "ai", text: "Your own AI" },
     { id: "people", text: "People", count: seats?.length },
   ];
@@ -184,6 +247,16 @@ export default function ProjectSettings({
       onClose={onClose}
       tall
       footer={
+        // The store and people act at once; only the name, currency and
+        // AI setting wait for Save.
+        tab === "store" || tab === "people" ? (
+          <>
+            <span className="text-xs text-fg-muted">{dirty ? "Unsaved changes on General or Your own AI" : ""}</span>
+            <button onClick={onClose} className={`${button("secondary")} ml-auto`}>
+              Done
+            </button>
+          </>
+        ) : (
         <>
           <span className="text-xs text-fg-muted">{dirty ? "Unsaved changes" : ""}</span>
           <button onClick={onClose} className={`${button("plain")} ml-auto`}>
@@ -193,6 +266,7 @@ export default function ProjectSettings({
             {busy && !confirmingDelete ? "Saving…" : "Save changes"}
           </button>
         </>
+        )
       }
     >
       <div role="tablist" aria-label="Settings" className="sticky -top-4 z-10 -mx-5 -mt-4 mb-4 flex gap-4 border-b border-line bg-surface px-5">
@@ -320,6 +394,103 @@ export default function ProjectSettings({
               </div>
             )}
           </Group>
+        </div>
+      )}
+
+      {tab === "store" && (
+        <div className="space-y-4">
+          {shopError && <div className={note.critical}>{shopError}</div>}
+          {shop === undefined ? (
+            <div className="h-40 animate-pulse rounded-card bg-surface-hover" aria-busy />
+          ) : shop === null ? (
+            <Group title="Connect a store" description="Orders, products, customers and stock come across on their own, and keep up as they change.">
+              <ConnectShopify projectId={project.id} anotherBrowser onCancel={() => setTab("general")} />
+            </Group>
+          ) : (
+            <>
+              <Group title="Connection">
+                {(() => {
+                  const standing = storeStanding(shop);
+                  const dot = standing.tone === "ok" ? "bg-signal-success" : standing.tone === "busy" ? "bg-signal-info" : "bg-signal-attention";
+                  return (
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <a
+                          href={`https://${shop.shop_domain}/admin`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex max-w-full items-center gap-1.5 truncate text-[13px] font-medium text-fg hover:underline"
+                        >
+                          {shop.shop_domain}
+                          <ExternalLink aria-hidden size={12} strokeWidth={2} className="shrink-0 text-fg-faint" />
+                        </a>
+                        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-fg-muted">
+                          <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+                          {standing.label}
+                        </div>
+                      </div>
+                      <button onClick={() => setReconnecting((r) => !r)} className={button("secondary", "sm")}>
+                        {reconnecting ? "Cancel" : "Reconnect"}
+                      </button>
+                    </div>
+                  );
+                })()}
+                {reconnecting && (
+                  <ConnectShopify
+                    projectId={project.id}
+                    initialShop={shop.shop_domain}
+                    submitLabel="Reconnect"
+                    onCancel={() => setReconnecting(false)}
+                  />
+                )}
+                <dl className="grid gap-x-6 gap-y-3 border-t border-line pt-4 sm:grid-cols-2">
+                  {[
+                    ["Connected", shop.connected_at ? new Date(shop.connected_at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "Not yet"],
+                    ["Last synced", ago(shop.last_synced_at, Date.now(), "Not yet")],
+                    ["Currency", shop.currency ?? "Not known yet"],
+                    ["Timezone", shop.timezone ?? "Not known yet"],
+                  ].map(([k, v]) => (
+                    <div key={k}>
+                      <dt className="text-[11px] text-fg-muted">{k}</dt>
+                      <dd className="mt-0.5 text-[13px] text-fg">{v}</dd>
+                    </div>
+                  ))}
+                </dl>
+                {shop.webhook_error && (
+                  <div className={note.attention}>
+                    Shopify was not asked to send updates, so changes there are not coming in. Reconnecting asks again.
+                  </div>
+                )}
+              </Group>
+
+              <Group title="Disconnect this store" danger>
+                {!confirmingDisconnect ? (
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-xs text-fg-muted">Everything imported from it is deleted here. The store itself is untouched.</p>
+                    <button onClick={() => setConfirmingDisconnect(true)} className={button("critical-secondary", "sm")}>
+                      Disconnect
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    <div className={note.critical}>
+                      Disconnect {shop.shop_domain}? Everything imported from it — products, stock,
+                      orders and customers — is deleted. Your Shopify store itself is untouched, and
+                      you can connect it again later.
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={disconnect} disabled={disconnecting} className={button("critical")}>
+                        {disconnecting ? "Disconnecting\u2026" : "Yes, disconnect"}
+                      </button>
+                      <button onClick={() => setConfirmingDisconnect(false)} className={button("plain")}>
+                        Keep it
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </Group>
+            </>
+          )}
         </div>
       )}
 

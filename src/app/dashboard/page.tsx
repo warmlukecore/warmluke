@@ -523,6 +523,7 @@ function DashboardInner() {
           }
           onDeleted={(id) => setProjects((prev) => prev.filter((x) => x.id !== id))}
           onClose={() => setSettingsFor(null)}
+          onStoreChanged={loadProjects}
         />
       )}
     </PageFrame>

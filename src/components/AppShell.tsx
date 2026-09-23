@@ -26,7 +26,11 @@ import ModuleSettings from "@/components/ModuleSettings";
 import NewSection from "@/components/NewSection";
 import StoreStrip from "@/components/StoreStrip";
 import StoreSwitcher from "@/components/StoreSwitcher";
+import Overview from "@/components/Overview";
+import StoreRecordDetail, { type DetailRow } from "@/components/StoreRecordDetail";
+import StorePicker, { addStoreSections } from "@/components/StorePicker";
 import {
+  CORE_STORE_TABLES,
   isStoreTable,
   readStoreRows,
   storeTableSchema,
@@ -47,7 +51,7 @@ import type {
 import { TITLE_MAX } from "@/lib/types";
 import { Icon } from "@/components/ui/Icon";
 import Image from "next/image";
-import { ArrowRight, ChevronRight, Ellipsis, History, Menu, Plus, Search, Settings, Sparkles, Zap } from "lucide-react";
+import { ArrowRight, ChevronRight, Ellipsis, History, LayoutDashboard, Menu, Plus, Search, Settings, Sparkles, Zap } from "lucide-react";
 import { button, iconButton, note } from "@/components/ui/controls";
 
 /**
@@ -100,6 +104,16 @@ export type BuildOutcome = {
   applied: Array<Record<string, unknown>>;
   errors: string[];
 };
+
+/** A group's name in the sidebar, with the one thing that adds to it. */
+function NavHeading({ text, action }: { text: string; action?: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between px-2 pt-4 pb-1.5 first:pt-1">
+      <span className="text-xs font-medium text-frame-fg-muted">{text}</span>
+      {action}
+    </div>
+  );
+}
 
 export default function AppShell({
   projectId,
@@ -162,6 +176,14 @@ export default function AppShell({
     if (new URLSearchParams(window.location.search).get("waiting")) setChatOpen(true);
   }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // The store's own page, and a store row opened from anywhere.
+  const [showOverview, setShowOverview] = useState(false);
+  const [inspecting, setInspecting] = useState<{ table: StoreTable; row: DetailRow; columns?: UiSchema["columns"] } | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [addingCore, setAddingCore] = useState(false);
+  const [storeImporting, setStoreImporting] = useState(false);
+  /** Goes up each time the store has been read again. */
+  const [storeSynced, setStoreSynced] = useState(0);
   const [moduleSettingsFor, setModuleSettingsFor] = useState<ModuleRow | null>(null);
   // Which parents are open. Collapsed by default would hide a section
   // the owner just built, so they start expanded.
@@ -794,11 +816,15 @@ export default function AppShell({
     // The id to read by, and the currency to render money in: a store
     // selling in USD inside a project set to INR would otherwise print
     // $2,897 as ₹2,897, which looks right and is not.
+    //
+    // A store taken off Shopify still has its rows until Shopify asks for
+    // them to be erased, so its sections keep showing them. One that never
+    // came back from Shopify has nothing to show.
     supabase
       .from("stores")
       .select("id, currency")
       .eq("project_id", projectId)
-      .eq("status", "connected")
+      .in("status", ["connected", "uninstalled"])
       .maybeSingle()
       .then(({ data }) =>
         setStore(data ? { id: data.id as string, currency: data.currency as string } : null)
@@ -817,6 +843,44 @@ export default function AppShell({
   }, [selectedModuleId, loadModuleData]);
 
   const topLevel = useMemo(() => modules.filter((m) => !m.parent_id), [modules]);
+  const storeTop = useMemo(() => topLevel.filter((m) => !!m.source_table), [topLevel]);
+  const ownTop = useMemo(() => topLevel.filter((m) => !m.source_table), [topLevel]);
+
+  // A store project opens on its Overview, the way a shop's admin opens
+  // on its home, until a section is picked.
+  const overviewDecided = useRef(false);
+  useEffect(() => {
+    if (overviewDecided.current || !store) return;
+    overviewDecided.current = true;
+    if (!selectedModuleId) setShowOverview(true);
+  }, [store, selectedModuleId]);
+  useEffect(() => {
+    if (selectedModuleId) setShowOverview(false);
+  }, [selectedModuleId]);
+
+  /** The four a store is run from, in one tap, before anything else is added. */
+  const addCoreSections = useCallback(async () => {
+    if (addingCore) return;
+    setAddingCore(true);
+    const failed = await addStoreSections(
+      projectId,
+      CORE_STORE_TABLES.filter((t) => !modules.some((m) => m.source_table === t))
+    );
+    setAddingCore(false);
+    await loadModules();
+    if (failed.length) setLoadError("Some of the store's sections couldn't be added. Try again from the + beside Store.");
+  }, [addingCore, projectId, modules, loadModules]);
+
+  useEffect(() => {
+    if (storeSynced > 0 && selectedModuleId && isStoreTable(loadedSource)) loadModuleData(selectedModuleId);
+    // Only when the store has been read again, not whenever the section changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeSynced]);
+
+  const onStoreStatus = useCallback((s: { importing: boolean; synced: number }) => {
+    setStoreImporting(s.importing);
+    setStoreSynced(s.synced);
+  }, []);
   const navHits = useMemo(() => {
     const q = navQuery.trim().toLowerCase();
     if (!q) return null;
@@ -1558,98 +1622,12 @@ export default function AppShell({
     );
   }
 
-  return (
-    <FormatProvider locale={project?.locale} currency={project?.currency}>
-    <LinkProvider options={linkOptions}>
-    <div
-      className="font-ui flex h-[100dvh] gap-0 overflow-hidden bg-frame text-fg lg:gap-2 lg:p-2 lg:pl-0"
-      // Headings inside the app are set in the same face as the rest;
-      // the display face belongs to the landing page.
-      style={{ ["--font-display" as string]: "var(--font-inter)" }}
-    >
-      {/* Backdrop for whichever drawer is open on a small screen. */}
-      {(navOpen || chatOpen) && (
-        <div
-          onClick={() => {
-            setNavOpen(false);
-            setChatOpen(false);
-          }}
-          className="fixed inset-0 z-30 bg-black/40 lg:hidden"
-        />
-      )}
+  // A search shows the children it matched, and every child of a
+  // parent it matched; it opens whatever it has to, to show them.
+  const navVisible = (m: ModuleRow) =>
+    !navHits || navHits.has(m.id) || (childrenOf.get(m.id) ?? []).some((k) => navHits.has(k.id));
 
-      {/* ── Sidebar ── */}
-      <aside
-        style={{ ["--nav-w" as string]: `${nav.width}px` }}
-        className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col overflow-hidden bg-frame text-frame-fg lg:static lg:w-[var(--nav-w)] lg:translate-x-0 ${
-          nav.dragging ? "" : "transition-transform duration-200"
-        } ${navOpen ? "translate-x-0" : "-translate-x-full"}`}
-      >
-        <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
-          <button
-            onClick={() => router.push("/dashboard")}
-            className="flex min-w-0 items-center gap-2.5 text-left"
-            title="Back to dashboard"
-          >
-            <Image
-              src="/images/logowarmluke.png"
-              alt=""
-              width={28}
-              height={28}
-              className="h-7 w-7 shrink-0 rounded-lg object-cover"
-            />
-            <div className="min-w-0">
-              <div className="truncate text-sm font-semibold text-white">{project?.name ?? "Warmluke"}</div>
-              <div className="max-w-[9rem] truncate text-[11px] text-frame-fg-muted">{ownerEmail}</div>
-            </div>
-          </button>
-          {project && isOwner && (
-            <button
-              onClick={() => setSettingsOpen(true)}
-              aria-label="Project settings"
-              title="Rename, currency, delete"
-              className="ml-auto rounded-control p-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white"
-            >
-              <Settings aria-hidden size={16} strokeWidth={1.75} />
-            </button>
-          )}
-        </div>
-
-        {modules.length > 0 && (
-          <div className="px-3 pb-2">
-            <label className="flex items-center gap-2 rounded-control bg-frame-raised px-2.5 py-1.5 text-sm text-frame-fg-muted focus-within:ring-2 focus-within:ring-focus">
-              <Search aria-hidden size={15} strokeWidth={1.75} className="shrink-0" />
-              <input
-                value={navQuery}
-                onChange={(e) => setNavQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Escape" && setNavQuery("")}
-                placeholder="Search"
-                aria-label="Search sections"
-                className="w-full bg-transparent text-frame-fg outline-none placeholder:text-frame-fg-muted"
-              />
-            </label>
-          </div>
-        )}
-        <nav className="flex-1 overflow-y-auto px-3 py-1 thin-scroll-dark">
-          <div className="flex items-center justify-between px-2 pb-2">
-            <span className="text-xs font-medium text-frame-fg-muted">Sections</span>
-            {isOwner && (
-            <button
-              onClick={() => setNewSectionParent("")}
-              aria-label="New section"
-              title="New section"
-              className="rounded px-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white"
-            >
-              <Plus aria-hidden size={14} strokeWidth={2} />
-            </button>
-            )}
-          </div>
-          {loading && <div className="px-2 py-1 text-sm text-frame-fg-muted">Loading…</div>}
-          {topLevel
-            .filter(
-              (m) => !navHits || navHits.has(m.id) || (childrenOf.get(m.id) ?? []).some((k) => navHits.has(k.id))
-            )
-            .map((m) => {
+  const renderTop = (m: ModuleRow) => {
             // A search shows the children it matched, and every child of a
             // parent it matched; it opens whatever it has to, to show them.
             const kids = (childrenOf.get(m.id) ?? []).filter(
@@ -1667,7 +1645,9 @@ export default function AppShell({
                   }}
                   onDragOver={(e) => {
                     const from = modules.find((x) => x.id === dragId);
-                    if (!from || from.parent_id) return; // top level only
+                    // Top level only, and within its own group: a store section
+                    // and one of their own do not trade places.
+                    if (!from || from.parent_id || !!from.source_table !== !!m.source_table) return;
                     e.preventDefault();
                     setDropTarget(m.id);
                   }}
@@ -1759,7 +1739,7 @@ export default function AppShell({
                         setDropTarget(null);
                       }}
                       className={`group mb-1 ml-4 flex items-center gap-1 rounded-lg border-l border-frame-line pr-1 pl-1 transition-colors ${
-                        dropTarget === k.id ? "border-t-2 border-t-blue-500" : ""
+                        dropTarget === k.id ? "border-t-2 border-t-focus" : ""
                       } ${dragId === k.id ? "opacity-40" : ""} ${
                         k.id === selectedModuleId
                           ? "bg-frame-raised text-white"
@@ -1788,10 +1768,160 @@ export default function AppShell({
                   ))}
               </div>
             );
-          })}
-          {!loading && modules.length === 0 && (
-            <div className="px-2 py-1 text-sm leading-relaxed text-frame-fg-muted">
-              No sections yet — describe your app to Luke to build them.
+  };
+
+  return (
+    <FormatProvider locale={project?.locale} currency={project?.currency}>
+    <LinkProvider options={linkOptions}>
+    <div
+      className="font-ui flex h-[100dvh] gap-0 overflow-hidden bg-frame text-fg lg:gap-2 lg:p-2 lg:pl-0"
+      // Headings inside the app are set in the same face as the rest;
+      // the display face belongs to the landing page.
+      style={{ ["--font-display" as string]: "var(--font-inter)" }}
+    >
+      {/* Backdrop for whichever drawer is open on a small screen. */}
+      {(navOpen || chatOpen) && (
+        <div
+          onClick={() => {
+            setNavOpen(false);
+            setChatOpen(false);
+          }}
+          className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+        />
+      )}
+
+      {/* ── Sidebar ── */}
+      <aside
+        style={{ ["--nav-w" as string]: `${nav.width}px` }}
+        className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col overflow-hidden bg-frame text-frame-fg lg:static lg:w-[var(--nav-w)] lg:translate-x-0 ${
+          nav.dragging ? "" : "transition-transform duration-200"
+        } ${navOpen ? "translate-x-0" : "-translate-x-full"}`}
+      >
+        <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
+          <button
+            onClick={() => router.push("/dashboard")}
+            className="flex min-w-0 items-center gap-2.5 text-left"
+            title="Back to dashboard"
+          >
+            <Image
+              src="/images/logowarmluke.png"
+              alt=""
+              width={28}
+              height={28}
+              className="h-7 w-7 shrink-0 rounded-lg object-cover"
+            />
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold text-white">{project?.name ?? "Warmluke"}</div>
+              <div className="max-w-[9rem] truncate text-[11px] text-frame-fg-muted">{ownerEmail}</div>
+            </div>
+          </button>
+          {project && isOwner && (
+            <button
+              onClick={() => setSettingsOpen(true)}
+              aria-label="Project settings"
+              title="Rename, currency, delete"
+              className="ml-auto rounded-control p-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white"
+            >
+              <Settings aria-hidden size={16} strokeWidth={1.75} />
+            </button>
+          )}
+        </div>
+
+        {modules.length > 0 && (
+          <div className="px-3 pb-2">
+            <label className="flex items-center gap-2 rounded-control bg-frame-raised px-2.5 py-1.5 text-sm text-frame-fg-muted focus-within:ring-2 focus-within:ring-focus">
+              <Search aria-hidden size={15} strokeWidth={1.75} className="shrink-0" />
+              <input
+                value={navQuery}
+                onChange={(e) => setNavQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Escape" && setNavQuery("")}
+                placeholder="Search"
+                aria-label="Search sections"
+                className="w-full bg-transparent text-frame-fg outline-none placeholder:text-frame-fg-muted"
+              />
+            </label>
+          </div>
+        )}
+        <nav className="flex-1 overflow-y-auto px-3 py-1 thin-scroll-dark">
+          {loading && <div className="px-2 py-1 text-sm text-frame-fg-muted">Loading…</div>}
+          {store && !navHits && (
+            <div
+              className={`mb-1 flex items-center gap-1 rounded-lg pr-1 transition-colors ${
+                showOverview ? "bg-frame-raised text-white" : "text-frame-fg hover:bg-frame-raised/60 hover:text-white"
+              }`}
+            >
+              <span className="w-[18px]" />
+              <button
+                onClick={() => {
+                  setSelectedModuleId(null);
+                  setShowOverview(true);
+                  setNavOpen(false);
+                }}
+                aria-current={showOverview ? "page" : undefined}
+                className="flex min-w-0 flex-1 items-center gap-2.5 py-2 text-left text-sm"
+              >
+                <LayoutDashboard aria-hidden size={16} strokeWidth={1.75} />
+                Overview
+              </button>
+            </div>
+          )}
+
+          {/* What comes from the store, apart from what they built: the
+              first is filled by Shopify, the second by them. */}
+          {(store || storeTop.length > 0) && (!navHits || storeTop.some(navVisible)) && (
+            <>
+              <NavHeading
+                text="Store"
+                action={
+                  isOwner && store ? (
+                    <button
+                      onClick={() => setPickerOpen(true)}
+                      aria-label="Add from your store"
+                      title="Add from your store"
+                      className="rounded px-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white"
+                    >
+                      <Plus aria-hidden size={14} strokeWidth={2} />
+                    </button>
+                  ) : null
+                }
+              />
+              {storeTop.filter(navVisible).map(renderTop)}
+              {isOwner && store && storeTop.length === 0 && !navHits && (
+                <button
+                  onClick={addCoreSections}
+                  disabled={addingCore}
+                  className="mb-1 flex w-full items-center gap-2.5 rounded-lg border border-dashed border-frame-line px-2.5 py-2 text-left text-[13px] leading-snug text-frame-fg-muted transition-colors hover:border-frame-fg-muted hover:text-white disabled:opacity-60"
+                >
+                  <Plus aria-hidden size={14} strokeWidth={2} className="shrink-0" />
+                  {addingCore ? "Adding…" : "Add orders, products, customers and stock"}
+                </button>
+              )}
+            </>
+          )}
+
+          {(!navHits || ownTop.some(navVisible)) && (
+          <NavHeading
+            text={store || storeTop.length > 0 ? "Your sections" : "Sections"}
+            action={
+              isOwner ? (
+                <button
+                  onClick={() => setNewSectionParent("")}
+                  aria-label="New section"
+                  title="New section"
+                  className="rounded px-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white"
+                >
+                  <Plus aria-hidden size={14} strokeWidth={2} />
+                </button>
+              ) : null
+            }
+          />
+          )}
+          {ownTop.filter(navVisible).map(renderTop)}
+          {!loading && ownTop.length === 0 && !navHits && (
+            <div className="px-2 py-1 text-[13px] leading-relaxed text-frame-fg-muted">
+              {store || storeTop.length > 0
+                ? "Nothing of your own yet. Ask Luke for the tool you wish you had."
+                : "No sections yet — describe your app to Luke to build them."}
             </div>
           )}
         </nav>
@@ -1799,9 +1929,11 @@ export default function AppShell({
         {navHits && navHits.size === 0 && (
           <p className="px-5 pb-2 text-xs text-frame-fg-muted">No section matches that.</p>
         )}
-        <div className="space-y-2 border-t border-frame-line px-3 py-3 empty:hidden">
+        <div className="space-y-1 border-t border-frame-line px-3 py-3 empty:hidden">
           {/* Every store they can open, and the way to add another. */}
           <StoreSwitcher projectId={projectId} placement="sidebar" />
+          {/* How the store stands, and the way to read it again. */}
+          <StoreStrip projectId={projectId} canManage={isOwner} onStatus={onStoreStatus} />
           {!isOwner && (
             <p className="px-2 text-[11px] leading-relaxed text-frame-fg-muted">
               Shared with you by the owner of {project?.name ?? "this app"}.
@@ -1829,7 +1961,7 @@ export default function AppShell({
               <Menu aria-hidden size={18} strokeWidth={1.75} />
             </button>
             <h1 className="truncate text-base font-semibold text-fg sm:text-lg">
-              {selectedModule?.nav_label ?? project?.name ?? "Your app"}
+              {showOverview && store ? "Overview" : (selectedModule?.nav_label ?? project?.name ?? "Your app")}
             </h1>
             {schema && (
               <span className="hidden shrink-0 rounded-full bg-tone-neutral px-2 py-px text-[11px] font-medium text-tone-neutral-fg sm:inline">
@@ -1880,17 +2012,22 @@ export default function AppShell({
               Couldn&rsquo;t load your data: {loadError}
             </div>
           )}
-          {/* Above the builder, because a merchant who just connected a
-              store is asking about the store, not about building. */}
-          <StoreStrip
-            projectId={projectId}
-            existingSources={modules
-              .map((m) => m.source_table)
-              .filter((x): x is string => !!x)}
-            onSectionsCreated={loadModules}
-          />
-
-          {isEmpty ? (
+          {showOverview && store ? (
+            <FormatProvider locale={project?.locale} currency={store.currency}>
+              <Overview
+                projectId={projectId}
+                storeId={store.id}
+                importing={storeImporting}
+                refreshKey={storeSynced}
+                hasSection={(t) => modules.some((m) => m.source_table === t)}
+                onOpenTable={(t) => {
+                  const m = storeTop.find((x) => x.source_table === t) ?? modules.find((x) => x.source_table === t);
+                  if (m) setSelectedModuleId(m.id);
+                }}
+                onInspect={(table, row) => setInspecting({ table, row })}
+              />
+            </FormatProvider>
+          ) : isEmpty ? (
             <div className="flex h-full flex-col items-center justify-center text-center">
               <div className="text-2xl font-semibold tracking-tight text-fg">
                 Start building
@@ -1963,8 +2100,17 @@ export default function AppShell({
               {...(storeBacked
                 ? // No write handlers at all, which is how the renderer
                   // already expresses read-only. The import owns these
-                  // rows; an edit here would vanish on the next run.
-                  {}
+                  // rows; an edit here would vanish on the next run. A tap
+                  // opens the row to read instead.
+                  {
+                    onInspect: (rec: RecordRow) =>
+                      isStoreTable(loadedSource) &&
+                      setInspecting({
+                        table: loadedSource,
+                        row: { id: rec.id, data: (rec.data ?? {}) as Record<string, unknown> },
+                        columns: schema.schema_json.columns,
+                      }),
+                  }
                 : { onCreate: createRecord, onUpdate: updateRecord, onDelete: deleteRecord })}
             />
             </FormatProvider>
@@ -2060,6 +2206,8 @@ export default function AppShell({
           onSaved={setProject}
           onDeleted={() => router.replace("/dashboard")}
           onClose={() => setSettingsOpen(false)}
+          // The shell reads its store once, when it opens; a fresh one is the honest picture.
+          onStoreChanged={() => window.location.reload()}
         />
       )}
       {rulesOpen && (
@@ -2072,6 +2220,26 @@ export default function AppShell({
             // A rule may have been switched off; reflect its effects.
             if (selectedModuleId) loadModuleData(selectedModuleId);
           }}
+        />
+      )}
+      {inspecting && store && (
+        <FormatProvider locale={project?.locale} currency={store.currency} approxRate={storeBacked ? sectionApprox : null}>
+          <StoreRecordDetail
+            table={inspecting.table}
+            row={inspecting.row}
+            columns={inspecting.columns}
+            storeId={store.id}
+            onClose={() => setInspecting(null)}
+          />
+        </FormatProvider>
+      )}
+      {pickerOpen && store && (
+        <StorePicker
+          projectId={projectId}
+          storeId={store.id}
+          existingSources={modules.map((m) => m.source_table).filter((x): x is string => !!x)}
+          onAdded={loadModules}
+          onClose={() => setPickerOpen(false)}
         />
       )}
       {historyOpen && selectedModule && (

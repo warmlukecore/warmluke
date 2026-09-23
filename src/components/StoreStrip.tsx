@@ -18,9 +18,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase-client";
 import { apiFetch } from "@/lib/auth";
-import { STORE_TABLES } from "@/lib/store-read";
+import { ago } from "@/lib/when";
 import ConnectShopify from "@/components/ConnectShopify";
-import { TriangleAlert } from "lucide-react";
+import { Dialog } from "@/components/ui/Dialog";
+import { Check, Plug, RefreshCw, TriangleAlert } from "lucide-react";
 
 /**
  * Where each resource stands, as the import route reports it: what to
@@ -40,27 +41,37 @@ const IMPORT_RETRIES = 3;
 /** How often the strip asks where a server-side import has got to. */
 const WATCH_MS = 3000;
 
+type StoreRow = {
+  id: string;
+  shop_domain: string;
+  status: string;
+  /** Why Shopify was never asked to send updates, if it was not. */
+  webhook_error?: string | null;
+  last_synced_at?: string | null;
+};
+
+/**
+ * The store's standing, at the foot of the sidebar: connected and when
+ * it last synced, the import while it runs, and anything that needs the
+ * merchant — said there, quietly when all is well and plainly when not.
+ *
+ * It used to be a line across the top of every section listing how many
+ * rows of each list had arrived, which is a fact nobody needed on every
+ * screen. The sections themselves say what they hold.
+ */
 export default function StoreStrip({
   projectId,
-  existingSources,
-  onSectionsCreated,
+  canManage,
+  onStatus,
 }: {
   projectId: string;
-  /** Store tables that already have a section, so the offer covers the
-   *  rest — which is also what makes a half-finished attempt fixable. */
-  existingSources: string[];
-  onSectionsCreated: () => void;
+  /** The owner: only they can start an import, reconnect or connect. */
+  canManage: boolean;
+  /** Told when the store is found, when an import starts or ends, and when it is read again. */
+  onStatus?: (s: { storeId: string | null; status: string | null; importing: boolean; synced: number }) => void;
 }) {
-  const [store, setStore] = useState<{
-    id: string;
-    shop_domain: string;
-    status: string;
-    /** Why Shopify was never asked to send updates, if it was not. */
-    webhook_error?: string | null;
-  } | null>(null);
+  const [store, setStore] = useState<StoreRow | null | undefined>(undefined);
   const [progress, setProgress] = useState<Progress>({});
-  /** What is in the store now, as opposed to what the import brought. */
-  const [held, setHeld] = useState<Record<string, number> | null>(null);
   /** Rows we hold that the last pass did not bring back from Shopify. */
   const [drift, setDrift] = useState<Record<string, { holding: number; imported: number }> | null>(
     null
@@ -70,51 +81,38 @@ export default function StoreStrip({
   const [onServer, setOnServer] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  /** Just finished a check the merchant asked for, to say so for a moment. */
+  const [justChecked, setJustChecked] = useState(false);
+  /** What the running pass is: the first import, a check for updates, or a retry. */
+  const [mode, setMode] = useState<"start" | "recheck" | "retry">("start");
+  const [now, setNow] = useState(() => Date.now());
   // Survives re-renders, and is flipped on unmount so a merchant who
   // navigates away does not leave a loop calling the route forever.
   const cancelled = useRef(false);
-  const [makingSections, setMakingSections] = useState(false);
-  const [offerDismissed, setOfferDismissed] = useState(false);
+  // Kept beside the state as well: a check that just finished asks whether
+  // it failed before React has drawn the failure.
+  const errorRef = useRef<string | null>(null);
+  const fail = (message: string) => {
+    errorRef.current = message;
+    setError(message);
+  };
+  const synced = useRef(0);
+  const status = useRef(onStatus);
+  useEffect(() => {
+    status.current = onStatus;
+  }, [onStatus]);
 
-  /**
-   * The store lists worth a section: rows imported, none built yet.
-   * Read from the one declaration of the store's lists, so a list
-   * added there is offered here without anyone remembering to.
-   */
-  const missing = Object.entries(STORE_TABLES).filter(
-    ([table, spec]) =>
-      !existingSources.includes(table) && (progress[spec.section.importedWith]?.imported ?? 0) > 0
-  );
-
-  /**
-   * Builds a section for each store table that has rows and no section.
-   *
-   * Offered rather than done automatically: a merchant whose whole app
-   * is about stock does not want three sections they never open.
-   *
-   * Carries on past a failure instead of stopping at the first. A flaky
-   * request used to leave one section built, the offer gone because the
-   * project was no longer empty, and no way back to the other three.
-   */
-  async function makeSections() {
-    setMakingSections(true);
-    setError(null);
-    const failed: string[] = [];
-    for (const [table, spec] of missing) {
-      const { ok, data } = await apiFetch("/api/modules", {
-        projectId,
-        nav_label: spec.section.label,
-        icon: spec.section.icon,
-        source_table: table,
-      });
-      if (!ok) failed.push(spec.section.label);
-    }
-    setMakingSections(false);
-    onSectionsCreated();
-    if (failed.length) {
-      setError(`Couldn't add ${failed.join(", ")}. The rest are in — try again for these.`);
-    }
-  }
+  const readStore = useCallback(async () => {
+    const { data: row } = await supabase
+      .from("stores")
+      .select("id, shop_domain, status, webhook_error, last_synced_at")
+      .eq("project_id", projectId)
+      .maybeSingle();
+    if (cancelled.current) return null;
+    setStore((row as StoreRow | null) ?? null);
+    setNow(Date.now());
+    return (row as StoreRow | null) ?? null;
+  }, [projectId]);
 
   /**
    * The server is doing it: say where it stands until it is finished,
@@ -130,7 +128,7 @@ export default function StoreStrip({
       if (data?.progress) setProgress(data.progress as Progress);
       const stopped = data?.stopped as { error?: string | null } | undefined;
       if (stopped) {
-        setError(stopped.error ?? "The import stopped.");
+        fail(stopped.error ?? "The import stopped.");
         return;
       }
       if (data?.done) {
@@ -167,7 +165,7 @@ export default function StoreStrip({
           await new Promise((r) => setTimeout(r, 2000 * stumbles));
           continue;
         }
-        setError((data?.error as string) ?? "The import stopped.");
+        fail((data?.error as string) ?? "The import stopped.");
         break;
       }
       // A page that worked clears the count: a long import is allowed
@@ -191,7 +189,9 @@ export default function StoreStrip({
    */
   const pump = useCallback(
     async (mode: "start" | "recheck" | "retry" = "start") => {
+      setMode(mode);
       setRunning(true);
+      errorRef.current = null;
       setError(null);
       setOnServer(false);
       // Reading Shopify over from the start. Everything on this path is
@@ -211,234 +211,255 @@ export default function StoreStrip({
     [projectId, watch, drive]
   );
 
-  // The strip read import_runs.imported — how many the first import
-  // carried across. Webhooks have been adding rows ever since without
-  // touching that number, so the header said "21 products" over a
-  // section listing 26. A merchant reads this as what they have.
-  const countHeld = useCallback(async (storeId: string, of: Progress) => {
-    const count = async (table: string) =>
-      (await supabase.from(table).select("id", { count: "exact", head: true }).eq("store_id", storeId))
-        .count ?? 0;
-    const counted = await Promise.all(
-      Object.entries(of)
-        .filter(([, p]) => p.holds)
-        .map(async ([key, p]) => [key, await count(p.holds!)] as const)
-    );
-    if (!cancelled.current) setHeld(Object.fromEntries(counted));
-  }, []);
-
   useEffect(() => {
     cancelled.current = false;
     (async () => {
-      const { data: row } = await supabase
-        .from("stores")
-        .select("id, shop_domain, status, webhook_error")
-        .eq("project_id", projectId)
-        .maybeSingle();
-      if (!row || cancelled.current) return;
-      setStore(row);
-
+      const row = await readStore();
+      if (!row || cancelled.current) {
+        status.current?.({ storeId: null, status: null, importing: false, synced: synced.current });
+        return;
+      }
+      // Only the owner can ask where an import stands — the route reads the
+      // store's token, which answers nobody else — so a member is shown what
+      // the store row says and nothing that would only fail for them.
+      if (!canManage || row.status !== "connected") {
+        status.current?.({ storeId: row.id, status: row.status, importing: false, synced: synced.current });
+        return;
+      }
       // Asked of the route rather than read off import_runs: the route
       // knows every resource there is, and this used to check four
       // names it had by heart — so a fifth resource, still pending,
       // would never have started.
       const { data } = await apiFetch("/api/shopify/import", { projectId, status: true });
-      const seen = (data?.progress as Progress | undefined) ?? {};
       if (cancelled.current) return;
-      setProgress(seen);
-
+      setProgress((data?.progress as Progress | undefined) ?? {});
       // Nothing has finished yet, or something is part way through.
       // Either way the merchant is waiting on it, so start.
-      if (row.status === "connected" && !data?.done) pump();
-      else await countHeld(row.id, seen);
+      if (!data?.done) pump();
+      else status.current?.({ storeId: row.id, status: row.status, importing: false, synced: synced.current });
     })();
     return () => {
       cancelled.current = true;
     };
-  }, [projectId, pump, countHeld]);
+  }, [projectId, canManage, pump, readStore]);
 
-  // And again when they come back from Shopify, which is when the
-  // webhooks they triggered have landed.
+  // Tell the page when an import starts and ends, so what it shows can
+  // grow with it and count again once it is done.
+  const wasRunning = useRef(false);
   useEffect(() => {
-    if (!store?.id || running) return;
-    const refresh = () => {
-      if (document.visibilityState === "visible") countHeld(store.id, progress);
-    };
-    document.addEventListener("visibilitychange", refresh);
-    window.addEventListener("focus", refresh);
-    return () => {
-      document.removeEventListener("visibilitychange", refresh);
-      window.removeEventListener("focus", refresh);
-    };
-  }, [store?.id, running, countHeld, progress]);
+    if (!store) return;
+    if (wasRunning.current && !running) {
+      synced.current += 1;
+      readStore();
+    }
+    wasRunning.current = running;
+    status.current?.({ storeId: store.id, status: store.status, importing: running, synced: synced.current });
+  }, [running, store, readStore]);
+
+  // "Synced 5 min ago" moves on by itself while the page is open.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  async function checkNow() {
+    if (running) return;
+    setJustChecked(false);
+    await pump("recheck");
+    if (!cancelled.current && !errorRef.current) {
+      setJustChecked(true);
+      setTimeout(() => setJustChecked(false), 4000);
+    }
+  }
+
+  if (store === undefined) {
+    return <div className="h-9 animate-pulse rounded-control bg-frame-raised/60" aria-busy />;
+  }
+
+  const connectDialog = connecting && (
+    <Dialog
+      title={store ? `Reconnect ${store.shop_domain}` : "Connect your Shopify store"}
+      description="Warmluke reads your store, and changes nothing in it unless you say yes to that change."
+      onClose={() => setConnecting(false)}
+    >
+      <ConnectShopify
+        projectId={projectId}
+        initialShop={store?.shop_domain ?? ""}
+        submitLabel={store ? "Reconnect" : "Connect"}
+        onCancel={() => setConnecting(false)}
+      />
+    </Dialog>
+  );
 
   // No store on this project. The builder screen used to say nothing
   // about Shopify at all, so the only way to find the connect button
   // was to go back to the dashboard and notice it on the card.
   if (!store) {
-    return connecting ? (
-      <div className="mb-4 max-w-sm rounded-xl border border-line bg-white p-3">
-        <ConnectShopify projectId={projectId} onCancel={() => setConnecting(false)} />
-      </div>
-    ) : (
-      <Strip>
-        <span className="text-fg-muted">
-          Selling on Shopify? Connect the store and your orders, customers and stock
-          come across on their own.
-        </span>
+    if (!canManage) return null;
+    return (
+      <>
         <button
           onClick={() => setConnecting(true)}
-          className="font-medium text-link hover:text-link"
+          className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-[13px] text-frame-fg transition-colors hover:bg-frame-raised"
         >
+          <span className="flex h-6 w-6 items-center justify-center rounded-[6px] border border-dashed border-frame-line text-frame-fg-muted">
+            <Plug aria-hidden size={13} strokeWidth={2} />
+          </span>
           Connect Shopify
         </button>
-      </Strip>
+        {connectDialog}
+      </>
     );
   }
 
   // Shopify told us the app was taken off this store: its token is gone,
   // so nothing can be read until they connect it again. Said plainly,
-  // with the way back, rather than a strip that still looks connected.
-  if (store.status === "uninstalled") {
-    return connecting ? (
-      <div className="mb-4 max-w-sm rounded-xl border border-line bg-white p-3">
-        <ConnectShopify
-          projectId={projectId}
-          initialShop={store.shop_domain}
-          submitLabel="Reconnect"
-          onCancel={() => setConnecting(false)}
-        />
-      </div>
-    ) : (
-      <Strip>
-        <span className="text-tone-attention-fg">
-          Warmluke was removed from {store.shop_domain} in Shopify, so it can&rsquo;t read the
-          store until you connect it again.
-        </span>
-        <button onClick={() => setConnecting(true)} className="font-medium text-link hover:text-link">
-          Reconnect
-        </button>
-      </Strip>
-    );
-  }
-
-  if (store.status === "pending") {
+  // with the way back, rather than a line that still looks connected.
+  if (store.status === "uninstalled" || store.status === "pending") {
+    const removed = store.status === "uninstalled";
     return (
-      <Strip>
-        <span className="text-tone-attention-fg">Waiting for Shopify to finish connecting.</span>
-      </Strip>
+      <>
+        <Line tone="attention" icon={<TriangleAlert aria-hidden size={13} strokeWidth={2} />}>
+          <span className="min-w-0 flex-1 truncate" title={removed ? "Warmluke was removed from this store in Shopify" : undefined}>
+            {removed ? "Removed from Shopify" : "Waiting for Shopify"}
+          </span>
+          {canManage && (
+            <button onClick={() => setConnecting(true)} className="shrink-0 font-medium text-frame-fg underline-offset-2 hover:underline">
+              Reconnect
+            </button>
+          )}
+        </Line>
+        {connectDialog}
+      </>
     );
   }
 
-  const counts = Object.entries(progress)
-    // While importing, the running total is the point. Once it is done,
-    // what matters is what the store holds.
-    .map(([key, p]) => [(running ? p.imported : held?.[key]) ?? p.imported ?? 0, p.label ?? key] as const)
-    .filter(([n]) => n > 0)
-    .map(([n, label]) => `${n.toLocaleString()} ${label}`);
+  const lists = Object.values(progress);
+  const done = lists.filter((p) => p.status === "done").length;
+  const trouble = store.webhook_error
+    ? { text: "Updates are not coming in", why: `Shopify was not asked to send updates: ${store.webhook_error}. Reconnecting asks again.` }
+    : drift && Object.keys(drift).length > 0
+      ? {
+          text: "Some rows are gone from Shopify",
+          why: `${Object.entries(drift)
+            .map(([resource, d]) => `${d.holding - d.imported} ${progress[resource]?.label ?? resource}`)
+            .join(", ")} no longer in Shopify. Nothing has been deleted here. Reconnecting the store re-subscribes its updates.`,
+        }
+      : null;
 
   return (
-    <Strip>
-      <span className="flex items-center gap-1.5 font-medium text-fg">
-        <span className="h-1.5 w-1.5 rounded-full bg-signal-success" />
-        {store.shop_domain}
-      </span>
-      {error ? (
-        <span className="text-tone-critical-fg">
-          {error}{" "}
-          <button onClick={() => pump("retry")} className="underline hover:text-tone-critical-fg">
-            Try again
-          </button>
-        </span>
-      ) : running ? (
+    <>
+      {running ? (
         // The running count, not a spinner: the merchant can see it is
-        // moving and roughly how far it has got.
-        <span className="text-fg-muted">
-          Importing… {counts.length ? counts.join(" · ") : "starting"}
-          {onServer && <span className="text-fg-faint"> · carries on if you close this tab</span>}
-        </span>
-      ) : counts.length ? (
-        <span className="flex items-center gap-2 text-fg-muted">
-          {counts.join(" · ")}
-          {/* Webhooks keep this current, and a webhook that never
-              arrives is missed in silence — a subscription that failed
-              to register, an outage, a topic Shopify switched off.
-              Nothing noticed, because once the import finished it
-              stopped reading Shopify at all. */}
-          <button
-            onClick={() => pump("recheck")}
-            className="text-[11px] text-fg-faint underline hover:text-fg-muted"
-            title="Read the store again from Shopify"
-          >
-            Check for changes
-          </button>
-          {/* Said out loud rather than swept away. A row here that
-              Shopify no longer returns was almost certainly deleted
-              there while a webhook went undelivered — but a page that
-              failed quietly looks the same, and a wrong delete does
-              not come back. */}
-          {/* Connecting succeeded and the updates did not. Saying only
-              "connected" leaves a merchant reading a store that will
-              never change again and no reason to doubt it. */}
-          {store.webhook_error && (
-            <span
-              className="text-[11px] text-tone-critical-fg"
-              title={store.webhook_error}
-            >
-              <TriangleAlert aria-hidden size={12} className="mr-1 inline align-[-1px]" />Shopify was not asked to send updates — Reconnect to try again
+        // moving and roughly how far it has got. A check for updates
+        // reads everything again, so it says that instead of a count.
+        <div
+          className="px-2 py-1.5"
+          title={onServer ? "Carries on if you close this tab" : "Keep this tab open until it finishes"}
+        >
+          <div className="flex items-center gap-2 text-[12px] text-frame-fg">
+            <RefreshCw aria-hidden size={12} strokeWidth={2} className="animate-spin text-frame-fg-muted" />
+            <span className="flex-1 truncate">
+              {mode === "recheck" ? "Checking for updates" : mode === "retry" ? "Trying again" : "Importing your store"}
             </span>
-          )}
-          {drift && Object.keys(drift).length > 0 && (
-            <span
-              className="text-[11px] text-tone-attention-fg"
-              title="Nothing has been deleted. Reconnecting the store re-subscribes the webhooks."
-            >
-              <TriangleAlert aria-hidden size={12} className="mr-1 inline align-[-1px]" />
-              {Object.entries(drift)
-                .map(
-                  ([resource, d]) =>
-                    `${d.holding - d.imported} ${progress[resource]?.label ?? resource} no longer in Shopify`
-                )
-                .join(" · ")}
-            </span>
-          )}
-        </span>
+            {mode !== "recheck" && lists.length > 0 && done < lists.length && (
+              <span className="text-[11px] text-frame-fg-muted tabular-nums">
+                {done} of {lists.length}
+              </span>
+            )}
+          </div>
+          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-frame-line">
+            {mode === "recheck" || !lists.length || done >= lists.length ? (
+              <div className="h-full w-1/3 animate-pulse rounded-full bg-signal-success/70" />
+            ) : (
+              <div
+                className="h-full rounded-full bg-signal-success transition-[width] duration-500"
+                style={{ width: `${Math.max(6, (done / lists.length) * 100)}%` }}
+              />
+            )}
+          </div>
+        </div>
       ) : (
-        <span className="text-fg-muted">Nothing imported yet</span>
+        <div className="flex items-center gap-2 px-2 py-1">
+          <span className="h-2 w-2 shrink-0 rounded-full bg-signal-success" />
+          <span className="min-w-0 flex-1 leading-tight">
+            <span className="block text-[12px] text-frame-fg">{justChecked ? "Up to date" : "Connected"}</span>
+            <span className="block truncate text-[11px] text-frame-fg-muted">synced {ago(store.last_synced_at, now, "not yet")}</span>
+          </span>
+          {canManage && (
+            <button
+              onClick={checkNow}
+              title="Read the store again from Shopify"
+              aria-label="Check for updates"
+              className="inline-flex h-7 shrink-0 items-center gap-1 rounded-control px-2 text-[11px] font-medium text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-frame-fg"
+            >
+              {justChecked ? (
+                <Check aria-hidden size={13} strokeWidth={2.25} className="text-signal-success" />
+              ) : (
+                <RefreshCw aria-hidden size={13} strokeWidth={2} />
+              )}
+              Check
+            </button>
+          )}
+        </div>
       )}
-
-      {/* The whole point of connecting. Without this the merchant's
-          store sits in the database behind an empty sidebar. */}
-      {/* Shown whenever a store table has rows and no section, so a
-          half-finished attempt can simply be repeated. */}
-      {!running && counts.length > 0 && missing.length > 0 && !offerDismissed && (
-        <span className="flex items-center gap-2">
-          <button
-            onClick={makeSections}
-            disabled={makingSections}
-            className="rounded-lg bg-primary px-2.5 py-1 font-medium text-white hover:bg-primary-hover disabled:opacity-50"
-          >
-            {makingSections
-              ? "Building…"
-              : existingSources.length
-                ? `Add ${missing.map(([, spec]) => spec.section.label).join(", ")}`
-                : "Show them in the app"}
-          </button>
-          <button
-            onClick={() => setOfferDismissed(true)}
-            className="text-fg-faint hover:text-fg-muted"
-          >
-            Not now
-          </button>
-        </span>
+      {/* A pass that stopped does not undo the store: it stays connected,
+          with what it had, and the stop is said under it — short, with
+          Shopify's own words kept for whoever points at it. */}
+      {error && !running && (
+        <Line tone="critical" icon={<TriangleAlert aria-hidden size={13} strokeWidth={2} />}>
+          <span className="min-w-0 flex-1 truncate" title={error}>
+            {mode === "recheck" ? "Couldn\u2019t reach Shopify" : "The import stopped"}
+          </span>
+          {canManage && (
+            <button
+              onClick={() => (mode === "recheck" ? checkNow() : pump("retry"))}
+              className="shrink-0 font-medium text-frame-fg underline-offset-2 hover:underline"
+            >
+              Try again
+            </button>
+          )}
+        </Line>
       )}
-    </Strip>
+      {/* Webhooks keep the store current, and one that never arrives is
+          missed in silence: a subscription that failed to register, an
+          outage, a topic Shopify switched off. Said here, where the store
+          is, rather than nowhere. */}
+      {trouble && !running && (
+        <Line tone="attention" icon={<TriangleAlert aria-hidden size={13} strokeWidth={2} />}>
+          <span className="min-w-0 flex-1 truncate" title={trouble.why}>
+            {trouble.text}
+          </span>
+          {canManage && (
+            <button onClick={() => setConnecting(true)} className="shrink-0 font-medium text-frame-fg underline-offset-2 hover:underline">
+              Reconnect
+            </button>
+          )}
+        </Line>
+      )}
+      {connectDialog}
+    </>
   );
 }
 
-function Strip({ children }: { children: React.ReactNode }) {
+/** One line of the store's standing that needs attention, on the dark sidebar. */
+function Line({
+  tone,
+  icon,
+  children,
+}: {
+  tone: "attention" | "critical";
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-line bg-white px-4 py-2.5 text-xs">
+    <div
+      role="status"
+      className={`flex items-center gap-2 rounded-control px-2 py-1.5 text-[12px] ${
+        tone === "critical" ? "bg-signal-critical/15 text-frame-fg" : "bg-signal-attention/15 text-frame-fg"
+      }`}
+    >
+      <span className={tone === "critical" ? "text-signal-critical" : "text-signal-attention"}>{icon}</span>
       {children}
     </div>
   );

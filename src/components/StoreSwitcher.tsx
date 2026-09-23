@@ -85,7 +85,9 @@ export default function StoreSwitcher({
           projectId: p.id,
           projectName: p.name,
           shop: s.shop_domain,
-          standing: storeStanding({ ...s, importing: runs.length === 0 || runs.some((r) => r.status !== "done") }),
+          // Importing while a list has not started or is under way; a list
+          // that stopped is not importing, and the store's own line says so.
+          standing: storeStanding({ ...s, importing: runs.length === 0 || runs.some((r) => r.status !== "done" && r.status !== "failed") }),
         });
       }
     }

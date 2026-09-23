@@ -128,7 +128,7 @@ if (signedIn?.session) {
   ).data;
   const shown = await owner
     .from("stores")
-    .select("id, shop_domain, status, webhook_error")
+    .select("id, shop_domain, status, webhook_error, last_synced_at")
     .eq("project_id", project?.project_id ?? "00000000-0000-0000-0000-000000000000");
   check("the strip's own query is answered", !shown.error);
   check("and it comes back with a store", (shown.data ?? []).length > 0);

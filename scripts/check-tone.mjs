@@ -21,6 +21,7 @@ check("PAID needs nothing", knownStatus("PAID")?.tone === "neutral");
 check("UNFULFILLED is still to send", knownStatus("UNFULFILLED")?.progress === "incomplete");
 check("PARTIALLY_FULFILLED is half way", knownStatus("PARTIALLY_FULFILLED")?.progress === "partial");
 check("with space around it, still the store's", badgeLabel(" PAID ") === "Paid");
+check("a product's status reads as words", badgeLabel("ACTIVE") === "Active" && badgeLabel("ARCHIVED") === "Archived");
 
 console.log("\na merchant's own words stay theirs");
 check("'Pending' in their section is not a payment", knownStatus("Pending") === null && badgeLabel("Pending") === "Pending");

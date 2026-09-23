@@ -68,6 +68,7 @@ export default function GenericRenderer({
   onUpdate,
   onDelete,
   onStats,
+  onInspect,
 }: {
   schema: UiSchema;
   records: RecordRow[];
@@ -86,6 +87,12 @@ export default function GenericRenderer({
    * only the rows they were handed.
    */
   onStats?: (req: StatRequest) => Promise<StatResult[]>;
+  /**
+   * Opens a row that cannot be edited here — a store row, owned by the
+   * import. Without it such a row did nothing when tapped, and an order
+   * is exactly the thing a merchant taps to see what was in it.
+   */
+  onInspect?: (rec: RecordRow) => void;
 }) {
   const fmt = useFormat();
   const total = totalRecords ?? records.length;
@@ -311,7 +318,7 @@ export default function GenericRenderer({
     columns,
     records: filteredRecords,
     allRecordCount: records.length,
-    onOpen: editable ? (rec: RecordRow) => setEditing(rec) : undefined,
+    onOpen: editable ? (rec: RecordRow) => setEditing(rec) : preview ? undefined : onInspect,
     actions: features?.actions,
     onAction: editable
       ? (rec: RecordRow, set: Record<string, unknown>) =>

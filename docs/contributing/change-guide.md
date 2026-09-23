@@ -102,7 +102,9 @@ Start from the owning state boundary:
 - module/record/schema/realtime coordination: `AppShell`;
 - assistant/design/request UI: `ChatPanel`;
 - generic fields/features/views: renderer and `views.tsx`;
-- import progress: `StoreStrip`.
+- import progress and the store's status line: `StoreStrip`;
+- the store's figures: `Overview` and `abo_store_overview`;
+- a store row opened: `StoreRecordDetail`; adding store lists: `StorePicker`.
 
 Preserve accessibility labels, loading/error states, mobile layout, and the distinction
 between owner-managed and store-backed data. For a Next.js convention, read the installed
