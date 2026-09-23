@@ -14,6 +14,7 @@ import { apiFetch } from "@/lib/auth";
 import { supabase } from "@/lib/supabase-client";
 import { makeFormatting } from "@/lib/format";
 import type { ProjectRow } from "@/lib/types";
+import { X } from "lucide-react";
 
 /** Common choices; any valid code can still be typed in. */
 const LOCALES = [
@@ -149,7 +150,7 @@ export default function ProjectSettings({
             onClick={onClose}
             className="rounded-lg px-2 py-1 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-300"
           >
-            ✕
+            <X aria-hidden size={14} strokeWidth={2} />
           </button>
         </div>
 

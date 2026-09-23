@@ -10,6 +10,7 @@ import { useState } from "react";
 import ErrorNote from "@/components/ErrorNote";
 import { asError } from "@/lib/errors";
 import type { UiSchemaRow } from "@/lib/types";
+import { X } from "lucide-react";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString("en-US", {
@@ -71,7 +72,7 @@ export default function VersionHistory({
             onClick={onClose}
             className="rounded-lg px-2 py-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
           >
-            ✕
+            <X aria-hidden size={14} strokeWidth={2} />
           </button>
         </div>
 

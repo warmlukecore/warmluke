@@ -13,6 +13,7 @@ import { badgeClasses, badgeLabel, knownStatus } from "@/lib/tone";
 import { evalExpr, truthy } from "@/lib/expr";
 import { useFormat, type Formatting } from "@/lib/format";
 import { useLinkLabel } from "@/components/LinkContext";
+import { ArrowDown, ArrowUp, Check } from "lucide-react";
 
 
 
@@ -77,7 +78,7 @@ export function Cell({
     case "boolean": {
       const yes = value === true || value === "true" || value === "yes" || value === 1;
       return (
-        <span className={yes ? "text-emerald-600" : "text-fg-faint"}>{yes ? "✓ Yes" : "No"}</span>
+        <span className={`inline-flex items-center gap-1 ${yes ? "text-tone-success-fg" : "text-fg-faint"}`}>{yes && <Check aria-hidden size={13} strokeWidth={2.25} />}{yes ? "Yes" : "No"}</span>
       );
     }
     case "badge":
@@ -317,7 +318,7 @@ export function TableView({
                 <span className="inline-flex items-center gap-1">
                   {col.label}
                   <span className="text-fg-faint">
-                    {sort?.field === col.field ? (sort.dir === "asc" ? "↑" : "↓") : ""}
+                    {sort?.field === col.field ? (sort.dir === "asc" ? <ArrowUp aria-hidden size={12} strokeWidth={2} /> : <ArrowDown aria-hidden size={12} strokeWidth={2} />) : null}
                   </span>
                 </span>
               </th>

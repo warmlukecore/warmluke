@@ -12,6 +12,7 @@ import { describeAutomation } from "@/lib/describe";
 import { asError, engineError, fixPrompt, type FixAction } from "@/lib/errors";
 import ErrorNote from "@/components/ErrorNote";
 import type { AutomationRow, AutomationRunRow, ModuleRow } from "@/lib/types";
+import { Check, TriangleAlert, X } from "lucide-react";
 
 type RunSummary = { ok: boolean; at: string; detail: Record<string, unknown> | null };
 
@@ -102,7 +103,7 @@ export default function AutomationsPanel({
             onClick={onClose}
             className="rounded-lg px-2 py-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
           >
-            ✕
+            <X aria-hidden size={14} strokeWidth={2} />
           </button>
         </div>
 
@@ -163,7 +164,11 @@ export default function AutomationsPanel({
                 <div className="mt-2 text-[10px] text-slate-400">
                   {run ? (
                     <>
-                      {run.ok ? "✓ Last ran" : "⚠ Last attempt failed"}{" "}
+                      {run.ok ? (
+                  <><Check aria-hidden size={12} strokeWidth={2.25} className="mr-1 inline align-[-1px]" />Last ran</>
+                ) : (
+                  <><TriangleAlert aria-hidden size={12} strokeWidth={2} className="mr-1 inline align-[-1px]" />Last attempt failed</>
+                )}{" "}
                       {new Date(run.at).toLocaleString()}
                       {run.detail && typeof run.detail.rows === "number" && (
                         <> · {run.detail.rows} row(s) changed</>

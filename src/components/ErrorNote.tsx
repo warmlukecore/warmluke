@@ -9,17 +9,18 @@
 
 import { useState } from "react";
 import type { AppError, FixAction } from "@/lib/errors";
+import { CircleX, Info, TriangleAlert, X, type LucideIcon } from "lucide-react";
 
-const TONE: Record<AppError["kind"], { box: string; mark: string; glyph: string }> = {
-  data: { box: "border-amber-200 bg-amber-50 text-amber-900", mark: "text-amber-600", glyph: "·" },
-  engine: { box: "border-amber-200 bg-amber-50 text-amber-900", mark: "text-amber-600", glyph: "⚠" },
-  system: { box: "border-rose-200 bg-rose-50 text-rose-900", mark: "text-rose-600", glyph: "✕" },
+const TONE: Record<AppError["kind"], { box: string; mark: string; Glyph: LucideIcon }> = {
+  data: { box: "border-amber-200 bg-amber-50 text-amber-900", mark: "text-amber-600", Glyph: Info },
+  engine: { box: "border-amber-200 bg-amber-50 text-amber-900", mark: "text-amber-600", Glyph: TriangleAlert },
+  system: { box: "border-rose-200 bg-rose-50 text-rose-900", mark: "text-rose-600", Glyph: CircleX },
 };
 // The settings modals are dark; the same note, in their palette.
-const DARK: Record<AppError["kind"], { box: string; mark: string; glyph: string }> = {
-  data: { box: "border-amber-900 bg-amber-950/50 text-amber-200", mark: "text-amber-400", glyph: "·" },
-  engine: { box: "border-amber-900 bg-amber-950/50 text-amber-200", mark: "text-amber-400", glyph: "⚠" },
-  system: { box: "border-rose-900 bg-rose-950/50 text-rose-300", mark: "text-rose-400", glyph: "✕" },
+const DARK: Record<AppError["kind"], { box: string; mark: string; Glyph: LucideIcon }> = {
+  data: { box: "border-amber-900 bg-amber-950/50 text-amber-200", mark: "text-amber-400", Glyph: Info },
+  engine: { box: "border-amber-900 bg-amber-950/50 text-amber-200", mark: "text-amber-400", Glyph: TriangleAlert },
+  system: { box: "border-rose-900 bg-rose-950/50 text-rose-300", mark: "text-rose-400", Glyph: CircleX },
 };
 
 export default function ErrorNote({
@@ -34,7 +35,7 @@ export default function ErrorNote({
   onFix?: (action: FixAction) => void | Promise<void>;
   /** Inside a list — smaller type, no shadow. */
   compact?: boolean;
-  /** Closes it. Absent, there is no ✕. */
+  /** Closes it. Absent, there is no close button. */
   onDismiss?: () => void;
   /** On a dark surface. */
   dark?: boolean;
@@ -49,16 +50,14 @@ export default function ErrorNote({
       className={`rounded-lg border px-2.5 py-2 ${compact ? "text-[11px]" : "text-xs"} ${tone.box}`}
     >
       <div className="flex items-start gap-1.5">
-        <span className={`shrink-0 ${tone.mark}`} aria-hidden>
-          {tone.glyph}
-        </span>
+        <tone.Glyph aria-hidden size={14} strokeWidth={2} className={`mt-px shrink-0 ${tone.mark}`} />
         {onDismiss && (
           <button
             onClick={onDismiss}
             aria-label="Dismiss"
             className="order-last shrink-0 -mt-0.5 -mr-1 rounded px-1 text-[13px] leading-none opacity-50 transition-opacity hover:opacity-100"
           >
-            ×
+            <X aria-hidden size={14} strokeWidth={2} />
           </button>
         )}
         <div className="min-w-0 flex-1">

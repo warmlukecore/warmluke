@@ -20,6 +20,7 @@ import { supabase } from "@/lib/supabase-client";
 import { apiFetch } from "@/lib/auth";
 import { STORE_TABLES } from "@/lib/store-read";
 import ConnectShopify from "@/components/ConnectShopify";
+import { TriangleAlert } from "lucide-react";
 
 /**
  * Where each resource stands, as the import route reports it: what to
@@ -384,7 +385,7 @@ export default function StoreStrip({
               className="text-[11px] text-rose-700"
               title={store.webhook_error}
             >
-              ⚠️ Shopify was not asked to send updates — Reconnect to try again
+              <TriangleAlert aria-hidden size={12} className="mr-1 inline align-[-1px]" />Shopify was not asked to send updates — Reconnect to try again
             </span>
           )}
           {drift && Object.keys(drift).length > 0 && (
@@ -392,7 +393,7 @@ export default function StoreStrip({
               className="text-[11px] text-amber-700"
               title="Nothing has been deleted. Reconnecting the store re-subscribes the webhooks."
             >
-              ⚠️{" "}
+              <TriangleAlert aria-hidden size={12} className="mr-1 inline align-[-1px]" />
               {Object.entries(drift)
                 .map(
                   ([resource, d]) =>

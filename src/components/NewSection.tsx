@@ -15,6 +15,7 @@ import { ALLOWED_ICONS, COLUMN_TYPES } from "@/lib/types";
 import { COLUMNS } from "@/lib/capabilities";
 import type { ColumnType, ModuleRow } from "@/lib/types";
 import { Icon } from "@/components/ui/Icon";
+import { X } from "lucide-react";
 
 
 interface Draft {
@@ -85,7 +86,7 @@ export default function NewSection({
             onClick={onClose}
             className="rounded-lg px-2 py-1 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-300"
           >
-            ✕
+            <X aria-hidden size={14} strokeWidth={2} />
           </button>
         </div>
 
@@ -181,7 +182,7 @@ export default function NewSection({
                     aria-label="Remove field"
                     className="shrink-0 rounded-lg px-2 text-slate-500 transition-colors hover:bg-slate-800 hover:text-rose-400 disabled:opacity-30"
                   >
-                    ✕
+                    <X aria-hidden size={14} strokeWidth={2} />
                   </button>
                 </div>
               ))}

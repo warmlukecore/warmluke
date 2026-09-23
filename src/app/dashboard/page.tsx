@@ -14,6 +14,7 @@ import ProjectSettings from "@/components/ProjectSettings";
 import ConnectShopify from "@/components/ConnectShopify";
 import { accessRanOut } from "@/lib/store-standing";
 import type { ProjectRow, StoreRow } from "@/lib/types";
+import { Plug, Settings, Store } from "lucide-react";
 
 /**
  * What the store is actually doing, not what we hope it is.
@@ -432,7 +433,7 @@ function DashboardInner() {
               >
                 <Link href={`/app/${p.id}`} className="block p-5">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-400/20 text-lg">
-                    🚀
+                    <Store aria-hidden size={20} strokeWidth={1.75} />
                   </div>
                   <div className="font-display mt-3 pr-8 font-semibold group-hover:text-white">
                     {p.name}
@@ -481,7 +482,7 @@ function DashboardInner() {
                       onClick={() => setConnecting(p.id)}
                       className="text-xs font-medium text-slate-400 transition-colors hover:text-blue-400"
                     >
-                      ⚡ Connect Shopify
+                      <Plug aria-hidden size={13} strokeWidth={2} className="mr-1 inline align-[-2px]" />Connect Shopify
                     </button>
                   )}
                 </div>
@@ -491,7 +492,7 @@ function DashboardInner() {
                   title="Rename, currency, delete"
                   className="absolute top-4 right-4 rounded-lg px-2 py-1 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-200"
                 >
-                  ⚙
+                  <Settings aria-hidden size={16} strokeWidth={1.75} />
                 </button>
               </div>
             ))}

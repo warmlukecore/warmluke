@@ -47,7 +47,7 @@ import type {
 import { TITLE_MAX } from "@/lib/types";
 import { Icon } from "@/components/ui/Icon";
 import Image from "next/image";
-import { Search, Settings } from "lucide-react";
+import { ChevronRight, Ellipsis, History, Menu, Plus, Search, Settings, Sparkles, Zap } from "lucide-react";
 
 /**
  * Rows are fetched a page at a time. Search, filters and stats run over
@@ -1036,7 +1036,7 @@ export default function AppShell({
             // stopped and nothing appeared.
             text: aborted
               ? "Stopped."
-              : `⚠️ Couldn't reach Luke — ${(e as Error)?.message ?? "check your connection"}. Nothing was changed.`,
+              : `Couldn't reach Luke — ${(e as Error)?.message ?? "check your connection"}. Nothing was changed.`,
           },
         ]);
         // The turn may have been saved in the moment between the server
@@ -1172,30 +1172,30 @@ export default function AppShell({
       let doneText: string;
       switch (plan.changeType) {
         case "NEW_MODULE":
-          doneText = `✓ Module "${plan.newModule?.nav_label}" created — it's in your sidebar.`;
+          doneText = `Module "${plan.newModule?.nav_label}" created — it's in your sidebar.`;
           setSelectedModuleId(result.moduleId as string);
           break;
         case "MODULE_DELETE":
-          doneText = "🗑️ Module deleted.";
+          doneText = "Module deleted.";
           setSelectedModuleId(null);
           break;
         case "MODULE_UPDATE":
-          doneText = "✓ Navigation updated.";
+          doneText = "Navigation updated.";
           break;
         case "AUTOMATION_ADD":
-          doneText = `⚡ Rule "${result.automationName as string}" is live — it runs on every change from now on.`;
+          doneText = `Rule "${result.automationName as string}" is live — it runs on every change from now on.`;
           break;
         case "AUTOMATION_REMOVE":
           doneText = `Rule "${result.automationName as string}" turned off.`;
           break;
         case "RECORD_SEED":
-          doneText = `✓ ${result.seeded as number} record(s) added.`;
+          doneText = `${result.seeded as number} record(s) added.`;
           break;
         default:
           // Was "Applied as schema v4", which is true and tells a shop
           // owner nothing. This branch is the commonest edit of all —
           // a field added, a column moved.
-          doneText = `✓ ${planTitle(plan)}.`;
+          doneText = `${planTitle(plan)}.`;
       }
       setChatMessages((prev) =>
         prev.map((m) => (m.id === planId ? { ...m, plan: undefined, text: doneText } : m))
@@ -1353,7 +1353,7 @@ export default function AppShell({
           const offer = !data.partial && next?.length ? next : undefined;
           // With something to offer, the offer is the invitation; the
           // sentence stays for a build that had none.
-          const doneText = `✓ ${shown}${rest > 0 ? ` · and ${rest} more` : ""}.${offer ? "" : " Tell me what to change next."}`;
+          const doneText = `${shown}${rest > 0 ? ` · and ${rest} more` : ""}.${offer ? "" : " Tell me what to change next."}`;
           const bubbleId = nextChatId();
           setChatMessages((prev) => [
             ...prev,
@@ -1639,7 +1639,7 @@ export default function AppShell({
               title="New section"
               className="rounded px-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white"
             >
-              +
+              <Plus aria-hidden size={14} strokeWidth={2} />
             </button>
             )}
           </div>
@@ -1691,7 +1691,7 @@ export default function AppShell({
                       aria-label={isOpen ? `Collapse ${m.nav_label}` : `Expand ${m.nav_label}`}
                       className="py-2 pl-2 text-[10px] text-frame-fg-muted transition-colors hover:text-white"
                     >
-                      {isOpen ? "▾" : "▸"}
+                      <ChevronRight aria-hidden size={13} strokeWidth={2} className={`transition-transform duration-150 ${isOpen ? "rotate-90" : ""}`} />
                     </button>
                   ) : (
                     <span className="w-[18px]" />
@@ -1714,7 +1714,7 @@ export default function AppShell({
                     title="Add a section inside this one"
                     className="rounded px-1.5 py-1 text-frame-fg-muted opacity-0 transition-opacity group-hover:opacity-100 hover:bg-frame-line hover:text-white focus:opacity-100"
                   >
-                    +
+                    <Plus aria-hidden size={14} strokeWidth={2} />
                   </button>
                   <button
                     onClick={() => setModuleSettingsFor(m)}
@@ -1722,7 +1722,7 @@ export default function AppShell({
                     title="Rename, move, delete"
                     className="rounded px-1.5 py-1 text-frame-fg-muted opacity-0 transition-opacity group-hover:opacity-100 hover:bg-frame-line hover:text-white focus:opacity-100"
                   >
-                    ⋯
+                    <Ellipsis aria-hidden size={16} strokeWidth={1.75} />
                   </button>
                   </>
                   )}
@@ -1781,7 +1781,7 @@ export default function AppShell({
                         title="Rename, move, delete"
                         className="rounded px-1.5 py-1 text-frame-fg-muted opacity-0 transition-opacity group-hover:opacity-100 hover:bg-frame-line hover:text-white focus:opacity-100"
                       >
-                        ⋯
+                        <Ellipsis aria-hidden size={16} strokeWidth={1.75} />
                       </button>
                     </div>
                   ))}
@@ -1825,7 +1825,7 @@ export default function AppShell({
               aria-label="Open sections"
               className="-ml-1 rounded-lg px-2 py-1.5 text-slate-500 transition-colors hover:bg-slate-100 lg:hidden"
             >
-              ☰
+              <Menu aria-hidden size={18} strokeWidth={1.75} />
             </button>
             <h1 className="truncate text-base font-semibold text-fg sm:text-lg">
               {selectedModule?.nav_label ?? project?.name ?? "Your app"}
@@ -1842,18 +1842,18 @@ export default function AppShell({
             <button
               onClick={() => setRulesOpen(true)}
               title="Rules"
-              className="rounded-control bg-surface px-2.5 py-1.5 text-sm font-medium text-fg shadow-control transition-colors hover:bg-surface-hover sm:px-3"
+              className="inline-flex items-center rounded-control bg-surface px-2.5 py-1.5 text-sm font-medium text-fg shadow-control transition-colors hover:bg-surface-hover sm:px-3"
             >
-              ⚡<span className="ml-1 hidden sm:inline">Rules</span>
+              <Zap aria-hidden size={15} strokeWidth={1.75} /><span className="ml-1.5 hidden sm:inline">Rules</span>
             </button>
             )}
           {selectedModule && isOwner && (
             <button
               onClick={() => setHistoryOpen(true)}
               title="Version history"
-              className="rounded-control bg-surface px-2.5 py-1.5 text-sm font-medium text-fg shadow-control transition-colors hover:bg-surface-hover sm:px-3"
+              className="inline-flex items-center rounded-control bg-surface px-2.5 py-1.5 text-sm font-medium text-fg shadow-control transition-colors hover:bg-surface-hover sm:px-3"
             >
-              🕘<span className="ml-1 hidden sm:inline">History</span>
+              <History aria-hidden size={15} strokeWidth={1.75} /><span className="ml-1.5 hidden sm:inline">History</span>
             </button>
           )}
             {isOwner && (
@@ -1862,7 +1862,7 @@ export default function AppShell({
               aria-label={waiting > 0 ? `Luke — ${waiting} waiting for you` : "Luke"}
               className="relative rounded-lg bg-gradient-to-br from-violet-500 to-blue-500 px-2.5 py-1.5 text-sm font-medium text-white shadow-sm lg:hidden"
             >
-              ✦<span className="ml-1 hidden sm:inline">Luke</span>
+              <Sparkles aria-hidden size={15} strokeWidth={1.75} /><span className="ml-1.5 hidden sm:inline">Luke</span>
               {waiting > 0 && (
                 <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-semibold text-white">
                   {waiting}

@@ -17,6 +17,7 @@ import { evalExpr } from "@/lib/expr";
 import { asError, nearest, type AppError, type FixAction } from "@/lib/errors";
 import ErrorNote from "@/components/ErrorNote";
 import type { FeatureSchema, RecordRow } from "@/lib/types";
+import { Check, CircleX } from "lucide-react";
 
 type Scan = { ok: true; message: string } | { ok: false; error: AppError };
 
@@ -258,7 +259,7 @@ export default function ScanBar({
             {log.map((s, i) =>
               s.ok ? (
                 <li key={i} className="text-[11px] text-emerald-700">
-                  ✓ {s.message}
+                  <Check aria-hidden size={14} strokeWidth={2.25} className="mr-1 inline align-[-2px]" />{s.message}
                 </li>
               ) : i === 0 ? (
                 // Only the newest miss is the full note, with its ways
@@ -271,7 +272,7 @@ export default function ScanBar({
                 </li>
               ) : (
                 <li key={i} className="text-[11px] text-rose-700">
-                  ✕ {s.error.what}
+                  <CircleX aria-hidden size={14} strokeWidth={2} className="mr-1 inline align-[-2px]" />{s.error.what}
                 </li>
               )
             )}

@@ -18,7 +18,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase-client";
 import { storeStanding, type Standing } from "@/lib/store-standing";
 import { canOneTap } from "@/lib/one-tap";
-import { ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown } from "lucide-react";
 
 type Row = {
   id: string;
@@ -189,7 +189,7 @@ export default function StoreSwitcher({
                   </span>
                   {here && (
                     <span className="mt-0.5 text-xs text-blue-600" aria-hidden>
-                      ✓
+                      <Check aria-hidden size={14} strokeWidth={2.25} />
                     </span>
                   )}
                 </Link>

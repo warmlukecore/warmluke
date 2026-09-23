@@ -9,6 +9,7 @@
 import { useMemo, useState } from "react";
 import { useLinkOptions } from "@/components/LinkContext";
 import type { FeatureSchema, RecordRow, SchemaColumn, UiSchema } from "@/lib/types";
+import { Check, X } from "lucide-react";
 
 export type RecordDraft = Record<string, unknown>;
 
@@ -81,7 +82,7 @@ function Field({
             on ? "border-emerald-500 bg-emerald-500 text-white" : "border-slate-300"
           }`}
         >
-          {on ? "✓" : ""}
+          {on ? <Check aria-hidden size={12} strokeWidth={2.5} /> : null}
         </span>
         {on ? "Yes" : "No"}
       </button>
@@ -209,7 +210,7 @@ export default function RecordModal({
             onClick={onClose}
             className="rounded-lg px-2 py-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
           >
-            ✕
+            <X aria-hidden size={14} strokeWidth={2} />
           </button>
         </div>
 

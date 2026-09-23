@@ -31,6 +31,11 @@ import type {
   UiSchema,
 } from "@/lib/types";
 import { Icon } from "@/components/ui/Icon";
+import { ArrowUp, Bell, Check, ChevronRight, History, Pencil, Plug, Sparkles, Square, SquarePen, TriangleAlert, X, Zap } from "lucide-react";
+import { LukeMark } from "@/components/ui/LukeMark";
+
+/** A message arrives with a short rise; turned off when motion is asked to be reduced (globals.css). */
+const RISE = { ["--rise-from" as string]: "6px", ["--rise-for" as string]: "0.28s" } as React.CSSProperties;
 
 export interface ChatMessage {
   id: string;
@@ -101,15 +106,14 @@ function TraceLine({ trace }: { trace: { steps: TurnEvent[]; ms: number } }) {
   if (parts.length === 0) return null;
   const secs = Math.max(1, Math.round(trace.ms / 1000));
   return (
-    <details className="group text-[11px] text-slate-400">
-      <summary className="cursor-pointer list-none select-none truncate hover:text-slate-600">
-        <span className="inline-block w-3.5 text-center group-open:hidden">▸</span>
-        <span className="hidden w-3.5 text-center group-open:inline-block">▾</span>
+    <details className="group text-[11px] text-fg-faint">
+      <summary className="cursor-pointer list-none select-none truncate hover:text-fg-muted">
+        <ChevronRight aria-hidden size={14} strokeWidth={2} className="inline shrink-0 align-[-2px] transition-transform duration-150 group-open:rotate-90" />
         {parts.join(" · ")} · {secs}s
       </summary>
-      <ul className="mt-0.5 space-y-0.5 pl-3.5 text-slate-300">
+      <ul className="mt-0.5 space-y-0.5 pl-3.5 text-fg-faint">
         {trace.steps.map((s, i) => (
-          <li key={i} className="truncate">✓ {stepWords(s)}</li>
+          <li key={i} className="flex items-center gap-1.5 truncate"><Check aria-hidden size={12} strokeWidth={2.25} className="shrink-0 text-tone-success-fg" />{stepWords(s)}</li>
         ))}
       </ul>
     </details>
@@ -177,11 +181,11 @@ function stepWords(step: TurnEvent): string {
 
 function describeFeatures(f: NonNullable<AssistantPlan["features"]>): string[] {
   const out: string[] = [];
-  if (f.search?.enabled) out.push(`🔍 Search${f.search.fields?.length ? ` over ${f.search.fields.join(", ")}` : ""}`);
-  for (const fl of f.filters ?? []) out.push(`▦ Filter: ${fl.label} (${fl.options.join(" / ")})`);
+  if (f.search?.enabled) out.push(`Search${f.search.fields?.length ? ` over ${f.search.fields.join(", ")}` : ""}`);
+  for (const fl of f.filters ?? []) out.push(`Filter: ${fl.label} (${fl.options.join(" / ")})`);
   for (const s of f.stats ?? [])
-    out.push(`📊 Stat: ${s.label} (${s.op}${s.field ? ` of ${s.field}` : ""}${s.by ? ` by ${s.by}` : ""})`);
-  if (f.defaultSort) out.push(`↕ Default sort: ${f.defaultSort.field} ${f.defaultSort.dir}`);
+    out.push(`Stat: ${s.label} (${s.op}${s.field ? ` of ${s.field}` : ""}${s.by ? ` by ${s.by}` : ""})`);
+  if (f.defaultSort) out.push(`Default sort: ${f.defaultSort.field} ${f.defaultSort.dir}`);
   if (out.length === 0) out.push("No features — plain table");
   return out;
 }
@@ -270,16 +274,16 @@ function ClarifyCard({
   // place to type. No header, no badge, no box around it.
   return (
     <div className="space-y-3">
-      <p className="text-[13px] leading-relaxed text-slate-700">{message}</p>
+      <p className="text-[13px] leading-relaxed text-fg">{message}</p>
 
       <ol className="space-y-3">
         {questions.map((q, n) => (
           <li key={q.id} className="space-y-1.5">
-            <div className="text-[13px] leading-relaxed text-slate-700">
-              <span className="mr-1.5 text-slate-400">{n + 1}.</span>
+            <div className="text-[13px] leading-relaxed text-fg">
+              <span className="mr-1.5 text-fg-faint">{n + 1}.</span>
               {q.question}
             </div>
-            {q.why && <div className="pl-5 text-[11px] text-slate-400">{q.why}</div>}
+            {q.why && <div className="pl-5 text-[11px] text-fg-faint">{q.why}</div>}
             {!done && (q.suggestions?.length ?? 0) > 0 && (
               <div className="flex flex-wrap gap-1.5 pl-5">
                 {q.suggestions!.map((sug) => {
@@ -292,7 +296,7 @@ function ClarifyCard({
                       className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
                         on
                           ? "border-slate-800 bg-slate-800 font-medium text-white"
-                          : "border-slate-200 text-slate-600 hover:border-slate-400 hover:text-slate-800"
+                          : "border-line text-fg-muted hover:border-slate-400 hover:text-fg"
                       }`}
                     >
                       {sug}
@@ -302,7 +306,7 @@ function ClarifyCard({
               </div>
             )}
             {done ? (
-              <div className="pl-5 text-xs text-slate-500">→ {shown(q.id) || "(skipped)"}</div>
+              <div className="pl-5 text-xs text-fg-muted">→ {shown(q.id) || "(skipped)"}</div>
             ) : (
               <div className="pl-5">
                 <textarea
@@ -310,7 +314,7 @@ function ClarifyCard({
                   onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
                   rows={1}
                   placeholder="Pick any above, or type your own"
-                  className="w-full resize-none rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                  className="w-full resize-none rounded-lg border border-line px-2.5 py-1.5 text-xs outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
                 />
               </div>
             )}
@@ -394,14 +398,14 @@ function BlueprintCard({
   // to meet something says so in its own "Not covered" line.
   return (
     <div className="space-y-3">
-      <p className="text-[13px] leading-relaxed text-slate-700">{message}</p>
+      <p className="text-[13px] leading-relaxed text-fg">{message}</p>
       {blueprint.summary && blueprint.summary.trim() !== message.trim() && (
-        <p className="text-[13px] leading-relaxed text-slate-600">{blueprint.summary}</p>
+        <p className="text-[13px] leading-relaxed text-fg-muted">{blueprint.summary}</p>
       )}
 
       <div className="space-y-1">
         {hasOptional && !done && (
-          <div className="text-[11px] text-slate-400">Untick anything you don&rsquo;t need.</div>
+          <div className="text-[11px] text-fg-faint">Untick anything you don&rsquo;t need.</div>
         )}
         {blueprint.plans.map((plan, i) => {
           const summary = describePlan(plan, modules, currentColumns, storeFacts);
@@ -425,20 +429,24 @@ function BlueprintCard({
                   aria-expanded={open}
                   aria-label={hasDetail ? (open ? "Hide detail" : "Show detail") : undefined}
                   className={`mt-0.5 w-3.5 shrink-0 text-center text-[11px] ${
-                    hasDetail ? "text-slate-400 hover:text-slate-700" : "cursor-default text-slate-300"
+                    hasDetail ? "text-fg-faint hover:text-fg" : "cursor-default text-fg-faint"
                   }`}
                 >
-                  {hasDetail ? (open ? "▾" : "▸") : "·"}
+                  {hasDetail ? (
+                    <ChevronRight aria-hidden size={13} strokeWidth={2} className={`transition-transform duration-150 ${open ? "rotate-90" : ""}`} />
+                  ) : (
+                    "·"
+                  )}
                 </button>
               )}
               <div className="min-w-0 flex-1">
                 <button
                   onClick={toggleDetail}
-                  className={`text-left text-[13px] leading-relaxed text-slate-800 ${hasDetail ? "hover:text-slate-950" : "cursor-default"}`}
+                  className={`text-left text-[13px] leading-relaxed text-fg ${hasDetail ? "hover:text-slate-950" : "cursor-default"}`}
                 >
                   {summary.title}
                   {hasDetail && !open && (
-                    <span className="text-slate-400">
+                    <span className="text-fg-faint">
                       {" "}· {summary.lines.length} detail{summary.lines.length === 1 ? "" : "s"}
                     </span>
                   )}
@@ -448,7 +456,7 @@ function BlueprintCard({
                     Optional
                   </span>
                 )}
-                {cascaded && <span className="ml-1.5 text-[11px] text-slate-400">needs a section you removed</span>}
+                {cascaded && <span className="ml-1.5 text-[11px] text-fg-faint">needs a section you removed</span>}
                 {plan.optional && plan.optionalWhy && (
                   <div className="text-[11px] leading-relaxed text-amber-700">{plan.optionalWhy}</div>
                 )}
@@ -460,9 +468,9 @@ function BlueprintCard({
                   </div>
                 ))}
                 {open && hasDetail && (
-                  <ul className="mt-1 space-y-0.5 border-l border-slate-200 pl-2.5">
+                  <ul className="mt-1 space-y-0.5 border-l border-line pl-2.5">
                     {summary.lines.map((line, j) => (
-                      <li key={j} className="text-[11px] leading-relaxed text-slate-500">
+                      <li key={j} className="text-[11px] leading-relaxed text-fg-muted">
                         {line}
                       </li>
                     ))}
@@ -476,16 +484,15 @@ function BlueprintCard({
 
       {blueprint.workflow.length > 0 && (
         <details className="group text-[11px]">
-          <summary className="cursor-pointer list-none select-none text-slate-400 hover:text-slate-600">
-            <span className="inline-block w-3.5 text-center group-open:hidden">▸</span>
-            <span className="hidden w-3.5 text-center group-open:inline-block">▾</span>
+          <summary className="cursor-pointer list-none select-none text-fg-faint hover:text-fg-muted">
+            <ChevronRight aria-hidden size={14} strokeWidth={2} className="inline shrink-0 align-[-2px] transition-transform duration-150 group-open:rotate-90" />
             How it flows
           </summary>
           <ol className="mt-1 space-y-1 pl-3.5">
             {blueprint.workflow.map((w, i) => (
-              <li key={i} className="leading-relaxed text-slate-500">
+              <li key={i} className="leading-relaxed text-fg-muted">
                 {w.step}
-                {w.who && <span className="text-slate-400"> — {w.who}</span>}
+                {w.who && <span className="text-fg-faint"> — {w.who}</span>}
               </li>
             ))}
           </ol>
@@ -507,7 +514,7 @@ function BlueprintCard({
           >
             Build {chosen.length === 1 ? "this" : `these ${chosen.length}`}
           </button>
-          <button onClick={onAmend} className="text-xs text-slate-500 transition-colors hover:text-slate-800 hover:underline">
+          <button onClick={onAmend} className="text-xs text-fg-muted transition-colors hover:text-fg hover:underline">
             Change something
           </button>
         </div>
@@ -1199,16 +1206,12 @@ export default function ChatPanel({
         title="Drag to resize · double-click to reset"
         className={resizeHandleClass("right", dragging)}
       />
-      <div className="border-b border-slate-100 px-4 py-3">
+      <div className="border-b border-line px-4 py-3">
         <div className="flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-blue-500 text-xs text-white">
-            ✦
-          </span>
-          <div>
-            <div className="font-display text-sm font-semibold tracking-tight">Luke</div>
-            <div className="text-[11px] text-slate-400">
-              Build anything by describing it — preview before it applies
-            </div>
+          <LukeMark />
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-fg">Luke</div>
+            <div className="truncate text-[11px] text-fg-faint">Describe it, preview it, then it applies</div>
           </div>
           <div ref={menus} className="relative ml-auto flex items-center gap-1">
             {/* What their own AI asked for is a notification, not a
@@ -1224,11 +1227,9 @@ export default function ChatPanel({
                 }}
                 title="What your AI asked for"
                 aria-label={`${pendingCount} want your attention`}
-                className={`relative rounded-lg px-2 py-1 text-[12px] transition-colors hover:bg-slate-100 ${
-                  pendingCount > 0 ? "text-amber-600" : "text-slate-400"
-                }`}
+                className={`relative inline-flex h-8 min-w-8 items-center justify-center gap-1 rounded-control px-1.5 text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg ${pendingCount > 0 ? "text-tone-attention-fg" : ""}`}
               >
-                🔔
+                <Bell aria-hidden size={16} strokeWidth={1.75} />
                 {pendingCount > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-semibold text-white">
                     {pendingCount}
@@ -1238,10 +1239,11 @@ export default function ChatPanel({
             )}
             <button
               onClick={onNewThread}
-              title="Start a fresh conversation"
-              className="rounded-lg px-2 py-1 text-[11px] font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              title="New conversation"
+              aria-label="New conversation"
+              className="relative inline-flex h-8 min-w-8 items-center justify-center gap-1 rounded-control px-1.5 text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
             >
-              + New
+              <SquarePen aria-hidden size={16} strokeWidth={1.75} />
             </button>
             {threads.length > 0 && (
               <button
@@ -1251,13 +1253,14 @@ export default function ChatPanel({
                 }}
                 title="Past conversations"
                 aria-label="Past conversations"
-                className="rounded-lg px-2 py-1 text-[11px] text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                className="relative inline-flex h-8 min-w-8 items-center justify-center gap-1 rounded-control px-1.5 text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
               >
-                🕘 {threads.length}
+                <History aria-hidden size={16} strokeWidth={1.75} />
+                <span className="text-[11px] tabular-nums">{threads.length}</span>
               </button>
             )}
             {bellOpen && (
-              <div className="absolute top-full right-0 z-50 mt-1 max-h-96 w-80 space-y-2 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg thin-scroll">
+              <div className="absolute top-full right-0 z-50 mt-1 max-h-96 w-80 space-y-2 overflow-y-auto rounded-xl border border-line bg-surface p-2 shadow-lg thin-scroll">
         {/* Changes to the shop, above the designs. Not a different
             colour — a different first line. The words are what say
             this one leaves the building, and a second palette would
@@ -1276,19 +1279,19 @@ export default function ChatPanel({
             <div
               key={a.id}
               className={`rounded-xl border px-2.5 py-2 ${
-                waiting || going ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-slate-50"
+                waiting || going ? "border-amber-300 bg-amber-50" : "border-line bg-surface-subdued"
               }`}
             >
               <div className="text-[10px] font-semibold tracking-widest text-amber-700">
                 IN YOUR SHOP{a.shop_domain ? ` · ${a.shop_domain}` : ""}
               </div>
-              <div className="mt-1 text-[12px] leading-relaxed text-slate-800">{a.summary}</div>
-              <div className="mt-1 text-[10px] text-slate-500">
+              <div className="mt-1 text-[12px] leading-relaxed text-fg">{a.summary}</div>
+              <div className="mt-1 text-[10px] text-fg-muted">
                 {touched > 0 ? `${touched} ${touched === 1 ? "thing" : "things"}` : "nothing named"}
                 {spec ? (spec.undo ? " · can be undone" : " · cannot be undone") : " · not recognised"}
               </div>
               {spec?.undoNote && !spec.undo && (
-                <div className="mt-1 text-[10px] leading-relaxed text-slate-500">{spec.undoNote}</div>
+                <div className="mt-1 text-[10px] leading-relaxed text-fg-muted">{spec.undoNote}</div>
               )}
               {!spec && (
                 <div className="mt-1 text-[10px] leading-relaxed text-rose-700">
@@ -1302,7 +1305,7 @@ export default function ChatPanel({
               )}
               {going && <div className="mt-1 text-[10px] text-amber-800">Going out to the shop…</div>}
               {(a.status === "done" || a.status === "partly_done" || a.status === "failed") && (
-                <div className="mt-1 text-[10px] leading-relaxed text-slate-600">
+                <div className="mt-1 text-[10px] leading-relaxed text-fg-muted">
                   {a.status === "done"
                     ? `Done · ${(a.outcome?.done ?? []).length} changed`
                     : a.status === "partly_done"
@@ -1355,9 +1358,9 @@ export default function ChatPanel({
                 className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2"
               >
                 <div className="text-[11px] font-medium text-amber-800">
-                  ⚠️ Only part of this was built
+                  <TriangleAlert aria-hidden size={13} className="mr-1 inline align-[-2px]" />Only part of this was built
                 </div>
-                <div className="text-[11px] text-slate-600">{r.request}</div>
+                <div className="text-[11px] text-fg-muted">{r.request}</div>
                 {missed.length > 0 && (
                   <ul className="list-disc space-y-0.5 pl-4 text-[10px] text-amber-700">
                     {missed.slice(0, 3).map((e, i) => (
@@ -1365,12 +1368,12 @@ export default function ChatPanel({
                     ))}
                   </ul>
                 )}
-                <div className="text-[10px] text-slate-500">
+                <div className="text-[10px] text-fg-muted">
                   Ask for the missing part again — this one cannot be finished.
                 </div>
                 <button
                   onClick={() => dismissRequest(r.id)}
-                  className="text-[10px] text-slate-500 hover:underline"
+                  className="text-[10px] text-fg-muted hover:underline"
                 >
                   Dismiss
                 </button>
@@ -1382,25 +1385,25 @@ export default function ChatPanel({
             return (
               <div
                 key={r.id}
-                className="flex items-center gap-2 rounded-lg border border-slate-150 bg-slate-50 px-2.5 py-1.5"
+                className="flex items-center gap-2 rounded-lg border border-slate-150 bg-surface-subdued px-2.5 py-1.5"
               >
-                <span className="min-w-0 flex-1 truncate text-[10px] text-slate-400">
+                <span className="min-w-0 flex-1 truncate text-[10px] text-fg-faint">
                   Built by your AI
                   {r.built_at ? ` · ${new Date(r.built_at).toLocaleDateString()}` : ""} ·{" "}
                   {r.request}
                 </span>
                 <button
                   onClick={() => setOpenBuilt((p) => ({ ...p, [r.id]: true }))}
-                  className="shrink-0 text-[10px] text-slate-500 hover:underline"
+                  className="shrink-0 text-[10px] text-fg-muted hover:underline"
                 >
                   Show
                 </button>
                 <button
                   onClick={() => dismissRequest(r.id)}
                   aria-label="Hide this"
-                  className="shrink-0 text-[11px] text-slate-400 hover:text-slate-600"
+                  className="shrink-0 text-[11px] text-fg-faint hover:text-fg-muted"
                 >
-                  ✕
+                  <X aria-hidden size={14} strokeWidth={2} />
                 </button>
               </div>
             );
@@ -1409,12 +1412,12 @@ export default function ChatPanel({
             <div
               key={r.id}
               className={`rounded-xl border px-3 py-2.5 ${
-                done ? "border-slate-200 bg-slate-50" : "border-amber-200 bg-amber-50"
+                done ? "border-line bg-surface-subdued" : "border-amber-200 bg-amber-50"
               }`}
             >
               <div
                 className={`text-[10px] font-semibold tracking-widest uppercase ${
-                  done ? "text-slate-400" : "text-amber-700"
+                  done ? "text-fg-faint" : "text-amber-700"
                 }`}
               >
                 {done
@@ -1422,7 +1425,7 @@ export default function ChatPanel({
                   : "Asked for by your AI"}
               </div>
               <div className="mt-2">
-              <p className={`text-[11px] leading-relaxed font-medium ${done ? "text-slate-700" : "text-amber-900"}`}>{r.request}</p>
+              <p className={`text-[11px] leading-relaxed font-medium ${done ? "text-fg" : "text-amber-900"}`}>{r.request}</p>
               {/* What changes their mind stays out in the open: the
                   warning, and what they asked for that this does not
                   do. The field-by-field detail folds away — it is how
@@ -1438,7 +1441,7 @@ export default function ChatPanel({
                     return (
                       <div key={i}>
                         <div
-                          className={`text-[11px] font-semibold ${done ? "text-slate-700" : "text-amber-900"}`}
+                          className={`text-[11px] font-semibold ${done ? "text-fg" : "text-amber-900"}`}
                         >
                           {d.title}
                         </div>
@@ -1454,14 +1457,14 @@ export default function ChatPanel({
                           <details className="mt-1">
                             <summary
                               className={`cursor-pointer list-none text-[10px] hover:underline ${
-                                done ? "text-slate-500" : "text-amber-700"
+                                done ? "text-fg-muted" : "text-amber-700"
                               }`}
                             >
                               {done ? "What was built" : "Show details"}
                             </summary>
                             <ul
                               className={`mt-1 space-y-0.5 text-[11px] leading-relaxed ${
-                                done ? "text-slate-600" : "text-amber-900/90"
+                                done ? "text-fg-muted" : "text-amber-900/90"
                               }`}
                             >
                               {d.lines.map((l, k) => (
@@ -1475,7 +1478,7 @@ export default function ChatPanel({
                   })}
                   {r.unmet?.length ? (
                     <div
-                      className={`text-[11px] leading-relaxed ${done ? "text-slate-600" : "text-amber-900"}`}
+                      className={`text-[11px] leading-relaxed ${done ? "text-fg-muted" : "text-amber-900"}`}
                     >
                       <span className="font-semibold">Not covered:</span>{" "}
                       {r.unmet.join(" · ")}
@@ -1612,14 +1615,14 @@ export default function ChatPanel({
               </div>
             )}
             {threadsOpen && (
-              <div className="absolute top-full right-0 z-50 mt-1 max-h-72 w-64 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg thin-scroll">
+              <div className="absolute top-full right-0 z-50 mt-1 max-h-72 w-64 overflow-y-auto rounded-xl border border-line bg-surface py-1 shadow-lg thin-scroll">
                 {threads.length === 0 && (
-                  <div className="px-3 py-2 text-[11px] text-slate-400">No past conversations.</div>
+                  <div className="px-3 py-2 text-[11px] text-fg-faint">No past conversations.</div>
                 )}
                 {threads.map((t) => (
                   <div
                     key={t.id}
-                    className={`flex items-center gap-1 px-1.5 transition-colors hover:bg-slate-50 ${
+                    className={`flex items-center gap-1 px-1.5 transition-colors hover:bg-surface-hover ${
                       t.id === conversationId ? "bg-blue-50" : ""
                     }`}
                   >
@@ -1629,11 +1632,11 @@ export default function ChatPanel({
                         setThreadsOpen(false);
                       }}
                       className={`min-w-0 flex-1 px-1.5 py-2 text-left text-[11px] ${
-                        t.id === conversationId ? "text-blue-800" : "text-slate-600"
+                        t.id === conversationId ? "text-blue-800" : "text-fg-muted"
                       }`}
                     >
                       <div className="truncate font-medium">{t.title ?? "Untitled"}</div>
-                      <div className="text-[10px] text-slate-400">
+                      <div className="text-[10px] text-fg-faint">
                         {new Date(t.updated_at).toLocaleString()}
                       </div>
                     </button>
@@ -1652,7 +1655,7 @@ export default function ChatPanel({
                         </button>
                         <button
                           onClick={() => setConfirmThread(null)}
-                          className="text-slate-400 hover:underline"
+                          className="text-fg-faint hover:underline"
                         >
                           Keep
                         </button>
@@ -1661,9 +1664,9 @@ export default function ChatPanel({
                       <button
                         onClick={() => setConfirmThread(t.id)}
                         aria-label={`Delete ${t.title ?? "this conversation"}`}
-                        className="shrink-0 rounded px-1.5 py-1 text-[11px] text-slate-300 hover:bg-rose-50 hover:text-rose-500"
+                        className="shrink-0 rounded px-1.5 py-1 text-[11px] text-fg-faint hover:bg-rose-50 hover:text-rose-500"
                       >
-                        ✕
+                        <X aria-hidden size={14} strokeWidth={2} />
                       </button>
                     )}
                   </div>
@@ -1674,9 +1677,9 @@ export default function ChatPanel({
           <button
             onClick={onClose}
             aria-label="Close Luke"
-            className="rounded-lg px-2 py-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 lg:hidden"
+            className="rounded-lg px-2 py-1 text-fg-faint transition-colors hover:bg-surface-hover hover:text-fg-muted lg:hidden"
           >
-            ✕
+            <X aria-hidden size={14} strokeWidth={2} />
           </button>
         </div>
       </div>
@@ -1692,10 +1695,13 @@ export default function ChatPanel({
             read as a product for somebody else. A prompt for their own
             words is the honest opening. */}
         {messages.length === 0 && (
-          <div className="text-[13px] leading-relaxed text-slate-600">
-            👋 Tell me the problem you&rsquo;re trying to solve — in your own words.
-            I&rsquo;ll ask how you work, show you a plan, and only build once you
-            approve it.
+          <div className="rise flex min-h-[55%] flex-col items-center justify-center px-4 text-center">
+            <LukeMark size="lg" />
+            <h2 className="mt-4 text-lg font-semibold text-fg">Where should we begin?</h2>
+            <p className="mt-1.5 max-w-xs text-[13px] leading-relaxed text-fg-muted">
+              Tell me the problem you&rsquo;re trying to solve, in your own words. I&rsquo;ll ask
+              how you work, show you a plan, and build only once you approve it.
+            </p>
           </div>
         )}
 
@@ -1714,14 +1720,14 @@ export default function ChatPanel({
               void onEditPrompt?.(m.id, said);
             };
             return (
-              <div key={m.id} className="group flex flex-col items-end">
+              <div key={m.id} className="rise group flex flex-col items-end" style={RISE}>
                 {m.viaClient && (
-                  <div className="mb-0.5 pr-1 text-[10px] tracking-wide text-slate-400 uppercase">
+                  <div className="mb-0.5 pr-1 text-[10px] tracking-wide text-fg-faint uppercase">
                     Asked through your AI
                   </div>
                 )}
                 {editing ? (
-                  <div className="w-full max-w-[85%] rounded-2xl rounded-br-sm border border-slate-300 bg-white p-2">
+                  <div className="w-full max-w-[85%] rounded-2xl rounded-br-sm border border-line-strong bg-surface p-2">
                     <textarea
                       autoFocus
                       rows={2}
@@ -1734,19 +1740,19 @@ export default function ChatPanel({
                         }
                         if (e.key === "Escape") setEditingId(null);
                       }}
-                      className="w-full resize-none bg-transparent text-sm break-words text-slate-900 outline-none"
+                      className="w-full resize-none bg-transparent text-sm break-words text-fg outline-none"
                     />
                     <div className="mt-1 flex items-center justify-end gap-3 text-[11px]">
                       <button
                         onClick={() => setEditingId(null)}
-                        className="text-slate-500 hover:text-slate-700"
+                        className="text-fg-muted hover:text-fg"
                       >
                         Cancel
                       </button>
                       <button
                         onClick={send}
                         disabled={!editText.trim() || busy}
-                        className="font-medium text-blue-600 hover:text-blue-700 disabled:text-slate-300"
+                        className="font-medium text-link hover:text-blue-700 disabled:text-fg-faint"
                       >
                         Send again
                       </button>
@@ -1764,7 +1770,7 @@ export default function ChatPanel({
                           setEditText(m.text ?? "");
                         }}
                         aria-label="Edit this message and send it again"
-                        className="mt-2 shrink-0 text-[11px] text-slate-400 opacity-0 transition group-hover:opacity-100 focus:opacity-100 hover:text-slate-600"
+                        className="mt-2 shrink-0 text-[11px] text-fg-faint opacity-0 transition group-hover:opacity-100 focus:opacity-100 hover:text-fg-muted"
                       >
                         Edit
                       </button>
@@ -1780,7 +1786,7 @@ export default function ChatPanel({
                   </div>
                 )}
                 {m.superseded && !editing && (
-                  <div className="mt-0.5 pr-1 text-[10px] text-slate-400">replaced by an edit</div>
+                  <div className="mt-0.5 pr-1 text-[10px] text-fg-faint">replaced by an edit</div>
                 )}
               </div>
             );
@@ -1797,7 +1803,7 @@ export default function ChatPanel({
             // A line of what happened — building, stopped, discarded —
             // in the margin's voice, not a box in the conversation.
             return (
-              <div key={m.id} className="flex items-start gap-1.5 text-[11px] leading-relaxed text-slate-400">
+              <div key={m.id} className="flex items-start gap-1.5 text-[11px] leading-relaxed text-fg-faint">
                 <span className="w-3.5 shrink-0 text-center">·</span>
                 <div className="min-w-0">
                   <div className="break-words">{m.text}</div>
@@ -1859,18 +1865,18 @@ export default function ChatPanel({
             return (
               <div key={m.id} className="space-y-1">
                 {m.trace && <TraceLine trace={m.trace} />}
-                <div className="text-[13px] leading-relaxed break-words whitespace-pre-line text-slate-700">{m.text}</div>
+                <div className="text-[13px] leading-relaxed break-words whitespace-pre-line text-fg">{m.text}</div>
                 {/* Under the build, which is where they find out it
                     happened — a change made with nobody watching is
                     read here first, and this is the moment they want
                     to say no. It names what goes back, because "undo"
                     on its own does not say how much. */}
                 {m.undo && onUndo && (
-                  <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-slate-400">
+                  <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-fg-faint">
                     <button
                       onClick={() => putItBack(m.undo!.messageId)}
                       disabled={undoing !== null}
-                      className="text-slate-500 transition-colors hover:text-slate-800 hover:underline disabled:opacity-50"
+                      className="text-fg-muted transition-colors hover:text-fg hover:underline disabled:opacity-50"
                     >
                       {undoing === m.undo.messageId ? "Putting it back…" : "Put it back"}
                     </button>
@@ -1884,7 +1890,7 @@ export default function ChatPanel({
                     after a question or a put-back, a suggestion about
                     the app as it was is stale. */}
                 {m.next && m.next.length > 0 && i === messages.length - 1 && !busy && (
-                  <div className="text-[11px] leading-relaxed text-slate-400">
+                  <div className="text-[11px] leading-relaxed text-fg-faint">
                     Next, if you like: {m.next.map((n) => n.label).join(" · ")}
                   </div>
                 )}
@@ -1915,9 +1921,9 @@ export default function ChatPanel({
             return (
               <div
                 key={m.id}
-                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500"
+                className="rounded-xl border border-line bg-surface-subdued px-3 py-2 text-xs text-fg-muted"
               >
-                <span className="font-medium text-slate-600">Out of date</span> — “
+                <span className="font-medium text-fg-muted">Out of date</span> — “
                 {plan.newModule?.nav_label ?? plan.explanation}” already changed since this was
                 proposed, so there is nothing left to apply.
               </div>
@@ -1927,13 +1933,13 @@ export default function ChatPanel({
           return (
             <div key={m.id} className="space-y-2.5">
               {m.trace && <TraceLine trace={m.trace} />}
-              <div className="text-[11px] tracking-wide text-slate-400 uppercase">
+              <div className="text-[11px] tracking-wide text-fg-faint uppercase">
                 Proposed change · {plan.changeType.replace("_", " ").toLowerCase()}
               </div>
 
               <div className="space-y-2.5">
                 {m.text ? (
-                  <p className="text-[13px] leading-relaxed text-slate-700">{m.text}</p>
+                  <p className="text-[13px] leading-relaxed text-fg">{m.text}</p>
                 ) : (
                   <>
                     {/* Generated from the plan, not the sentence the
@@ -1945,11 +1951,11 @@ export default function ChatPanel({
                       const summary = describePlan(plan, modules, currentSchema?.columns);
                       return (
                         <>
-                          <p className="text-xs font-medium text-slate-700">{summary.title}</p>
+                          <p className="text-xs font-medium text-fg">{summary.title}</p>
                           {summary.lines.length > 0 && (
                             <ul className="mt-1 space-y-0.5">
                               {summary.lines.map((line, j) => (
-                                <li key={j} className="text-[11px] leading-relaxed text-slate-500">
+                                <li key={j} className="text-[11px] leading-relaxed text-fg-muted">
                                   {line}
                                 </li>
                               ))}
@@ -1958,7 +1964,7 @@ export default function ChatPanel({
                         </>
                       );
                     })()}
-                    <p className="mt-1 text-[11px] text-slate-400">{plan.explanation}</p>
+                    <p className="mt-1 text-[11px] text-fg-faint">{plan.explanation}</p>
                   </>
                 )}
 
@@ -1968,10 +1974,10 @@ export default function ChatPanel({
 
                 {plan.changeType === "NEW_MODULE" && plan.newModule && (
                   <>
-                    <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                    <div className="flex items-center gap-2 rounded-lg bg-surface-subdued px-3 py-2 text-xs text-fg-muted">
                       <Icon name={plan.newModule.icon} size={16} />
                       New module: <b>{plan.newModule.nav_label}</b>
-                      <span className="text-slate-400">({plan.newModule.name})</span>
+                      <span className="text-fg-faint">({plan.newModule.name})</span>
                     </div>
                     <GenericRenderer
                       schema={plan.newSchema}
@@ -1989,10 +1995,10 @@ export default function ChatPanel({
                 )}
 
                 {plan.changeType === "MODULE_UPDATE" && plan.moduleUpdate && (
-                  <div className="space-y-1.5 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                  <div className="space-y-1.5 rounded-lg bg-surface-subdued px-3 py-2 text-xs text-fg-muted">
                     {plan.moduleUpdate.nav_label && (
                       <div>
-                        ✏️ Rename: <b>{targetModule?.nav_label}</b> → <b>{plan.moduleUpdate.nav_label}</b>
+                        <Pencil aria-hidden size={12} className="mr-1 inline align-[-1px]" />Rename: <b>{targetModule?.nav_label}</b> → <b>{plan.moduleUpdate.nav_label}</b>
                       </div>
                     )}
                     {plan.moduleUpdate.icon && (
@@ -2010,7 +2016,7 @@ export default function ChatPanel({
                 {plan.changeType === "MODULE_DELETE" && targetModule && (
                   <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
                     <div className="font-semibold">
-                      ⚠️ Delete “{targetModule.nav_label}” and all its records?
+                      <TriangleAlert aria-hidden size={13} className="mr-1 inline align-[-2px]" />Delete “{targetModule.nav_label}” and all its records?
                     </div>
                     <div className="mt-1">
                       Type <b>“{targetModule.nav_label}”</b> below to confirm.
@@ -2020,7 +2026,7 @@ export default function ChatPanel({
 
                 {plan.changeType === "FEATURE_UPDATE" && (
                   <>
-                    <ul className="space-y-1 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                    <ul className="space-y-1 rounded-lg bg-surface-subdued px-3 py-2 text-xs text-fg-muted">
                       {describeFeatures(plan.features!).map((line, i) => (
                         <li key={i}>{line}</li>
                       ))}
@@ -2039,7 +2045,7 @@ export default function ChatPanel({
                 {plan.changeType === "AUTOMATION_ADD" && plan.automation && (
                   <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2.5">
                     <div className="text-[11px] font-semibold text-emerald-900">
-                      ⚡ {plan.automation.name}
+                      <Zap aria-hidden size={12} className="mr-1 inline align-[-1px]" />{plan.automation.name}
                     </div>
                     <ul className="mt-1 space-y-0.5">
                       {describeAutomation(plan.automation, modules).map((line, i) => (
@@ -2055,16 +2061,16 @@ export default function ChatPanel({
                 )}
 
                 {plan.changeType === "AUTOMATION_REMOVE" && (
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+                  <div className="rounded-lg border border-line bg-surface-subdued px-3 py-2 text-[11px] text-fg-muted">
                     Turns off the rule “{plan.automationRemoveName}”. Its history stays visible.
                   </div>
                 )}
 
                 {plan.changeType === "RECORD_SEED" && (
-                  <div className="overflow-x-auto rounded-lg border border-slate-200 thin-scroll">
+                  <div className="overflow-x-auto rounded-lg border border-line thin-scroll">
                     <table className="w-full text-left text-xs">
                       <thead>
-                        <tr className="border-b border-slate-200 bg-slate-50 text-slate-500">
+                        <tr className="border-b border-line bg-surface-subdued text-fg-muted">
                           {Object.keys(plan.newRecords?.[0] ?? {}).map((k) => (
                             <th key={k} className="px-2.5 py-1.5 font-semibold">
                               {k}
@@ -2074,7 +2080,7 @@ export default function ChatPanel({
                       </thead>
                       <tbody>
                         {(plan.newRecords ?? []).map((row, i) => (
-                          <tr key={i} className="border-b border-slate-100 last:border-0">
+                          <tr key={i} className="border-b border-line last:border-0">
                             {Object.keys(plan.newRecords?.[0] ?? {}).map((k) => (
                               <td key={k} className="px-2.5 py-1.5">
                                 {String(row[k] ?? "—")}
@@ -2113,7 +2119,7 @@ export default function ChatPanel({
                       <button
                         onClick={() => onDiscard(m.id)}
                         disabled={isPending}
-                        className="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                        className="flex-1 rounded-lg border border-line px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-surface-hover disabled:opacity-50"
                       >
                         Discard
                       </button>
@@ -2131,7 +2137,7 @@ export default function ChatPanel({
                     <button
                       onClick={() => onDiscard(m.id)}
                       disabled={isPending}
-                      className="text-xs text-slate-500 transition-colors hover:text-slate-800 hover:underline disabled:opacity-50"
+                      className="text-xs text-fg-muted transition-colors hover:text-fg hover:underline disabled:opacity-50"
                     >
                       Discard
                     </button>
@@ -2148,26 +2154,28 @@ export default function ChatPanel({
             entirely — the one place it must not be is on top of the
             thing it is asking about. */}
         {busy && (
-          <div className="text-[11px] text-slate-400">
+          <div className="text-[11px] text-fg-faint">
             {/* One line: the step the server is on right now, with the
                 seconds climbing beside it, and the steps already taken
                 behind a caret. Nothing here is on a timer — a turn
                 that stalls shows a line that stays put. */}
             <button
               onClick={() => setStepsOpen((o) => !o)}
-              className="flex max-w-full items-center gap-1.5 text-left hover:text-slate-600"
+              className="flex max-w-full items-center gap-1.5 text-left hover:text-fg-muted"
             >
               <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-slate-400" />
               <span className="min-w-0 truncate">
                 {steps.length ? stepWords(steps[steps.length - 1]) : "Working on it…"}
               </span>
-              {stepSeconds >= 2 && <span className="shrink-0 tabular-nums text-slate-300">{stepSeconds}s</span>}
-              {steps.length > 1 && <span className="shrink-0 text-slate-300">{stepsOpen ? "▾" : "▸"}</span>}
+              {stepSeconds >= 2 && <span className="shrink-0 tabular-nums text-fg-faint">{stepSeconds}s</span>}
+              {steps.length > 1 && (
+                <ChevronRight aria-hidden size={13} strokeWidth={2} className={`shrink-0 text-fg-faint transition-transform duration-150 ${stepsOpen ? "rotate-90" : ""}`} />
+              )}
             </button>
             {stepsOpen && steps.length > 1 && (
-              <ul className="mt-1 space-y-0.5 pl-3 text-slate-300">
+              <ul className="mt-1 space-y-0.5 pl-3 text-fg-faint">
                 {steps.slice(0, -1).map((s, i) => (
-                  <li key={i} className="truncate">✓ {stepWords(s)}</li>
+                  <li key={i} className="flex items-center gap-1.5 truncate"><Check aria-hidden size={12} strokeWidth={2.25} className="shrink-0 text-tone-success-fg" />{stepWords(s)}</li>
                 ))}
               </ul>
             )}
@@ -2190,7 +2198,7 @@ export default function ChatPanel({
                 className="pointer-events-auto rounded-xl border border-amber-300 bg-amber-50 p-3 shadow-lg"
               >
                 <div className="flex items-start gap-2">
-                  <span className="text-sm">✦</span>
+                  <Sparkles aria-hidden size={14} strokeWidth={2} className="mt-0.5 shrink-0 text-tone-attention-fg" />
                   <div className="min-w-0 flex-1">
                     <div className="text-[10px] font-semibold tracking-widest text-amber-700 uppercase">
                       Your AI asked for this
@@ -2204,7 +2212,7 @@ export default function ChatPanel({
                     aria-label="Later"
                     className="shrink-0 text-[11px] text-amber-600 hover:text-amber-800"
                   >
-                    ✕
+                    <X aria-hidden size={14} strokeWidth={2} />
                   </button>
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -2255,30 +2263,30 @@ export default function ChatPanel({
           still uses this panel to read and approve what it asked for. */}
       {features.mcp && (
         <details
-          className="border-t border-slate-100 px-3 py-2 text-[11px]"
+          className="border-t border-line px-3 py-2 text-[11px]"
           open={ownAiOpen || !features.chat}
           onToggle={(e) => setOwnAiOpen((e.currentTarget as HTMLDetailsElement).open)}
         >
-          <summary className="cursor-pointer list-none text-slate-500 hover:text-slate-700">
-            ✦ Use your own Claude or ChatGPT
+          <summary className="cursor-pointer list-none text-fg-muted hover:text-fg">
+            <Plug aria-hidden size={13} strokeWidth={2} className="mr-1 inline align-[-2px]" />Use your own Claude or ChatGPT
           </summary>
-          <p className="mt-2 leading-relaxed text-slate-500">
+          <p className="mt-2 leading-relaxed text-fg-muted">
             Add Warmluke as a connector with this address. It can read your store, and
             anything it wants to build comes back here for you to approve.
           </p>
-          <code className="mt-2 block rounded-lg bg-slate-50 px-2.5 py-1.5 text-[10px] break-all text-slate-600">
+          <code className="mt-2 block rounded-lg bg-surface-subdued px-2.5 py-1.5 text-[10px] break-all text-fg-muted">
             {mcpUrl}
           </code>
 
           {assistants.length > 0 && (
             <div className="mt-3 space-y-1.5">
-              <div className="text-[10px] font-semibold tracking-widest text-slate-400 uppercase">
+              <div className="text-[10px] font-semibold tracking-widest text-fg-faint uppercase">
                 Connected
               </div>
               {assistants.map((c) => (
                 <div
                   key={c.name}
-                  className="flex items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5"
+                  className="flex items-center gap-2 rounded-lg border border-line px-2.5 py-1.5"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
@@ -2291,9 +2299,9 @@ export default function ChatPanel({
                           c.calls24h > 0 ? "bg-emerald-500" : "bg-slate-300"
                         }`}
                       />
-                      <div className="truncate text-[11px] font-medium text-slate-700">{c.name}</div>
+                      <div className="truncate text-[11px] font-medium text-fg">{c.name}</div>
                     </div>
-                    <div className="text-[10px] text-slate-400">
+                    <div className="text-[10px] text-fg-faint">
                       {c.lastCall
                         ? `${c.calls24h > 0 ? "Working" : "Quiet"} · last used ${since(c.lastCall)}${
                             c.calls24h > 0 ? ` · ${c.calls24h} today` : ""
@@ -2311,7 +2319,7 @@ export default function ChatPanel({
                       click is the confirmation. */}
                   {confirmRevoke === c.name ? (
                     <span className="flex shrink-0 items-center gap-1.5 text-[10px]">
-                      <span className="text-slate-500">Sure?</span>
+                      <span className="text-fg-muted">Sure?</span>
                       <button
                         onClick={() => {
                           setConfirmRevoke(null);
@@ -2323,7 +2331,7 @@ export default function ChatPanel({
                       </button>
                       <button
                         onClick={() => setConfirmRevoke(null)}
-                        className="text-slate-400 hover:underline"
+                        className="text-fg-faint hover:underline"
                       >
                         Keep
                       </button>
@@ -2369,7 +2377,7 @@ export default function ChatPanel({
             aria-label="Hide this until something else arrives"
             className="shrink-0 px-1 text-amber-500 hover:text-amber-800"
           >
-            ✕
+            <X aria-hidden size={14} strokeWidth={2} />
           </button>
         </div>
       )}
@@ -2379,12 +2387,12 @@ export default function ChatPanel({
         // Not a locked door with a price on it. What they can still
         // do is the larger half — reading their store never costs us
         // anything — so it is offered first, by name.
-        <div className="border-t border-slate-100 p-3">
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <div className="text-[11px] font-semibold text-slate-700">
+        <div className="border-t border-line p-3">
+          <div className="rounded-xl border border-line bg-surface-subdued p-3">
+            <div className="text-[11px] font-semibold text-fg">
               You have used all {turns.free} included {turns.free === 1 ? "design" : "designs"}
             </div>
-            <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+            <p className="mt-1 text-[11px] leading-relaxed text-fg-muted">
               Asking about your store still works, and anything already designed can still
               be built. Designing something new is the part that needs Warmluke AI.
             </p>
@@ -2401,19 +2409,19 @@ export default function ChatPanel({
                     setWantsPlan(false);
                     setOwnAiOpen(true);
                   }}
-                  className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-white"
+                  className="rounded-lg border border-line-strong px-2.5 py-1.5 text-[11px] font-medium text-fg hover:bg-surface"
                 >
                   Use your own Claude
                 </button>
               )}
             </div>
             {wantsPlan && (
-              <div className="mt-2.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[11px] leading-relaxed text-slate-600">
+              <div className="mt-2.5 rounded-lg border border-line bg-surface px-2.5 py-2 text-[11px] leading-relaxed text-fg-muted">
                 Still being built — it releases soon. Until then your own Claude or ChatGPT
                 does the asking, and Warmluke keeps building what you have already approved.
                 <button
                   onClick={() => setWantsPlan(false)}
-                  className="mt-1.5 block text-[10px] text-slate-400 hover:underline"
+                  className="mt-1.5 block text-[10px] text-fg-faint hover:underline"
                 >
                   Close
                 </button>
@@ -2422,18 +2430,18 @@ export default function ChatPanel({
           </div>
         </div>
       ) : !features.chat ? (
-        <div className="border-t border-slate-100 p-3 text-[11px] leading-relaxed text-slate-500">
+        <div className="border-t border-line p-3 text-[11px] leading-relaxed text-fg-muted">
           Luke is off for this account.{" "}
           {features.mcp
             ? "Your own AI can still design changes, and you approve them above."
             : "Ask us to turn Luke on for you."}
         </div>
       ) : (
-      <div className="border-t border-slate-100 p-3">
+      <div className="border-t border-line p-3">
         {/* One quiet box: the words inside it, the send inside it. A
             thick ring and a labelled button made the composer the
             loudest thing on the panel, and the conversation should be. */}
-        <div className="flex items-end gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm transition-colors focus-within:border-slate-400">
+        <div className="flex items-end gap-2 rounded-2xl border border-line bg-surface px-3 py-2 shadow-card transition-all duration-150 focus-within:border-line-strong focus-within:shadow-md">
           <textarea
             ref={inputRef}
             value={input}
@@ -2452,35 +2460,32 @@ export default function ChatPanel({
             }}
             rows={1}
             placeholder="Ask Luke to build or change something"
-            className="max-h-40 flex-1 resize-none bg-transparent py-0.5 text-[13px] leading-6 text-slate-800 outline-none placeholder:text-slate-400"
+            className="max-h-40 flex-1 resize-none bg-transparent py-0.5 text-[13px] leading-6 text-fg outline-none placeholder:text-fg-faint"
           />
           <button
             onClick={() => (canStop ? onStop() : send())}
             disabled={busy && !canStop ? true : !canStop && !input.trim()}
             aria-label={canStop ? "Stop" : "Send"}
             title={canStop ? "Stop" : busy ? "Building…" : "Send"}
-            className="mb-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white transition-colors hover:bg-slate-700 disabled:opacity-30"
+            className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary transition-all duration-150 hover:bg-primary-hover active:scale-95 disabled:bg-line-strong disabled:text-surface"
           >
             {canStop ? (
-              <span className="block h-2.5 w-2.5 rounded-[2px] bg-white" aria-hidden />
+              <Square aria-hidden size={11} strokeWidth={0} fill="currentColor" />
             ) : (
-              <span className="text-sm leading-none" aria-hidden>
-                ↑
-              </span>
+              <ArrowUp aria-hidden size={16} strokeWidth={2.25} />
             )}
           </button>
         </div>
-        <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 text-[10px] text-slate-400">
+        <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 text-[10px] text-fg-faint">
           <span>Asked, previewed, versioned, reversible — nothing applies without your approval.</span>
           {/* From the engine's own registry, one tap away rather than
               repeated on every design. The assistant is told to flag
               anything it cannot do, but a prompt instruction is not a
               guarantee; the list is here whether or not it mentions it. */}
           <details className="group">
-            <summary className="cursor-pointer list-none select-none hover:text-slate-600">
+            <summary className="cursor-pointer list-none select-none hover:text-fg-muted">
               What Luke can&rsquo;t do
-              <span className="ml-0.5 group-open:hidden">▸</span>
-              <span className="ml-0.5 hidden group-open:inline">▾</span>
+<ChevronRight aria-hidden size={11} strokeWidth={2} className="ml-0.5 inline align-[-1px] transition-transform duration-150 group-open:rotate-90" />
             </summary>
             <ul className="mt-1 space-y-0.5 pl-3">
               {NOT_SUPPORTED.map((n) => (

@@ -15,6 +15,7 @@ import { STORE_TABLES } from "@/lib/store-read";
 import { ALLOWED_ICONS } from "@/lib/types";
 import type { ModuleRow } from "@/lib/types";
 import { Icon } from "@/components/ui/Icon";
+import { X } from "lucide-react";
 
 
 interface Impact {
@@ -132,7 +133,7 @@ export default function ModuleSettings({
             onClick={onClose}
             className="rounded-lg px-2 py-1 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-300"
           >
-            ✕
+            <X aria-hidden size={14} strokeWidth={2} />
           </button>
         </div>
 
