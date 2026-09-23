@@ -10,7 +10,8 @@ import { useState } from "react";
 import ErrorNote from "@/components/ErrorNote";
 import { asError } from "@/lib/errors";
 import type { UiSchemaRow } from "@/lib/types";
-import { X } from "lucide-react";
+import { Dialog } from "@/components/ui/Dialog";
+import { button } from "@/components/ui/controls";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString("en-US", {
@@ -59,82 +60,51 @@ export default function VersionHistory({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-6">
-      <div className="flex max-h-[70vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
-          <div>
-            <h2 className="text-sm font-semibold">Schema version history</h2>
-            <p className="text-[11px] text-slate-400">
-              Nothing is ever deleted — rollback adds a new version.
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg px-2 py-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-          >
-            <X aria-hidden size={14} strokeWidth={2} />
-          </button>
+    <Dialog
+      title="Schema version history"
+      description="Nothing is ever deleted — rollback adds a new version."
+      onClose={onClose}
+    >
+      {error && (
+        <div className="mb-3">
+          <ErrorNote error={asError(error)} />
         </div>
-
-        <div className="flex-1 overflow-y-auto p-4 thin-scroll">
-          {error && (
-            <div className="mb-3">
-              <ErrorNote error={asError(error)} />
-            </div>
-          )}
-          <ol className="space-y-2">
-            {versions.map((v) => {
-              const isCurrent = current && v.version === current.version;
-              return (
-                <li
-                  key={v.id}
-                  className={`flex items-center justify-between rounded-xl border px-4 py-3 ${
-                    isCurrent ? "border-blue-200 bg-blue-50/50" : "border-slate-200"
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold">v{v.version}</span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                          v.created_by === "ai"
-                            ? "bg-violet-100 text-violet-700"
-                            : "bg-slate-100 text-slate-600"
-                        }`}
-                      >
-                        {v.created_by === "ai" ? "AI" : "User"}
+      )}
+      {versions.length === 0 ? (
+        <p className="py-8 text-center text-[13px] text-fg-muted">No versions yet.</p>
+      ) : (
+        <ol className="divide-y divide-line overflow-hidden rounded-card border border-line">
+          {versions.map((v) => {
+            const isCurrent = current && v.version === current.version;
+            return (
+              <li key={v.id} className={`flex items-center gap-3 px-4 py-3 ${isCurrent ? "bg-surface-subdued" : ""}`}>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[13px] font-semibold text-fg tabular-nums">v{v.version}</span>
+                    <span className="rounded-full bg-tone-neutral px-2 py-px text-[11px] font-medium text-tone-neutral-fg">
+                      {v.created_by === "ai" ? "AI" : "User"}
+                    </span>
+                    {isCurrent && (
+                      <span className="rounded-full bg-tone-success px-2 py-px text-[11px] font-medium text-tone-success-fg">
+                        Current
                       </span>
-                      {isCurrent && (
-                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                          current
-                        </span>
-                      )}
-                    </div>
-                    <div className="truncate text-xs text-slate-500">
-                      {v.change_description ?? "—"}
-                    </div>
-                    <div className="text-[10px] text-slate-400">
-                      {formatDate(v.created_at)}
-                    </div>
+                    )}
                   </div>
-                  <button
-                    onClick={() => rollback(v)}
-                    disabled={isCurrent || busyVersion !== null}
-                    className="ml-3 shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {busyVersion === v.version ? "Rolling back…" : "Rollback to this"}
-                  </button>
-                </li>
-              );
-            })}
-            {versions.length === 0 && (
-              <li className="py-8 text-center text-sm text-slate-400">
-                No versions yet.
+                  <div className="mt-0.5 truncate text-xs text-fg-muted">{v.change_description ?? "—"}</div>
+                  <div className="text-[11px] text-fg-faint">{formatDate(v.created_at)}</div>
+                </div>
+                <button
+                  onClick={() => rollback(v)}
+                  disabled={isCurrent || busyVersion !== null}
+                  className={button("secondary", "sm")}
+                >
+                  {busyVersion === v.version ? "Rolling back…" : "Roll back to this"}
+                </button>
               </li>
-            )}
-          </ol>
-        </div>
-      </div>
-    </div>
+            );
+          })}
+        </ol>
+      )}
+    </Dialog>
   );
 }

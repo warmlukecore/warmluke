@@ -12,6 +12,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
+import { CenteredCard } from "@/components/CenteredCard";
+import { button } from "@/components/ui/controls";
 
 export default function JoinPage() {
   const router = useRouter();
@@ -39,22 +41,20 @@ export default function JoinPage() {
   }, [token, router]);
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-slate-950 px-4">
-      <div className="w-full max-w-sm rounded-2xl border border-slate-800 bg-slate-900 p-6 text-center">
-        {error ? (
-          <>
-            <div className="text-sm text-slate-200">{error}</div>
-            <button
-              onClick={() => router.replace("/dashboard")}
-              className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
-            >
-              Go to my apps
-            </button>
-          </>
-        ) : (
-          <div className="text-sm text-slate-400">Opening the app…</div>
-        )}
-      </div>
-    </main>
+    <CenteredCard>
+      {error ? (
+        <div className="text-center">
+          <div className="text-fg">{error}</div>
+          <button onClick={() => router.replace("/dashboard")} className={`${button("primary")} mt-4`}>
+            Go to my apps
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-center gap-2">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-signal-neutral" />
+          Opening the app…
+        </div>
+      )}
+    </CenteredCard>
   );
 }

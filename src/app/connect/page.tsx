@@ -19,6 +19,8 @@ import { apiFetch, signOut, useUser } from "@/lib/auth";
 import { supabase } from "@/lib/supabase-client";
 import { readShopAddress } from "@/lib/shop-address";
 import ConnectShopify from "@/components/ConnectShopify";
+import { CenteredCard } from "@/components/CenteredCard";
+import { button } from "@/components/ui/controls";
 
 type Project = { id: string; name: string };
 type Store = { project_id: string; shop_domain: string; status: string };
@@ -139,7 +141,7 @@ function ConnectInner() {
     if (!shop) {
       return (
         <Shell>
-          <p className="text-rose-300">That link did not name a Shopify store.</p>
+          <p className="text-tone-critical-fg">That link did not name a Shopify store.</p>
           <BackLink />
         </Shell>
       );
@@ -149,10 +151,10 @@ function ConnectInner() {
       return (
         <Shell>
           <p>
-            <span className="text-slate-100">{shop}</span> is already connected
+            <span className="font-medium text-fg">{shop}</span> is already connected
             {where ? ` to ${where.name}` : ""}.
           </p>
-          <Link href={`/app/${already.project_id}`} className="mt-3 inline-block text-blue-400 hover:text-blue-300">
+          <Link href={`/app/${already.project_id}`} className={`${button("primary")} mt-4 w-full`}>
             Open it →
           </Link>
         </Shell>
@@ -161,7 +163,7 @@ function ConnectInner() {
     const pick = chosen ?? hinted ?? (eligible.length === 1 ? eligible[0].id : null);
     return (
       <Shell>
-        <h1 className="text-lg font-semibold text-slate-100">Connect {shop}</h1>
+        <h1 className="text-base font-semibold text-fg">Connect {shop}</h1>
         {busy ? (
           <p className="mt-2">Opening Shopify…</p>
         ) : (
@@ -169,10 +171,10 @@ function ConnectInner() {
             {eligible.length > 0 ? (
               <>
                 <p className="mt-1">Which project is it for?</p>
-                <div className="mt-3 space-y-1.5">
+                <div className="mt-3 divide-y divide-line overflow-hidden rounded-control border border-line">
                   {eligible.map((p) => (
-                    <label key={p.id} className="flex cursor-pointer items-center gap-2 text-slate-200">
-                      <input type="radio" name="project" checked={pick === p.id} onChange={() => setChosen(p.id)} />
+                    <label key={p.id} className="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-fg transition-colors hover:bg-surface-hover has-[:checked]:bg-surface-subdued">
+                      <input type="radio" name="project" checked={pick === p.id} onChange={() => setChosen(p.id)} className="accent-primary" />
                       {p.name}
                     </label>
                   ))}
@@ -180,7 +182,7 @@ function ConnectInner() {
                 <button
                   onClick={() => pick && begin(pick)}
                   disabled={!pick}
-                  className="mt-4 w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+                  className={`${button("primary")} mt-4 w-full`}
                 >
                   Continue to Shopify
                 </button>
@@ -192,12 +194,12 @@ function ConnectInner() {
                   : "Start a project for this store:"}
               </p>
             )}
-            <button onClick={newProject} className="mt-3 text-sm text-slate-400 underline hover:text-slate-200">
+            <button onClick={newProject} className="mt-3 text-[13px] text-fg-muted underline decoration-line-strong underline-offset-2 hover:text-fg">
               New project for {shop.replace(/\.myshopify\.com$/, "")}
             </button>
           </>
         )}
-        {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}
+        {error && <p className="mt-3 text-tone-critical-fg">{error}</p>}
         {signedIn}
       </Shell>
     );
@@ -218,10 +220,10 @@ function ConnectInner() {
     return (
       <Shell>
         <p>
-          {project.name} is connected to <span className="text-slate-100">{connected.shop_domain}</span>. You can
+          {project.name} is connected to <span className="font-medium text-fg">{connected.shop_domain}</span>. You can
           close this tab.
         </p>
-        <Link href={`/app/${project.id}`} className="mt-3 inline-block text-blue-400 hover:text-blue-300">
+        <Link href={`/app/${project.id}`} className={`${button("primary")} mt-4 w-full`}>
           Open it →
         </Link>
       </Shell>
@@ -229,7 +231,7 @@ function ConnectInner() {
   }
   return (
     <Shell>
-      <h1 className="mb-3 text-lg font-semibold text-slate-100">Connect {project.name} to Shopify</h1>
+      <h1 className="mb-3 text-base font-semibold text-fg">Connect {project.name} to Shopify</h1>
       <ConnectShopify
         projectId={project.id}
         anotherBrowser={false}
@@ -243,9 +245,9 @@ function ConnectInner() {
 
 function SignedInAs({ email, onSignOut }: { email?: string | null; onSignOut: () => void }) {
   return (
-    <p className="mt-6 text-[11px] text-slate-500">
+    <p className="mt-6 border-t border-line pt-4 text-xs text-fg-faint">
       Signed in as {email}.{" "}
-      <button onClick={onSignOut} className="underline hover:text-slate-300">
+      <button onClick={onSignOut} className="underline hover:text-fg">
         Not you?
       </button>
     </p>
@@ -253,16 +255,12 @@ function SignedInAs({ email, onSignOut }: { email?: string | null; onSignOut: ()
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-sm text-slate-400">
-      <div className="w-full max-w-sm rounded-2xl border border-slate-800 bg-slate-900 p-5">{children}</div>
-    </div>
-  );
+  return <CenteredCard>{children}</CenteredCard>;
 }
 
 function BackLink() {
   return (
-    <Link href="/dashboard" className="mt-3 inline-block text-blue-400 hover:text-blue-300">
+    <Link href="/dashboard" className={`${button("secondary")} mt-4 w-full`}>
       Back to Warmluke →
     </Link>
   );

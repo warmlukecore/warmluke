@@ -48,11 +48,18 @@ const KNOWN: Record<string, Known> = {
   CANCELLED: { label: "Cancelled", tone: "neutral", progress: "complete" },
 };
 
-const key = (value: string) => value.trim().toUpperCase().replace(/[\s-]+/g, "_");
+/**
+ * How Shopify writes a status: capitals joined by underscores. A
+ * merchant's own words never look like that, which is what keeps the
+ * "Pending" in their repairs section from being read as "Payment
+ * pending" — the same word, meaning something else entirely.
+ */
+const SHOPIFY_FORM = /^[A-Z]+(?:_[A-Z]+)*$/;
 
 /** A store status we know the meaning of, or null. */
 export function knownStatus(value: string): Known | null {
-  return KNOWN[key(value)] ?? null;
+  const v = value.trim();
+  return SHOPIFY_FORM.test(v) ? (KNOWN[v] ?? null) : null;
 }
 
 /** What a badge should say: the status's own words, or the value itself. */
@@ -86,13 +93,17 @@ const QUIET = [
   "bg-stone-200 text-stone-800",
 ];
 
-/** The classes a badge for this value is drawn with. */
-export function badgeClasses(value: string): string {
-  const known = knownStatus(value);
-  if (known) return TONE_CLASSES[known.tone];
+/** One of the calm colours, the same one every time for the same word. */
+export function quietClasses(value: string): string {
   const k = value.trim().toLowerCase();
   if (!k) return TONE_CLASSES.neutral;
   let hash = 0;
   for (let i = 0; i < k.length; i++) hash = (hash * 31 + k.charCodeAt(i)) | 0;
   return QUIET[Math.abs(hash) % QUIET.length];
+}
+
+/** The classes a badge for this value is drawn with. */
+export function badgeClasses(value: string): string {
+  const known = knownStatus(value);
+  return known ? TONE_CLASSES[known.tone] : quietClasses(value);
 }

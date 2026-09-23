@@ -13,8 +13,15 @@ import { asError } from "@/lib/errors";
 import { apiFetch } from "@/lib/auth";
 import { supabase } from "@/lib/supabase-client";
 import { makeFormatting } from "@/lib/format";
+import { quietClasses } from "@/lib/tone";
 import type { ProjectRow } from "@/lib/types";
-import { X } from "lucide-react";
+import { Dialog } from "@/components/ui/Dialog";
+import { Switch } from "@/components/ui/Switch";
+import { Group } from "@/components/ui/Group";
+import { button, field, hint, iconButton, iconButtonCritical, label, note } from "@/components/ui/controls";
+import { Check, Copy, Link2, Trash2, UserPlus } from "lucide-react";
+
+type Tab = "general" | "ai" | "people";
 
 /** Common choices; any valid code can still be typed in. */
 const LOCALES = [
@@ -51,15 +58,25 @@ export default function ProjectSettings({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [seats, setSeats] = useState<MemberRow[]>([]);
+  const [seats, setSeats] = useState<MemberRow[] | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [peopleError, setPeopleError] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("general");
 
   async function loadSeats() {
-    const { data } = await supabase
+    const { data, error: e } = await supabase
       .from("project_members")
       .select("id, email, token, joined_at")
       .eq("project_id", project.id)
       .order("created_at");
+    // A list that failed to load is not a list of nobody.
+    if (e) {
+      setPeopleError("The people on this project couldn’t be loaded.");
+      setSeats((prev) => prev ?? []);
+      return;
+    }
     setSeats(data ?? []);
   }
   useEffect(() => {
@@ -67,13 +84,32 @@ export default function ProjectSettings({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
 
+  /** A new seat is a link; it is copied straight away, since that is the next thing anyone does with it. */
   async function addSeat() {
-    await supabase.from("project_members").insert({ project_id: project.id });
+    setAdding(true);
+    setPeopleError(null);
+    const { data, error: e } = await supabase
+      .from("project_members")
+      .insert({ project_id: project.id })
+      .select("id, email, token, joined_at")
+      .single();
+    setAdding(false);
+    if (e || !data) {
+      setPeopleError("Couldn’t make a link. Try again.");
+      return;
+    }
+    copyLink(data as MemberRow);
     loadSeats();
   }
 
   async function removeSeat(id: string) {
-    await supabase.from("project_members").delete().eq("id", id);
+    setPeopleError(null);
+    const { error: e } = await supabase.from("project_members").delete().eq("id", id);
+    setRemoving(null);
+    if (e) {
+      setPeopleError("Couldn’t remove them. Try again.");
+      return;
+    }
     loadSeats();
   }
 
@@ -135,44 +171,69 @@ export default function ProjectSettings({
     onClose();
   }
 
+  const tabs: Array<{ id: Tab; text: string; count?: number }> = [
+    { id: "general", text: "General" },
+    { id: "ai", text: "Your own AI" },
+    { id: "people", text: "People", count: seats?.length },
+  ];
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/70 p-0 sm:items-center sm:p-4"
-      onClick={onClose}
-    >
-      <div
-        className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-slate-800 bg-slate-900 text-slate-200 shadow-2xl thin-scroll-dark sm:rounded-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3.5">
-          <h2 className="font-display text-sm font-semibold text-white">Project settings</h2>
-          <button
-            onClick={onClose}
-            className="rounded-lg px-2 py-1 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-300"
-          >
-            <X aria-hidden size={14} strokeWidth={2} />
+    <Dialog
+      title="Project settings"
+      description={project.name}
+      onClose={onClose}
+      tall
+      footer={
+        <>
+          <span className="text-xs text-fg-muted">{dirty ? "Unsaved changes" : ""}</span>
+          <button onClick={onClose} className={`${button("plain")} ml-auto`}>
+            Cancel
           </button>
+          <button onClick={save} disabled={busy || !dirty || !name.trim()} className={button("primary")}>
+            {busy && !confirmingDelete ? "Saving…" : "Save changes"}
+          </button>
+        </>
+      }
+    >
+      <div role="tablist" aria-label="Settings" className="sticky -top-4 z-10 -mx-5 -mt-4 mb-4 flex gap-4 border-b border-line bg-surface px-5">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            role="tab"
+            aria-selected={tab === t.id}
+            onClick={() => setTab(t.id)}
+            className={`-mb-px border-b-2 py-2.5 text-[13px] font-medium transition-colors ${
+              tab === t.id ? "border-fg text-fg" : "border-transparent text-fg-muted hover:text-fg"
+            }`}
+          >
+            {t.text}
+            {t.count ? <span className="ml-1.5 rounded-full bg-surface-hover px-1.5 text-[11px] text-fg-muted">{t.count}</span> : null}
+          </button>
+        ))}
+      </div>
+
+      {error && (
+        <div className="mb-4">
+          <ErrorNote error={asError(error)} />
         </div>
+      )}
 
-        <div className="space-y-4 px-5 py-4">
-          {error && <ErrorNote error={asError(error)} dark />}
-
+      {tab === "general" && (
+        <div className="space-y-4">
+          <Group title="Details" description="What the project is called, and how it writes money and dates.">
           <div>
-            <label className="mb-1 block text-[11px] font-medium tracking-wide text-slate-400 uppercase">
+            <label htmlFor="project-name" className={label}>
               Name
             </label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-blue-500"
-            />
+            <input id="project-name" value={name} onChange={(e) => setName(e.target.value)} className={field} />
           </div>
 
           <div>
-            <label className="mb-1 block text-[11px] font-medium tracking-wide text-slate-400 uppercase">
+            <label htmlFor="project-locale" className={label}>
               Locale and default currency
             </label>
             <select
+              id="project-locale"
               value={chose ? `${locale}|${currency}` : "default"}
               onChange={(e) => {
                 if (e.target.value === "default") {
@@ -184,7 +245,7 @@ export default function ProjectSettings({
                 setLocale(l);
                 setCurrency(c);
               }}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-blue-500"
+              className={field}
             >
               {/* Without this, a project that has never been touched
                   showed "India — ₹" as though somebody had picked it,
@@ -201,7 +262,7 @@ export default function ProjectSettings({
                 </option>
               )}
             </select>
-            <div className="mt-1.5 text-[11px] text-slate-500">
+            <div className={hint}>
               {chose ? (
                 <>
                   Amounts look like {preview.money(123456.5)} · dates like{" "}
@@ -218,134 +279,32 @@ export default function ProjectSettings({
               )}
             </div>
           </div>
+          </Group>
 
-          <div className="border-t border-slate-800 pt-4">
-            <div className="text-sm font-semibold text-slate-100">Your own AI</div>
-            <label className="mt-2 flex cursor-pointer items-start gap-2.5">
-              <input
-                type="checkbox"
-                checked={autoBuild}
-                onChange={(e) => setAutoBuild(e.target.checked)}
-                className="mt-0.5 h-4 w-4 shrink-0 accent-blue-600"
-              />
-              <span className="text-[11px] leading-relaxed text-slate-300">
-                Build without asking me first
-              </span>
-            </label>
-            {/* What it will and will not do, in full, because a
-                setting whose limits are a surprise is worse than no
-                setting. */}
-            <div className="mt-2 space-y-1 rounded-lg bg-slate-800/60 px-2.5 py-2 text-[11px] leading-relaxed text-slate-400">
-              {/* This list has to match ADDITIVE in the MCP route. It
-                  said "new sections and example rows" for a day after
-                  adding a field joined them, which made the sentence
-                  below it — "anything that changes a section you
-                  already have" — untrue. */}
-              <div>
-                <span className="text-slate-300">Applies on its own:</span> everything your
-                AI is allowed to design — new sections, example rows, new fields, changes to
-                sections you already have, and rules that run by themselves afterwards.
-              </div>
-              <div>
-                <span className="text-slate-300">Still waits for you:</span> nothing. Turn
-                this off and every design waits for your yes instead.
-              </div>
-              <div>
-                <span className="text-slate-300">Never, either way:</span> removing a
-                section. That one is typed out by you, in Warmluke, and your AI cannot ask
-                for it at all.
-              </div>
-              <div>
-                Whatever it builds appears in the panel with what was asked for, and you can
-                delete it.
-              </div>
-            </div>
-          </div>
-
-          <button
-            onClick={save}
-            disabled={busy || !dirty || !name.trim()}
-            className="w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-40"
-          >
-            {busy ? "Saving…" : "Save changes"}
-          </button>
-
-
-          <div className="border-t border-slate-800 pt-4">
-            <div className="text-sm font-semibold text-slate-100">People</div>
-            <div className="mt-1 text-[11px] text-slate-400">
-              Share a link and whoever opens it can use this app — see the
-              sections, add rows, update them. They cannot change how the app
-              is built, read your conversation with Luke, or delete
-              anything.
-            </div>
-
-            {seats.length > 0 && (
-              <ul className="mt-2.5 space-y-1.5">
-                {seats.map((seat) => (
-                  <li
-                    key={seat.id}
-                    className="flex items-center gap-2 rounded-lg bg-slate-800/60 px-2.5 py-1.5"
-                  >
-                    <span className="min-w-0 flex-1 truncate text-xs text-slate-200">
-                      {seat.email ?? (
-                        <span className="text-slate-500">Link not opened yet</span>
-                      )}
-                    </span>
-                    {!seat.joined_at && (
-                      <button
-                        onClick={() => copyLink(seat)}
-                        className="shrink-0 rounded-md border border-slate-600 px-2 py-0.5 text-[11px] text-slate-300 transition-colors hover:border-blue-400 hover:text-blue-300"
-                      >
-                        {copied === seat.id ? "Copied" : "Copy link"}
-                      </button>
-                    )}
-                    <button
-                      onClick={() => removeSeat(seat.id)}
-                      aria-label="Remove"
-                      className="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] text-slate-500 transition-colors hover:text-rose-400"
-                    >
-                      Remove
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <button
-              onClick={addSeat}
-              className="mt-2.5 w-full rounded-lg border border-slate-600 px-3 py-2 text-xs font-medium text-slate-200 transition-colors hover:border-blue-400 hover:text-blue-300"
-            >
-              + Add someone
-            </button>
-          </div>
-
-          <div className="border-t border-slate-800 pt-4">
+          <Group title="Delete this project" danger>
             {!confirmingDelete ? (
-              <button
-                onClick={() => setConfirmingDelete(true)}
-                className="text-xs font-medium text-rose-400 transition-colors hover:text-rose-300"
-              >
-                Delete this project
-              </button>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-fg-muted">Every section, row, rule and conversation goes with it.</p>
+                <button onClick={() => setConfirmingDelete(true)} className={button("critical-secondary", "sm")}>
+                  Delete project
+                </button>
+              </div>
             ) : (
-              <div className="space-y-2">
-                <div className="rounded-lg border border-rose-900 bg-rose-950/40 px-3 py-2 text-[11px] leading-relaxed text-rose-200">
+              <div className="space-y-2.5">
+                <div className={note.critical}>
                   This removes every section, row, rule and conversation in{" "}
                   <b>{project.name}</b>. It cannot be undone.
                 </div>
                 <input
+                  autoFocus
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
                   placeholder={`Type "${project.name}" to confirm`}
-                  className="w-full rounded-lg border border-rose-900 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-rose-500"
+                  aria-label="Type the project name to confirm"
+                  className={field}
                 />
                 <div className="flex gap-2">
-                  <button
-                    onClick={remove}
-                    disabled={busy || !canDelete}
-                    className="flex-1 rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-40"
-                  >
+                  <button onClick={remove} disabled={busy || !canDelete} className={button("critical")}>
                     {busy ? "Deleting…" : "Delete permanently"}
                   </button>
                   <button
@@ -353,16 +312,147 @@ export default function ProjectSettings({
                       setConfirmingDelete(false);
                       setConfirm("");
                     }}
-                    className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300 transition-colors hover:bg-slate-800"
+                    className={button("plain")}
                   >
                     Cancel
                   </button>
                 </div>
               </div>
             )}
-          </div>
+          </Group>
         </div>
-      </div>
-    </div>
+      )}
+
+      {tab === "ai" && (
+        <Group title="Designs your own AI asks for" description="From Claude or ChatGPT, connected to this project over MCP.">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-[13px] font-medium text-fg">Build without asking me first</div>
+              <p className="mt-0.5 text-xs leading-relaxed text-fg-muted">
+                {autoBuild ? "On: designs are built as they arrive." : "Off: every design waits for your yes."}
+              </p>
+            </div>
+            <Switch checked={autoBuild} onChange={setAutoBuild} label="Build without asking me first" />
+          </div>
+          {/* What it will and will not do, in full, because a
+              setting whose limits are a surprise is worse than no
+              setting. */}
+          <div className="space-y-2 rounded-control bg-surface-subdued px-3 py-2.5 text-xs leading-relaxed text-fg-muted">
+            {/* This list has to match ADDITIVE in the MCP route. It
+                said "new sections and example rows" for a day after
+                adding a field joined them, which made the sentence
+                below it — "anything that changes a section you
+                already have" — untrue. */}
+            <div>
+              <span className="font-medium text-fg">Applies on its own:</span> everything your
+              AI is allowed to design — new sections, example rows, new fields, changes to
+              sections you already have, and rules that run by themselves afterwards.
+            </div>
+            <div>
+              <span className="font-medium text-fg">Still waits for you:</span> nothing. Turn
+              this off and every design waits for your yes instead.
+            </div>
+            <div>
+              <span className="font-medium text-fg">Never, either way:</span> removing a
+              section. That one is typed out by you, in Warmluke, and your AI cannot ask
+              for it at all.
+            </div>
+            <div>
+              Whatever it builds appears in the panel with what was asked for, and you can
+              delete it.
+            </div>
+          </div>
+        </Group>
+      )}
+
+      {tab === "people" && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <p className="max-w-sm text-xs leading-relaxed text-fg-muted">
+              Share a link and whoever opens it can use this app — see the
+              sections, add rows, update them. They cannot change how the app
+              is built, read your conversation with Luke, or delete
+              anything.
+            </p>
+            <button onClick={addSeat} disabled={adding} className={button("primary", "sm")}>
+              <UserPlus aria-hidden size={14} strokeWidth={2} />
+              {adding ? "Making a link…" : "Add someone"}
+            </button>
+          </div>
+
+          {peopleError && <div className={note.critical}>{peopleError}</div>}
+
+          {seats === null ? (
+            <div className="h-14 animate-pulse rounded-card bg-surface-hover" />
+          ) : seats.length === 0 ? (
+            <div className="rounded-card border border-dashed border-line-strong px-4 py-8 text-center text-xs text-fg-muted">
+              Only you, for now. Add someone and send them the link.
+            </div>
+          ) : (
+            <ul className="divide-y divide-line overflow-hidden rounded-card border border-line">
+              {seats.map((seat) => (
+                <li key={seat.id} className="flex items-center gap-3 px-3 py-2.5">
+                  {seat.email ? (
+                    <span
+                      aria-hidden
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${quietClasses(seat.email)}`}
+                    >
+                      {seat.email.charAt(0).toUpperCase()}
+                    </span>
+                  ) : (
+                    <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-dashed border-line-strong text-fg-faint">
+                      <Link2 size={14} strokeWidth={1.75} />
+                    </span>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13px] text-fg">{seat.email ?? "Link not opened yet"}</div>
+                    <div className="text-[11px] text-fg-faint">
+                      {seat.joined_at
+                        ? `Joined ${new Date(seat.joined_at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })} · can use the app`
+                        : "Waiting for them to open it"}
+                    </div>
+                  </div>
+                  {removing === seat.id ? (
+                    <div className="flex shrink-0 items-center gap-1">
+                      <button onClick={() => removeSeat(seat.id)} className={button("critical", "sm")}>
+                        Remove
+                      </button>
+                      <button onClick={() => setRemoving(null)} className={button("plain", "sm")}>
+                        Keep
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex shrink-0 items-center">
+                      {!seat.joined_at && (
+                        <button
+                          onClick={() => copyLink(seat)}
+                          aria-label="Copy their link"
+                          title={copied === seat.id ? "Copied" : "Copy link"}
+                          className={iconButton}
+                        >
+                          {copied === seat.id ? (
+                            <Check aria-hidden size={15} strokeWidth={2} className="text-signal-success" />
+                          ) : (
+                            <Copy aria-hidden size={15} strokeWidth={1.75} />
+                          )}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setRemoving(seat.id)}
+                        aria-label={`Remove ${seat.email ?? "this link"}`}
+                        title="Remove"
+                        className={iconButtonCritical}
+                      >
+                        <Trash2 aria-hidden size={15} strokeWidth={1.75} />
+                      </button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </Dialog>
   );
 }

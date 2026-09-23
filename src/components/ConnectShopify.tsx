@@ -24,6 +24,8 @@ import { supabase } from "@/lib/supabase-client";
 import { readShopAddress } from "@/lib/shop-address";
 import { whatCanChange } from "@/lib/store-actions";
 import { canOneTap } from "@/lib/one-tap";
+import { button, field, fieldOf } from "@/components/ui/controls";
+import { ShoppingBag } from "lucide-react";
 
 /** Reasons the server can refuse, said the way the owner would ask. */
 function explain(status: number, message?: string, hint?: string): string {
@@ -50,6 +52,8 @@ export default function ConnectShopify({
   anotherBrowser = true,
   // What to do when the store connects somewhere else; reloading shows it.
   onConnected,
+  // What the way out is called: "Cancel" on a card, "Later" in onboarding.
+  cancelLabel = "Cancel",
 }: {
   projectId: string;
   onCancel: () => void;
@@ -57,6 +61,7 @@ export default function ConnectShopify({
   submitLabel?: string;
   anotherBrowser?: boolean;
   onConnected?: () => void;
+  cancelLabel?: string;
 }) {
   const [shop, setShop] = useState(initialShop);
   const [busy, setBusy] = useState(false);
@@ -172,8 +177,9 @@ export default function ConnectShopify({
       {oneTap && (
         <a
           href={`/api/shopify/start?project=${encodeURIComponent(projectId)}`}
-          className="block w-full rounded-lg bg-blue-600 px-3 py-1.5 text-center text-xs font-medium text-white transition-colors hover:bg-blue-700"
+          className={`${button("primary")} w-full`}
         >
+          <ShoppingBag aria-hidden size={15} strokeWidth={1.75} />
           Connect with Shopify
         </a>
       )}
@@ -201,30 +207,30 @@ export default function ConnectShopify({
             spellCheck={false}
             autoCapitalize="none"
             autoCorrect="off"
-            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+            className={field}
           />
           {differs && !shownError && (
-            <p className="text-[11px] text-slate-400">
-              Connecting <span className="text-slate-200">{understood}</span>
+            <p className="text-xs text-fg-muted">
+              Connecting <span className="font-medium text-fg">{understood}</span>
             </p>
           )}
-          {shownError && <ErrorNote error={asError(shownError)} compact dark />}
+          {shownError && <ErrorNote error={asError(shownError)} compact />}
         </>
       ) : (
         <button
           onClick={() => setTyping(true)}
-          className="text-[11px] text-slate-400 underline hover:text-slate-200"
+          className="text-xs text-fg-muted underline decoration-line-strong underline-offset-2 hover:text-fg"
         >
           or type your store address
         </button>
       )}
 
       {anotherBrowser && (
-        <div className="text-[11px] text-slate-500">
+        <div className="text-xs leading-relaxed text-fg-muted">
           {!link ? (
             <>
               Shopify signed in on another browser?{" "}
-              <button onClick={copyLink} className="underline hover:text-slate-300">
+              <button onClick={copyLink} className="font-medium text-link hover:underline">
                 Copy a link
               </button>{" "}
               to open there.
@@ -242,7 +248,7 @@ export default function ConnectShopify({
                   value={link}
                   onFocus={(e) => e.currentTarget.select()}
                   aria-label="Link to connect in another browser"
-                  className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-[10px] text-slate-300"
+                  className={`${fieldOf("sm")} w-full`}
                 />
               )}
             </div>
@@ -252,13 +258,13 @@ export default function ConnectShopify({
 
       {/* Shown before the button, not after: an agreement a merchant
           only meets once they have already left for Shopify is not one. */}
-      <p className="text-[11px] leading-relaxed text-slate-500">
+      <p className="text-[11px] leading-relaxed text-fg-faint">
         Connecting agrees to our{" "}
-        <a href="/terms" target="_blank" className="underline hover:text-slate-300">
+        <a href="/terms" target="_blank" className="underline hover:text-fg">
           terms
         </a>{" "}
         and{" "}
-        <a href="/privacy" target="_blank" className="underline hover:text-slate-300">
+        <a href="/privacy" target="_blank" className="underline hover:text-fg">
           privacy policy
         </a>
         .{" "}
@@ -271,16 +277,16 @@ export default function ConnectShopify({
           <button
             onClick={connect}
             disabled={busy || !shop.trim()}
-            className="flex-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-40"
+            className={`${button(oneTap ? "secondary" : "primary")} flex-1`}
           >
             {busy ? "Opening Shopify…" : submitLabel}
           </button>
         )}
         <button
           onClick={onCancel}
-          className="rounded-lg px-2.5 py-1.5 text-xs text-slate-400 transition-colors hover:text-slate-200"
+          className={button("plain")}
         >
-          Cancel
+          {cancelLabel}
         </button>
       </div>
     </div>

@@ -15,3 +15,10 @@ The maintained documentation lives in `docs/`, with `README.md` as its entry poi
 When a user invokes `$update-readme-agent` or asks to run the update-readme agent,
 read and follow `.agents/skills/update-readme-agent/SKILL.md`. The skill updates the
 whole documentation set, not only the root README.
+
+When a user invokes `$ui-designer-agent`, or asks to redesign, restyle or audit a screen,
+read and follow `.agents/skills/ui-designer-agent/SKILL.md`. It works from
+`docs/design/design-system.md`, which says what every token and shared block is for.
+Any UI change, by whoever makes it, uses those tokens and blocks, is walked in a real
+browser with Playwright at desktop and phone width, and proposes newer techniques to the
+user with pros and cons instead of adopting them unasked.

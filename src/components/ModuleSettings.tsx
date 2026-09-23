@@ -15,7 +15,9 @@ import { STORE_TABLES } from "@/lib/store-read";
 import { ALLOWED_ICONS } from "@/lib/types";
 import type { ModuleRow } from "@/lib/types";
 import { Icon } from "@/components/ui/Icon";
-import { X } from "lucide-react";
+import { Dialog } from "@/components/ui/Dialog";
+import { Group } from "@/components/ui/Group";
+import { button, field, hint, label as labelClass, note } from "@/components/ui/controls";
 
 
 interface Impact {
@@ -119,173 +121,167 @@ export default function ModuleSettings({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-end justify-center bg-slate-950/70 sm:items-center sm:p-4"
-      onClick={onClose}
+    <Dialog
+      title="Section settings"
+      description={module.nav_label}
+      onClose={onClose}
+      footer={
+        <>
+          <button onClick={onClose} className={`${button("plain")} ml-auto`}>
+            Cancel
+          </button>
+          <button onClick={save} disabled={busy || !dirty || !label.trim()} className={button("primary")}>
+            {busy && !confirmingDelete ? "Saving…" : "Save changes"}
+          </button>
+        </>
+      }
     >
-      <div
-        className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-slate-800 bg-slate-900 text-slate-200 shadow-2xl thin-scroll-dark sm:rounded-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3.5">
-          <h2 className="font-display text-sm font-semibold text-white">Section settings</h2>
-          <button
-            onClick={onClose}
-            className="rounded-lg px-2 py-1 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-300"
-          >
-            <X aria-hidden size={14} strokeWidth={2} />
-          </button>
+      <div className="space-y-4">
+        {error && <ErrorNote error={asError(error)} />}
+
+        <Group title="Details" description="How it shows in the menu, and where.">
+        <div>
+          <label htmlFor="section-name" className={labelClass}>
+            Name
+          </label>
+          <input id="section-name" value={label} onChange={(e) => setLabel(e.target.value)} className={field} />
         </div>
 
-        <div className="space-y-4 px-5 py-4">
-          {error && <ErrorNote error={asError(error)} dark />}
+        <div>
+          <div className={labelClass}>Icon</div>
+          <IconPicker value={icon} onChange={setIcon} />
+        </div>
 
-          <div>
-            <label className="mb-1 block text-[11px] font-medium tracking-wide text-slate-400 uppercase">
-              Name
-            </label>
-            <input
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-blue-500"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-[11px] font-medium tracking-wide text-slate-400 uppercase">
-              Icon
-            </label>
-            <div className="flex flex-wrap gap-1.5">
-              {ALLOWED_ICONS.map((name) => (
-                <button
-                  key={name}
-                  onClick={() => setIcon(name)}
-                  title={name}
-                  className={`flex h-8 w-8 items-center justify-center rounded-lg border text-base transition-colors ${
-                    icon === name
-                      ? "border-blue-500 bg-blue-500/20"
-                      : "border-slate-700 hover:bg-slate-800"
-                  }`}
-                >
-                  <Icon name={name} size={16} />
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-[11px] font-medium tracking-wide text-slate-400 uppercase">
-              Sits inside
-            </label>
-            <select
-              value={parentId}
-              onChange={(e) => setParentId(e.target.value)}
-              disabled={hasChildren}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-blue-500 disabled:opacity-50"
-            >
-              <option value="">Nothing — it sits at the top</option>
-              {parentOptions.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.nav_label}
-                </option>
-              ))}
-            </select>
-            {hasChildren && (
-              <div className="mt-1 text-[11px] text-slate-500">
-                This section has {impact!.children.length} inside it, so it stays at the top.
-                Sections nest one level only.
-              </div>
-            )}
-          </div>
-
-          <div>
-            <label className="mb-1 block text-[11px] font-medium tracking-wide text-slate-400 uppercase">
-              Rows come from
-            </label>
-            <select
-              value={source}
-              onChange={(e) => setSource(e.target.value)}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-blue-500"
-            >
-              <option value="">Rows added in this section</option>
-              {Object.entries(STORE_TABLES).map(([table, spec]) => (
-                <option key={table} value={table}>
-                  {spec.label}
-                </option>
-              ))}
-            </select>
-            <div className="mt-1 text-[11px] leading-relaxed text-slate-500">
-              {source
-                ? // Said before they save, not after: switching replaces
-                  // the columns, and rows they typed stop being shown.
-                  "These rows come from Shopify and cannot be edited here — the import owns them. Rows added in this section stay in the database but are hidden while this is on, and the columns are replaced to match the store."
-                : "This section holds rows you or your staff add."}
-            </div>
-          </div>
-
-          <button
-            onClick={save}
-            disabled={busy || !dirty || !label.trim()}
-            className="w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-40"
+        <div>
+          <label htmlFor="section-parent" className={labelClass}>
+            Sits inside
+          </label>
+          <select
+            id="section-parent"
+            value={parentId}
+            onChange={(e) => setParentId(e.target.value)}
+            disabled={hasChildren}
+            className={field}
           >
-            {busy ? "Saving…" : "Save changes"}
-          </button>
+            <option value="">Nothing — it sits at the top</option>
+            {parentOptions.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.nav_label}
+              </option>
+            ))}
+          </select>
+          {hasChildren && (
+            <div className={hint}>
+              This section has {impact!.children.length} inside it, so it stays at the top.
+              Sections nest one level only.
+            </div>
+          )}
+        </div>
+        </Group>
 
-          <div className="border-t border-slate-800 pt-4">
-            {!confirmingDelete ? (
-              <button
-                onClick={() => setConfirmingDelete(true)}
-                className="text-xs font-medium text-rose-400 transition-colors hover:text-rose-300"
-              >
-                Delete this section
+        <Group title="Rows" description="Where this section's rows come from.">
+        <div>
+          <label htmlFor="section-source" className={labelClass}>
+            Rows come from
+          </label>
+          <select id="section-source" value={source} onChange={(e) => setSource(e.target.value)} className={field}>
+            <option value="">Rows added in this section</option>
+            {Object.entries(STORE_TABLES).map(([table, spec]) => (
+              <option key={table} value={table}>
+                {spec.label}
+              </option>
+            ))}
+          </select>
+          <div className={hint}>
+            {source
+              ? // Said before they save, not after: switching replaces
+                // the columns, and rows they typed stop being shown.
+                "These rows come from Shopify and cannot be edited here — the import owns them. Rows added in this section stay in the database but are hidden while this is on, and the columns are replaced to match the store."
+              : "This section holds rows you or your staff add."}
+          </div>
+        </div>
+        </Group>
+
+        <Group title="Delete this section" danger>
+          {!confirmingDelete ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-fg-muted">
+                {impact ? `${impact.records} row${impact.records === 1 ? "" : "s"} go with it.` : "Its rows go with it."}
+              </p>
+              <button onClick={() => setConfirmingDelete(true)} className={button("critical-secondary", "sm")}>
+                Delete section
               </button>
-            ) : (
-              <div className="space-y-2">
-                <div className="rounded-lg border border-rose-900 bg-rose-950/40 px-3 py-2 text-[11px] leading-relaxed text-rose-200">
-                  Removes <b>{module.nav_label}</b>
-                  {impact ? `, its ${impact.records} row${impact.records === 1 ? "" : "s"}` : ""}
-                  {hasChildren
-                    ? ` and the ${impact!.children.length} section${
-                        impact!.children.length === 1 ? "" : "s"
-                      } inside it (${impact!.children.map((c) => c.nav_label).join(", ")})`
-                    : ""}
-                  . It cannot be undone.
-                </div>
-                {blocked && (
-                  <div className="rounded-lg border border-amber-900 bg-amber-950/40 px-3 py-2 text-[11px] leading-relaxed text-amber-200">
-                    These rules write to this section and would stop working:{" "}
-                    {impact!.blockedBy.join(", ")}. Turn them off in Rules first.
-                  </div>
-                )}
-                <input
-                  value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
-                  placeholder={`Type "${module.nav_label}" to confirm`}
-                  className="w-full rounded-lg border border-rose-900 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-rose-500"
-                />
-                <div className="flex gap-2">
-                  <button
-                    onClick={remove}
-                    disabled={busy || !canDelete || blocked}
-                    className="flex-1 rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-40"
-                  >
-                    {busy ? "Deleting…" : "Delete permanently"}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setConfirmingDelete(false);
-                      setConfirm("");
-                    }}
-                    className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300 transition-colors hover:bg-slate-800"
-                  >
-                    Cancel
-                  </button>
-                </div>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              <div className={note.critical}>
+                Removes <b>{module.nav_label}</b>
+                {impact ? `, its ${impact.records} row${impact.records === 1 ? "" : "s"}` : ""}
+                {hasChildren
+                  ? ` and the ${impact!.children.length} section${
+                      impact!.children.length === 1 ? "" : "s"
+                    } inside it (${impact!.children.map((c) => c.nav_label).join(", ")})`
+                  : ""}
+                . It cannot be undone.
               </div>
-            )}
-          </div>
-        </div>
+              {blocked && (
+                <div className={note.attention}>
+                  These rules write to this section and would stop working:{" "}
+                  {impact!.blockedBy.join(", ")}. Turn them off in Rules first.
+                </div>
+              )}
+              <input
+                autoFocus
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                placeholder={`Type "${module.nav_label}" to confirm`}
+                aria-label="Type the section name to confirm"
+                className={field}
+              />
+              <div className="flex gap-2">
+                <button onClick={remove} disabled={busy || !canDelete || blocked} className={button("critical")}>
+                  {busy ? "Deleting…" : "Delete permanently"}
+                </button>
+                <button
+                  onClick={() => {
+                    setConfirmingDelete(false);
+                    setConfirm("");
+                  }}
+                  className={button("plain")}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </Group>
       </div>
+    </Dialog>
+  );
+}
+
+/** The section icons, as a row of buttons; shared with a new section. */
+export function IconPicker({ value, onChange }: { value: string; onChange: (name: string) => void }) {
+  return (
+    <div role="radiogroup" aria-label="Icon" className="flex flex-wrap gap-1.5">
+      {ALLOWED_ICONS.map((name) => (
+        <button
+          key={name}
+          type="button"
+          role="radio"
+          aria-checked={value === name}
+          aria-label={name}
+          onClick={() => onChange(name)}
+          title={name}
+          className={`flex h-8 w-8 items-center justify-center rounded-control border transition-colors ${
+            value === name
+              ? "border-fg bg-surface-hover text-fg"
+              : "border-line text-fg-muted hover:bg-surface-hover hover:text-fg"
+          }`}
+        >
+          <Icon name={name} size={16} />
+        </button>
+      ))}
     </div>
   );
 }

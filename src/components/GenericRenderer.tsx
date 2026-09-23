@@ -47,6 +47,8 @@ import {
 } from "@/components/views";
 import { useFormat } from "@/lib/format";
 import { evalExpr, truthy, withComputed } from "@/lib/expr";
+import { button } from "@/components/ui/controls";
+import { Plus } from "lucide-react";
 
 const VIEW_LABELS: Record<ViewSpec["type"], string> = {
   table: "Table",
@@ -403,7 +405,7 @@ export default function GenericRenderer({
       <div className="relative overflow-hidden rounded-card bg-surface shadow-card">
         {preview && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
-            <span className="font-display -rotate-12 text-6xl font-black tracking-widest text-slate-900/5 select-none">
+            <span className="font-display -rotate-12 text-6xl font-black tracking-widest text-fg/5 select-none">
               PREVIEW
             </span>
           </div>
@@ -415,7 +417,7 @@ export default function GenericRenderer({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={features.search.placeholder ?? "Search…"}
-                className="w-full min-w-0 rounded-lg border border-line px-3 py-1.5 text-sm outline-none transition-colors focus:border-focus focus:ring-2 focus:ring-blue-100 sm:w-52"
+                className="w-full min-w-0 rounded-lg border border-line px-3 py-1.5 text-sm outline-none transition-colors focus:border-focus focus:ring-2 focus:ring-focus/15 sm:w-52"
               />
             )}
             {(features?.filters ?? []).map((fl) => (
@@ -441,15 +443,16 @@ export default function GenericRenderer({
             {editable && (
               <button
                 onClick={() => setAdding(true)}
-                className="rounded-control bg-primary px-3 py-1.5 text-xs font-semibold text-on-primary shadow-control transition-colors hover:bg-primary-hover"
+                className={button("primary", "sm")}
               >
-                + Add
+                <Plus aria-hidden size={14} strokeWidth={2} />
+                Add
               </button>
             )}
           </div>
 
         {writeError && (
-          <div className="border-b border-rose-100 px-4 py-2">
+          <div className="border-b border-tone-critical/70 px-4 py-2">
             <ErrorNote error={asError(writeError, "That didn't save.")} compact onDismiss={() => setWriteError(null)} />
           </div>
         )}
@@ -460,7 +463,7 @@ export default function GenericRenderer({
             {editable && (
               <button
                 onClick={() => setAdding(true)}
-                className="mt-3 rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-700"
+                className="mt-3 rounded-lg bg-primary px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary-hover"
               >
                 Add the first one
               </button>
@@ -494,7 +497,7 @@ export default function GenericRenderer({
           )}
         </div>
         {total > records.length && (
-          <div className="border-t border-amber-100 bg-amber-50/70 px-4 py-1.5 text-[10px] text-amber-800">
+          <div className="border-t border-tone-attention/70 bg-tone-attention/25 px-4 py-1.5 text-[10px] text-tone-attention-fg">
             {onStats
               ? `The totals above cover all ${fmt.number(total)} rows; the list below is the ${records.length} loaded so far.`
               : `Search, filters and the totals above cover the ${records.length} rows loaded so far.`}

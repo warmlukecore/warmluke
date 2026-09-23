@@ -93,6 +93,7 @@ computed columns, guards, and local display behavior where allowed.
 | `judgements` | Asynchronous design-quality observations; never an authorization decision |
 | `mcp_calls` | Per-user/client usage accounting and throttling |
 | `account_settings` | Feature switches, turn allowances, and superadmin state |
+| `profiles` | One row per account: onboarding answers (name, business, role, monthly orders, platform, optional website/team size/source) and `onboarded_at`, which only the database stamps and which cannot be unset |
 | `admin_account_audit` | Audit trail for administrator account changes |
 
 Build request state evolved across migrations. Current code recognizes `pending`,

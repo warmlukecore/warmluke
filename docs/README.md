@@ -45,6 +45,7 @@ remain authoritative; the documents explain how those sources fit together.
 | System boundaries | [Architecture overview](architecture/overview.md) | `src/app`, `src/lib`, `supabase/migrations` |
 | Critical sequences | [Runtime flows](architecture/runtime-flows.md) | `engine.ts`, `apply.ts`, API routes |
 | UI runtime | [Frontend architecture](architecture/frontend.md) | `AppShell.tsx`, `ChatPanel.tsx`, renderer components |
+| Look and feel | [Design system](design/design-system.md) | `globals.css` tokens, `src/components/ui/` |
 | Domain/storage | [Data model](domain/data-model.md) | `types.ts`, migrations |
 | AI design contract | [AI builder](ai-builder/engine.md) | `ai.ts`, `engine.ts`, `capabilities.ts` |
 | Authentication and authorization | [Security](security/security-model.md) | RLS migrations, auth helpers, build RPCs |

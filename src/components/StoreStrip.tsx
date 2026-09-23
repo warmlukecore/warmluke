@@ -277,18 +277,18 @@ export default function StoreStrip({
   // was to go back to the dashboard and notice it on the card.
   if (!store) {
     return connecting ? (
-      <div className="mb-4 max-w-sm rounded-xl border border-slate-200 bg-white p-3">
+      <div className="mb-4 max-w-sm rounded-xl border border-line bg-white p-3">
         <ConnectShopify projectId={projectId} onCancel={() => setConnecting(false)} />
       </div>
     ) : (
       <Strip>
-        <span className="text-slate-600">
+        <span className="text-fg-muted">
           Selling on Shopify? Connect the store and your orders, customers and stock
           come across on their own.
         </span>
         <button
           onClick={() => setConnecting(true)}
-          className="font-medium text-blue-600 hover:text-blue-700"
+          className="font-medium text-link hover:text-link"
         >
           Connect Shopify
         </button>
@@ -301,7 +301,7 @@ export default function StoreStrip({
   // with the way back, rather than a strip that still looks connected.
   if (store.status === "uninstalled") {
     return connecting ? (
-      <div className="mb-4 max-w-sm rounded-xl border border-slate-200 bg-white p-3">
+      <div className="mb-4 max-w-sm rounded-xl border border-line bg-white p-3">
         <ConnectShopify
           projectId={projectId}
           initialShop={store.shop_domain}
@@ -311,11 +311,11 @@ export default function StoreStrip({
       </div>
     ) : (
       <Strip>
-        <span className="text-amber-700">
+        <span className="text-tone-attention-fg">
           Warmluke was removed from {store.shop_domain} in Shopify, so it can&rsquo;t read the
           store until you connect it again.
         </span>
-        <button onClick={() => setConnecting(true)} className="font-medium text-blue-600 hover:text-blue-700">
+        <button onClick={() => setConnecting(true)} className="font-medium text-link hover:text-link">
           Reconnect
         </button>
       </Strip>
@@ -325,7 +325,7 @@ export default function StoreStrip({
   if (store.status === "pending") {
     return (
       <Strip>
-        <span className="text-amber-600">Waiting for Shopify to finish connecting.</span>
+        <span className="text-tone-attention-fg">Waiting for Shopify to finish connecting.</span>
       </Strip>
     );
   }
@@ -339,26 +339,26 @@ export default function StoreStrip({
 
   return (
     <Strip>
-      <span className="flex items-center gap-1.5 font-medium text-slate-700">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+      <span className="flex items-center gap-1.5 font-medium text-fg">
+        <span className="h-1.5 w-1.5 rounded-full bg-signal-success" />
         {store.shop_domain}
       </span>
       {error ? (
-        <span className="text-rose-600">
+        <span className="text-tone-critical-fg">
           {error}{" "}
-          <button onClick={() => pump("retry")} className="underline hover:text-rose-700">
+          <button onClick={() => pump("retry")} className="underline hover:text-tone-critical-fg">
             Try again
           </button>
         </span>
       ) : running ? (
         // The running count, not a spinner: the merchant can see it is
         // moving and roughly how far it has got.
-        <span className="text-slate-500">
+        <span className="text-fg-muted">
           Importing… {counts.length ? counts.join(" · ") : "starting"}
-          {onServer && <span className="text-slate-400"> · carries on if you close this tab</span>}
+          {onServer && <span className="text-fg-faint"> · carries on if you close this tab</span>}
         </span>
       ) : counts.length ? (
-        <span className="flex items-center gap-2 text-slate-500">
+        <span className="flex items-center gap-2 text-fg-muted">
           {counts.join(" · ")}
           {/* Webhooks keep this current, and a webhook that never
               arrives is missed in silence — a subscription that failed
@@ -367,7 +367,7 @@ export default function StoreStrip({
               stopped reading Shopify at all. */}
           <button
             onClick={() => pump("recheck")}
-            className="text-[11px] text-slate-400 underline hover:text-slate-600"
+            className="text-[11px] text-fg-faint underline hover:text-fg-muted"
             title="Read the store again from Shopify"
           >
             Check for changes
@@ -382,7 +382,7 @@ export default function StoreStrip({
               never change again and no reason to doubt it. */}
           {store.webhook_error && (
             <span
-              className="text-[11px] text-rose-700"
+              className="text-[11px] text-tone-critical-fg"
               title={store.webhook_error}
             >
               <TriangleAlert aria-hidden size={12} className="mr-1 inline align-[-1px]" />Shopify was not asked to send updates — Reconnect to try again
@@ -390,7 +390,7 @@ export default function StoreStrip({
           )}
           {drift && Object.keys(drift).length > 0 && (
             <span
-              className="text-[11px] text-amber-700"
+              className="text-[11px] text-tone-attention-fg"
               title="Nothing has been deleted. Reconnecting the store re-subscribes the webhooks."
             >
               <TriangleAlert aria-hidden size={12} className="mr-1 inline align-[-1px]" />
@@ -404,7 +404,7 @@ export default function StoreStrip({
           )}
         </span>
       ) : (
-        <span className="text-slate-500">Nothing imported yet</span>
+        <span className="text-fg-muted">Nothing imported yet</span>
       )}
 
       {/* The whole point of connecting. Without this the merchant's
@@ -416,7 +416,7 @@ export default function StoreStrip({
           <button
             onClick={makeSections}
             disabled={makingSections}
-            className="rounded-lg bg-blue-600 px-2.5 py-1 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            className="rounded-lg bg-primary px-2.5 py-1 font-medium text-white hover:bg-primary-hover disabled:opacity-50"
           >
             {makingSections
               ? "Building…"
@@ -426,7 +426,7 @@ export default function StoreStrip({
           </button>
           <button
             onClick={() => setOfferDismissed(true)}
-            className="text-slate-400 hover:text-slate-600"
+            className="text-fg-faint hover:text-fg-muted"
           >
             Not now
           </button>
@@ -438,7 +438,7 @@ export default function StoreStrip({
 
 function Strip({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs">
+    <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-line bg-white px-4 py-2.5 text-xs">
       {children}
     </div>
   );

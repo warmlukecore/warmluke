@@ -66,10 +66,25 @@
   --color-tone-neutral: hsl(0 0% 89%);
   --color-tone-neutral-fg: hsl(0 0% 38%);
 
+  /* Signals: the small solid marks — a status dot, a count — which need
+     a mid tone the pale badge fills above cannot give. */
+  --color-signal-success: hsl(152 68% 38%);
+  --color-signal-attention: hsl(33 96% 50%);
+  --color-signal-info: hsl(210 90% 52%);
+  --color-signal-critical: hsl(357 84% 50%);
+  --color-signal-neutral: hsl(0 0% 70%);
+
+  /* The one destructive button colour: deleting, disconnecting. */
+  --color-critical: hsl(357 84% 42%);
+  --color-critical-hover: hsl(357 84% 35%);
+
   --radius-card: 0.75rem;
   --radius-control: 0.5rem;
   --shadow-card: 0 1px 0 0 rgb(0 0 0 / 0.07), 0 0 0 1px rgb(0 0 0 / 0.06);
   --shadow-control: 0 1px 0 0 rgb(0 0 0 / 0.08), inset 0 -1px 0 0 rgb(0 0 0 / 0.12);
+  --shadow-raised: 0 0 0 1px rgb(0 0 0 / 0.06), 0 4px 12px -2px rgb(0 0 0 / 0.1);
+  --shadow-popover: 0 0 0 1px rgb(0 0 0 / 0.07), 0 10px 28px -6px rgb(0 0 0 / 0.2);
+  --shadow-dialog: 0 0 0 1px rgb(0 0 0 / 0.06), 0 24px 64px -12px rgb(0 0 0 / 0.35);
 }
 
 /* The one shadow that makes the dashboard preview float. Kept out of
@@ -101,8 +116,49 @@
   animation-delay: var(--rise-after, 0s);
 }
 
+/* A menu or popover opening from its button: quick, and short. */
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(var(--pop-from, -4px)) scale(0.98);
+  }
+}
+.pop {
+  animation: pop 0.14s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Dialogs are the browser's own modal (ui/Dialog): focus stays inside,
+   Escape closes, and it sits above everything without a z-index war.
+   The page behind does not scroll while one is open. */
+dialog.wl-dialog::backdrop {
+  background: rgb(0 0 0 / 0.45);
+}
+dialog.wl-dialog[open] {
+  animation: dialog-in 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+dialog.wl-dialog[open]::backdrop {
+  animation: fade-in 0.2s ease-out;
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+html:has(dialog.wl-dialog[open]) {
+  overflow: hidden;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .rise {
+  .rise,
+  .pop,
+  dialog.wl-dialog[open],
+  dialog.wl-dialog[open]::backdrop {
     animation: none;
     opacity: 1;
     transform: none;
@@ -115,8 +171,8 @@ body {
 }
 
 body {
-  background-color: #eef2f7;
-  color: #0f172a;
+  background-color: var(--color-canvas);
+  color: var(--color-fg);
   font-family: var(--font-sans);
 }
 
@@ -126,7 +182,7 @@ body {
   height: 6px;
 }
 .thin-scroll::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--color-line-strong);
   border-radius: 9999px;
 }
 .thin-scroll::-webkit-scrollbar-track {
@@ -136,7 +192,7 @@ body {
   width: 6px;
 }
 .thin-scroll-dark::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: var(--color-frame-line);
   border-radius: 9999px;
 }
 .thin-scroll-dark::-webkit-scrollbar-track {

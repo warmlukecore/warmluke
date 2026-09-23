@@ -10,8 +10,10 @@
 // ─────────────────────────────────────────────────────────────
 
 import { useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
+import { Mail } from "lucide-react";
+import { CenteredCard } from "@/components/CenteredCard";
+import { button, field, label, note } from "@/components/ui/controls";
 import { supabase } from "@/lib/supabase-client";
 
 export default function Forgot() {
@@ -41,80 +43,64 @@ export default function Forgot() {
   }
 
   return (
-    <div className="font-ui flex min-h-screen items-center justify-center bg-white px-6 text-ink">
-      <div className="w-full max-w-sm">
-        <Link href="/" className="mb-8 flex items-center justify-center gap-2.5">
-          <Image
-            src="/images/logowarmluke.png"
-            alt=""
-            width={36}
-            height={36}
-            priority
-            className="h-9 w-9 rounded-xl object-cover"
-          />
-          <span className="font-serif text-lg font-semibold">Warmluke</span>
-        </Link>
+    <CenteredCard>
+      {sent ? (
+        <div className="text-center">
+          <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-canvas text-fg">
+            <Mail aria-hidden size={18} strokeWidth={1.75} />
+          </span>
+          <h1 className="mt-4 text-lg font-semibold tracking-tight text-fg">Check your email</h1>
+          <p className="mt-2">
+            If <span className="font-medium text-fg">{email.trim()}</span> has an account, a
+            link to set a new password is on its way. It works once, and expires in an
+            hour.
+          </p>
+          <Link href="/login" className={`${button("secondary")} mt-5 w-full`}>
+            Back to sign in
+          </Link>
+        </div>
+      ) : (
+        <>
+          <h1 className="text-lg font-semibold tracking-tight text-fg">Forgotten your password</h1>
+          <p className="mt-1">We&rsquo;ll email you a link to set a new one.</p>
 
-        {sent ? (
-          <div className="rounded-2xl border border-hair bg-white/60 p-6 text-center">
-            <h1 className="font-serif text-xl font-semibold">Check your email</h1>
-            <p className="mt-2 text-sm leading-relaxed text-quiet">
-              If <span className="text-neutral-700">{email.trim()}</span> has an account, a
-              link to set a new password is on its way. It works once, and expires in an
-              hour.
-            </p>
-            <Link
-              href="/login"
-              className="mt-5 inline-block text-sm font-medium text-accent hover:text-blue-300"
-            >
-              Back to sign in
-            </Link>
-          </div>
-        ) : (
-          <>
-            <h1 className="font-serif text-center text-2xl font-bold tracking-tight">
-              Forgotten your password
-            </h1>
-            <p className="mt-2 text-center text-sm text-quiet">
-              We&rsquo;ll email you a link to set a new one.
-            </p>
+          <form onSubmit={submit} className="mt-6 space-y-4">
+            <div>
+              <label htmlFor="email" className={label}>
+                Email
+              </label>
+              <input
+                id="email"
+                type="email"
+                required
+                autoFocus
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@company.com"
+                className={field}
+              />
+            </div>
 
-            <form onSubmit={submit} className="mt-6 space-y-3">
-              <div>
-                <label className="mb-1 block text-[11px] font-medium tracking-wide text-quiet uppercase">
-                  Email
-                </label>
-                <input
-                  type="email"
-                  required
-                  autoFocus
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@company.com"
-                  className="w-full rounded-lg border border-hair bg-white px-3 py-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
-                />
+            {error && (
+              <div role="alert" className={note.critical}>
+                {error}
               </div>
+            )}
 
-              {error && <div className="text-xs text-rose-400">{error}</div>}
+            <button type="submit" disabled={busy || !email.trim()} className={`${button("primary", "lg")} w-full`}>
+              {busy ? "Sending\u2026" : "Send the link"}
+            </button>
+          </form>
 
-              <button
-                type="submit"
-                disabled={busy || !email.trim()}
-                className="w-full rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-              >
-                {busy ? "Sending…" : "Send the link"}
-              </button>
-            </form>
-
-            <p className="mt-5 text-center text-sm text-quiet">
-              Remembered it?{" "}
-              <Link href="/login" className="font-medium text-accent hover:text-blue-300">
-                Sign in
-              </Link>
-            </p>
-          </>
-        )}
-      </div>
-    </div>
+          <p className="mt-5 border-t border-line pt-4 text-center text-xs">
+            Remembered it?{" "}
+            <Link href="/login" className="font-medium text-link hover:underline">
+              Sign in
+            </Link>
+          </p>
+        </>
+      )}
+    </CenteredCard>
   );
 }

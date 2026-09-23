@@ -186,18 +186,18 @@ export default function ScanBar({
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
+    <div className="rounded-xl border border-line bg-white p-3.5 shadow-sm">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <div className="text-xs font-semibold text-slate-800">
+          <div className="text-xs font-semibold text-fg">
             {scanMode.action.label}
           </div>
-          <div className="text-[11px] text-slate-400">
+          <div className="text-[11px] text-fg-faint">
             {scanMode.hint ?? `Scan or type a ${scanMode.lookupField} to apply it.`}
           </div>
         </div>
         {lastSeq !== null && (
-          <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+          <span className="shrink-0 rounded-full bg-surface-hover px-2 py-0.5 text-[10px] font-semibold text-fg-muted">
             at #{lastSeq}
           </span>
         )}
@@ -216,20 +216,20 @@ export default function ScanBar({
           }}
           disabled={busy}
           placeholder="Scan here…"
-          className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+          className="min-w-0 flex-1 rounded-lg border border-line px-3 py-2 font-mono text-sm outline-none transition-colors focus:border-focus focus:ring-2 focus:ring-focus/15 disabled:opacity-60"
         />
         <button
           onClick={submit}
           disabled={busy || !code.trim()}
-          className="rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-700 disabled:opacity-40"
+          className="rounded-lg bg-primary px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary-hover disabled:opacity-40"
         >
           {busy ? "…" : "Apply"}
         </button>
       </div>
 
       {choices && (
-        <div className="mt-2.5 rounded-lg border border-blue-200 bg-blue-50/70 p-2.5">
-          <div className="text-[11px] font-medium text-blue-900">
+        <div className="mt-2.5 rounded-lg border border-tone-info bg-tone-info/50 p-2.5">
+          <div className="text-[11px] font-medium text-tone-info-fg">
             {choices.rows.length} rows share “{choices.code}” — which one?
           </div>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -238,14 +238,14 @@ export default function ScanBar({
                 key={r.id}
                 disabled={busy}
                 onClick={() => apply(r, choices.code)}
-                className="rounded-md border border-blue-300 bg-white px-2 py-1 text-[11px] font-medium text-blue-800 transition-colors hover:bg-blue-100 disabled:opacity-40"
+                className="rounded-md border border-tone-info bg-white px-2 py-1 text-[11px] font-medium text-tone-info-fg transition-colors hover:bg-tone-info disabled:opacity-40"
               >
                 {describeRow(r, choices.rows)}
               </button>
             ))}
             <button
               onClick={() => setChoices(null)}
-              className="rounded-md px-2 py-1 text-[11px] text-slate-500 transition-colors hover:bg-white"
+              className="rounded-md px-2 py-1 text-[11px] text-fg-muted transition-colors hover:bg-white"
             >
               Cancel
             </button>
@@ -254,11 +254,11 @@ export default function ScanBar({
       )}
 
       {log.length > 0 && (
-        <div className="mt-2.5 border-t border-slate-100 pt-2">
+        <div className="mt-2.5 border-t border-line pt-2">
           <ul className="space-y-1">
             {log.map((s, i) =>
               s.ok ? (
-                <li key={i} className="text-[11px] text-emerald-700">
+                <li key={i} className="text-[11px] text-tone-success-fg">
                   <Check aria-hidden size={14} strokeWidth={2.25} className="mr-1 inline align-[-2px]" />{s.message}
                 </li>
               ) : i === 0 ? (
@@ -271,7 +271,7 @@ export default function ScanBar({
                   <ErrorNote error={s.error} compact onFix={onFix} onDismiss={dismissNewest} />
                 </li>
               ) : (
-                <li key={i} className="text-[11px] text-rose-700">
+                <li key={i} className="text-[11px] text-tone-critical-fg">
                   <CircleX aria-hidden size={14} strokeWidth={2} className="mr-1 inline align-[-2px]" />{s.error.what}
                 </li>
               )
@@ -279,7 +279,7 @@ export default function ScanBar({
           </ul>
           <button
             onClick={() => setLog([])}
-            className="mt-1.5 text-[10px] text-slate-400 underline decoration-slate-300 underline-offset-2 hover:text-slate-600"
+            className="mt-1.5 text-[10px] text-fg-faint underline decoration-line-strong underline-offset-2 hover:text-fg-muted"
           >
             Clear
           </button>

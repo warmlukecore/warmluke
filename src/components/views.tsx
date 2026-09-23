@@ -241,8 +241,8 @@ function actionsFor(
 }
 
 const ACTION_STYLES: Record<string, string> = {
-  primary: "bg-blue-600 text-white hover:bg-blue-700",
-  danger: "bg-rose-600 text-white hover:bg-rose-700",
+  primary: "bg-primary text-white hover:bg-primary-hover",
+  danger: "bg-critical text-white hover:bg-critical-hover",
   neutral: "border border-line text-fg-muted hover:bg-surface-hover",
 };
 
@@ -525,7 +525,7 @@ export function CalendarView({
           </div>
         )}
       </div>
-      <div className="grid min-w-[560px] grid-cols-7 gap-px overflow-hidden rounded-lg bg-slate-200">
+      <div className="grid min-w-[560px] grid-cols-7 gap-px overflow-hidden rounded-lg bg-line">
         {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
           <div
             key={d}
@@ -539,7 +539,7 @@ export function CalendarView({
           return (
             <div
               key={i}
-              className={`min-h-[84px] bg-surface p-1.5 ${day === null ? "bg-slate-50/60" : ""}`}
+              className={`min-h-[84px] bg-surface p-1.5 ${day === null ? "bg-surface-subdued/60" : ""}`}
             >
               {day !== null && (
                 <>
@@ -668,12 +668,12 @@ export function ListView({
   const linkLabel = useLinkLabel();
   if (records.length === 0) return <EmptyState total={allRecordCount} />;
   return (
-    <ul className="divide-y divide-slate-100">
+    <ul className="divide-y divide-line">
       {records.map((rec) => (
         <li
           key={rec.id}
           onClick={() => onOpen?.(rec)}
-          className={`flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-slate-50/70 ${
+          className={`flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-subdued/70 ${
             onOpen ? "cursor-pointer" : ""
           }`}
         >

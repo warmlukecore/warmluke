@@ -47,7 +47,8 @@ import type {
 import { TITLE_MAX } from "@/lib/types";
 import { Icon } from "@/components/ui/Icon";
 import Image from "next/image";
-import { ChevronRight, Ellipsis, History, Menu, Plus, Search, Settings, Sparkles, Zap } from "lucide-react";
+import { ArrowRight, ChevronRight, Ellipsis, History, Menu, Plus, Search, Settings, Sparkles, Zap } from "lucide-react";
+import { button, iconButton, note } from "@/components/ui/controls";
 
 /**
  * Rows are fetched a page at a time. Search, filters and stats run over
@@ -1538,17 +1539,17 @@ export default function AppShell({
   // database does.
   if (project === null) {
     return (
-      <div className="flex min-h-[100dvh] items-center justify-center bg-slate-950 px-6">
-        <div className="max-w-sm text-center">
-          <h1 className="font-display text-lg font-semibold text-slate-200">
+      <div className="font-ui flex min-h-[100dvh] items-center justify-center bg-canvas px-6">
+        <div className="w-full max-w-sm rounded-card bg-surface p-6 text-center shadow-card">
+          <h1 className="text-base font-semibold text-fg">
             This app isn&rsquo;t available
           </h1>
-          <p className="mt-2 text-sm text-slate-400">
+          <p className="mt-2 text-[13px] leading-relaxed text-fg-muted">
             It may have been deleted, or it belongs to someone who hasn&rsquo;t shared it with you.
           </p>
           <button
             onClick={() => router.replace("/dashboard")}
-            className="mt-5 rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-900 transition-colors hover:bg-white"
+            className={`${button("primary")} mt-5`}
           >
             Back to your apps
           </button>
@@ -1573,7 +1574,7 @@ export default function AppShell({
             setNavOpen(false);
             setChatOpen(false);
           }}
-          className="fixed inset-0 z-30 bg-slate-900/40 lg:hidden"
+          className="fixed inset-0 z-30 bg-black/40 lg:hidden"
         />
       )}
 
@@ -1678,7 +1679,7 @@ export default function AppShell({
                     setDropTarget(null);
                   }}
                   className={`group mb-1 flex w-full items-center gap-1 rounded-lg pr-1 transition-colors ${
-                    dropTarget === m.id ? "border-t-2 border-blue-500" : ""
+                    dropTarget === m.id ? "border-t-2 border-focus" : ""
                   } ${dragId === m.id ? "opacity-40" : ""} ${
                     m.id === selectedModuleId
                       ? "bg-frame-raised text-white"
@@ -1798,7 +1799,7 @@ export default function AppShell({
         {navHits && navHits.size === 0 && (
           <p className="px-5 pb-2 text-xs text-frame-fg-muted">No section matches that.</p>
         )}
-        <div className="space-y-2 border-t border-frame-line px-3 py-3">
+        <div className="space-y-2 border-t border-frame-line px-3 py-3 empty:hidden">
           {/* Every store they can open, and the way to add another. */}
           <StoreSwitcher projectId={projectId} placement="sidebar" />
           {!isOwner && (
@@ -1823,7 +1824,7 @@ export default function AppShell({
             <button
               onClick={() => setNavOpen(true)}
               aria-label="Open sections"
-              className="-ml-1 rounded-lg px-2 py-1.5 text-slate-500 transition-colors hover:bg-slate-100 lg:hidden"
+              className={`${iconButton} -ml-1 lg:hidden`}
             >
               <Menu aria-hidden size={18} strokeWidth={1.75} />
             </button>
@@ -1831,7 +1832,7 @@ export default function AppShell({
               {selectedModule?.nav_label ?? project?.name ?? "Your app"}
             </h1>
             {schema && (
-              <span className="hidden shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-500 sm:inline">
+              <span className="hidden shrink-0 rounded-full bg-tone-neutral px-2 py-px text-[11px] font-medium text-tone-neutral-fg sm:inline">
                 schema v{schema.version}
                 {schema.created_by === "ai" && " · AI"}
               </span>
@@ -1842,29 +1843,29 @@ export default function AppShell({
             <button
               onClick={() => setRulesOpen(true)}
               title="Rules"
-              className="inline-flex items-center rounded-control bg-surface px-2.5 py-1.5 text-sm font-medium text-fg shadow-control transition-colors hover:bg-surface-hover sm:px-3"
+              className={button("secondary")}
             >
-              <Zap aria-hidden size={15} strokeWidth={1.75} /><span className="ml-1.5 hidden sm:inline">Rules</span>
+              <Zap aria-hidden size={15} strokeWidth={1.75} /><span className="hidden sm:inline">Rules</span>
             </button>
             )}
           {selectedModule && isOwner && (
             <button
               onClick={() => setHistoryOpen(true)}
               title="Version history"
-              className="inline-flex items-center rounded-control bg-surface px-2.5 py-1.5 text-sm font-medium text-fg shadow-control transition-colors hover:bg-surface-hover sm:px-3"
+              className={button("secondary")}
             >
-              <History aria-hidden size={15} strokeWidth={1.75} /><span className="ml-1.5 hidden sm:inline">History</span>
+              <History aria-hidden size={15} strokeWidth={1.75} /><span className="hidden sm:inline">History</span>
             </button>
           )}
             {isOwner && (
             <button
               onClick={() => setChatOpen(true)}
               aria-label={waiting > 0 ? `Luke — ${waiting} waiting for you` : "Luke"}
-              className="relative rounded-lg bg-gradient-to-br from-violet-500 to-blue-500 px-2.5 py-1.5 text-sm font-medium text-white shadow-sm lg:hidden"
+              className={`${button("primary")} relative lg:hidden`}
             >
-              <Sparkles aria-hidden size={15} strokeWidth={1.75} /><span className="ml-1.5 hidden sm:inline">Luke</span>
+              <Sparkles aria-hidden size={15} strokeWidth={1.75} /><span className="hidden sm:inline">Luke</span>
               {waiting > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-semibold text-white">
+                <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-signal-attention px-1 text-[9px] font-semibold text-white">
                   {waiting}
                 </span>
               )}
@@ -1875,7 +1876,7 @@ export default function AppShell({
 
         <div className="flex-1 overflow-y-auto p-3 thin-scroll sm:p-6">
           {loadError && (
-            <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            <div role="alert" className={`${note.critical} mb-4 text-[13px]`}>
               Couldn&rsquo;t load your data: {loadError}
             </div>
           )}
@@ -1891,14 +1892,16 @@ export default function AppShell({
 
           {isEmpty ? (
             <div className="flex h-full flex-col items-center justify-center text-center">
-              <div className="font-display text-3xl font-bold tracking-tight text-slate-800">
+              <div className="text-2xl font-semibold tracking-tight text-fg">
                 Start building
               </div>
-              <p className="mt-3 max-w-md text-sm text-slate-500">
+              <p className="mt-2 max-w-md text-[13px] leading-relaxed text-fg-muted">
                 Describe the problem you&rsquo;re stuck on — not the software. I&rsquo;ll
                 ask how you work, propose a design, and build it once you approve.
               </p>
-              <div className="mt-6 flex flex-wrap justify-center gap-2">
+              {/* Said as sentences to pick, not pills: each is somebody's
+                  problem in their own words, and reads better as one. */}
+              <div className="mt-6 w-full max-w-md divide-y divide-line border-y border-line text-left">
                 {[
                   "I lose track of which jobs are done and which are still pending",
                   "I need to know what stock I have before I promise a delivery date",
@@ -1907,9 +1910,10 @@ export default function AppShell({
                   <button
                     key={s}
                     onClick={() => runPrompt(s)}
-                    className="rounded-full border border-slate-200 px-3.5 py-1.5 text-xs text-slate-500 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+                    className="group flex w-full items-center gap-3 py-2.5 text-[13px] text-fg-muted transition-colors hover:text-fg"
                   >
-                    {s}
+                    <span className="flex-1 text-left">{s}</span>
+                    <ArrowRight aria-hidden size={14} strokeWidth={1.75} className="shrink-0 -translate-x-1 opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100" />
                   </button>
                 ))}
               </div>
@@ -1927,7 +1931,7 @@ export default function AppShell({
               (store.currency !== project.currency || recordedCurrencies.length > 1) && (
               // One quiet line, not a notice: the fact fits in a sentence,
               // and a box of it above every store section read as a warning.
-              <div className="mb-2 text-[11px] leading-snug text-blue-400">
+              <div className="mb-2 text-[11px] leading-snug text-fg-muted">
                 {recordedCurrencies.length > 1 ? (
                   <>
                     Shopify recorded these orders in {recordedCurrencies.join(" and ")}; each amount
@@ -1965,13 +1969,13 @@ export default function AppShell({
             />
             </FormatProvider>
           ) : loading ? (
-            <div className="text-sm text-slate-400">Loading module…</div>
+            <div className="text-sm text-fg-faint">Loading module…</div>
           ) : (
             <div className="flex h-full flex-col items-center justify-center text-center">
-              <div className="font-display text-xl font-semibold text-slate-700">
+              <div className="text-lg font-semibold text-fg">
                 {selectedModule?.nav_label ?? "No section selected"}
               </div>
-              <p className="mt-2 text-sm text-slate-500">
+              <p className="mt-2 text-sm text-fg-muted">
                 {isOwner
                   ? "Pick a section from the menu, or ask Luke to build one."
                   : "Pick a section from the menu."}

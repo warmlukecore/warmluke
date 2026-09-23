@@ -9,7 +9,9 @@
 import { useMemo, useState } from "react";
 import { useLinkOptions } from "@/components/LinkContext";
 import type { FeatureSchema, RecordRow, SchemaColumn, UiSchema } from "@/lib/types";
-import { Check, X } from "lucide-react";
+import { Check } from "lucide-react";
+import { Dialog } from "@/components/ui/Dialog";
+import { button, field, label } from "@/components/ui/controls";
 
 export type RecordDraft = Record<string, unknown>;
 
@@ -44,8 +46,7 @@ function Field({
   onChange: (v: string) => void;
 }) {
   const linkOptions = useLinkOptions();
-  const base =
-    "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100";
+  const base = field;
   const str = value === null || value === undefined ? "" : String(value);
 
   // A link is chosen from the target section's rows, never typed: that
@@ -71,15 +72,16 @@ function Field({
       <button
         type="button"
         onClick={() => onChange(on ? "false" : "true")}
-        className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+        aria-pressed={on}
+        className={`flex w-full items-center gap-2 rounded-control border px-3 py-1.5 text-[13px] leading-5 transition-colors ${
           on
-            ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-            : "border-slate-200 text-slate-500 hover:bg-slate-50"
+            ? "border-tone-success bg-tone-success/30 text-tone-success-fg"
+            : "border-line-strong text-fg-muted hover:bg-surface-hover"
         }`}
       >
         <span
-          className={`flex h-4 w-4 items-center justify-center rounded border text-[10px] ${
-            on ? "border-emerald-500 bg-emerald-500 text-white" : "border-slate-300"
+          className={`flex h-4 w-4 items-center justify-center rounded border ${
+            on ? "border-signal-success bg-signal-success text-white" : "border-line-strong"
           }`}
         >
           {on ? <Check aria-hidden size={12} strokeWidth={2.5} /> : null}
@@ -194,77 +196,47 @@ export default function RecordModal({
   }, [columns, features, records]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 sm:items-center sm:p-4"
-      onClick={onClose}
-    >
-      <div
-        className="max-h-[92dvh] w-full max-w-md overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-h-[85vh] sm:rounded-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
-          <h2 className="font-display text-sm font-semibold text-slate-800">
-            {isNew ? "Add a row" : "Edit row"}
-          </h2>
-          <button
-            onClick={onClose}
-            className="rounded-lg px-2 py-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-          >
-            <X aria-hidden size={14} strokeWidth={2} />
-          </button>
-        </div>
-
-        <div className="max-h-[60dvh] space-y-3 overflow-y-auto px-5 py-4 thin-scroll">
-          {columns.map((col) => (
-            <div key={col.field}>
-              <label className="mb-1 block text-[11px] font-medium tracking-wide text-slate-500 uppercase">
-                {col.label}
-              </label>
-              <Field
-                col={col}
-                value={draft[col.field]}
-                options={optionMap[col.field] ?? []}
-                onChange={(v) => setDraft((prev) => ({ ...prev, [col.field]: v }))}
-              />
-            </div>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-2 border-t border-slate-100 bg-slate-50/60 px-5 py-3">
+    <Dialog
+      title={isNew ? "Add a row" : "Edit row"}
+      onClose={onClose}
+      footer={
+        <>
           {!isNew &&
             (confirmingDelete ? (
-              <button
-                onClick={onDelete}
-                disabled={busy}
-                className="rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-50"
-              >
+              <button onClick={onDelete} disabled={busy} className={button("critical")}>
                 {busy ? "Deleting…" : "Really delete"}
               </button>
             ) : (
               <button
                 onClick={() => setConfirmingDelete(true)}
                 disabled={busy}
-                className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
+                className={button("critical-plain")}
               >
                 Delete
               </button>
             ))}
-          <button
-            onClick={onClose}
-            disabled={busy}
-            className="ml-auto rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-white"
-          >
+          <button onClick={onClose} disabled={busy} className={`${button("plain")} ml-auto`}>
             Cancel
           </button>
-          <button
-            onClick={() => onSave(draft)}
-            disabled={busy}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
-          >
+          <button onClick={() => onSave(draft)} disabled={busy} className={button("primary")}>
             {busy ? "Saving…" : isNew ? "Add row" : "Save"}
           </button>
-        </div>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {columns.map((col) => (
+          <div key={col.field}>
+            <label className={label}>{col.label}</label>
+            <Field
+              col={col}
+              value={draft[col.field]}
+              options={optionMap[col.field] ?? []}
+              onChange={(v) => setDraft((prev) => ({ ...prev, [col.field]: v }))}
+            />
+          </div>
+        ))}
       </div>
-    </div>
+    </Dialog>
   );
 }

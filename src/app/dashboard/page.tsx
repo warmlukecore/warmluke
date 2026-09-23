@@ -9,12 +9,25 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase-client";
-import { useUser, signOut, takePendingPrompt } from "@/lib/auth";
+import { useUser, takePendingPrompt } from "@/lib/auth";
 import ProjectSettings from "@/components/ProjectSettings";
 import ConnectShopify from "@/components/ConnectShopify";
+import { PageFrame } from "@/components/PageFrame";
+import { button, field, iconButton, note } from "@/components/ui/controls";
 import { accessRanOut } from "@/lib/store-standing";
+import { quietClasses } from "@/lib/tone";
+import { needsOnboarding } from "@/lib/onboarding";
 import type { ProjectRow, StoreRow } from "@/lib/types";
-import { Plug, Settings, Store } from "lucide-react";
+import { Plug, Plus, Search, Settings, Store } from "lucide-react";
+
+/** Past this many projects, a search box is quicker than scrolling. */
+const SEARCH_FROM = 7;
+
+/** "my-store" → "MS": the tile that stands for a project. */
+function initials(name: string): string {
+  const words = name.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  return ((words[0]?.[0] ?? "") + (words[1]?.[0] ?? "")).toUpperCase() || "·";
+}
 
 /**
  * What the store is actually doing, not what we hope it is.
@@ -58,29 +71,29 @@ function ShopifyStatus({
 
   const line =
     store.status === "pending"
-      ? { tone: "text-amber-400", dot: "bg-amber-400", text: "Shopify never came back" }
+      ? { tone: "text-tone-attention-fg", dot: "bg-signal-attention", text: "Shopify never came back" }
       : // Shopify said the app was removed from the store (0111). The
         // imported rows are still here until Shopify asks for them to
         // be erased; reconnecting picks them up again.
         store.status === "uninstalled"
-        ? { tone: "text-amber-400", dot: "bg-amber-400", text: "Removed from Shopify — reconnect to use it again" }
+        ? { tone: "text-tone-attention-fg", dot: "bg-signal-attention", text: "Removed from Shopify, reconnect to use it again" }
         : expired
-        ? { tone: "text-amber-400", dot: "bg-amber-400", text: "Shopify access ran out" }
+        ? { tone: "text-tone-attention-fg", dot: "bg-signal-attention", text: "Shopify access ran out" }
         : {
-            tone: "text-slate-300",
-            dot: "bg-emerald-400",
+            tone: "text-fg-muted",
+            dot: "bg-signal-success",
             text: store.last_synced_at
-              ? `Synced ${new Date(store.last_synced_at).toLocaleDateString()}`
+              ? `Synced ${new Date(store.last_synced_at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`
               : "Not imported yet",
           };
 
   return (
     <div className="space-y-1">
-      <div className={`flex items-center gap-1.5 text-xs ${line.tone}`}>
-        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${line.dot}`} />
-        <span className="truncate">{store.shop_domain}</span>
+      <div className="flex min-w-0 items-center gap-2 text-[13px]">
+        <span className={`h-2 w-2 shrink-0 rounded-full ${line.dot}`} />
+        <span className="truncate font-medium text-fg">{store.shop_domain}</span>
       </div>
-      <div className="text-[11px] text-slate-500">
+      <div className={`truncate pl-4 text-xs ${line.tone}`}>
         {line.text} · {store.timezone}
       </div>
       {isOwner ? (
@@ -88,41 +101,32 @@ function ShopifyStatus({
           // The cost, in the card, in the app's own type — rather than
           // a browser box that cannot be styled or placed and reads as
           // though a different program is asking.
-          <div className="mt-1 rounded-lg border border-rose-900/50 bg-rose-950/30 p-2.5 text-[11px]">
-            <p className="leading-relaxed text-rose-100">
+          <div className={`${note.critical} mt-2`}>
+            <p className="font-medium">
               Disconnect {store.shop_domain}? Everything imported from it — products,
               stock, orders and customers — is deleted.
             </p>
-            <p className="mt-1 leading-relaxed text-slate-400">
+            <p className="mt-1 opacity-80">
               Your Shopify store itself is untouched, and you can connect it again later.
             </p>
-            <div className="mt-2 flex items-center gap-3">
-              <button
-                onClick={onDisconnect}
-                disabled={busy}
-                className="font-medium text-rose-300 hover:text-rose-200 disabled:opacity-40"
-              >
+            <div className="mt-2.5 flex items-center gap-1.5">
+              <button onClick={onDisconnect} disabled={busy} className={button("critical", "sm")}>
                 {busy ? "Disconnecting…" : "Yes, disconnect"}
               </button>
-              <button onClick={onCancelDisconnect} className="text-slate-400 hover:text-slate-200">
+              <button onClick={onCancelDisconnect} className={button("plain", "sm")}>
                 Keep it
               </button>
             </div>
           </div>
         ) : (
-        <div className="flex items-center gap-2 pt-0.5 text-[11px]">
-          <button
-            onClick={onReconnect}
-            disabled={busy}
-            className="font-medium text-blue-400 transition-colors hover:text-blue-300 disabled:opacity-40"
-          >
+        <div className="-ml-2.5 flex items-center gap-0.5 pt-1">
+          <button onClick={onReconnect} disabled={busy} className={button("plain", "sm")}>
             Reconnect
           </button>
-          <span className="text-slate-700">·</span>
           <button
             onClick={onAskDisconnect}
             disabled={busy}
-            className="text-slate-500 transition-colors hover:text-rose-400 disabled:opacity-40"
+            className={button("critical-plain", "sm")}
           >
             Disconnect
           </button>
@@ -131,7 +135,7 @@ function ShopifyStatus({
       ) : (
         // A member can see the store but not change it; a button that
         // silently did nothing would be worse than no button.
-        <div className="pt-0.5 text-[11px] text-slate-600">Managed by the owner</div>
+        <div className="pt-1 pl-4 text-xs text-fg-faint">Managed by the owner</div>
       )}
     </div>
   );
@@ -172,6 +176,11 @@ function DashboardInner() {
   // refuses non-administrators; this only decides whether the door is
   // visible, so a wrong answer here is cosmetic.
   const [isSuperadmin, setIsSuperadmin] = useState(false);
+  const [query, setQuery] = useState("");
+  // Whether this person still has onboarding ahead of them. Decided
+  // before anything else happens here, so a landing-page prompt is not
+  // spent on a project before they have said who they are.
+  const [gate, setGate] = useState<"checking" | "open">("checking");
   const storeOf = (projectId: string) => stores[projectId];
 
   /** Reconnecting is the connect form again, with the address filled in. */
@@ -265,6 +274,33 @@ function DashboardInner() {
   }, [user, loadProjects]);
 
   useEffect(() => {
+    if (!user || projectsLoading || gate !== "checking") return;
+    let live = true;
+    supabase
+      .from("profiles")
+      .select("onboarded_at")
+      .eq("user_id", user.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!live) return;
+        // A read that failed never locks anybody out of their projects.
+        if (error) {
+          setGate("open");
+          return;
+        }
+        const own = projects.filter((p) => p.owner_id === user.id).length;
+        if (needsOnboarding({ onboarded: !!data?.onboarded_at, ownProjects: own, sharedWithMe: projects.length - own })) {
+          router.replace("/onboarding");
+        } else {
+          setGate("open");
+        }
+      });
+    return () => {
+      live = false;
+    };
+  }, [user, projectsLoading, gate, projects, router]);
+
+  useEffect(() => {
     if (!user) return;
     supabase.rpc("abo_my_settings").then(({ data }) => {
       setIsSuperadmin(!!data?.[0]?.is_superadmin);
@@ -296,7 +332,7 @@ function DashboardInner() {
 
   // Arrived from signup/login with a pending prompt.
   useEffect(() => {
-    if (loading || !user || handoffStarted) return;
+    if (loading || !user || handoffStarted || gate !== "open") return;
     if (searchParams.get("build") === "1") {
       setHandoffStarted(true);
       const pending = takePendingPrompt();
@@ -311,152 +347,138 @@ function DashboardInner() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, user, searchParams, handoffStarted]);
+  }, [loading, user, searchParams, handoffStarted, gate]);
 
-  async function handleSignOut() {
-    await signOut(router);
-  }
+  if (loading || !user || gate !== "open") return <DashboardLoading />;
 
-  if (loading || !user) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-400">
-        Loading…
-      </div>
-    );
-  }
+  const q = query.trim().toLowerCase();
+  const shown = q
+    ? projects.filter((p) => p.name.toLowerCase().includes(q) || (storeOf(p.id)?.shop_domain ?? "").includes(q))
+    : projects;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4 sm:px-6 sm:py-5">
-        <Link href="/" className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-400 text-sm font-bold text-white">
-            A
-          </div>
-          <span className="font-display text-base font-semibold">Warmluke</span>
-        </Link>
-        <div className="flex items-center gap-3 text-sm">
-          {/* An administrator had no way to reach their own screen but
-              to know the URL, which is not a product. */}
-          {isSuperadmin && (
-            <Link
-              href="/admin"
-              className="rounded-lg border border-slate-800 px-3 py-1.5 text-slate-300 transition-colors hover:bg-slate-900"
-            >
-              Accounts
-            </Link>
-          )}
-          <span className="text-slate-400">{user.email}</span>
-          <button
-            onClick={handleSignOut}
-            className="rounded-lg border border-slate-800 px-3 py-1.5 text-slate-300 transition-colors hover:bg-slate-900"
-          >
-            Sign out
-          </button>
-        </div>
-      </header>
-
-      <main className="mx-auto w-full max-w-6xl px-4 pb-16 sm:px-6">
-        <div className="flex items-center justify-between">
+    <PageFrame email={user.email} isSuperadmin={isSuperadmin}>
+      <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-8 sm:py-8">
+        <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="font-display text-2xl font-bold tracking-tight">Your projects</h1>
-            <p className="mt-1 text-sm text-slate-400">
+            <h1 className="text-xl font-semibold tracking-tight text-fg">Your projects</h1>
+            <p className="mt-1 text-[13px] text-fg-muted">
               Each project is its own app — isolated data, its own chat history.
             </p>
           </div>
-          <button
-            onClick={() => createAndBuild()}
-            disabled={creating}
-            className="rounded-xl bg-gradient-to-r from-blue-500 to-cyan-400 px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-          >
-            + New project
+          <button onClick={() => createAndBuild()} disabled={creating} className={button("primary")}>
+            <Plus aria-hidden size={15} strokeWidth={2} />
+            {creating ? "Creating…" : "New project"}
           </button>
         </div>
 
         {(connectFailure || storeError) && (
-          <div className="mt-6 rounded-xl border border-rose-900/60 bg-rose-950/40 px-4 py-3 text-sm text-rose-200">
+          <div role="alert" className={`${note.critical} mt-5 text-[13px]`}>
             {connectFailure ?? storeError}
           </div>
         )}
 
+        {projects.length >= SEARCH_FROM && (
+          <label className="relative mt-5 block max-w-xs">
+            <Search aria-hidden size={15} strokeWidth={1.75} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-fg-faint" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Escape" && setQuery("")}
+              placeholder="Find a project or store"
+              aria-label="Find a project or store"
+              className={`${field} pl-8`}
+            />
+          </label>
+        )}
+
         {projectsLoading ? (
-          <div className="mt-10 text-sm text-slate-500">Loading projects…</div>
+          <CardSkeletons />
         ) : projects.length === 0 ? (
-          <div className="mt-10 rounded-2xl border border-dashed border-slate-800 p-8 text-center sm:p-14">
+          <div className="mt-6 flex flex-col items-center rounded-card border border-dashed border-line-strong bg-surface px-6 py-14 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-canvas text-fg-muted">
+              <Store aria-hidden size={22} strokeWidth={1.75} />
+            </span>
             {/* An administrator with no projects is not a merchant who
                 has not started — they are looking at the wrong screen.
                 Building one stays available; it is just not the pitch. */}
             {isSuperadmin ? (
               <>
-                <div className="font-display text-lg font-semibold">No projects of your own</div>
-                <p className="mx-auto mt-2 max-w-md text-sm text-slate-400">
+                <h2 className="mt-4 text-base font-semibold text-fg">No projects of your own</h2>
+                <p className="mt-1.5 max-w-md text-[13px] leading-relaxed text-fg-muted">
                   This is your own workspace. Everyone else&rsquo;s is under Accounts.
                 </p>
-                <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-                  <Link
-                    href="/admin"
-                    className="rounded-xl bg-gradient-to-r from-blue-500 to-cyan-400 px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-                  >
+                <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+                  <Link href="/admin" className={button("primary")}>
                     Accounts
                   </Link>
-                  <button
-                    onClick={() => createAndBuild()}
-                    disabled={creating}
-                    className="rounded-xl border border-slate-800 px-5 py-2.5 text-sm text-slate-300 transition-colors hover:bg-slate-900 disabled:opacity-50"
-                  >
+                  <button onClick={() => createAndBuild()} disabled={creating} className={button("secondary")}>
                     {creating ? "Creating…" : "Build one anyway"}
                   </button>
                 </div>
               </>
             ) : (
               <>
-                <div className="font-display text-lg font-semibold">Nothing here yet</div>
-                <p className="mx-auto mt-2 max-w-md text-sm text-slate-400">
+                <h2 className="mt-4 text-base font-semibold text-fg">Nothing here yet</h2>
+                <p className="mt-1.5 max-w-md text-[13px] leading-relaxed text-fg-muted">
                   Create your first project and describe the problem you&rsquo;re stuck on.
                   It asks how you work, then builds the app around it.
                 </p>
-                <button
-                  onClick={() => createAndBuild()}
-                  disabled={creating}
-                  className="mt-6 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-400 px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                >
-                  {creating ? "Creating…" : "+ New project"}
+                <button onClick={() => createAndBuild()} disabled={creating} className={`${button("primary")} mt-5`}>
+                  <Plus aria-hidden size={15} strokeWidth={2} />
+                  {creating ? "Creating…" : "New project"}
                 </button>
               </>
             )}
           </div>
         ) : (
-          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {projects.map((p) => (
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {shown.map((p) => (
               <div
                 key={p.id}
-                className="group relative rounded-2xl border border-slate-800 bg-slate-900/50 transition-colors hover:border-slate-600"
+                className="group relative flex flex-col rounded-card bg-surface shadow-card transition-shadow duration-200 hover:shadow-raised"
               >
-                <Link href={`/app/${p.id}`} className="block p-5">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-400/20 text-lg">
-                    <Store aria-hidden size={20} strokeWidth={1.75} />
-                  </div>
-                  <div className="font-display mt-3 pr-8 font-semibold group-hover:text-white">
-                    {p.name}
-                  </div>
-                  {waiting[p.id] > 0 && (
-                    <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-300">
-                      <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                      {waiting[p.id]} waiting for you
-                    </div>
-                  )}
-                  <div className="mt-1 text-xs text-slate-500">
-                    Created{" "}
-                    {new Date(p.created_at).toLocaleDateString(p.locale || "en-IN", {
-                      month: "short",
-                      day: "numeric",
-                    })}
-                    {p.currency ? ` · ${p.currency}` : ""}
-                  </div>
-                  <div className="mt-3 text-xs font-medium text-blue-400 opacity-0 transition-opacity group-hover:opacity-100">
-                    Open builder →
-                  </div>
+                <Link
+                  href={`/app/${p.id}`}
+                  className="flex flex-1 items-start gap-3 rounded-t-card p-4 pr-12 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
+                >
+                  <span
+                    aria-hidden
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-control text-[13px] font-semibold ${quietClasses(p.name)}`}
+                  >
+                    {initials(p.name)}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-fg">{p.name}</span>
+                    <span className="mt-0.5 block text-xs text-fg-muted">
+                      Created{" "}
+                      {new Date(p.created_at).toLocaleDateString(p.locale || "en-IN", {
+                        month: "short",
+                        day: "numeric",
+                      })}
+                      {p.currency ? ` · ${p.currency}` : ""}
+                    </span>
+                    {waiting[p.id] > 0 && (
+                      <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-tone-attention px-2 py-0.5 text-[11px] font-medium text-tone-attention-fg">
+                        <span className="h-1.5 w-1.5 rounded-full bg-signal-attention" />
+                        {waiting[p.id]} waiting for you
+                      </span>
+                    )}
+                  </span>
                 </Link>
-                <div className="border-t border-slate-800 px-5 py-3">
+                {/* Only the owner can change or delete it; the database
+                    refuses anyone else, so neither is offered to them. */}
+                {p.owner_id === user.id && (
+                  <button
+                    onClick={() => setSettingsFor(p)}
+                    aria-label={`Settings for ${p.name}`}
+                    title="Rename, currency, people, delete"
+                    className={`${iconButton} absolute top-3 right-3`}
+                  >
+                    <Settings aria-hidden size={16} strokeWidth={1.75} />
+                  </button>
+                )}
+                <div className="border-t border-line px-4 py-3">
                   {/* The form wins over the status: a reconnect starts
                       from a store that is already there. */}
                   {connecting === p.id ? (
@@ -478,27 +500,20 @@ function DashboardInner() {
                       confirming={confirmDisconnect === p.id}
                     />
                   ) : (
-                    <button
-                      onClick={() => setConnecting(p.id)}
-                      className="text-xs font-medium text-slate-400 transition-colors hover:text-blue-400"
-                    >
-                      <Plug aria-hidden size={13} strokeWidth={2} className="mr-1 inline align-[-2px]" />Connect Shopify
+                    <button onClick={() => setConnecting(p.id)} className={button("secondary", "sm")}>
+                      <Plug aria-hidden size={13} strokeWidth={2} />
+                      Connect Shopify
                     </button>
                   )}
                 </div>
-                <button
-                  onClick={() => setSettingsFor(p)}
-                  aria-label={`Settings for ${p.name}`}
-                  title="Rename, currency, delete"
-                  className="absolute top-4 right-4 rounded-lg px-2 py-1 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-200"
-                >
-                  <Settings aria-hidden size={16} strokeWidth={1.75} />
-                </button>
               </div>
             ))}
+            {shown.length === 0 && (
+              <p className="text-[13px] text-fg-muted">No project or store matches &ldquo;{query}&rdquo;.</p>
+            )}
           </div>
         )}
-      </main>
+      </div>
 
       {settingsFor && (
         <ProjectSettings
@@ -510,19 +525,44 @@ function DashboardInner() {
           onClose={() => setSettingsFor(null)}
         />
       )}
+    </PageFrame>
+  );
+}
+
+/** Three cards where the projects will be, rather than a line of text. */
+function CardSkeletons() {
+  return (
+    <div aria-busy className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="animate-pulse rounded-card bg-surface p-4 shadow-card">
+          <div className="flex gap-3">
+            <div className="h-10 w-10 rounded-control bg-surface-hover" />
+            <div className="flex-1 space-y-2 pt-1">
+              <div className="h-3.5 w-2/3 rounded bg-surface-hover" />
+              <div className="h-3 w-1/3 rounded bg-surface-hover" />
+            </div>
+          </div>
+          <div className="mt-6 h-3 w-1/2 rounded bg-surface-hover" />
+        </div>
+      ))}
     </div>
+  );
+}
+
+function DashboardLoading() {
+  return (
+    <PageFrame email={null}>
+      <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-8 sm:py-8">
+        <div className="h-6 w-40 animate-pulse rounded bg-surface-hover" />
+        <CardSkeletons />
+      </div>
+    </PageFrame>
   );
 }
 
 export default function Dashboard() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-400">
-          Loading…
-        </div>
-      }
-    >
+    <Suspense fallback={<DashboardLoading />}>
       <DashboardInner />
     </Suspense>
   );

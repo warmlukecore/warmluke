@@ -113,9 +113,26 @@ variant through a request header. A stable HTTP-only cookie remembers the assign
 Campaign parameters may select a specific hero. Landing events are written through the
 server action or browser client and rate-limited in PostgreSQL.
 
-A prompt entered before authentication is stored temporarily in browser storage. After
-signup/login, the dashboard creates a project, transfers the prompt to the builder, and
-opens the assistant.
+A prompt entered before authentication is stored temporarily in browser storage.
+
+After sign-in the dashboard reads the person's `profiles` row. Anyone who has not
+finished onboarding goes to `/onboarding` first, except a person who only works in
+somebody else's app through an invite. A failed read never blocks the dashboard. The
+landing-page prompt waits until onboarding is done, then opens in their project with the
+assistant.
+
+`/onboarding` has four visible steps: about you (name, business, role, orders a month,
+platform, and optionally website, team size and where they heard of Warmluke); the store
+(one-tap connect, typed address or a link for another browser, or later); their own AI
+(the MCP address, noticed automatically when it connects, or later; shown only when the
+account has it switched on); and ready. While a newly connected store imports, a
+"preparing" state shows its progress. Which step is shown is computed from what is true
+(`src/lib/onboarding.ts`), so leaving midway resumes at the first missing thing. Saving
+the answers creates a project named for the business if the person has none. Leaving for
+Shopify sets a one-hour note in browser storage; the app page sees it on
+`?shopify=connected` and sends the person back to finish.
+
+Screens are drawn from the [design system](../design/design-system.md).
 
 ## UI maintenance notes
 

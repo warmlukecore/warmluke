@@ -16,6 +16,9 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
+import { CenteredCard } from "@/components/CenteredCard";
+import { button } from "@/components/ui/controls";
+import { Check } from "lucide-react";
 
 type Details = {
   authorization_id: string;
@@ -34,13 +37,7 @@ const SCOPE_TEXT: Record<string, string> = {
 };
 
 function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-slate-100">
-      <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
-        {children}
-      </div>
-    </div>
-  );
+  return <CenteredCard wide>{children}</CenteredCard>;
 }
 
 function ConsentInner() {
@@ -111,7 +108,7 @@ function ConsentInner() {
   if (loading) {
     return (
       <Shell>
-        <p className="text-sm text-slate-400">Checking the request…</p>
+        <p>Checking the request…</p>
       </Shell>
     );
   }
@@ -119,7 +116,7 @@ function ConsentInner() {
   if (error || !details) {
     return (
       <Shell>
-        <p className="text-sm text-rose-300">{error ?? "That request couldn't be read."}</p>
+        <p className="text-tone-critical-fg">{error ?? "That request couldn't be read."}</p>
       </Shell>
     );
   }
@@ -137,30 +134,30 @@ function ConsentInner() {
 
   return (
     <Shell>
-      <h1 className="font-display text-xl font-semibold text-white">
+      <h1 className="text-base font-semibold text-fg">
         {name} wants access to your store
       </h1>
-      <p className="mt-2 text-sm leading-relaxed text-slate-400">
+      <p className="mt-2">
         It will be able to see your Shopify products, customers and orders through
         Warmluke, and to ask for changes: to this app, and to your shop.
       </p>
-      <p className="mt-2 text-sm leading-relaxed text-slate-400">
+      <p className="mt-2">
         Asking is all it can do. A change to your shop waits for you to agree to it
         here, every time, and it cannot agree for you. A change to this app waits the
         same way, unless you have turned on automatic builds.
       </p>
 
-      <ul className="mt-5 space-y-1.5">
+      <ul className="mt-5 space-y-2 rounded-control bg-surface-subdued px-3 py-2.5">
         {scopes.map((s) => (
-          <li key={s} className="flex gap-2 text-sm text-slate-300">
-            <span className="text-slate-600">·</span>
+          <li key={s} className="flex gap-2 text-fg">
+            <Check aria-hidden size={14} strokeWidth={2} className="mt-0.5 shrink-0 text-signal-success" />
             <span>{SCOPE_TEXT[s] ?? s}</span>
           </li>
         ))}
       </ul>
 
-      <p className="mt-5 text-xs text-slate-500">
-        Sends you back to <span className="text-slate-400">{host}</span>. If you don&rsquo;t
+      <p className="mt-5 text-xs text-fg-faint">
+        Sends you back to <span className="font-medium text-fg-muted">{host}</span>. If you don&rsquo;t
         recognise that, say no.
       </p>
 
@@ -168,14 +165,14 @@ function ConsentInner() {
         <button
           onClick={() => decide(true)}
           disabled={!!busy}
-          className="flex-1 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-400 px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          className={`${button("primary", "lg")} flex-1`}
         >
           {busy === "approve" ? "Allowing…" : "Allow"}
         </button>
         <button
           onClick={() => decide(false)}
           disabled={!!busy}
-          className="rounded-xl border border-slate-700 px-4 py-2.5 text-sm text-slate-300 transition-colors hover:bg-slate-800 disabled:opacity-50"
+          className={button("secondary", "lg")}
         >
           {busy === "deny" ? "…" : "No"}
         </button>
@@ -189,7 +186,7 @@ export default function Consent() {
     <Suspense
       fallback={
         <Shell>
-          <p className="text-sm text-slate-400">Loading…</p>
+          <p>Loading…</p>
         </Shell>
       }
     >

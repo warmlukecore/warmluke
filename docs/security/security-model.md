@@ -130,6 +130,17 @@ when needed; an expired refresh token requires reconnection.
 - Shopify drift detection reports unmatched rows but does not infer deletion.
 - Customer/shop compliance redaction is intentionally irreversible and tombstoned.
 
+## Account profiles
+
+`profiles` holds what a person said in onboarding. It is not `auth.users`: that table
+belongs to Supabase Auth, and `user_metadata` can be rewritten from the browser without
+any check. RLS lets a person read, insert and update only their own row; nobody deletes
+one (it cascades with the account); values are limited to the form's lists by check
+constraints; and a trigger stamps `onboarded_at` with the database clock and keeps it
+once set. Administrators read everyone's answers only through `abo_admin_accounts`,
+which refuses non-administrators with `42501`. The table has the standard OAuth-client
+write wall. `check-profiles` exercises all of this against a live database.
+
 ## Web and transport protections
 
 `next.config.mjs` applies content type, framing, referrer, permissions, and conditional

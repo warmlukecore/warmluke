@@ -1,8 +1,9 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useUser } from "@/lib/auth";
+import { RETURN_KEY, returnsToOnboarding } from "@/lib/onboarding";
 import AppShell from "@/components/AppShell";
 
 export default function BuilderPage() {
@@ -15,9 +16,29 @@ export default function BuilderPage() {
     if (!loading && !user) router.replace("/login");
   }, [loading, user, router]);
 
-  if (loading || !user || !projectId) {
+  // Shopify brings everyone back here once a store connects. Someone who
+  // left from onboarding goes back to finish it; the note is used once.
+  const [returning, setReturning] = useState(false);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("shopify") !== "connected") return;
+    try {
+      const note = localStorage.getItem(RETURN_KEY);
+      if (!note) return;
+      localStorage.removeItem(RETURN_KEY);
+      if (returnsToOnboarding(note, Date.now())) {
+        setReturning(true);
+        router.replace("/onboarding");
+      }
+    } catch {
+      /* storage refused: they stay in their app, which is fine */
+    }
+  }, [router]);
+
+  if (loading || !user || !projectId || returning) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-sm text-slate-400">
+      // The shell's own dark frame, so arriving does not flash a
+      // different colour before the app draws.
+      <div className="font-ui flex min-h-dvh items-center justify-center bg-frame text-[13px] text-frame-fg-muted">
         Loading workspace…
       </div>
     );

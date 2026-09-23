@@ -107,6 +107,8 @@ pnpm hooks
 | Undo/build result | Rollback pure check plus apply/outcome/put-back live checks |
 | Conversation streaming | Stream, reload, and window checks |
 | Environment/build config | Production build and CI workflow review |
+| Screen styling | Typecheck, pure checks, build, and screenshots at desktop and phone width ([design system](../design/design-system.md)); `check-tone` for badge meaning |
+| Onboarding or profiles | `check-onboarding` (pure) and `check-profiles` (live) |
 
 New regression tests should prove behavior rather than source wording. Source-text checks
 are appropriate only when the invariant itself is a declaration that must remain in one
