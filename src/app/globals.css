@@ -93,9 +93,11 @@
   --shadow-dashboard: 0 25px 80px -12px rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.06);
 }
 
-/* Fade up, in CSS rather than a 50KB animation library — the project
-   runs on four dependencies and a marketing page is a poor reason to
-   make it five. Each element sets its own delay inline.
+/* Fade up, in CSS rather than a 50KB animation library: the project
+   keeps its dependencies few, and motion is not a reason to add one.
+   (The landing's globe is the one exception, a 6KB WebGL drawing CSS
+   cannot make; see docs/design/design-system.md.) Each element sets
+   its own delay inline.
 
    Honoured only when the visitor has not asked for less motion: an
    animation that ignores that setting is not a nice touch, it is a
@@ -125,6 +127,68 @@
 }
 .pop {
   animation: pop 0.14s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* The landing's sections come up as they scroll into view, driven by
+   the browser's own scroll timeline rather than a script. A browser
+   without one (Firefox today) shows them where they are, which is the
+   whole of what they were ever for. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal {
+      animation: rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 22%;
+    }
+  }
+}
+
+/* The landing's hub: logos going round, each turning back as it goes so
+   it stays upright. The ring sets --orbit-for and its logos inherit it. */
+@keyframes orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.orbit {
+  animation: orbit var(--orbit-for, 90s) linear infinite;
+}
+.orbit-back {
+  animation: orbit var(--orbit-for, 90s) linear infinite reverse;
+}
+
+/* A connection with something travelling along it. */
+@keyframes flow {
+  to {
+    background-position: 12px 0;
+  }
+}
+.flow {
+  background-image: radial-gradient(circle, var(--color-accent) 1.5px, transparent 2px);
+  background-size: 12px 4px;
+  background-repeat: repeat-x;
+  background-position: 0 center;
+  animation: flow 0.9s linear infinite;
+}
+
+/* Something resting on the page that bobs gently, as if it floated. */
+@keyframes bob {
+  50% {
+    transform: translateY(-6px);
+  }
+}
+.bob {
+  animation: bob 6s ease-in-out infinite;
+}
+
+/* A text caret, for a prompt that is being typed into. */
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+.caret {
+  animation: caret 1s steps(1) infinite;
 }
 
 /* Dialogs are the browser's own modal (ui/Dialog): focus stays inside,
@@ -157,6 +221,11 @@ html:has(dialog.wl-dialog[open]) {
 @media (prefers-reduced-motion: reduce) {
   .rise,
   .pop,
+  .orbit,
+  .orbit-back,
+  .flow,
+  .caret,
+  .bob,
   dialog.wl-dialog[open],
   dialog.wl-dialog[open]::backdrop {
     animation: none;

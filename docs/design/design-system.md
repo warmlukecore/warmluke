@@ -81,6 +81,24 @@ The aesthetic stays; the technique can move on. A newer platform feature or libr
 would do the job better is proposed with its pros, cons, browser support and effort, and
 adopted only when the user agrees. The platform comes before a dependency.
 
+Adopted so far, each with the user's yes:
+
+- **Scroll-driven reveals** on the landing (`.reveal`, `animation-timeline: view()`):
+  sections rise as they enter. Chrome, Edge and Safari 26+; elsewhere they simply show.
+- **The orders globe** in the landing's Ask Luke section: WebGL by `cobe` (about 6 KB,
+  loaded after the page runs), the one dependency the landing added. It pauses off screen,
+  is still under reduced motion, and the section reads the same without WebGL.
+
+The landing's other motion is plain CSS in `globals.css` and stops under reduced motion:
+`.orbit` / `.orbit-back` (the hub of logos), `.flow` (the MCP line), `.caret`, `.bob`
+(things resting on the page), and the `wl-tool` roll that `cycleCss` builds. Anything on
+the landing that may bleed past its column relies on the page root's `overflow-x-clip`,
+never on a negative margin that would scroll the page sideways.
+
+The landing's navigation is one list (`NAV` in `components/Landing.tsx`) read by the glass
+pill on the first screen and by the pill that floats in once that screen has scrolled
+away, which lights the section being read.
+
 ## Adding or changing UI
 
 1. Reach for a block above before writing classes.

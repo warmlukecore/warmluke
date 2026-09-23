@@ -40,7 +40,27 @@ import Link from "next/link";
 import { cookies, headers } from "next/headers";
 import { cycleCss, DEFAULT_HERO, headlineParts, heroById, resolveHero, VARIANT_COOKIE } from "@/lib/landing";
 import { VARIANT_HEADER } from "@/proxy";
-import { DemoForm, LandingTracker } from "@/components/Landing";
+import {
+  Bell,
+  Blocks,
+  Check,
+  CircleCheck,
+  CreditCard,
+  Hammer,
+  Lock,
+  Megaphone,
+  MessageCircle,
+  MessageSquareText,
+  Package,
+  RotateCcw,
+  ShieldCheck,
+  Sparkles,
+  TrendingUp,
+  Truck,
+  Undo2,
+  type LucideIcon,
+} from "lucide-react";
+import { AskLuke, DemoForm, FloatingNav, LandingTracker, NavLinks, type Ask } from "@/components/Landing";
 import { whatCanChange, whatNeverChanges } from "@/lib/store-actions";
 
 export const metadata = {
@@ -114,7 +134,8 @@ function Section({
 }) {
   return (
     <section id={id} className="border-t border-hair">
-      <div className="mx-auto w-full max-w-5xl px-5 py-16 sm:py-20">
+      {/* reveal: comes up as it scrolls into view, where the browser can. */}
+      <div className="reveal mx-auto w-full max-w-5xl px-5 py-16 sm:py-20">
         {eyebrow && (
           <div className="mb-3 text-xs font-semibold tracking-widest text-accent">
             {eyebrow}
@@ -142,14 +163,16 @@ function Section({
  * are connected in the app today. The rest are set up by the team,
  * and say so wherever they appear, never "connected".
  */
-const CONNECTORS: Array<{ name: string; ready: boolean }> = [
-  { name: "Shopify", ready: true },
+const CONNECTORS: Array<{ name: string; ready: boolean; logo?: string }> = [
+  { name: "Shopify", ready: true, logo: "/logos/shopify.svg" },
   { name: "Internal tools Luke builds", ready: true },
-  { name: "Meta Ads", ready: false },
-  { name: "Google Ads", ready: false },
-  { name: "WhatsApp", ready: false },
-  { name: "Instagram", ready: false },
+  { name: "Meta Ads", ready: false, logo: "/logos/meta.svg" },
+  { name: "Google Ads", ready: false, logo: "/logos/google.svg" },
+  { name: "WhatsApp", ready: false, logo: "/logos/whatsapp.svg" },
+  { name: "Instagram", ready: false, logo: "/logos/instagram.svg" },
 ];
+
+const logoOf = (name: string) => CONNECTORS.find((c) => c.name === name)?.logo;
 
 /** The few that fit above a headline without crowding it. */
 const HERO_CONNECTORS = [
@@ -178,55 +201,103 @@ const LLM_TINT: Record<string, string> = {
 };
 
 /**
- * What Luke can be asked today, and what the team sets up.
+ * What Luke can be asked today, and what it answers.
  *
- * Split, because two of the six the brief wrote have no data behind
- * them at all — no advertising spend, no support conversations. A line
- * that cannot survive its own demo is worse than a shorter list.
+ * Only what the product can do: an earlier brief had advertising spend
+ * and support conversations in here, with no data behind either. A
+ * line that cannot survive its own demo is worse than a shorter list.
+ * The answers use the same store the drawing above does (Priya
+ * Sharma's #1041 is the order awaiting payment there too), and the
+ * first is the exchange the old hero carried, word for word.
  */
-const ASKS = [
+const ASKS: Ask[] = [
   {
     q: "Which products are running out?",
     a: "Low stock by variant and location, straight from what Shopify last told us.",
+    said: "What's running low?",
+    reply:
+      "Three variants are under ten at your main location: Classic Tee / M (4), Canvas Tote (7), Ceramic Mug / White (9). Want a low-stock board your team can work from?",
+    from: ["Shopify", "synced 6 min ago"],
+    show: "stock",
   },
   {
     q: "What happened in orders yesterday?",
     a: "Orders for a real calendar day in your store's own timezone. Totals, status, who ordered.",
+    reply:
+      "Yesterday, in your store's timezone: 18 orders and $4,120 collected. Three are still awaiting payment on cash on delivery, and two haven't been sent yet. Want the two that haven't gone?",
+    from: ["Shopify", "synced 6 min ago"],
+    show: "orders",
   },
   {
     q: "Find this customer's orders.",
     a: "Look somebody up by name, email or phone and see what they bought.",
+    said: "Find Priya Sharma's orders.",
+    reply:
+      "Priya Sharma has 4 orders since March, $1,842 in all. The latest, #1041, is still awaiting payment. Her phone and email are on the order if you want to follow up.",
+    from: ["Shopify", "synced 6 min ago"],
+    show: "customer",
   },
   {
     q: "Our returns process is a mess. Make something better.",
     a: "Luke builds the tracker: fields, board, filters, the rules that move a return along.",
+    reply:
+      "Here is a Returns tracker for you to look over: the order, the reason and the refund on each return, a board from requested to refunded, and a rule that moves a return along once it arrives. Nothing is built until you approve it.",
+    from: ["Design", "waiting for your yes"],
+    show: "returns",
   },
   {
     q: "Create a dashboard for my operations team.",
     a: "A real internal section your team uses, shaped around how they actually work.",
+    reply:
+      "Here is an Operations section: orders still to send, stock running low and today's returns on one screen. Approve it and it appears in your team's menu.",
+    from: ["Design", "waiting for your yes"],
+    show: "dashboard",
   },
   {
     q: "Add an approval step before we refund.",
     a: "Luke writes the rule and shows you what it will do before anything runs.",
+    reply:
+      "Here is the rule, and what it will do: a refund waits for a manager's yes before it is marked done. It applies to new refunds only, and nothing runs until you say yes.",
+    from: ["Rule", "waiting for your yes"],
+    show: "rule",
   },
 ];
 
 /**
- * Written down rather than implied. The app has no connector for these;
- * the team sets them up, and the page says that rather than "connected".
+ * What Luke noticed, drawn as the alerts it would raise. Marketing and
+ * support come from accounts the team sets up, and say so, the same as
+ * everywhere else on the page.
  */
-const BY_TEAM = [
-  ["Advertising", "Wasted spend and campaign performance, from your Meta and Google accounts."],
-  ["Support", "Recurring complaints across WhatsApp and reviews."],
+const WATCHES: Array<{ area: string; what: string; icon: LucideIcon; tone: string; when: string; team?: boolean }> = [
+  { area: "Inventory", what: "A fast-moving product is approaching low stock.", icon: Package, tone: "bg-amber-50 text-amber-700", when: "just now" },
+  { area: "Operations", what: "Orders haven't been dispatched within the expected time.", icon: Truck, tone: "bg-sky-50 text-sky-700", when: "12 min ago" },
+  { area: "Returns", what: "Returns suddenly increase for a particular product.", icon: RotateCcw, tone: "bg-rose-50 text-rose-700", when: "1 h ago" },
+  { area: "Performance", what: "Conversion rate changes significantly.", icon: TrendingUp, tone: "bg-emerald-50 text-emerald-700", when: "3 h ago" },
+  { area: "Marketing", what: "A campaign suddenly starts spending without converting.", icon: Megaphone, tone: "bg-violet-50 text-violet-700", when: "yesterday", team: true },
+  { area: "Support", what: "The same customer complaint starts appearing repeatedly.", icon: MessageCircle, tone: "bg-indigo-50 text-accent", when: "yesterday", team: true },
 ];
 
-const WATCHES: Array<[string, string]> = [
-  ["Marketing", "A campaign suddenly starts spending without converting."],
-  ["Operations", "Orders haven't been dispatched within the expected time."],
-  ["Inventory", "A fast-moving product is approaching low stock."],
-  ["Support", "The same customer complaint starts appearing repeatedly."],
-  ["Performance", "Conversion rate changes significantly."],
-  ["Returns", "Returns suddenly increase for a particular product."],
+/** What a merchant would otherwise go and buy, one app at a time. */
+const USUAL = ["A returns app", "A stock alert app", "A reporting app", "An approval tool"];
+
+/** What Luke is asked for instead. */
+const TOOLS = [
+  "returns dashboard",
+  "COD verification workflow",
+  "inventory alert system",
+  "customer support tool",
+  "internal approval workflow",
+  "custom reporting dashboard",
+  "team operations tool",
+  "store-specific automation",
+];
+
+/** "an inventory alert system", "a returns dashboard": said as a sentence says it. */
+const withArticle = (t: string) => `${/^[aeiou]/i.test(t) ? "an" : "a"} ${t}`;
+
+const BOOK_POINTS = [
+  "Shown on your own store, not a sample one",
+  "Your questions, in your words",
 ];
 
 /**
@@ -239,8 +310,9 @@ const WATCHES: Array<[string, string]> = [
  * the selling point; the function name is an implementation detail
  * they will never type.
  */
-const BYO = [
+const BYO: Array<{ head: string; body: string; items: string[]; icon: LucideIcon }> = [
   {
+    icon: MessageSquareText,
     head: "Ask it about your store",
     body: "Your assistant reads the real thing, not a description of it.",
     items: [
@@ -251,21 +323,12 @@ const BYO = [
     ],
   },
   {
+    icon: Hammer,
     head: "Have it build you something",
     body: "Describe the tool you need. Your assistant designs it and Warmluke checks the design against the same rules its own engine answers to.",
     items: [
-      "A returns board, a COD queue, an approval step",
       "Checked before you ever see it",
       "Built into your app, not bolted beside it",
-    ],
-  },
-  {
-    head: "Stay in charge of it",
-    body: "Nothing happens quietly.",
-    items: [
-      "Nothing is built until you say yes",
-      "See what is waiting and what was built",
-      "Put any build back with one undo",
     ],
   },
 ];
@@ -277,54 +340,24 @@ const BYO = [
  * after it could. What it can change is read off the registry now, so
  * the day a fifth change is added this sentence says so on its own.
  */
-const BYO_LIMITS: Array<[string, string]> = [
+const BYO_LIMITS: Array<[string, string, LucideIcon]> = [
   [
     "It cannot change your shop without you",
     `Your assistant can look at orders, stock and customers, and ask to ${whatCanChange()}. Each change waits for your yes, and it cannot give one for you. It cannot ${whatNeverChanges()} anything at all.`,
+    Lock,
   ],
   [
     "It cannot build without your approval",
     "Every design arrives as a request you read and approve. Refuse it and nothing happened.",
+    CircleCheck,
   ],
   [
     "Anything it built can be put back",
     "One undo reverses a build: the fields, the settings, the rules, the rows it seeded. It tells you anything it could not put back.",
+    Undo2,
   ],
 ];
 
-const AREAS = [
-  {
-    name: "Operations",
-    team: false,
-    items: ["Orders", "Inventory", "Customers", "Workflows", "Internal dashboards"],
-    body: "Connect the operational parts of your store and give your team one place to understand what's happening and get things done.",
-  },
-  {
-    name: "Marketing",
-    team: true,
-    items: ["Meta Ads", "Google Ads", "Campaign monitoring", "Reporting"],
-    body: "Our team connects your Meta and Google ad accounts and sets up reporting that reads each campaign against the orders it actually produced.",
-  },
-  {
-    name: "Support",
-    team: true,
-    items: ["WhatsApp", "Customer conversations", "Reviews", "Common issues"],
-    body: "Our team sets up WhatsApp and reviews for you, so recurring problems stop being buried inside tickets.",
-  },
-];
-
-/**
- * The product, drawn rather than photographed.
- *
- * Coded because a screenshot goes stale the week after it is taken
- * and nobody notices. Every list named in here is one the app really
- * has — orders, draft orders, stock, discounts, returns — so the
- * picture stays honest as the product grows.
- *
- * Decorative, and told so: aria-hidden, no focus stops, no pointer
- * events. A person on a screen reader should meet the headline and
- * the demo form, not eleven fake table cells.
- */
 function Preview() {
   const orders: Array<[string, string, string, string, string]> = [
     ["Today", "#1042 · Aman Kumar", "$1,299", "Paid", "text-emerald-600"],
@@ -519,7 +552,99 @@ function Preview() {
   );
 }
 
+/** Where the i-th of n sits on a ring, as a share of the ring's box, starting at the top. */
+function onRing(i: number, n: number, turn = 0): React.CSSProperties {
+  const a = (((i / n) * 360 + turn) * Math.PI) / 180;
+  return { left: `${(50 + 50 * Math.sin(a)).toFixed(2)}%`, top: `${(50 - 50 * Math.cos(a)).toFixed(2)}%` };
+}
+
+/** A logo on a white tile; what Luke builds, which has no logo, as blocks. */
+function Planet({ name, ready }: { name: string; ready: boolean }) {
+  const logo = logoOf(name);
+  return (
+    <div
+      className={`relative flex h-12 w-12 items-center justify-center rounded-2xl border bg-white shadow-[0_10px_30px_-12px_rgb(0_0_0/0.3)] sm:h-14 sm:w-14 ${
+        ready ? "border-emerald-200" : "border-hair"
+      }`}
+    >
+      {logo ? (
+        // eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise
+        <img src={logo} alt="" width={28} height={28} className="h-6 w-6 object-contain sm:h-7 sm:w-7" />
+      ) : (
+        <Blocks className="h-6 w-6 text-accent" strokeWidth={1.75} />
+      )}
+      {ready && <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />}
+    </div>
+  );
+}
+
+/** One ring of the hub, turning; each logo on it turns back so it stays upright. */
+function Ring({ names, inset, seconds, turn }: { names: typeof CONNECTORS; inset: string; seconds: number; turn: number }) {
+  return (
+    <div className="orbit absolute" style={{ inset, "--orbit-for": `${seconds}s` } as React.CSSProperties}>
+      {names.map((c, i) => (
+        <div key={c.name} className="absolute -translate-x-1/2 -translate-y-1/2" style={onRing(i, names.length, turn)}>
+          <div className="orbit-back">
+            <Planet name={c.name} ready={c.ready} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Warmluke in the middle and what it connects to going round it: what
+ * the app itself connects on the inner ring, what the team sets up on
+ * the dashed outer one. A picture of the list beside it, so hidden from
+ * a screen reader, which reads the list.
+ */
+function Hub() {
+  return (
+    <div aria-hidden="true" className="relative mx-auto aspect-square w-full max-w-[20rem] sm:max-w-[24rem]">
+      <div className="absolute inset-[28%] rounded-full bg-accent/15 blur-3xl" />
+      <div className="absolute inset-[7%] rounded-full border border-dashed border-neutral-300" />
+      <div className="absolute inset-[28%] rounded-full border border-hair bg-white/60" />
+      <Ring names={CONNECTORS.filter((c) => !c.ready)} inset="7%" seconds={120} turn={45} />
+      <Ring names={CONNECTORS.filter((c) => c.ready)} inset="28%" seconds={80} turn={-90} />
+      <div className="absolute top-1/2 left-1/2 flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-3xl bg-white shadow-[var(--shadow-dashboard)]">
+        <Image src="/images/logowarmluke.png" alt="" width={48} height={48} className="h-12 w-12 rounded-xl object-cover" />
+      </div>
+    </div>
+  );
+}
+
+/** Claude or ChatGPT, through MCP, into Warmluke. */
+function Bridge() {
+  return (
+    <div aria-hidden="true" className="flex items-center gap-3 rounded-2xl border border-hair bg-neutral-50 px-4 py-5 sm:px-6">
+      <div className="flex shrink-0 flex-col gap-2">
+        {[
+          ["Claude", "/logos/claude.svg"],
+          ["ChatGPT", "/logos/openai.svg"],
+        ].map(([name, src]) => (
+          <div key={name} className="flex items-center gap-2 rounded-xl border border-hair bg-white px-3 py-2 text-xs font-medium text-ink">
+            {/* eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise */}
+            <img src={src} alt="" width={16} height={16} className="h-4 w-4 object-contain" />
+            {name}
+          </div>
+        ))}
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col items-center gap-2">
+        <span className="rounded-full border border-accent/30 bg-white px-2 py-0.5 text-[10px] font-semibold tracking-widest text-accent">
+          MCP
+        </span>
+        <div className="flow h-1 w-full" />
+      </div>
+      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white shadow-[var(--shadow-dashboard)]">
+        <Image src="/images/logowarmluke.png" alt="" width={36} height={36} className="h-9 w-9 rounded-lg object-cover" />
+      </div>
+    </div>
+  );
+}
+
 export default async function Landing({
+
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -552,15 +677,20 @@ export default async function Landing({
   const parts = headlineParts(shown);
   const names = shown.cycle?.through ?? [];
   const roll = cycleCss(names.length);
+  const toolRoll = cycleCss(TOOLS.length, 2.2, "wl-tool");
 
   return (
-    <div className="font-ui bg-white text-ink">
+    // overflow-x-clip: the globe and the hub are allowed to bleed past
+    // the edge of their column, and never to make the page scroll sideways.
+    <div id="top" className="font-ui overflow-x-clip bg-white text-ink">
       <LandingTracker variant={shown.id} />
+      <FloatingNav cta={shown.cta} />
       {/* Built from the list rather than written out, so the timing
           stays right whatever length it grows to. Inline styles are
           what the policy allows; inline scripts are the thing this
           page deliberately does without. */}
       {roll && <style dangerouslySetInnerHTML={{ __html: roll }} />}
+      {toolRoll && <style dangerouslySetInnerHTML={{ __html: toolRoll }} />}
 
       {/* ── The first screen: exactly one viewport ───────────── */}
       <div className="relative flex h-screen flex-col overflow-hidden">
@@ -634,22 +764,8 @@ export default async function Landing({
             />
             <span className="text-lg font-semibold tracking-tight sm:text-xl">Warmluke</span>
           </div>
-          <nav className="flex items-center gap-5 text-sm md:gap-8">
-            <a href="#luke" className="hidden text-quiet transition-colors hover:text-ink sm:inline">
-              Luke
-            </a>
-            <a href="#uses" className="hidden text-quiet transition-colors hover:text-ink sm:inline">
-              Use cases
-            </a>
-            <a
-              href="#integrations"
-              className="hidden text-quiet transition-colors hover:text-ink sm:inline"
-            >
-              Integrations
-            </a>
-            <a href="#mcp" className="hidden text-quiet transition-colors hover:text-ink md:inline">
-              Your own AI
-            </a>
+          <nav className="flex items-center gap-4 text-sm md:gap-6">
+            <NavLinks />
             {/* nowrap: at 320px it broke into "Sign / in" over two
                 lines beside a button that was still on one. */}
             <Link href="/login" className="whitespace-nowrap text-quiet transition-colors hover:text-ink">
@@ -812,97 +928,9 @@ export default async function Landing({
         </main>
       </div>
 
-      {/* ── One context ──────────────────────────────────────── */}
-      <Section id="integrations" title="Your whole ecommerce business. One context.">
-        <div className="flex flex-wrap gap-2">
-          {CONNECTORS.map((c) => (
-            <span
-              key={c.name}
-              className={
-                c.ready
-                  ? "rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-sm text-emerald-800"
-                  : "rounded-lg border border-hair px-3.5 py-2 text-sm text-quiet"
-              }
-            >
-              {c.name}{" "}
-              <span className={c.ready ? "text-emerald-600" : "text-neutral-400"}>
-                {c.ready ? "· connected" : "· set up by our team"}
-              </span>
-            </span>
-          ))}
-          <span className="rounded-lg border border-dashed border-hair px-3.5 py-2 text-sm text-neutral-400">
-            and many more
-          </span>
-        </div>
-        <p className="mt-4 text-sm text-neutral-400">
-          Whatever a growing business runs on: payments, shipping, accounting, marketplaces, the
-          spreadsheet your team actually lives in.{" "}
-          <a href="#book" data-cta="connectors_ask" className="text-accent underline underline-offset-2 hover:opacity-80">
-            Tell us yours on the demo
-          </a>
-          .
-        </p>
-        <p className="mt-6 max-w-2xl text-quiet">
-          Your business already has the data. The problem is that it&apos;s spread across different
-          systems. Warmluke brings that context together so Luke can understand the whole picture,
-          not one dashboard at a time.
-        </p>
-      </Section>
-
       {/* ── Luke doing real work ─────────────────────────────── */}
       <Section id="luke" title="Ask Luke like you'd ask someone on your team.">
-        <div className="grid gap-4 sm:grid-cols-2">
-          {ASKS.map((x) => (
-            <div key={x.q} className="rounded-2xl border border-hair bg-neutral-50 p-5">
-              <div className="font-serif text-lg text-ink">
-                &ldquo;{x.q}&rdquo;
-              </div>
-              <p className="mt-2 text-sm leading-relaxed text-quiet">{x.a}</p>
-            </div>
-          ))}
-        </div>
-        {/* One of those questions, actually answered.
-    
-            This exchange lived in the old hero and is kept word for
-            word, because the words were the careful part: an earlier
-            version of it showed sessions holding steady and a
-            campaign overspending, none of which exists anywhere in
-            the product. A mock is a promise. This one can be kept. */}
-        <div className="mt-8 overflow-hidden rounded-2xl border border-hair bg-white shadow-[0_2px_24px_rgb(0_0_0/0.04)]">
-          <div className="flex items-center gap-2 border-b border-hair px-4 py-2.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-neutral-200" />
-            <span className="h-2.5 w-2.5 rounded-full bg-neutral-200" />
-            <span className="h-2.5 w-2.5 rounded-full bg-neutral-200" />
-            <span className="ml-2 text-xs text-neutral-400">Warmluke · Luke</span>
-          </div>
-          <div className="space-y-4 p-5 sm:p-7">
-            <div className="ml-auto max-w-md rounded-2xl rounded-br-sm bg-accent/10 px-4 py-3 text-sm text-ink">
-              What&apos;s running low?
-            </div>
-            <div className="max-w-xl rounded-2xl rounded-bl-sm border border-hair bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
-              <div className="mb-2 flex flex-wrap gap-1.5 text-[11px] text-neutral-400">
-                <span className="rounded border border-hair bg-white px-1.5 py-0.5">Shopify</span>
-                <span className="rounded border border-hair bg-white px-1.5 py-0.5">synced 6 min ago</span>
-              </div>
-              Three variants are under ten at your main location: Classic Tee / M (4),
-              Canvas Tote (7), Ceramic Mug / White (9). Want a low-stock board your team
-              can work from?
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-8 rounded-2xl border border-hair bg-neutral-50 p-5">
-          <div className="text-xs font-semibold tracking-widest text-neutral-400">
-            SET UP BY OUR TEAM
-          </div>
-          <div className="mt-3 space-y-2">
-            {BY_TEAM.map(([area, what]) => (
-              <div key={area} className="text-sm text-quiet">
-                <span className="text-neutral-700">{area}:</span> {what}
-              </div>
-            ))}
-          </div>
-        </div>
+        <AskLuke asks={ASKS} />
         <div className="mt-8">
           <Cta where="asks">See what Luke could do for your store →</Cta>
         </div>
@@ -910,23 +938,52 @@ export default async function Landing({
 
       {/* ── Proactive ────────────────────────────────────────── */}
       <Section title="Luke doesn't have to wait for you to ask.">
-        <p className="max-w-2xl text-quiet">
-          Traditional dashboards are useful only when somebody remembers to check them. Luke can
-          help monitor the business continuously and surface important changes.
-        </p>
-        <div className="mt-6 grid gap-3 sm:grid-cols-2">
-          {WATCHES.map(([area, what]) => (
-            <div key={area} className="rounded-xl border border-hair bg-neutral-50 p-4">
-              <div className="text-xs font-semibold tracking-widest text-accent">
-                {area.toUpperCase()}
-              </div>
-              <p className="mt-1.5 text-sm text-neutral-700">{what}</p>
+        <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+          <div>
+            <p className="max-w-xl text-quiet">
+              Traditional dashboards are useful only when somebody remembers to check them. Luke can
+              help monitor the business continuously and surface important changes.
+            </p>
+            <p className="font-serif mt-8 text-2xl text-ink sm:text-3xl">
+              Less checking dashboards. More knowing what needs your attention.
+            </p>
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-hair bg-white shadow-[var(--shadow-dashboard)]">
+            <div className="flex items-center justify-between border-b border-hair px-4 py-3">
+              <span className="flex items-center gap-2 text-sm font-medium text-ink">
+                <Bell aria-hidden="true" className="h-4 w-4" strokeWidth={1.75} />
+                What Luke noticed
+              </span>
+              <span className="rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-white">
+                {WATCHES.length} new
+              </span>
             </div>
-          ))}
+            <ul className="divide-y divide-hair">
+              {WATCHES.map((w) => {
+                const Icon = w.icon;
+                return (
+                  <li key={w.area} className="flex items-start gap-3 px-4 py-3.5">
+                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${w.tone}`}>
+                      <Icon aria-hidden="true" className="h-4 w-4" strokeWidth={1.75} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-semibold tracking-widest text-neutral-400">
+                        {w.area.toUpperCase()}
+                        {w.team && (
+                          <span className="rounded border border-hair px-1 py-px text-[9px] font-medium">
+                            WITH OUR TEAM
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-sm text-neutral-700">{w.what}</p>
+                    </div>
+                    <span className="shrink-0 text-[11px] whitespace-nowrap text-neutral-400">{w.when}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         </div>
-        <p className="font-serif mt-8 text-2xl text-ink sm:text-3xl">
-          Less checking dashboards. More knowing what needs your attention.
-        </p>
       </Section>
 
       {/* ── Stop adding another app ──────────────────────────── */}
@@ -936,75 +993,128 @@ export default async function Landing({
           Usually that means searching the app store, trying three SaaS products, paying another
           subscription, and changing your workflow around the software.
         </p>
-        <p className="font-serif mt-6 text-2xl text-ink">
-          Need something? Tell Luke.
-        </p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {[
-            "returns dashboard",
-            "COD verification workflow",
-            "inventory alert system",
-            "customer support tool",
-            "internal approval workflow",
-            "custom reporting dashboard",
-            "team operations tool",
-            "store-specific automation",
-          ].map((n) => (
-            <span
-              key={n}
-              className="rounded-full border border-hair px-3.5 py-1.5 text-xs text-quiet"
-            >
-              {n}
-            </span>
-          ))}
-        </div>
-        <p className="mt-6 max-w-2xl text-quiet">
-          Your business shouldn&apos;t have to change how it works because another SaaS product was
-          designed for everyone.
-        </p>
-      </Section>
-
-      {/* ── Three areas ──────────────────────────────────────── */}
-      <Section title="One Luke. Across your business.">
-        <div className="grid gap-5 sm:grid-cols-3">
-          {AREAS.map((a) => (
-            <div
-              key={a.name}
-              className="rounded-2xl border border-hair bg-white p-5"
-            >
-              <div className="font-serif flex items-center gap-2 text-xl">
-                {a.name}
-                {a.team && (
-                  <span className="rounded border border-hair px-1.5 py-0.5 font-sans text-[10px] font-medium tracking-widest text-neutral-400">
-                    WITH OUR TEAM
+        <div className="mt-8 grid gap-4 lg:grid-cols-2">
+          <div className="rounded-2xl border border-hair bg-neutral-50 p-6">
+            <div className="text-xs font-semibold tracking-widest text-neutral-400">THE USUAL WAY</div>
+            <ul className="mt-4 space-y-2">
+              {USUAL.map((u) => (
+                <li
+                  key={u}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-hair bg-white px-4 py-3 text-sm"
+                >
+                  <span className="flex min-w-0 items-center gap-2.5 text-neutral-500">
+                    <CreditCard aria-hidden="true" className="h-4 w-4 shrink-0 text-neutral-400" strokeWidth={1.75} />
+                    <span className="truncate">{u}</span>
                   </span>
-                )}
-              </div>
-              <ul className="mt-3 space-y-1 text-sm text-quiet">
-                {a.items.map((i) => (
-                  <li key={i}>{i}</li>
-                ))}
-              </ul>
-              <p className="mt-4 text-sm leading-relaxed text-quiet">{a.body}</p>
+                  <span className="shrink-0 text-xs text-rose-600">+1 subscription</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-4 text-sm text-quiet">
+              Another login and another bill for each, and a workflow bent around every one.
+            </p>
+          </div>
+          <div className="flex flex-col rounded-2xl border border-accent/30 bg-white p-6 shadow-[var(--shadow-dashboard)]">
+            <div className="text-xs font-semibold tracking-widest text-accent">WITH LUKE</div>
+            <p className="font-serif mt-3 text-2xl text-ink">Need something? Tell Luke.</p>
+            <div className="mt-4 flex items-center gap-2.5 rounded-xl border border-hair bg-neutral-50 px-4 py-3.5 text-sm text-ink">
+              <Sparkles aria-hidden="true" className="h-4 w-4 shrink-0 text-accent" strokeWidth={1.75} />
+              <span className="min-w-0">
+                Build us{" "}
+                {/* The first name is the real text; the rest take turns
+                    over it, as the hero's names do. See cycleCss. */}
+                <span className="font-medium text-accent">
+                  {TOOLS.map((t, n) => (
+                    <span
+                      key={t}
+                      aria-hidden={n > 0 ? "true" : undefined}
+                      className="wl-tool"
+                      style={{ animationDelay: `${(n * 2.2).toFixed(2)}s` }}
+                    >
+                      {withArticle(t)}
+                    </span>
+                  ))}
+                </span>
+                <span aria-hidden="true" className="caret ml-0.5 inline-block h-4 w-px translate-y-0.5 bg-ink" />
+              </span>
             </div>
-          ))}
+            <p className="mt-5 text-sm text-quiet">
+              Built into your app, shaped around how you already work, and only once you say yes.
+            </p>
+            <p className="font-serif mt-6 border-t border-hair pt-5 text-xl leading-snug text-ink lg:mt-auto">
+              Your business shouldn&apos;t have to change how it works because another SaaS product
+              was designed for everyone.
+            </p>
+          </div>
         </div>
       </Section>
 
-      {/* ── Against a general-purpose assistant ──────────────── */}
-      <Section title="AI is more useful when it actually knows your business.">
-        <p className="max-w-2xl text-quiet">
-          ChatGPT and Claude are great general-purpose AI tools. But unless you repeatedly give them
-          your store data, advertising data, support context and operational information, they
-          don&apos;t know what&apos;s happening inside your business. Luke does.
-        </p>
-        <p className="mt-5 max-w-2xl text-quiet">
-          Prefer ChatGPT or Claude? Warmluke can connect to them too, so you can reach your business
-          context from the AI tools you already use.
-        </p>
-        <p className="font-serif mt-8 text-2xl text-ink sm:text-3xl">
-          Stop explaining your business to AI every time you start a conversation.
-        </p>
+      {/* ── One context ──────────────────────────────────────── */}
+      <Section id="integrations" title="Your whole ecommerce business. One context.">
+        <div className="grid items-center gap-10 lg:grid-cols-2">
+          <div>
+            <p className="max-w-xl text-quiet">
+              Your business already has the data. The problem is that it&apos;s spread across different
+              systems. Warmluke brings that context together so Luke can understand the whole picture,
+              not one dashboard at a time.
+            </p>
+            <dl className="mt-8 space-y-6">
+              {[
+                { ready: true, head: "CONNECTED IN THE APP" },
+                { ready: false, head: "SET UP BY OUR TEAM" },
+              ].map((g) => (
+                <div key={g.head}>
+                  <dt
+                    className={`flex items-center gap-2 text-xs font-semibold tracking-widest ${
+                      g.ready ? "text-emerald-700" : "text-neutral-400"
+                    }`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={
+                        g.ready
+                          ? "h-2 w-2 rounded-full bg-emerald-500"
+                          : "h-2.5 w-2.5 rounded-full border border-dashed border-neutral-400"
+                      }
+                    />
+                    {g.head}
+                  </dt>
+                  <dd className="mt-3 flex flex-wrap gap-2">
+                    {CONNECTORS.filter((c) => c.ready === g.ready).map((c) => (
+                      <span
+                        key={c.name}
+                        className="inline-flex items-center gap-2 rounded-lg border border-hair bg-white px-3 py-1.5 text-sm text-ink"
+                      >
+                        {c.logo ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise
+                          <img src={c.logo} alt="" width={16} height={16} className="h-4 w-4 object-contain" />
+                        ) : (
+                          <Blocks aria-hidden="true" className="h-4 w-4 text-accent" strokeWidth={1.75} />
+                        )}
+                        {c.name}
+                      </span>
+                    ))}
+                  </dd>
+                  {!g.ready && (
+                    <dd className="mt-2 max-w-md text-sm text-quiet">
+                      Our team connects your ad accounts and WhatsApp, and sets up the reporting
+                      against your orders.
+                    </dd>
+                  )}
+                </div>
+              ))}
+            </dl>
+            <p className="mt-6 text-sm text-neutral-400">
+              Whatever a growing business runs on: payments, shipping, accounting, marketplaces, the
+              spreadsheet your team actually lives in.{" "}
+              <a href="#book" data-cta="connectors_ask" className="text-accent underline underline-offset-2 hover:opacity-80">
+                Tell us yours on the demo
+              </a>
+              .
+            </p>
+          </div>
+          <Hub />
+        </div>
       </Section>
 
       {/* ── Bring your own assistant ─────────────────────────── */}
@@ -1013,47 +1123,49 @@ export default async function Landing({
         eyebrow="CLAUDE OR CHATGPT, CONNECTED"
         title="Bring your own AI. Give it the keys to your business."
       >
-        <p className="max-w-2xl text-quiet">
-          Warmluke speaks MCP, the standard Claude and ChatGPT use to reach outside tools. Connect
-          it once and the assistant you already pay for stops guessing about your business, and
-          starts building inside it.
-        </p>
-        <div className="mt-8 grid gap-5 sm:grid-cols-3">
-          {BYO.map((g) => (
-            <div key={g.head} className="rounded-2xl border border-hair bg-white p-5">
-              <div className="font-serif text-lg text-ink">{g.head}</div>
-              <p className="mt-2 text-sm leading-relaxed text-quiet">{g.body}</p>
-              <ul className="mt-4 space-y-1.5">
-                {g.items.map((t) => (
-                  <li key={t} className="flex gap-2 text-sm leading-relaxed text-neutral-700">
-                    <span aria-hidden="true" className="text-accent">
-                      ·
-                    </span>
-                    {t}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+        <div className="grid items-center gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          <p className="max-w-2xl text-quiet">
+            Warmluke speaks MCP, the standard Claude and ChatGPT use to reach outside tools. Connect
+            it once and the assistant you already pay for stops guessing about your business, and
+            starts building inside it.
+          </p>
+          <Bridge />
+        </div>
+        <div className="mt-8 grid gap-4 sm:grid-cols-2">
+          {BYO.map((g) => {
+            const Icon = g.icon;
+            return (
+              <div key={g.head} className="rounded-2xl border border-hair bg-white p-5">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent/10 text-accent">
+                  <Icon aria-hidden="true" className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                </span>
+                <div className="font-serif mt-4 text-lg text-ink">{g.head}</div>
+                <p className="mt-2 text-sm leading-relaxed text-quiet">{g.body}</p>
+                <ul className="mt-4 space-y-1.5">
+                  {g.items.map((t) => (
+                    <li key={t} className="flex gap-2 text-sm leading-relaxed text-neutral-700">
+                      <Check aria-hidden="true" className="mt-1 h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2} />
+                      {t}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
         </div>
 
-        <p className="font-serif mt-10 text-2xl text-ink sm:text-3xl">
-          Your assistant does the thinking. Warmluke does the building, and the checking.
-        </p>
-        <p className="mt-3 max-w-2xl text-quiet">
-          Ask your own Claude for a returns board, a COD verification queue, an approval step before
-          refunds. It writes the design; Warmluke puts it through the same validator its own engine
-          answers to, and only then asks you. Two assistants, one set of rules.
-        </p>
-
-        <div className="mt-8 rounded-2xl border border-hair bg-neutral-50 p-5">
-          <div className="text-xs font-semibold tracking-widest text-neutral-400">
+        <div className="mt-8 rounded-2xl border border-hair bg-gradient-to-br from-emerald-50/60 via-white to-white p-6">
+          <div className="flex items-center gap-2 text-xs font-semibold tracking-widest text-neutral-500">
+            <ShieldCheck aria-hidden="true" className="h-4 w-4 text-emerald-600" strokeWidth={1.75} />
             AND WHAT IT CANNOT DO
           </div>
-          <div className="mt-4 grid gap-4 sm:grid-cols-3">
-            {BYO_LIMITS.map(([head, body]) => (
+          <div className="mt-5 grid gap-6 sm:grid-cols-3">
+            {BYO_LIMITS.map(([head, body, Icon]) => (
               <div key={head}>
-                <div className="text-sm font-medium text-ink">{head}</div>
+                <div className="flex items-center gap-2 text-sm font-medium text-ink">
+                  <Icon aria-hidden="true" className="h-4 w-4 shrink-0 text-emerald-600" strokeWidth={1.75} />
+                  {head}
+                </div>
                 <p className="mt-1.5 text-sm leading-relaxed text-quiet">{body}</p>
               </div>
             ))}
@@ -1065,44 +1177,31 @@ export default async function Landing({
         </div>
       </Section>
 
-      {/* ── How it works ─────────────────────────────────────── */}
-      <Section title="How it works">
-        <div className="grid gap-5 sm:grid-cols-3">
-          {[
-            [
-              "1. Connect your business",
-              "Connect the tools and systems your ecommerce team already uses.",
-            ],
-            ["2. Talk to Luke", "Ask questions, identify problems, or tell Luke what you need."],
-            [
-              "3. Get something done",
-              "Analyse data, monitor the business, create workflows or build functionality specific to your company.",
-            ],
-          ].map(([t, b]) => (
-            <div key={t} className="rounded-2xl border border-hair bg-neutral-50 p-5">
-              <div className="font-serif text-lg">{t}</div>
-              <p className="mt-2 text-sm leading-relaxed text-quiet">{b}</p>
-            </div>
-          ))}
-        </div>
-        <div className="mt-8">
-          <Cta where="how" />
-        </div>
-      </Section>
-
       {/* ── Book ─────────────────────────────────────────────── */}
       <section id="book" className="border-t border-hair">
-        <div className="mx-auto w-full max-w-3xl px-5 py-16 sm:py-20">
-          <h2 className="font-serif text-3xl leading-tight tracking-tight sm:text-[2.75rem]">
-            What would you ask Luke to fix first?
-          </h2>
-          <p className="mt-4 text-quiet">
-            Connect your ecommerce business to Warmluke and see what Luke could do for your team. No
-            generic sales pitch. Show us how your business works today and we&apos;ll show you what
-            Warmluke can do with it.
-          </p>
-          <div className="mt-8">
-            <DemoForm variant={shown.id} />
+        <div className="reveal mx-auto w-full max-w-5xl px-5 py-16 sm:py-20">
+          <div className="grid gap-8 rounded-3xl border border-hair bg-gradient-to-br from-indigo-50/70 via-white to-white p-6 sm:p-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-12">
+            <div>
+              <h2 className="font-serif text-3xl leading-tight tracking-tight sm:text-[2.75rem]">
+                What would you ask Luke to fix first?
+              </h2>
+              <p className="mt-4 text-quiet">
+                Connect your ecommerce business to Warmluke and see what Luke could do for your team.
+                No generic sales pitch. Show us how your business works today and we&apos;ll show you
+                what Warmluke can do with it.
+              </p>
+              <ul className="mt-6 space-y-2.5">
+                {BOOK_POINTS.map((p) => (
+                  <li key={p} className="flex items-start gap-2.5 text-sm text-neutral-700">
+                    <Check aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" strokeWidth={2} />
+                    {p}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="self-center rounded-2xl border border-hair bg-white p-5 shadow-[var(--shadow-dashboard)] sm:p-6">
+              <DemoForm variant={shown.id} />
+            </div>
           </div>
         </div>
       </section>

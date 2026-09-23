@@ -77,10 +77,9 @@ export const HEROES: Hero[] = [
     sub: "Connect your store, marketing, support and operations to Warmluke. Luke understands what's happening, helps you take action and builds the tools your business needs.",
     cta: "Book a Demo",
     secondary: "See how it works",
-    // What is connected, apart from what the team sets up. Listing Meta,
-    // Google and WhatsApp as connected read as "these are plugged in",
-    // and none of them is.
-    supporting: "Connected today: Shopify. Orders, products, customers, stock. Meta, Google Ads and WhatsApp set up by our team.",
+    // Only what is connected today. Listing Meta, Google and WhatsApp
+    // here read as "these are plugged in", and none of them is.
+    supporting: "Connected today: Shopify. Orders, products, customers, stock.",
   },
   {
     id: "apps",
@@ -305,8 +304,11 @@ export function headlineParts(hero: Hero): HeadlinePart[] {
  * cut for five shows one word twice and one never. Inline, which the
  * policy allows for styles, and server-rendered, so the animation is
  * running before any JavaScript has loaded.
+ *
+ * `name` is the class and the keyframes, so two rolls on one page each
+ * keep their own timing.
  */
-export function cycleCss(count: number, each = 2.2): string | null {
+export function cycleCss(count: number, each = 2.2, name = "wl-cycle"): string | null {
   if (count < 2) return null;
   const hold = 100 / count;
   const fade = Math.min(hold * 0.24, 5);
@@ -315,7 +317,7 @@ export function cycleCss(count: number, each = 2.2): string | null {
   const snap = 0.001;
   const at = (pc: number) => Math.max(0, Math.min(100, pc)).toFixed(3);
   return [
-    "@keyframes wl-cycle {",
+    `@keyframes ${name} {`,
     // font-size, not display.
     //
     // Only the name being shown may take up space, or the line is
@@ -335,11 +337,11 @@ export function cycleCss(count: number, each = 2.2): string | null {
     "}",
     // backwards fill, so a name waiting its turn is already
     // collapsed rather than sitting there at full width.
-    `.wl-cycle { animation: wl-cycle ${(count * each).toFixed(2)}s infinite both; }`,
+    `.${name} { animation: ${name} ${(count * each).toFixed(2)}s infinite both; }`,
     "@media (prefers-reduced-motion: reduce) {",
     // Still legible, still honest: the first name stays put.
-    "  .wl-cycle { animation: none; font-size: 0; opacity: 0; }",
-    "  .wl-cycle:first-child { font-size: 1em; opacity: 1; }",
+    `  .${name} { animation: none; font-size: 0; opacity: 0; }`,
+    `  .${name}:first-child { font-size: 1em; opacity: 1; }`,
     "}",
   ].join("\n");
 }
