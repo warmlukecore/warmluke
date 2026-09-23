@@ -130,7 +130,7 @@ function Section({
 }
 
 /**
- * What is plugged in, and a few of what is coming.
+ * What is plugged in, and what the team sets up alongside it.
  *
  * Named on purpose, and short on purpose. An earlier version listed
  * all twenty and it read as a roadmap published to competitors and
@@ -139,8 +139,8 @@ function Section({
  * promising each one by name.
  *
  * `ready` is the line that has to stay honest: exactly two of these
- * send anything today, and everything else is labelled soon
- * wherever it appears.
+ * are connected in the app today. The rest are set up by the team,
+ * and say so wherever they appear, never "connected".
  */
 const CONNECTORS: Array<{ name: string; ready: boolean }> = [
   { name: "Shopify", ready: true },
@@ -178,7 +178,7 @@ const LLM_TINT: Record<string, string> = {
 };
 
 /**
- * What Luke can be asked today, and what is honestly next.
+ * What Luke can be asked today, and what the team sets up.
  *
  * Split, because two of the six the brief wrote have no data behind
  * them at all — no advertising spend, no support conversations. A line
@@ -211,10 +211,13 @@ const ASKS = [
   },
 ];
 
-/** Written down rather than implied. These need a connector first. */
-const NEXT = [
-  ["Advertising", "Wasted spend, campaign performance. Needs Meta and Google connected."],
-  ["Support", "Recurring complaints, WhatsApp and reviews. Needs a support connector."],
+/**
+ * Written down rather than implied. The app has no connector for these;
+ * the team sets them up, and the page says that rather than "connected".
+ */
+const BY_TEAM = [
+  ["Advertising", "Wasted spend and campaign performance, from your Meta and Google accounts."],
+  ["Support", "Recurring complaints across WhatsApp and reviews."],
 ];
 
 const WATCHES: Array<[string, string]> = [
@@ -292,21 +295,21 @@ const BYO_LIMITS: Array<[string, string]> = [
 const AREAS = [
   {
     name: "Operations",
-    soon: false,
+    team: false,
     items: ["Orders", "Inventory", "Customers", "Workflows", "Internal dashboards"],
     body: "Connect the operational parts of your store and give your team one place to understand what's happening and get things done.",
   },
   {
     name: "Marketing",
-    soon: true,
+    team: true,
     items: ["Meta Ads", "Google Ads", "Campaign monitoring", "Reporting"],
-    body: "Once your ad accounts are connected, Luke can read campaign performance in the context of the orders it actually produced. Not connected yet.",
+    body: "Our team connects your Meta and Google ad accounts and sets up reporting that reads each campaign against the orders it actually produced.",
   },
   {
     name: "Support",
-    soon: true,
+    team: true,
     items: ["WhatsApp", "Customer conversations", "Reviews", "Common issues"],
-    body: "Once support is connected, recurring problems stop being buried inside tickets. Not connected yet.",
+    body: "Our team sets up WhatsApp and reviews for you, so recurring problems stop being buried inside tickets.",
   },
 ];
 
@@ -687,8 +690,8 @@ export default async function Landing({
                 </span>
               ) : (
                 // Not decoration, and not a dead label either. Somebody
-                // reading "Meta Ads · soon" wants to say "that is the
-                // one I need", so the chip is the place to say it.
+                // reading "Meta Ads · with our team" wants to say "that
+                // is the one I need", so the chip is the place to say it.
                 //
                 // Each carries its own data-cta, which the tracker
                 // stores verbatim: after a month the clicks say which
@@ -698,11 +701,11 @@ export default async function Landing({
                   key={c.name}
                   href="#book"
                   data-cta={`connector_${c.name.toLowerCase().replace(/\s+/g, "_")}`}
-                  title={`Need ${c.name}? Book a demo and tell us.`}
+                  title={`Need ${c.name}? Our team sets it up. Book a demo and tell us.`}
                   className="inline-flex items-center gap-1.5 rounded-full border border-hair bg-white px-3 py-1 text-xs text-quiet transition-colors hover:border-neutral-400 hover:text-ink"
                 >
                   {c.name}
-                  <span className="text-[10px] uppercase tracking-wide text-neutral-400">soon</span>
+                  <span className="text-[10px] uppercase tracking-wide text-neutral-400">with our team</span>
                 </a>
               )
             )}
@@ -818,12 +821,12 @@ export default async function Landing({
               className={
                 c.ready
                   ? "rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-sm text-emerald-800"
-                  : "rounded-lg border border-hair px-3.5 py-2 text-sm text-neutral-400"
+                  : "rounded-lg border border-hair px-3.5 py-2 text-sm text-quiet"
               }
             >
               {c.name}{" "}
-              <span className={c.ready ? "text-emerald-600" : "text-neutral-300"}>
-                {c.ready ? "· connected" : "· soon"}
+              <span className={c.ready ? "text-emerald-600" : "text-neutral-400"}>
+                {c.ready ? "· connected" : "· set up by our team"}
               </span>
             </span>
           ))}
@@ -890,10 +893,10 @@ export default async function Landing({
 
         <div className="mt-8 rounded-2xl border border-hair bg-neutral-50 p-5">
           <div className="text-xs font-semibold tracking-widest text-neutral-400">
-            NOT YET, AND WE&apos;D RATHER SAY SO
+            SET UP BY OUR TEAM
           </div>
           <div className="mt-3 space-y-2">
-            {NEXT.map(([area, what]) => (
+            {BY_TEAM.map(([area, what]) => (
               <div key={area} className="text-sm text-quiet">
                 <span className="text-neutral-700">{area}:</span> {what}
               </div>
@@ -967,17 +970,13 @@ export default async function Landing({
           {AREAS.map((a) => (
             <div
               key={a.name}
-              className={`rounded-2xl border p-5 ${
-                a.soon
-                  ? "border-hair bg-neutral-50 text-neutral-400"
-                  : "border-hair bg-white"
-              }`}
+              className="rounded-2xl border border-hair bg-white p-5"
             >
               <div className="font-serif flex items-center gap-2 text-xl">
                 {a.name}
-                {a.soon && (
-                  <span className="rounded border border-hair px-1.5 py-0.5 text-[10px] font-medium tracking-widest text-neutral-400">
-                    NEXT
+                {a.team && (
+                  <span className="rounded border border-hair px-1.5 py-0.5 font-sans text-[10px] font-medium tracking-widest text-neutral-400">
+                    WITH OUR TEAM
                   </span>
                 )}
               </div>
