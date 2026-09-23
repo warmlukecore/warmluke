@@ -18,6 +18,58 @@
   --color-ink: hsl(210 14% 17%);
   --color-quiet: hsl(184 5% 55%);
   --color-hair: hsl(0 0% 90%);
+
+  /* ── The product's design tokens ─────────────────────────────
+     Everything inside the app draws with these names, never with a
+     raw colour: docs/design/design-system.md says what each is for,
+     and the ui-designer agent changes the look here, in one place.
+
+     The frame is the dark surround — sidebar and the edge around the
+     page — and the page sits on it as a rounded card, the way a
+     merchant's commerce admin is laid out. */
+  --color-frame: hsl(0 0% 10%);
+  --color-frame-raised: hsl(0 0% 17%);
+  --color-frame-line: hsl(0 0% 22%);
+  --color-frame-fg: hsl(0 0% 89%);
+  --color-frame-fg-muted: hsl(0 0% 60%);
+
+  --color-canvas: hsl(0 0% 95%);
+  --color-surface: hsl(0 0% 100%);
+  --color-surface-subdued: hsl(0 0% 97%);
+  --color-surface-hover: hsl(0 0% 96%);
+  --color-line: hsl(0 0% 89%);
+  --color-line-strong: hsl(0 0% 80%);
+
+  --color-fg: hsl(0 0% 19%);
+  --color-fg-muted: hsl(0 0% 38%);
+  --color-fg-faint: hsl(0 0% 54%);
+
+  /* Near-black, not a brand colour: the page is neutral and colour is
+     kept for what it means — a status that needs attention. */
+  --color-primary: hsl(0 0% 19%);
+  --color-primary-hover: hsl(0 0% 10%);
+  --color-on-primary: hsl(0 0% 100%);
+  --color-focus: hsl(214 100% 50%);
+  --color-link: hsl(214 100% 41%);
+
+  /* Tones: what a badge means, not which hue it happens to be. */
+  --color-tone-attention: hsl(33 100% 82%);
+  --color-tone-attention-fg: hsl(40 100% 18%);
+  --color-tone-warning: hsl(52 100% 74%);
+  --color-tone-warning-fg: hsl(55 100% 16%);
+  --color-tone-success: hsl(141 94% 84%);
+  --color-tone-success-fg: hsl(153 98% 16%);
+  --color-tone-info: hsl(208 100% 94%);
+  --color-tone-info-fg: hsl(201 100% 24%);
+  --color-tone-critical: hsl(2 94% 92%);
+  --color-tone-critical-fg: hsl(350 86% 30%);
+  --color-tone-neutral: hsl(0 0% 89%);
+  --color-tone-neutral-fg: hsl(0 0% 38%);
+
+  --radius-card: 0.75rem;
+  --radius-control: 0.5rem;
+  --shadow-card: 0 1px 0 0 rgb(0 0 0 / 0.07), 0 0 0 1px rgb(0 0 0 / 0.06);
+  --shadow-control: 0 1px 0 0 rgb(0 0 0 / 0.08), inset 0 -1px 0 0 rgb(0 0 0 / 0.12);
 }
 
 /* The one shadow that makes the dashboard preview float. Kept out of

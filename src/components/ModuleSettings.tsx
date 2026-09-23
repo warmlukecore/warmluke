@@ -14,28 +14,8 @@ import { supabase } from "@/lib/supabase-client";
 import { STORE_TABLES } from "@/lib/store-read";
 import { ALLOWED_ICONS } from "@/lib/types";
 import type { ModuleRow } from "@/lib/types";
+import { Icon } from "@/components/ui/Icon";
 
-const ICON_GLYPHS: Record<string, string> = {
-  "shopping-cart": "🛒",
-  package: "📦",
-  users: "👥",
-  receipt: "🧾",
-  calendar: "📅",
-  "clipboard-list": "📋",
-  "undo-2": "↩️",
-  box: "📦",
-  heart: "❤️",
-  wrench: "🔧",
-  globe: "🌐",
-  truck: "🚚",
-  banknote: "💵",
-  "map-pin": "📍",
-  layers: "🗂️",
-  wallet: "👛",
-  target: "🎯",
-  "scan-line": "🔎",
-  table: "📋",
-};
 
 interface Impact {
   records: number;
@@ -186,7 +166,7 @@ export default function ModuleSettings({
                       : "border-slate-700 hover:bg-slate-800"
                   }`}
                 >
-                  {ICON_GLYPHS[name] ?? "📋"}
+                  <Icon name={name} size={16} />
                 </button>
               ))}
             </div>

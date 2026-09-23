@@ -30,6 +30,7 @@ import type {
   TurnEvent,
   UiSchema,
 } from "@/lib/types";
+import { Icon } from "@/components/ui/Icon";
 
 export interface ChatMessage {
   id: string;
@@ -173,26 +174,6 @@ function stepWords(step: TurnEvent): string {
   }
 }
 
-const ICON_GLYPHS: Record<string, string> = {
-  "shopping-cart": "🛒",
-  package: "📦",
-  users: "👥",
-  receipt: "🧾",
-  calendar: "📅",
-  "clipboard-list": "📋",
-  "undo-2": "↩️",
-  box: "📦",
-  heart: "❤️",
-  wrench: "🔧",
-  globe: "🌐",
-  truck: "🚚",
-  banknote: "💵",
-  "map-pin": "📍",
-  layers: "🗂️",
-  wallet: "👛",
-  target: "🎯",
-  table: "📋",
-};
 
 function describeFeatures(f: NonNullable<AssistantPlan["features"]>): string[] {
   const out: string[] = [];
@@ -1208,7 +1189,7 @@ export default function ChatPanel({
   return (
     <aside
       style={{ ["--chat-w" as string]: `${width}px` }}
-      className={`fixed inset-y-0 right-0 z-40 flex w-full max-w-[420px] shrink-0 flex-col border-l border-slate-200 bg-white lg:relative lg:w-[var(--chat-w)] lg:max-w-none lg:translate-x-0 ${
+      className={`fixed inset-y-0 right-0 z-40 flex w-full max-w-[420px] shrink-0 flex-col overflow-hidden border-l border-line bg-surface lg:relative lg:w-[var(--chat-w)] lg:max-w-none lg:translate-x-0 lg:rounded-card lg:border-l-0 lg:shadow-card ${
         dragging ? "" : "transition-transform duration-200"
       } ${open ? "translate-x-0" : "translate-x-full"}`}
     >
@@ -1988,7 +1969,7 @@ export default function ChatPanel({
                 {plan.changeType === "NEW_MODULE" && plan.newModule && (
                   <>
                     <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                      <span className="text-base">{ICON_GLYPHS[plan.newModule.icon] ?? "📋"}</span>
+                      <Icon name={plan.newModule.icon} size={16} />
                       New module: <b>{plan.newModule.nav_label}</b>
                       <span className="text-slate-400">({plan.newModule.name})</span>
                     </div>
@@ -2016,8 +1997,8 @@ export default function ChatPanel({
                     )}
                     {plan.moduleUpdate.icon && (
                       <div>
-                        Icon: {ICON_GLYPHS[targetModule?.icon ?? ""] ?? "📋"} →{" "}
-                        {ICON_GLYPHS[plan.moduleUpdate.icon] ?? "📋"}
+                        Icon: <Icon name={targetModule?.icon} size={14} className="inline" /> →{" "}
+                        <Icon name={plan.moduleUpdate.icon} size={14} className="inline" />
                       </div>
                     )}
                     {plan.moduleUpdate.sort_order !== undefined && (

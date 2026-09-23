@@ -14,28 +14,8 @@ import { apiFetch } from "@/lib/auth";
 import { ALLOWED_ICONS, COLUMN_TYPES } from "@/lib/types";
 import { COLUMNS } from "@/lib/capabilities";
 import type { ColumnType, ModuleRow } from "@/lib/types";
+import { Icon } from "@/components/ui/Icon";
 
-const ICON_GLYPHS: Record<string, string> = {
-  "shopping-cart": "🛒",
-  package: "📦",
-  users: "👥",
-  receipt: "🧾",
-  calendar: "📅",
-  "clipboard-list": "📋",
-  "undo-2": "↩️",
-  box: "📦",
-  heart: "❤️",
-  wrench: "🔧",
-  globe: "🌐",
-  truck: "🚚",
-  banknote: "💵",
-  "map-pin": "📍",
-  layers: "🗂️",
-  wallet: "👛",
-  target: "🎯",
-  "scan-line": "🔎",
-  table: "📋",
-};
 
 interface Draft {
   label: string;
@@ -141,7 +121,7 @@ export default function NewSection({
                       : "border-slate-700 hover:bg-slate-800"
                   }`}
                 >
-                  {ICON_GLYPHS[name] ?? "📋"}
+                  <Icon name={name} size={16} />
                 </button>
               ))}
             </div>

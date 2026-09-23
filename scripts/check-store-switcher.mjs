@@ -55,7 +55,7 @@ check("it writes nothing", !/\.(insert|update|delete|upsert)\(/.test(switcher));
 console.log("\nmoving between stores carries nothing across");
 check("the app shell is mounted fresh for each project",
   /<AppShell key=\{projectId\} projectId=\{projectId\}/.test(src("src/app/app/[projectId]/page.tsx")));
-check("the switcher sits in the app's header", /<StoreSwitcher projectId=\{projectId\} \/>/.test(src("src/components/AppShell.tsx")));
+check("the switcher sits at the foot of the sidebar", /<StoreSwitcher projectId=\{projectId\} placement="sidebar" \/>/.test(src("src/components/AppShell.tsx")));
 
 console.log("\nconnect another store: a project only once Shopify names the store");
 check("the hint for it is its own word", NEW_PROJECT === "new" && isConnectHint("new"));

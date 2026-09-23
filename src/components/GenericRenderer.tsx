@@ -283,7 +283,7 @@ export default function GenericRenderer({
 
   if (columns.length === 0) {
     return (
-      <div className="flex h-40 items-center justify-center text-sm text-slate-500">
+      <div className="flex h-40 items-center justify-center text-sm text-fg-muted">
         This section has no columns defined yet.
       </div>
     );
@@ -366,20 +366,20 @@ export default function GenericRenderer({
           {stats.map((s, i) => (
             <div
               key={i}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition-shadow hover:shadow-md"
+              className="rounded-card bg-surface px-4 py-3 shadow-card transition-shadow hover:shadow-md"
             >
-              <div className="text-[11px] font-medium tracking-wide text-slate-500 uppercase">
+              <div className="text-xs font-medium text-fg-muted">
                 {s.label}
               </div>
               {s.groups ? (
                 <div className="mt-1.5 space-y-0.5">
                   {s.groups.length === 0 ? (
-                    <div className="text-sm text-slate-400">—</div>
+                    <div className="text-sm text-fg-faint">—</div>
                   ) : (
                     s.groups.map((g) => (
                       <div key={g.key} className="flex items-baseline justify-between gap-2 text-sm">
-                        <span className="truncate text-slate-700">{g.key}</span>
-                        <span className="font-display font-semibold text-slate-900 tabular-nums">
+                        <span className="truncate text-fg">{g.key}</span>
+                        <span className="font-display font-semibold text-fg tabular-nums">
                           {g.display}
                         </span>
                       </div>
@@ -388,7 +388,7 @@ export default function GenericRenderer({
                 </div>
               ) : (
                 <div
-                  className={`font-display mt-1 font-semibold text-slate-900 tabular-nums ${
+                  className={`font-display mt-1 font-semibold text-fg tabular-nums ${
                     s.display.length > 9 ? "text-lg" : "text-2xl"
                   }`}
                 >
@@ -400,7 +400,7 @@ export default function GenericRenderer({
         </div>
       )}
 
-      <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="relative overflow-hidden rounded-card bg-surface shadow-card">
         {preview && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
             <span className="font-display -rotate-12 text-6xl font-black tracking-widest text-slate-900/5 select-none">
@@ -409,13 +409,13 @@ export default function GenericRenderer({
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-3.5 py-2.5">
+        <div className="flex flex-wrap items-center gap-2 border-b border-line px-3.5 py-2.5">
             {features?.search?.enabled && (
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={features.search.placeholder ?? "Search…"}
-                className="w-full min-w-0 rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100 sm:w-52"
+                className="w-full min-w-0 rounded-lg border border-line px-3 py-1.5 text-sm outline-none transition-colors focus:border-focus focus:ring-2 focus:ring-blue-100 sm:w-52"
               />
             )}
             {(features?.filters ?? []).map((fl) => (
@@ -425,7 +425,7 @@ export default function GenericRenderer({
                 onChange={(e) =>
                   setFilterValues((prev) => ({ ...prev, [fl.field]: e.target.value }))
                 }
-                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-600 outline-none transition-colors focus:border-blue-400"
+                className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm text-fg-muted outline-none transition-colors focus:border-focus"
               >
                 <option value="">{fl.label}: All</option>
                 {filterOptions(fl.options ?? [], rowsWithComputed, fl.field).map((o) => (
@@ -435,13 +435,13 @@ export default function GenericRenderer({
                 ))}
               </select>
             ))}
-            <span className="ml-auto hidden rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-slate-500 uppercase sm:inline">
+            <span className="ml-auto hidden rounded-lg bg-tone-neutral px-2 py-0.5 text-xs text-fg-muted sm:inline">
               {VIEW_LABELS[view.type]}
             </span>
             {editable && (
               <button
                 onClick={() => setAdding(true)}
-                className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-slate-700"
+                className="rounded-control bg-primary px-3 py-1.5 text-xs font-semibold text-on-primary shadow-control transition-colors hover:bg-primary-hover"
               >
                 + Add
               </button>
@@ -456,7 +456,7 @@ export default function GenericRenderer({
 
         {records.length === 0 ? (
           <div className="px-4 py-12 text-center">
-            <div className="text-sm text-slate-500">Nothing here yet.</div>
+            <div className="text-sm text-fg-muted">Nothing here yet.</div>
             {editable && (
               <button
                 onClick={() => setAdding(true)}
@@ -470,7 +470,7 @@ export default function GenericRenderer({
           renderView()
         )}
 
-        <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400">
+        <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-2 text-[11px] text-fg-faint">
           <span>
             {filteredRecords.length} of {records.length} record{records.length === 1 ? "" : "s"}
             {total > records.length && ` shown · ${total} in total`}
@@ -487,7 +487,7 @@ export default function GenericRenderer({
                 }
               }}
               disabled={loadingMore}
-              className="ml-auto rounded-md border border-slate-200 px-2 py-1 font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+              className="ml-auto rounded-md border border-line px-2 py-1 font-medium text-fg-muted transition-colors hover:bg-surface-hover disabled:opacity-50"
             >
               {loadingMore ? "Loading…" : "Load more"}
             </button>

@@ -18,6 +18,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase-client";
 import { storeStanding, type Standing } from "@/lib/store-standing";
 import { canOneTap } from "@/lib/one-tap";
+import { ChevronsUpDown } from "lucide-react";
 
 type Row = {
   id: string;
@@ -45,7 +46,16 @@ const DOT: Record<Standing["tone"], string> = {
 
 const handle = (shop: string) => shop.replace(/\.myshopify\.com$/, "");
 
-export default function StoreSwitcher({ projectId }: { projectId: string }) {
+export default function StoreSwitcher({
+  projectId,
+  // Where it sits: the header, or the foot of the dark sidebar, where
+  // it opens upward.
+  placement = "header",
+}: {
+  projectId: string;
+  placement?: "header" | "sidebar";
+}) {
+  const inSidebar = placement === "sidebar";
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -125,29 +135,33 @@ export default function StoreSwitcher({ projectId }: { projectId: string }) {
         aria-haspopup="menu"
         aria-expanded={open}
         title={current ? `${current.shop} — ${current.standing.label}` : "Switch store"}
-        className="flex max-w-[11rem] items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 sm:max-w-[16rem]"
+        className={
+          inSidebar
+            ? "flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-sm text-frame-fg transition-colors hover:bg-frame-raised"
+            : "flex max-w-[11rem] items-center gap-1.5 rounded-control bg-surface px-2.5 py-1.5 text-sm text-fg shadow-control transition-colors hover:bg-surface-hover sm:max-w-[16rem]"
+        }
       >
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${current ? DOT[current.standing.tone] : "bg-slate-300"}`} />
-        <span className="truncate">{current ? handle(current.shop) : "No store"}</span>
-        <span className="text-slate-400" aria-hidden>
-          ▾
-        </span>
+        <span className={`truncate ${inSidebar ? "flex-1 text-left" : ""}`}>{current ? handle(current.shop) : "No store"}</span>
+        <ChevronsUpDown aria-hidden size={14} strokeWidth={1.75} className={inSidebar ? "text-frame-fg-muted" : "text-fg-faint"} />
       </button>
 
       {open && (
         <div
           role="menu"
-          className="absolute right-0 z-40 mt-1.5 w-72 overflow-hidden rounded-xl border border-slate-200 bg-white text-sm shadow-lg"
+          className={`absolute z-40 w-72 overflow-hidden rounded-card border border-line bg-surface text-sm text-fg shadow-lg ${
+            inSidebar ? "bottom-full left-0 mb-2" : "right-0 mt-1.5"
+          }`}
         >
           {entries.length >= SEARCH_FROM && (
-            <div className="border-b border-slate-100 p-2">
+            <div className="border-b border-line p-2">
               <input
                 autoFocus
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Find a store"
                 aria-label="Find a store"
-                className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus:border-blue-400"
+                className="w-full rounded-lg border border-line px-2.5 py-1.5 text-xs outline-none focus:border-focus"
               />
             </div>
           )}
@@ -162,12 +176,12 @@ export default function StoreSwitcher({ projectId }: { projectId: string }) {
                   href={`/app/${e.projectId}`}
                   onClick={() => setOpen(false)}
                   aria-current={here ? "true" : undefined}
-                  className={`flex items-start gap-2 px-3 py-2 transition-colors hover:bg-slate-50 ${here ? "bg-slate-50" : ""}`}
+                  className={`flex items-start gap-2 px-3 py-2 transition-colors hover:bg-surface-hover ${here ? "bg-surface-subdued" : ""}`}
                 >
                   <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${DOT[e.standing.tone]}`} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-slate-800">{e.shop}</span>
-                    <span className="block truncate text-[11px] text-slate-500">
+                    <span className="block truncate text-fg">{e.shop}</span>
+                    <span className="block truncate text-[11px] text-fg-muted">
                       {named ? `${e.projectName} · ` : ""}
                       {e.standing.label}
                       {e.standing.reconnect ? " — open it to reconnect" : ""}
@@ -181,12 +195,12 @@ export default function StoreSwitcher({ projectId }: { projectId: string }) {
                 </Link>
               );
             })}
-            {shown.length === 0 && <p className="px-3 py-2 text-xs text-slate-400">No store matches that.</p>}
+            {shown.length === 0 && <p className="px-3 py-2 text-xs text-fg-faint">No store matches that.</p>}
           </div>
           <a
             href={another}
             role="menuitem"
-            className="block border-t border-slate-100 px-3 py-2 text-xs font-medium text-blue-600 transition-colors hover:bg-slate-50"
+            className="block border-t border-line px-3 py-2 text-xs font-medium text-blue-600 transition-colors hover:bg-surface-hover"
           >
             + Connect another store
           </a>

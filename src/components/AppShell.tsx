@@ -45,6 +45,9 @@ import type {
   UiSchemaRow,
 } from "@/lib/types";
 import { TITLE_MAX } from "@/lib/types";
+import { Icon } from "@/components/ui/Icon";
+import Image from "next/image";
+import { Search, Settings } from "lucide-react";
 
 /**
  * Rows are fetched a page at a time. Search, filters and stats run over
@@ -54,30 +57,7 @@ import { TITLE_MAX } from "@/lib/types";
  */
 const RECORD_PAGE = 200;
 
-const ICONS: Record<string, string> = {
-  "shopping-cart": "🛒",
-  package: "📦",
-  users: "👥",
-  receipt: "🧾",
-  calendar: "📅",
-  "clipboard-list": "📋",
-  "undo-2": "↩️",
-  box: "📦",
-  heart: "❤️",
-  wrench: "🔧",
-  globe: "🌐",
-  truck: "🚚",
-  banknote: "💵",
-  "map-pin": "📍",
-  layers: "🗂️",
-  wallet: "👛",
-  target: "🎯",
-  table: "📋",
-};
 
-function Icon({ name }: { name: string }) {
-  return <span className="w-5 text-center text-base">{ICONS[name] ?? "📋"}</span>;
-}
 
 /**
  * The columns a section should show, for a section whose rows are the
@@ -161,6 +141,8 @@ export default function AppShell({
   const [rulesOpen, setRulesOpen] = useState(false);
   // Below lg the three panes become drawers: the phone shows one at a time.
   const [navOpen, setNavOpen] = useState(false);
+  // Finding a section by name, from the sidebar's search box.
+  const [navQuery, setNavQuery] = useState("");
   const [chatOpen, setChatOpen] = useState(false);
   /**
    * How many things their own AI is waiting on them for.
@@ -834,6 +816,11 @@ export default function AppShell({
   }, [selectedModuleId, loadModuleData]);
 
   const topLevel = useMemo(() => modules.filter((m) => !m.parent_id), [modules]);
+  const navHits = useMemo(() => {
+    const q = navQuery.trim().toLowerCase();
+    if (!q) return null;
+    return new Set(modules.filter((m) => m.nav_label.toLowerCase().includes(q)).map((m) => m.id));
+  }, [navQuery, modules]);
   const childrenOf = useMemo(() => {
     const map = new Map<string, ModuleRow[]>();
     for (const m of modules) {
@@ -1573,7 +1560,12 @@ export default function AppShell({
   return (
     <FormatProvider locale={project?.locale} currency={project?.currency}>
     <LinkProvider options={linkOptions}>
-    <div className="flex h-[100dvh] overflow-hidden">
+    <div
+      className="font-ui flex h-[100dvh] gap-0 overflow-hidden bg-frame text-fg lg:gap-2 lg:p-2 lg:pl-0"
+      // Headings inside the app are set in the same face as the rest;
+      // the display face belongs to the landing page.
+      style={{ ["--font-display" as string]: "var(--font-inter)" }}
+    >
       {/* Backdrop for whichever drawer is open on a small screen. */}
       {(navOpen || chatOpen) && (
         <div
@@ -1588,24 +1580,26 @@ export default function AppShell({
       {/* ── Sidebar ── */}
       <aside
         style={{ ["--nav-w" as string]: `${nav.width}px` }}
-        className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col overflow-hidden bg-slate-900 text-slate-300 lg:static lg:w-[var(--nav-w)] lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col overflow-hidden bg-frame text-frame-fg lg:static lg:w-[var(--nav-w)] lg:translate-x-0 ${
           nav.dragging ? "" : "transition-transform duration-200"
         } ${navOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
-        <div className="flex items-center gap-2.5 px-5 py-5">
+        <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
           <button
             onClick={() => router.push("/dashboard")}
-            className="flex items-center gap-2.5 text-left"
+            className="flex min-w-0 items-center gap-2.5 text-left"
             title="Back to dashboard"
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-400 text-sm font-bold text-white">
-              A
-            </div>
+            <Image
+              src="/images/logowarmluke.png"
+              alt=""
+              width={28}
+              height={28}
+              className="h-7 w-7 shrink-0 rounded-lg object-cover"
+            />
             <div className="min-w-0">
-              <div className="font-display truncate text-sm font-semibold tracking-tight text-white">
-                {project?.name ?? "Warmluke"}
-              </div>
-              <div className="max-w-[8rem] truncate text-[11px] text-slate-500">{ownerEmail}</div>
+              <div className="truncate text-sm font-semibold text-white">{project?.name ?? "Warmluke"}</div>
+              <div className="max-w-[9rem] truncate text-[11px] text-frame-fg-muted">{ownerEmail}</div>
             </div>
           </button>
           {project && isOwner && (
@@ -1613,33 +1607,54 @@ export default function AppShell({
               onClick={() => setSettingsOpen(true)}
               aria-label="Project settings"
               title="Rename, currency, delete"
-              className="ml-auto rounded-lg px-2 py-1 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-200"
+              className="ml-auto rounded-control p-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white"
             >
-              ⚙
+              <Settings aria-hidden size={16} strokeWidth={1.75} />
             </button>
           )}
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-3 py-2 thin-scroll-dark">
+        {modules.length > 0 && (
+          <div className="px-3 pb-2">
+            <label className="flex items-center gap-2 rounded-control bg-frame-raised px-2.5 py-1.5 text-sm text-frame-fg-muted focus-within:ring-2 focus-within:ring-focus">
+              <Search aria-hidden size={15} strokeWidth={1.75} className="shrink-0" />
+              <input
+                value={navQuery}
+                onChange={(e) => setNavQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Escape" && setNavQuery("")}
+                placeholder="Search"
+                aria-label="Search sections"
+                className="w-full bg-transparent text-frame-fg outline-none placeholder:text-frame-fg-muted"
+              />
+            </label>
+          </div>
+        )}
+        <nav className="flex-1 overflow-y-auto px-3 py-1 thin-scroll-dark">
           <div className="flex items-center justify-between px-2 pb-2">
-            <span className="text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
-              Sections
-            </span>
+            <span className="text-xs font-medium text-frame-fg-muted">Sections</span>
             {isOwner && (
             <button
               onClick={() => setNewSectionParent("")}
               aria-label="New section"
               title="New section"
-              className="rounded px-1.5 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-200"
+              className="rounded px-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white"
             >
               +
             </button>
             )}
           </div>
-          {loading && <div className="px-2 py-1 text-sm text-slate-500">Loading…</div>}
-          {topLevel.map((m) => {
-            const kids = childrenOf.get(m.id) ?? [];
-            const isOpen = !collapsed[m.id];
+          {loading && <div className="px-2 py-1 text-sm text-frame-fg-muted">Loading…</div>}
+          {topLevel
+            .filter(
+              (m) => !navHits || navHits.has(m.id) || (childrenOf.get(m.id) ?? []).some((k) => navHits.has(k.id))
+            )
+            .map((m) => {
+            // A search shows the children it matched, and every child of a
+            // parent it matched; it opens whatever it has to, to show them.
+            const kids = (childrenOf.get(m.id) ?? []).filter(
+              (k) => !navHits || navHits.has(k.id) || navHits.has(m.id)
+            );
+            const isOpen = !!navHits || !collapsed[m.id];
             return (
               <div key={m.id}>
                 <div
@@ -1666,15 +1681,15 @@ export default function AppShell({
                     dropTarget === m.id ? "border-t-2 border-blue-500" : ""
                   } ${dragId === m.id ? "opacity-40" : ""} ${
                     m.id === selectedModuleId
-                      ? "bg-slate-800 text-white shadow-sm"
-                      : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
+                      ? "bg-frame-raised text-white"
+                      : "text-frame-fg hover:bg-frame-raised/60 hover:text-white"
                   }`}
                 >
                   {kids.length > 0 ? (
                     <button
                       onClick={() => toggleCollapsed(m.id)}
                       aria-label={isOpen ? `Collapse ${m.nav_label}` : `Expand ${m.nav_label}`}
-                      className="py-2 pl-2 text-[10px] text-slate-500 transition-colors hover:text-slate-200"
+                      className="py-2 pl-2 text-[10px] text-frame-fg-muted transition-colors hover:text-white"
                     >
                       {isOpen ? "▾" : "▸"}
                     </button>
@@ -1697,7 +1712,7 @@ export default function AppShell({
                     onClick={() => setNewSectionParent(m.id)}
                     aria-label={`Add a section inside ${m.nav_label}`}
                     title="Add a section inside this one"
-                    className="rounded px-1.5 py-1 text-slate-500 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-slate-700 hover:text-slate-200 focus:opacity-100"
+                    className="rounded px-1.5 py-1 text-frame-fg-muted opacity-0 transition-opacity group-hover:opacity-100 hover:bg-frame-line hover:text-white focus:opacity-100"
                   >
                     +
                   </button>
@@ -1705,7 +1720,7 @@ export default function AppShell({
                     onClick={() => setModuleSettingsFor(m)}
                     aria-label={`Settings for ${m.nav_label}`}
                     title="Rename, move, delete"
-                    className="rounded px-1.5 py-1 text-slate-500 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-slate-700 hover:text-slate-200 focus:opacity-100"
+                    className="rounded px-1.5 py-1 text-frame-fg-muted opacity-0 transition-opacity group-hover:opacity-100 hover:bg-frame-line hover:text-white focus:opacity-100"
                   >
                     ⋯
                   </button>
@@ -1742,12 +1757,12 @@ export default function AppShell({
                         setDragId(null);
                         setDropTarget(null);
                       }}
-                      className={`group mb-1 ml-4 flex items-center gap-1 rounded-lg border-l border-slate-800 pr-1 pl-1 transition-colors ${
+                      className={`group mb-1 ml-4 flex items-center gap-1 rounded-lg border-l border-frame-line pr-1 pl-1 transition-colors ${
                         dropTarget === k.id ? "border-t-2 border-t-blue-500" : ""
                       } ${dragId === k.id ? "opacity-40" : ""} ${
                         k.id === selectedModuleId
-                          ? "bg-slate-800 text-white shadow-sm"
-                          : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
+                          ? "bg-frame-raised text-white"
+                          : "text-frame-fg hover:bg-frame-raised/60 hover:text-white"
                       }`}
                     >
                       <button
@@ -1764,7 +1779,7 @@ export default function AppShell({
                         onClick={() => setModuleSettingsFor(k)}
                         aria-label={`Settings for ${k.nav_label}`}
                         title="Rename, move, delete"
-                        className="rounded px-1.5 py-1 text-slate-500 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-slate-700 hover:text-slate-200 focus:opacity-100"
+                        className="rounded px-1.5 py-1 text-frame-fg-muted opacity-0 transition-opacity group-hover:opacity-100 hover:bg-frame-line hover:text-white focus:opacity-100"
                       >
                         ⋯
                       </button>
@@ -1774,16 +1789,23 @@ export default function AppShell({
             );
           })}
           {!loading && modules.length === 0 && (
-            <div className="px-2 py-1 text-sm leading-relaxed text-slate-500">
+            <div className="px-2 py-1 text-sm leading-relaxed text-frame-fg-muted">
               No sections yet — describe your app to Luke to build them.
             </div>
           )}
         </nav>
 
-        <div className="border-t border-slate-800 px-5 py-3 text-[11px] leading-relaxed text-slate-500">
-          {isOwner
-            ? "Everything here was generated from your prompts — nothing hardcoded."
-            : `Shared with you by the owner of ${project?.name ?? "this app"}.`}
+        {navHits && navHits.size === 0 && (
+          <p className="px-5 pb-2 text-xs text-frame-fg-muted">No section matches that.</p>
+        )}
+        <div className="space-y-2 border-t border-frame-line px-3 py-3">
+          {/* Every store they can open, and the way to add another. */}
+          <StoreSwitcher projectId={projectId} placement="sidebar" />
+          {!isOwner && (
+            <p className="px-2 text-[11px] leading-relaxed text-frame-fg-muted">
+              Shared with you by the owner of {project?.name ?? "this app"}.
+            </p>
+          )}
         </div>
 
         <div
@@ -1795,8 +1817,8 @@ export default function AppShell({
       </aside>
 
       {/* ── Main area ── */}
-      <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-3 sm:px-6 sm:py-3.5">
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas lg:rounded-card lg:shadow-card">
+        <header className="flex items-center justify-between gap-2 border-b border-line bg-canvas px-3 py-3 sm:px-6 sm:py-3.5">
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <button
               onClick={() => setNavOpen(true)}
@@ -1805,7 +1827,7 @@ export default function AppShell({
             >
               ☰
             </button>
-            <h1 className="font-display truncate text-base font-semibold tracking-tight sm:text-lg">
+            <h1 className="truncate text-base font-semibold text-fg sm:text-lg">
               {selectedModule?.nav_label ?? project?.name ?? "Your app"}
             </h1>
             {schema && (
@@ -1816,13 +1838,11 @@ export default function AppShell({
             )}
           </div>
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-            {/* Every store they can open, and the way to add another. */}
-            <StoreSwitcher projectId={projectId} />
             {isOwner && (
             <button
               onClick={() => setRulesOpen(true)}
               title="Rules"
-              className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 sm:px-3"
+              className="rounded-control bg-surface px-2.5 py-1.5 text-sm font-medium text-fg shadow-control transition-colors hover:bg-surface-hover sm:px-3"
             >
               ⚡<span className="ml-1 hidden sm:inline">Rules</span>
             </button>
@@ -1831,7 +1851,7 @@ export default function AppShell({
             <button
               onClick={() => setHistoryOpen(true)}
               title="Version history"
-              className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 sm:px-3"
+              className="rounded-control bg-surface px-2.5 py-1.5 text-sm font-medium text-fg shadow-control transition-colors hover:bg-surface-hover sm:px-3"
             >
               🕘<span className="ml-1 hidden sm:inline">History</span>
             </button>

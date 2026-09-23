@@ -488,31 +488,6 @@ export interface ValidationResult {
 // got nothing. Hashing gives every vocabulary, in any language, stable
 // and distinguishable colours.
 
-const BADGE_PALETTE = [
-  "bg-blue-100 text-blue-800 ring-blue-200",
-  "bg-emerald-100 text-emerald-800 ring-emerald-200",
-  "bg-amber-100 text-amber-800 ring-amber-200",
-  "bg-violet-100 text-violet-800 ring-violet-200",
-  "bg-rose-100 text-rose-800 ring-rose-200",
-  "bg-cyan-100 text-cyan-800 ring-cyan-200",
-  "bg-indigo-100 text-indigo-800 ring-indigo-200",
-  "bg-teal-100 text-teal-800 ring-teal-200",
-  "bg-orange-100 text-orange-800 ring-orange-200",
-  "bg-sky-100 text-sky-800 ring-sky-200",
-  "bg-fuchsia-100 text-fuchsia-800 ring-fuchsia-200",
-  "bg-lime-100 text-lime-800 ring-lime-200",
-] as const;
-
-export function badgeColorFor(value: string): string {
-  const key = value.trim().toLowerCase();
-  if (!key) return "bg-slate-100 text-slate-700 ring-slate-200";
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) {
-    hash = (hash * 31 + key.charCodeAt(i)) | 0;
-  }
-  return BADGE_PALETTE[Math.abs(hash) % BADGE_PALETTE.length];
-}
-
 // ── Sidebar icon whitelist ───────────────────────────────────
 
 /** The most a thread title holds. Three places cut one; they cut the same. */

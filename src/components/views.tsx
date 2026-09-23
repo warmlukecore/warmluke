@@ -9,7 +9,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import type { FeatureSchema, RecordRow, SchemaColumn, ViewSpec } from "@/lib/types";
-import { badgeColorFor } from "@/lib/types";
+import { badgeClasses, badgeLabel, knownStatus } from "@/lib/tone";
 import { evalExpr, truthy } from "@/lib/expr";
 import { useFormat, type Formatting } from "@/lib/format";
 import { useLinkLabel } from "@/components/LinkContext";
@@ -41,7 +41,7 @@ export function Cell({
   const fmt = useFormat();
   const linkLabel = useLinkLabel();
   if (value === undefined || value === null || value === "") {
-    return <span className="text-slate-300">—</span>;
+    return <span className="text-fg-faint">—</span>;
   }
   switch (col.type) {
     case "number": {
@@ -61,7 +61,7 @@ export function Cell({
         <span className="font-medium tabular-nums">
           {fmt.money(n, currency)}
           {rough && (
-            <span className="block text-[11px] font-normal text-slate-400">{rough}</span>
+            <span className="block text-[11px] font-normal text-fg-faint">{rough}</span>
           )}
         </span>
       );
@@ -77,7 +77,7 @@ export function Cell({
     case "boolean": {
       const yes = value === true || value === "true" || value === "yes" || value === 1;
       return (
-        <span className={yes ? "text-emerald-600" : "text-slate-300"}>{yes ? "✓ Yes" : "No"}</span>
+        <span className={yes ? "text-emerald-600" : "text-fg-faint"}>{yes ? "✓ Yes" : "No"}</span>
       );
     }
     case "badge":
@@ -89,7 +89,7 @@ export function Cell({
         <a
           href={`tel:${String(value).replace(/[^\d+]/g, "")}`}
           onClick={(e) => e.stopPropagation()}
-          className="text-blue-600 hover:underline"
+          className="text-link hover:underline"
         >
           {String(value)}
         </a>
@@ -99,7 +99,7 @@ export function Cell({
         <a
           href={`mailto:${String(value)}`}
           onClick={(e) => e.stopPropagation()}
-          className="text-blue-600 hover:underline"
+          className="text-link hover:underline"
         >
           {String(value)}
         </a>
@@ -112,32 +112,61 @@ export function Cell({
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
-          className="text-blue-600 hover:underline"
+          className="text-link hover:underline"
         >
           {String(value).replace(/^https?:\/\//i, "")}
         </a>
       );
     }
     case "link":
-      return <span className="text-slate-700">{linkLabel(col.linkTo, value) || "—"}</span>;
+      return <span className="text-fg">{linkLabel(col.linkTo, value) || "—"}</span>;
     case "longtext":
       return (
-        <span className="block max-w-xs truncate text-slate-600" title={String(value)}>
+        <span className="block max-w-xs truncate text-fg-muted" title={String(value)}>
           {String(value)}
         </span>
       );
     default:
+      if (Array.isArray(value)) {
+        const items = value.filter((v) => v !== null && v !== undefined && String(v).trim() !== "");
+        if (items.length === 0) return <span className="text-fg-faint">—</span>;
+        return (
+          <span className="inline-flex flex-wrap gap-1">
+            {items.map((v, i) => (
+              <span key={`${String(v)}:${i}`} className="rounded-lg bg-tone-neutral px-2 py-0.5 text-xs text-fg-muted no-underline">
+                {String(v)}
+              </span>
+            ))}
+          </span>
+        );
+      }
       return <span>{String(value)}</span>;
   }
 }
 
+/**
+ * A value that has a state, drawn by what the state means (lib/tone).
+ * A known store status says so in its own words, with a hollow circle
+ * while there is something left to do and a filled one when there is
+ * not; anything else is its own word in a calm colour.
+ */
 export function Badge({ value, dot }: { value: string; dot?: boolean }) {
+  const known = knownStatus(value);
+  const progress = known?.progress;
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${badgeColorFor(value)}`}
+      className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-0.5 text-xs font-medium whitespace-nowrap ${badgeClasses(value)}`}
     >
-      {dot && <span className="h-1.5 w-1.5 rounded-full bg-current opacity-60" />}
-      {value}
+      {progress ? (
+        <span
+          aria-hidden
+          className={`h-2 w-2 shrink-0 rounded-full border-[1.5px] border-current ${progress === "complete" ? "bg-current" : ""}`}
+          style={progress === "partial" ? { background: "linear-gradient(90deg, currentColor 50%, transparent 50%)" } : undefined}
+        />
+      ) : (
+        dot && <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-60" />
+      )}
+      {badgeLabel(value)}
     </span>
   );
 }
@@ -213,7 +242,7 @@ function actionsFor(
 const ACTION_STYLES: Record<string, string> = {
   primary: "bg-blue-600 text-white hover:bg-blue-700",
   danger: "bg-rose-600 text-white hover:bg-rose-700",
-  neutral: "border border-slate-200 text-slate-600 hover:bg-slate-50",
+  neutral: "border border-line text-fg-muted hover:bg-surface-hover",
 };
 
 export function ActionButtons({
@@ -277,36 +306,40 @@ export function TableView({
     <div className="overflow-x-auto thin-scroll">
       <table className="w-full text-left text-sm">
         <thead>
-          <tr className="border-b border-slate-200 bg-slate-50/80 text-[11px] tracking-wider text-slate-500 uppercase">
+          <tr className="border-b border-line bg-surface-subdued text-xs text-fg-muted">
             {columns.map((col) => (
               <th
                 key={col.field}
                 onClick={() => onSort(col.field)}
-                className="cursor-pointer px-4 py-2.5 font-semibold transition-colors select-none hover:text-slate-800"
+                className="cursor-pointer px-3 py-2 font-medium whitespace-nowrap transition-colors select-none hover:text-fg"
                 title="Click to sort"
               >
                 <span className="inline-flex items-center gap-1">
                   {col.label}
-                  <span className="text-slate-400">
+                  <span className="text-fg-faint">
                     {sort?.field === col.field ? (sort.dir === "asc" ? "↑" : "↓") : ""}
                   </span>
                 </span>
               </th>
             ))}
-            {hasActions && <th className="px-4 py-2.5" />}
+            {hasActions && <th className="px-3 py-2" />}
           </tr>
         </thead>
         <tbody>
-          {records.map((rec) => (
+          {records.map((rec) => {
+            // The store's own mark for an order that no longer stands.
+            // Struck, not hidden: it happened, and it still counts as one.
+            const struck = !!rec.data?.cancelled_at;
+            return (
             <tr
               key={rec.id}
               onClick={() => onOpen?.(rec)}
-              className={`border-b border-slate-100 transition-colors last:border-0 hover:bg-blue-50/40 ${
+              className={`border-b border-line transition-colors last:border-0 hover:bg-surface-hover ${
                 onOpen ? "cursor-pointer" : ""
-              }`}
+              } ${struck ? "text-fg-faint line-through" : "text-fg"}`}
             >
               {columns.map((col) => (
-                <td key={col.field} className="px-4 py-2.5 align-middle">
+                <td key={col.field} className="px-3 py-2 align-middle whitespace-nowrap">
                   <Cell
                     col={col}
                     value={rec.data?.[col.field]}
@@ -319,7 +352,7 @@ export function TableView({
                 </td>
               ))}
               {hasActions && (
-                <td className="px-4 py-2.5 text-right">
+                <td className="px-3 py-2 text-right">
                   <ActionButtons
                     rec={rec}
                     actions={actions}
@@ -329,7 +362,8 @@ export function TableView({
                 </td>
               )}
             </tr>
-          ))}
+            );
+          })}
           {records.length === 0 && (
             <tr>
               <td colSpan={columns.length + (hasActions ? 1 : 0)}>
@@ -378,10 +412,10 @@ export function BoardView({
           (r) => (String(r.data?.[view.groupBy] ?? "").trim() || "Unassigned") === g
         );
         return (
-          <div key={g} className="flex w-[72vw] max-w-64 shrink-0 flex-col rounded-xl bg-slate-50 p-2 sm:w-64">
+          <div key={g} className="flex w-[72vw] max-w-64 shrink-0 flex-col rounded-xl bg-surface-subdued p-2 sm:w-64">
             <div className="flex items-center justify-between px-1.5 pb-2">
               <Badge value={g} dot />
-              <span className="text-[11px] font-medium text-slate-400 tabular-nums">
+              <span className="text-[11px] font-medium text-fg-faint tabular-nums">
                 {rows.length}
               </span>
             </div>
@@ -390,11 +424,11 @@ export function BoardView({
                 <div
                   key={rec.id}
                   onClick={() => onOpen?.(rec)}
-                  className={`rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md ${
+                  className={`rounded-lg border border-line bg-surface p-2.5 shadow-sm transition-shadow hover:shadow-md ${
                     onOpen ? "cursor-pointer" : ""
                   }`}
                 >
-                  <div className="text-xs font-semibold text-slate-800">
+                  <div className="text-xs font-semibold text-fg">
                     {fieldText(fmt, columns, rec, view.cardTitle, linkLabel) || "Untitled"}
                   </div>
                   {cardFields.map((col) => {
@@ -402,8 +436,8 @@ export function BoardView({
                     if (!val) return null;
                     return (
                       <div key={col.field} className="mt-1 flex gap-1.5 text-[11px] leading-snug">
-                        <span className="shrink-0 text-slate-400">{col.label}</span>
-                        <span className="min-w-0 truncate text-slate-600">{val}</span>
+                        <span className="shrink-0 text-fg-faint">{col.label}</span>
+                        <span className="min-w-0 truncate text-fg-muted">{val}</span>
                       </div>
                     );
                   })}
@@ -422,7 +456,7 @@ export function BoardView({
         );
       })}
       {groupCol === undefined && (
-        <div className="self-center text-xs text-slate-400">
+        <div className="self-center text-xs text-fg-faint">
           Grouping field &ldquo;{view.groupBy}&rdquo; is missing from this schema.
         </div>
       )}
@@ -481,11 +515,11 @@ export function CalendarView({
   return (
     <div className="overflow-x-auto p-3 thin-scroll">
       <div className="mb-2 flex items-baseline justify-between px-1">
-        <div className="font-display text-sm font-semibold text-slate-800">
+        <div className="font-display text-sm font-semibold text-fg">
           {first.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
         </div>
         {outside > 0 && (
-          <div className="text-[11px] text-slate-400">
+          <div className="text-[11px] text-fg-faint">
             {outside} more in other months
           </div>
         )}
@@ -494,7 +528,7 @@ export function CalendarView({
         {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
           <div
             key={d}
-            className="bg-slate-50 px-2 py-1.5 text-center text-[10px] font-semibold tracking-wider text-slate-500 uppercase"
+            className="bg-surface-subdued px-2 py-1.5 text-center text-[10px] font-semibold tracking-wider text-fg-muted uppercase"
           >
             {d}
           </div>
@@ -504,18 +538,18 @@ export function CalendarView({
           return (
             <div
               key={i}
-              className={`min-h-[84px] bg-white p-1.5 ${day === null ? "bg-slate-50/60" : ""}`}
+              className={`min-h-[84px] bg-surface p-1.5 ${day === null ? "bg-slate-50/60" : ""}`}
             >
               {day !== null && (
                 <>
-                  <div className="mb-1 text-[11px] font-medium text-slate-400 tabular-nums">
+                  <div className="mb-1 text-[11px] font-medium text-fg-faint tabular-nums">
                     {day}
                   </div>
                   <div className="space-y-1">
                     {entries.slice(0, 3).map(({ rec }) => {
                       const colour = view.colorBy
-                        ? badgeColorFor(String(rec.data?.[view.colorBy] ?? ""))
-                        : "bg-blue-100 text-blue-800 ring-blue-200";
+                        ? badgeClasses(String(rec.data?.[view.colorBy] ?? ""))
+                        : "bg-tone-info text-tone-info-fg";
                       return (
                         <div
                           key={rec.id}
@@ -530,7 +564,7 @@ export function CalendarView({
                       );
                     })}
                     {entries.length > 3 && (
-                      <div className="px-1 text-[10px] text-slate-400">
+                      <div className="px-1 text-[10px] text-fg-faint">
                         +{entries.length - 3} more
                       </div>
                     )}
@@ -570,17 +604,17 @@ export function CardsView({
         <div
           key={rec.id}
           onClick={() => onOpen?.(rec)}
-          className={`rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm transition-shadow hover:shadow-md ${
+          className={`rounded-xl border border-line bg-surface p-3.5 shadow-sm transition-shadow hover:shadow-md ${
             onOpen ? "cursor-pointer" : ""
           }`}
         >
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <div className="truncate text-sm font-semibold text-slate-800">
+              <div className="truncate text-sm font-semibold text-fg">
                 {fieldText(fmt, columns, rec, view.titleField, linkLabel) || "Untitled"}
               </div>
               {view.subtitleField && (
-                <div className="truncate text-xs text-slate-500">
+                <div className="truncate text-xs text-fg-muted">
                   {fieldText(fmt, columns, rec, view.subtitleField, linkLabel)}
                 </div>
               )}
@@ -590,14 +624,14 @@ export function CardsView({
             )}
           </div>
           {extra.length > 0 && (
-            <dl className="mt-2.5 space-y-1 border-t border-slate-100 pt-2.5">
+            <dl className="mt-2.5 space-y-1 border-t border-line pt-2.5">
               {extra.map((col) => {
                 const val = fieldText(fmt, columns, rec, col.field, linkLabel);
                 if (!val) return null;
                 return (
                   <div key={col.field} className="flex justify-between gap-2 text-[11px]">
-                    <dt className="text-slate-400">{col.label}</dt>
-                    <dd className="truncate font-medium text-slate-700">{val}</dd>
+                    <dt className="text-fg-faint">{col.label}</dt>
+                    <dd className="truncate font-medium text-fg">{val}</dd>
                   </div>
                 );
               })}
@@ -643,17 +677,17 @@ export function ListView({
           }`}
         >
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium text-slate-800">
+            <div className="truncate text-sm font-medium text-fg">
               {fieldText(fmt, columns, rec, view.titleField, linkLabel) || "Untitled"}
             </div>
             {view.secondaryField && (
-              <div className="truncate text-[11px] text-slate-500">
+              <div className="truncate text-[11px] text-fg-muted">
                 {fieldText(fmt, columns, rec, view.secondaryField, linkLabel)}
               </div>
             )}
           </div>
           {view.metaField && (
-            <div className="shrink-0 text-[11px] text-slate-500 tabular-nums">
+            <div className="shrink-0 text-[11px] text-fg-muted tabular-nums">
               {fieldText(fmt, columns, rec, view.metaField, linkLabel)}
             </div>
           )}
@@ -677,7 +711,7 @@ export function ListView({
 export function EmptyState({ total }: { total: number }) {
   return (
     <div className="px-4 py-12 text-center">
-      <div className="text-sm text-slate-500">
+      <div className="text-sm text-fg-muted">
         {total === 0 ? "Nothing here yet." : "Nothing matches the current search or filters."}
       </div>
     </div>
