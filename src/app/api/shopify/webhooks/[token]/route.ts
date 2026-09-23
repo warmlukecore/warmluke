@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { verifyWebhookHmac } from "@/lib/shopify";
+import { LIFECYCLE_TOPICS } from "@/lib/shopify-webhooks";
 
 export const runtime = "nodejs";
 
@@ -61,12 +62,22 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   // shop to trust. The body signature is checked there a second time
   // because this route is not the only way to reach that function:
   // PostgREST is, and the anon key is public.
-  const { error } = await anon.rpc("abo_shopify_webhook", {
-    p_token: token,
-    p_topic: topic,
-    p_raw: raw,
-    p_hmac: req.headers.get("x-shopify-hmac-sha256"),
-  });
+  //
+  // A topic about the app itself — app/uninstalled — has a function of
+  // its own, which proves the delivery the same two ways.
+  const lifecycle = LIFECYCLE_TOPICS[topic.toUpperCase().replace("/", "_")];
+  const { error } = lifecycle
+    ? await anon.rpc(lifecycle, {
+        p_token: token,
+        p_raw: raw,
+        p_hmac: req.headers.get("x-shopify-hmac-sha256"),
+      })
+    : await anon.rpc("abo_shopify_webhook", {
+        p_token: token,
+        p_topic: topic,
+        p_raw: raw,
+        p_hmac: req.headers.get("x-shopify-hmac-sha256"),
+      });
 
   if (error) {
     // A 500 makes Shopify retry, which is right for a write that

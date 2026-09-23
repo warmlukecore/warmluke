@@ -107,6 +107,45 @@ try {
     configured ? "one store, however many ways it was written" : "and nothing was written",
     (rows ?? []).length === (configured ? 1 : 0) && (rows ?? []).every((r) => r.shop_domain === domain)
   );
+
+  // One store to a project: every read of a project's store asks for the
+  // one, and a second row makes all of them fail at once.
+  console.log("\nand a project keeps to one store");
+  if (!configured) {
+    console.log("  ..    Shopify is not configured here, so the route stops before it gets this far");
+  } else {
+    const other = (name) => `${name}-${Date.now().toString(36)}.myshopify.com`;
+    const clear = () => admin.from("stores").delete().eq("project_id", project.id);
+    const put = (row) => admin.from("stores").insert({ project_id: project.id, provider: "shopify", ...row });
+
+    await clear();
+    const held = other("wl-held");
+    await put({ shop_domain: held, status: "connected", access_token: "x", connected_at: new Date().toISOString() });
+    const second = await install(other("wl-second"));
+    check("a second shop beside a connected one is refused", second.status === 409);
+    check("and it says which store is already there", (second.body.error ?? "").includes(held));
+
+    await clear();
+    const was = other("wl-was");
+    await put({ shop_domain: was, status: "pending", connected_at: new Date(Date.now() - 864e5).toISOString() });
+    const overData = await install(other("wl-over"));
+    check("so is one beside a store that was connected and is mid-reconnect", overData.status === 409);
+    const { data: kept } = await admin.from("stores").select("id").eq("project_id", project.id).eq("shop_domain", was);
+    check("and that store, which holds the project's data, is kept", (kept ?? []).length === 1);
+
+    await clear();
+    const typo = other("wl-typo");
+    await put({ shop_domain: typo, status: "pending" });
+    const right = other("wl-right");
+    const fixed = await install(right);
+    const { data: after } = await admin.from("stores").select("shop_domain").eq("project_id", project.id);
+    check("an attempt that never came back gives way to the real store", fixed.status === 200);
+    check("and does not stay beside it", (after ?? []).length === 1 && after[0].shop_domain === right);
+
+    const again = await install(right);
+    const { data: once } = await admin.from("stores").select("id").eq("project_id", project.id);
+    check("connecting the same store again is still one row", again.status === 200 && (once ?? []).length === 1);
+  }
 } finally {
   await project.remove();
 }

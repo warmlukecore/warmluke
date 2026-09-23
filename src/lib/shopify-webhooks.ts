@@ -30,6 +30,21 @@ import { graphql } from "@/lib/shopify-import";
 export { WEBHOOK_TOPICS } from "@/lib/shopify-resources";
 import { WEBHOOK_TOPICS } from "@/lib/shopify-resources";
 
+/**
+ * Topics about the app itself rather than any resource, each with the
+ * database function that handles it. The webhook route sends these
+ * there instead of the resource dispatcher; check-shopify holds that
+ * each is subscribed, routed, and defined in a migration.
+ */
+export const LIFECYCLE_TOPICS: Readonly<Record<string, string>> = {
+  // The merchant removed the app: the store is marked for it and its
+  // dead token dropped (0111), rather than left "connected" and failing.
+  APP_UNINSTALLED: "abo_shopify_uninstalled",
+};
+
+/** Every topic a store is subscribed to at connect. */
+const SUBSCRIBED: readonly string[] = [...WEBHOOK_TOPICS, ...Object.keys(LIFECYCLE_TOPICS)];
+
 const CREATE = `
 mutation($topic: WebhookSubscriptionTopic!, $url: URL!) {
   webhookSubscriptionCreate(
@@ -120,7 +135,7 @@ export async function subscribeWebhooks(
     return out;
   }
 
-  for (const topic of WEBHOOK_TOPICS) {
+  for (const topic of SUBSCRIBED) {
     try {
       const have = existing.get(topic) ?? [];
       if (have.length > 0) {

@@ -31,6 +31,15 @@ const REMEMBER_FOR = 60 * 60 * 24 * 30;
 export const VARIANT_HEADER = "x-wl-variant";
 
 export function proxy(req: NextRequest) {
+  // Shopify sends a merchant to the app's address with the store in a
+  // signed query — after an install, or when they open the app from
+  // their admin. If that address is the site's root, it is passed to the
+  // route that reads it, with the query exactly as signed; the landing
+  // page has nothing to do with a store.
+  if (req.nextUrl.searchParams.has("shop") && req.nextUrl.searchParams.has("hmac")) {
+    return NextResponse.redirect(new URL(`/api/shopify/entry${req.nextUrl.search}`, req.url));
+  }
+
   const { hero, source } = resolveHero({
     wlVariant: req.nextUrl.searchParams.get("wl_variant"),
     utmCampaign: req.nextUrl.searchParams.get("utm_campaign"),

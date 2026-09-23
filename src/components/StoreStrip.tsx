@@ -295,6 +295,32 @@ export default function StoreStrip({
     );
   }
 
+  // Shopify told us the app was taken off this store: its token is gone,
+  // so nothing can be read until they connect it again. Said plainly,
+  // with the way back, rather than a strip that still looks connected.
+  if (store.status === "uninstalled") {
+    return connecting ? (
+      <div className="mb-4 max-w-sm rounded-xl border border-slate-200 bg-white p-3">
+        <ConnectShopify
+          projectId={projectId}
+          initialShop={store.shop_domain}
+          submitLabel="Reconnect"
+          onCancel={() => setConnecting(false)}
+        />
+      </div>
+    ) : (
+      <Strip>
+        <span className="text-amber-700">
+          Warmluke was removed from {store.shop_domain} in Shopify, so it can&rsquo;t read the
+          store until you connect it again.
+        </span>
+        <button onClick={() => setConnecting(true)} className="font-medium text-blue-600 hover:text-blue-700">
+          Reconnect
+        </button>
+      </Strip>
+    );
+  }
+
   if (store.status === "pending") {
     return (
       <Strip>

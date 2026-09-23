@@ -61,7 +61,12 @@ function ShopifyStatus({
   const line =
     store.status === "pending"
       ? { tone: "text-amber-400", dot: "bg-amber-400", text: "Shopify never came back" }
-      : expired
+      : // Shopify said the app was removed from the store (0111). The
+        // imported rows are still here until Shopify asks for them to
+        // be erased; reconnecting picks them up again.
+        store.status === "uninstalled"
+        ? { tone: "text-amber-400", dot: "bg-amber-400", text: "Removed from Shopify — reconnect to use it again" }
+        : expired
         ? { tone: "text-amber-400", dot: "bg-amber-400", text: "Shopify access ran out" }
         : {
             tone: "text-slate-300",

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
 import { takePendingPrompt } from "@/lib/auth";
+import { ownPath } from "@/lib/paths";
 
 export default function Login() {
   const router = useRouter();
@@ -31,7 +32,7 @@ export default function Login() {
       setError(error.message);
       return;
     }
-    if (next?.startsWith("/")) {
+    if (ownPath(next)) {
       router.replace(next);
     } else if (takePendingPrompt()) {
       router.replace("/dashboard?build=1");

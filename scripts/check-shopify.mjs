@@ -29,7 +29,9 @@ import {
 } from "../src/lib/shopify-resources.ts";
 import { COUNTED } from "../src/lib/store-read.ts";
 import { ACTION_SCOPES } from "../src/lib/store-actions.ts";
-import { readShopAddress } from "../src/lib/shop-address.ts";
+import { installLink, readShopAddress } from "../src/lib/shop-address.ts";
+import { entryTarget, isProjectId } from "../src/lib/shopify-entry.ts";
+import { ownPath } from "../src/lib/paths.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -232,6 +234,34 @@ for (const t of WEBHOOK_TOPICS) check(`${t} has a handler`, handled.has(wire(t))
 const subscribed = new Set(WEBHOOK_TOPICS.map(wire));
 for (const t of handled) check(`${t} is subscribed`, subscribed.has(t));
 
+// The app's own topics go past the dispatcher to a function each. The
+// same failure is possible three ways — subscribed and never routed,
+// routed to a function no migration defines, or never subscribed at
+// all — and each is a store that goes on saying "connected" after the
+// merchant removed the app.
+console.log("\nand every topic about the app itself lands too");
+{
+  const hooks = readFileSync(new URL("../src/lib/shopify-webhooks.ts", import.meta.url), "utf8");
+  const route = readFileSync(new URL("../src/app/api/shopify/webhooks/[token]/route.ts", import.meta.url), "utf8");
+  const block = hooks.match(/LIFECYCLE_TOPICS[^=]*=\s*\{([^}]*)\}/)?.[1] ?? "";
+  const lifecycle = [...block.matchAll(/([A-Z_]+):\s*"([a-z_]+)"/g)].map((m) => ({ topic: m[1], fn: m[2] }));
+  const allSql = migrations.map((f) => readFileSync(new URL(`../supabase/migrations/${f}`, import.meta.url), "utf8")).join("\n");
+  check("the app's own topics are declared", lifecycle.length > 0);
+  check("app/uninstalled is one of them", lifecycle.some((l) => l.topic === "APP_UNINSTALLED"));
+  check("every one is subscribed at connect", /SUBSCRIBED[^;]*LIFECYCLE_TOPICS/.test(hooks) && /for \(const topic of SUBSCRIBED\)/.test(hooks));
+  check("and the webhook route sends them past the dispatcher", /LIFECYCLE_TOPICS\[/.test(route));
+  for (const { topic, fn } of lifecycle) {
+    check(`${topic}'s ${fn} is defined by a migration`, allSql.includes(`create or replace function public.${fn}(`));
+    check(`and it is not also a resource topic`, !WEBHOOK_TOPICS.includes(topic));
+  }
+  // The erasure spares a store connected after the uninstall it is about.
+  const redact = migrations.filter((f) =>
+    readFileSync(new URL(`../supabase/migrations/${f}`, import.meta.url), "utf8").toLowerCase().includes("function public.abo_shopify_shop_redact(p_shop text)")
+  ).at(-1);
+  const redactSql = redact ? readFileSync(new URL(`../supabase/migrations/${redact}`, import.meta.url), "utf8") : "";
+  check("shop/redact spares a store connected in the last 48 hours", /connected_at > now\(\) - interval '48 hours'/.test(redactSql));
+}
+
 console.log("\nwhat a grant came with is read from the grant");
 // Shopify reports the granted scopes as one comma-separated string,
 // and how it spaces them is not ours to rely on.
@@ -341,6 +371,70 @@ check("an already-expired token is renewed", tokenNeedsRefresh(at(-10), now));
 // work, instead of telling the merchant to reconnect.
 check("a store with no expiry is not called refreshable", !tokenNeedsRefresh(null, now));
 check("an unparseable expiry is not called refreshable", !tokenNeedsRefresh("whenever", now));
+
+// ── Shopify sending a merchant to us ─────────────────────────────
+//
+// Installing from the listing, or opening the app from the Shopify
+// admin, arrives with the store in a signed query. That is the only
+// time Shopify names the store without anybody typing it — and so the
+// one place a hand-made link could pretend Shopify sent it.
+console.log("\nand a merchant Shopify sends us is only believed when Shopify signed it");
+{
+  const SECRET = "check-app-secret";
+  const ORIGIN = "https://warmluke.example";
+  const signed = (q, secret = SECRET) => {
+    const message = Object.entries(q).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`).join("&");
+    return { ...q, hmac: createHmac("sha256", secret).update(message).digest("hex") };
+  };
+  const at = (seconds) => String(Math.floor(Date.now() / 1000) + seconds);
+  const install = { shop: "mystore.myshopify.com", timestamp: at(0), host: "YWRtaW4uc2hvcGlmeS5jb20vc3RvcmUvbXlzdG9yZQ" };
+  const go = (query, project) => entryTarget({ query, secret: SECRET, origin: ORIGIN, project });
+  const where = (r) => new URL(r.to);
+
+  const ok = go(signed(install));
+  check("a signed install goes to the connect page", ok.ok && where(ok).pathname === "/connect");
+  check("with the store Shopify named", where(ok).searchParams.get("shop") === "mystore.myshopify.com");
+  const PROJECT = "11111111-2222-3333-4444-555555555555";
+  check("and the project they tapped from, when there is one", where(go(signed(install), PROJECT)).searchParams.get("project") === PROJECT);
+  check("a cookie that is not a project id is not carried", !where(go(signed(install), "../../admin")).searchParams.has("project"));
+  check("an id is only an id", isProjectId(PROJECT) && !isProjectId("x") && !isProjectId(`${PROJECT}'`));
+
+  const refusedTo = (r) => !r.ok && where(r).pathname === "/dashboard" && where(r).searchParams.get("shopify") === "failed";
+  check("unsigned: refused", refusedTo(go(install)));
+  check("signed with another secret: refused", refusedTo(go(signed(install, "not-ours"))));
+  check("a store swapped after signing: refused", refusedTo(go({ ...signed(install), shop: "evil.myshopify.com" })));
+  check("an old signature: refused", refusedTo(go(signed({ ...install, timestamp: at(-3600) }))));
+  check("a signed but crooked shop: refused", refusedTo(go(signed({ ...install, shop: "evil.com?x=.myshopify.com" }))));
+
+  // The one-tap link is configuration, and must stay Shopify's.
+  check("the listing is a one-tap link", installLink("https://apps.shopify.com/warmluke") === "https://apps.shopify.com/warmluke");
+  check("so is Shopify's admin", !!installLink("https://admin.shopify.com/oauth/install?client_id=x"));
+  check("none configured: none", installLink(undefined) === null && installLink("") === null);
+  check("another host: none", installLink("https://evil.example/apps.shopify.com") === null);
+  check("a lookalike: none", installLink("https://apps.shopify.com.evil.example/") === null);
+  check("plain http: none", installLink("http://apps.shopify.com/warmluke") === null);
+  check("userinfo in front: none", installLink("https://evil@apps.shopify.com/warmluke") === null);
+  check("not a URL: none", installLink("apps.shopify.com/warmluke") === null);
+
+  // Where signing in sends them next.
+  check("our own page is followed", ownPath("/connect?shop=mystore.myshopify.com"));
+  check("another site dressed as a path is not", !ownPath("//evil.example") && !ownPath("/\\evil.example"));
+  check("a full URL is not", !ownPath("https://evil.example/") && !ownPath("javascript:alert(1)"));
+  check("nothing is not", !ownPath(null) && !ownPath(undefined) && !ownPath(""));
+
+  const proxySrc = readFileSync(new URL("../src/proxy.ts", import.meta.url), "utf8");
+  check("the site's root passes Shopify's query on untouched",
+    /has\("shop"\) && req\.nextUrl\.searchParams\.has\("hmac"\)/.test(proxySrc) && /api\/shopify\/entry\$\{req\.nextUrl\.search\}/.test(proxySrc));
+  const entrySrc = readFileSync(new URL("../src/app/api/shopify/entry/route.ts", import.meta.url), "utf8");
+  check("the entry writes nothing", !/\.from\(|\.rpc\(|insert|update\(/.test(entrySrc));
+  check("and spends the project hint", /cookies\.delete\(CONNECT_PROJECT_COOKIE\)/.test(entrySrc));
+  const startSrc = readFileSync(new URL("../src/app/api/shopify/start/route.ts", import.meta.url), "utf8");
+  check("one tap only ever goes where installLink allows", /installLink\(process\.env\.NEXT_PUBLIC_SHOPIFY_INSTALL_URL\)/.test(startSrc));
+  for (const page of ["login", "signup"]) {
+    const src = readFileSync(new URL(`../src/app/${page}/page.tsx`, import.meta.url), "utf8");
+    check(`${page} follows next only through ownPath`, /if \(ownPath\(next\)\)/.test(src) && !/next\?\.startsWith/.test(src));
+  }
+}
 
 // ── What an import ticket reaches is what the importer writes ─────
 //

@@ -248,7 +248,8 @@ export interface StoreRow {
    * store nobody has touched since lunch.
    */
   refresh_token_expires_at: string | null;
-  status: "pending" | "connected" | "disconnected";
+  /** "uninstalled": Shopify said the app was removed from the store (0111). */
+  status: "pending" | "connected" | "disconnected" | "uninstalled";
   created_at: string;
 }
 

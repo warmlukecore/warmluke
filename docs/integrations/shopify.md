@@ -49,7 +49,37 @@ callers should not grow a second hard-coded resource list.
 custom domain is refused with where to find the real address, never guessed. The route
 then validates ownership, creates or updates a pending store with a ten-minute OAuth
 state, and returns Shopify's authorization URL. `check-shopify` holds the reading and
-`check-connect-address` holds the route.
+`check-connect-address` holds the route. A project holds one store: connecting a
+different shop beside a connected (or once-connected) one is refused with a 409, and an
+attempt that never came back from Shopify is cleared rather than left beside the real
+store.
+
+### Connecting without typing
+
+Shopify only names the store by itself when the install starts on Shopify's side, and
+for any store that means a **public** app (unlisted is enough). With
+`NEXT_PUBLIC_SHOPIFY_INSTALL_URL` set, **Connect with Shopify** goes through
+`/api/shopify/start`, which remembers the project as a 15-minute cookie (a hint only) and
+sends the merchant to the listing. Shopify then sends them to the app's address with
+`shop`, `hmac`, `timestamp` and `host`. The App URL may be the site root, which `proxy.ts`
+forwards, or `/api/shopify/entry` directly. The entry verifies the signature and freshness
+and passes the store to `/connect`.
+
+`/connect` requires sign-in and offers only projects the merchant owns that have no store,
+or already have this one. It starts the ordinary install, including Shopify's approval.
+The same page serves the **Copy a link** option for a merchant whose Shopify is signed in
+in another browser. The link names only the project, and signing in there is what
+authorizes it, so a link somebody else sent can only connect a store to the opener's own
+account. The first tab waits and updates when the store connects.
+
+### Uninstall and erasure
+
+`APP_UNINSTALLED` is subscribed at connect (`LIFECYCLE_TOPICS`) and handled by
+`abo_shopify_uninstalled`, which verifies the delivery like every webhook. It marks the
+store `uninstalled`, drops the dead tokens and any import lease, and deletes nothing.
+`shop/redact`, which Shopify sends 48 hours after an uninstall, erases the store unless
+it was connected within those 48 hours. Shopify does not document whether a reinstall
+cancels the redact, so the database guards against it. `check-uninstall` holds both.
 
 The requested scopes are the unique union of resource scopes, the write scopes the
 declared store actions need (`ACTION_SCOPES`), plus

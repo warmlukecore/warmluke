@@ -22,6 +22,7 @@ test and migration workflows may require additional values in `.env.check.local`
 | `SHOPIFY_CLIENT_SECRET` | For Shopify | OAuth secret and webhook-HMAC secret |
 | `SHOPIFY_READ_ALL_ORDERS` | No | Adds `read_all_orders` only after Shopify has approved that scope |
 | `SHOPIFY_BULK_THRESHOLD` | No | Resource count above which supported imports use bulk operations; default `250` |
+| `NEXT_PUBLIC_SHOPIFY_INSTALL_URL` | No | The app's Shopify listing (`https://apps.shopify.com/…`). Set it once the app is public (unlisted is enough) to show one-tap **Connect with Shopify**. Only `apps.shopify.com` and `admin.shopify.com` over https are accepted. Unset, the address box is the way in. |
 
 `ADAPTIVE_OS_SERVICE_ROLE_KEY` appears in `.env.example` for maintenance/check tooling.
 The application runtime deliberately uses caller-scoped clients and narrow database RPCs

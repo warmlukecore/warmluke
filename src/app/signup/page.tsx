@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
 import { takePendingPrompt } from "@/lib/auth";
+import { ownPath } from "@/lib/paths";
 
 export default function Signup() {
   const router = useRouter();
@@ -32,7 +33,7 @@ export default function Signup() {
       return;
     }
     // Autoconfirm is on: the session exists immediately.
-    if (next?.startsWith("/")) {
+    if (ownPath(next)) {
       router.replace(next);
     } else if (takePendingPrompt()) {
       router.replace("/dashboard?build=1");

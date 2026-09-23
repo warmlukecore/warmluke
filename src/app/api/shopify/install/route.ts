@@ -84,6 +84,33 @@ export async function POST(req: Request) {
     .eq("shop_domain", domain)
     .maybeSingle();
 
+  // One store to a project. Everything that reads a project's store
+  // asks for the one, and a second row — a different shop connected
+  // beside the first — makes every one of those reads fail at once.
+  if (!existing) {
+    const { data: others } = await auth.client
+      .from("stores")
+      .select("id, shop_domain, status, connected_at")
+      .eq("project_id", projectId)
+      .neq("shop_domain", domain);
+    // A shop that is, or ever was, connected here holds this project's
+    // store data: it stays, and the merchant decides what to do with it.
+    const held = (others ?? []).find((o) => o.status !== "pending" || o.connected_at);
+    if (held) {
+      return NextResponse.json(
+        {
+          error: `This project is already connected to ${held.shop_domain}. Disconnect it first, or connect ${domain} to another project.`,
+        },
+        { status: 409 }
+      );
+    }
+    // What is left are attempts that never came back from Shopify — a
+    // mistyped address, a closed tab. They hold nothing, and left in
+    // place beside the real store they are that second row.
+    const stale = (others ?? []).map((o) => o.id);
+    if (stale.length) await auth.client.from("stores").delete().in("id", stale);
+  }
+
   // A working store stays working while they are away.
   //
   // This used to set status to "pending" before sending them to

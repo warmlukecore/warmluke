@@ -82,9 +82,9 @@ export function readShopAddress(input: string): ShopAddress {
   // and a full stop at the end of a sentence the address was copied
   // out of.
   const cleaned = input
-    .replace(/[​-‍⁠﻿]/g, "")
+    .replace(/[\u200b-\u200d\u2060\ufeff]/g, "")
     .trim()
-    .replace(/^["'<`“”‘’\s]+|["'>`“”‘’\s]+$/g, "")
+    .replace(/^["'<`\u201c\u201d\u2018\u2019\s]+|["'>`\u201c\u201d\u2018\u2019\s]+$/g, "")
     .replace(/\.+$/, "")
     .toLowerCase();
   if (!cleaned) return { error: "Enter your store address." };
@@ -182,4 +182,23 @@ function strict(domain: string): ShopAddress {
     return { error: "That doesn't look like a store address.", hint: WHERE_TO_FIND };
   }
   return { domain };
+}
+
+/**
+ * The one-tap install link, if this deployment has one and it is
+ * Shopify's. A public app's listing is the only address that lets a
+ * merchant install without us knowing their store first; it is
+ * configuration (NEXT_PUBLIC_SHOPIFY_INSTALL_URL), and a mistyped value
+ * must not become a redirect somewhere else, so only Shopify's own
+ * hosts are accepted.
+ */
+export function installLink(raw: string | undefined | null): string | null {
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    const shopifys = u.hostname === "apps.shopify.com" || u.hostname === "admin.shopify.com";
+    return u.protocol === "https:" && shopifys && !u.username && !u.password ? u.toString() : null;
+  } catch {
+    return null;
+  }
 }
