@@ -95,7 +95,12 @@ route does not attempt an unauthorized direct table update after building.
 ## Limits and exclusions
 
 - MCP does not expose arbitrary SQL or arbitrary URLs.
-- Store data is read-only.
+- Store data is never written directly. A client may propose one of the store actions
+  declared in `src/lib/store-actions.ts` through `propose_store_action`; only the merchant
+  can approve it, in the application, and the database refuses an approval from a client
+  token. Actions that are not declared (cancelling, refunding, fulfilling, publishing,
+  repricing) have no path at all, and `check-action-registry` holds that list to the copy
+  that promises it.
 - A connected client cannot *build* a module deletion, though it may propose one. The
   request waits in the application, where the owner types the section's name to confirm.
   Auto-build never applies such a design, `approve_change` refuses it, and `abo_build`

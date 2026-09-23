@@ -14,7 +14,16 @@
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-action-registry.mjs
 
 import { readFileSync, readdirSync } from "node:fs";
-import { ACTIONS, ACTION_SCOPES, MOST_TARGETS, STORE_ACTIONS, actionSpec } from "../src/lib/store-actions.ts";
+import {
+  ACTIONS,
+  ACTION_SCOPES,
+  MOST_TARGETS,
+  NEVER_DOES,
+  STORE_ACTIONS,
+  actionSpec,
+  whatCanChange,
+  whatNeverChanges,
+} from "../src/lib/store-actions.ts";
 import { STORE_TABLES } from "../src/lib/store-read.ts";
 
 const fails = [];
@@ -158,6 +167,50 @@ console.log("\nand every id an action needs, some list gives");
         new RegExp(`\\b${column}\\b`).test(sql)
       );
     }
+  }
+}
+
+// ── And what the pages promise is what the registry holds ────────
+//
+// The connect box said "we never write to it" for days after the app
+// could. Nothing failed, because nothing held the sentence to the
+// code. Now the sentences come off the registry, and this holds both
+// halves: what it says it can do is every action there is, and what
+// it says it never does is no action there is.
+console.log("\nand what the pages promise is what the registry holds");
+{
+  const can = whatCanChange();
+  for (const name of ACTIONS) {
+    const spec = STORE_ACTIONS[name];
+    if (spec.connector !== "shopify") continue;
+    const said = spec.label.charAt(0).toLowerCase() + spec.label.slice(1);
+    check(`what it can change names ${name}`, can.includes(said));
+  }
+
+  const never = whatNeverChanges();
+  for (const { say, stem } of NEVER_DOES) {
+    check(`what it never does says "${say}"`, never.includes(say));
+    for (const name of ACTIONS) {
+      const spec = STORE_ACTIONS[name];
+      const said = `${name} ${spec.label} ${spec.mutation}`.toLowerCase();
+      check(`${name} does not ${say}`, !said.includes(stem));
+    }
+  }
+
+  // Every page that makes the promise makes it from here.
+  const SURFACES = {
+    "src/components/ConnectShopify.tsx": ["whatCanChange"],
+    "src/app/page.tsx": ["whatCanChange", "whatNeverChanges"],
+    "src/app/terms/page.tsx": ["whatCanChange", "whatNeverChanges"],
+    "src/app/api/mcp/route.ts": ["whatCanChange", "whatNeverChanges"],
+  };
+  for (const [file, uses] of Object.entries(SURFACES)) {
+    const src = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+    for (const fn of uses) check(`${file} says it with ${fn}()`, src.includes(`${fn}()`));
+    // Comments may quote the old line to say why it went; copy may not.
+    const copy = src.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+    check(`${file} no longer says it never writes`, !/never write/i.test(copy));
+    check(`${file} no longer calls the store read-only`, !/store data is read-only/i.test(copy));
   }
 }
 

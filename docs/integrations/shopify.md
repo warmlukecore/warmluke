@@ -42,11 +42,17 @@ callers should not grow a second hard-coded resource list.
 
 ## Installation
 
-`POST /api/shopify/install` validates ownership and normalizes the `*.myshopify.com`
-domain. It creates or updates a pending store with a ten-minute OAuth state, then returns
-Shopify's authorization URL.
+`POST /api/shopify/install` reads the address the way a merchant gives it
+(`src/lib/shop-address.ts`): the bare name, a copied store URL or an
+`admin.shopify.com/store/<name>` link. Whatever it reads is held to the same strict
+`*.myshopify.com` pattern the callback uses, and the callback itself stays strict. A
+custom domain is refused with where to find the real address, never guessed. The route
+then validates ownership, creates or updates a pending store with a ten-minute OAuth
+state, and returns Shopify's authorization URL. `check-shopify` holds the reading and
+`check-connect-address` holds the route.
 
-The requested scopes are the unique union of resource scopes, plus
+The requested scopes are the unique union of resource scopes, the write scopes the
+declared store actions need (`ACTION_SCOPES`), plus
 `PLANNED_SCOPES`: reads asked for before the resource that will use them
 exists. Adding a scope makes every connected store reconnect, so they are
 asked for once while there is one store rather than once per pack. A planned

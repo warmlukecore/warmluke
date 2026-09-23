@@ -31,6 +31,8 @@ import {
   MOST_TARGETS,
   STORE_ACTIONS,
   actionSpec,
+  whatCanChange,
+  whatNeverChanges,
   type ActionTarget,
 } from "@/lib/store-actions";
 import { applyPlans, logClientBuild, putBack } from "@/lib/apply";
@@ -51,11 +53,14 @@ export const runtime = "nodejs";
  * and a server that keeps no state cannot lose any — nothing here
  * streams, so pretending to would be ceremony.
  *
- * Store data is read-only. The app itself can be changed, but only
- * along one path: propose_change designs it here — the assistant never
- * writes plans — and approve_change builds it once the merchant has
- * heard that design and said yes. The database enforces this; a token
- * carrying client_id cannot write anything else at all.
+ * The store's data is read here and never written through these
+ * tools. Two things can be changed, each along one path. The app:
+ * propose_change designs it — the assistant never writes plans — and
+ * approve_change builds it once the merchant has heard that design and
+ * said yes. The shop: propose_store_action asks for one of the changes
+ * in lib/store-actions, and only the merchant can agree to it, in
+ * Warmluke. The database enforces both; a token carrying client_id
+ * cannot write anything else at all.
  */
 
 /**
@@ -999,7 +1004,12 @@ export async function POST(req: Request) {
       capabilities: { tools: {} },
       serverInfo: { name: "warmluke", version: "0.1.0" },
       instructions:
-        "One merchant's Warmluke app and connected Shopify store. Store data is read-only, and a day always means a day in the store's own timezone. Changes to their app go through propose_change, which returns a design, and approve_change, which builds it only after they have heard the design and agreed.",
+        // The first thing every connected assistant reads about this
+        // server. It said "store data is read-only" after the shop
+        // could be changed, which is the one sentence that guarantees
+        // an assistant never offers to. What can change comes off the
+        // registry, so it stays true as actions are added.
+        `One merchant's Warmluke app and connected Shopify store. A day always means a day in the store's own timezone. Changes to their app go through propose_change, which returns a design, and approve_change, which builds it only after they have heard the design and agreed. Changes to their shop go through propose_store_action: it can ${whatCanChange()}, and only the merchant can agree to one, in Warmluke — you cannot, whatever their settings say. It has no way to ${whatNeverChanges()} anything.`,
     });
   }
 

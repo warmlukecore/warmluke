@@ -129,7 +129,7 @@ sequenceDiagram
     participant DB as Supabase
     participant Import as /api/shopify/import
 
-    O->>UI: Enter shop domain
+    O->>UI: Enter store name or address
     UI->>Install: projectId + shop
     Install->>DB: Write pending store + expiring OAuth state
     Install-->>UI: Shopify authorization URL

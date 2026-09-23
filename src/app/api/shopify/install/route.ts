@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getUserClient } from "@/lib/supabase-server";
 import { ShopifyError, authorizeUrl, newOAuthState, normalizeShopDomain } from "@/lib/shopify";
 import { scopesFor } from "@/lib/shopify-resources";
+import { readShopAddress } from "@/lib/shop-address";
 
 export const runtime = "nodejs";
 
@@ -25,21 +26,32 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "projectId and shop are required." }, { status: 400 });
   }
 
+  // Read the way a merchant writes it — the bare name, a copied URL,
+  // the admin's address — and read here, whatever the box already
+  // showed them: the page is not trusted to have done it. What comes
+  // out is still put through the strict check the callback uses, so
+  // being forgiving about spelling cannot widen what is accepted.
+  // Before the deployment's own settings, like the check above it:
+  // what is wrong with the address is wrong wherever it is sent.
+  const read = readShopAddress(shop);
+  if ("error" in read) {
+    return NextResponse.json({ error: read.error, hint: read.hint }, { status: 400 });
+  }
+  let domain: string;
+  try {
+    domain = normalizeShopDomain(read.domain);
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof ShopifyError ? e.message : "Invalid store address." },
+      { status: 400 }
+    );
+  }
+
   const clientId = process.env.SHOPIFY_CLIENT_ID;
   if (!clientId || !process.env.SHOPIFY_CLIENT_SECRET) {
     return NextResponse.json(
       { error: "Shopify is not configured on this deployment yet." },
       { status: 503 }
-    );
-  }
-
-  let domain: string;
-  try {
-    domain = normalizeShopDomain(shop);
-  } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof ShopifyError ? e.message : "Invalid store address." },
-      { status: 400 }
     );
   }
 

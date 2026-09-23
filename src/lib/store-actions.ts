@@ -279,6 +279,56 @@ export const ACTION_SCOPES: readonly string[] = [
   ...new Set(ACTIONS.flatMap((a) => STORE_ACTIONS[a].scopes)),
 ];
 
+/**
+ * What Warmluke can change in a merchant's shop, as one phrase:
+ * "add a tag, remove a tag, write a note on an order and set a stock
+ * count".
+ *
+ * Every sentence that promises what Warmluke will and will not do to
+ * a store is built from this — the connect box, the landing page, the
+ * terms, what a connected assistant is told. They used to be written
+ * by hand, and when writing was switched on four of them went on
+ * saying "we never write to it" to the people deciding whether to
+ * connect. A promise copied into four places is a promise that is
+ * wrong in three of them the next time anything changes.
+ */
+export function whatCanChange(connector: StoreActionSpec["connector"] = "shopify"): string {
+  const said = ACTIONS.map((a) => STORE_ACTIONS[a])
+    .filter((spec) => spec.connector === connector)
+    .map((spec) => spec.label.charAt(0).toLowerCase() + spec.label.slice(1));
+  if (said.length === 0) return "";
+  if (said.length === 1) return said[0];
+  return `${said.slice(0, -1).join(", ")} and ${said[said.length - 1]}`;
+}
+
+/**
+ * What Warmluke will not do to a shop, said once.
+ *
+ * Not something the registry can say, because the registry lists
+ * what exists and this is what is refused on purpose. So it is a
+ * promise, declared here, and it is held to the registry the other
+ * way round: check-action-registry fails the moment any action's
+ * name, label or mutation touches one of these stems. Add a refund and this
+ * promise has to be changed in the same commit, on every page that
+ * makes it.
+ *
+ * `stem` is what gives an action away ("price" catches set_price),
+ * `say` is how the sentence puts it.
+ */
+export const NEVER_DOES = [
+  { say: "cancel", stem: "cancel" },
+  { say: "refund", stem: "refund" },
+  { say: "fulfil", stem: "fulfil" },
+  { say: "publish", stem: "publish" },
+  { say: "reprice", stem: "price" },
+] as const;
+
+/** "cancel, refund, fulfil, publish or reprice" — the same words everywhere. */
+export function whatNeverChanges(): string {
+  const said = NEVER_DOES.map((n) => n.say);
+  return said.length > 1 ? `${said.slice(0, -1).join(", ")} or ${said[said.length - 1]}` : (said[0] ?? "");
+}
+
 /** The spec, or null for a name nobody declared. */
 export function actionSpec(name: string): StoreActionSpec | null {
   return Object.prototype.hasOwnProperty.call(STORE_ACTIONS, name) ? STORE_ACTIONS[name] : null;

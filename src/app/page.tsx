@@ -41,6 +41,7 @@ import { cookies, headers } from "next/headers";
 import { cycleCss, DEFAULT_HERO, headlineParts, heroById, resolveHero, VARIANT_COOKIE } from "@/lib/landing";
 import { VARIANT_HEADER } from "@/proxy";
 import { DemoForm, LandingTracker } from "@/components/Landing";
+import { whatCanChange, whatNeverChanges } from "@/lib/store-actions";
 
 export const metadata = {
   title: "Warmluke: one place for your ecommerce business",
@@ -266,11 +267,17 @@ const BYO = [
   },
 ];
 
-/** The three limits worth saying out loud, because they are the point. */
+/**
+ * The three limits worth saying out loud, because they are the point.
+ *
+ * The first one said "it cannot change your Shopify store" for a day
+ * after it could. What it can change is read off the registry now, so
+ * the day a fifth change is added this sentence says so on its own.
+ */
 const BYO_LIMITS: Array<[string, string]> = [
   [
-    "It cannot change your Shopify store",
-    "The connection only reads from Shopify. Your assistant can look at orders, stock and customers; it cannot edit, cancel or refund anything there.",
+    "It cannot change your shop without you",
+    `Your assistant can look at orders, stock and customers, and ask to ${whatCanChange()}. Each change waits for your yes, and it cannot give one for you. It cannot ${whatNeverChanges()} anything at all.`,
   ],
   [
     "It cannot build without your approval",

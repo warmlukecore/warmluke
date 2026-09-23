@@ -10,6 +10,10 @@
 
 import Image from "next/image";
 import Link from "next/link";
+// What the store can have changed, and what it never will, come off
+// the registry — the same words the connect box and the landing page
+// use. A list written here by hand was already wrong once.
+import { whatCanChange, whatNeverChanges } from "@/lib/store-actions";
 
 export const metadata = {
   title: "Terms · Warmluke",
@@ -68,16 +72,15 @@ export default function Terms() {
             products, stock, orders and customers and answer questions about them.
           </p>
           <p>
-            Warmluke can also change some things in your store: add or remove a tag,
-            write a note on an order, set a stock count. It never does so on its own.
-            Every change is shown to you first, in plain words, and nothing is sent
-            until you say yes to that exact change. An assistant you have connected can
-            ask for one; it cannot agree to one for you.
+            Warmluke can also change some things in your store: it can {whatCanChange()}.
+            It never does so on its own. Every change is shown to you first, in plain
+            words, and nothing is sent until you say yes to that exact change. An
+            assistant you have connected can ask for one; it cannot agree to one for you.
           </p>
           <p>
-            Anything else in your store, Warmluke does not touch. It does not refund,
-            cancel, fulfil, publish, reprice or message anyone. The app asks Shopify
-            only for what the changes above need, and Shopify refuses it the rest.
+            Anything else in your store, Warmluke does not touch. It has no way to{" "}
+            {whatNeverChanges()} anything: those changes do not exist in the app, so there
+            is nothing to ask for and nothing to agree to.
           </p>
           <p>You keep ownership of your data. Disconnecting the store deletes our copy.</p>
         </Section>

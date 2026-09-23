@@ -10,19 +10,19 @@
 // ─────────────────────────────────────────────────────────────
 
 import { createHmac, timingSafeEqual, randomUUID } from "node:crypto";
+// The one local import, and a leaf: shop-address imports nothing, so
+// it cannot close a cycle back here. It holds the pattern because
+// the browser needs it too, and a second copy of a security check is
+// the copy that stops being updated.
+import { SHOP_DOMAIN } from "@/lib/shop-address";
 
 // Which scopes to ask for is a sum over the resources the store
 // imports, so it is declared with them: scopesFor in lib/shopify-resources.
-// This file stays free of local imports on purpose — everything that
-// reads Shopify imports it.
+// Nothing else local is imported here — everything that reads Shopify
+// imports this file.
 
 // Kept in step with the version set on the app in Shopify.
 export const SHOPIFY_API_VERSION = "2026-07";
-
-// Anchored, and it must start with a letter or digit. A loose test like
-// /myshopify.com/ matches "evil.com?x=.myshopify.com" and sends the
-// merchant's authorization somewhere else entirely.
-const SHOP_DOMAIN = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/;
 
 export class ShopifyError extends Error {
   // Written out rather than declared as a parameter property: Node can

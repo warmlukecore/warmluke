@@ -29,6 +29,7 @@ import {
 } from "../src/lib/shopify-resources.ts";
 import { COUNTED } from "../src/lib/store-read.ts";
 import { ACTION_SCOPES } from "../src/lib/store-actions.ts";
+import { readShopAddress } from "../src/lib/shop-address.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -55,6 +56,90 @@ check("a subdomain trick is refused", refuses(() => normalizeShopDomain("shop.my
 check("a leading hyphen is refused", refuses(() => normalizeShopDomain("-shop.myshopify.com")));
 check("an empty domain is refused", refuses(() => normalizeShopDomain("")));
 check("an overlong domain is refused", refuses(() => normalizeShopDomain("a".repeat(260) + ".myshopify.com")));
+
+// ── What a merchant types, read the way they mean it ─────────────
+//
+// The connect box took one spelling and refused the rest, so a
+// merchant who typed their store's name, or pasted its address from
+// the browser, was told they were wrong about their own shop. The
+// risk in forgiving is reading something that is not a store as if it
+// were one, so the half of this that matters most is the refusals.
+console.log("\nand what a merchant types is read the way they mean it");
+{
+  const reads = (input, want) => {
+    const r = readShopAddress(input);
+    return "domain" in r && r.domain === want;
+  };
+  const refused = (input) => "error" in readShopAddress(input);
+  const W = "mystore.myshopify.com";
+
+  // The spellings a real person has to hand.
+  check("the bare name", reads("mystore", W));
+  check("the full address", reads(W, W));
+  check("in capitals, with spaces round it", reads("  MyStore.MyShopify.com  ", W));
+  check("copied with https and a path", reads("https://mystore.myshopify.com/admin/orders?page=2", W));
+  check("with http", reads("http://mystore.myshopify.com", W));
+  check("the new admin's address", reads("https://admin.shopify.com/store/mystore/products/123", W));
+  check("the new admin without https", reads("admin.shopify.com/store/mystore", W));
+  check("in quotes, from a chat", reads('"mystore.myshopify.com"', W));
+  check("with a full stop after it", reads("mystore.myshopify.com.", W));
+  check("with www in front", reads("www.mystore.myshopify.com", W));
+  check("with a port", reads("mystore.myshopify.com:443", W));
+  check("the name with a slash after it", reads("mystore/", W));
+  check("hyphens and digits", reads("my-store-2", "my-store-2.myshopify.com"));
+  check("the name with only a scheme", reads("https://mystore", W));
+  check("in curly quotes, as a document writes them", reads("\u201cmystore.myshopify.com\u201d", W));
+  check("with a zero-width space pasted into it", reads("mystore\u200b.myshopify.com", W));
+  // Userinfo looks like a host and is not. Here the real host is the store.
+  check("junk before an @ does not change the store", reads("https://anything@mystore.myshopify.com", W));
+
+  // Nothing that is not a store gets read as one.
+  check("nothing typed", refused("   "));
+  check("the store's name rather than its address", refused("My Store"));
+  check("the suffix trick", refused("evil.com?x=.myshopify.com"));
+  check("the subdomain trick", refused("shop.myshopify.com.evil.com"));
+  // The dangerous way round: it looks like the store and goes to evil.com.
+  check("a store before an @ is not the host", refused("https://mystore.myshopify.com@evil.com"));
+  check("a leading hyphen", refused("-shop"));
+  check("a store inside a store", refused("a.b.myshopify.com"));
+  check("myshopify.com on its own", refused("myshopify.com"));
+  check("Shopify's admin with no store in it", refused("https://admin.shopify.com/settings"));
+  check("an admin path with no handle", refused("admin.shopify.com/store/"));
+  check("a script instead of an address", refused("javascript:alert(1)"));
+  check("another scheme", refused("ftp://mystore.myshopify.com"));
+  check("a page of text", refused("a".repeat(5000)));
+  check("not a string at all", refused(undefined) && refused(null) && refused(42));
+  // A garbled scheme must not leave "https" or "http" to be read as a store.
+  check("a scheme written twice", refused("https://https://mystore.myshopify.com"));
+  check("a scheme missing its colon", refused("http//mystore.myshopify.com"));
+  check("a name with something after it", refused("mystore/admin") && refused("mystore:8080"));
+  check("a name in another script", refused("\u092e\u0947\u0930\u093e\u0938\u094d\u091f\u094b\u0930"));
+  const shopifys = readShopAddress("mystore.shopify.com");
+  check("Shopify's own site, one letter short", "error" in shopifys && !/own domain/.test(shopifys.hint ?? ""));
+  check("Shopify's sign-in page", refused("https://accounts.shopify.com/store-login"));
+
+  // A custom domain is refused with somewhere to go, not a guess.
+  const custom = readShopAddress("mystore.com");
+  check("a shop's own domain is refused", "error" in custom);
+  check("and names what they typed", /mystore\.com/.test(custom.error ?? ""));
+  check("and says where the real address is", /Settings/.test(custom.hint ?? "") && /Domains/.test(custom.hint ?? ""));
+
+  // Whatever the road, the answer passes the check the callback uses.
+  const inputs = ["mystore", "MyStore.myshopify.com", "https://admin.shopify.com/store/abc-9", "x/", "a1.myshopify.com"];
+  const accepted = inputs.map(readShopAddress).filter((r) => "domain" in r);
+  check("what it accepts, the strict check accepts too",
+    accepted.length === inputs.length && accepted.every((r) => !refuses(() => normalizeShopDomain(r.domain))));
+
+  // The callback reads what came back from Shopify and must stay
+  // strict: forgiveness is for people typing, never for a redirect
+  // somebody could have forged.
+  const callback = readFileSync(new URL("../src/app/api/shopify/callback/route.ts", import.meta.url), "utf8");
+  const install = readFileSync(new URL("../src/app/api/shopify/install/route.ts", import.meta.url), "utf8");
+  check("the callback still reads Shopify's answer strictly", /normalizeShopDomain\(q\.shop/.test(callback));
+  check("and never the forgiving way", !/readShopAddress/.test(callback));
+  check("the install reads what was typed the forgiving way", /readShopAddress\(shop\)/.test(install));
+  check("and still holds the answer to the strict check", /normalizeShopDomain\(read\.domain\)/.test(install));
+}
 
 console.log("\nthe authorize URL asks for the reads, and only the writes an action needs");
 const url = new URL(
