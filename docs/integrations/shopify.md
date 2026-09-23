@@ -56,12 +56,16 @@ store.
 
 ### Connecting without typing
 
-Shopify only names the store by itself when the install starts on Shopify's side, and
-for any store that means a **public** app (unlisted is enough). With
-`NEXT_PUBLIC_SHOPIFY_INSTALL_URL` set, **Connect with Shopify** goes through
-`/api/shopify/start`, which remembers the project as a 15-minute cookie (a hint only) and
-sends the merchant to the listing. Shopify then sends them to the app's address with
-`shop`, `hmac`, `timestamp` and `host`. The App URL may be the site root, which `proxy.ts`
+Shopify only names the store by itself when the install starts on Shopify's side.
+**Connect with Shopify** goes through `/api/shopify/start`, which remembers the project as
+a 15-minute cookie (a hint only) and sends the merchant to Shopify's own install link,
+`https://admin.shopify.com/oauth/install?client_id=<SHOPIFY_CLIENT_ID>`, or to
+`NEXT_PUBLIC_SHOPIFY_INSTALL_URL` when that is set (for example the listing). Shopify
+reads which store the merchant is signed in to, asks them to choose if they have several,
+and sends them to the app's address with `shop`, `hmac`, `timestamp` and `host`. It
+installs only where Shopify allows: the developer's own stores until the app is public
+(unlisted is enough), then any store. The app must not be embedded, because the site
+refuses to be framed (`X-Frame-Options: DENY`). The App URL may be the site root, which `proxy.ts`
 forwards, or `/api/shopify/entry` directly. The entry verifies the signature and freshness
 and passes the store to `/connect`.
 

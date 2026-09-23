@@ -7,8 +7,9 @@
 // proves, on the way back, that this project asked for it.
 //
 // Three ways in, whichever the merchant has to hand:
-//   one tap — the app's Shopify listing, where Shopify already knows
-//     which store they are signed in to (only once the app is public);
+//   one tap — Shopify's own install link, where Shopify already knows
+//     which store they are signed in to (their own stores now, any
+//     store once the app is public);
 //   the address — typed or pasted, in whatever form they have it;
 //   another browser — a link to this project's connect page, for when
 //     Shopify is signed in somewhere else. They sign in to Warmluke
@@ -20,7 +21,7 @@ import ErrorNote from "@/components/ErrorNote";
 import { asError } from "@/lib/errors";
 import { apiFetch } from "@/lib/auth";
 import { supabase } from "@/lib/supabase-client";
-import { installLink, readShopAddress } from "@/lib/shop-address";
+import { readShopAddress } from "@/lib/shop-address";
 import { whatCanChange } from "@/lib/store-actions";
 
 /** Reasons the server can refuse, said the way the owner would ask. */
@@ -31,8 +32,16 @@ function explain(status: number, message?: string, hint?: string): string {
   return message ?? "Couldn't reach Shopify. Try again in a moment.";
 }
 
-/** The one-tap link, if this deployment has a Shopify listing to send people to. */
-const ONE_TAP = installLink(process.env.NEXT_PUBLIC_SHOPIFY_INSTALL_URL);
+/**
+ * Whether this deployment can connect in one tap. Asked of the server,
+ * which knows the app's client id and any listing, once per page load.
+ */
+let oneTapAnswer: Promise<boolean> | null = null;
+const canOneTap = () =>
+  (oneTapAnswer ??= fetch("/api/shopify/start?check=1")
+    .then((r) => (r.ok ? r.json() : { oneTap: false }))
+    .then((d: { oneTap?: unknown }) => d.oneTap === true)
+    .catch(() => false));
 
 /** How often a page waiting on another browser looks for the store. */
 const WAIT_MS = 3000;
@@ -66,9 +75,20 @@ export default function ConnectShopify({
   // line under every keystroke is a box shouting at somebody for
   // being halfway through a word.
   const [judged, setJudged] = useState(false);
-  // With a listing to tap, the box is the second way in and waits to be
-  // asked for. Reconnecting already knows the address, so it is open.
-  const [typing, setTyping] = useState(!ONE_TAP || !!initialShop);
+  // Unknown until the server says. With one tap on offer the box is the
+  // second way in and waits to be asked for; reconnecting already knows
+  // the address, so the box is open for that.
+  const [oneTap, setOneTap] = useState<boolean | null>(null);
+  const [typing, setTyping] = useState(!!initialShop);
+  useEffect(() => {
+    let live = true;
+    canOneTap().then((yes) => live && setOneTap(yes));
+    return () => {
+      live = false;
+    };
+  }, []);
+  // The box shows while the answer is coming, so nothing waits on it.
+  const boxOpen = typing || oneTap !== true;
   const [link, setLink] = useState<string | null>(null);
   const [copied, setCopied] = useState<"yes" | "no" | null>(null);
   const [waiting, setWaiting] = useState(false);
@@ -158,7 +178,7 @@ export default function ConnectShopify({
 
   return (
     <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
-      {ONE_TAP && (
+      {oneTap && (
         <a
           href={`/api/shopify/start?project=${encodeURIComponent(projectId)}`}
           className="block w-full rounded-lg bg-blue-600 px-3 py-1.5 text-center text-xs font-medium text-white transition-colors hover:bg-blue-700"
@@ -167,13 +187,14 @@ export default function ConnectShopify({
         </a>
       )}
 
-      {typing ? (
+      {boxOpen ? (
         <>
           <input
-            autoFocus={!ONE_TAP || !!initialShop}
+            autoFocus={!!initialShop}
             onFocus={(e) => e.currentTarget.select()}
             value={shop}
             onChange={(e) => {
+              setTyping(true);
               setShop(e.target.value);
               setError(null);
               setJudged(false);
@@ -255,7 +276,7 @@ export default function ConnectShopify({
           : "Warmluke reads your store and changes nothing in it."}
       </p>
       <div className="flex gap-1.5">
-        {typing && (
+        {boxOpen && (
           <button
             onClick={connect}
             disabled={busy || !shop.trim()}

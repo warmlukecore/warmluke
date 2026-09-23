@@ -202,3 +202,18 @@ export function installLink(raw: string | undefined | null): string | null {
     return null;
   }
 }
+
+/**
+ * Shopify's own install link for an app, built from its client id.
+ * Shopify reads which store the merchant is signed in to — asking them
+ * to choose if they have several — and sends them to the app's address
+ * with it, so nobody types an address. Tried on warmluke-dev on
+ * 23 Sep 2026. It installs only where Shopify lets the app be
+ * installed: the developer's own stores now, any store once the app is
+ * public. A client id is public — it is in every authorize URL — but
+ * it is still checked for shape before it goes into a link.
+ */
+export function installLinkFor(clientId: string | undefined | null): string | null {
+  if (!clientId || !/^[A-Za-z0-9_-]{16,64}$/.test(clientId)) return null;
+  return `https://admin.shopify.com/oauth/install?client_id=${clientId}`;
+}

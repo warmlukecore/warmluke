@@ -29,7 +29,7 @@ import {
 } from "../src/lib/shopify-resources.ts";
 import { COUNTED } from "../src/lib/store-read.ts";
 import { ACTION_SCOPES } from "../src/lib/store-actions.ts";
-import { installLink, readShopAddress } from "../src/lib/shop-address.ts";
+import { installLink, installLinkFor, readShopAddress } from "../src/lib/shop-address.ts";
 import { entryTarget, isProjectId } from "../src/lib/shopify-entry.ts";
 import { ownPath } from "../src/lib/paths.ts";
 
@@ -415,6 +415,12 @@ console.log("\nand a merchant Shopify sends us is only believed when Shopify sig
   check("plain http: none", installLink("http://apps.shopify.com/warmluke") === null);
   check("userinfo in front: none", installLink("https://evil@apps.shopify.com/warmluke") === null);
   check("not a URL: none", installLink("apps.shopify.com/warmluke") === null);
+  // With no listing, Shopify's own install link, from the client id.
+  check("a client id gives Shopify's install link",
+    installLinkFor("2fbfb378521dd14d5be638893ae3f97c") === "https://admin.shopify.com/oauth/install?client_id=2fbfb378521dd14d5be638893ae3f97c");
+  check("and that link is one installLink accepts", installLink(installLinkFor("2fbfb378521dd14d5be638893ae3f97c")) !== null);
+  check("no client id: no link", installLinkFor(undefined) === null && installLinkFor("") === null);
+  check("a client id that could smuggle a query in: no link", installLinkFor("abc&redirect_uri=https://evil.example") === null);
 
   // Where signing in sends them next.
   check("our own page is followed", ownPath("/connect?shop=mystore.myshopify.com"));
@@ -429,7 +435,9 @@ console.log("\nand a merchant Shopify sends us is only believed when Shopify sig
   check("the entry writes nothing", !/\.from\(|\.rpc\(|insert|update\(/.test(entrySrc));
   check("and spends the project hint", /cookies\.delete\(CONNECT_PROJECT_COOKIE\)/.test(entrySrc));
   const startSrc = readFileSync(new URL("../src/app/api/shopify/start/route.ts", import.meta.url), "utf8");
-  check("one tap only ever goes where installLink allows", /installLink\(process\.env\.NEXT_PUBLIC_SHOPIFY_INSTALL_URL\)/.test(startSrc));
+  check("one tap goes to the listing, else Shopify's own link, and nowhere else",
+    /installLink\(process\.env\.NEXT_PUBLIC_SHOPIFY_INSTALL_URL\) \?\? installLinkFor\(process\.env\.SHOPIFY_CLIENT_ID\)/.test(startSrc));
+  check("and ?check only answers", /searchParams\.has\("check"\)\) return NextResponse\.json\(\{ oneTap: !!to \}\)/.test(startSrc));
   for (const page of ["login", "signup"]) {
     const src = readFileSync(new URL(`../src/app/${page}/page.tsx`, import.meta.url), "utf8");
     check(`${page} follows next only through ownPath`, /if \(ownPath\(next\)\)/.test(src) && !/next\?\.startsWith/.test(src));
