@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { CONNECT_PROJECT_COOKIE, isProjectId } from "@/lib/shopify-entry";
+import { CONNECT_PROJECT_COOKIE, isConnectHint } from "@/lib/shopify-entry";
 import { installLink, installLinkFor } from "@/lib/shop-address";
 
 export const runtime = "nodejs";
@@ -35,7 +35,7 @@ export function GET(req: Request) {
 
   const res = NextResponse.redirect(to);
   const project = url.searchParams.get("project");
-  if (isProjectId(project)) {
+  if (isConnectHint(project)) {
     res.cookies.set(CONNECT_PROJECT_COOKIE, project.toLowerCase(), {
       path: "/",
       maxAge: REMEMBER_SECONDS,

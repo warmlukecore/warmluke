@@ -23,5 +23,8 @@ export default function BuilderPage() {
     );
   }
 
-  return <AppShell projectId={projectId} ownerEmail={user.email ?? ""} />;
+  // Keyed by project, so moving between stores mounts a fresh shell:
+  // nothing one store left open — a section, a draft, a chat — can
+  // carry over into another store's app.
+  return <AppShell key={projectId} projectId={projectId} ownerEmail={user.email ?? ""} />;
 }

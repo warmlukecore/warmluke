@@ -80,6 +80,10 @@ function ConnectInner() {
 
   const already = shop ? stores.find((s) => s.shop_domain === shop && s.status === "connected") : undefined;
   const hinted = hint && eligible.some((p) => p.id === hint) ? hint : null;
+  // "Connect another store": a project of its own, made now that Shopify
+  // has said which store — never before, so turning back at Shopify
+  // leaves nothing empty behind.
+  const wantsNew = hint === "new";
 
   async function begin(projectId: string) {
     if (!shop || busy) return;
@@ -109,14 +113,21 @@ function ConnectInner() {
   }
 
   // Tapped from a project, sent through Shopify, back again: nothing is
-  // left to ask. Only when that project is theirs and can take the store.
+  // left to ask. Only when that project is theirs and can take the store,
+  // or when they asked for a new one — and never for a store that is
+  // already connected, which is shown to them instead.
   useEffect(() => {
-    if (started.current || !shop || !hinted || already) return;
-    started.current = true;
-    begin(hinted);
-    // begin reads only state that is settled by now.
+    if (started.current || !shop || projects === null || already) return;
+    if (hinted) {
+      started.current = true;
+      begin(hinted);
+    } else if (wantsNew) {
+      started.current = true;
+      newProject();
+    }
+    // begin and newProject read only state that is settled by now.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shop, hinted, already]);
+  }, [shop, hinted, wantsNew, already, projects]);
 
   if (loading || !user || projects === null) {
     return <Shell>Loading…</Shell>;

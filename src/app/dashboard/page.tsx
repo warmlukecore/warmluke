@@ -12,6 +12,7 @@ import { supabase } from "@/lib/supabase-client";
 import { useUser, signOut, takePendingPrompt } from "@/lib/auth";
 import ProjectSettings from "@/components/ProjectSettings";
 import ConnectShopify from "@/components/ConnectShopify";
+import { accessRanOut } from "@/lib/store-standing";
 import type { ProjectRow, StoreRow } from "@/lib/types";
 
 /**
@@ -51,12 +52,8 @@ function ShopifyStatus({
   //
   // Reconnecting is only needed when the 90-day refresh token is gone
   // or has run out, because then nothing can renew anything.
-  const expired =
-    // A store from before Shopify made tokens expire has neither date
-    // and works indefinitely; only judge one that has an expiry.
-    !!store.token_expires_at &&
-    (!store.refresh_token_expires_at ||
-      Date.parse(store.refresh_token_expires_at) < Date.now());
+  // Said once, in lib/store-standing, which the store switcher reads too.
+  const expired = accessRanOut(store);
 
   const line =
     store.status === "pending"

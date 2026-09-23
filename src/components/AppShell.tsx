@@ -25,6 +25,7 @@ import { labelForRow } from "@/lib/links";
 import ModuleSettings from "@/components/ModuleSettings";
 import NewSection from "@/components/NewSection";
 import StoreStrip from "@/components/StoreStrip";
+import StoreSwitcher from "@/components/StoreSwitcher";
 import {
   isStoreTable,
   readStoreRows,
@@ -1815,6 +1816,8 @@ export default function AppShell({
             )}
           </div>
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+            {/* Every store they can open, and the way to add another. */}
+            <StoreSwitcher projectId={projectId} />
             {isOwner && (
             <button
               onClick={() => setRulesOpen(true)}

@@ -76,6 +76,22 @@ in another browser. The link names only the project, and signing in there is wha
 authorizes it, so a link somebody else sent can only connect a store to the opener's own
 account. The first tab waits and updates when the store connects.
 
+### More than one store
+
+A store is its own project, so its data, sections, rules and chat never mix with another
+store's. Shopify hands over one store per connection and does not tell an app how many a
+merchant has, so they are added one at a time. The header's store switcher
+(`StoreSwitcher`) lists every store the signed-in user can open, read under row security
+each time it opens, with its standing from `lib/store-standing`, the same function the
+dashboard card uses. An attempt that never came back from Shopify is left out, and a
+search box appears past six stores.
+
+**+ Connect another store** goes through one tap with the hint `new`. `/connect` creates
+a project named after the store only once Shopify has named it, so turning back at
+Shopify leaves no empty project. Each `/app/<project>` mounts a fresh `AppShell`
+(`key={projectId}`), so nothing carries across a switch. `check-store-switcher` holds all
+of this.
+
 ### Uninstall and erasure
 
 `APP_UNINSTALLED` is subscribed at connect (`LIFECYCLE_TOPICS`) and handled by

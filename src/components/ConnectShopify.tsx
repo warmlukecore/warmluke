@@ -23,6 +23,7 @@ import { apiFetch } from "@/lib/auth";
 import { supabase } from "@/lib/supabase-client";
 import { readShopAddress } from "@/lib/shop-address";
 import { whatCanChange } from "@/lib/store-actions";
+import { canOneTap } from "@/lib/one-tap";
 
 /** Reasons the server can refuse, said the way the owner would ask. */
 function explain(status: number, message?: string, hint?: string): string {
@@ -32,16 +33,6 @@ function explain(status: number, message?: string, hint?: string): string {
   return message ?? "Couldn't reach Shopify. Try again in a moment.";
 }
 
-/**
- * Whether this deployment can connect in one tap. Asked of the server,
- * which knows the app's client id and any listing, once per page load.
- */
-let oneTapAnswer: Promise<boolean> | null = null;
-const canOneTap = () =>
-  (oneTapAnswer ??= fetch("/api/shopify/start?check=1")
-    .then((r) => (r.ok ? r.json() : { oneTap: false }))
-    .then((d: { oneTap?: unknown }) => d.oneTap === true)
-    .catch(() => false));
 
 /** How often a page waiting on another browser looks for the store. */
 const WAIT_MS = 3000;

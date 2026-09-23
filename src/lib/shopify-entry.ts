@@ -28,6 +28,15 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isProjectId = (v: unknown): v is string => typeof v === "string" && UUID.test(v);
 
 /**
+ * What a one-tap connect may carry through Shopify: the project it was
+ * tapped from, or "new" — "connect another store" — for a project made
+ * only once Shopify has named the store, so turning back at Shopify
+ * leaves no empty project behind.
+ */
+export const NEW_PROJECT = "new";
+export const isConnectHint = (v: unknown): v is string => v === NEW_PROJECT || isProjectId(v);
+
+/**
  * Where to send a request that arrived at the app's address from Shopify.
  *
  * `project` is the cookie the one-tap button left, if any: a hint about
@@ -53,6 +62,6 @@ export function entryTarget(opts: {
   }
   const next = new URL("/connect", opts.origin);
   next.searchParams.set("shop", shop);
-  if (isProjectId(opts.project)) next.searchParams.set("project", opts.project.toLowerCase());
+  if (isConnectHint(opts.project)) next.searchParams.set("project", opts.project.toLowerCase());
   return { to: next.toString(), ok: true };
 }
