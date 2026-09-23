@@ -137,9 +137,7 @@ function Section({
       {/* reveal: comes up as it scrolls into view, where the browser can. */}
       <div className="reveal mx-auto w-full max-w-5xl px-5 py-16 sm:py-20">
         {eyebrow && (
-          <div className="mb-3 text-xs font-semibold tracking-widest text-accent">
-            {eyebrow}
-          </div>
+          <div className="mb-3 text-sm font-medium text-accent">{eyebrow}</div>
         )}
         <h2 className="font-serif text-3xl leading-tight tracking-tight text-ink sm:text-[2.75rem]">
           {title}
@@ -268,13 +266,13 @@ const ASKS: Ask[] = [
  * support come from accounts the team sets up, and say so, the same as
  * everywhere else on the page.
  */
-const WATCHES: Array<{ area: string; what: string; icon: LucideIcon; tone: string; when: string; team?: boolean }> = [
-  { area: "Inventory", what: "A fast-moving product is approaching low stock.", icon: Package, tone: "bg-amber-50 text-amber-700", when: "just now" },
-  { area: "Operations", what: "Orders haven't been dispatched within the expected time.", icon: Truck, tone: "bg-sky-50 text-sky-700", when: "12 min ago" },
-  { area: "Returns", what: "Returns suddenly increase for a particular product.", icon: RotateCcw, tone: "bg-rose-50 text-rose-700", when: "1 h ago" },
-  { area: "Performance", what: "Conversion rate changes significantly.", icon: TrendingUp, tone: "bg-emerald-50 text-emerald-700", when: "3 h ago" },
-  { area: "Marketing", what: "A campaign suddenly starts spending without converting.", icon: Megaphone, tone: "bg-violet-50 text-violet-700", when: "yesterday", team: true },
-  { area: "Support", what: "The same customer complaint starts appearing repeatedly.", icon: MessageCircle, tone: "bg-indigo-50 text-accent", when: "yesterday", team: true },
+const WATCHES: Array<{ area: string; what: string; icon: LucideIcon; when: string; team?: boolean }> = [
+  { area: "Inventory", what: "A fast-moving product is approaching low stock.", icon: Package, when: "just now" },
+  { area: "Operations", what: "Orders haven't been dispatched within the expected time.", icon: Truck, when: "12 min ago" },
+  { area: "Returns", what: "Returns suddenly increase for a particular product.", icon: RotateCcw, when: "1 h ago" },
+  { area: "Performance", what: "Conversion rate changes significantly.", icon: TrendingUp, when: "3 h ago" },
+  { area: "Marketing", what: "A campaign suddenly starts spending without converting.", icon: Megaphone, when: "yesterday", team: true },
+  { area: "Support", what: "The same customer complaint starts appearing repeatedly.", icon: MessageCircle, when: "yesterday", team: true },
 ];
 
 /** What a merchant would otherwise go and buy, one app at a time. */
@@ -301,7 +299,8 @@ const BOOK_POINTS = [
 ];
 
 /**
- * What a connected assistant can actually do, in three groups.
+ * What a connected assistant can actually do, in two lines; the
+ * questions themselves are Ask Luke's, higher up the page.
  *
  * Said in the merchant's words, not ours. An earlier version listed
  * the tool names — store_overview, propose_change and the rest —
@@ -310,26 +309,16 @@ const BOOK_POINTS = [
  * the selling point; the function name is an implementation detail
  * they will never type.
  */
-const BYO: Array<{ head: string; body: string; items: string[]; icon: LucideIcon }> = [
+const BYO: Array<{ head: string; body: string; icon: LucideIcon }> = [
   {
     icon: MessageSquareText,
     head: "Ask it about your store",
-    body: "Your assistant reads the real thing, not a description of it.",
-    items: [
-      "Orders for any day, in your store's own timezone",
-      "A customer's whole history by name, email or phone",
-      "What is running low, by variant and location",
-      "Anything held in the sections your team built",
-    ],
+    body: "Orders, stock and customers, read from the store itself rather than from whatever you paste into the chat.",
   },
   {
     icon: Hammer,
     head: "Have it build you something",
     body: "Describe the tool you need. Your assistant designs it and Warmluke checks the design against the same rules its own engine answers to.",
-    items: [
-      "Checked before you ever see it",
-      "Built into your app, not bolted beside it",
-    ],
   },
 ];
 
@@ -578,15 +567,13 @@ function Planet({ name, ready }: { name: string; ready: boolean }) {
   );
 }
 
-/** One ring of the hub, turning; each logo on it turns back so it stays upright. */
-function Ring({ names, inset, seconds, turn }: { names: typeof CONNECTORS; inset: string; seconds: number; turn: number }) {
+/** One ring of the hub, with its logos set round it. */
+function Ring({ names, inset, turn }: { names: typeof CONNECTORS; inset: string; turn: number }) {
   return (
-    <div className="orbit absolute" style={{ inset, "--orbit-for": `${seconds}s` } as React.CSSProperties}>
+    <div className="absolute" style={{ inset }}>
       {names.map((c, i) => (
         <div key={c.name} className="absolute -translate-x-1/2 -translate-y-1/2" style={onRing(i, names.length, turn)}>
-          <div className="orbit-back">
-            <Planet name={c.name} ready={c.ready} />
-          </div>
+          <Planet name={c.name} ready={c.ready} />
         </div>
       ))}
     </div>
@@ -602,11 +589,10 @@ function Ring({ names, inset, seconds, turn }: { names: typeof CONNECTORS; inset
 function Hub() {
   return (
     <div aria-hidden="true" className="relative mx-auto aspect-square w-full max-w-[20rem] sm:max-w-[24rem]">
-      <div className="absolute inset-[28%] rounded-full bg-accent/15 blur-3xl" />
       <div className="absolute inset-[7%] rounded-full border border-dashed border-neutral-300" />
       <div className="absolute inset-[28%] rounded-full border border-hair bg-white/60" />
-      <Ring names={CONNECTORS.filter((c) => !c.ready)} inset="7%" seconds={120} turn={45} />
-      <Ring names={CONNECTORS.filter((c) => c.ready)} inset="28%" seconds={80} turn={-90} />
+      <Ring names={CONNECTORS.filter((c) => !c.ready)} inset="7%" turn={45} />
+      <Ring names={CONNECTORS.filter((c) => c.ready)} inset="28%" turn={-90} />
       <div className="absolute top-1/2 left-1/2 flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-3xl bg-white shadow-[var(--shadow-dashboard)]">
         <Image src="/images/logowarmluke.png" alt="" width={48} height={48} className="h-12 w-12 rounded-xl object-cover" />
       </div>
@@ -634,7 +620,7 @@ function Bridge() {
         <span className="rounded-full border border-accent/30 bg-white px-2 py-0.5 text-[10px] font-semibold tracking-widest text-accent">
           MCP
         </span>
-        <div className="flow h-1 w-full" />
+        <div className="h-px w-full border-t border-dashed border-accent/50" />
       </div>
       <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white shadow-[var(--shadow-dashboard)]">
         <Image src="/images/logowarmluke.png" alt="" width={36} height={36} className="h-9 w-9 rounded-lg object-cover" />
@@ -790,51 +776,41 @@ export default async function Landing({
               reach my stack", and one line of prose answered it for
               one system while saying nothing about the rest. */}
           <div
-            className="rise mb-6 flex flex-wrap items-center justify-center gap-1.5"
+            className="rise mb-6 flex max-w-full flex-wrap items-center justify-center gap-x-2.5 gap-y-1.5 rounded-full border border-hair bg-white/80 py-1 pr-3 pl-1 text-xs text-quiet shadow-[0_1px_2px_rgb(0_0_0/0.04)] backdrop-blur"
             style={{ "--rise-from": "10px", "--rise-for": "0.5s" } as React.CSSProperties}
           >
-            {HERO_CONNECTORS.map((c) =>
-              c.ready ? (
-                <span
-                  key={c.name}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800"
-                >
-                  <span aria-hidden="true" className="text-[8px] text-emerald-600">
-                    ●
-                  </span>
-                  {c.name}
-                </span>
-              ) : (
-                // Not decoration, and not a dead label either. Somebody
-                // reading "Meta Ads · with our team" wants to say "that
-                // is the one I need", so the chip is the place to say it.
-                //
-                // Each carries its own data-cta, which the tracker
-                // stores verbatim: after a month the clicks say which
-                // connector merchants actually ask for, which is a
-                // better way to choose the next one than guessing.
+            {HERO_CONNECTORS.filter((c) => c.ready).map((c) => (
+              <span
+                key={c.name}
+                className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 font-medium text-emerald-800"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise */}
+                <img src={c.logo} alt="" width={12} height={12} className="h-3 w-3 object-contain" />
+                {c.name} connected
+              </span>
+            ))}
+            <span className="flex items-center gap-2">
+              {HERO_CONNECTORS.filter((c) => !c.ready).map((c) => (
+                // Not decoration: each logo carries its own data-cta,
+                // which the tracker stores verbatim, so after a month
+                // the clicks say which service merchants ask for.
                 <a
                   key={c.name}
                   href="#book"
                   data-cta={`connector_${c.name.toLowerCase().replace(/\s+/g, "_")}`}
                   title={`Need ${c.name}? Our team sets it up. Book a demo and tell us.`}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-hair bg-white px-3 py-1 text-xs text-quiet transition-colors hover:border-neutral-400 hover:text-ink"
+                  aria-label={`${c.name}, set up by our team`}
+                  className="opacity-80 transition-opacity hover:opacity-100"
                 >
-                  {c.name}
-                  <span className="text-[10px] uppercase tracking-wide text-neutral-400">with our team</span>
+                  {/* eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise */}
+                  <img src={c.logo} alt="" width={14} height={14} className="h-3.5 w-3.5 object-contain" />
                 </a>
-              )
-            )}
-            {/* No number. A count invites the question "which
-                twenty?", and the answer would be a roadmap on the
-                front page. This says there is more without listing
-                what a competitor would like to read. */}
-            <a
-              href="#integrations"
-              data-cta="connectors_more"
-              className="inline-flex items-center rounded-full px-2 py-1 text-xs text-neutral-400 underline underline-offset-2 transition-colors hover:text-ink"
-            >
-              and many more
+              ))}
+            </span>
+            {/* No number: a count invites "which twenty?". */}
+            <a href="#integrations" data-cta="connectors_more" className="whitespace-nowrap transition-colors hover:text-ink">
+              <span className="sm:hidden">with our team</span>
+              <span className="hidden sm:inline">and more, set up by our team</span>
             </a>
           </div>
 
@@ -930,15 +906,12 @@ export default async function Landing({
 
       {/* ── Luke doing real work ─────────────────────────────── */}
       <Section id="luke" title="Ask Luke like you'd ask someone on your team.">
-        <AskLuke asks={ASKS} />
-        <div className="mt-8">
-          <Cta where="asks">See what Luke could do for your store →</Cta>
-        </div>
+        <AskLuke asks={ASKS} after={<Cta where="asks">See what Luke could do for your store →</Cta>} />
       </Section>
 
       {/* ── Proactive ────────────────────────────────────────── */}
       <Section title="Luke doesn't have to wait for you to ask.">
-        <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+        <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
           <div>
             <p className="max-w-xl text-quiet">
               Traditional dashboards are useful only when somebody remembers to check them. Luke can
@@ -963,17 +936,13 @@ export default async function Landing({
                 const Icon = w.icon;
                 return (
                   <li key={w.area} className="flex items-start gap-3 px-4 py-3.5">
-                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${w.tone}`}>
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-600">
                       <Icon aria-hidden="true" className="h-4 w-4" strokeWidth={1.75} />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-semibold tracking-widest text-neutral-400">
-                        {w.area.toUpperCase()}
-                        {w.team && (
-                          <span className="rounded border border-hair px-1 py-px text-[9px] font-medium">
-                            WITH OUR TEAM
-                          </span>
-                        )}
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium text-ink">
+                        {w.area}
+                        {w.team && <span className="font-normal text-neutral-400">· with our team</span>}
                       </div>
                       <p className="mt-0.5 text-sm text-neutral-700">{w.what}</p>
                     </div>
@@ -987,7 +956,7 @@ export default async function Landing({
       </Section>
 
       {/* ── Stop adding another app ──────────────────────────── */}
-      <Section id="uses" eyebrow="INSTEAD OF BUYING ANOTHER APP" title="Stop adding another app.">
+      <Section id="uses" eyebrow="Instead of buying another app" title="Stop adding another app.">
         <p className="max-w-2xl text-quiet">
           Your business will eventually need something your current software doesn&apos;t do.
           Usually that means searching the app store, trying three SaaS products, paying another
@@ -995,7 +964,7 @@ export default async function Landing({
         </p>
         <div className="mt-8 grid gap-4 lg:grid-cols-2">
           <div className="rounded-2xl border border-hair bg-neutral-50 p-6">
-            <div className="text-xs font-semibold tracking-widest text-neutral-400">THE USUAL WAY</div>
+            <div className="text-sm font-medium text-neutral-500">The usual way</div>
             <ul className="mt-4 space-y-2">
               {USUAL.map((u) => (
                 <li
@@ -1006,7 +975,7 @@ export default async function Landing({
                     <CreditCard aria-hidden="true" className="h-4 w-4 shrink-0 text-neutral-400" strokeWidth={1.75} />
                     <span className="truncate">{u}</span>
                   </span>
-                  <span className="shrink-0 text-xs text-rose-600">+1 subscription</span>
+                  <span className="shrink-0 text-xs text-neutral-400">another subscription</span>
                 </li>
               ))}
             </ul>
@@ -1015,7 +984,7 @@ export default async function Landing({
             </p>
           </div>
           <div className="flex flex-col rounded-2xl border border-accent/30 bg-white p-6 shadow-[var(--shadow-dashboard)]">
-            <div className="text-xs font-semibold tracking-widest text-accent">WITH LUKE</div>
+            <div className="text-sm font-medium text-accent">With Luke</div>
             <p className="font-serif mt-3 text-2xl text-ink">Need something? Tell Luke.</p>
             <div className="mt-4 flex items-center gap-2.5 rounded-xl border border-hair bg-neutral-50 px-4 py-3.5 text-sm text-ink">
               <Sparkles aria-hidden="true" className="h-4 w-4 shrink-0 text-accent" strokeWidth={1.75} />
@@ -1060,13 +1029,13 @@ export default async function Landing({
             </p>
             <dl className="mt-8 space-y-6">
               {[
-                { ready: true, head: "CONNECTED IN THE APP" },
-                { ready: false, head: "SET UP BY OUR TEAM" },
+                { ready: true, head: "Connected in the app" },
+                { ready: false, head: "Set up by our team" },
               ].map((g) => (
                 <div key={g.head}>
                   <dt
-                    className={`flex items-center gap-2 text-xs font-semibold tracking-widest ${
-                      g.ready ? "text-emerald-700" : "text-neutral-400"
+                    className={`flex items-center gap-2 text-sm font-medium ${
+                      g.ready ? "text-emerald-700" : "text-neutral-500"
                     }`}
                   >
                     <span
@@ -1079,21 +1048,10 @@ export default async function Landing({
                     />
                     {g.head}
                   </dt>
-                  <dd className="mt-3 flex flex-wrap gap-2">
-                    {CONNECTORS.filter((c) => c.ready === g.ready).map((c) => (
-                      <span
-                        key={c.name}
-                        className="inline-flex items-center gap-2 rounded-lg border border-hair bg-white px-3 py-1.5 text-sm text-ink"
-                      >
-                        {c.logo ? (
-                          // eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise
-                          <img src={c.logo} alt="" width={16} height={16} className="h-4 w-4 object-contain" />
-                        ) : (
-                          <Blocks aria-hidden="true" className="h-4 w-4 text-accent" strokeWidth={1.75} />
-                        )}
-                        {c.name}
-                      </span>
-                    ))}
+                  <dd className="mt-1.5 text-ink">
+                    {CONNECTORS.filter((c) => c.ready === g.ready)
+                      .map((c) => c.name)
+                      .join(", ")}
                   </dd>
                   {!g.ready && (
                     <dd className="mt-2 max-w-md text-sm text-quiet">
@@ -1120,7 +1078,7 @@ export default async function Landing({
       {/* ── Bring your own assistant ─────────────────────────── */}
       <Section
         id="mcp"
-        eyebrow="CLAUDE OR CHATGPT, CONNECTED"
+        eyebrow="Claude or ChatGPT, connected"
         title="Bring your own AI. Give it the keys to your business."
       >
         <div className="grid items-center gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
@@ -1141,23 +1099,15 @@ export default async function Landing({
                 </span>
                 <div className="font-serif mt-4 text-lg text-ink">{g.head}</div>
                 <p className="mt-2 text-sm leading-relaxed text-quiet">{g.body}</p>
-                <ul className="mt-4 space-y-1.5">
-                  {g.items.map((t) => (
-                    <li key={t} className="flex gap-2 text-sm leading-relaxed text-neutral-700">
-                      <Check aria-hidden="true" className="mt-1 h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2} />
-                      {t}
-                    </li>
-                  ))}
-                </ul>
               </div>
             );
           })}
         </div>
 
-        <div className="mt-8 rounded-2xl border border-hair bg-gradient-to-br from-emerald-50/60 via-white to-white p-6">
-          <div className="flex items-center gap-2 text-xs font-semibold tracking-widest text-neutral-500">
+        <div className="mt-8 rounded-2xl border border-hair bg-neutral-50 p-6">
+          <div className="flex items-center gap-2 text-sm font-medium text-ink">
             <ShieldCheck aria-hidden="true" className="h-4 w-4 text-emerald-600" strokeWidth={1.75} />
-            AND WHAT IT CANNOT DO
+            And what it cannot do
           </div>
           <div className="mt-5 grid gap-6 sm:grid-cols-3">
             {BYO_LIMITS.map(([head, body, Icon]) => (

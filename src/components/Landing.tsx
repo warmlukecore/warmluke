@@ -255,7 +255,7 @@ const ASK_ICON: Record<Show, LucideIcon> = {
  */
 function Artifact({ show }: { show: Show }) {
   const card = "w-full max-w-[17rem] rounded-xl border border-hair bg-white p-3.5 shadow-[0_24px_48px_-20px_rgb(49_46_129/0.35)]";
-  const head = "mb-2.5 flex items-center justify-between text-[11px] font-semibold tracking-widest text-neutral-400";
+  const head = "mb-2.5 flex items-center justify-between text-xs font-medium text-neutral-500";
   if (show === "stock") {
     const rows: Array<[string, number]> = [
       ["Classic Tee / M", 4],
@@ -265,7 +265,7 @@ function Artifact({ show }: { show: Show }) {
     return (
       <div className={card}>
         <div className={head}>
-          RUNNING LOW <Package aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.75} />
+          Running low <Package aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.75} />
         </div>
         <div className="space-y-2.5">
           {rows.map(([name, n]) => (
@@ -288,7 +288,7 @@ function Artifact({ show }: { show: Show }) {
     return (
       <div className={card}>
         <div className={head}>
-          LAST 7 DAYS <CalendarDays aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.75} />
+          Last 7 days <CalendarDays aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.75} />
         </div>
         <div className="flex h-16 items-end gap-1.5">
           {week.map((n, i) => (
@@ -323,14 +323,14 @@ function Artifact({ show }: { show: Show }) {
   }
   if (show === "returns") {
     const cols: Array<[string, number, string]> = [
-      ["Requested", 3, "bg-amber-300"],
-      ["Received", 2, "bg-sky-300"],
-      ["Refunded", 1, "bg-emerald-300"],
+      ["Requested", 3, "bg-neutral-300"],
+      ["Received", 2, "bg-neutral-400"],
+      ["Refunded", 1, "bg-accent"],
     ];
     return (
       <div className={card}>
         <div className={head}>
-          RETURNS BOARD <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.75} />
+          Returns board <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.75} />
         </div>
         <div className="grid grid-cols-3 gap-1.5">
           {cols.map(([name, n, tone]) => (
@@ -359,7 +359,7 @@ function Artifact({ show }: { show: Show }) {
     return (
       <div className={card}>
         <div className={head}>
-          OPERATIONS <LayoutDashboard aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.75} />
+          Operations <LayoutDashboard aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.75} />
         </div>
         <div className="grid grid-cols-3 gap-1.5">
           {tiles.map(([name, n]) => (
@@ -376,7 +376,7 @@ function Artifact({ show }: { show: Show }) {
   return (
     <div className={card}>
       <div className={head}>
-        NEW RULE <ShieldCheck aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.75} />
+        New rule <ShieldCheck aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.75} />
       </div>
       <div className="flex items-center gap-1.5 text-xs">
         <span className="rounded-lg bg-neutral-50 px-2 py-1.5 text-ink">Refund</span>
@@ -517,7 +517,7 @@ function OrdersGlobe({ className }: { className: string }) {
  * Behind the window, the orders coming in: a globe, drawn in WebGL,
  * turning slowly with each city's orders arcing to the store.
  */
-export function AskLuke({ asks }: { asks: Ask[] }) {
+export function AskLuke({ asks, after }: { asks: Ask[]; after?: React.ReactNode }) {
   const [at, setAt] = useState(0);
   const panel = useId();
   const shown = asks[at];
@@ -525,6 +525,7 @@ export function AskLuke({ asks }: { asks: Ask[] }) {
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-10">
+      <div className="flex flex-col gap-8">
       <div role="tablist" aria-label="Questions to ask Luke" className="flex flex-col gap-2">
         {asks.map((x, i) => {
           const Icon = ASK_ICON[x.show];
@@ -558,36 +559,11 @@ export function AskLuke({ asks }: { asks: Ask[] }) {
           );
         })}
       </div>
+      {after && <div>{after}</div>}
+      </div>
 
-      <div className="relative isolate pt-28 sm:pt-32 lg:pt-24 lg:pr-12">
+      <div className="relative isolate pt-24 sm:pt-28 lg:pt-20 lg:pr-12">
         <OrdersGlobe className="absolute -top-8 -right-16 -z-10 w-72 sm:w-80 lg:-top-20 lg:-right-24 lg:w-[30rem]" />
-        <div
-          aria-hidden="true"
-          className="bob absolute top-6 left-0 z-10 sm:left-6 lg:top-4 lg:left-auto lg:right-72"
-          style={{ animationDelay: "-2s" }}
-        >
-          <span className="flex items-center gap-2 rounded-full border border-hair bg-white/90 px-3 py-1.5 text-[11px] text-ink shadow-[0_12px_28px_-14px_rgb(49_46_129/0.45)] backdrop-blur">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inset-0 animate-ping rounded-full bg-accent/60 motion-reduce:hidden" />
-              <span className="relative h-2 w-2 rounded-full bg-accent" />
-            </span>
-            New order from Delhi · #1042
-          </span>
-        </div>
-        {/* The stage: a faint grid fading out from the middle, and a glow behind the window. */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 -z-10 lg:-inset-10"
-          style={{
-            backgroundImage:
-              "linear-gradient(to right, rgb(99 102 241 / 0.14) 1px, transparent 1px), linear-gradient(to bottom, rgb(99 102 241 / 0.14) 1px, transparent 1px)",
-            backgroundSize: "32px 32px",
-            maskImage: "radial-gradient(ellipse at center, black 35%, transparent 72%)",
-            WebkitMaskImage: "radial-gradient(ellipse at center, black 35%, transparent 72%)",
-          }}
-        />
-        <div aria-hidden="true" className="absolute top-1/4 right-1/4 -z-10 h-56 w-56 rounded-full bg-accent/20 blur-3xl" />
-
         <div
           id={panel}
           role="tabpanel"
@@ -595,15 +571,14 @@ export function AskLuke({ asks }: { asks: Ask[] }) {
           className="relative flex min-h-[24rem] flex-col rounded-2xl border border-hair bg-white shadow-[var(--shadow-dashboard)]"
         >
           <div className="flex items-center gap-2 rounded-t-2xl border-b border-hair px-4 py-2.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-rose-200" />
-            <span className="h-2.5 w-2.5 rounded-full bg-amber-200" />
-            <span className="h-2.5 w-2.5 rounded-full bg-emerald-200" />
+            <span className="h-2.5 w-2.5 rounded-full bg-neutral-200" />
+            <span className="h-2.5 w-2.5 rounded-full bg-neutral-200" />
+            <span className="h-2.5 w-2.5 rounded-full bg-neutral-200" />
             <span className="ml-2 text-xs text-neutral-400">Warmluke · Luke</span>
           </div>
           <div
             aria-hidden="true"
-            className="bob absolute -top-3.5 right-6"
-            style={{ animationDelay: "-3s" }}
+            className="absolute -top-3.5 right-6"
           >
             <span className="flex items-center gap-1.5 rounded-full border border-hair bg-white px-2.5 py-1 text-[11px] text-ink shadow-[0_12px_24px_-12px_rgb(0_0_0/0.3)]">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -613,7 +588,7 @@ export function AskLuke({ asks }: { asks: Ask[] }) {
           {/* Keyed on the question, so each answer arrives rather than swaps. */}
           <div key={at} className="flex flex-1 flex-col justify-end gap-4 rounded-b-2xl bg-neutral-50/60 p-5 sm:p-7">
             {/* On a wide screen it hangs out past the window's edge, which is what makes it read as in front. */}
-            <div className="bob self-start lg:-ml-14">
+            <div className="self-start lg:-ml-14">
               <div className="rise" style={{ "--rise-after": "0.45s" } as React.CSSProperties}>
                 <Artifact show={shown.show} />
               </div>

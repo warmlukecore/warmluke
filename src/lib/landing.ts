@@ -77,9 +77,8 @@ export const HEROES: Hero[] = [
     sub: "Connect your store, marketing, support and operations to Warmluke. Luke understands what's happening, helps you take action and builds the tools your business needs.",
     cta: "Book a Demo",
     secondary: "See how it works",
-    // Only what is connected today. Listing Meta, Google and WhatsApp
-    // here read as "these are plugged in", and none of them is.
-    supporting: "Connected today: Shopify. Orders, products, customers, stock.",
+    // No supporting line: the pill above the headline already says what
+    // is connected, and a second line under the buttons said it again.
   },
   {
     id: "apps",

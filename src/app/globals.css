@@ -16,7 +16,10 @@
      changing the brand is changing this line. */
   --color-accent: hsl(239 84% 67%);
   --color-ink: hsl(210 14% 17%);
-  --color-quiet: hsl(184 5% 55%);
+  /* Body copy on the landing and legal pages. Was 55% lightness, about
+     3.4:1 on white: below what reading text needs, and the reason the
+     page looked washed out. 40% is about 5.7:1. */
+  --color-quiet: hsl(184 5% 40%);
   --color-hair: hsl(0 0% 90%);
 
   /* ── The product's design tokens ─────────────────────────────
@@ -143,44 +146,6 @@
   }
 }
 
-/* The landing's hub: logos going round, each turning back as it goes so
-   it stays upright. The ring sets --orbit-for and its logos inherit it. */
-@keyframes orbit {
-  to {
-    transform: rotate(360deg);
-  }
-}
-.orbit {
-  animation: orbit var(--orbit-for, 90s) linear infinite;
-}
-.orbit-back {
-  animation: orbit var(--orbit-for, 90s) linear infinite reverse;
-}
-
-/* A connection with something travelling along it. */
-@keyframes flow {
-  to {
-    background-position: 12px 0;
-  }
-}
-.flow {
-  background-image: radial-gradient(circle, var(--color-accent) 1.5px, transparent 2px);
-  background-size: 12px 4px;
-  background-repeat: repeat-x;
-  background-position: 0 center;
-  animation: flow 0.9s linear infinite;
-}
-
-/* Something resting on the page that bobs gently, as if it floated. */
-@keyframes bob {
-  50% {
-    transform: translateY(-6px);
-  }
-}
-.bob {
-  animation: bob 6s ease-in-out infinite;
-}
-
 /* A text caret, for a prompt that is being typed into. */
 @keyframes caret {
   50% {
@@ -221,11 +186,7 @@ html:has(dialog.wl-dialog[open]) {
 @media (prefers-reduced-motion: reduce) {
   .rise,
   .pop,
-  .orbit,
-  .orbit-back,
-  .flow,
   .caret,
-  .bob,
   dialog.wl-dialog[open],
   dialog.wl-dialog[open]::backdrop {
     animation: none;

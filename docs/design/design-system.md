@@ -90,10 +90,11 @@ Adopted so far, each with the user's yes:
   is still under reduced motion, and the section reads the same without WebGL.
 
 The landing's other motion is plain CSS in `globals.css` and stops under reduced motion:
-`.orbit` / `.orbit-back` (the hub of logos), `.flow` (the MCP line), `.caret`, `.bob`
-(things resting on the page), and the `wl-tool` roll that `cycleCss` builds. Anything on
-the landing that may bleed past its column relies on the page root's `overflow-x-clip`,
-never on a negative margin that would scroll the page sideways.
+the `.caret` and the `wl-tool` roll that `cycleCss` builds. Everything else on it stands
+still on purpose: one moving thing per screen at most, colour only where it means
+something (connected, low, done), and labels in sentence case rather than small capitals.
+Anything on the landing that may bleed past its column relies on the page root's
+`overflow-x-clip`, never on a negative margin that would scroll the page sideways.
 
 The landing's navigation is one list (`NAV` in `components/Landing.tsx`) read by the glass
 pill on the first screen and by the pill that floats in once that screen has scrolled
