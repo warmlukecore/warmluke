@@ -16,7 +16,7 @@
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { OWNER_EMAIL } from "./owner-session.mjs";
+import { OWNER_EMAIL, shopifyStores } from "./owner-session.mjs";
 
 const env = Object.fromEntries(
   readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
@@ -49,12 +49,8 @@ const admin = createClient(
   env.ADAPTIVE_OS_SERVICE_ROLE_KEY
 );
 
-const { data: store } = await admin
-  .from("stores")
-  .select("id, project_id, last_synced_at")
-  .eq("status", "connected")
-  .limit(1)
-  .maybeSingle();
+// A store a real Shopify answers for: the import route asks it.
+const [store = null] = await shopifyStores(admin, "id, project_id, last_synced_at");
 if (!store) {
   console.log("no connected store — nothing to check");
   process.exit(0);

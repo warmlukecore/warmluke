@@ -1,0 +1,16 @@
+{
+  "label": "jev",
+  "asked": "",
+  "parts": {
+    "system": "74234e98afe7498f",
+    "tools": "74234e98afe7498f",
+    "conversation": "efc39e8e3b0a89ac"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"jev-1.13.0\",\"answers\":{\"addresses\":{\"type\":\"noul\",\"noul\":0.66}},\"usage\":{\"input_tokens\":1005,\"output_tokens\":20}}"
+    }
+  ]
+}

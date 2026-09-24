@@ -79,8 +79,11 @@ async function ask(message) {
   // The server has to be doing what this process is doing: recording
   // with it, or playing back with it. A server making real calls under a
   // check that plays back would bill for every turn and answer anything.
+  // Only an answer says how it was made: a refusal before the model (out
+  // of turns, over the hour's limit) never called one, and is shown as
+  // itself below rather than blamed on the server's mode.
   const serverTape = res.headers.get("x-model-tape");
-  if (serverTape !== process.env.MODEL_TAPE) {
+  if (res.ok && serverTape !== process.env.MODEL_TAPE) {
     throw new Error(
       `the server at ${APP} is ${serverTape ? `in ${serverTape} mode` : "making real model calls"}, and this check is in ${process.env.MODEL_TAPE} mode; start it with MODEL_TAPE=${process.env.MODEL_TAPE}`
     );

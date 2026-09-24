@@ -67,6 +67,7 @@ if (!store) {
     }
     check(`${table}: the count is the table's, not the page's`, total >= rows.length);
     check(`${table}: every row has an id to key on`, rows.every((r) => !!r.id));
+    check(`${table}: and no two rows share one`, new Set(rows.map((r) => r.id)).size === rows.length);
 
     // The real trap. A column the schema promises but flatten never
     // sets renders as an empty cell in every row, for ever, silently.
@@ -76,11 +77,19 @@ if (!store) {
         rows.some((r) => r.data[col.field] !== undefined && r.data[col.field] !== null)
       );
     }
-    // And the other way: a value nobody will ever show is dead weight
-    // that also hides a mismatch in the column list.
-    const declared = new Set(spec.columns.map((c) => c.field));
-    const extra = Object.keys(rows[0].data).filter((k) => !declared.has(k));
-    check(`${table}: no field is produced that no column shows`, extra.length === 0);
+    // And the other way. This used to refuse any field no column shows,
+    // but a list reads some on purpose: financial_status is what revenue
+    // is summed by, order_id is what an order's items hang off, the ids
+    // in `gives` are what a change is aimed with. It went unnoticed for
+    // as long as the check database had no store to run it on. What a
+    // column does promise is its currency, and money read without it is
+    // a bare number.
+    for (const col of spec.columns.filter((c) => c.currencyField)) {
+      check(
+        `${table}: "${col.field}" comes with its currency`,
+        rows.some((r) => r.data[col.currencyField] !== undefined && r.data[col.currencyField] !== null)
+      );
+    }
   }
 
   const { rows: orders } = await readStoreRows(db, store.id, "orders", 50);

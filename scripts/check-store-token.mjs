@@ -6,11 +6,11 @@
 // merchant, from anywhere, and revoking a Supabase session does not
 // touch it.
 //
-//   OWNER_PASSWORD=… node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-store-token.mjs
+//   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-store-token.mjs
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { OWNER_EMAIL, realStores } from "./owner-session.mjs";
+import { OWNER_EMAIL, realStores, signInAsOwner } from "./owner-session.mjs";
 
 const env = Object.fromEntries(
   readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
@@ -86,14 +86,16 @@ try {
 }
 
 // ── The owner, who runs the import ──────────────────────────────
+// Whoever owns this store's project, signed in without a password
+// (signInAsOwner mints the session). It used to be the merchant, by
+// OWNER_PASSWORD, so this half never ran anywhere the password was not.
+const { data: owned } = await admin.from("projects").select("owner_id").eq("id", store.project_id).single();
+const { data: ownerUser } = await admin.auth.admin.getUserById(owned?.owner_id ?? "");
 const owner = createClient(URL_, ANON);
-const { data: signedIn } = await owner.auth.signInWithPassword({
-  email: OWNER_EMAIL,
-  password: process.env.OWNER_PASSWORD ?? "",
-});
+const signedIn = await signInAsOwner(owner, env, ownerUser?.user?.email ?? OWNER_EMAIL);
 
 if (!signedIn?.session) {
-  console.log("\nno OWNER_PASSWORD given — the owner's side was not checked");
+  console.log(`\nthe owner could not be signed in (${signedIn.why}) — the owner's side was not checked`);
 } else {
   console.log("\nthe owner");
   const star = await owner.from("stores").select("*").eq("id", store.id);

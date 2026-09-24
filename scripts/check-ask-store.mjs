@@ -151,7 +151,8 @@ try {
       });
       // The server has to record or play back as this process does, or its
       // router answers from a different place than this one's.
-      if (res.headers.get("x-model-tape") !== process.env.MODEL_TAPE) {
+      // Only on an answer: a refusal before any router call has no mode to report.
+      if (res.ok && res.headers.get("x-model-tape") !== process.env.MODEL_TAPE) {
         throw new Error(`the server at ${APP} is ${res.headers.get("x-model-tape") ? `in ${res.headers.get("x-model-tape")} mode` : "calling the real router"}, and this check is in ${process.env.MODEL_TAPE} mode; start it with MODEL_TAPE=${process.env.MODEL_TAPE}`);
       }
       const j = await res.json();

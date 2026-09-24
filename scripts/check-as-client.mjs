@@ -11,13 +11,16 @@
 // obtains it (see client-session.mjs), and asks the questions the
 // merchant asked: with the switch on, does everything build; with it
 // off, does everything wait; can the assistant talk itself past a no.
+// The judge's calls play back from tapes/ by default (model-tape.ts);
+// MODEL_TAPE=record, with the server recording, asks the real one.
 //
-//   node scripts/check-as-client.mjs
+//   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-as-client.mjs
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { signInAsClient } from "./client-session.mjs";
 import { signInAsCheckUser, throwawayProject } from "./owner-session.mjs";
+import { keyFor } from "../src/lib/model-tape.ts";
 
 const env = Object.fromEntries(
   readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
@@ -51,6 +54,7 @@ const admin = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIV
 // that exists for this run and is removed at the end.
 const project = await throwawayProject(admin, me.userId, "as-client");
 const setAuto = (on) => admin.from("projects").update({ auto_build: on }).eq("id", project.id);
+process.env.MODEL_TAPE ??= "replay";
 
 let n = 0;
 const tool = async (name, args) => {
@@ -68,6 +72,10 @@ const tool = async (name, args) => {
       params: { name, arguments: { project_id: project.id, ...args } },
     }),
   });
+  // Only on an answer: the server has to judge as this check expects it to.
+  if (res.ok && res.headers.get("x-model-tape") !== process.env.MODEL_TAPE) {
+    throw new Error(`the server at ${APP} is ${res.headers.get("x-model-tape") ? `in ${res.headers.get("x-model-tape")} mode` : "making real model calls"}, and this check is in ${process.env.MODEL_TAPE} mode; start it with MODEL_TAPE=${process.env.MODEL_TAPE}`);
+  }
   const j = await res.json();
   try {
     return JSON.parse(j.result.content[0].text);
@@ -75,7 +83,10 @@ const tool = async (name, args) => {
     return { error: `unreadable answer: ${JSON.stringify(j).slice(0, 200)}` };
   }
 };
-const stamp = Date.now().toString(36);
+// The same words every run, so what the judge is asked plays back from
+// tapes/; the throwaway project keeps runs apart, and the thread search
+// below only ever looks inside it.
+const stamp = "as-client";
 const slug = `client-${stamp}`;
 const madeRequests = [];
 let moduleId = null;
@@ -148,7 +159,7 @@ try {
   // client cannot write at the table. Proven with a client's token, or
   // it is only proven for the owner. Needs the server to hold the key;
   // without it no row comes, and that is what "no key" means.
-  if (env.TYPESAFE_API_KEY) {
+  if (keyFor(env.TYPESAFE_API_KEY)) {
     let judged = null;
     for (let i = 0; i < 40 && !judged; i++) {
       const { data } = await admin

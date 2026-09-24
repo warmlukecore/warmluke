@@ -8,15 +8,19 @@
 // definer function, since nobody can write at that table. And that
 // the owner can read it, and nobody can write it by hand.
 //
-// Needs the server on 3100 to hold TYPESAFE_API_KEY. Without it, the
-// row never comes — and this says so and passes, because a missing
-// key is the one condition the judge is built to do nothing under.
+// The judge is played back from tapes/ by default (model-tape.ts), so
+// this runs in CI too; the design is asked in the same words every run
+// so its judging is the same request. Recorded with MODEL_TAPE=record,
+// the server recording too. With the key set empty, the row never
+// comes — and this says so and passes, because a missing key is the
+// one condition the judge is built to do nothing under.
 //
-//   node scripts/check-judged.mjs
+//   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-judged.mjs
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { signInAsCheckUser, throwawayProject } from "./owner-session.mjs";
+import { keyFor } from "../src/lib/model-tape.ts";
 
 const env = Object.fromEntries(
   readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
@@ -25,6 +29,7 @@ const env = Object.fromEntries(
     .map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()])
 );
 const APP = process.env.APP_URL ?? "http://localhost:3100";
+process.env.MODEL_TAPE ??= "replay";
 
 const fails = [];
 const check = (name, cond) => {
@@ -57,6 +62,10 @@ const tool = async (name, args) => {
       params: { name, arguments: { project_id: project.id, ...args } },
     }),
   });
+  // Only on an answer: the server has to judge as this check expects it to.
+  if (res.ok && res.headers.get("x-model-tape") !== process.env.MODEL_TAPE) {
+    throw new Error(`the server at ${APP} is ${res.headers.get("x-model-tape") ? `in ${res.headers.get("x-model-tape")} mode` : "making real model calls"}, and this check is in ${process.env.MODEL_TAPE} mode; start it with MODEL_TAPE=${process.env.MODEL_TAPE}`);
+  }
   const j = await res.json();
   try {
     return JSON.parse(j.result.content[0].text);
@@ -81,7 +90,9 @@ const judged = async (waitMs) => {
   return null;
 };
 
-const stamp = Date.now().toString(36);
+// The same words every run, so the judge is asked the same thing and its
+// answer plays back; the throwaway project is what keeps runs apart.
+const stamp = "parcels";
 let row = null;
 try {
   console.log("a design through the tool, and the answer already back");
@@ -108,7 +119,7 @@ try {
   if (made?.status !== "waiting for approval") show(made);
 
   row = await judged(20_000);
-  if (!row && !env.TYPESAFE_API_KEY) {
+  if (!row && !keyFor(env.TYPESAFE_API_KEY)) {
     console.log("  skip  no TYPESAFE_API_KEY in this env, and no judgement came — which is the point of having no key");
   } else {
     check("and a judgement landed on its own", !!row);

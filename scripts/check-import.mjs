@@ -10,6 +10,7 @@
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { RESOURCES, importPage } from "../src/lib/shopify-resources.ts";
+import { shopifyStores } from "./owner-session.mjs";
 
 const env = Object.fromEntries(
   readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
@@ -24,10 +25,8 @@ const db = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_O
 // skipped and the run fails an hour after connecting.
 Object.assign(process.env, env);
 
-const { data: store } = await db
-  .from("stores")
-  .select("id, shop_domain, access_token, refresh_token, token_expires_at")
-  .eq("status", "connected").maybeSingle();
+// A store a real Shopify answers for: this imports from it.
+const [store = null] = await shopifyStores(db, "id, shop_domain, access_token, refresh_token, token_expires_at");
 // Nothing to import from is nothing to check — the way "no project on
 // this account" is elsewhere. Exit 0 and say so: on a database with a
 // store this runs in full, on a blank one it must not read as broken.

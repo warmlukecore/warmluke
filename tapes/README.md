@@ -24,7 +24,8 @@ with the check database idle (`gh run list --limit 1` says completed):
 # the router eval: no database, no server
 MODEL_TAPE=record node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-route-eval.mjs
 
-# Luke's checks and check-ask-store: the dev server records too
+# checks that talk to the server (check-luke-lookups, check-ask-store,
+# check-judged, check-as-client): the dev server records too
 (set -a; . ./.env.check.local; set +a; MODEL_TAPE=record pnpm exec next dev -p 3101)
 MODEL_TAPE=record ENV_FILE=.env.check.local APP_URL=http://localhost:3101 \
   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-luke-lookups.mjs

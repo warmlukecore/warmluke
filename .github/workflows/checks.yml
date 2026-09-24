@@ -130,7 +130,8 @@ jobs:
       # The check project is brought up to the repo before anything
       # reads it: a migration committed with the change it serves is
       # applied here, in order, once, with the ledger — so a new one
-      # needs no hand on it. Then the one seed the checks assume.
+      # needs no hand on it. Then the seed the checks assume: the
+      # check user as an administrator, and a shop to read.
       - name: psql
         run: command -v psql >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client)
 
@@ -138,7 +139,7 @@ jobs:
         run: node scripts/apply-migrations.mjs --env .env.local
 
       - name: seed
-        run: node scripts/seed-check-project.mjs --env .env.local
+        run: node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/seed-check-project.mjs --env .env.local
 
       - name: build
         run: pnpm build

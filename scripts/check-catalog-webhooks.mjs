@@ -17,6 +17,7 @@
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
+import { shopifyStores } from "./owner-session.mjs";
 
 const env = Object.fromEntries(
   readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
@@ -35,11 +36,15 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
-const { data: store, error: lookup } = await db
-  .from("stores")
-  .select("id, shop_domain")
-  .eq("status", "connected")
-  .maybeSingle();
+// Never the seeded shop: these write into the store, and the read checks
+// count on its rows staying as seeded.
+let store = null;
+let lookup = null;
+try {
+  [store = null] = await shopifyStores(db, "id, shop_domain");
+} catch (e) {
+  lookup = e;
+}
 // A query that could not run is not an empty result. This reported
 // "nothing to check" and exited 0 when the request had failed outright,
 // so a check of a security boundary passed without reaching it.

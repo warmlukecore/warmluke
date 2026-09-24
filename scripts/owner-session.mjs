@@ -162,3 +162,23 @@ export async function realStores(admin, columns = "id, project_id, shop_domain")
   if (error) throw new Error(`could not list the stores to check: ${error.message}`);
   return (data ?? []).map(({ projects: _project, ...store }) => store);
 }
+
+/**
+ * The seeded shop (scripts/fixtures/seed-shop.ts): a store the check
+ * project always has, so the checks that read one run in CI instead of
+ * saying "nothing to check". It belongs to an account of its own, so
+ * the check user never has two stores to choose between.
+ */
+export const SEED_SHOP = "seed-shop.myshopify.com";
+export const SEED_EMAIL = "seed@warmluke.test";
+
+/**
+ * The connected stores a real Shopify answers for: realStores without
+ * the seeded shop, whose token opens nothing, and whose rows the read
+ * checks count on staying as seeded. For checks that call Shopify, or
+ * write into a store as a webhook would.
+ */
+export async function shopifyStores(admin, columns = "id, project_id, shop_domain") {
+  const withDomain = /\bshop_domain\b/.test(columns) ? columns : `${columns}, shop_domain`;
+  return (await realStores(admin, withDomain)).filter((s) => s.shop_domain !== SEED_SHOP);
+}

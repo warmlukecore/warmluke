@@ -838,7 +838,11 @@ export async function readStoreRows(
   return {
     rows: (data ?? []).map((r) => {
       const row = r as unknown as Record<string, unknown>;
-      return { id: row.id as string, data: row };
+      // A view that groups (return reasons: one row per product and
+      // reason) has no id of its own, and every list keys its rows by
+      // one. What it shows is what tells its rows apart.
+      const id = (row.id as string | undefined) ?? spec.columns.map((c) => String(row[c.field] ?? "")).join("|");
+      return { id, data: row };
     }),
     total: count ?? 0,
   };

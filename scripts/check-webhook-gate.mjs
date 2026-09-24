@@ -123,6 +123,16 @@ check(
   (await countOf("orders")) === ordersBefore && (await countOf("products")) === productsBefore
 );
 
+// Everything below signs as Shopify, which takes the app's secret. The
+// check project's env holds none, so there this proves the half above,
+// the half a stranger has, and says it stopped rather than crashing on
+// an undefined key.
+if (!env.SHOPIFY_CLIENT_SECRET) {
+  console.log("\n  skip  no SHOPIFY_CLIENT_SECRET — nothing was signed as Shopify, so the webhook doors were not tried");
+  console.log(fails.length === 0 ? "\nthe public key opens nothing" : `\n${fails.length} FAILED`);
+  process.exit(fails.length === 0 ? 0 : 1);
+}
+
 console.log("\nthe one door it can knock on");
 // The shop is no longer something a caller says. Each store has its
 // own webhook address and the last segment of it — hmac(shop, app

@@ -140,8 +140,24 @@ part (gated, list, window, month, kind, needle), and fails below the baseline wr
 file. Recording it measures the real router and its latency; the baseline moves only with
 `EVAL_REBASELINE=1`.
 
+## The seeded shop
+
+The check project always holds one store: `seed-shop.myshopify.com`, owned by
+`seed@warmluke.test`, made again from nothing by `scripts/seed-check-project.mjs` on every CI
+run. Its rows are Shopify-shaped nodes (`scripts/fixtures/seed-shop.ts`: ten orders over four
+weeks, refunds, COD, a cancelled order, returns, drafts, discounts, two locations, payouts)
+saved through each resource's own saver, in import order, twice, as an import does. So the
+store checks test the import's flattening too, not just the reads. A resource added to the
+registry does not type-check until the fixture has rows for it.
+
 The store checks (`check-store-read`, `check-store-sections`, `check-store-token`,
-`check-webhook-gate`) read only stores outside the throwaway `check …` projects
-(`realStores` in `scripts/owner-session.mjs`). The check project holds no such store today,
-so they report "nothing to check": a seeded store with realistic rows is still to come.
+`check-webhook-gate`) read it through `realStores`, which skips the throwaway `check …`
+projects. Checks that call Shopify or write webhooks into a store (`check-import`,
+`check-recheck`, `check-drift`, `check-catalog-webhooks`, `check-order-webhook`) use
+`shopifyStores`, which also skips the seeded shop: its token opens nothing, and the read
+checks count on its rows staying as seeded. To seed by hand, with CI idle:
+
+```sh
+node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/seed-check-project.mjs --env .env.check.local
+```
 
