@@ -200,6 +200,7 @@ const COPY = [
   "src/lib/sample-store.ts",
   "src/components/Landing.tsx",
   "src/components/StorePreview.tsx",
+  "src/components/StorePreviewApp.tsx",
 ].sort();
 for (const f of COPY) {
   const code = readFileSync(new URL(`../${f}`, import.meta.url), "utf8")
