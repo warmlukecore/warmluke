@@ -47,7 +47,7 @@ Rules:
 | `PageFrame` | [`PageFrame.tsx`](../../src/components/PageFrame.tsx) | Dashboard and accounts: dark top bar, tabs, account menu, rounded page |
 | `CenteredCard` | [`CenteredCard.tsx`](../../src/components/CenteredCard.tsx) | One card under the mark: sign-in, sign-up, password reset, connect, invite, AI consent |
 | `LukeMark` | [`ui/LukeMark.tsx`](../../src/components/ui/LukeMark.tsx) | Luke's face: an orb in the Luke colours with eyes that blink; sizes `xs` 20px, `sm` 28px, `lg` 48px; `state="thinking"` while it works (the eyes look about, the glow breathes). CSS only, still under reduced motion |
-| `.beam`, `.shimmer` | [`globals.css`](../../src/app/globals.css) | While Luke works: a beam of its colour round the composer, and a light passing along the step it is on. Nowhere else; motion that means "working" |
+| `.beam`, `.beam-ink`, `.shimmer` | [`globals.css`](../../src/app/globals.css) | The composer's border: while Luke works, a beam of Luke's colour; while the merchant types, a beam in the page's ink that flares with each key and goes a moment after they stop. `.shimmer` is the light along the step Luke is on. Nowhere else |
 | `Icon` | [`ui/`](../../src/components/ui/) | Section icons by name (`ALLOWED_ICONS`) |
 
 Why size and width are separate: two Tailwind classes for the same property on one

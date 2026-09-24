@@ -31,7 +31,8 @@ import type {
   UiSchema,
 } from "@/lib/types";
 import { Icon } from "@/components/ui/Icon";
-import { ArrowUp, Bell, Check, ChevronRight, History, Pencil, Plug, Sparkles, Square, SquarePen, TriangleAlert, X, Zap } from "lucide-react";
+import { ArrowUp, Bell, Check, ChevronRight, Copy, History, Pencil, Plug, Sparkles, Square, SquarePen, TriangleAlert, X, Zap } from "lucide-react";
+import { button } from "@/components/ui/controls";
 import { LukeMark } from "@/components/ui/LukeMark";
 
 /** A message arrives with a short rise; turned off when motion is asked to be reduced (globals.css). */
@@ -622,6 +623,15 @@ export default function ChatPanel({
   projectId: string;
 }) {
   const [input, setInput] = useState("");
+  // While they type, the composer's border carries a beam in the page's
+  // ink, and each keystroke flares it; it goes a moment after they stop.
+  const [typing, setTyping] = useState(false);
+  const [strokes, setStrokes] = useState(0);
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (typingTimer.current) clearTimeout(typingTimer.current);
+  }, []);
+  const [copied, setCopied] = useState(false);
   /** The bubble being corrected, and the words as they stand. */
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
@@ -2280,92 +2290,149 @@ export default function ChatPanel({
           still uses this panel to read and approve what it asked for. */}
       {features.mcp && (
         <details
-          className="border-t border-line px-3 py-2 text-[11px]"
+          className="group/ai border-t border-line px-3 py-2.5"
           open={ownAiOpen || !features.chat}
           onToggle={(e) => setOwnAiOpen((e.currentTarget as HTMLDetailsElement).open)}
         >
-          <summary className="cursor-pointer list-none text-fg-muted hover:text-fg">
-            <Plug aria-hidden size={13} strokeWidth={2} className="mr-1 inline align-[-2px]" />Use your own Claude or ChatGPT
-          </summary>
-          <p className="mt-2 leading-relaxed text-fg-muted">
-            Add Warmluke as a connector with this address. It can read your store, and
-            anything it wants to build comes back here for you to approve.
-          </p>
-          <code className="mt-2 block rounded-lg bg-surface-subdued px-2.5 py-1.5 text-[10px] break-all text-fg-muted">
-            {mcpUrl}
-          </code>
-
-          {assistants.length > 0 && (
-            <div className="mt-3 space-y-1.5">
-              <div className="text-[10px] font-semibold tracking-widest text-fg-faint uppercase">
-                Connected
-              </div>
-              {assistants.map((c) => (
-                <div
-                  key={c.name}
-                  className="flex items-center gap-2 rounded-lg border border-line px-2.5 py-1.5"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      {/* Working, as opposed to merely allowed. A key
-                          that has not been used in a month looks the
-                          same as one in use, and only one of those is
-                          worth keeping. */}
-                      <span
-                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                          c.calls24h > 0 ? "bg-signal-success" : "bg-line-strong"
-                        }`}
-                      />
-                      <div className="truncate text-[11px] font-medium text-fg">{c.name}</div>
-                    </div>
-                    <div className="text-[10px] text-fg-faint">
-                      {c.lastCall
-                        ? `${c.calls24h > 0 ? "Working" : "Quiet"} · last used ${since(c.lastCall)}${
-                            c.calls24h > 0 ? ` · ${c.calls24h} today` : ""
-                          }`
-                        : "Connected, not used yet"}
-                      {/* Said once, here, because otherwise five rows
-                          appear and look like five separate grants. */}
-                      {c.count > 1 && ` · ${c.count} connections, disconnected together`}
-                    </div>
-                  </div>
-                  {/* Worth a pause — the assistant stops mid-sentence
-                      and reconnecting means consent again — but a
-                      browser confirm box is somebody else's chrome
-                      appearing in the middle of our app. The second
-                      click is the confirmation. */}
-                  {confirmRevoke === c.name ? (
-                    <span className="flex shrink-0 items-center gap-1.5 text-[10px]">
-                      <span className="text-fg-muted">Sure?</span>
-                      <button
-                        onClick={() => {
-                          setConfirmRevoke(null);
-                          revoke(c);
-                        }}
-                        className="font-medium text-tone-critical-fg hover:underline"
-                      >
-                        Disconnect
-                      </button>
-                      <button
-                        onClick={() => setConfirmRevoke(null)}
-                        className="text-fg-faint hover:underline"
-                      >
-                        Keep
-                      </button>
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => setConfirmRevoke(c.name)}
-                      disabled={revoking === c.name}
-                      className="shrink-0 text-[10px] font-medium text-tone-critical-fg hover:underline disabled:opacity-40"
-                    >
-                      {revoking === c.name ? "…" : "Disconnect"}
-                    </button>
-                  )}
-                </div>
+          <summary className="flex cursor-pointer list-none items-center gap-2.5 text-xs text-fg-muted hover:text-fg [&::-webkit-details-marker]:hidden">
+            <span aria-hidden className="flex -space-x-1.5">
+              {["/logos/claude.svg", "/logos/openai.svg"].map((src) => (
+                <span key={src} className="flex h-6 w-6 items-center justify-center rounded-full border border-line bg-surface shadow-card">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise */}
+                  <img src={src} alt="" width={13} height={13} className="h-3.5 w-3.5 object-contain" />
+                </span>
               ))}
+            </span>
+            <span className="min-w-0 flex-1 truncate font-medium text-fg">Use your own Claude or ChatGPT</span>
+            {assistants.length > 0 && (
+              <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-fg-muted">
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    assistants.some((c) => c.calls24h > 0) ? "bg-signal-success" : "bg-line-strong"
+                  }`}
+                />
+                {assistants.length} connected
+              </span>
+            )}
+            <ChevronRight
+              aria-hidden
+              size={14}
+              strokeWidth={2}
+              className="shrink-0 text-fg-faint transition-transform duration-150 group-open/ai:rotate-90"
+            />
+          </summary>
+
+          <div className="mt-2.5 space-y-2.5">
+            <p className="text-xs leading-relaxed text-fg-muted">
+              Add Warmluke as a custom connector with this address. It reads your store, and
+              anything it wants to build comes back here for you to approve.
+            </p>
+            <div className="flex items-center gap-1 rounded-control border border-line bg-surface-subdued py-1 pr-1 pl-2.5">
+              <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-fg" title={mcpUrl}>
+                {mcpUrl}
+              </code>
+              <button
+                onClick={() =>
+                  navigator.clipboard
+                    ?.writeText(mcpUrl)
+                    .then(() => {
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 1600);
+                    })
+                    .catch(() => {})
+                }
+                className={button("secondary", "sm")}
+              >
+                {copied ? (
+                  <Check aria-hidden size={13} strokeWidth={2.25} className="text-signal-success" />
+                ) : (
+                  <Copy aria-hidden size={13} strokeWidth={2} />
+                )}
+                {copied ? "Copied" : "Copy"}
+              </button>
             </div>
-          )}
+
+            {assistants.length > 0 && (
+              <ul className="overflow-hidden rounded-card border border-line">
+                {assistants.map((c) => {
+                  const working = c.calls24h > 0;
+                  const logo = /claude/i.test(c.name)
+                    ? "/logos/claude.svg"
+                    : /chatgpt|openai/i.test(c.name)
+                      ? "/logos/openai.svg"
+                      : null;
+                  // Working, as opposed to merely allowed: a key unused
+                  // for a month looks the same as one in use, and only
+                  // one of those is worth keeping.
+                  const status = c.lastCall
+                    ? `${working ? "Working" : "Quiet"} · last used ${since(c.lastCall)}${working ? ` · ${c.calls24h} today` : ""}`
+                    : "Connected, not used yet";
+                  return (
+                    <li key={c.name} className="flex items-center gap-2.5 border-b border-line px-2.5 py-2 last:border-b-0">
+                      <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-control border border-line bg-surface">
+                        {logo ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise
+                          <img src={logo} alt="" width={16} height={16} className="h-4 w-4 object-contain" />
+                        ) : (
+                          <Plug aria-hidden size={14} strokeWidth={1.75} className="text-fg-muted" />
+                        )}
+                        <span
+                          className={`absolute -right-0.5 -bottom-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-surface ${
+                            working ? "bg-signal-success" : "bg-line-strong"
+                          }`}
+                        />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate text-xs font-medium text-fg">{c.name}</span>
+                          {/* Said once, here, because otherwise five rows
+                              appear and look like five separate grants. */}
+                          {c.count > 1 && (
+                            <span
+                              title={`${c.count} connections, disconnected together`}
+                              className="shrink-0 rounded-full bg-surface-subdued px-1.5 text-[10px] text-fg-muted tabular-nums"
+                            >
+                              ×{c.count}
+                            </span>
+                          )}
+                        </div>
+                        <div className="truncate text-[11px] text-fg-faint" title={status}>
+                          {status}
+                        </div>
+                      </div>
+                      {/* Worth a pause (the assistant stops mid-sentence and
+                          reconnecting means consent again), so the second
+                          tap is the confirmation. */}
+                      {confirmRevoke === c.name ? (
+                        <span className="flex shrink-0 items-center gap-1">
+                          <button
+                            onClick={() => {
+                              setConfirmRevoke(null);
+                              revoke(c);
+                            }}
+                            className={button("critical", "sm")}
+                          >
+                            Disconnect
+                          </button>
+                          <button onClick={() => setConfirmRevoke(null)} className={button("plain", "sm")}>
+                            Keep
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmRevoke(c.name)}
+                          disabled={revoking === c.name}
+                          className={button("critical-plain", "sm")}
+                        >
+                          {revoking === c.name ? "Disconnecting…" : "Disconnect"}
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
         </details>
       )}
 
@@ -2459,10 +2526,12 @@ export default function ChatPanel({
             thick ring and a labelled button made the composer the
             loudest thing on the panel, and the conversation should be. */}
         {/* While Luke works, a beam of its colour goes round the box;
-            focused, the border takes Luke's colour. */}
+            while they type, a beam in the page's ink, flaring with each
+            key. Focused, the border takes Luke's colour. */}
         <div
+          data-stroke={strokes % 2}
           className={`flex items-end gap-2 rounded-2xl border border-line bg-surface px-3 py-2 shadow-card transition-all duration-150 focus-within:border-luke-light focus-within:shadow-[0_0_0_3px_rgb(139_126_255/0.14)] ${
-            busy ? "beam" : ""
+            busy ? "beam" : typing ? "beam beam-ink" : ""
           }`}
         >
           <textarea
@@ -2470,6 +2539,10 @@ export default function ChatPanel({
             value={input}
             onChange={(e) => {
               setInput(e.target.value);
+              setStrokes((n) => n + 1);
+              setTyping(true);
+              if (typingTimer.current) clearTimeout(typingTimer.current);
+              typingTimer.current = setTimeout(() => setTyping(false), 1200);
               // Grows with what is typed, up to a few lines, and
               // shrinks back; a fixed two rows was mostly empty.
               e.target.style.height = "auto";
