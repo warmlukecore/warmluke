@@ -36,6 +36,7 @@ import { UTM_KEYS, type Utm } from "@/lib/landing";
 import { bookDemo, type BookingState } from "@/app/actions";
 import { Logo } from "@/components/ui/Logo";
 import { HEARD_OPTIONS, ORDER_OPTIONS, TEAM_OPTIONS, heardDetailPrompt, type Option } from "@/lib/onboarding";
+import { FIGURES, FOLLOW_UP, LOW, LOW_STOCK, RETURNS, money, variantName } from "@/lib/sample-store";
 
 const SESSION_KEY = "wl_session";
 
@@ -449,17 +450,14 @@ const ASK_ICON: Record<Show, LucideIcon> = {
 
 /**
  * What comes out of the chat beside an answer: the same facts, drawn.
- * The numbers are the ones the reply says, so the two never disagree.
+ * Both read the sample store, so the drawing and the reply cannot
+ * disagree, with each other or with the dashboard at the top.
  */
 function Artifact({ show }: { show: Show }) {
   const card = "w-full max-w-[17rem] rounded-xl border border-hair bg-white p-3.5 shadow-[0_24px_48px_-20px_rgb(49_46_129/0.35)]";
   const head = "mb-2.5 flex items-center justify-between text-xs font-medium text-neutral-500";
   if (show === "stock") {
-    const rows: Array<[string, number]> = [
-      ["Classic Tee / M", 4],
-      ["Canvas Tote", 7],
-      ["Ceramic Mug / White", 9],
-    ];
+    const rows = LOW.map((v): [string, number] => [variantName(v), v.stock]);
     return (
       <div className={card}>
         <div className={head}>
@@ -473,7 +471,7 @@ function Artifact({ show }: { show: Show }) {
                 <span className="shrink-0 tabular-nums">{n} left</span>
               </div>
               <div className="mt-1 h-1.5 rounded-full bg-neutral-100">
-                <div className={`h-1.5 rounded-full ${n < 5 ? "bg-rose-400" : "bg-amber-400"}`} style={{ width: `${n * 10}%` }} />
+                <div className={`h-1.5 rounded-full ${n < LOW_STOCK / 2 ? "bg-rose-400" : "bg-amber-400"}`} style={{ width: `${(n / LOW_STOCK) * 100}%` }} />
               </div>
             </div>
           ))}
@@ -482,7 +480,8 @@ function Artifact({ show }: { show: Show }) {
     );
   }
   if (show === "orders") {
-    const week = [11, 14, 9, 16, 12, 15, 18];
+    const week = FIGURES.week;
+    const top = Math.max(...week);
     return (
       <div className={card}>
         <div className={head}>
@@ -490,41 +489,51 @@ function Artifact({ show }: { show: Show }) {
         </div>
         <div className="flex h-16 items-end gap-1.5">
           {week.map((n, i) => (
-            <div key={i} className={`flex-1 rounded-t ${i === week.length - 1 ? "bg-accent" : "bg-accent/25"}`} style={{ height: `${(n / 18) * 100}%` }} />
+            <div key={i} className={`flex-1 rounded-t ${i === week.length - 1 ? "bg-accent" : "bg-accent/25"}`} style={{ height: `${(n / top) * 100}%` }} />
           ))}
         </div>
         <div className="mt-2.5 flex items-baseline justify-between gap-3 text-xs">
           <span className="text-quiet">Yesterday</span>
           <span className="text-ink">
-            <span className="font-serif text-lg">18</span> orders · $4,120
+            <span className="font-serif text-lg">{FIGURES.yesterday.orders}</span> orders · {money(FIGURES.yesterday.collected)}
           </span>
         </div>
       </div>
     );
   }
   if (show === "customer") {
+    const latest = FOLLOW_UP.orders[0];
     return (
       <div className={card}>
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-accent/10 text-sm font-semibold text-accent">PS</span>
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-accent/10 text-sm font-semibold text-accent">
+            {FOLLOW_UP.name.split(" ").map((w) => w[0]).join("")}
+          </span>
           <div className="min-w-0">
-            <div className="text-sm font-medium text-ink">Priya Sharma</div>
-            <div className="text-xs text-quiet">4 orders · $1,842 since March</div>
+            <div className="text-sm font-medium text-ink">{FOLLOW_UP.name}</div>
+            <div className="text-xs text-quiet">
+              {FOLLOW_UP.orders.length} orders · {money(FOLLOW_UP.spent)} this month
+            </div>
           </div>
         </div>
         <div className="mt-3 flex items-center justify-between rounded-lg bg-neutral-50 px-2.5 py-2 text-xs">
-          <span className="text-ink">#1041 · $598</span>
+          <span className="text-ink">
+            #{latest.number} · {money(latest.total)}
+          </span>
           <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">Awaiting payment</span>
         </div>
       </div>
     );
   }
   if (show === "returns") {
-    const cols: Array<[string, number, string]> = [
-      ["Requested", 3, "bg-neutral-300"],
-      ["Received", 2, "bg-neutral-400"],
-      ["Refunded", 1, "bg-accent"],
-    ];
+    // A card for each return at that stage, up to three: the board, not the ledger.
+    const cols = (
+      [
+        ["Requested", "bg-neutral-300"],
+        ["Received", "bg-neutral-400"],
+        ["Refunded", "bg-accent"],
+      ] as const
+    ).map(([name, tone]): [string, number, string] => [name, Math.min(3, RETURNS.filter((r) => r.stage === name).length), tone]);
     return (
       <div className={card}>
         <div className={head}>
@@ -550,9 +559,9 @@ function Artifact({ show }: { show: Show }) {
   }
   if (show === "dashboard") {
     const tiles: Array<[string, string]> = [
-      ["To send", "6"],
-      ["Low stock", "3"],
-      ["Returns", "2"],
+      ["To send", String(FIGURES.toSend)],
+      ["Low stock", String(LOW.length)],
+      ["Returns", String(FIGURES.openReturns)],
     ];
     return (
       <div className={card}>

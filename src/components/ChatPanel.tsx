@@ -34,6 +34,7 @@ import { Icon } from "@/components/ui/Icon";
 import { ArrowUp, Bell, Check, ChevronRight, Copy, History, Pencil, Plug, Sparkles, Square, SquarePen, TriangleAlert, X, Zap } from "lucide-react";
 import { button } from "@/components/ui/controls";
 import { LukeMark } from "@/components/ui/LukeMark";
+import { LUKE_COPY } from "@/lib/luke-copy";
 
 /** A message arrives with a short rise; turned off when motion is asked to be reduced (globals.css). */
 const RISE = { ["--rise-from" as string]: "6px", ["--rise-for" as string]: "0.28s" } as React.CSSProperties;
@@ -1228,7 +1229,7 @@ export default function ChatPanel({
           <LukeMark state={busy ? "thinking" : "idle"} />
           <div className="min-w-0">
             <div className="text-sm font-semibold text-fg">Luke</div>
-            <div className="truncate text-[11px] text-fg-faint">Describe it, preview it, then it applies</div>
+            <div className="truncate text-[11px] text-fg-faint">{LUKE_COPY.tagline}</div>
           </div>
           <div ref={menus} className="relative ml-auto flex items-center gap-1">
             {/* What their own AI asked for is a notification, not a
@@ -1731,11 +1732,8 @@ export default function ChatPanel({
         {messages.length === 0 && (
           <div className="rise flex min-h-[55%] flex-col items-center justify-center px-4 text-center">
             <LukeMark size="lg" />
-            <h2 className="mt-4 text-lg font-semibold text-fg">Where should we begin?</h2>
-            <p className="mt-1.5 max-w-xs text-[13px] leading-relaxed text-fg-muted">
-              Tell me the problem you&rsquo;re trying to solve, in your own words. I&rsquo;ll ask
-              how you work, show you a plan, and build only once you approve it.
-            </p>
+            <h2 className="mt-4 text-lg font-semibold text-fg">{LUKE_COPY.emptyTitle}</h2>
+            <p className="mt-1.5 max-w-xs text-[13px] leading-relaxed text-fg-muted">{LUKE_COPY.emptyBody}</p>
           </div>
         )}
 
@@ -2315,7 +2313,7 @@ export default function ChatPanel({
                 </span>
               ))}
             </span>
-            <span className="min-w-0 flex-1 truncate font-medium text-fg">Use your own Claude or ChatGPT</span>
+            <span className="min-w-0 flex-1 truncate font-medium text-fg">{LUKE_COPY.ownAi}</span>
             {assistants.length > 0 && (
               <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-fg-muted">
                 <span
@@ -2563,7 +2561,7 @@ export default function ChatPanel({
               }
             }}
             rows={1}
-            placeholder="Ask Luke to build or change something"
+            placeholder={LUKE_COPY.placeholder}
             className="max-h-40 flex-1 resize-none bg-transparent py-0.5 text-[13px] leading-6 text-fg outline-none placeholder:text-fg-faint"
           />
           <button
@@ -2581,7 +2579,7 @@ export default function ChatPanel({
           </button>
         </div>
         <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 text-[10px] text-fg-faint">
-          <span>Asked, previewed, versioned, reversible — nothing applies without your approval.</span>
+          <span>{LUKE_COPY.promise}</span>
           {/* From the engine's own registry, one tap away rather than
               repeated on every design. The assistant is told to flag
               anything it cannot do, but a prompt instruction is not a

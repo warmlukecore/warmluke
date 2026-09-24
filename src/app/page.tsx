@@ -34,7 +34,6 @@
 // Callers: none — this is "/".
 // ─────────────────────────────────────────────────────────────
 
-import { Fragment } from "react";
 import Link from "next/link";
 import { cookies, headers } from "next/headers";
 import { cycleCss, DEFAULT_HERO, headlineParts, heroById, resolveHero, VARIANT_COOKIE } from "@/lib/landing";
@@ -62,6 +61,8 @@ import {
 import { AskLuke, DemoForm, FloatingNav, LandingTracker, NavLinks, type Ask } from "@/components/Landing";
 import { whatCanChange, whatNeverChanges } from "@/lib/store-actions";
 import { Logo } from "@/components/ui/Logo";
+import { StorePreview } from "@/components/StorePreview";
+import { FIGURES, FOLLOW_UP, LOW, LOW_STOCK, STORE, Spell, money, spell, variantName } from "@/lib/sample-store";
 
 export const metadata = {
   title: "Warmluke: one place for your ecommerce business",
@@ -204,35 +205,40 @@ const LLM_TINT: Record<string, string> = {
  * Only what the product can do: an earlier brief had advertising spend
  * and support conversations in here, with no data behind either. A
  * line that cannot survive its own demo is worse than a shorter list.
- * The answers use the same store the drawing above does (Priya
- * Sharma's #1041 is the order awaiting payment there too), and the
- * first is the exchange the old hero carried, word for word.
+ * The facts in the answers are read from the sample store the
+ * dashboard above runs on (src/lib/sample-store.ts), so the stock Luke
+ * calls low is the stock the dashboard shows low, and the customer it
+ * finds is one a visitor can click on up there.
  */
+/** Yesterday in the sample store, said the way Luke says it. */
+function yesterdayReply() {
+  const { orders, collected, awaiting, toSend } = FIGURES.yesterday;
+  const not = toSend === 1 ? "hasn't" : "haven't";
+  return `Yesterday, in your store's timezone: ${orders} orders and ${money(collected)} collected. ${Spell(awaiting)} ${awaiting === 1 ? "is" : "are"} still awaiting payment on cash on delivery, and ${spell(toSend)} ${not} been sent yet. Want the ${spell(toSend)} that ${not} gone?`;
+}
+
 const ASKS: Ask[] = [
   {
     q: "Which products are running out?",
     a: "Low stock by variant and location, straight from what Shopify last told us.",
     said: "What's running low?",
-    reply:
-      "Three variants are under ten at your main location: Classic Tee / M (4), Canvas Tote (7), Ceramic Mug / White (9). Want a low-stock board your team can work from?",
-    from: ["Shopify", "synced 6 min ago"],
+    reply: `${Spell(LOW.length)} variants are under ${spell(LOW_STOCK)} at your main location: ${LOW.map((v) => `${variantName(v)} (${v.stock})`).join(", ")}. Want a low-stock board your team can work from?`,
+    from: ["Shopify", `synced ${STORE.synced} min ago`],
     show: "stock",
   },
   {
     q: "What happened in orders yesterday?",
     a: "Orders for a real calendar day in your store's own timezone. Totals, status, who ordered.",
-    reply:
-      "Yesterday, in your store's timezone: 18 orders and $4,120 collected. Three are still awaiting payment on cash on delivery, and two haven't been sent yet. Want the two that haven't gone?",
-    from: ["Shopify", "synced 6 min ago"],
+    reply: yesterdayReply(),
+    from: ["Shopify", `synced ${STORE.synced} min ago`],
     show: "orders",
   },
   {
     q: "Find this customer's orders.",
     a: "Look somebody up by name, email or phone and see what they bought.",
-    said: "Find Priya Sharma's orders.",
-    reply:
-      "Priya Sharma has 4 orders since March, $1,842 in all. The latest, #1041, is still awaiting payment. Her phone and email are on the order if you want to follow up.",
-    from: ["Shopify", "synced 6 min ago"],
+    said: `Find ${FOLLOW_UP.name}'s orders.`,
+    reply: `${FOLLOW_UP.name} has ${spell(FOLLOW_UP.orders.length)} orders this month, ${money(FOLLOW_UP.spent)} in all. The latest, #${FOLLOW_UP.orders[0].number}, is still awaiting payment. Their phone and email are on the order if you want to follow up.`,
+    from: ["Shopify", `synced ${STORE.synced} min ago`],
     show: "customer",
   },
   {
@@ -358,194 +364,6 @@ const BYO_LIMITS: Array<[string, string, LucideIcon]> = [
     Undo2,
   ],
 ];
-
-function Preview() {
-  const orders: Array<[string, string, string, string, string]> = [
-    ["Today", "#1042 · Aman Kumar", "$1,299", "Paid", "text-emerald-600"],
-    ["Today", "#1041 · Priya Sharma", "$598", "Pending", "text-amber-600"],
-    ["Yesterday", "#1040 · Rahul Verma", "$149", "Paid", "text-emerald-600"],
-    ["Yesterday", "#1039 · Sara Iqbal", "$2,897", "Refunded", "text-neutral-500"],
-  ];
-  const nav: Array<[string, string?]> = [
-    ["Home"],
-    ["Orders", "24"],
-    ["Draft orders", "16"],
-    ["Products"],
-    ["Stock"],
-    ["Discounts", "5"],
-    ["Returns"],
-    ["Customers"],
-  ];
-
-  return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none select-none overflow-hidden rounded-2xl p-3 text-[11px] md:p-4"
-      style={{
-        background: "rgb(255 255 255 / 0.55)",
-        border: "1px solid rgb(255 255 255 / 0.6)",
-        boxShadow: "var(--shadow-dashboard)",
-      }}
-    >
-      <div className="overflow-hidden rounded-xl border border-hair bg-white text-left">
-        {/* Top bar */}
-        <div className="flex items-center gap-3 border-b border-hair px-3 py-2">
-          <div className="flex items-center gap-1.5">
-            <Logo className="h-3.5" />
-            <span className="font-medium text-ink">Warmluke</span>
-            <span className="text-quiet">▾</span>
-          </div>
-          <div className="mx-auto hidden w-56 items-center justify-between rounded-md border border-hair px-2 py-1 text-quiet sm:flex">
-            <span>Search orders, products…</span>
-            <span className="rounded border border-hair px-1">⌘K</span>
-          </div>
-          <div className="ml-auto flex items-center gap-2 sm:ml-0">
-            <span className="rounded-full bg-accent px-2.5 py-1 font-medium text-white">
-              Ask Luke
-            </span>
-            <span className="text-quiet">🔔</span>
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-200 text-[9px] font-semibold text-neutral-700">
-              JB
-            </span>
-          </div>
-        </div>
-
-        <div className="flex">
-          {/* Sidebar */}
-          <div className="hidden w-40 shrink-0 border-r border-hair p-2 sm:block">
-            {nav.map(([label, badge], i) => (
-              <div
-                key={label}
-                className={`flex items-center justify-between rounded-md px-2 py-1.5 ${
-                  i === 0 ? "bg-neutral-100 font-medium text-ink" : "text-quiet"
-                }`}
-              >
-                <span>{label}</span>
-                {badge && (
-                  <span className="rounded bg-neutral-100 px-1 text-[10px] text-neutral-600">
-                    {badge}
-                  </span>
-                )}
-              </div>
-            ))}
-            <div className="mt-3 px-2 text-[10px] font-semibold tracking-widest text-neutral-400">
-              AUTOMATIONS
-            </div>
-            {["Low stock alert", "Refund approval", "Notifications", "Settings"].map((n) => (
-              <div key={n} className="rounded-md px-2 py-1.5 text-quiet">
-                {n}
-              </div>
-            ))}
-          </div>
-
-          {/* Main */}
-          <div className="min-w-0 flex-1 bg-neutral-50/60 p-3">
-            <div className="text-sm font-semibold text-ink">Welcome back, Jane</div>
-
-            <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px]">
-              <span className="rounded-full bg-accent px-2.5 py-1 font-medium text-white">
-                Ask Luke
-              </span>
-              {["Import", "New section", "Orders", "Stock", "Export"].map((n) => (
-                <span
-                  key={n}
-                  className="rounded-full border border-hair bg-white px-2.5 py-1 text-neutral-700"
-                >
-                  {n}
-                </span>
-              ))}
-              <span className="text-quiet">Customise</span>
-            </div>
-
-            {/* Stacked on a phone. Side by side they are narrow
-                enough that "Last 30 days" breaks over three lines,
-                which reads as a broken layout rather than a small
-                one. */}
-            <div className="mt-3 flex flex-col gap-3 sm:flex-row">
-              {/* Revenue */}
-              <div className="basis-0 flex-1 rounded-lg border border-hair bg-white p-3">
-                <div className="flex items-center gap-1 text-quiet">
-                  Revenue collected
-                  <span className="text-emerald-600">✓</span>
-                </div>
-                <div className="mt-0.5 text-lg font-semibold tracking-tight text-ink">
-                  $84,501
-                  <span className="text-xs font-normal text-quiet">.32</span>
-                </div>
-                <div className="mt-1 flex gap-3 text-[10px] text-quiet">
-                  <span>Last 30 days</span>
-                  <span className="text-emerald-600">+$18.2K</span>
-                  <span className="text-rose-600">−$4.9K</span>
-                </div>
-                {/* Hand-drawn rather than charted: one path is cheaper
-                    than a charting library and cannot fail to load. */}
-                <svg viewBox="0 0 220 64" className="mt-2 h-16 w-full" preserveAspectRatio="none">
-                  <defs>
-                    <linearGradient id="wl-rev" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="hsl(239 84% 67%)" stopOpacity="0.15" />
-                      <stop offset="100%" stopColor="hsl(239 84% 67%)" stopOpacity="0" />
-                    </linearGradient>
-                  </defs>
-                  <path
-                    d="M0 48 C 30 44, 44 24, 72 28 S 116 48, 140 34 S 186 8, 220 14 L 220 64 L 0 64 Z"
-                    fill="url(#wl-rev)"
-                  />
-                  <path
-                    d="M0 48 C 30 44, 44 24, 72 28 S 116 48, 140 34 S 186 8, 220 14"
-                    fill="none"
-                    stroke="hsl(239 84% 67%)"
-                    strokeWidth="1.5"
-                  />
-                </svg>
-              </div>
-
-              {/* What is in the copy */}
-              <div className="basis-0 flex-1 rounded-lg border border-hair bg-white p-3">
-                <div className="flex items-center justify-between text-quiet">
-                  <span>From your store</span>
-                  <span className="flex gap-1.5">
-                    <span>+</span>
-                    <span>⋯</span>
-                  </span>
-                </div>
-                {[
-                  ["Orders", "1,284"],
-                  ["Draft orders", "16"],
-                  ["Products in stock", "342"],
-                ].map(([k, v]) => (
-                  <div key={k} className="flex items-center justify-between py-3 text-xs">
-                    <span className="text-neutral-600">{k}</span>
-                    <span className="font-medium text-ink">{v}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Recent orders */}
-            <div className="mt-3 rounded-lg border border-hair bg-white p-3">
-              <div className="font-medium text-ink">Recent orders</div>
-              <div className="mt-2 grid grid-cols-[auto_1fr_auto_auto] gap-x-3 gap-y-2 text-[10px]">
-                {["Date", "Order", "Amount", "Status"].map((h) => (
-                  <div key={h} className="text-quiet">
-                    {h}
-                  </div>
-                ))}
-                {orders.map(([date, who, amount, status, tone]) => (
-                  <Fragment key={who}>
-                    <div className="text-quiet">{date}</div>
-                    <div className="truncate text-neutral-700">{who}</div>
-                    <div className="text-right text-neutral-700">{amount}</div>
-                    <div className={tone}>{status}</div>
-                  </Fragment>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /** Where the i-th of n sits on a ring, as a share of the ring's box, starting at the top. */
 function onRing(i: number, n: number, turn = 0): React.CSSProperties {
@@ -943,7 +761,7 @@ export default async function Landing({
             className="rise mt-8 w-full max-w-5xl"
             style={{ "--rise-from": "30px", "--rise-for": "0.8s", "--rise-after": "0.5s" } as React.CSSProperties}
           >
-            <Preview />
+            <StorePreview />
           </div>
         </main>
       </div>

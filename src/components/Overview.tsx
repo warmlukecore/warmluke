@@ -13,7 +13,7 @@
 // opens, or the order itself.
 // ─────────────────────────────────────────────────────────────
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ArrowRight,
   Clock3,
@@ -51,7 +51,7 @@ type Money = {
  * What abo_store_overview (0114) answers. The windows it counted are in
  * the answer; the page labels from them and keeps no copy of its own.
  */
-type OverviewData = {
+export type OverviewData = {
   store: { shop_domain: string; status: string; currency: string; timezone: string; last_synced_at: string | null } | null;
   days?: number;
   chart_days?: number;
@@ -90,7 +90,6 @@ export default function Overview({
   /** Changes when the store has been read again, to count afresh. */
   refreshKey: number;
 }) {
-  const fmt = useFormat();
   const [data, setData] = useState<OverviewData | null>(null);
   const [latest, setLatest] = useState<DetailRow[] | null>(null);
   const [name, setName] = useState<string | null>(null);
@@ -133,11 +132,6 @@ export default function Overview({
     });
   }, []);
 
-  const greeting = useMemo(() => {
-    const h = new Date(now).getHours();
-    return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
-  }, [now]);
-
   if (error) {
     return (
       <div className="mx-auto max-w-5xl">
@@ -153,7 +147,49 @@ export default function Overview({
   }
 
   if (!data) return <OverviewSkeleton />;
+  return (
+    <OverviewBoard
+      data={data}
+      latest={latest}
+      name={name}
+      now={now}
+      importing={importing}
+      hasSection={hasSection}
+      onOpenTable={onOpenTable}
+      onInspect={onInspect}
+    />
+  );
+}
+
+/**
+ * The overview itself, drawn from counts already made. The app's own
+ * screen, and the landing page's glimpse of it, fed the sample store:
+ * one drawing, so what a visitor sees is what they will open.
+ */
+export function OverviewBoard({
+  data,
+  latest,
+  name,
+  now,
+  importing,
+  hasSection,
+  onOpenTable,
+  onInspect,
+}: {
+  data: OverviewData;
+  /** The newest orders, or null while they are still being read. */
+  latest: DetailRow[] | null;
+  name: string | null;
+  now: number;
+  importing: boolean;
+  hasSection: (table: StoreTable) => boolean;
+  onOpenTable: (table: StoreTable) => void;
+  onInspect: (table: StoreTable, row: DetailRow) => void;
+}) {
+  const fmt = useFormat();
   if (!data.store) return null;
+  const hour = new Date(now).getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   const store = data.store;
   const money = [...(data.money ?? [])].sort((a, b) => (a.currency === store.currency ? -1 : b.currency === store.currency ? 1 : 0));

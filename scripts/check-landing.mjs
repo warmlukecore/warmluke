@@ -20,6 +20,7 @@ import {
   headlineParts,
 } from "../src/lib/landing.ts";
 import { readFileSync, readdirSync } from "node:fs";
+import * as sample from "../src/lib/sample-store.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -194,9 +195,11 @@ const pagesUnder = (dir) =>
   );
 const COPY = [
   ...pagesUnder("src/app").filter((f) => !BEHIND_THE_LOGIN.test(f)),
-  // The two files the landing page is actually written in.
+  // The files the landing page is actually written in.
   "src/lib/landing.ts",
+  "src/lib/sample-store.ts",
   "src/components/Landing.tsx",
+  "src/components/StorePreview.tsx",
 ].sort();
 for (const f of COPY) {
   const code = readFileSync(new URL(`../${f}`, import.meta.url), "utf8")
@@ -223,6 +226,32 @@ for (const f of COPY) {
     }
     check(`${ref} (${f.split("/").slice(-2).join("/")})`, there);
   }
+}
+
+console.log("\nand the sample store adds up");
+// The dashboard and Luke's answers are sentences built on these
+// numbers. "Two are awaiting payment" over a day with none, or a
+// customer "still awaiting payment" whose order was paid, would be the
+// page saying something about its own store that is not so.
+{
+  const { ORDERS, VARIANTS, LOW, LOW_STOCK, OUT, FIGURES, FOLLOW_UP, RETURNS, CUSTOMERS } = sample;
+  const numbers = ORDERS.map((o) => o.number);
+  check("orders are newest first, each number once", numbers.every((n, i) => i === 0 || numbers[i - 1] - n === 1));
+  check(
+    "each total is what its lines cost",
+    ORDERS.every((o) => o.total === o.lines.reduce((s, l) => s + VARIANTS[l.variant].price * l.qty, 0))
+  );
+  check("nothing unpaid has been sent", ORDERS.every((o) => o.payment !== "pending" || !o.sent));
+  check("something is out of stock, so the overview has stock to watch", OUT.length > 0 && OUT.every((v) => v.stock <= 0));
+  check("the low list is exactly what is under the line", LOW.length > 0 && LOW.length === VARIANTS.filter((v) => v.stock < LOW_STOCK).length);
+  check(
+    "yesterday has orders, some awaiting payment and some to send, as Luke says",
+    FIGURES.yesterday.orders > 0 && FIGURES.yesterday.awaiting > 0 && FIGURES.yesterday.toSend > 0
+  );
+  check("the customer Luke finds really is waiting on a payment", FOLLOW_UP.orders[0].payment === "pending" && FOLLOW_UP.orders.length > 1);
+  check("every day of the week Luke draws had orders", FIGURES.week.length === 7 && FIGURES.week.every((n) => n > 0));
+  check("every return is an order that exists, refunded when it says so", RETURNS.every((r) => ORDERS.includes(r.order) && (r.stage === "Refunded") === (r.order.payment === "refunded")));
+  check("every order belongs to a customer on the list", CUSTOMERS.reduce((s, c) => s + c.orders.length, 0) === ORDERS.length);
 }
 
 console.log("\nand the demo form sends what the booking reads");

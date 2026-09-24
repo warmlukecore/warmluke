@@ -57,6 +57,7 @@ Rules:
 | `Switch` | [`ui/Switch.tsx`](../../src/components/ui/Switch.tsx) | `role="switch"`; always shown with its state in words beside it |
 | `PasswordInput` | [`ui/PasswordInput.tsx`](../../src/components/ui/PasswordInput.tsx) | A password field with show and hide |
 | `PageFrame` | [`PageFrame.tsx`](../../src/components/PageFrame.tsx) | Dashboard, accounts and demo requests: dark top bar, tabs, account menu, rounded page |
+| `OverviewBoard` | [`Overview.tsx`](../../src/components/Overview.tsx) | The store overview drawn from counts already made; `Overview` loads them and hands them to it, and the landing hands it the sample store |
 | `Stat`, `Breakdown` | [`AdminParts.tsx`](../../src/components/AdminParts.tsx) | The admin screens' numbers: a figure with a line under it, and the top answers as bars |
 | `CenteredCard` | [`CenteredCard.tsx`](../../src/components/CenteredCard.tsx) | One card under the mark: sign-in, sign-up, password reset, connect, invite, AI consent |
 | `LukeMark` | [`ui/LukeMark.tsx`](../../src/components/ui/LukeMark.tsx) | Luke's face: an orb in the Luke colours with eyes that blink; sizes `xs` 20px, `sm` 28px, `lg` 48px; `state="thinking"` while it works (the eyes look about, the glow breathes). CSS only, still under reduced motion |
@@ -112,6 +113,16 @@ screen at most, colour only where it means
 something (connected, low, done), and labels in sentence case rather than small capitals.
 Anything on the landing that may bleed past its column relies on the page root's
 `overflow-x-clip`, never on a negative margin that would scroll the page sideways.
+
+The first screen's dashboard is the app itself, not a drawing of it: `StorePreview`
+draws the app's frame in the product tokens and fills it with the app's own
+`OverviewBoard`, `TableView` and `BoardView`, fed the sample store in
+`lib/sample-store.ts` instead of a database. It is drawn at a laptop's width (the app's
+breakpoints read the window) and zoomed to fit, a phone gets the app's phone layout,
+and it fades out at the bottom: a glimpse, not the whole app. Every figure about
+"your store" on the landing, Luke's answers and drawings included, is read from that
+one sample, so a change to it changes all of them together. When the app's screens
+change, the glimpse changes with them; nothing needs redrawing.
 
 A choice from a list is the page's own listbox, never the system's select menu: on the
 landing that is `Pick` in `components/Landing.tsx` (arrows, Enter, Escape and a letter to
