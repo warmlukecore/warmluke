@@ -50,6 +50,14 @@ through owner-scoped RPCs and the built-in chat settings UI.
 Tool descriptions tell clients to use inline SVG for charts in artifacts and to propose
 a persistent Warmluke section when the merchant wants the result retained.
 
+The six store-reading tools (`ask_store` through `low_stock`) are declared once, in
+[`src/lib/store-tools.ts`](../../src/lib/store-tools.ts): name, description, JSON Schema
+and a `run()` that reads with the caller's own client. The MCP route lists that same array,
+adding only `shop_domain` and the artifact note, and calls its `run()` once the store is
+settled; `aiStoreTools()` gives the same tools to the AI SDK for Luke. `check-store-tools`
+(pure) holds that there is one list and that each tool refuses a bad argument before any
+read. The other tools stay in the route: they are MCP's approval flows.
+
 ## Read behavior
 
 All reads use the caller-scoped Supabase client and inherit project/store RLS. Optional

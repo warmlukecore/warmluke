@@ -114,6 +114,8 @@ pnpm hooks
 | Screen styling | Typecheck, pure checks, build, and screenshots at desktop and phone width ([design system](../design/design-system.md)); `check-tone` for badge meaning |
 | Onboarding or profiles | `check-onboarding` (pure) and `check-profiles` (live) |
 | Admin screens | `check-admin` (live); `check-follow-up` (pure) for the CSV formula guard and the demo stages against 0120 |
+| Model calls | `check-model-errors` (pure): each provider's request as sent, the one-sentence failures, one attempt, the Gemini fallback |
+| Store tools | `check-store-tools` (pure) for one declaration and refusals before reads; `check-ask-store`, `check-leaders`, `check-free-turns`, `check-mcp-limit` (live) through MCP |
 | Overview figures | `check-overview` (live) |
 
 New regression tests should prove behavior rather than source wording. Source-text checks

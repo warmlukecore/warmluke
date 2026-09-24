@@ -75,6 +75,7 @@ The repository uses Next.js 16's `src/proxy.ts` convention—not the deprecated
 - `src/lib/engine.ts`: a complete read-only design turn shared by chat and MCP.
 - `src/lib/apply.ts`: the only application-level path from plans to builder writes.
 - `src/lib/store-read.ts`: canonical, caller-scoped commerce reads.
+- `src/lib/store-tools.ts`: the store-reading tools declared once, for MCP clients and Luke.
 - `src/lib/shopify-*.ts`: OAuth, resource registry, import, bulk, and webhook support.
 
 ### Database
