@@ -65,6 +65,19 @@ export const HEARD_OPTIONS: Option[] = [
   { value: "other", label: "Somewhere else" },
 ];
 
+/**
+ * What a person invited into somebody's app does there, asked once when
+ * they join. The list 0118 holds project_members.team_role to.
+ */
+export const MEMBER_ROLE_OPTIONS: Option[] = [
+  { value: "operations", label: "Operations" },
+  { value: "customer_support", label: "Customer support" },
+  { value: "warehouse", label: "Warehouse" },
+  { value: "finance", label: "Finance" },
+  { value: "marketing", label: "Marketing" },
+  { value: "other", label: "Something else" },
+];
+
 /** The follow-up a "where did you hear" answer earns, if any. */
 export function heardDetailPrompt(heard: string | null | undefined): string | null {
   if (heard === "referral") return "Who told you? (optional)";

@@ -135,7 +135,9 @@ finished onboarding goes to `/onboarding` first, except a person who only works 
 somebody else's app through an invite, and Warmluke's own team (administrators), who are
 not a business signing up; they can still open `/onboarding` by hand to see it. The
 accounts screen marks them "Warmluke team" and leaves them out of its figures. A failed
-read never blocks the dashboard. The
+read never blocks the dashboard. A person joining by invite is asked one short question
+on `/join` (their name, and what they do on the team); the owner sees it on the seat, and
+the accounts screen shows whose app they joined and who invited them. The
 landing-page prompt waits until onboarding is done, then opens in their project with the
 assistant.
 

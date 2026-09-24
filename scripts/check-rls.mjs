@@ -97,6 +97,22 @@ try {
   }).then((r) => r.json());
   check("a used link cannot be taken by someone else", stolen === null);
 
+  console.log("\nand who joined, in their own words (0118)");
+  const about = (jwt, body) =>
+    fetch(`${URL_}/rest/v1/rpc/abo_member_about`, {
+      method: "POST",
+      headers: { apikey: ANON, Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  check("staff can say who they are on the team",
+    (await about(staff.jwt, { p_project: proj.id, p_name: " Meera ", p_role: "warehouse" })).ok);
+  const told = (await O(`project_members?id=eq.${seat.id}&select=full_name,team_role`)).json?.[0];
+  check("and the owner sees it on the seat", told?.full_name === "Meera" && told?.team_role === "warehouse");
+  check("a role off the list is refused",
+    !(await about(staff.jwt, { p_project: proj.id, p_name: "Meera", p_role: "ceo" })).ok);
+  check("an outsider cannot write themselves onto the team",
+    !(await about(outsider.jwt, { p_project: proj.id, p_name: "Nobody", p_role: "other" })).ok);
+
   console.log("\nwhat staff CAN do — this is the point of the feature");
   check("staff sees the project", (await S(`projects?id=eq.${proj.id}`)).json.length === 1);
   check("staff sees the sections", (await S(`modules?id=eq.${mod.id}`)).json.length === 1);

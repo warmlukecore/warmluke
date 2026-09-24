@@ -48,7 +48,9 @@ Live checks use the isolated Supabase project and/or a server on port 3100. They
 - approved build claims and application outcomes;
 - request history, rejection, automatic-build gates, and undo;
 - conversation reload/window/streaming;
-- admin switches and turn ledger, and demo requests readable only by an administrator;
+- admin switches and turn ledger, demo requests readable only by an administrator, and
+  suspending, restoring and deleting an account;
+- that no security definer function is open to the public key without a guard (PAT);
 - the landing's event cap, which never lets browsing use up a demo booking's room;
 - Shopify import, webhooks, drift, canonical views, statistics, totals, refunds, variants,
   order items, and fulfillments;

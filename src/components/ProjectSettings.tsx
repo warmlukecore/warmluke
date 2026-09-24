@@ -23,6 +23,7 @@ import { Check, Copy, ExternalLink, Link2, Trash2, UserPlus } from "lucide-react
 import ConnectShopify from "@/components/ConnectShopify";
 import { storeStanding } from "@/lib/store-standing";
 import { ago } from "@/lib/when";
+import { MEMBER_ROLE_OPTIONS, labelOf } from "@/lib/onboarding";
 
 type Tab = "general" | "store" | "ai" | "people";
 
@@ -49,7 +50,15 @@ type ShopRow = {
   refresh_token_expires_at: string | null;
 };
 
-type MemberRow = { id: string; email: string | null; token: string; joined_at: string | null };
+/** A seat; the name and role are what the person who took it said when they joined (0118). */
+type MemberRow = {
+  id: string;
+  email: string | null;
+  token: string;
+  joined_at: string | null;
+  full_name: string | null;
+  team_role: string | null;
+};
 
 export default function ProjectSettings({
   project,
@@ -130,7 +139,7 @@ export default function ProjectSettings({
   async function loadSeats() {
     const { data, error: e } = await supabase
       .from("project_members")
-      .select("id, email, token, joined_at")
+      .select("id, email, token, joined_at, full_name, team_role")
       .eq("project_id", project.id)
       .order("created_at");
     // A list that failed to load is not a list of nobody.
@@ -153,7 +162,7 @@ export default function ProjectSettings({
     const { data, error: e } = await supabase
       .from("project_members")
       .insert({ project_id: project.id })
-      .select("id, email, token, joined_at")
+      .select("id, email, token, joined_at, full_name, team_role")
       .single();
     setAdding(false);
     if (e || !data) {
@@ -568,7 +577,7 @@ export default function ProjectSettings({
                       aria-hidden
                       className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${quietClasses(seat.email)}`}
                     >
-                      {seat.email.charAt(0).toUpperCase()}
+                      {(seat.full_name ?? seat.email).charAt(0).toUpperCase()}
                     </span>
                   ) : (
                     <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-dashed border-line-strong text-fg-faint">
@@ -576,8 +585,12 @@ export default function ProjectSettings({
                     </span>
                   )}
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] text-fg">{seat.email ?? "Link not opened yet"}</div>
-                    <div className="text-[11px] text-fg-faint">
+                    <div className="truncate text-[13px] text-fg">
+                      {seat.full_name ?? seat.email ?? "Link not opened yet"}
+                      {seat.team_role && <span className="text-fg-muted"> · {labelOf(MEMBER_ROLE_OPTIONS, seat.team_role)}</span>}
+                    </div>
+                    <div className="truncate text-[11px] text-fg-faint">
+                      {seat.full_name && seat.email ? `${seat.email} · ` : ""}
                       {seat.joined_at
                         ? `Joined ${new Date(seat.joined_at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })} · can use the app`
                         : "Waiting for them to open it"}

@@ -18,6 +18,7 @@ import {
   TEAM_OPTIONS,
   currentStep,
   heardDetailPrompt,
+  MEMBER_ROLE_OPTIONS,
   needsOnboarding,
   problems,
   returnsToOnboarding,
@@ -48,6 +49,15 @@ for (const [column, options] of [
   const form = options.map((o) => o.value).sort();
   check(`${column}: ${form.length} choices, the same in both`, JSON.stringify(table) === JSON.stringify(form));
   check(`${column}: every choice has words to show`, options.every((o) => o.label.trim().length > 0));
+}
+
+{
+  // The one list asked of an invited person, held by the seat itself (0118).
+  const seats = src("supabase/migrations/0118_who_joined_and_taking_an_account_off.sql");
+  const m = /team_role in \(([^)]*)\)/.exec(seats);
+  const table = m ? [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]).sort() : null;
+  const form = MEMBER_ROLE_OPTIONS.map((o) => o.value).sort();
+  check(`team_role: ${form.length} choices, the same in both`, JSON.stringify(table) === JSON.stringify(form));
 }
 
 console.log("\nwhat is asked for, and what can wait");

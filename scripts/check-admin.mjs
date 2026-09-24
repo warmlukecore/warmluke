@@ -134,6 +134,15 @@ try {
     ).error
   );
 
+  check(
+    "cannot suspend an account",
+    (await merchant.rpc("abo_admin_suspend", { p_user: made.user.id, p_on: true })).error?.code === "42501"
+  );
+  check(
+    "nor delete one",
+    (await merchant.rpc("abo_admin_delete_account", { p_user: made.user.id, p_email: email })).error?.code === "42501"
+  );
+
   const auditRead = await merchant
     .from("admin_account_audit")
     .select("actor_user_id")
@@ -344,6 +353,39 @@ try {
     check(
       "the trail keeps before and after values",
       (audit ?? []).every((entry) => entry.old_value && entry.new_value)
+    );
+
+    console.log("\ntaking an account off (0118)");
+    check(
+      "an administrator cannot suspend themselves",
+      (await owner.rpc("abo_admin_suspend", { p_user: signed.user.id, p_on: true })).error?.code === "42501"
+    );
+    check(
+      "an account is not deleted before it is suspended",
+      (await owner.rpc("abo_admin_delete_account", { p_user: made.user.id, p_email: email })).error?.code === "55000"
+    );
+    const suspended = await owner.rpc("abo_admin_suspend", { p_user: made.user.id, p_on: true });
+    check("an account can be suspended", suspended.data === true && !suspended.error);
+    const banned = (await admin.auth.admin.getUserById(made.user.id)).data.user?.banned_until;
+    check("and it cannot sign in", !!banned && Date.parse(banned) > Date.now());
+    check("and the sessions it had are ended", !!(await merchant.auth.refreshSession()).error);
+    const listedOff = ((await owner.rpc("abo_admin_accounts")).data ?? []).find((a) => a.user_id === made.user.id);
+    check("the accounts screen says so", listedOff?.suspended === true);
+    check(
+      "a wrong email does not delete it",
+      (await owner.rpc("abo_admin_delete_account", { p_user: made.user.id, p_email: "someone@else.test" })).error?.code === "22023"
+    );
+    const back = await owner.rpc("abo_admin_suspend", { p_user: made.user.id, p_on: false });
+    const unbanned = (await admin.auth.admin.getUserById(made.user.id)).data.user?.banned_until;
+    check("and restore lets it back in", back.data === false && (!unbanned || Date.parse(unbanned) <= Date.now()));
+    await owner.rpc("abo_admin_suspend", { p_user: made.user.id, p_on: true });
+    const erased = await owner.rpc("abo_admin_delete_account", { p_user: made.user.id, p_email: email.toUpperCase() });
+    check("with its email typed back, whatever the case, it is deleted", !erased.error && typeof erased.data === "number");
+    check("and is gone", !(await admin.auth.admin.getUserById(made.user.id)).data.user);
+    const trail = (await admin.from("admin_account_audit").select("action, old_value").eq("target_user_id", made.user.id)).data ?? [];
+    check(
+      "and the trail outlives it, with the address it had",
+      trail.some((t) => t.action === "delete" && t.old_value?.email === email) && trail.some((t) => t.action === "suspend")
     );
   }
 } finally {
