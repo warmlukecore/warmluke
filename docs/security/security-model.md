@@ -141,6 +141,17 @@ once set. Administrators read everyone's answers only through `abo_admin_account
 which refuses non-administrators with `42501`. The table has the standard OAuth-client
 write wall. `check-profiles` exercises all of this against a live database.
 
+Supabase lets anon and authenticated execute every new function in `public`, and a
+security definer function runs past RLS. So such a function must check its caller in its
+body or be one of the few doors guarded another way (Shopify's signature, the import
+ticket, the OAuth state); `check-definer-grants` fails anything else. Helpers written for
+triggers and cron jobs are closed to both roles (0117).
+
+Administrators can suspend an account (signed out everywhere, kept out, data kept,
+reversible) and, once suspended and only with its email typed back, delete it with the
+apps it owns (0118). Neither works on their own account or another administrator's, and
+both are written to the audit trail, which outlives the account.
+
 Anyone may write landing events, so each session is capped: sixty browsing events an
 hour, and five demo bookings counted on their own (0116), so clicking around the page can
 never use up the room a booking needs. Demo bookings stay unreadable with the public key. Administrators read them only through
