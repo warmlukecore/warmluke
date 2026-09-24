@@ -11,7 +11,7 @@ test and migration workflows may require additional values in `.env.check.local`
 | `NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY` | Yes | Public Supabase anonymous key; authorization still depends on JWT/RLS |
 | `ANTHROPIC_API_KEY` | For Anthropic models/fallback | Built-in assistant and gap-model access |
 | `ANTHROPIC_MODEL` | No | Main design model; defaults to `claude-sonnet-4-5` |
-| `ANTHROPIC_API_URL` | No | Compatible Messages API host for local/testing use |
+| `ANTHROPIC_API_URL` | No | The Messages URL (`…/v1/messages`) of a host speaking Anthropic's API, for testing or a proxy. A proxy must accept the model names in `ANTHROPIC_MODEL`, `ANTHROPIC_GAP_MODEL` and `ANTHROPIC_FALLBACK_MODEL`, or those calls are refused |
 | `ANTHROPIC_GAP_MODEL` | No | Lower-cost model used by the gap pass |
 | `ANTHROPIC_FALLBACK_MODEL` | No | Anthropic fallback after repeated Gemini transient failure |
 | `GEMINI_API_KEY` | For Gemini model IDs | Gemini generation access |

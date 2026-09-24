@@ -7,7 +7,10 @@
 // nothing changed, and whether trying again is any use. The raw
 // answer goes to the server log instead, under one prefix.
 //
-// No network: fetch is stood in for, so each status can be dealt.
+// No network: fetch is stood in for, so each status can be dealt, and
+// what each provider is sent can be read back. The calls go through the
+// AI SDK; this is what holds that the SDK changed nothing the merchant or
+// the bill can see: the request, the text, the failures, one attempt.
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-model-errors.mjs
 
@@ -20,10 +23,13 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
-// The provider, stood in for: a queue of answers, dealt in order.
+// The provider, stood in for: a queue of answers, dealt in order, and
+// every request it was sent, kept.
 const queue = [];
+const sent = [];
 const realFetch = globalThis.fetch;
-globalThis.fetch = async () => {
+globalThis.fetch = async (input, init) => {
+  sent.push({ url: String(input), headers: new Headers(init?.headers), body: init?.body ? JSON.parse(String(init.body)) : null });
   const next = queue.shift();
   if (next instanceof Error) throw next;
   return new Response(next.body, { status: next.status, headers: { "content-type": "application/json" } });
@@ -103,6 +109,80 @@ try {
     unset = e;
   }
   check("says so in a sentence, and is not retried", unset?.kind === "unset" && /no model key/.test(unset.message) && !isTransient(unset));
+
+  console.log("\nwhat Anthropic is sent, and what comes back");
+  process.env.ANTHROPIC_API_KEY = "test-key";
+  const reply = (text) => ({
+    status: 200,
+    body: JSON.stringify({
+      id: "msg_1", type: "message", role: "assistant", model: "claude-test",
+      content: [{ type: "text", text }], stop_reason: "end_turn", stop_sequence: null,
+      usage: { input_tokens: 10, output_tokens: 5 },
+    }),
+  });
+  sent.length = 0;
+  queue.push(reply('{"type":"clarify"}'));
+  const text = await callAnthropicChat(["the contract", "this project"], [
+    { role: "user", content: "track bikes" },
+    { role: "assistant", content: "which stages?" },
+    { role: "user", content: "intake, done" },
+  ]);
+  const req = sent[0];
+  check("the text comes back whole, for parseReply to judge", text === '{"type":"clarify"}');
+  check("to the messages URL, on our key", req?.url === "https://api.anthropic.com/v1/messages" && req.headers.get("x-api-key") === "test-key");
+  check("the model named, and replies capped at 6000 tokens", req?.body?.model === "claude-test" && req.body.max_tokens === 6000);
+  check(
+    "the contract is cached, what changes per project is not",
+    req?.body?.system?.length === 2 &&
+      req.body.system[0].text === "the contract" && req.body.system[0].cache_control?.type === "ephemeral" &&
+      req.body.system[1].text === "this project" && !req.body.system[1].cache_control
+  );
+  check(
+    "the whole conversation goes, in order",
+    JSON.stringify((req?.body?.messages ?? []).map((m) => [m.role, typeof m.content === "string" ? m.content : m.content.map((c) => c.text).join("")])) ===
+      JSON.stringify([["user", "track bikes"], ["assistant", "which stages?"], ["user", "intake, done"]])
+  );
+  check("and nothing the call never set, like a temperature", req?.body && !("temperature" in req.body) && !("top_p" in req.body));
+  sent.length = 0;
+  await failing(529, '{"error":{"type":"overloaded_error"}}');
+  check("a failure is tried once: retrying is the caller's call", sent.length === 1);
+  process.env.ANTHROPIC_API_URL = "http://localhost:4010/v1/messages";
+  sent.length = 0;
+  queue.push(reply("ok"));
+  await call();
+  check("ANTHROPIC_API_URL still points the same call elsewhere", sent[0]?.url === "http://localhost:4010/v1/messages");
+  delete process.env.ANTHROPIC_API_URL;
+
+  console.log("\nwhat Gemini is sent, and the way back to Anthropic");
+  process.env.GEMINI_API_KEY = "gemini-key";
+  const gemini = (text) => ({
+    status: 200,
+    body: JSON.stringify({
+      candidates: [{ content: { role: "model", parts: [{ text }] }, finishReason: "STOP", index: 0 }],
+      usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15 },
+    }),
+  });
+  sent.length = 0;
+  queue.push(gemini("not json at all"));
+  const said = await callAnthropicChat(["the contract", "this project"], [
+    { role: "user", content: "hi" },
+    { role: "assistant", content: "hello" },
+    { role: "user", content: "again" },
+  ], undefined, "gemini-test");
+  const g = sent[0];
+  check("a reply that is not JSON comes back raw, for the repairs, not as an error", said === "not json at all");
+  check("to the model's generateContent, on the Gemini key", /\/v1beta\/models\/gemini-test:generateContent$/.test(g?.url ?? "") && g.headers.get("x-goog-api-key") === "gemini-key");
+  check("asked for JSON, capped at 6000", g?.body?.generationConfig?.responseMimeType === "application/json" && g.body.generationConfig.maxOutputTokens === 6000);
+  check("the blocks as one instruction", g?.body?.systemInstruction?.parts?.map((x) => x.text).join("") === "the contract\n\nthis project");
+  check("and the assistant speaking as the model", JSON.stringify(g?.body?.contents?.map((c) => c.role)) === '["user","model","user"]');
+  sent.length = 0;
+  queue.push({ status: 503, body: "busy" }, { status: 503, body: "busy" }, reply("from anthropic"));
+  process.env.ANTHROPIC_FALLBACK_MODEL = "claude-fallback";
+  const fell = await callAnthropicChat("s", [{ role: "user", content: "hi" }], undefined, "gemini-test");
+  check(
+    "Gemini busy twice: Anthropic answers instead, on the fallback model",
+    fell === "from anthropic" && sent.length === 3 && sent[2].body?.model === "claude-fallback"
+  );
 
   console.log("\nthe importer's own errors still read as they did");
   check("a Shopify 429 in plain words is transient", isTransient(new Error("Shopify said 429 Too Many Requests")));

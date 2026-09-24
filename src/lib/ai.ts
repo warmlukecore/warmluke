@@ -6,6 +6,19 @@
 // the apply route re-validates everything under the caller's RLS.
 // ─────────────────────────────────────────────────────────────
 
+import {
+  APICallError,
+  NoContentGeneratedError,
+  generateText,
+  wrapLanguageModel,
+  type Instructions,
+  type LanguageModel,
+  type LanguageModelMiddleware,
+  type ModelMessage,
+  type SystemModelMessage,
+} from "ai";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGoogle } from "@ai-sdk/google";
 import { isStoreTable, storeTableSchema, STORE_TABLES } from "@/lib/store-read";
 // One definition, shared with the Shopify importer rather than copied.
 import { isTransient } from "@/lib/retry";
@@ -1990,7 +2003,7 @@ export function parseReply(
   }
 }
 
-// ── Anthropic call ───────────────────────────────────────────
+// ── The model ────────────────────────────────────────────────
 
 export interface ChatTurn {
   role: "user" | "assistant";
@@ -2053,14 +2066,79 @@ export function modelError(provider: Provider, status: number, raw: string): Mod
   return new ModelError(kind, provider, status, raw);
 }
 
-/** The call itself, with a dropped connection read as the model being down. A stop stays a stop. */
-async function reach(provider: Provider, call: () => Promise<Response>): Promise<Response> {
-  try {
-    return await call();
-  } catch (e) {
-    if (e instanceof Error && e.name === "AbortError") throw e;
-    throw modelError(provider, 0, e instanceof Error ? e.message : String(e));
+// ── The call itself ─────────────────────────────────────────────
+//
+// Through the AI SDK (`ai`, with `@ai-sdk/anthropic` and `@ai-sdk/google`
+// talking to each provider directly, on our own keys): one call shape for
+// both, and the ground the tool loop and streaming stand on. What a call
+// returns and how it fails did not move with it, and check-model-errors
+// holds both, down to the request each provider is sent:
+//
+//   - the text answered, whole, for parseReply and its repairs to judge;
+//   - a failure as one ModelError sentence, never the SDK's own error;
+//   - no retries inside the SDK: whether to try again stays the caller's
+//     decision (Gemini tries twice, then Anthropic; Anthropic says so at
+//     once), where the SDK alone would quietly try three times;
+//   - a stop is a stop, passed through untouched.
+
+/** Every reply is capped here, as it was: a whole design fits, a runaway does not. */
+const MAX_OUTPUT_TOKENS = 6000;
+
+/**
+ * The provider's fetch, with a dropped connection read as the model
+ * being down. The SDK only recognises some network failures; this reads
+ * every thrown fetch that way, as the hand-written call did. A stop stays
+ * a stop. globalThis.fetch is read per call, so a check can stand in for it.
+ */
+function reaching(provider: Provider): typeof fetch {
+  return async (input, init) => {
+    try {
+      return await globalThis.fetch(input, init);
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") throw e;
+      throw modelError(provider, 0, e instanceof Error ? e.message : String(e));
+    }
+  };
+}
+
+/** What the SDK threw, as the sentence the merchant reads. */
+function asModelError(provider: Provider, e: unknown): unknown {
+  if (e instanceof ModelError || (e instanceof Error && e.name === "AbortError")) return e;
+  if (APICallError.isInstance(e)) {
+    const status = e.statusCode ?? 0;
+    // A 200 whose body was not a reply: nothing usable came back.
+    if (status >= 200 && status < 300) return new ModelError("empty", provider, status, e.responseBody ?? e.message);
+    return modelError(provider, status, e.responseBody || e.message);
   }
+  if (NoContentGeneratedError.isInstance(e)) return new ModelError("empty", provider, 200, e.message);
+  return e;
+}
+
+/** One call: the text the model answered, or the ModelError that says why not. */
+async function generate(
+  provider: Provider,
+  model: LanguageModel,
+  instructions: Instructions,
+  turns: ChatTurn[],
+  signal?: AbortSignal
+): Promise<string> {
+  let text: string;
+  try {
+    ({ text } = await generateText({
+      model,
+      instructions,
+      messages: turns.map((t): ModelMessage =>
+        t.role === "user" ? { role: "user", content: t.content } : { role: "assistant", content: t.content }
+      ),
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
+      maxRetries: 0,
+      abortSignal: signal,
+    }));
+  } catch (e) {
+    throw asModelError(provider, e);
+  }
+  if (!text) throw new ModelError("empty", provider, 200, "empty content");
+  return text;
 }
 
 export async function callAnthropicChat(
@@ -2113,40 +2191,28 @@ export async function callAnthropicChat(
 
   // Where the messages call goes. Read when called, like the model, so
   // a local run can point the same request at another host that speaks
-  // this API — testing without spending Anthropic credit.
-  const res = await reach("anthropic", () => fetch(process.env.ANTHROPIC_API_URL || "https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 6000,
-      // The contract is ~6,500 tokens and byte-identical on every call,
-      // including all three repair attempts of the same turn. Sent fresh
-      // each time it is the bulk of the bill, and it is what made a
-      // twenty-scenario eval cost more than the bugs it finds — which
-      // meant the measurements could not be afforded, which meant fixes
-      // went back to being guesses.
-      system: (Array.isArray(system) ? system : [system]).map((text, i) =>
-        i === 0 ? { type: "text", text, cache_control: { type: "ephemeral" } } : { type: "text", text }
-      ),
-      messages: turns,
-    }),
-    signal,
-  }));
+  // this API — testing without spending Anthropic credit. It is the
+  // messages URL, as it always was; the SDK wants the prefix before it.
+  const url = process.env.ANTHROPIC_API_URL?.trim();
+  const anthropic = createAnthropic({
+    apiKey,
+    baseURL: url ? url.replace(/\/messages\/?$/, "") : undefined,
+    fetch: reaching("anthropic"),
+  });
 
-  if (!res.ok) throw modelError("anthropic", res.status, await res.text());
-
-  const data = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
-  const text = (data.content ?? [])
-    .filter((b) => b.type === "text")
-    .map((b) => b.text ?? "")
-    .join("");
-  if (!text) throw new ModelError("empty", "anthropic", res.status, "empty content");
-  return text;
+  // The contract is ~6,500 tokens and byte-identical on every call,
+  // including all three repair attempts of the same turn. Sent fresh
+  // each time it is the bulk of the bill, and it is what made a
+  // twenty-scenario eval cost more than the bugs it finds — which
+  // meant the measurements could not be afforded, which meant fixes
+  // went back to being guesses. So the first block is cached.
+  const instructions = (Array.isArray(system) ? system : [system]).map(
+    (content, i): SystemModelMessage =>
+      i === 0
+        ? { role: "system", content, providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } } }
+        : { role: "system", content }
+  );
+  return generate("anthropic", anthropic(model), instructions, turns, signal);
 }
 
 // ── The gap pass ────────────────────────────────────────────────
@@ -2233,33 +2299,19 @@ async function callGemini(
   if (!apiKey) {
     throw new ModelError("unset", "gemini", 0, `ANTHROPIC_MODEL is "${model}" but GEMINI_API_KEY is not set`);
   }
+  const google = createGoogle({ apiKey, fetch: reaching("gemini") });
+  // Gemini has no cache marker to carry, so the blocks go as one text.
   const systemText = (Array.isArray(system) ? system : [system]).join("\n\n");
-
-  const res = await reach("gemini", () => fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemText }] },
-        contents: turns.map((t) => ({
-          role: t.role === "assistant" ? "model" : "user",
-          parts: [{ text: t.content }],
-        })),
-        generationConfig: { maxOutputTokens: 6000, responseMimeType: "application/json" },
-      }),
-      signal,
-    }
-  ));
-
-  if (!res.ok) throw modelError("gemini", res.status, await res.text());
-
-  const data = (await res.json()) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-  };
-  const text = (data.candidates?.[0]?.content?.parts ?? [])
-    .map((p) => p.text ?? "")
-    .join("");
-  if (!text) throw new ModelError("empty", "gemini", res.status, "empty candidates");
-  return text;
+  return generate("gemini", wrapLanguageModel({ model: google(model), middleware: JSON_MODE }), systemText, turns, signal);
 }
+
+/**
+ * Gemini asked for JSON (responseMimeType application/json), with the
+ * text still handed back raw. Output.json() would ask the same, but it
+ * throws on a reply that does not parse, and that reply belongs to
+ * parseReply and its repairs, not to an exception.
+ */
+const JSON_MODE: LanguageModelMiddleware = {
+  specificationVersion: "v4",
+  transformParams: async ({ params }) => ({ ...params, responseFormat: { type: "json" } }),
+};

@@ -68,7 +68,9 @@ The repository uses Next.js 16's `src/proxy.ts` convention—not the deprecated
 - `src/lib/types.ts`: shared domain and model-output contracts.
 - `src/lib/capabilities.ts`: supported columns, views, operators, triggers, actions,
   statistics, and unsupported requests.
-- `src/lib/ai.ts`: prompt construction, response parsing, validation, provider calls,
+- `src/lib/ai.ts`: prompt construction, response parsing, validation, provider calls
+  (through the AI SDK: `ai` with `@ai-sdk/anthropic` and `@ai-sdk/google`, direct to each
+  provider on our own keys, SDK retries off),
   and gap analysis.
 - `src/lib/engine.ts`: a complete read-only design turn shared by chat and MCP.
 - `src/lib/apply.ts`: the only application-level path from plans to builder writes.
