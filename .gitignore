@@ -18,3 +18,5 @@ evals/
 
 # Playwright MCP scratch output (snapshots, console logs)
 .playwright-mcp/
+/playwright-report/
+/test-results/

@@ -22,6 +22,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { askJev } from "@/lib/jev";
+import { keyFor } from "@/lib/model-tape";
 import {
   AUTOMATION_ACTIONS,
   COLUMNS,
@@ -97,7 +98,8 @@ export async function judgeDesign(
   opts: { request: string; built: string; unmet: string[] },
   timeoutMs = TIMEOUT_MS
 ): Promise<Judgement | null> {
-  const key = process.env.TYPESAFE_API_KEY;
+  // keyFor: a stand-in while replaying tapes (model-tape.ts), where the call never leaves.
+  const key = keyFor(process.env.TYPESAFE_API_KEY);
   if (!key) return null;
   const unmet = opts.unmet.slice(0, MAX_UNMET);
 
@@ -174,7 +176,7 @@ export async function noteJudgement(
   try {
     // Nothing to judge: a clarify or an answer has no build in it. The
     // cheap check comes before any description is rendered.
-    if (!process.env.TYPESAFE_API_KEY || opts.plans.length === 0) return;
+    if (!keyFor(process.env.TYPESAFE_API_KEY) || opts.plans.length === 0) return;
     const built = describeBuild(opts.plans, opts.modules, opts.columns, opts.store);
     const unmet = opts.unmet.slice(0, MAX_UNMET);
     const judge = await judgeDesign({ request: opts.request, built, unmet });

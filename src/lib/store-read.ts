@@ -141,12 +141,18 @@ export async function storeLeaders(
       .gt("orders_count", 0)
       .order("total_spent", { ascending: false, nullsFirst: false })
       .order("orders_count", { ascending: false })
+      // Ties broken by what the rows say, never left to the database: the
+      // same shop has to read the same to Luke every turn (a prompt that
+      // reshuffles is a cache miss, and a tape that no longer matches).
+      .order("name", { ascending: true })
       .limit(limit),
     db
       .from("product_sales")
       .select("title, units, revenue, currency")
       .eq("store_id", storeId)
       .order("units", { ascending: false })
+      .order("revenue", { ascending: false, nullsFirst: false })
+      .order("title", { ascending: true })
       .limit(limit),
   ]);
   if (c.error) throw new Error(c.error.message);
@@ -1059,9 +1065,15 @@ export async function lowStock(
     .eq("store_id", storeId)
     .lte("available", Math.max(threshold, 0))
     .order("available", { ascending: true })
+    .order("location_name", { ascending: true })
     .limit(Math.min(Math.max(limit, 1), MAX_LIMIT));
   if (error) throw new Error(error.message);
 
+  // Equal stock at one place is then put in the product's order here:
+  // its name is on the joined row, which the query cannot sort by, and
+  // an unbroken tie reshuffles between reads.
+  // ponytail: a tie across the limit's edge can still swap which row is cut; sort in SQL if that ever shows.
+  const name = (x: { product: string | null; variant: string | null }) => `${x.product ?? ""} ${x.variant ?? ""}`;
   return (data ?? []).map((r) => {
     const row = r as unknown as Record<string, unknown>;
     const v = one(row.variants as { title?: string; sku?: string; products?: unknown } | null);
@@ -1073,7 +1085,7 @@ export async function lowStock(
       location: (row.location_name as string) || "—",
       available: (row.available as number) ?? 0,
     };
-  });
+  }).sort((a, b) => a.available - b.available || a.location.localeCompare(b.location) || name(a).localeCompare(name(b)));
 }
 
 /**
@@ -1176,5 +1188,8 @@ export async function storeValues(
     })
   );
 
-  return out;
+  // In FILTERABLE's order, not the order the reads happened to finish in.
+  return Object.fromEntries(
+    FILTERABLE.map(([table, column]) => `${table}.${column}`).filter((k) => k in out).map((k) => [k, out[k]])
+  );
 }

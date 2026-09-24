@@ -88,6 +88,11 @@ database decides who may do what.
   change asked for. The server it talks to must be in the same tape mode (it checks).
 - `check-model-tape` (pure): the recorder. `check-route-eval` (pure, played back): the
   router on forty real questions, held to its baseline.
+- `e2e/luke.spec.ts` (Playwright, played back): Luke in the panel at desktop and phone
+  width, answering from the seeded shop and asking before a change. Change what Luke is
+  sent from the browser and these tapes need recording too.
+- Anything that holds a model key reads it through `keyFor` (model-tape.ts), never
+  `process.env` directly: a direct read turns a replayed call off in CI, where no key is.
 - **Changed a prompt, a tool or a model call?** Its tapes no longer match, on purpose.
   Record again (`tapes/README.md`), replay with no keys, review the new answers, commit
   them with the change.

@@ -11,7 +11,8 @@
 //
 // The key is the whole request (system prompt, conversation, tools, as
 // normalised text: the ids, dates and store addresses that differ
-// between runs become placeholders), without the model's name: a
+// between runs become placeholders, and tool calls are numbered by
+// position, since Gemini's are made up by the SDK), without the model's name: a
 // recording answers only the request it was made for. Change what Luke
 // is told and the old answer no longer matches, and the miss says what
 // changed. A hand-written fixture matched on a line of the question, as
@@ -91,6 +92,39 @@ type Kept = {
   responses: Array<{ status: number; type: string; body: string }>;
 };
 
+/**
+ * Tool calls by where they fall in the conversation, not by their ids.
+ * Gemini sends a call with no id and the SDK makes one up at random, so
+ * a turn that went through Gemini carried a new id into every request
+ * after it, on every run, and matched no recording from the second step
+ * on. Renumbered in the order they appear, a call and its result still
+ * pair up, and nothing random is left in the key.
+ */
+function renumberCalls<T>(value: T): T {
+  const seen = new Map<string, string>();
+  const as = (id: unknown) => {
+    if (typeof id !== "string") return id;
+    if (!seen.has(id)) seen.set(id, `‹call${seen.size + 1}›`);
+    return seen.get(id);
+  };
+  const walk = (x: unknown): unknown => {
+    if (Array.isArray(x)) return x.map(walk);
+    if (!x || typeof x !== "object") return x;
+    const o: Record<string, unknown> = {};
+    const named = (x as Record<string, unknown>).type === "tool_use";
+    for (const [k, v] of Object.entries(x as Record<string, unknown>)) {
+      // Anthropic's tool_use id and tool_result's pointer to it; Gemini's
+      // functionCall and functionResponse, when they carry one.
+      if ((k === "id" && named) || k === "tool_use_id") o[k] = as(v);
+      else if ((k === "functionCall" || k === "functionResponse") && v && typeof v === "object" && "id" in v)
+        o[k] = walk({ ...(v as Record<string, unknown>), id: as((v as { id: unknown }).id) });
+      else o[k] = walk(v);
+    }
+    return o;
+  };
+  return walk(value) as T;
+}
+
 /** A request, as the parts it is known by. */
 export function fingerprint(label: string, url: string, body: string) {
   let o: Record<string, unknown>;
@@ -101,7 +135,7 @@ export function fingerprint(label: string, url: string, body: string) {
   }
   const system = o.system ?? o.systemInstruction ?? null;
   const tools = o.tools ?? null;
-  const rest: Record<string, unknown> = { ...o };
+  const rest: Record<string, unknown> = renumberCalls({ ...o });
   for (const k of ["system", "systemInstruction", "tools", "model"]) delete rest[k];
   // The road, without the model: Gemini names it in the path.
   const road = new URL(url).pathname.replace(/\/models\/[^/:]+/, "/models/‹model›");

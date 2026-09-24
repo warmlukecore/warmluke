@@ -118,8 +118,9 @@ pnpm hooks
 | Store tools | `check-store-tools` (pure) for one declaration and refusals before reads; `check-ask-store` (live, its router half played back from `tapes/`), `check-leaders`, `check-free-turns`, `check-mcp-limit` (live) through MCP |
 | Luke's lookups | `check-model-errors` (pure) for the loop, the cap and Gemini's JSON mode; `check-luke-lookups` (live, played back from `tapes/`) for a real turn that must look an order up, and one that must not |
 | Model calls in tests | `check-model-tape` (pure) for the recorder itself; `check-route-eval` (pure, played back) for the router on forty real questions against its baseline |
-| Asking to change the shop | `check-store-action-propose` (pure) for every gate, the server's wording, one request per change and that each target kind is handed out; `check-luke-lookups` (model, by hand) for Luke's real proposal, and none with the switch off |
-| Overview figures | `check-overview` (live) |
+| Asking to change the shop | `check-store-action-propose` (pure) for every gate, the server's wording, one request per change and that each target kind is handed out; `check-luke-lookups` (live, played back) for Luke's real proposal, and none with the switch off; `e2e/luke.spec.ts` for the request waiting in the bell |
+| Overview figures | `check-overview` (live); `e2e/store.spec.ts` for the seeded shop's overview in a browser |
+| A flow in the browser | `pnpm exec playwright test` (`e2e/`, desktop and phone width, played back) |
 
 New regression tests should prove behavior rather than source wording. Source-text checks
 are appropriate only when the invariant itself is a declaration that must remain in one
@@ -139,6 +140,23 @@ The router eval (`scripts/fixtures/route-questions.json`) scores forty real ques
 part (gated, list, window, month, kind, needle), and fails below the baseline written in the
 file. Recording it measures the real router and its latency; the baseline moves only with
 `EVAL_REBASELINE=1`.
+
+## In a browser
+
+`e2e/` holds Playwright specs run at desktop (1440×900) and phone (390×844) width against a
+server that is already up: CI's, after the live checks, or yours on 3101. Each worker makes a
+throwaway `check e2e` project with the seeded shop's rows (below) and removes it after; a spec
+fails on any uncaught page error. Luke's turns play back from `tapes/`, and a spec refuses a
+server that records or replays differently. The env file must declare `CHECK_PROJECT=1`.
+
+```sh
+(set -a; . ./.env.check.local; set +a; MODEL_TAPE=replay pnpm exec next dev -p 3101)
+ENV_FILE=.env.check.local APP_URL=http://localhost:3101 pnpm exec playwright test
+```
+
+A spec asked in new words needs recording once: the same two commands with
+`MODEL_TAPE=record` on both. A failure in CI leaves the report, traces and screenshots as the
+`playwright-report` artifact.
 
 ## The seeded shop
 

@@ -73,6 +73,18 @@ try {
   const g2 = fingerprint("gemini", "https://x/v1beta/models/gemini-9:streamGenerateContent", '{"contents":[]}');
   check("Gemini's model, named in the path, is left out too", g1.key === g2.key);
   check("and the provider is not: its answers are shaped differently", g1.key !== fingerprint("anthropic", "https://x/v1beta/models/gemini-9:streamGenerateContent", '{"contents":[]}').key);
+  // A turn that went through Gemini: the SDK makes each call's id up, so two runs differ only there.
+  const called = (ids, extra = []) => JSON.stringify({ system: "s", messages: [
+    { role: "user", content: "tag #1003 VIP" },
+    { role: "assistant", content: ids.map((id, i) => ({ type: "tool_use", id, name: i ? "propose" : "search", input: {} })) },
+    { role: "user", content: [...ids.map((id) => ({ type: "tool_result", tool_use_id: id, content: "ok" })), ...extra] },
+  ] });
+  const run1 = fingerprint("anthropic", "https://x/v1/messages", called(["aB3dE5fG7hJ9kL1m", "Qw8eR7tY6uI5oP4a"]));
+  const run2 = fingerprint("anthropic", "https://x/v1/messages", called(["Zx1cV2bN3mA4sD5f", "Gh6jK7lP8oI9uY0t"]));
+  check("tool calls with made-up ids from two runs are one recording", run1.key === run2.key);
+  check("but a turn with another call in it is not", run1.key !== fingerprint("anthropic", "https://x/v1/messages", called(["a1", "b2", "c3"])).key);
+  const gem = (id) => JSON.stringify({ contents: [{ role: "model", parts: [{ functionCall: { id, name: "search", args: {} } }] }, { role: "user", parts: [{ functionResponse: { id, name: "search", response: {} } }] }] });
+  check("and the same holds for Gemini's own call ids", fingerprint("gemini", "https://x/v1beta/models/m:generateContent", gem("r4nd0m1")).key === fingerprint("gemini", "https://x/v1beta/models/m:generateContent", gem("0th3rId")).key);
 
   console.log("\nrecorded, then played back");
   process.env.MODEL_TAPE = "record";

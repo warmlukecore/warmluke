@@ -980,8 +980,11 @@ export default function AppShell({
 
         if (data.conversationId && data.conversationId !== conversationId) {
           rememberConversation(data.conversationId as string);
-          // A brand-new thread needs to appear in the switcher.
-          loadThread(data.conversationId as string).catch(() => {});
+          // A brand-new thread needs to appear in the switcher: re-listed
+          // only. Reloading it rebuilt the panel from the saved rows, which
+          // carry no trace, so the first reply's "Read your store · 14s"
+          // vanished a moment after it appeared.
+          loadThread().catch(() => {});
         }
 
         if (!ok || data.error) {

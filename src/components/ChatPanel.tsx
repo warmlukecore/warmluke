@@ -1230,6 +1230,7 @@ export default function ChatPanel({
 
   return (
     <aside
+      aria-label="Luke"
       style={{ ["--chat-w" as string]: `${width}px` }}
       className={`fixed inset-y-0 right-0 z-40 flex w-full max-w-[420px] shrink-0 flex-col overflow-hidden border-l border-line bg-surface lg:relative lg:w-[var(--chat-w)] lg:max-w-none lg:translate-x-0 lg:rounded-card lg:border-l-0 lg:shadow-card ${
         dragging ? "" : "transition-transform duration-200"

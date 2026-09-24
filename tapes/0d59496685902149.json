@@ -10,7 +10,7 @@
     {
       "status": 200,
       "type": "application/json",
-      "body": "{\"content\":[{\"type\":\"thinking\",\"thinking\":\"The user is asking about a specific order #1001. I need to look it up. The orders listed above only go from #1006 to #1025, so #1001 isn't in the printed list. I need to use the store tools to look it up.\",\"signature\":\"14b8c82b07f24b16b6ac45486e314c6e\"},{\"type\":\"tool_use\",\"id\":\"chatcmpl-tool-9f6973b3246f2508\",\"name\":\"get_order\",\"input\":{\"order_number\":\"#1001\"}}],\"id\":\"chatcmpl-___prefill_addr_10.119.15.234:7101___decode_addr_10.119.15.218:7100_07b3222c737d441e9ce0c376dd956657\",\"model\":\"Atria-Dawn-Preview\",\"request_id\":\"req_02c1942c-be46-4611-8823-716113a7517e\",\"role\":\"assistant\",\"stop_reason\":\"tool_use\",\"type\":\"message\",\"usage\":{\"input_tokens\":14060,\"output_tokens\":72}}"
+      "body": "{\"content\":[{\"type\":\"thinking\",\"thinking\":\"The user is asking about a specific order, #1001. I need to look it up. Let me use the get_order function.\",\"signature\":\"2732a2fdcab1443caf2c484b38a65b24\"},{\"type\":\"tool_use\",\"id\":\"chatcmpl-tool-9bbc6b325d6a7db7\",\"name\":\"get_order\",\"input\":{\"order_number\":\"1001\"}}],\"id\":\"chatcmpl-req_c015d216-0d19-4697-895a-ca7c8b3966e4\",\"model\":\"Atria-Dawn-Preview\",\"request_id\":\"req_c015d216-0d19-4697-895a-ca7c8b3966e4\",\"role\":\"assistant\",\"stop_reason\":\"tool_use\",\"type\":\"message\",\"usage\":{\"input_tokens\":58,\"output_tokens\":42,\"cache_creation_input_tokens\":3584,\"cache_read_input_tokens\":10432}}"
     }
   ]
 }

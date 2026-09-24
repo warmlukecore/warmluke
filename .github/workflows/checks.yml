@@ -158,6 +158,25 @@ jobs:
       - name: live checks
         run: node scripts/run-checks.mjs --tier live
 
+      # The app in a browser, at desktop and phone width, against the
+      # server above; Luke's turns play back from tapes/ like the checks'.
+      - name: browser for the end-to-end specs
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: end to end
+        run: pnpm exec playwright test
+
+      - name: end-to-end report, when something went red
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: server log, when something went red
         if: failure()
         run: tail -60 server.log
