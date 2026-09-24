@@ -18,11 +18,14 @@
 // by the same policy either way. The service role does not belong in a
 // deployment.
 //
+// Read back by the admin screen through abo_admin_demo_requests (0115).
+//
 // Callers: src/components/Landing.tsx.
 // ─────────────────────────────────────────────────────────────
 
 import { createClient } from "@supabase/supabase-js";
 import { UTM_KEYS } from "@/lib/landing";
+import { HEARD_OPTIONS, ORDER_OPTIONS, TEAM_OPTIONS, heardDetailPrompt, type Option } from "@/lib/onboarding";
 
 export type BookingState = { ok: boolean; message?: string };
 
@@ -31,6 +34,12 @@ const text = (v: FormDataEntryValue | null, max: number) =>
     .trim()
     .slice(0, max);
 
+/** A value from one of the form's lists, or nothing: a stale or forged one is not stored. */
+const pick = (v: FormDataEntryValue | null, options: Option[]) => {
+  const s = text(v, 40);
+  return options.some((o) => o.value === s) ? s : "";
+};
+
 export async function bookDemo(
   _prev: BookingState,
   form: FormData
@@ -38,11 +47,22 @@ export async function bookDemo(
   const name = text(form.get("name"), 120);
   const email = text(form.get("email"), 160);
   const store = text(form.get("store"), 200);
+  // The same lists onboarding asks from, so a lead and an account are
+  // described in the same words on the admin screen.
+  const team_size = pick(form.get("team_size"), TEAM_OPTIONS);
+  const monthly_orders = pick(form.get("monthly_orders"), ORDER_OPTIONS);
+  const heard_from = pick(form.get("heard_from"), HEARD_OPTIONS);
+  // Only kept where the form asks for it: a detail left behind after
+  // the answer above it changed would describe the wrong answer.
+  const heard_from_detail = heardDetailPrompt(heard_from) ? text(form.get("heard_from_detail"), 200) : "";
 
   // The browser checks these too; the browser is not the one to ask.
   if (!name || !email || !store) {
     return { ok: false, message: "Name, email and store are all needed." };
   }
+  // The picks are not required here. The form will not send without
+  // them, but with JavaScript off it cannot open them at all, and a
+  // booking without its picks is still somebody asking for a demo.
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return { ok: false, message: "That email address doesn't look right." };
   }
@@ -67,7 +87,16 @@ export async function bookDemo(
     landing_path: text(form.get("landing_path"), 500) || null,
     event: "demo_booked",
     idem: text(form.get("idem"), 64) || null,
-    payload: { name, email, store, note: text(form.get("note"), 600) },
+    payload: {
+      name,
+      email,
+      store,
+      note: text(form.get("note"), 600),
+      team_size,
+      monthly_orders,
+      heard_from,
+      heard_from_detail,
+    },
   });
 
   if (error) {

@@ -58,6 +58,26 @@ const merchant = createClient(URL_, ANON);
 const { error: signInError } = await merchant.auth.signInWithPassword({ email, password });
 if (signInError) throw new Error(`could not sign in the admin-boundary test user: ${signInError.message}`);
 
+// A demo booking as a stranger makes one: the public key, nobody
+// signed in. Under the merchant's address, so the admin list can be
+// seen to say that this lead already has an account.
+const bookingSession = `chk_admin_${stamp}`;
+const booked = await createClient(URL_, ANON).from("landing_events").insert({
+  session_id: bookingSession,
+  event: "demo_booked",
+  payload: {
+    name: "Check Lead",
+    email: email.toUpperCase(),
+    store: "check-lead.example",
+    note: "Stock first",
+    team_size: "2_5",
+    monthly_orders: "500_2000",
+    heard_from: "referral",
+    heard_from_detail: "a friend",
+  },
+});
+if (booked.error) throw new Error(`could not book the test demo: ${booked.error.message}`);
+
 try {
   console.log("an ordinary merchant");
   const mine = await merchant.rpc("abo_my_settings");
@@ -70,6 +90,11 @@ try {
   // sends whoever is debugging in the wrong direction.
   check("cannot list accounts", !!list.error);
   check("and is told why, rather than shown nothing", list.error?.code === "42501");
+
+  const leads = await merchant.rpc("abo_admin_demo_requests");
+  check("cannot list demo requests", leads.error?.code === "42501" && !leads.data?.length);
+  const peek = await merchant.from("landing_events").select("payload").eq("session_id", bookingSession);
+  check("nor read the bookings behind them", !peek.data?.length);
 
   check(
     "cannot switch even their own assistant",
@@ -170,6 +195,18 @@ try {
       "and says whether each allowance is unlimited",
       (all.data ?? []).every((r) => typeof r.turns_unlimited === "boolean")
     );
+
+    const leads = await owner.rpc("abo_admin_demo_requests");
+    const lead = (leads.data ?? []).find((r) => r.name === "Check Lead" && r.store === "check-lead.example");
+    check("can list demo requests", !leads.error && !!lead);
+    check(
+      "each with what the person picked",
+      lead?.team_size === "2_5" && lead?.monthly_orders === "500_2000" && lead?.heard_from === "referral"
+    );
+    check("and what they wrote", lead?.heard_from_detail === "a friend" && lead?.note === "Stock first");
+    check("and that the address already has an account, whatever its case", lead?.has_account === true);
+    const times = (leads.data ?? []).map((r) => Date.parse(r.created_at));
+    check("newest first", times.every((t, i) => i === 0 || times[i - 1] >= t));
 
     const off = await owner.rpc("abo_admin_set_feature", {
       p_user: made.user.id,
@@ -310,6 +347,7 @@ try {
     );
   }
 } finally {
+  await admin.from("landing_events").delete().eq("session_id", bookingSession);
   await admin.from("admin_account_audit").delete().eq("target_user_id", made.user.id);
   await admin.auth.admin.deleteUser(made.user.id);
   console.log("\ntest user removed");

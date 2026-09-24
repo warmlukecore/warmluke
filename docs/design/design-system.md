@@ -56,7 +56,8 @@ Rules:
 | `Group` | [`ui/Group.tsx`](../../src/components/ui/Group.tsx) | A bordered, headed part of a long form; `danger` for what cannot be undone, always last |
 | `Switch` | [`ui/Switch.tsx`](../../src/components/ui/Switch.tsx) | `role="switch"`; always shown with its state in words beside it |
 | `PasswordInput` | [`ui/PasswordInput.tsx`](../../src/components/ui/PasswordInput.tsx) | A password field with show and hide |
-| `PageFrame` | [`PageFrame.tsx`](../../src/components/PageFrame.tsx) | Dashboard and accounts: dark top bar, tabs, account menu, rounded page |
+| `PageFrame` | [`PageFrame.tsx`](../../src/components/PageFrame.tsx) | Dashboard, accounts and demo requests: dark top bar, tabs, account menu, rounded page |
+| `Stat`, `Breakdown` | [`AdminParts.tsx`](../../src/components/AdminParts.tsx) | The admin screens' numbers: a figure with a line under it, and the top answers as bars |
 | `CenteredCard` | [`CenteredCard.tsx`](../../src/components/CenteredCard.tsx) | One card under the mark: sign-in, sign-up, password reset, connect, invite, AI consent |
 | `LukeMark` | [`ui/LukeMark.tsx`](../../src/components/ui/LukeMark.tsx) | Luke's face: an orb in the Luke colours with eyes that blink; sizes `xs` 20px, `sm` 28px, `lg` 48px; `state="thinking"` while it works (the eyes look about, the glow breathes). CSS only, still under reduced motion |
 | `.beam`, `.beam-ink`, `.shimmer` | [`globals.css`](../../src/app/globals.css) | The composer's border: while Luke works, a beam of Luke's colour; while the merchant types, a beam in the page's ink that flares with each key and goes a moment after they stop. `.shimmer` is the light along the step Luke is on. Nowhere else |
@@ -111,6 +112,14 @@ screen at most, colour only where it means
 something (connected, low, done), and labels in sentence case rather than small capitals.
 Anything on the landing that may bleed past its column relies on the page root's
 `overflow-x-clip`, never on a negative margin that would scroll the page sideways.
+
+A choice from a list is the page's own listbox, never the system's select menu: on the
+landing that is `Pick` in `components/Landing.tsx` (arrows, Enter, Escape and a letter to
+jump; the question moves up small once answered). The footer's name and mark pop up as
+the page ends (`.reveal-pop`, timed on their own entry because the foot of a page never
+scrolls far enough to finish a cover range), and the mark gives when pressed and springs
+back. Anything timed with `view()` must not sit inside an `overflow: hidden` box, which
+becomes the scroller it is timed to; clip with `overflow-clip` instead.
 
 The landing's navigation is one list (`NAV` in `components/Landing.tsx`) read by the glass
 pill on the first screen and by the pill that floats in once that screen has scrolled

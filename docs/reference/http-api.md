@@ -89,7 +89,11 @@ See [MCP integration](../integrations/mcp.md) for the tool catalogue and approva
 
 `bookDemo` in `src/app/actions.ts` validates and records a landing/demo request using the
 public Supabase configuration. PostgreSQL rate limiting and table policy constrain the
-anonymous write.
+anonymous write. Besides name, email, store and note it records team size, orders a month
+and where the person heard of us, each kept only when it is one of onboarding's lists
+(`src/lib/onboarding.ts`). The form will not send without them; with JavaScript off it
+cannot ask them, and the booking is stored without them rather than lost. Administrators
+read bookings back through `abo_admin_demo_requests` on `/admin/demos`.
 
 ## Error conventions
 

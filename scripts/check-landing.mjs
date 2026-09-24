@@ -225,5 +225,26 @@ for (const f of COPY) {
   }
 }
 
+console.log("\nand the demo form sends what the booking reads");
+// A field renamed on one side and not the other still renders, still
+// submits, and books a lead with that answer silently missing.
+{
+  const landing = readFileSync(new URL("../src/components/Landing.tsx", import.meta.url), "utf8");
+  const action = readFileSync(new URL("../src/app/actions.ts", import.meta.url), "utf8");
+  const form = landing.slice(landing.indexOf("export function DemoForm"), landing.indexOf("\n/** Which picture"));
+  const sent = new Set([...form.matchAll(/\bname="([a-z_]+)"/g)].map((m) => m[1]));
+  const read = new Set([...action.matchAll(/form\.get\("([a-z_]+)"\)/g)].map((m) => m[1]));
+  const unread = [...sent].filter((n) => !read.has(n));
+  const unsent = [...read].filter((n) => !sent.has(n));
+  check("every field the form has is read by the booking", sent.size > 0 && unread.length === 0);
+  if (unread.length) console.log("     →", unread.join(", "));
+  check("and every field the booking reads is on the form", read.size > 0 && unsent.length === 0);
+  if (unsent.length) console.log("     →", unsent.join(", "));
+  check(
+    "and its picks are checked against onboarding's lists",
+    ["TEAM_OPTIONS", "ORDER_OPTIONS", "HEARD_OPTIONS"].every((l) => new RegExp(`pick\\(form\\.get\\("[a-z_]+"\\), ${l}\\)`).test(action))
+  );
+}
+
 console.log(fails.length === 0 ? "\nthe right hero, every time" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

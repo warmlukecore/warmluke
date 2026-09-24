@@ -131,7 +131,9 @@ application.
 ## Supporting tables
 
 - `fx_rates`: project-scoped currency conversion cache.
-- `landing_events`: rate-limited marketing attribution and conversion events.
+- `landing_events`: rate-limited marketing attribution and conversion events. A demo
+  booking is one of them (`demo_booked`, the answers in `payload`), read only by
+  administrators through `abo_admin_demo_requests` (0115).
 - `app_secrets`: server-side integration secrets used by database verification paths.
 - `abo_migrations`: repository-managed migration ledger created by the migration runner.
 

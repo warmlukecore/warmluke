@@ -32,6 +32,7 @@ import {
 } from "@/lib/onboarding";
 import { Search } from "lucide-react";
 import { ago } from "@/lib/when";
+import { Breakdown, Stat, siteLink, topCounts } from "@/components/AdminParts";
 
 type Account = {
   user_id: string;
@@ -62,18 +63,6 @@ type Account = {
 };
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-
-/** A link somebody typed, made safe to follow: https only, shown bare. */
-function siteLink(raw: string | null | undefined): { href: string; text: string } | null {
-  if (!raw) return null;
-  const text = raw.trim().replace(/^https?:\/\//i, "").replace(/\/$/, "");
-  try {
-    const u = new URL(`https://${text}`);
-    return u.hostname.includes(".") ? { href: u.toString(), text } : null;
-  } catch {
-    return null;
-  }
-}
 
 type PendingAction =
   | { kind: "turns"; row: Account; next: number }
@@ -189,14 +178,12 @@ export default function Admin() {
   // The numbers at the top, from the same rows as the table.
   const stats = useMemo(() => {
     const all = rows ?? [];
-    const heard = new Map<string, number>();
-    for (const r of all) if (r.heard_from) heard.set(r.heard_from, (heard.get(r.heard_from) ?? 0) + 1);
     return {
       total: all.length,
       onboarded: all.filter((r) => r.onboarded_at).length,
       withStore: all.filter((r) => r.stores > 0).length,
       thisWeek: all.filter((r) => now - Date.parse(r.created_at) < WEEK_MS).length,
-      heard: [...heard.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4),
+      heard: topCounts(all.map((r) => labelOf(HEARD_OPTIONS, r.heard_from))),
     };
   }, [rows, now]);
 
@@ -238,27 +225,7 @@ export default function Admin() {
               <Stat label="Accounts" value={stats.total} sub={`${stats.thisWeek} new this week`} />
               <Stat label="Finished onboarding" value={stats.onboarded} sub={`of ${stats.total}`} />
               <Stat label="With a store connected" value={stats.withStore} sub={`of ${stats.total}`} />
-              <div className={`${card} p-4`}>
-                <div className="text-xs font-medium text-fg-muted">Where they heard of us</div>
-                {stats.heard.length === 0 ? (
-                  <div className="mt-2 text-[13px] text-fg-faint">Nobody has said yet</div>
-                ) : (
-                  <ul className="mt-2 space-y-1.5">
-                    {stats.heard.map(([k, n]) => (
-                      <li key={k} className="flex items-center gap-2 text-xs">
-                        <span className="w-32 truncate text-fg" title={labelOf(HEARD_OPTIONS, k) ?? k}>{labelOf(HEARD_OPTIONS, k)}</span>
-                        <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-hover">
-                          <span
-                            className="block h-full rounded-full bg-primary"
-                            style={{ width: `${Math.round((n / Math.max(1, stats.heard[0][1])) * 100)}%` }}
-                          />
-                        </span>
-                        <span className="w-5 text-right text-fg-muted tabular-nums">{n}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+              <Breakdown label="Where they heard of us" counts={stats.heard} empty="Nobody has said yet" />
             </div>
 
             <label className="relative mt-6 block max-w-xs">
@@ -571,17 +538,5 @@ export default function Admin() {
         </p>
       </div>
     </PageFrame>
-  );
-}
-
-function Stat({ label, value, sub }: { label: string; value: number; sub: string }) {
-  return (
-    <div className={`${card} p-4`}>
-      <div className="text-xs font-medium text-fg-muted">{label}</div>
-      <div className="mt-1 flex items-baseline gap-2">
-        <span className="text-2xl font-semibold tracking-tight text-fg tabular-nums">{value.toLocaleString()}</span>
-        <span className="text-xs text-fg-faint">{sub}</span>
-      </div>
-    </div>
   );
 }

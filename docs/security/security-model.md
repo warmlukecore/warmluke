@@ -141,6 +141,11 @@ once set. Administrators read everyone's answers only through `abo_admin_account
 which refuses non-administrators with `42501`. The table has the standard OAuth-client
 write wall. `check-profiles` exercises all of this against a live database.
 
+Demo bookings stay unreadable with the public key. Administrators read them only through
+`abo_admin_demo_requests`, which refuses everyone else with the same `42501`; the screen
+shows every value as text, because anyone with the public key can write a booking, not
+only the form. `check-admin` books one as a stranger and checks both sides.
+
 ## Web and transport protections
 
 `next.config.mjs` applies content type, framing, referrer, permissions, and conditional

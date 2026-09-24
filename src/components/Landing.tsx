@@ -17,10 +17,12 @@
 // Callers: src/app/page.tsx.
 // ─────────────────────────────────────────────────────────────
 
-import { useActionState, useEffect, useId, useRef, useState } from "react";
+import { useActionState, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import {
   ArrowRight,
   CalendarDays,
+  Check,
+  ChevronDown,
   LayoutDashboard,
   Package,
   RotateCcw,
@@ -33,6 +35,7 @@ import { supabase } from "@/lib/supabase-client";
 import { UTM_KEYS, type Utm } from "@/lib/landing";
 import { bookDemo, type BookingState } from "@/app/actions";
 import { Logo } from "@/components/ui/Logo";
+import { HEARD_OPTIONS, ORDER_OPTIONS, TEAM_OPTIONS, heardDetailPrompt, type Option } from "@/lib/onboarding";
 
 const SESSION_KEY = "wl_session";
 
@@ -127,18 +130,186 @@ export function LandingTracker({ variant }: { variant: string }) {
   return null;
 }
 
+/** The landing's text box, one look for every field of the form. */
+const FIELD =
+  "w-full rounded-xl border border-hair bg-white px-4 text-sm text-ink outline-none placeholder:text-neutral-400 focus:border-accent focus:ring-2 focus:ring-accent/20";
+const INPUT = `${FIELD} py-3`;
+
+/**
+ * One of the form's lists, drawn by the page rather than the system,
+ * so it opens like the rest of the form instead of as the computer's
+ * own grey menu. The answer travels in a hidden input, and the keyboard
+ * does what it does on a select: arrows move, Enter or Space picks,
+ * Escape closes, a letter jumps to the next option starting with it.
+ *
+ * Once picked, the question moves up small, because a range alone
+ * could be anything. Same height either way, so the row does not jump.
+ */
+function Pick({
+  name,
+  label,
+  options,
+  onPick,
+  className = "",
+}: {
+  name: string;
+  label: string;
+  options: Option[];
+  onPick?: (value: string) => void;
+  className?: string;
+}) {
+  const [value, setValue] = useState("");
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const box = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLUListElement>(null);
+  const id = useId();
+  const chosen = options.find((o) => o.value === value);
+
+  useEffect(() => {
+    if (!open) return;
+    list.current?.focus({ preventScroll: true });
+    const away = (e: MouseEvent) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [open]);
+
+  useEffect(() => {
+    if (open) list.current?.children[active]?.scrollIntoView({ block: "nearest" });
+  }, [open, active]);
+
+  function show() {
+    setActive(Math.max(0, options.findIndex((o) => o.value === value)));
+    setOpen(true);
+  }
+
+  function choose(i: number) {
+    setValue(options[i].value);
+    setOpen(false);
+    onPick?.(options[i].value);
+    button.current?.focus();
+  }
+
+  function keys(e: KeyboardEvent) {
+    const last = options.length - 1;
+    if (e.key === "ArrowDown") setActive((a) => Math.min(last, a + 1));
+    else if (e.key === "ArrowUp") setActive((a) => Math.max(0, a - 1));
+    else if (e.key === "Home") setActive(0);
+    else if (e.key === "End") setActive(last);
+    else if (e.key === "Enter" || e.key === " ") choose(active);
+    else if (e.key === "Escape") {
+      setOpen(false);
+      button.current?.focus();
+    } else if (e.key === "Tab") return setOpen(false);
+    else if (e.key.length === 1) {
+      const k = e.key.toLowerCase();
+      const next = options
+        .map((_, j) => (active + 1 + j) % options.length)
+        .find((j) => options[j].label.toLowerCase().startsWith(k));
+      if (next === undefined) return;
+      setActive(next);
+    } else return;
+    e.preventDefault();
+  }
+
+  return (
+    <div ref={box} className={`relative ${className}`}>
+      <input type="hidden" name={name} value={value} />
+      <span
+        id={`${id}-label`}
+        className={
+          chosen
+            ? "pointer-events-none absolute top-1.5 left-4 z-10 text-[10px] leading-none text-neutral-400"
+            : "sr-only"
+        }
+      >
+        {label}
+      </span>
+      <button
+        ref={button}
+        type="button"
+        data-pick=""
+        data-empty={chosen ? undefined : ""}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={`${id}-list`}
+        aria-labelledby={`${id}-label ${id}-value`}
+        onClick={() => (open ? setOpen(false) : show())}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            show();
+          }
+        }}
+        className={`${FIELD} flex cursor-pointer items-center pr-10 text-left ${chosen ? "pt-[1.125rem] pb-1.5" : "py-3"}`}
+      >
+        <span id={`${id}-value`} className="truncate">
+          {chosen?.label}
+        </span>
+        {!chosen && (
+          <span aria-hidden="true" className="truncate text-neutral-400">
+            {label}
+          </span>
+        )}
+        <ChevronDown
+          aria-hidden="true"
+          className={`pointer-events-none absolute top-1/2 right-3.5 h-4 w-4 -translate-y-1/2 text-neutral-400 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open && (
+        <ul
+          ref={list}
+          id={`${id}-list`}
+          role="listbox"
+          tabIndex={-1}
+          aria-labelledby={`${id}-label`}
+          aria-activedescendant={`${id}-${active}`}
+          onKeyDown={keys}
+          className="pop absolute top-full right-0 left-0 z-20 mt-1.5 max-h-72 overflow-auto rounded-xl border border-hair bg-white p-1 shadow-[0_24px_48px_-20px_rgb(49_46_129/0.35)] outline-none"
+        >
+          {options.map((o, i) => (
+            <li
+              key={o.value}
+              id={`${id}-${i}`}
+              role="option"
+              aria-selected={o.value === value}
+              onMouseEnter={() => setActive(i)}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => choose(i)}
+              className={`flex cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm ${
+                i === active ? "bg-accent/10 text-ink" : "text-neutral-700"
+              }`}
+            >
+              {o.label}
+              {o.value === value && <Check aria-hidden="true" className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} />}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /**
  * Asking for a demo.
  *
- * Deliberately short. Everything here gets asked again on the call, so
- * anything beyond who they are and where their store is only costs the
- * form its completion rate.
+ * Who they are and where their store is, then three picks: how big
+ * the team is, how many orders, and where they heard of us. Picks and
+ * not typing, so the form stays quick and the admin screen can count
+ * them. The lists are onboarding's, so a lead and an account read the
+ * same way there.
  */
 export function DemoForm({ variant }: { variant: string }) {
   const [state, act, pending] = useActionState<BookingState, FormData>(bookDemo, {
     ok: false,
   });
   const started = useRef(false);
+  const [heard, setHeard] = useState("");
+  const [unpicked, setUnpicked] = useState(false);
+  const heardDetail = heardDetailPrompt(heard);
   // One key per rendered form. A submit whose answer never arrived and
   // is sent again carries the same one, so the lead lands once.
   const idem = useId().replace(/[^a-zA-Z0-9]/g, "").slice(0, 32) + Date.now().toString(36);
@@ -175,7 +346,22 @@ export function DemoForm({ variant }: { variant: string }) {
   }
 
   return (
-    <form action={act} onFocusCapture={began} className="grid gap-3 sm:grid-cols-2">
+    <form
+      action={act}
+      onFocusCapture={began}
+      // The browser checks the text fields; the picks are the page's own,
+      // so they are checked here. With JavaScript off none of this runs,
+      // and the booking goes through without them rather than not at all.
+      onSubmit={(e) => {
+        const empty = e.currentTarget.querySelector<HTMLButtonElement>("[data-pick][data-empty]");
+        setUnpicked(!!empty);
+        if (empty) {
+          e.preventDefault();
+          empty.focus();
+        }
+      }}
+      className="grid gap-3 sm:grid-cols-2"
+    >
       <input type="hidden" name="variant" value={variant} />
       <input type="hidden" name="idem" value={idem} />
       <input type="hidden" name="session_id" value={ctx.session} />
@@ -184,30 +370,36 @@ export function DemoForm({ variant }: { variant: string }) {
         <input key={k} type="hidden" name={k} value={ctx.utm[k] ?? ""} />
       ))}
 
-      <input
-        name="name"
-        required
-        placeholder="Your name"
-        className="rounded-xl border border-hair bg-white px-4 py-3 text-sm text-ink outline-none placeholder:text-neutral-400 focus:border-accent focus:ring-2 focus:ring-accent/20"
+      <input name="name" required aria-label="Your name" placeholder="Your name" className={INPUT} />
+      <input name="email" type="email" required aria-label="Work email" placeholder="Work email" className={INPUT} />
+      <input name="store" required aria-label="Your store URL" placeholder="Your store URL" className={`${INPUT} sm:col-span-2`} />
+      <Pick name="team_size" label="People on the team" options={TEAM_OPTIONS} onPick={() => setUnpicked(false)} />
+      <Pick name="monthly_orders" label="Orders a month" options={ORDER_OPTIONS} onPick={() => setUnpicked(false)} />
+      <Pick
+        name="heard_from"
+        label="Where did you hear about us?"
+        options={HEARD_OPTIONS}
+        onPick={(v) => {
+          setHeard(v);
+          setUnpicked(false);
+        }}
+        className={heardDetail ? "" : "sm:col-span-2"}
       />
-      <input
-        name="email"
-        type="email"
-        required
-        placeholder="Work email"
-        className="rounded-xl border border-hair bg-white px-4 py-3 text-sm text-ink outline-none placeholder:text-neutral-400 focus:border-accent focus:ring-2 focus:ring-accent/20"
-      />
-      <input
-        name="store"
-        required
-        placeholder="Your store URL"
-        className="rounded-xl border border-hair bg-white px-4 py-3 text-sm text-ink outline-none placeholder:text-neutral-400 focus:border-accent focus:ring-2 focus:ring-accent/20 sm:col-span-2"
-      />
+      {heardDetail && (
+        <input
+          name="heard_from_detail"
+          maxLength={200}
+          aria-label={heardDetail}
+          placeholder={heardDetail}
+          className={`${INPUT} rise [--rise-from:6px]`}
+        />
+      )}
       <textarea
         name="note"
         rows={3}
+        aria-label="What would you ask Luke to fix first?"
         placeholder="What would you ask Luke to fix first?"
-        className="resize-none rounded-xl border border-hair bg-white px-4 py-3 text-sm text-ink outline-none placeholder:text-neutral-400 focus:border-accent focus:ring-2 focus:ring-accent/20 sm:col-span-2"
+        className={`${INPUT} resize-none sm:col-span-2`}
       />
       <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
         <button
@@ -218,7 +410,11 @@ export function DemoForm({ variant }: { variant: string }) {
         >
           {pending ? "Sending\u2026" : "Book a Demo"}
         </button>
-        {state.message && <span className="text-sm text-amber-700">{state.message}</span>}
+        {(unpicked || state.message) && (
+          <span className="text-sm text-amber-700">
+            {unpicked ? "Pick the team size, orders a month and where you heard of us." : state.message}
+          </span>
+        )}
       </div>
     </form>
   );
