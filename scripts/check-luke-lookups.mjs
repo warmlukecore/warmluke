@@ -66,7 +66,13 @@ async function ask(message) {
   });
   const text = await res.text();
   const lines = text.split("\n").filter(Boolean).map((l) => JSON.parse(l));
-  return { status: res.status, steps: lines.filter((l) => "step" in l), last: lines.filter((l) => !("step" in l)).at(-1) ?? {} };
+  return {
+    status: res.status,
+    lines,
+    steps: lines.filter((l) => "step" in l),
+    words: lines.filter((l) => "words" in l).map((l) => l.words),
+    last: lines.filter((l) => !("step" in l) && !("words" in l)).at(-1) ?? {},
+  };
 }
 
 try {
@@ -107,6 +113,11 @@ try {
   if (reply) show(reply.message);
   const told = out.steps.filter((s) => s.step === "lookup").map((s) => s.about);
   check("and every lookup it told is on the receipt", JSON.stringify(reply?.grounding?.looked_up ?? []) === JSON.stringify(told));
+  const drafts = out.words.filter(Boolean);
+  check("its words arrived as they were written", drafts.length >= 1);
+  check("growing toward the reply, and ending as its message", !!reply?.message && drafts.every((d) => reply.message.startsWith(d.trimEnd()) || d === reply.message) && (drafts.at(-1) === reply.message || reply.message.startsWith(drafts.at(-1))));
+  if (drafts.length) show(drafts.slice(-3));
+  check("and nothing came after the reply", "reply" in (out.lines.at(-1) ?? {}));
 
   console.log("\nthe same, with the router off: only a lookup can find it");
   const { data: row } = await client.from("projects").select("*").eq("id", project.id).single();

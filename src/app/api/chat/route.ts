@@ -87,6 +87,9 @@ const HISTORY_LIMIT = 30;
  */
 const MAX_TURNS_PER_HOUR = 60;
 
+/** How often a draft of Luke's words is sent: often enough to read as typing, not a line a token. */
+const WORDS_EVERY_MS = 80;
+
 /**
  * POST /api/chat — body: { message, projectId, moduleId?, conversationId? }
  * Runs under the caller's RLS: they can only ever touch their own project's
@@ -312,6 +315,36 @@ export async function POST(req: Request) {
     const halt = new AbortController();
     req.signal.addEventListener("abort", () => halt.abort());
 
+    // Luke's words as they are written, one line at most every
+    // WORDS_EVERY_MS: a fast model would otherwise send a line a token.
+    // Each line is the draft whole, so one dropped costs nothing. When
+    // the turn ends the one still waiting is dropped, so no draft can
+    // arrive after the reply it was a draft of.
+    let say: ((o: unknown) => void) | null = null;
+    let waiting: ReturnType<typeof setTimeout> | null = null;
+    let latest = "";
+    let sentAt = 0;
+    const send = () => {
+      waiting = null;
+      sentAt = Date.now();
+      say?.({ words: latest });
+    };
+    const words = (text: string) => {
+      latest = text;
+      if (text === "") {
+        // Starting over is said at once, so rejected words do not linger.
+        if (waiting) clearTimeout(waiting);
+        send();
+        return;
+      }
+      if (!waiting) waiting = setTimeout(send, Math.max(0, WORDS_EVERY_MS - (Date.now() - sentAt)));
+    };
+    const quiet = () => {
+      if (waiting) clearTimeout(waiting);
+      waiting = null;
+      say = null;
+    };
+
     const work = async (tell: (event: TurnEvent) => void): Promise<Record<string, unknown>> => {
       try {
         tell({ step: "accepted" });
@@ -329,6 +362,7 @@ export async function POST(req: Request) {
           lookups: true,
           signal: halt.signal,
           onEvent: tell,
+          onWords: words,
         });
 
         if (!turn.ok) {
@@ -444,7 +478,10 @@ export async function POST(req: Request) {
             // is settled either way.
           }
         };
-        line(await work(line));
+        say = line;
+        const last = await work(line);
+        quiet();
+        line(last);
         try {
           controller.close();
         } catch {
@@ -452,6 +489,7 @@ export async function POST(req: Request) {
         }
       },
       cancel() {
+        quiet();
         halt.abort();
       },
     });

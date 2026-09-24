@@ -14,7 +14,7 @@
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-model-errors.mjs
 
-import { callAnthropicChat, callModel, ModelError } from "../src/lib/ai.ts";
+import { callAnthropicChat, callModel, draftMessage, ModelError } from "../src/lib/ai.ts";
 import { jsonSchema, tool } from "ai";
 import { isTransient } from "../src/lib/retry.ts";
 
@@ -33,7 +33,7 @@ globalThis.fetch = async (input, init) => {
   sent.push({ url: String(input), headers: new Headers(init?.headers), body: init?.body ? JSON.parse(String(init.body)) : null });
   const next = queue.shift();
   if (next instanceof Error) throw next;
-  return new Response(next.body, { status: next.status, headers: { "content-type": "application/json" } });
+  return new Response(next.body, { status: next.status, headers: { "content-type": next.type ?? "application/json" } });
 };
 // The log line is the raw answer's home; caught here so the run stays readable.
 const logged = [];
@@ -256,6 +256,83 @@ try {
     "and is not asked for JSON mode beside its tools, which it refuses",
     sent[0]?.body?.tools?.[0]?.functionDeclarations?.[0]?.name === "get_order" && !sent[0].body.generationConfig?.responseMimeType
   );
+
+  console.log("\nwhat Luke is saying, read while it is still arriving");
+  check("nothing until the message has begun", draftMessage('{"type":"answer",') === null && draftMessage("") === null);
+  check("the words so far, mid-string", draftMessage('{"type":"answer","message":"Order #1001 is not') === "Order #1001 is not");
+  check("the whole message once it closes, and not a word past it", draftMessage('{"type":"answer","message":"Paid.","kind":"store"}') === "Paid.");
+  check("escapes read as what they stand for", draftMessage('{"message":"a \\"quote\\"\\nline 2') === 'a "quote"\nline 2');
+  check("and a half-arrived escape waits", draftMessage('{"message":"cost \\u20') === "cost " && draftMessage('{"message":"₹ is \\u20b9') === "₹ is ₹");
+  check("prose before the JSON is looked past", draftMessage('Here you go:\n```json\n{"type":"answer","message":"Hi') === "Hi");
+
+  console.log("\nthe reply, streamed");
+  const sse = (events) => ({ status: 200, type: "text/event-stream", body: events.map(([e, d]) => `event: ${e}\ndata: ${JSON.stringify(d)}\n\n`).join("") });
+  const anthropicStream = (chunks, end = "end_turn") =>
+    sse([
+      ["message_start", { type: "message_start", message: { id: "msg_s", type: "message", role: "assistant", model: "claude-test", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 10, output_tokens: 1 } } }],
+      ["content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }],
+      ...chunks.map((text) => ["content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } }]),
+      ["content_block_stop", { type: "content_block_stop", index: 0 }],
+      ["message_delta", { type: "message_delta", delta: { stop_reason: end, stop_sequence: null }, usage: { output_tokens: 20 } }],
+      ["message_stop", { type: "message_stop" }],
+    ]);
+  const heardText = [];
+  sent.length = 0;
+  queue.push(anthropicStream(['{"type":"answer",', '"message":"Order #1001 ', 'is not paid."}']));
+  const streamed = await callModel({ system: ["the contract", "this project"], turns: [{ role: "user", content: "is #1001 paid?" }], onText: (t) => heardText.push(t) });
+  check("the reply comes back whole, as ever", streamed === '{"type":"answer","message":"Order #1001 is not paid."}');
+  check("heard as it grew, starting from nothing", heardText[0] === "" && heardText.at(-1) === streamed && heardText.length >= 4);
+  const drafts = heardText.map(draftMessage).filter((d) => d !== null);
+  check("and the draft read from it grows the same way", JSON.stringify(drafts) === JSON.stringify(["Order #1001 ", "Order #1001 is not paid."]));
+  check("asked as a stream, still caching the contract and capping the reply", sent[0]?.body?.stream === true && sent[0].body.system?.[0]?.cache_control?.type === "ephemeral" && sent[0].body.max_tokens === 6000);
+  const refusedStream = await (async () => {
+    queue.push({ status: 529, body: '{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}' });
+    try {
+      await callModel({ system: "s", turns: [{ role: "user", content: "hi" }], onText: () => {} });
+      return null;
+    } catch (e) {
+      return e;
+    }
+  })();
+  check("a stream refused at the door is the same sentence", refusedStream instanceof ModelError && refusedStream.kind === "busy");
+  const midway = await (async () => {
+    queue.push(sse([
+      ["message_start", { type: "message_start", message: { id: "msg_e", type: "message", role: "assistant", model: "claude-test", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } } }],
+      ["error", { type: "error", error: { type: "overloaded_error", message: "Overloaded" } }],
+    ]));
+    try {
+      await callModel({ system: "s", turns: [{ role: "user", content: "hi" }], onText: () => {} });
+      return null;
+    } catch (e) {
+      return e;
+    }
+  })();
+  check("and one that breaks off midway, overloaded, is busy too", midway instanceof ModelError && midway.kind === "busy");
+  const halted = await (async () => {
+    const stop = new Error("aborted");
+    stop.name = "AbortError";
+    queue.push(stop);
+    try {
+      await callModel({ system: "s", turns: [{ role: "user", content: "hi" }], onText: () => {} });
+      return null;
+    } catch (e) {
+      return e;
+    }
+  })();
+  check("a stop is still a stop when streaming", halted?.name === "AbortError" && !(halted instanceof ModelError));
+  sent.length = 0;
+  const geminiHeard = [];
+  queue.push({
+    status: 200,
+    type: "text/event-stream",
+    body: [
+      { candidates: [{ content: { role: "model", parts: [{ text: '{"type":"answer","message":"Pa' }] }, index: 0 }] },
+      { candidates: [{ content: { role: "model", parts: [{ text: 'id."}' }] }, finishReason: "STOP", index: 0 }], usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 5, totalTokenCount: 10 } },
+    ].map((d) => `data: ${JSON.stringify(d)}\n\n`).join(""),
+  });
+  const gs = await callModel({ system: "s", turns: [{ role: "user", content: "paid?" }], model: "gemini-test", onText: (t) => geminiHeard.push(t) });
+  check("Gemini streams too, asked for JSON", gs === '{"type":"answer","message":"Paid."}' && /streamGenerateContent/.test(sent[0]?.url ?? "") && sent[0]?.body?.generationConfig?.responseMimeType === "application/json");
+  check("and is heard as it grows", draftMessage(geminiHeard.at(-2) ?? "") === "Pa" && draftMessage(geminiHeard.at(-1)) === "Paid.");
 
   console.log("\nthe importer's own errors still read as they did");
   check("a Shopify 429 in plain words is transient", isTransient(new Error("Shopify said 429 Too Many Requests")));

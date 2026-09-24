@@ -57,6 +57,11 @@ database decides who may do what.
 10. **What was read is told by the tool, not the model.** `observe` hears a lookup once it
    has run; that is the step the merchant sees and the receipt the answer carries. A prompt
    offers lookups only when the call has tools (`canLookUp`).
+11. **A draft is never the reply.** With `onText`, a call streams (`streamText`); every
+   other caller keeps the plain call. `draftMessage` reads the reply's `message` out of
+   JSON still arriving; the route sends it as `words` lines, throttled, and drops the one
+   waiting when the turn ends. A new attempt clears the draft. Stream failures are thrown
+   and mapped to the same `ModelError` sentences (`StreamProviderError` too).
 
 ## Adding a store tool
 

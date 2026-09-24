@@ -84,9 +84,13 @@ filters, import completeness, and last sync time. A Jev question router may addi
 select a list, time window, and question kind; `fetchSlice` then retrieves up to 50 rows
 for that specific question.
 
-This is deliberately a bounded pre-model read rather than an unrestricted model tool
-loop. The trade-off is predictable authorization and evidence at the cost of arbitrary
-follow-up queries inside one turn.
+Most questions are answered from that read in one model call. In the chat (`lookups: true`)
+the model may also look up what the snapshot does not hold with five read-only store tools
+(`LUKE_TOOLS`): at most three lookups before its reply, on the first attempt only, each read
+with the caller's own client. Every lookup is recorded by the tool that ran it, as a
+`lookup` step and in the answer's `grounding.looked_up`, never by the model's word. A cap
+reached mid-lookup is still answered, in one more call with the results folded into words.
+The MCP design engine does not look things up; the client asking has the same tools.
 
 ## Validation and repair
 

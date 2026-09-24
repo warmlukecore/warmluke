@@ -9,7 +9,9 @@
 import {
   APICallError,
   NoContentGeneratedError,
+  StreamProviderError,
   generateText,
+  streamText,
   isStepCount,
   wrapLanguageModel,
   type Instructions,
@@ -2146,7 +2148,44 @@ function asModelError(provider: Provider, e: unknown): unknown {
     return modelError(provider, status, e.responseBody || e.message);
   }
   if (NoContentGeneratedError.isInstance(e)) return new ModelError("empty", provider, 200, e.message);
+  // Said by the provider mid-stream ("overloaded", "rate limited"): the same sentences.
+  if (StreamProviderError.isInstance(e)) return modelError(provider, e.statusCode ?? 0, `${e.type ?? ""} ${e.message}`);
   return e;
+}
+
+/** A stop, as fetch says it: passed through untouched by every caller. */
+const stopped = () => Object.assign(new Error("The turn was stopped."), { name: "AbortError" });
+
+/**
+ * The text so far of a reply's "message", read out of JSON that is still
+ * arriving: what Luke is saying, before the rest of the reply (the plans,
+ * the questions) has come. Null until the key has appeared. Only a draft
+ * for the screen; parseReply reads the finished reply as ever.
+ */
+export function draftMessage(text: string): string | null {
+  const key = /"message"\s*:\s*"/.exec(text);
+  if (!key) return null;
+  let out = "";
+  for (let i = key.index + key[0].length; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"') return out;
+    if (c !== "\\") {
+      out += c;
+      continue;
+    }
+    const n = text[i + 1];
+    if (n === undefined) return out; // the rest of the escape has not arrived
+    if (n === "u") {
+      const hex = text.slice(i + 2, i + 6);
+      if (!/^[0-9a-fA-F]{4}$/.test(hex)) return out;
+      out += String.fromCharCode(parseInt(hex, 16));
+      i += 5;
+      continue;
+    }
+    out += n === "n" ? "\n" : n === "t" ? "\t" : n === "r" ? "" : n;
+    i++;
+  }
+  return out;
 }
 
 /**
@@ -2171,6 +2210,41 @@ const asMessages = (turns: ChatTurn[]) =>
     t.role === "user" ? { role: "user", content: t.content } : { role: "assistant", content: t.content }
   );
 
+/**
+ * One model step or loop, whole or streamed. Streamed only when someone
+ * listens to the text as it comes (the chat); every other caller gets
+ * the SDK's plain call, exactly as before. Both answer the same three
+ * things, and a stream's failures are thrown like the plain call's.
+ */
+async function step(
+  base: Parameters<typeof generateText>[0],
+  onText?: (text: string) => void
+): Promise<{ text: string; finishReason: string; steps: Array<{ toolResults: Array<{ toolName: string; input: unknown; output: unknown }> }> }> {
+  if (!onText) {
+    const r = await generateText(base);
+    return { text: r.text, finishReason: r.finishReason, steps: r.steps };
+  }
+  const r = streamText(base as Parameters<typeof streamText>[0]);
+  // The text of the step being written. A step that ends in a lookup
+  // wrote no reply, and the next one starts the draft again.
+  let current = "";
+  for await (const part of r.stream) {
+    if (part.type === "start-step") {
+      current = "";
+      onText("");
+    } else if (part.type === "text-delta") {
+      current += part.text;
+      onText(current);
+    } else if (part.type === "error") {
+      throw part.error;
+    } else if (part.type === "abort") {
+      throw stopped();
+    }
+  }
+  const [text, finishReason, steps] = await Promise.all([r.text, r.finishReason, r.steps]);
+  return { text, finishReason, steps };
+}
+
 /** One call: the text the model answered, or the ModelError that says why not. */
 async function generate(
   provider: Provider,
@@ -2178,16 +2252,32 @@ async function generate(
   instructions: Instructions,
   turns: ChatTurn[],
   signal?: AbortSignal,
-  lookups?: Lookups
+  lookups?: Lookups,
+  /** Hears the reply's text as it arrives, whole each time; "" when a new attempt starts. */
+  onText?: (text: string) => void
 ): Promise<string> {
   const base = { model, instructions, maxOutputTokens: MAX_OUTPUT_TOKENS, maxRetries: 0, abortSignal: signal };
+  // A listener that throws does not take the call with it.
+  const hear = onText
+    ? (t: string) => {
+        try {
+          onText(t);
+        } catch {
+          /* the listener's problem */
+        }
+      }
+    : undefined;
+  hear?.("");
   let text: string;
   try {
-    const result = await generateText({
-      ...base,
-      messages: asMessages(turns),
-      ...(lookups ? { tools: lookups.tools, stopWhen: isStepCount(lookups.steps ?? LOOKUP_STEPS) } : {}),
-    });
+    const result = await step(
+      {
+        ...base,
+        messages: asMessages(turns),
+        ...(lookups ? { tools: lookups.tools, stopWhen: isStepCount(lookups.steps ?? LOOKUP_STEPS) } : {}),
+      },
+      hear
+    );
     text = result.text;
     // The cap arrived while it was still looking things up, so no reply
     // was written. It is asked once more with what it found folded into
@@ -2205,10 +2295,10 @@ async function generate(
         role: "user",
         content: `${last?.role === "user" ? `${last.content}\n\n` : ""}What your lookups returned, all you will get:\n${JSON.stringify(found).slice(0, FOLD_CHARS)}\n\nReply now, from these and the rows above, with the JSON only.`,
       };
-      ({ text } = await generateText({ ...base, messages: asMessages(folded) }));
+      ({ text } = await step({ ...base, messages: asMessages(folded) }, hear));
     }
   } catch (e) {
-    throw asModelError(provider, e);
+    throw asModelError(provider, signal?.aborted && !(e instanceof Error && e.name === "AbortError") ? stopped() : e);
   }
   if (!text) throw new ModelError("empty", provider, 200, "empty content");
   return text;
@@ -2237,8 +2327,10 @@ export async function callModel(opts: {
   /** Which model; the design model when absent. */
   model?: string;
   lookups?: Lookups;
+  /** Hears the reply as it is written; "" each time an attempt starts again. */
+  onText?: (text: string) => void;
 }): Promise<string> {
-  const { system, turns, signal, lookups } = opts;
+  const { system, turns, signal, lookups, onText } = opts;
   const model = opts.model || modelFor("design");
 
   // The provider comes from the model id rather than a second setting.
@@ -2250,12 +2342,12 @@ export async function callModel(opts: {
     // not, and a design half-written when Google is busy is worse than a
     // slower one. Retry once, then pay for Anthropic rather than fail.
     try {
-      return await callGemini(model, system, turns, signal, lookups);
+      return await callGemini(model, system, turns, signal, lookups, onText);
     } catch (e) {
       if (!isTransient(e) || signal?.aborted) throw e;
       await new Promise((r) => setTimeout(r, 2000));
       try {
-        return await callGemini(model, system, turns, signal, lookups);
+        return await callGemini(model, system, turns, signal, lookups, onText);
       } catch (again) {
         if (!isTransient(again) || signal?.aborted) throw again;
         if (!process.env.ANTHROPIC_API_KEY) throw again;
@@ -2293,7 +2385,7 @@ export async function callModel(opts: {
         ? { role: "system", content, providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } } }
         : { role: "system", content }
   );
-  return generate("anthropic", anthropic(model), instructions, turns, signal, lookups);
+  return generate("anthropic", anthropic(model), instructions, turns, signal, lookups, onText);
 }
 
 // ── The gap pass ────────────────────────────────────────────────
@@ -2375,7 +2467,8 @@ async function callGemini(
   system: string | [string, string],
   turns: ChatTurn[],
   signal?: AbortSignal,
-  lookups?: Lookups
+  lookups?: Lookups,
+  onText?: (text: string) => void
 ): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -2384,7 +2477,7 @@ async function callGemini(
   const google = createGoogle({ apiKey, fetch: reaching("gemini") });
   // Gemini has no cache marker to carry, so the blocks go as one text.
   const systemText = (Array.isArray(system) ? system : [system]).join("\n\n");
-  return generate("gemini", wrapLanguageModel({ model: google(model), middleware: JSON_MODE }), systemText, turns, signal, lookups);
+  return generate("gemini", wrapLanguageModel({ model: google(model), middleware: JSON_MODE }), systemText, turns, signal, lookups, onText);
 }
 
 /**

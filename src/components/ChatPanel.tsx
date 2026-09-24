@@ -558,6 +558,7 @@ export default function ChatPanel({
   onStop,
   canStop,
   steps = [],
+  draft = "",
   onSend,
   onEditPrompt,
   onApply,
@@ -605,6 +606,8 @@ export default function ChatPanel({
   /** What the running turn has done so far, oldest first. Empty until
    *  the server has taken the turn, and while a build is applied. */
   steps?: TurnEvent[];
+  /** What Luke is saying while it says it; the reply replaces it. */
+  draft?: string;
   onSend: (text: string) => Promise<void> | void;
   /**
    * Corrects a prompt already sent and runs it again. The shell owns
@@ -1037,7 +1040,7 @@ export default function ChatPanel({
   // build that just landed opens below the fold.
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
-  }, [messages.length, requests.length, busy, steps.length]);
+  }, [messages.length, requests.length, busy, steps.length, draft.length]);
 
   // How long the current step has been running. A model call is
   // twenty quiet seconds; a number that moves says the turn has not
@@ -2201,7 +2204,7 @@ export default function ChatPanel({
             >
               <LukeMark size="xs" state="thinking" />
               <span className="shimmer min-w-0 truncate">
-                {steps.length ? stepWords(steps[steps.length - 1]) : "Working on it…"}
+                {draft ? "Writing…" : steps.length ? stepWords(steps[steps.length - 1]) : "Working on it…"}
               </span>
               {stepSeconds >= 2 && <span className="shrink-0 tabular-nums text-fg-faint">{stepSeconds}s</span>}
               {steps.length > 1 && (
@@ -2216,6 +2219,15 @@ export default function ChatPanel({
               </ul>
             )}
           </div>
+        )}
+        {/* What Luke is saying, as it says it: the reply's own words, in
+            the reply's own type. A draft, so a screen reader is not read
+            every word; the reply that replaces it is. */}
+        {busy && draft && (
+          <p aria-hidden className="whitespace-pre-line text-[13px] leading-relaxed text-fg">
+            {draft}
+            <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-fg-faint" />
+          </p>
         )}
       </div>
 

@@ -35,7 +35,9 @@ routes exist where server-side validation, orchestration, or secrets are require
 
 `POST /api/chat` accepts `message`, `projectId`, optional `moduleId`, and optional
 `conversationId`. It enforces the account feature switch, project ownership, hourly
-ceiling, and included-turn ledger. It never applies plans.
+ceiling, and included-turn ledger. It never applies plans. Lines with `step` are progress
+(including `lookup` when a store tool ran), lines with `words` are drafts of the reply's
+message, and the last line is the result.
 
 `POST /api/apply` accepts `projectId`, plans, and an optional MCP `requestId`. With a
 request ID it first claims the request atomically. Plans are capped, revalidated against

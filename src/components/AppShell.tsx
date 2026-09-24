@@ -229,6 +229,9 @@ export default function AppShell({
   // What the running turn has done so far, as the server said it.
   // Empty between turns, and while a build is being applied.
   const [chatSteps, setChatSteps] = useState<TurnEvent[]>([]);
+  // What Luke is saying while it says it. Cleared when the turn ends,
+  // however it ends: the reply, or the error, takes its place.
+  const [chatDraft, setChatDraft] = useState("");
   const chatAbort = useRef<AbortController | null>(null);
   // One thread per builder session: the server replays it so the
   // assistant remembers what it already asked.
@@ -952,6 +955,7 @@ export default function AppShell({
       }
       setChatBusy(true);
       setChatSteps([]);
+      setChatDraft("");
       const controller = new AbortController();
       chatAbort.current = controller;
       // What the turn did, kept with the reply it produced so the
@@ -969,8 +973,10 @@ export default function AppShell({
           (step) => {
             seen.push(step as TurnEvent);
             setChatSteps((prev) => [...prev, step as TurnEvent]);
-          }
+          },
+          setChatDraft
         );
+        setChatDraft("");
 
         if (data.conversationId && data.conversationId !== conversationId) {
           rememberConversation(data.conversationId as string);
@@ -1114,6 +1120,7 @@ export default function AppShell({
         chatAbort.current = null;
         setChatBusy(false);
         setChatSteps([]);
+        setChatDraft("");
       }
     },
     [chatBusy, building, projectId, selectedModuleId, conversationId, loadModules, loadThread]
@@ -2154,6 +2161,7 @@ export default function AppShell({
         messages={chatMessages}
         busy={chatBusy || building}
         steps={chatSteps}
+        draft={chatDraft}
         canStop={chatBusy}
         threads={threads}
         conversationId={conversationId}

@@ -38,8 +38,11 @@ sequenceDiagram
     UI->>DB: Persist receipt in conversation
 ```
 
-`POST /api/chat` never applies a plan. Its stream contains truthful step events followed
-by one final response object. The model can be retried up to two times after the initial
+`POST /api/chat` never applies a plan. Its stream contains truthful step events, draft
+lines of what Luke is saying as the reply is written (`{"words": "…"}`, the reply's message
+so far, at most one every 80 ms), and one final response object. A draft is never the
+reply: the validated reply replaces it, a new attempt clears it, and none is sent after the
+final object. The model can be retried up to two times after the initial
 attempt when structural or semantic validation fails.
 
 ## Plan application and compensation

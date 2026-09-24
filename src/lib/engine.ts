@@ -19,6 +19,7 @@ import {
   buildSystemPrompt,
   buildUserMessage,
   callModel,
+  draftMessage,
   findGaps,
   parseReply,
   type ChatTurn,
@@ -199,6 +200,13 @@ export type TurnInput = {
    * said — the MCP tool answers in one piece and never asks.
    */
   onEvent?: (event: TurnEvent) => void;
+  /**
+   * Hears what Luke is saying as it is written: the reply's message, so
+   * far, whole each time, and "" when an attempt starts over. A draft
+   * for the screen, never the reply: the one the validator passes
+   * replaces it. Absent, the model is not streamed at all.
+   */
+  onWords?: (text: string) => void;
 };
 
 export type TurnResult =
@@ -362,6 +370,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     lookups = false,
     signal,
     onEvent,
+    onWords,
   } = input;
   // Said after the fact, with what was found. A listener that throws
   // must not take the turn down with it: the work is the point, the
@@ -430,6 +439,22 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           }
         )
       : null;
+  // The draft, told only when it changes: a stream of the same words
+  // over and over would be a stream of nothing.
+  let drafted = "";
+  const draft = onWords
+    ? (text: string) => {
+        const said = text === "" ? "" : draftMessage(text);
+        if (said === null || said === drafted) return;
+        drafted = said;
+        try {
+          onWords(said);
+        } catch {
+          /* the caller's problem, not the turn's */
+        }
+      }
+    : undefined;
+
   // Before the prompt is written: it offers lookups only when there are tools to make them.
   if (store) store.canLookUp = !!tools;
 
@@ -465,6 +490,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       turns: [...history, ...attemptTurns],
       signal,
       lookups: attempt === 0 && tools ? { tools } : undefined,
+      onText: draft,
     });
     parsed = parseReply(raw, modules, currentSchema, currentFeatures, (mid) =>
       schemas.get(mid) ?? null
