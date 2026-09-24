@@ -293,6 +293,18 @@ const TOOLS = [
 /** "an inventory alert system", "a returns dashboard": said as a sentence says it. */
 const withArticle = (t: string) => `${/^[aeiou]/i.test(t) ? "an" : "a"} ${t}`;
 
+/** Where the footer goes: the page's own sections, then the rest of the site. */
+const FOOTER_LINKS: Array<[string, string]> = [
+  ["Luke", "#luke"],
+  ["Use cases", "#uses"],
+  ["Integrations", "#integrations"],
+  ["Your own AI", "#mcp"],
+  ["Book a demo", "#book"],
+  ["Sign in", "/login"],
+  ["Privacy", "/privacy"],
+  ["Terms", "/terms"],
+];
+
 const BOOK_POINTS = [
   "Shown on your own store, not a sample one",
   "Your questions, in your words",
@@ -589,7 +601,7 @@ function Hub() {
       <div className="absolute inset-[28%] rounded-full border border-hair bg-white/60" />
       <Ring names={CONNECTORS.filter((c) => !c.ready)} inset="7%" seconds={120} turn={45} />
       <Ring names={CONNECTORS.filter((c) => c.ready)} inset="28%" seconds={80} turn={-90} />
-      <div className="absolute top-1/2 left-1/2 flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-3xl bg-white shadow-[var(--shadow-dashboard)]">
+      <div className="absolute top-1/2 left-1/2 flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-3xl border border-hair bg-white shadow-[0_2px_12px_-2px_rgb(0_0_0/0.12)]">
         <Logo className="h-8" />
       </div>
     </div>
@@ -660,7 +672,7 @@ function Bridge() {
         </span>
 
         <div className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center" style={at(to.x, to.y)}>
-          <span className="flex h-16 w-16 items-center justify-center rounded-2xl border border-hair bg-white shadow-[var(--shadow-dashboard)]">
+          <span className="flex h-16 w-16 items-center justify-center rounded-2xl border border-hair bg-white shadow-[0_2px_12px_-2px_rgb(0_0_0/0.12)]">
             <Logo className="h-7" />
           </span>
         </div>
@@ -1188,17 +1200,52 @@ export default async function Landing({
         </div>
       </section>
 
-      <footer className="border-t border-hair py-8">
-        <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 px-5 text-xs text-neutral-400">
-          <span>Warmluke. One intelligent operating layer for your ecommerce business.</span>
-          <span className="flex gap-4">
-            <Link href="/privacy" className="hover:text-neutral-700">
-              Privacy
-            </Link>
-            <Link href="/terms" className="hover:text-neutral-700">
-              Terms
-            </Link>
-          </span>
+      {/* ── Footer ───────────────────────────────────────────── */}
+      {/* The name large and fading behind everything, and the mark on a
+          line across the bottom. Only real places are linked: no social
+          accounts are listed until there are ones to list. Clipped rather
+          than overflow-hidden: hidden makes the footer a scroll container,
+          and the pop-ups would time themselves to it instead of the page. */}
+      <footer className="relative overflow-clip border-t border-hair bg-white">
+        <div className="relative mx-auto flex min-h-[30rem] w-full max-w-5xl flex-col justify-between px-5 pt-16 pb-10 sm:min-h-[34rem] md:min-h-[38rem]">
+          <div className="reveal flex flex-col items-center text-center">
+            <span className="text-3xl font-bold tracking-tight text-ink">Warmluke</span>
+            <p className="mt-2 max-w-md text-sm font-medium text-balance text-quiet">
+              One intelligent operating layer for your ecommerce business.
+            </p>
+            <nav aria-label="Footer" className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-3 text-sm font-medium text-quiet">
+              {FOOTER_LINKS.map(([label, href]) => (
+                <Link
+                  key={href}
+                  href={href}
+                  data-cta={`footer_${label.toLowerCase().replace(/\s+/g, "_")}`}
+                  className="transition-colors duration-200 hover:text-ink"
+                >
+                  {label}
+                </Link>
+              ))}
+            </nav>
+          </div>
+          <p className="relative z-10 text-center text-sm text-quiet md:text-left">
+            © {new Date().getFullYear()} Warmluke. All rights reserved.
+          </p>
+        </div>
+
+        <div
+          aria-hidden="true"
+          className="reveal-pop pointer-events-none absolute bottom-40 left-1/2 -translate-x-1/2 select-none [--pop-scale:0.94] bg-gradient-to-b from-ink/20 via-ink/10 to-transparent bg-clip-text px-4 text-center leading-none font-extrabold tracking-tighter text-transparent md:bottom-32"
+          style={{ fontSize: "clamp(3rem, 14vw, 11rem)", maxWidth: "95vw" }}
+        >
+          WARMLUKE
+        </div>
+        <div aria-hidden="true" className="absolute bottom-32 left-0 h-px w-full bg-gradient-to-r from-transparent via-neutral-300 to-transparent" />
+        <div
+          aria-hidden="true"
+          className="reveal-pop absolute bottom-24 left-1/2 z-10 -translate-x-1/2 [--pop-scale:0.6] rounded-3xl border border-hair bg-white/60 p-2.5 shadow-[0_10px_40px_-12px_rgb(0_0_0/0.35)] backdrop-blur-sm transition-colors duration-300 hover:border-neutral-300 md:bottom-20"
+        >
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-hair bg-white shadow-[0_2px_12px_-2px_rgb(0_0_0/0.12)] sm:h-16 sm:w-16 md:h-20 md:w-20">
+            <Logo className="h-6 sm:h-7 md:h-9" />
+          </div>
         </div>
       </footer>
     </div>

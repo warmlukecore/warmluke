@@ -133,7 +133,7 @@
 @keyframes pop {
   from {
     opacity: 0;
-    transform: translateY(var(--pop-from, -4px)) scale(0.98);
+    transform: translateY(var(--pop-from, -4px)) scale(var(--pop-scale, 0.98));
   }
 }
 .pop {
@@ -150,6 +150,15 @@
       animation: rise linear both;
       animation-timeline: view();
       animation-range: entry 0% cover 22%;
+    }
+    /* The footer's mark and name, popping up as the page ends. Timed on
+       their own entry rather than a cover range: they sit at the foot of
+       the page, which a tall window never scrolls far enough to finish. */
+    .reveal-pop {
+      --pop-from: 24px;
+      animation: pop linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 100%;
     }
   }
 }
