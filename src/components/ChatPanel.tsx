@@ -152,6 +152,13 @@ function since(iso: string): string {
   return days === 1 ? "yesterday" : `${days} days ago`;
 }
 
+/** An assistant's mark, by the name it registered with; null for one we have no mark for. */
+function assistantLogo(name: string): string | null {
+  if (/claude/i.test(name)) return "/logos/claude.svg";
+  if (/chatgpt|openai/i.test(name)) return "/logos/openai.svg";
+  return null;
+}
+
 let msgSeq = 0;
 export const nextChatId = () => `m${++msgSeq}`;
 
@@ -2295,8 +2302,13 @@ export default function ChatPanel({
           onToggle={(e) => setOwnAiOpen((e.currentTarget as HTMLDetailsElement).open)}
         >
           <summary className="flex cursor-pointer list-none items-center gap-2.5 text-xs text-fg-muted hover:text-fg [&::-webkit-details-marker]:hidden">
+            {/* The marks of what is connected; before anything is, the two
+                it can be. */}
             <span aria-hidden className="flex -space-x-1.5">
-              {["/logos/claude.svg", "/logos/openai.svg"].map((src) => (
+              {(() => {
+                const theirs = [...new Set(assistants.map((c) => assistantLogo(c.name)).filter((l): l is string => !!l))];
+                return theirs.length ? theirs : ["/logos/claude.svg", "/logos/openai.svg"];
+              })().map((src) => (
                 <span key={src} className="flex h-6 w-6 items-center justify-center rounded-full border border-line bg-surface shadow-card">
                   {/* eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise */}
                   <img src={src} alt="" width={13} height={13} className="h-3.5 w-3.5 object-contain" />
@@ -2356,11 +2368,7 @@ export default function ChatPanel({
               <ul className="overflow-hidden rounded-card border border-line">
                 {assistants.map((c) => {
                   const working = c.calls24h > 0;
-                  const logo = /claude/i.test(c.name)
-                    ? "/logos/claude.svg"
-                    : /chatgpt|openai/i.test(c.name)
-                      ? "/logos/openai.svg"
-                      : null;
+                  const logo = assistantLogo(c.name);
                   // Working, as opposed to merely allowed: a key unused
                   // for a month looks the same as one in use, and only
                   // one of those is worth keeping.

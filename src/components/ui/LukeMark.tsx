@@ -12,6 +12,7 @@ const SIZES = {
   xs: { box: "h-5 w-5", eye: "h-1.5 w-[3px]", gap: "gap-[3px]", grain: false },
   sm: { box: "h-7 w-7", eye: "h-2 w-1", gap: "gap-1", grain: true },
   lg: { box: "h-12 w-12", eye: "h-2.5 w-1.5", gap: "gap-2.5", grain: true },
+  xl: { box: "h-24 w-24", eye: "h-5 w-3", gap: "gap-4", grain: true },
 } as const;
 
 export function LukeMark({
@@ -46,7 +47,7 @@ export function LukeMark({
             "radial-gradient(ellipse at 30% 24%, rgb(255 255 255 / 0.75) 0%, rgb(255 255 255 / 0.1) 50%, transparent 70%)",
         }}
       />
-      <span className={`luke-eyes relative flex -translate-y-px items-center ${s.gap}`}>
+      <span className={`luke-eyes relative flex items-center ${s.gap}`}>
         <span className={`luke-eye rounded-full ${s.eye}`} />
         <span className={`luke-eye rounded-full ${s.eye}`} />
       </span>

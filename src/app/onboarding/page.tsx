@@ -12,15 +12,20 @@
 // The store and the AI can wait: a merchant without their Shopify login
 // to hand, or without Claude, is not stopped at the door. Only the
 // answers about them are asked for before they go in.
+//
+// Laid out as a conversation with Luke: Luke on the left, with the steps
+// and what was answered in each, and one question at a time on the
+// right. Any step already passed can be opened again from the left.
 // ─────────────────────────────────────────────────────────────
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Check, Copy, LoaderCircle, LogOut, Plug, Sparkles, Store } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Copy, LoaderCircle, LogOut } from "lucide-react";
 import { apiFetch, signOut, takePendingPrompt, useUser } from "@/lib/auth";
 import { supabase } from "@/lib/supabase-client";
 import ConnectShopify from "@/components/ConnectShopify";
+import { LukeMark } from "@/components/ui/LukeMark";
 import { button, field, fieldOf, label, note } from "@/components/ui/controls";
 import {
   BUSINESS_MAX,
@@ -45,6 +50,8 @@ const WATCH_MS = 3000;
 
 type Owned = { id: string; name: string; store: { shop_domain: string; status: string } | null };
 type Progress = Record<string, { imported: number; status: string; label?: string }>;
+/** Which way the last move went, so the next screen comes in from that side. */
+type Dir = "from-right" | "from-left";
 
 const EMPTY: Answers = {
   full_name: "",
@@ -59,6 +66,9 @@ const EMPTY: Answers = {
 };
 
 const LATER = "I’ll do this later";
+
+/** The steps in the order they come. */
+const ORDER: Step[] = ["about", "store", "preparing", "assistant", "done"];
 
 export default function Onboarding() {
   const { user, loading } = useUser();
@@ -76,6 +86,11 @@ export default function Onboarding() {
   const [importing, setImporting] = useState<boolean | null>(null);
   const [progress, setProgress] = useState<Progress>({});
   const [skipped, setSkipped] = useState({ store: false, assistant: false, preparing: false });
+  // A step opened again from the list, over the one they are up to.
+  const [viewing, setViewing] = useState<Step | null>(null);
+  const [dir, setDir] = useState<Dir>("from-right");
+  // What they have typed so far, for Luke to answer to as they type.
+  const [draft, setDraft] = useState<Answers>(EMPTY);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login?next=/onboarding");
@@ -115,9 +130,12 @@ export default function Onboarding() {
       const saved = { ...EMPTY };
       for (const k of Object.keys(EMPTY) as Array<keyof Answers>) saved[k] = row[k] ?? "";
       setAnswers(saved);
+      setDraft(saved);
     } else {
       const meta = user.user_metadata as { full_name?: string; name?: string } | undefined;
-      setAnswers((a) => ({ ...a, full_name: a.full_name || meta?.full_name || meta?.name || "" }));
+      const name = meta?.full_name || meta?.name || "";
+      setAnswers((a) => ({ ...a, full_name: a.full_name || name }));
+      setDraft((a) => ({ ...a, full_name: a.full_name || name }));
     }
     setOwned(
       ((projects.data ?? []) as Array<{ id: string; name: string; stores: Owned["store"][] | null }>).map((p) => ({
@@ -144,6 +162,7 @@ export default function Onboarding() {
     importing: importing !== false,
     preparingSkipped: skipped.preparing,
   });
+  const shown: Step = viewing ?? step;
 
   // The import, watched from here while they set up the rest.
   const connectedId = connected?.id ?? null;
@@ -168,233 +187,547 @@ export default function Onboarding() {
 
   // Their AI, noticed the moment it connects.
   useEffect(() => {
-    if (step !== "assistant") return;
+    if (shown !== "assistant") return;
     const t = setInterval(async () => {
       const { data } = await supabase.rpc("abo_oauth_clients");
       setAssistants(((data ?? []) as Array<{ name: string }>).map((c) => c.name));
     }, WATCH_MS);
     return () => clearInterval(t);
-  }, [step]);
+  }, [shown]);
 
   // Leaving for Shopify from the store step comes back here, not to the app.
   useEffect(() => {
-    if (step !== "store") return;
+    if (shown !== "store") return;
     try {
       localStorage.setItem(RETURN_KEY, String(Date.now()));
     } catch {
       /* nothing to come back to, then: the app is where they land */
     }
-  }, [step]);
+  }, [shown]);
+
+  /** Opens a step already passed, coming in from the side it lies on. */
+  function revisit(to: Step) {
+    if (to === shown) return;
+    setDir(ORDER.indexOf(to) < ORDER.indexOf(shown) ? "from-left" : "from-right");
+    // A step opened again that its skip had closed is open again.
+    if (to === "store") setSkipped((s) => ({ ...s, store: false }));
+    if (to === "assistant") setSkipped((s) => ({ ...s, assistant: false }));
+    setViewing(to === step ? null : to);
+  }
+
+  /** Done with the step on screen: on to whatever is still missing. */
+  function onward(skip?: Partial<typeof skipped>) {
+    setDir("from-right");
+    if (skip) setSkipped((s) => ({ ...s, ...skip }));
+    setViewing(null);
+  }
 
   if (loading || !user || !ready) {
     return (
-      <Frame email={user?.email} step={null} assistantOffered={false}>
-        <div className="h-80 animate-pulse rounded-card bg-surface shadow-card" />
-      </Frame>
+      <div className="font-ui flex min-h-dvh flex-col items-center justify-center gap-4 bg-canvas text-fg" role="status">
+        <LukeMark size="lg" state="thinking" />
+        <span className="shimmer text-[13px]">Setting things up</span>
+      </div>
     );
   }
 
+  const reading = Object.values(progress).find((p) => p.label && p.status !== "done")?.label;
+
   return (
-    <Frame email={user.email} step={step} assistantOffered={assistantOffered}>
-      {loadError ? (
-        <div className={note.critical}>{loadError}</div>
-      ) : step === "about" ? (
-        <AboutYou
-          userId={user.id}
-          initial={answers}
-          onSaved={async (a) => {
-            // A place for the store to go, named for the business, if
-            // they have no project of their own to put it in.
-            if (owned.length === 0) {
-              const { data } = await supabase
-                .from("projects")
-                .insert({ name: a.business_name.trim().slice(0, 42) })
-                .select("id, name")
-                .single();
-              if (data) setOwned([{ id: data.id, name: data.name, store: null }]);
-            }
-            setAnswers(a);
-            setProfileSaved(true);
-          }}
-        />
-      ) : step === "store" ? (
-        <Card
-          icon={<Store aria-hidden size={20} strokeWidth={1.75} />}
-          title="Connect your Shopify store"
-          lede="Warmluke reads your products, orders and customers, and changes nothing in your shop unless you say yes to that change."
-        >
-          {target ? (
-            <ConnectShopify
-              projectId={target.id}
-              initialShop={target.store?.shop_domain ?? ""}
-              submitLabel={target.store ? "Reconnect" : "Connect"}
-              cancelLabel={LATER}
-              onCancel={() => setSkipped((s) => ({ ...s, store: true }))}
-              onConnected={load}
-            />
-          ) : (
-            <div className="space-y-3">
-              <div className={note.critical}>There is no project to connect it to yet.</div>
-              <button onClick={() => setSkipped((s) => ({ ...s, store: true }))} className={button("secondary")}>
-                {LATER}
-              </button>
-            </div>
-          )}
-        </Card>
-      ) : step === "assistant" ? (
-        <Assistant connected={assistants} onDone={() => setSkipped((s) => ({ ...s, assistant: true }))} />
-      ) : step === "preparing" ? (
-        <Card
-          icon={<LoaderCircle aria-hidden size={20} strokeWidth={1.75} className="animate-spin" />}
-          title="Bringing in your store"
-          lede={`${connected?.store?.shop_domain ?? "Your store"} is importing. It carries on if you close this page.`}
-        >
-          <ImportList progress={progress} />
-          <button
-            onClick={() => setSkipped((s) => ({ ...s, preparing: true }))}
-            className={`${button("secondary", "lg")} mt-6 w-full`}
+    <Frame
+      email={user.email}
+      shown={shown}
+      step={step}
+      assistantOffered={assistantOffered}
+      answers={answers}
+      draft={draft}
+      shop={connected?.store?.shop_domain ?? null}
+      skipped={skipped}
+      assistants={assistants}
+      reading={reading}
+      onRevisit={revisit}
+    >
+      <div key={shown} className={dir}>
+        {loadError ? (
+          <div className={note.critical}>{loadError}</div>
+        ) : shown === "about" ? (
+          <AboutYou
+            userId={user.id}
+            initial={answers}
+            onDraft={setDraft}
+            onSaved={async (a) => {
+              // A place for the store to go, named for the business, if
+              // they have no project of their own to put it in.
+              if (owned.length === 0) {
+                const { data } = await supabase
+                  .from("projects")
+                  .insert({ name: a.business_name.trim().slice(0, 42) })
+                  .select("id, name")
+                  .single();
+                if (data) setOwned([{ id: data.id, name: data.name, store: null }]);
+              }
+              setAnswers(a);
+              setProfileSaved(true);
+              onward();
+            }}
+          />
+        ) : shown === "store" ? (
+          <Screen
+            eyebrow="Your store"
+            title="Connect your Shopify store"
+            lede="Warmluke reads your products, orders and customers, and changes nothing in your shop unless you say yes to that change."
           >
-            Continue, it will finish on its own
-          </button>
-        </Card>
-      ) : (
-        <Done
-          name={answers.full_name}
-          storeConnected={!!connected}
-          onOpen={async () => {
-            const { error } = await supabase
-              .from("profiles")
-              .update({ onboarded_at: new Date().toISOString() })
-              .eq("user_id", user.id);
-            if (error) return "That didn’t save. Try again.";
-            try {
-              localStorage.removeItem(RETURN_KEY);
-            } catch {
-              /* already gone */
-            }
-            // What they typed on the landing page, carried into their app.
-            const pending = takePendingPrompt();
-            const where = connected ?? target;
-            if (!where) {
-              router.replace(pending ? "/dashboard?build=1" : "/dashboard");
+            {connected ? (
+              <div className="space-y-8">
+                <div className="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3">
+                  <span className="h-2 w-2 shrink-0 rounded-full bg-signal-success" />
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{connected.store?.shop_domain}</span>
+                  <span className="text-xs text-fg-muted">Connected</span>
+                </div>
+                <Actions onBack={() => revisit("about")} onNext={() => onward()} next="Continue" />
+              </div>
+            ) : target ? (
+              <div className="space-y-6">
+                <ConnectShopify
+                  projectId={target.id}
+                  initialShop={target.store?.shop_domain ?? ""}
+                  submitLabel={target.store ? "Reconnect" : "Connect"}
+                  cancelLabel={LATER}
+                  onCancel={() => onward({ store: true })}
+                  onConnected={load}
+                />
+                <BackLink onBack={() => revisit("about")} />
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className={note.critical}>There is no project to connect it to yet.</div>
+                <button onClick={() => onward({ store: true })} className={button("secondary")}>
+                  {LATER}
+                </button>
+              </div>
+            )}
+          </Screen>
+        ) : shown === "assistant" ? (
+          <Assistant connected={assistants} onBack={() => revisit("store")} onDone={() => onward({ assistant: true })} />
+        ) : shown === "preparing" ? (
+          <Screen
+            eyebrow="Your store"
+            title="Bringing in your store"
+            lede={`${connected?.store?.shop_domain ?? "Your store"} is importing. It carries on if you close this page.`}
+          >
+            <ImportList progress={progress} />
+            <div className="mt-8">
+              <Actions
+                onBack={() => revisit("store")}
+                onNext={() => onward({ preparing: true })}
+                next="Continue, it will finish on its own"
+                quiet
+              />
+            </div>
+          </Screen>
+        ) : (
+          <Done
+            name={answers.full_name}
+            business={answers.business_name}
+            shop={connected?.store?.shop_domain ?? null}
+            assistants={assistants}
+            assistantOffered={assistantOffered}
+            onChange={revisit}
+            onOpen={async () => {
+              const { error } = await supabase
+                .from("profiles")
+                .update({ onboarded_at: new Date().toISOString() })
+                .eq("user_id", user.id);
+              if (error) return "That didn’t save. Try again.";
+              try {
+                localStorage.removeItem(RETURN_KEY);
+              } catch {
+                /* already gone */
+              }
+              // What they typed on the landing page, carried into their app.
+              const pending = takePendingPrompt();
+              const where = connected ?? target;
+              if (!where) {
+                router.replace(pending ? "/dashboard?build=1" : "/dashboard");
+                return null;
+              }
+              if (pending) sessionStorage.setItem("abo_build_prompt", pending);
+              router.replace(`/app/${where.id}${pending ? "?build=1" : ""}`);
               return null;
-            }
-            if (pending) sessionStorage.setItem("abo_build_prompt", pending);
-            router.replace(`/app/${where.id}${pending ? "?build=1" : ""}`);
-            return null;
-          }}
-        />
-      )}
+            }}
+          />
+        )}
+      </div>
     </Frame>
   );
 }
 
-// ── The frame: the mark, where they are, and the way out ────────
+// ── The frame: Luke and the steps on the left, the screen on the right ──
 
-const TRAIL: Array<{ step: Step[]; text: string; assistant?: true }> = [
-  { step: ["about"], text: "About you" },
-  { step: ["store", "preparing"], text: "Your store" },
-  { step: ["assistant"], text: "Your AI", assistant: true },
-  { step: ["done"], text: "Ready" },
-];
+type TrailItem = { key: Step; steps: Step[]; text: string };
 
 function Frame({
   email,
+  shown,
   step,
   assistantOffered,
+  answers,
+  draft,
+  shop,
+  skipped,
+  assistants,
+  reading,
+  onRevisit,
   children,
 }: {
   email: string | null | undefined;
-  step: Step | null;
+  shown: Step;
+  step: Step;
   assistantOffered: boolean;
+  answers: Answers;
+  draft: Answers;
+  shop: string | null;
+  skipped: { store: boolean; assistant: boolean; preparing: boolean };
+  assistants: string[];
+  reading?: string;
+  onRevisit: (to: Step) => void;
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const trail = TRAIL.filter((t) => !t.assistant || assistantOffered);
-  const at = step ? trail.findIndex((t) => t.step.includes(step)) : -1;
+  const trail: TrailItem[] = [
+    { key: "about", steps: ["about"], text: "About you" },
+    { key: "store", steps: ["store", "preparing"], text: "Your store" },
+    ...(assistantOffered ? [{ key: "assistant" as Step, steps: ["assistant"] as Step[], text: "Your AI" }] : []),
+    { key: "done", steps: ["done"], text: "Ready" },
+  ];
+  const at = trail.findIndex((t) => t.steps.includes(shown));
+  const reached = trail.findIndex((t) => t.steps.includes(step));
+  const names = [...new Set(assistants)];
+
+  /** What was answered in a step, said under it. */
+  const said = (key: Step): string | null => {
+    if (key === "about") return answers.business_name ? `${answers.full_name} · ${answers.business_name}` : null;
+    if (key === "store") return shop ?? (skipped.store ? "Later" : null);
+    if (key === "assistant") return names.length ? names.join(", ") : skipped.assistant ? "Later" : null;
+    return null;
+  };
+
+  const first = draft.full_name.trim().split(/\s+/)[0] ?? "";
+  const business = draft.business_name.trim();
+  // What Luke says beside each step; it answers to what they type.
+  const line =
+    shown === "about"
+      ? first
+        ? business
+          ? `Nice to meet you, ${first}. Tell me about ${business}.`
+          : `Nice to meet you, ${first}.`
+        : "Hi, I’m Luke. A few questions, and I’ll set things up around how you work."
+      : shown === "store"
+        ? "I read your store and change nothing in it until you say yes."
+        : shown === "preparing"
+          ? reading
+            ? `Reading ${reading.toLowerCase()}.`
+            : "Starting on your store."
+          : shown === "assistant"
+            ? "If you already use Claude or ChatGPT, I can work alongside it."
+            : `That’s everything${first ? `, ${first}` : ""}. Let’s build something.`;
+
   return (
-    <div className="font-ui min-h-dvh bg-canvas text-fg">
-      <header className="mx-auto flex w-full max-w-2xl items-center gap-3 px-4 py-5 sm:px-6">
-        <Image src="/images/logowarmluke.png" alt="" width={28} height={28} priority className="h-7 w-7 rounded-lg object-cover" />
-        <span className="text-sm font-semibold">Warmluke</span>
-        <div className="ml-auto flex items-center gap-2 text-xs text-fg-muted">
-          <span className="hidden max-w-[14rem] truncate sm:inline">{email}</span>
-          <button onClick={() => signOut(router)} className={button("plain", "sm")} aria-label="Sign out">
+    <div className="font-ui grid min-h-dvh bg-canvas text-fg lg:grid-cols-[20rem_minmax(0,1fr)]">
+      {/* Luke and the steps. On a phone, a bar across the top instead. */}
+      <aside className="sticky top-0 hidden h-dvh flex-col border-r border-line bg-surface px-7 py-7 lg:flex">
+        <div className="flex items-center gap-2.5">
+          <Image src="/images/logowarmluke.png" alt="" width={26} height={26} priority className="h-[26px] w-[26px] rounded-lg object-cover" />
+          <span className="text-sm font-semibold">Warmluke</span>
+        </div>
+
+        <div className="mt-14">
+          <LookingLuke thinking={shown === "preparing"} />
+          <p aria-live="polite" className="mt-5 min-h-[4.5rem] text-[15px] leading-relaxed text-fg">
+            {line}
+          </p>
+        </div>
+
+        <ol aria-label="Steps" className="mt-8 space-y-0.5">
+          {trail.map((t, i) => {
+            const done = i < reached || (t.key === "done" && shown === "done");
+            const current = i === at;
+            const open = i <= reached && !current;
+            const sub = said(t.key);
+            return (
+              <li key={t.key}>
+                <button
+                  onClick={() => onRevisit(t.key === "store" && step === "preparing" ? "preparing" : t.key)}
+                  disabled={!open}
+                  aria-current={current ? "step" : undefined}
+                  className={`group flex w-full items-start gap-3 rounded-control px-2.5 py-2 text-left transition-colors ${
+                    current ? "bg-surface-subdued" : open ? "hover:bg-surface-hover" : ""
+                  }`}
+                >
+                  <span
+                    className={`mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums transition-colors ${
+                      done && !current
+                        ? "bg-primary text-on-primary"
+                        : current
+                          ? "border-2 border-primary text-fg"
+                          : "border border-line-strong text-fg-faint"
+                    }`}
+                  >
+                    {done && !current ? <Check aria-hidden size={11} strokeWidth={3} /> : i + 1}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span
+                      className={`block text-[13px] leading-5 font-medium ${
+                        current ? "text-fg" : open ? "text-fg-muted group-hover:text-fg" : "text-fg-faint"
+                      }`}
+                    >
+                      {t.text}
+                    </span>
+                    {sub && <span className="block truncate text-xs text-fg-faint">{sub}</span>}
+                  </span>
+                  {open && (
+                    <span className="text-[11px] leading-5 text-fg-faint opacity-0 transition-opacity group-hover:opacity-100">
+                      Change
+                    </span>
+                  )}
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+
+        <div className="mt-auto flex items-center gap-2 border-t border-line pt-4 text-xs text-fg-muted">
+          <span className="min-w-0 flex-1 truncate">{email}</span>
+          <button onClick={() => signOut(router)} className={button("plain", "sm")} aria-label="Sign out" title="Sign out">
             <LogOut aria-hidden size={14} strokeWidth={1.75} />
-            <span className="hidden sm:inline">Sign out</span>
           </button>
         </div>
-      </header>
+      </aside>
 
-      <main className="mx-auto w-full max-w-2xl px-4 pb-16 sm:px-6">
-        {at >= 0 && (
-          <ol aria-label="Steps" className="mb-6 flex items-center gap-2">
-            {trail.map((t, i) => (
-              <li key={t.text} className="flex flex-1 flex-col gap-1.5" aria-current={i === at ? "step" : undefined}>
-                <span className={`h-1 rounded-full transition-colors duration-300 ${i <= at ? "bg-primary" : "bg-line"}`} />
-                <span className={`text-[11px] font-medium ${i === at ? "text-fg" : "text-fg-faint"}`}>{t.text}</span>
-              </li>
-            ))}
-          </ol>
-        )}
-        <div
-          key={step ?? "loading"}
-          className="rise"
-          style={{ ["--rise-from" as string]: "8px", ["--rise-for" as string]: "0.35s" }}
-        >
-          {children}
+      <main className="flex min-w-0 flex-col">
+        <header className="flex items-center gap-3 border-b border-line bg-surface px-4 py-3 lg:hidden">
+          <Image src="/images/logowarmluke.png" alt="" width={24} height={24} priority className="h-6 w-6 rounded-md object-cover" />
+          <span className="text-sm font-semibold">Warmluke</span>
+          <span className="ml-auto text-xs text-fg-muted tabular-nums">
+            {at + 1} of {trail.length} · {trail[at]?.text}
+          </span>
+          <button onClick={() => signOut(router)} className={button("plain", "sm")} aria-label="Sign out">
+            <LogOut aria-hidden size={14} strokeWidth={1.75} />
+          </button>
+        </header>
+        <div className="h-0.5 bg-line lg:hidden">
+          <div className="h-full bg-primary transition-[width] duration-500" style={{ width: `${((at + 1) / trail.length) * 100}%` }} />
+        </div>
+
+        <div className="flex flex-1 justify-center px-5 pt-10 pb-16 sm:px-8 lg:pt-[12vh]">
+          <div className="w-full max-w-[34rem]">
+            {/* On a phone, Luke and what it says sit above the question. */}
+            <div className="mb-8 flex items-start gap-3 lg:hidden">
+              <LukeMark size="sm" state={shown === "preparing" ? "thinking" : "idle"} />
+              <p className="pt-1 text-[13px] leading-relaxed text-fg-muted">
+                {line}
+              </p>
+            </div>
+            {children}
+          </div>
         </div>
       </main>
     </div>
   );
 }
 
-function Card({
-  icon,
+/**
+ * Luke, looking at the pointer: the eyes follow it round the page, a
+ * few pixels at most. Still for reduced motion and on touch, where there
+ * is no pointer to follow.
+ */
+function LookingLuke({ thinking }: { thinking: boolean }) {
+  const face = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const el = face.current;
+    if (!el || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    let frame = 0;
+    let x = 0;
+    let y = 0;
+    const aim = () => {
+      frame = 0;
+      const r = el.getBoundingClientRect();
+      const dx = x - (r.left + r.width / 2);
+      const dy = y - (r.top + r.height / 2);
+      const d = Math.max(1, Math.hypot(dx, dy));
+      const k = Math.min(1, d / 400);
+      el.style.setProperty("--look-x", `${((dx / d) * k * 5).toFixed(2)}px`);
+      el.style.setProperty("--look-y", `${((dy / d) * k * 4).toFixed(2)}px`);
+    };
+    const move = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse") return;
+      x = e.clientX;
+      y = e.clientY;
+      if (!frame) frame = requestAnimationFrame(aim);
+    };
+    window.addEventListener("pointermove", move);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      cancelAnimationFrame(frame);
+    };
+  }, []);
+  return (
+    <span ref={face} className="inline-flex">
+      <LukeMark size="xl" state={thinking ? "thinking" : "idle"} />
+    </span>
+  );
+}
+
+/** Words arriving one after another, each coming into focus. */
+function Reveal({ text, after = 0.05 }: { text: string; after?: number }) {
+  return (
+    <>
+      {text.split(" ").map((w, i) => (
+        <Fragment key={i}>
+          <span className="word-in" style={{ ["--word-after" as string]: `${(after + i * 0.05).toFixed(2)}s` }}>
+            {w}
+          </span>{" "}
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+/** One screen: where it belongs, the question, what it is for, then what to do. */
+function Screen({
+  eyebrow,
   title,
   lede,
   children,
 }: {
-  icon: React.ReactNode;
+  eyebrow: string;
   title: string;
-  lede: string;
+  lede?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-card bg-surface p-6 shadow-card sm:p-8">
-      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-canvas text-fg">{icon}</span>
-      <h1 className="mt-4 text-xl font-semibold tracking-tight">{title}</h1>
-      <p className="mt-1.5 text-[13px] leading-relaxed text-fg-muted">{lede}</p>
-      <div className="mt-6">{children}</div>
+    <section>
+      <div className="text-xs font-medium text-fg-muted">{eyebrow}</div>
+      <h1 className="mt-2 text-[28px] leading-[1.15] font-semibold tracking-tight text-fg sm:text-[32px]">
+        <Reveal text={title} />
+      </h1>
+      {lede && (
+        <p
+          className="rise mt-3 text-[15px] leading-relaxed text-fg-muted"
+          style={{ ["--rise-after" as string]: "0.25s", ["--rise-from" as string]: "4px" }}
+        >
+          {lede}
+        </p>
+      )}
+      <div className="mt-8">{children}</div>
     </section>
   );
 }
 
-// ── About you ───────────────────────────────────────────────────
+/** Back on the left, onward on the right, the same on every screen. */
+function Actions({
+  onBack,
+  onNext,
+  next,
+  busy,
+  submit,
+  quiet,
+}: {
+  onBack?: () => void;
+  onNext?: () => void;
+  next: string;
+  busy?: boolean;
+  submit?: boolean;
+  quiet?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      {onBack && (
+        <button type="button" onClick={onBack} className={`${button("plain", "lg")} -ml-3`}>
+          <ArrowLeft aria-hidden size={16} strokeWidth={2} />
+          Back
+        </button>
+      )}
+      {submit && <span className="ml-auto hidden text-xs text-fg-faint sm:inline">or press Enter</span>}
+      <button
+        type={submit ? "submit" : "button"}
+        onClick={submit ? undefined : onNext}
+        disabled={busy}
+        className={`${button(quiet ? "secondary" : "primary", "lg")} ${submit ? "" : "ml-auto"}`}
+      >
+        {next}
+        {!busy && !quiet && <ArrowRight aria-hidden size={16} strokeWidth={2} />}
+      </button>
+    </div>
+  );
+}
+
+function BackLink({ onBack }: { onBack: () => void }) {
+  return (
+    <button type="button" onClick={onBack} className={`${button("plain", "sm")} -ml-2.5`}>
+      <ArrowLeft aria-hidden size={14} strokeWidth={2} />
+      Back
+    </button>
+  );
+}
+
+// ── About you: one question at a time ─────────────────────────────
+
+/** The questions, the answers each one holds, and whether a tap on a choice moves on. */
+const QUESTIONS: Array<{ fields: Array<keyof Answers>; advance?: true }> = [
+  { fields: ["full_name", "business_name"] },
+  { fields: ["role"], advance: true },
+  { fields: ["monthly_orders"], advance: true },
+  { fields: ["platform", "website"] },
+  { fields: ["team_size", "heard_from", "heard_from_detail"] },
+];
 
 function AboutYou({
   userId,
   initial,
+  onDraft,
   onSaved,
 }: {
   userId: string;
   initial: Answers;
+  onDraft: (a: Answers) => void;
   onSaved: (a: Answers) => Promise<void>;
 }) {
   const [a, setA] = useState<Answers>(initial);
-  const [tried, setTried] = useState(false);
+  const [q, setQ] = useState(0);
+  const [dir, setDir] = useState<Dir>("from-right");
+  const [tried, setTried] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const wrong = useMemo(() => problems(a), [a]);
-  const set = (k: keyof Answers) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-    setA((prev) => ({ ...prev, [k]: e.target.value }));
-  const shown = (k: keyof Answers) => (tried ? wrong[k] : undefined);
+  const last = q === QUESTIONS.length - 1;
+  const business = a.business_name.trim() || "the business";
+
+  const update = (k: keyof Answers, v: string) => {
+    const nextA = { ...a, [k]: v };
+    setA(nextA);
+    onDraft(nextA);
+  };
+  const set = (k: keyof Answers) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => update(k, e.target.value);
+  const shown = (k: keyof Answers) => (tried === q ? wrong[k] : undefined);
   const detail = heardDetailPrompt(a.heard_from);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    setTried(true);
-    if (Object.keys(wrong).length > 0 || busy) return;
+    const bad = QUESTIONS[q].fields.some((f) => wrong[f]);
+    if (bad) {
+      setTried(q);
+      return;
+    }
+    if (!last) {
+      setDir("from-right");
+      setQ(q + 1);
+      return;
+    }
+    if (Object.keys(wrong).length > 0 || busy) {
+      setTried(q);
+      return;
+    }
     setBusy(true);
     setError(null);
     const { error: err } = await supabase
@@ -409,35 +742,137 @@ function AboutYou({
     setBusy(false);
   }
 
+  function back() {
+    setDir("from-left");
+    setQ(q - 1);
+  }
+
+  /** A choice: kept, and on a question with one answer, straight on to the next. */
+  function choose(k: keyof Answers, v: string) {
+    update(k, v);
+    if (QUESTIONS[q].advance) {
+      setTimeout(() => {
+        setDir("from-right");
+        setQ((n) => Math.min(n + 1, QUESTIONS.length - 1));
+      }, 220);
+    }
+  }
+
+  const eyebrow = `About you · ${q + 1} of ${QUESTIONS.length}`;
   return (
-    <Card
-      icon={<Sparkles aria-hidden size={20} strokeWidth={1.75} />}
-      title="Tell us about you"
-      lede="So Warmluke fits the way your business already works. It takes a minute."
-    >
-      <form onSubmit={save} noValidate className="space-y-5">
-        <div className="grid gap-5 sm:grid-cols-2">
-          <Text id="full_name" text="Your name" value={a.full_name} onChange={set("full_name")} error={shown("full_name")} max={NAME_MAX} autoComplete="name" autoFocus />
-          <Text id="business_name" text="Business name" value={a.business_name} onChange={set("business_name")} error={shown("business_name")} max={BUSINESS_MAX} autoComplete="organization" />
-          <Pick id="role" text="Your role" value={a.role} onChange={set("role")} options={ROLE_OPTIONS} error={shown("role")} />
-          <Pick id="monthly_orders" text="Orders a month" value={a.monthly_orders} onChange={set("monthly_orders")} options={ORDER_OPTIONS} error={shown("monthly_orders")} />
-          <Pick id="platform" text="Where your store runs" value={a.platform} onChange={set("platform")} options={PLATFORM_OPTIONS} error={shown("platform")} />
-          <Pick id="team_size" text="Team size" value={a.team_size} onChange={set("team_size")} options={TEAM_OPTIONS} error={shown("team_size")} optional />
-        </div>
-        <Text id="website" text="Website" value={a.website} onChange={set("website")} error={shown("website")} max={TEXT_MAX} optional placeholder="yourstore.com" autoComplete="url" />
-        <div className="grid gap-5 sm:grid-cols-2">
-          <Pick id="heard_from" text="How did you hear about us?" value={a.heard_from} onChange={set("heard_from")} options={HEARD_OPTIONS} error={shown("heard_from")} optional />
-          {detail && (
-            <Text id="heard_from_detail" text={detail} value={a.heard_from_detail} onChange={set("heard_from_detail")} error={shown("heard_from_detail")} max={TEXT_MAX} />
-          )}
-        </div>
-        {error && <div className={note.critical}>{error}</div>}
-        <button type="submit" disabled={busy} className={`${button("primary", "lg")} w-full`}>
-          {busy ? "Saving…" : "Continue"}
-          {!busy && <ArrowRight aria-hidden size={16} strokeWidth={2} />}
-        </button>
-      </form>
-    </Card>
+    <form onSubmit={save} noValidate>
+      <div key={q} className={dir}>
+        {q === 0 ? (
+          <Screen eyebrow={eyebrow} title="First, who are we talking to?" lede="So Warmluke fits the way your business already works. It takes a minute.">
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Text id="full_name" text="Your name" value={a.full_name} onChange={set("full_name")} error={shown("full_name")} max={NAME_MAX} autoComplete="name" autoFocus />
+              <Text id="business_name" text="Business name" value={a.business_name} onChange={set("business_name")} error={shown("business_name")} max={BUSINESS_MAX} autoComplete="organization" />
+            </div>
+          </Screen>
+        ) : q === 1 ? (
+          <Screen eyebrow={eyebrow} title={`What do you do at ${business}?`}>
+            <Choices label="Your role" options={ROLE_OPTIONS} value={a.role} onPick={(v) => choose("role", v)} error={shown("role")} />
+          </Screen>
+        ) : q === 2 ? (
+          <Screen eyebrow={eyebrow} title="How many orders a month?">
+            <Choices label="Orders a month" options={ORDER_OPTIONS} value={a.monthly_orders} onPick={(v) => choose("monthly_orders", v)} error={shown("monthly_orders")} />
+          </Screen>
+        ) : q === 3 ? (
+          <Screen eyebrow={eyebrow} title="Where does the store run?">
+            <Choices label="Where your store runs" options={PLATFORM_OPTIONS} value={a.platform} onPick={(v) => choose("platform", v)} error={shown("platform")} />
+            <div className="mt-6">
+              <Text id="website" text="Website" value={a.website} onChange={set("website")} error={shown("website")} max={TEXT_MAX} optional placeholder="yourstore.com" autoComplete="url" />
+            </div>
+          </Screen>
+        ) : (
+          <Screen eyebrow={eyebrow} title="Two last things, both optional.">
+            <Choices label="Team size" options={TEAM_OPTIONS} value={a.team_size} onPick={(v) => choose("team_size", a.team_size === v ? "" : v)} compact />
+            <div className="mt-6 grid gap-5 sm:grid-cols-2">
+              <Pick id="heard_from" text="How did you hear about us?" value={a.heard_from} onChange={set("heard_from")} options={HEARD_OPTIONS} error={shown("heard_from")} optional />
+              {detail && (
+                <Text id="heard_from_detail" text={detail} value={a.heard_from_detail} onChange={set("heard_from_detail")} error={shown("heard_from_detail")} max={TEXT_MAX} />
+              )}
+            </div>
+          </Screen>
+        )}
+      </div>
+      {error && <div className={`${note.critical} mt-6`}>{error}</div>}
+      <div className="mt-8">
+        <Actions onBack={q > 0 ? back : undefined} next={busy ? "Saving…" : last ? "Save and continue" : "Continue"} busy={busy} submit />
+      </div>
+    </form>
+  );
+}
+
+/**
+ * Choices as tiles, each with the letter that picks it from the keyboard.
+ * Letters only while no field has focus, so typing a name never picks one.
+ */
+function Choices({
+  label: text,
+  options,
+  value,
+  onPick,
+  error,
+  compact,
+}: {
+  label: string;
+  options: Option[];
+  value: string;
+  onPick: (v: string) => void;
+  error?: string;
+  compact?: boolean;
+}) {
+  const pick = useRef(onPick);
+  useEffect(() => {
+    pick.current = onPick;
+  });
+  useEffect(() => {
+    if (compact) return;
+    const key = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (e.metaKey || e.ctrlKey || e.altKey || (t && /INPUT|TEXTAREA|SELECT/.test(t.tagName))) return;
+      const i = e.key.toLowerCase().charCodeAt(0) - 97;
+      if (e.key.length === 1 && i >= 0 && i < options.length) pick.current(options[i].value);
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [options, compact]);
+
+  return (
+    <div>
+      <div role="radiogroup" aria-label={text} className={`grid gap-2 ${compact ? "grid-cols-2 sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+        {options.map((o, i) => {
+          const on = o.value === value;
+          return (
+            <button
+              key={o.value}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              onClick={() => onPick(o.value)}
+              className={`group flex min-h-11 items-center gap-3 rounded-control border bg-surface px-3 py-2.5 text-left text-sm transition-[border-color,box-shadow,background-color] duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${
+                on ? "border-primary shadow-[0_0_0_1px_var(--color-primary)]" : "border-line hover:border-line-strong hover:bg-surface-hover"
+              }`}
+            >
+              {!compact && (
+                <span
+                  aria-hidden
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[10px] font-semibold uppercase ${
+                    on ? "border-primary bg-primary text-on-primary" : "border-line-strong text-fg-muted"
+                  }`}
+                >
+                  {String.fromCharCode(97 + i)}
+                </span>
+              )}
+              <span className={`min-w-0 flex-1 truncate text-fg ${on ? "font-medium" : ""}`}>{o.label}</span>
+              {on && <Check aria-hidden size={14} strokeWidth={2.5} className="shrink-0 text-fg" />}
+            </button>
+          );
+        })}
+      </div>
+      {error && <p className="mt-2 text-xs text-tone-critical-fg">{error}</p>}
+    </div>
   );
 }
 
@@ -540,7 +975,7 @@ function Pick({
 
 // ── Their own AI ───────────────────────────────────────────────
 
-function Assistant({ connected, onDone }: { connected: string[]; onDone: () => void }) {
+function Assistant({ connected, onBack, onDone }: { connected: string[]; onBack: () => void; onDone: () => void }) {
   const [copied, setCopied] = useState(false);
   const url = typeof window === "undefined" ? "" : `${window.location.origin}/api/mcp`;
   const names = [...new Set(connected)];
@@ -556,8 +991,8 @@ function Assistant({ connected, onDone }: { connected: string[]; onDone: () => v
   }
 
   return (
-    <Card
-      icon={<Plug aria-hidden size={20} strokeWidth={1.75} />}
+    <Screen
+      eyebrow="Your AI"
       title="Bring your own AI"
       lede="Use Claude or ChatGPT with your store. It can read it, and anything it wants to build or change comes back to Warmluke for your yes."
     >
@@ -568,7 +1003,7 @@ function Assistant({ connected, onDone }: { connected: string[]; onDone: () => v
           value={url}
           onFocus={(e) => e.currentTarget.select()}
           aria-label="Connector address"
-          className={`${fieldOf("sm")} w-full min-w-0 font-mono`}
+          className={`${fieldOf("md")} w-full min-w-0 font-mono`}
         />
         <button onClick={copy} className={button("secondary")}>
           {copied ? (
@@ -579,14 +1014,14 @@ function Assistant({ connected, onDone }: { connected: string[]; onDone: () => v
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      <ol className="mt-5 space-y-2.5 text-[13px] text-fg-muted">
+      <ol className="mt-6 space-y-3 text-sm text-fg-muted">
         {[
           "In Claude, open Settings, then Connectors, and add a custom connector. In ChatGPT it is under Settings, Connectors.",
           "Paste the address, connect, and sign in with this Warmluke account when it asks.",
           "Ask it about your store. What it proposes waits in Warmluke for you.",
         ].map((t, i) => (
           <li key={i} className="flex gap-3">
-            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-canvas text-[11px] font-semibold text-fg">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-line-strong text-[11px] font-semibold text-fg">
               {i + 1}
             </span>
             <span>{t}</span>
@@ -596,7 +1031,7 @@ function Assistant({ connected, onDone }: { connected: string[]; onDone: () => v
 
       <div
         role="status"
-        className={`mt-6 flex items-center gap-2 rounded-control px-3 py-2.5 text-[13px] ${
+        className={`mt-7 flex items-center gap-2.5 rounded-control px-3 py-2.5 text-[13px] ${
           names.length ? "bg-tone-success/30 text-tone-success-fg" : "bg-surface-subdued text-fg-muted"
         }`}
       >
@@ -607,16 +1042,16 @@ function Assistant({ connected, onDone }: { connected: string[]; onDone: () => v
           </>
         ) : (
           <>
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-signal-neutral" />
+            <LoaderCircle aria-hidden size={14} strokeWidth={2} className="animate-spin motion-reduce:animate-none" />
             Waiting for it to connect. This notices by itself.
           </>
         )}
       </div>
 
-      <button onClick={onDone} className={`${button(names.length ? "primary" : "secondary", "lg")} mt-4 w-full`}>
-        {names.length ? "Continue" : LATER}
-      </button>
-    </Card>
+      <div className="mt-8">
+        <Actions onBack={onBack} onNext={onDone} next={names.length ? "Continue" : LATER} quiet={!names.length} />
+      </div>
+    </Screen>
   );
 }
 
@@ -628,17 +1063,17 @@ function ImportList({ progress }: { progress: Progress }) {
     return <div className="h-24 animate-pulse rounded-card bg-surface-subdued" />;
   }
   return (
-    <ul className="divide-y divide-line overflow-hidden rounded-card border border-line">
+    <ul className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
       {rows.map(([key, p]) => {
         const done = p.status === "done";
         return (
-          <li key={key} className="flex items-center gap-3 px-3 py-2 text-[13px]">
+          <li key={key} className="flex items-center gap-3 px-4 py-2.5 text-sm">
             {done ? (
               <Check aria-hidden size={15} strokeWidth={2} className="text-signal-success" />
             ) : (
-              <LoaderCircle aria-hidden size={15} strokeWidth={1.75} className="animate-spin text-fg-faint" />
+              <LoaderCircle aria-hidden size={15} strokeWidth={1.75} className="animate-spin text-fg-faint motion-reduce:animate-none" />
             )}
-            <span className="flex-1 text-fg">{p.label}</span>
+            <span className={`flex-1 ${done ? "text-fg" : "shimmer"}`}>{p.label}</span>
             <span className="text-xs text-fg-muted tabular-nums">{p.imported.toLocaleString()}</span>
           </li>
         );
@@ -651,27 +1086,56 @@ function ImportList({ progress }: { progress: Progress }) {
 
 function Done({
   name,
-  storeConnected,
+  business,
+  shop,
+  assistants,
+  assistantOffered,
+  onChange,
   onOpen,
 }: {
   name: string;
-  storeConnected: boolean;
+  business: string;
+  shop: string | null;
+  assistants: string[];
+  assistantOffered: boolean;
+  onChange: (to: Step) => void;
   onOpen: () => Promise<string | null | undefined>;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const first = name.trim().split(/\s+/)[0];
+  const names = [...new Set(assistants)];
+  // What was set up, each with a way back to it.
+  const summary: Array<{ to: Step; what: string; value: string; set: boolean }> = [
+    { to: "about", what: "About you", value: business ? `${name} · ${business}` : name, set: true },
+    { to: "store", what: "Store", value: shop ?? "Not connected yet", set: !!shop },
+    ...(assistantOffered
+      ? [{ to: "assistant" as Step, what: "Your AI", value: names.length ? names.join(", ") : "Not connected yet", set: names.length > 0 }]
+      : []),
+  ];
   return (
-    <Card
-      icon={<Check aria-hidden size={20} strokeWidth={2} className="text-signal-success" />}
+    <Screen
+      eyebrow="Ready"
       title={first ? `You’re all set, ${first}` : "You’re all set"}
       lede={
-        storeConnected
+        shop
           ? "Your store is in. Ask Luke anything about it, or describe the tool you wish you had and it builds it around how you work."
           : "Describe the problem you’re stuck on, not the software, and Luke builds the app around how you work. You can connect your store whenever you like."
       }
     >
-      {error && <div className={`${note.critical} mb-4`}>{error}</div>}
+      <ul className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
+        {summary.map((s) => (
+          <li key={s.what} className="flex items-center gap-3 px-4 py-3">
+            <span className={`h-2 w-2 shrink-0 rounded-full ${s.set ? "bg-signal-success" : "bg-line-strong"}`} />
+            <span className="w-20 shrink-0 text-xs text-fg-muted">{s.what}</span>
+            <span className={`min-w-0 flex-1 truncate text-sm ${s.set ? "text-fg" : "text-fg-faint"}`}>{s.value}</span>
+            <button onClick={() => onChange(s.to)} className={button("plain", "sm")}>
+              {s.set ? "Change" : "Set up"}
+            </button>
+          </li>
+        ))}
+      </ul>
+      {error && <div className={`${note.critical} mt-4`}>{error}</div>}
       <button
         onClick={async () => {
           setBusy(true);
@@ -683,11 +1147,11 @@ function Done({
           }
         }}
         disabled={busy}
-        className={`${button("primary", "lg")} w-full`}
+        className={`${button("primary", "lg")} mt-8 w-full`}
       >
         {busy ? "Opening…" : "Open Warmluke"}
         {!busy && <ArrowRight aria-hidden size={16} strokeWidth={2} />}
       </button>
-    </Card>
+    </Screen>
   );
 }

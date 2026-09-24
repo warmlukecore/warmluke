@@ -192,6 +192,13 @@
   background: linear-gradient(135deg, #fff 0%, var(--color-luke-pale) 100%);
   animation: luke-blink 3.6s ease-in-out infinite;
 }
+/* Where the eyes look: a wrapper may set --look-x / --look-y (the
+   onboarding points them at the pointer). The pixel up is where the eyes
+   sit on the face. */
+.luke-eyes {
+  translate: var(--look-x, 0px) calc(var(--look-y, 0px) - 1px);
+  transition: translate 0.18s ease-out;
+}
 .luke-eye + .luke-eye {
   animation-delay: 60ms;
 }
@@ -352,6 +359,42 @@
   }
 }
 
+/* Words arriving one after another, each coming into focus: headings
+   on the onboarding. Each word sets its own --word-after. */
+@keyframes word-in {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+    transform: translateY(6px);
+  }
+}
+.word-in {
+  display: inline-block;
+  animation: word-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--word-after, 0s);
+}
+
+/* A screen arriving from the side it comes from: from the right going
+   forward, from the left coming back. */
+@keyframes from-right {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+}
+@keyframes from-left {
+  from {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+}
+.from-right {
+  animation: from-right 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.from-left {
+  animation: from-left 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 /* A text caret, for a prompt that is being typed into. */
 @keyframes caret {
   50% {
@@ -395,6 +438,9 @@ html:has(dialog.wl-dialog[open]) {
   .orbit,
   .orbit-back,
   .caret,
+  .word-in,
+  .from-right,
+  .from-left,
   .luke-eye,
   .luke-eyes,
   .luke-orb,
