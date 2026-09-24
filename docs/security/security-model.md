@@ -166,6 +166,13 @@ never use up the room a booking needs. Demo bookings stay unreadable with the pu
 shows every value as text, because anyone with the public key can write a booking, not
 only the form. `check-admin` books one as a stranger and checks both sides.
 
+A request's stage and note live in `demo_followups` (0120), closed to every key and written
+only through `abo_admin_demo_follow_up`, which takes the version the screen saw and
+refuses (`PT409`, a plain 409) a save over a newer one. One account's whole story,
+`abo_admin_account`, is administrator-only too, and never carries a store's tokens. The
+admin screens' CSV downloads write any cell starting with `= + - @` as text, so a name
+typed as a formula stays a name in the administrator's spreadsheet (`check-follow-up`).
+
 ## Web and transport protections
 
 `next.config.mjs` applies content type, framing, referrer, permissions, and conditional

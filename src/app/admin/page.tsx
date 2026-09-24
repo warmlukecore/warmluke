@@ -31,43 +31,41 @@ import {
   TEAM_OPTIONS,
   labelOf,
 } from "@/lib/onboarding";
-import { Search } from "lucide-react";
+import { Download, Search } from "lucide-react";
 import { ago } from "@/lib/when";
 import { Breakdown, Stat, siteLink, topCounts } from "@/components/AdminParts";
 import { Dialog } from "@/components/ui/Dialog";
-
-type Account = {
-  user_id: string;
-  email: string;
-  chat_enabled: boolean;
-  mcp_enabled: boolean;
-  store_actions_enabled: boolean;
-  free_turns: number;
-  turns_used: number;
-  turns_unlimited: boolean;
-  is_superadmin: boolean;
-  projects: number;
-  stores: number;
-  created_at: string;
-  // What they said in onboarding (0112). Absent on a database that has
-  // not had it yet, and null for an account that has not answered.
-  full_name?: string | null;
-  business_name?: string | null;
-  role?: string | null;
-  monthly_orders?: string | null;
-  platform?: string | null;
-  website?: string | null;
-  team_size?: string | null;
-  heard_from?: string | null;
-  heard_from_detail?: string | null;
-  onboarded_at?: string | null;
-  last_sign_in_at?: string | null;
-  // 0118: whether they may sign in, and the apps they were invited into.
-  suspended?: boolean;
-  memberships?: Array<{ project: string; owner: string | null; name: string | null; role: string | null; joined_at: string | null }>;
-};
+import { AccountDetail, type Account } from "@/components/AccountDetail";
+import { downloadCsv, type Column } from "@/lib/csv";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** The accounts as a spreadsheet: every column the table shows, as values. */
+const CSV_COLUMNS: Column<Account>[] = [
+  ["Email", (r) => r.email],
+  ["Name", (r) => r.full_name],
+  ["Business", (r) => r.business_name],
+  ["Role", (r) => labelOf(ROLE_OPTIONS, r.role)],
+  ["Orders a month", (r) => labelOf(ORDER_OPTIONS, r.monthly_orders)],
+  ["Sells on", (r) => labelOf(PLATFORM_OPTIONS, r.platform)],
+  ["Website", (r) => r.website],
+  ["Team", (r) => labelOf(TEAM_OPTIONS, r.team_size)],
+  ["Heard of us", (r) => labelOf(HEARD_OPTIONS, r.heard_from)],
+  ["Heard of us, detail", (r) => r.heard_from_detail],
+  ["Joined", (r) => r.created_at],
+  ["Last signed in", (r) => r.last_sign_in_at],
+  ["Finished onboarding", (r) => r.onboarded_at],
+  ["Projects", (r) => r.projects],
+  ["Stores connected", (r) => r.stores],
+  ["Team member of", (r) => r.memberships?.map((m) => m.project).join("; ")],
+  ["Administrator", (r) => r.is_superadmin],
+  ["Suspended", (r) => !!r.suspended],
+  ["Warmluke AI", (r) => r.chat_enabled],
+  ["Their own AI", (r) => r.mcp_enabled],
+  ["Change their shop", (r) => r.store_actions_enabled],
+  ["Designs used", (r) => r.turns_used],
+  ["Designs included", (r) => (r.turns_unlimited ? "unlimited" : r.free_turns)],
+];
 
 type PendingAction =
   | { kind: "turns"; row: Account; next: number }
@@ -98,6 +96,14 @@ export default function Admin() {
   const [eraseError, setEraseError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [now] = useState(() => Date.now());
+  // The account whose whole story is open, if any.
+  const [open, setOpen] = useState<Account | null>(null);
+
+  // Another admin screen links here with ?find=<email>.
+  useEffect(() => {
+    const find = new URLSearchParams(window.location.search).get("find");
+    if (find) setQuery(find);
+  }, []);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login?next=/admin");
@@ -274,17 +280,28 @@ export default function Admin() {
               <Breakdown label="Where they heard of us" counts={stats.heard} empty="Nobody has said yet" />
             </div>
 
-            <label className="relative mt-6 block max-w-xs">
-              <Search aria-hidden size={15} strokeWidth={1.75} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-fg-faint" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Escape" && setQuery("")}
-                placeholder="Find by email, name or business"
-                aria-label="Find an account"
-                className={`${field} pl-8`}
-              />
-            </label>
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
+              <label className="relative block w-full max-w-xs">
+                <Search aria-hidden size={15} strokeWidth={1.75} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-fg-faint" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Escape" && setQuery("")}
+                  placeholder="Find by email, name or business"
+                  aria-label="Find an account"
+                  className={`${field} pl-8`}
+                />
+              </label>
+              {/* What is shown, so a search narrows the file too. */}
+              <button
+                onClick={() => downloadCsv("warmluke-accounts", shown, CSV_COLUMNS)}
+                disabled={shown.length === 0}
+                className={button("secondary")}
+              >
+                <Download aria-hidden size={14} strokeWidth={1.75} />
+                Download CSV{q ? ` (${shown.length})` : ""}
+              </button>
+            </div>
 
             <div className={`${card} thin-scroll mt-3 overflow-x-auto`}>
               <table className="w-full text-left text-[13px]">
@@ -333,9 +350,13 @@ export default function Admin() {
                           </span>
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5">
-                              <span className="max-w-[14rem] truncate font-medium text-fg">
+                              <button
+                                onClick={() => setOpen(r)}
+                                title="See everything about this account"
+                                className="max-w-[14rem] truncate text-left font-medium text-fg hover:text-link hover:underline"
+                              >
                                 {r.full_name || r.memberships?.find((m) => m.name)?.name || r.email}
-                              </span>
+                              </button>
                               {r.suspended && (
                                 <span className="rounded-full bg-tone-critical px-1.5 py-px text-[10px] font-medium text-tone-critical-fg">
                                   suspended
@@ -655,6 +676,7 @@ export default function Admin() {
           the email back, and takes the account and the apps it owns.
         </p>
       </div>
+      {open && <AccountDetail account={open} now={now} onClose={() => setOpen(null)} />}
       {erase && (
         <Dialog
           title="Delete this account for good"

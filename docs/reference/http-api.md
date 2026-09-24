@@ -93,7 +93,10 @@ anonymous write. Besides name, email, store and note it records team size, order
 and where the person heard of us, each kept only when it is one of onboarding's lists
 (`src/lib/onboarding.ts`). The form will not send without them; with JavaScript off it
 cannot ask them, and the booking is stored without them rather than lost. Administrators
-read bookings back through `abo_admin_demo_requests` on `/admin/demos`.
+read bookings back through `abo_admin_demo_requests` on `/admin/demos`, set each one's
+stage and note through `abo_admin_demo_follow_up` (0120), and open one account's whole
+story on `/admin` through `abo_admin_account`. Both screens take `?find=<text>` to open
+with a search, and download what they show as CSV.
 
 ## Invite links
 

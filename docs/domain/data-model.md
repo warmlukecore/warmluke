@@ -97,6 +97,7 @@ computed columns, guards, and local display behavior where allowed.
 | `admin_account_audit` | Audit trail for administrator account changes |
 | `account_invites` | Sign-up links an administrator makes: a 192-bit token, what is known of the person (email, name, business), uses allowed, `expires_at` (72 hours unless chosen), `revoked_at`; closed to every key, read and written only through `abo_admin_invite*` and `abo_invite_peek`/`abo_invite_claim` (0119) |
 | `account_invite_claims` | Who took each invite, one row per account and invite |
+| `demo_followups` | One row per demo request an administrator has touched: its stage (new, contacted, scheduled, customer, not_a_fit) and a private note; written only through `abo_admin_demo_follow_up`, against the version last seen (0120) |
 
 Build request state evolved across migrations. Current code recognizes `pending`,
 `opened`, `building`, `dismissed`, `built`, and `partly_built`. Do not
@@ -135,7 +136,8 @@ application.
 - `fx_rates`: project-scoped currency conversion cache.
 - `landing_events`: rate-limited marketing attribution and conversion events. A demo
   booking is one of them (`demo_booked`, the answers in `payload`), read only by
-  administrators through `abo_admin_demo_requests` (0115).
+  administrators through `abo_admin_demo_requests` (0115), with where each stands
+  (`demo_followups`, 0120).
 - `app_secrets`: server-side integration secrets used by database verification paths.
 - `abo_migrations`: repository-managed migration ledger created by the migration runner.
 

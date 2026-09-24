@@ -388,6 +388,38 @@ try {
       (audit ?? []).every((entry) => entry.old_value && entry.new_value)
     );
 
+    console.log("\nfollowing up, and the whole story (0120)");
+    const leadId = ((await owner.rpc("abo_admin_demo_requests")).data ?? []).find(
+      (r) => r.name === "Check Lead" && r.store === "check-lead.example"
+    )?.id;
+    const follow = (who, p_stage, p_note, p_seen) => who.rpc("abo_admin_demo_follow_up", { p_id: leadId, p_stage, p_note, p_seen });
+    check("a merchant cannot follow up a request", (await follow(merchant, "contacted", "x", null)).error?.code === "42501");
+    const first = await follow(owner, "contacted", "  Wrote back  ", null);
+    check("an administrator marks one contacted, with a note", !first.error && typeof first.data === "string");
+    check("a second first save is refused, not written over", (await follow(owner, "scheduled", "", null)).error?.code === "PT409");
+    const followed = ((await owner.rpc("abo_admin_demo_requests")).data ?? []).find((r) => r.id === leadId);
+    check(
+      "the list says where it stands, trimmed and signed",
+      followed?.stage === "contacted" && followed?.follow_up_note === "Wrote back" && followed?.followed_up_by === signed.user.email
+    );
+    // The version as the list gave it, string for string: a Date would lose its microseconds.
+    const next = await follow(owner, "scheduled", "Thursday", followed?.followed_up_at);
+    check("a save over the version the list gave is taken", !next.error);
+    check("and one over an older version is refused", (await follow(owner, "customer", "", followed?.followed_up_at)).error?.code === "PT409");
+    check("a stage the screen does not offer is refused", (await follow(owner, "won", "", next.data)).error?.code === "22023");
+    check("a merchant cannot read an account's story", (await merchant.rpc("abo_admin_account", { p_user: made.user.id })).error?.code === "42501");
+    const story = (await owner.rpc("abo_admin_account", { p_user: made.user.id })).data;
+    check("the story names the invite they came through, and who made it", story?.invite?.by === signed.user.email && story?.invite?.note === "check-admin");
+    check("the demo they asked for, where it stands now", !!story?.demos?.some((d) => d.id === leadId && d.stage === "scheduled"));
+    check(
+      "and what administrators did, newest first",
+      story?.trail?.length > 0 &&
+        story.trail.every((t, i) => i === 0 || story.trail[i - 1].at >= t.at) &&
+        story.trail.some((t) => t.action === "set_feature" && t.by === signed.user.email)
+    );
+    check("and never a store's token", !JSON.stringify(story ?? {}).includes("access_token"));
+    check("an account that does not exist is said to", (await owner.rpc("abo_admin_account", { p_user: crypto.randomUUID() })).error?.code === "P0002");
+
     console.log("\ntaking an account off (0118)");
     check(
       "an administrator cannot suspend themselves",

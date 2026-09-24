@@ -1,10 +1,33 @@
-// What the two admin screens, accounts and demo requests, both show:
-// a number with a line under it, a count broken down as bars, and a
-// link somebody typed made safe to follow.
+// What the admin screens share: the stages a demo request moves through,
+// a number with a line under it, a count broken down as bars, a link
+// somebody typed made safe to follow, and a row of choices.
 //
-// Callers: src/app/admin/page.tsx, src/app/admin/demos/page.tsx.
+// Callers: src/app/admin/page.tsx, src/app/admin/demos/page.tsx,
+// src/app/admin/invites/page.tsx.
 
 import { card } from "@/components/ui/controls";
+import type { Option } from "@/lib/onboarding";
+
+/**
+ * Where a demo request stands, in order. The values are 0120's check on
+ * demo_followups.stage, word for word (check-follow-up compares them).
+ */
+export const DEMO_STAGES: Option[] = [
+  { value: "new", label: "New" },
+  { value: "contacted", label: "Contacted" },
+  { value: "scheduled", label: "Call booked" },
+  { value: "customer", label: "Customer" },
+  { value: "not_a_fit", label: "Not a fit" },
+];
+
+/** Each stage's badge. */
+export const STAGE_TONE: Record<string, string> = {
+  new: "bg-tone-info text-tone-info-fg",
+  contacted: "bg-tone-attention text-tone-attention-fg",
+  scheduled: "bg-tone-warning text-tone-warning-fg",
+  customer: "bg-tone-success text-tone-success-fg",
+  not_a_fit: "bg-tone-neutral text-tone-neutral-fg",
+};
 
 export function Stat({ label, value, sub }: { label: string; value: number; sub: string }) {
   return (
@@ -70,4 +93,39 @@ export function siteLink(raw: string | null | undefined): { href: string; text: 
   } catch {
     return null;
   }
+}
+
+/** A row of choices, one of them picked. */
+export function Choices<T extends string | number>({
+  options,
+  value,
+  onChange,
+  disabled,
+}: {
+  options: Array<[T, string]>;
+  value: T;
+  onChange: (v: T) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div role="radiogroup" className="flex flex-wrap gap-1.5">
+      {options.map(([v, text]) => (
+        <button
+          key={String(v)}
+          type="button"
+          role="radio"
+          aria-checked={value === v}
+          disabled={disabled}
+          onClick={() => onChange(v)}
+          className={`rounded-control border px-3 py-1.5 text-[13px] transition-colors disabled:opacity-50 ${
+            value === v
+              ? "border-primary bg-surface-hover font-medium text-fg"
+              : "border-line text-fg-muted hover:border-line-strong hover:text-fg"
+          }`}
+        >
+          {text}
+        </button>
+      ))}
+    </div>
+  );
 }

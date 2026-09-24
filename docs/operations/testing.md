@@ -113,6 +113,7 @@ pnpm hooks
 | Environment/build config | Production build and CI workflow review |
 | Screen styling | Typecheck, pure checks, build, and screenshots at desktop and phone width ([design system](../design/design-system.md)); `check-tone` for badge meaning |
 | Onboarding or profiles | `check-onboarding` (pure) and `check-profiles` (live) |
+| Admin screens | `check-admin` (live); `check-follow-up` (pure) for the CSV formula guard and the demo stages against 0120 |
 | Overview figures | `check-overview` (live) |
 
 New regression tests should prove behavior rather than source wording. Source-text checks

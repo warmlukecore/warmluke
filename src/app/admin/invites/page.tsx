@@ -19,6 +19,7 @@ import { Check, Copy } from "lucide-react";
 import { supabase } from "@/lib/supabase-client";
 import { useUser } from "@/lib/auth";
 import { PageFrame } from "@/components/PageFrame";
+import { Choices } from "@/components/AdminParts";
 import { button, card, field, fieldOf, label, note } from "@/components/ui/controls";
 
 type Invite = {
@@ -63,41 +64,6 @@ function relative(iso: string, now: number) {
   const mins = Math.round(Math.abs(ms) / 60000);
   const say = mins < 60 ? `${Math.max(1, mins)} min` : mins < 48 * 60 ? `${Math.round(mins / 60)} h` : `${Math.round(mins / 1440)} days`;
   return ms >= 0 ? `in ${say}` : `${say} ago`;
-}
-
-/** A row of choices, one of them picked. */
-function Choices<T extends string | number>({
-  options,
-  value,
-  onChange,
-  disabled,
-}: {
-  options: Array<[T, string]>;
-  value: T;
-  onChange: (v: T) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div role="radiogroup" className="flex flex-wrap gap-1.5">
-      {options.map(([v, text]) => (
-        <button
-          key={String(v)}
-          type="button"
-          role="radio"
-          aria-checked={value === v}
-          disabled={disabled}
-          onClick={() => onChange(v)}
-          className={`rounded-control border px-3 py-1.5 text-[13px] transition-colors disabled:opacity-50 ${
-            value === v
-              ? "border-primary bg-surface-hover font-medium text-fg"
-              : "border-line text-fg-muted hover:border-line-strong hover:text-fg"
-          }`}
-        >
-          {text}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 export default function Invites() {
