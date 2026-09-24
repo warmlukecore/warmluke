@@ -1239,13 +1239,16 @@ export default async function Landing({
           WARMLUKE
         </div>
         <div aria-hidden="true" className="absolute bottom-32 left-0 h-px w-full bg-gradient-to-r from-transparent via-neutral-300 to-transparent" />
+        {/* Pressed, it gives and tilts; let go, it springs back past where
+            it was. Only that: a link would jump the page away before the
+            spring could be seen, and the way back up is the nav's. */}
         <div
           aria-hidden="true"
-          className="reveal-pop absolute bottom-24 left-1/2 z-10 -translate-x-1/2 [--pop-scale:0.6] rounded-3xl border border-hair bg-white/60 p-2.5 shadow-[0_10px_40px_-12px_rgb(0_0_0/0.35)] backdrop-blur-sm transition-colors duration-300 hover:border-neutral-300 md:bottom-20"
+          className="group reveal-pop absolute bottom-24 left-1/2 z-10 -translate-x-1/2 [--pop-scale:0.6] rounded-3xl border border-hair bg-white/60 p-2.5 shadow-[0_10px_40px_-12px_rgb(0_0_0/0.35)] backdrop-blur-sm transition-[scale,translate,border-color] duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-1 hover:border-neutral-300 active:scale-90 active:duration-100 md:bottom-20"
         >
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-hair bg-white shadow-[0_2px_12px_-2px_rgb(0_0_0/0.12)] sm:h-16 sm:w-16 md:h-20 md:w-20">
+          <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-hair bg-white shadow-[0_2px_12px_-2px_rgb(0_0_0/0.12)] transition-[rotate] duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-active:-rotate-12 group-active:duration-100 sm:h-16 sm:w-16 md:h-20 md:w-20">
             <Logo className="h-6 sm:h-7 md:h-9" />
-          </div>
+          </span>
         </div>
       </footer>
     </div>
