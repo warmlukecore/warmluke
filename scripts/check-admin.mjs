@@ -217,6 +217,39 @@ try {
     const times = (leads.data ?? []).map((r) => Date.parse(r.created_at));
     check("newest first", times.every((t, i) => i === 0 || times[i - 1] >= t));
 
+    console.log("\ninvites to start (0119)");
+    check("a merchant cannot list invites", (await merchant.rpc("abo_admin_invites")).error?.code === "42501");
+    check(
+      "nor make one",
+      (await merchant.rpc("abo_admin_invite_create", { p_email: null, p_full_name: null, p_business_name: null, p_note: "check-admin", p_hours: 72, p_max_uses: 1 }))
+        .error?.code === "42501"
+    );
+    const named = await owner.rpc("abo_admin_invite_create", {
+      p_email: ` ${email.toUpperCase()} `,
+      p_full_name: "Check Merchant",
+      p_business_name: "Check Shop",
+      p_note: "check-admin",
+      p_hours: 72,
+      p_max_uses: 1,
+    });
+    check("an administrator makes an invite for one email", !named.error && typeof named.data === "string" && named.data.length >= 40);
+    const stranger = createClient(URL_, ANON);
+    const peeked = (await stranger.rpc("abo_invite_peek", { p_token: named.data })).data?.[0];
+    check("the link says what it knew, to whoever holds it", peeked?.state === "open" && peeked?.email === email && peeked?.business_name === "Check Shop");
+    check("a made-up link says only that it is unknown", (await stranger.rpc("abo_invite_peek", { p_token: "made-up" })).data?.[0]?.state === "unknown");
+    const took = (await merchant.rpc("abo_invite_claim", { p_token: named.data })).data?.[0];
+    check("its own email takes it, with the name and business", took?.state === "claimed" && took?.full_name === "Check Merchant");
+    check("taking it again is taking it once", (await merchant.rpc("abo_invite_claim", { p_token: named.data })).data?.[0]?.state === "claimed");
+    const listedInv = ((await owner.rpc("abo_admin_invites")).data ?? []).find((i) => i.token === named.data);
+    check("the list shows it used, and by whom", listedInv?.state === "used" && listedInv?.uses === 1 && listedInv?.claimed_by?.[0]?.email === email);
+    const open = await owner.rpc("abo_admin_invite_create", { p_email: null, p_full_name: null, p_business_name: null, p_note: "check-admin", p_hours: 72, p_max_uses: 3 });
+    const openId = ((await owner.rpc("abo_admin_invites")).data ?? []).find((i) => i.token === open.data)?.id;
+    const shorter = await owner.rpc("abo_admin_invite_update", { p_id: openId, p_hours: 24, p_revoke: false });
+    const hoursLeft = (Date.parse(shorter.data) - Date.now()) / 3600e3;
+    check("an invite can be made to end sooner", !shorter.error && hoursLeft > 23.5 && hoursLeft <= 24.1);
+    await owner.rpc("abo_admin_invite_update", { p_id: openId, p_hours: null, p_revoke: true });
+    check("and taken back", (await stranger.rpc("abo_invite_peek", { p_token: open.data })).data?.[0]?.state === "revoked");
+
     const off = await owner.rpc("abo_admin_set_feature", {
       p_user: made.user.id,
       p_feature: "chat",
@@ -389,6 +422,7 @@ try {
     );
   }
 } finally {
+  await admin.from("account_invites").delete().eq("note", "check-admin");
   await admin.from("landing_events").delete().eq("session_id", bookingSession);
   await admin.from("admin_account_audit").delete().eq("target_user_id", made.user.id);
   await admin.auth.admin.deleteUser(made.user.id);

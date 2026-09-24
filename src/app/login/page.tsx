@@ -7,7 +7,7 @@ import { PasswordInput } from "@/components/ui/PasswordInput";
 import { button, field, label, note } from "@/components/ui/controls";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
-import { takePendingPrompt } from "@/lib/auth";
+import { authMessage, takePendingPrompt } from "@/lib/auth";
 import { ownPath } from "@/lib/paths";
 
 export default function Login() {
@@ -16,10 +16,14 @@ export default function Login() {
   // detour, or the invited person arrives at a dashboard with nothing
   // in it and no way back to the app they were sent to.
   const [next, setNext] = useState<string | null>(null);
-  useEffect(() => {
-    setNext(new URLSearchParams(window.location.search).get("next"));
-  }, []);
   const [email, setEmail] = useState("");
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    setNext(q.get("next"));
+    // Sent from a sign-up that found the address already has an account.
+    const known = q.get("email");
+    if (known) setEmail(known);
+  }, []);
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -31,7 +35,7 @@ export default function Login() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setBusy(false);
     if (error) {
-      setError(error.message);
+      setError(authMessage(error).message);
       return;
     }
     if (ownPath(next)) {

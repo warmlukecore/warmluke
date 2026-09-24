@@ -137,7 +137,20 @@ not a business signing up; they can still open `/onboarding` by hand to see it. 
 accounts screen marks them "Warmluke team" and leaves them out of its figures. A failed
 read never blocks the dashboard. A person joining by invite is asked one short question
 on `/join` (their name, and what they do on the team); the owner sees it on the seat, and
-the accounts screen shows whose app they joined and who invited them. The
+the accounts screen shows whose app they joined and who invited them.
+
+A customer invited by an administrator opens `/start/<token>`: a sign-up with their email
+(locked when the invite names one), name and business already known, then onboarding
+with those answered. An address that already has an account is offered sign-in instead,
+and comes back to take the invite. A link that ran out, was used or was withdrawn says
+which, and what to do.
+
+Across every page, `ConnectionWatch` notices the connection dropping: a small panel says
+nothing is lost, with a game to pass the wait, and does not cover the page. The way back
+is confirmed by asking the site for its icon; then it says so, and the screens that
+re-read their data on coming back into view are told to. `not-found.tsx`, `error.tsx` and
+`global-error.tsx` replace Next's bare defaults, with a reference to quote rather than the
+error's own words. The
 landing-page prompt waits until onboarding is done, then opens in their project with the
 assistant.
 

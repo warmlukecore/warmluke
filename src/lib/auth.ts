@@ -33,6 +33,32 @@ export async function requireUser(router: ReturnType<typeof useRouter>): Promise
   return data.user;
 }
 
+/** What went wrong signing in or up, said the way a person would want to hear it. */
+export type AuthProblem = { message: string; exists?: boolean };
+
+/**
+ * Supabase's auth errors, in plain words. The raw ones read "User is
+ * banned" to someone who was suspended and "Failed to fetch" to someone
+ * whose wifi dropped. `exists` marks the one a sign-up form turns into a
+ * way to sign in instead.
+ */
+export function authMessage(error: { message?: string; status?: number; code?: string } | null | undefined): AuthProblem {
+  const raw = `${error?.code ?? ""} ${error?.message ?? ""}`.toLowerCase();
+  if (typeof navigator !== "undefined" && !navigator.onLine) return { message: "You’re offline. Check your connection and try again." };
+  if (/failed to fetch|network|load failed/.test(raw)) return { message: "Warmluke couldn’t be reached. Check your connection and try again." };
+  if (/banned/.test(raw)) return { message: "This account is suspended. Write to us if you think that’s a mistake." };
+  if (/already (been )?registered|user_already_exists|email_exists/.test(raw)) {
+    return { message: "There’s already an account with this email.", exists: true };
+  }
+  if (/invalid login credentials|invalid_credentials/.test(raw)) return { message: "That email and password don’t match an account." };
+  if (/email not confirmed/.test(raw)) return { message: "Confirm your email first; the link is in your inbox." };
+  if (/password/.test(raw) && /(weak|short|least|characters)/.test(raw)) return { message: "Choose a longer password: at least 8 characters." };
+  if (/rate limit|too many|over_request_rate_limit|429/.test(raw) || error?.status === 429) {
+    return { message: "Too many tries just now. Wait a minute and try again." };
+  }
+  return { message: error?.message || "Something went wrong. Try again." };
+}
+
 export async function signOut(router: ReturnType<typeof useRouter>) {
   await supabase.auth.signOut();
   router.replace("/");

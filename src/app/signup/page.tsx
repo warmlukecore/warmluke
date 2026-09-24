@@ -7,7 +7,7 @@ import { PasswordInput } from "@/components/ui/PasswordInput";
 import { button, field, label, note } from "@/components/ui/controls";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
-import { takePendingPrompt } from "@/lib/auth";
+import { authMessage, takePendingPrompt } from "@/lib/auth";
 import { ownPath } from "@/lib/paths";
 
 export default function Signup() {
@@ -22,16 +22,21 @@ export default function Signup() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // The address already has an account: offer to sign in with it instead.
+  const [exists, setExists] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
+    setExists(false);
     const { error } = await supabase.auth.signUp({ email, password });
     setBusy(false);
     if (error) {
-      setError(error.message);
+      const problem = authMessage(error);
+      setError(problem.message);
+      setExists(!!problem.exists);
       return;
     }
     // Autoconfirm is on: the session exists immediately.
@@ -82,6 +87,14 @@ export default function Signup() {
         {error && (
           <div role="alert" className={note.critical}>
             {error}
+            {exists && (
+              <Link
+                href={`/login?email=${encodeURIComponent(email)}${next ? `&next=${encodeURIComponent(next)}` : ""}`}
+                className="ml-1 font-medium underline underline-offset-2"
+              >
+                Sign in instead
+              </Link>
+            )}
           </div>
         )}
         <button type="submit" disabled={busy} className={`${button("primary", "lg")} w-full`}>

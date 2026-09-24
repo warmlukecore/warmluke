@@ -3,6 +3,7 @@ import { Bricolage_Grotesque, Instrument_Serif, Inter, Manrope } from "next/font
 import "./globals.css";
 import { THEME_SCRIPT } from "@/lib/theme";
 import { ThemeSync } from "@/components/ThemeSync";
+import { ConnectionWatch } from "@/components/ConnectionWatch";
 
 // The product's two faces. Twenty-one files reach for font-display,
 // fifteen of them inside the app itself, so these stay exactly as
@@ -62,6 +63,7 @@ export default function RootLayout({
       <body className="antialiased">
         <ThemeSync />
         {children}
+        <ConnectionWatch />
       </body>
     </html>
   );

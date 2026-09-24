@@ -50,6 +50,7 @@ const GUARDED = {
   abo_import_holds: "the import worker's ticket",
   abo_import_release: "the import worker's ticket",
   abo_import_renew: "the import worker's ticket",
+  abo_invite_peek: "the invite link's own token, 192 random bits, and it tells only about that link",
 };
 
 /** What a body that checks its caller says. */

@@ -152,6 +152,13 @@ reversible) and, once suspended and only with its email typed back, delete it wi
 apps it owns (0118). Neither works on their own account or another administrator's, and
 both are written to the audit trail, which outlives the account.
 
+An administrator can send a customer an invite to start (0119): a link with a 192-bit
+token that lasts 72 hours unless set otherwise, can be shortened, lengthened or withdrawn,
+and is used once unless made for several people. The tables are closed; a visitor can
+only ask about the one link they hold (`abo_invite_peek`, which says nothing but its
+state for a link that is not open) and, signed in, take it. An invite made for one email
+can only be taken by that email.
+
 Anyone may write landing events, so each session is capped: sixty browsing events an
 hour, and five demo bookings counted on their own (0116), so clicking around the page can
 never use up the room a booking needs. Demo bookings stay unreadable with the public key. Administrators read them only through

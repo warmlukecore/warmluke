@@ -132,10 +132,14 @@ export default function Onboarding() {
       setAnswers(saved);
       setDraft(saved);
     } else {
-      const meta = user.user_metadata as { full_name?: string; name?: string } | undefined;
+      // A name from the sign-up, and a business from an invite (0119),
+      // so the first question starts answered.
+      const meta = user.user_metadata as { full_name?: string; name?: string; business_name?: string } | undefined;
       const name = meta?.full_name || meta?.name || "";
-      setAnswers((a) => ({ ...a, full_name: a.full_name || name }));
-      setDraft((a) => ({ ...a, full_name: a.full_name || name }));
+      const business = meta?.business_name || "";
+      const seed = (a: Answers) => ({ ...a, full_name: a.full_name || name, business_name: a.business_name || business });
+      setAnswers(seed);
+      setDraft(seed);
     }
     setOwned(
       ((projects.data ?? []) as Array<{ id: string; name: string; stores: Owned["store"][] | null }>).map((p) => ({

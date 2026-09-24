@@ -95,6 +95,17 @@ and where the person heard of us, each kept only when it is one of onboarding's 
 cannot ask them, and the booking is stored without them rather than lost. Administrators
 read bookings back through `abo_admin_demo_requests` on `/admin/demos`.
 
+## Invite links
+
+`/admin/invites` makes a link (`abo_admin_invite_create`) for one email or for several
+people, for 24 hours to 30 days, and changes when it ends or withdraws it
+(`abo_admin_invite_update`). `/start/[token]` asks `abo_invite_peek`, which anyone may
+call and which answers only for that token: its state and, while it is open, the prefill.
+Signing up there, or arriving signed in, calls `abo_invite_claim`, which takes a use once
+per account, refuses a link made for another email, and lets an administrator look
+without using it up. The name and business go into the account's metadata, where
+onboarding picks them up.
+
 ## Error conventions
 
 Routes return a concise user-facing `error` for expected failures and an appropriate HTTP
