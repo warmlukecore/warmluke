@@ -10,7 +10,7 @@
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-store-tools.mjs
 
 import { readFileSync } from "node:fs";
-import { STORE_TOOLS, aiStoreTools, storeTool } from "../src/lib/store-tools.ts";
+import { MODEL_OUTPUT_CHARS, STORE_TOOLS, aiStoreTools, fitForModel, storeTool } from "../src/lib/store-tools.ts";
 import { STORE_TABLES } from "../src/lib/store-read.ts";
 
 const fails = [];
@@ -70,6 +70,34 @@ check("one AI SDK tool per store tool, same names", JSON.stringify(Object.keys(a
 check("each carries its description and schema", NAMES.every((n) => ai[n].description === storeTool(n).description && ai[n].inputSchema));
 const viaSdk = await ai.low_stock.execute({ threshold: -1 }, { toolCallId: "t1", messages: [] });
 check("and answers exactly as the shared tool does", JSON.stringify(viaSdk) === JSON.stringify(await run("low_stock", { threshold: -1 })));
+
+console.log("\nwhat a lookup is called, for the merchant");
+const about = (n, a) => storeTool(n).about(a);
+check("an order, by its number, with or without the #", about("get_order", { order_number: "#1042" }) === "order #1042" && about("get_order", { order_number: "1042" }) === "order #1042");
+check("orders by what was asked", about("search_orders", { day: "2026-09-20" }) === "orders on 2026-09-20" && about("search_orders", { q: "Asha" }) === "orders matching “Asha”" && about("search_orders", {}) === "the latest orders");
+check("a list, and what was searched in it", about("search_store", { table: "products", q: "linen" }) === "products matching “linen”");
+check("stock, at the threshold asked", about("low_stock", { threshold: 0 }) === "stock at or below 0" && about("low_stock", {}) === "stock at or below 5");
+check("and nothing odd for arguments that are not there", STORE_TOOLS.every((t) => typeof t.about({}) === "string" && t.about({}).length > 0));
+
+console.log("\nan answer too long for a model is cut, and says so");
+const rows = Array.from({ length: 400 }, (_, i) => ({ n: i, title: "x".repeat(200) }));
+const fitted = fitForModel({ table: "products", matched: 400, rows });
+check("it fits", JSON.stringify(fitted).length <= MODEL_OUTPUT_CHARS);
+check("it keeps the rows it can, from the top", fitted.rows.length > 0 && fitted.rows.length < 400 && fitted.rows[0].n === 0);
+check("and says how many of how many", new RegExp(`first ${fitted.rows.length} of 400 rows`).test(fitted.trimmed ?? ""));
+check("the numbers beside the list are untouched", fitted.matched === 400 && fitted.table === "products");
+const small = { count: 2, rows: [1, 2] };
+check("a short answer is left exactly as it was", fitForModel(small) === small);
+
+console.log("\nLuke's view of them");
+const heard = [];
+const luke = aiStoreTools(ctx, { only: ["get_order", "low_stock"], observe: (l) => heard.push(l) });
+check("only the tools asked for", JSON.stringify(Object.keys(luke)) === JSON.stringify(["get_order", "low_stock"]));
+await luke.get_order.execute({ order_number: "" }, { toolCallId: "t2", messages: [] });
+check("each lookup is heard once it has run, in words", heard.length === 1 && heard[0].tool === "get_order" && heard[0].about === "order #?" && heard[0].result?.error);
+const loud = aiStoreTools(ctx, { observe: () => { throw new Error("listener broke"); } });
+const stillAnswers = await loud.low_stock.execute({ threshold: -1 }, { toolCallId: "t3", messages: [] });
+check("and a listener that throws does not take the lookup with it", /0 or more/.test(stillAnswers?.error ?? ""));
 
 console.log(fails.length === 0 ? "\nthe store's tools are declared once" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

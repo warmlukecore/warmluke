@@ -101,6 +101,8 @@ function TraceLine({ trace }: { trace: { steps: TurnEvent[]; ms: number } }) {
   const parts: string[] = [];
   const store = trace.steps.find((s) => s.step === "store");
   if (store) parts.push(store.shop ? "Read your store" : "Read your app");
+  const looked = trace.steps.filter((s) => s.step === "lookup").length;
+  if (looked) parts.push(looked === 1 ? "looked one thing up" : `looked ${looked} things up`);
   const tries = trace.steps.filter((s) => s.step === "model").length;
   if (tries === 1) parts.push("thought it through");
   else if (tries > 1) parts.push(`took ${tries} tries`);
@@ -180,6 +182,8 @@ function stepWords(step: TurnEvent): string {
       return `Read ${n(step.sections, "section")} and ${n(step.rules, "rule")}`;
     case "model":
       return step.attempt === 1 ? "Thinking it through…" : `Trying again (${step.attempt} of ${step.of})…`;
+    case "lookup":
+      return `Looked up ${step.about}`;
     case "checked":
       return step.problems === 0 ? "Checked the reply" : `Found ${n(step.problems, "problem")} — sending it back`;
     case "gaps":

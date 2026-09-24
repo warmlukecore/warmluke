@@ -18,7 +18,7 @@ import {
   asNextSteps,
   buildSystemPrompt,
   buildUserMessage,
-  callAnthropicChat,
+  callModel,
   findGaps,
   parseReply,
   type ChatTurn,
@@ -34,6 +34,14 @@ import {
   type StoreFacts,
 } from "@/lib/describe";
 import { describeBuild } from "@/lib/judge";
+import { aiStoreTools } from "@/lib/store-tools";
+
+/**
+ * The store tools Luke may look things up with. Not ask_store: it routes
+ * a question to rows, and this turn's question was routed before the
+ * model was called, into the snapshot's slice.
+ */
+const LUKE_TOOLS = ["store_overview", "search_orders", "get_order", "search_store", "low_stock"] as const;
 
 /**
  * How many rules the designer is shown.
@@ -80,15 +88,11 @@ export async function storeContextFor(
 
   const overview = await storeOverview(client, storeRow.id as string);
 
-  // Read here, before the model runs, rather than fetched by the model
-  // through tools. Two reasons: whether a read happened is then a fact
-  // about this code path instead of something the model asserts, and a
-  // provider without tool support behaves exactly the same as one with
-  // it. The ceiling is that the model can only answer from what was
-  // brought — it cannot go and look for one particular order.
-  //
-  // ponytail: a fixed snapshot, not a tool loop. Move to real tools
-  // when "find order #1042" becomes a question people actually ask.
+  // Read here, before the model runs, so most questions are answered in
+  // one call from rows this code path read. What the snapshot does not
+  // hold (one particular order, a day not shown) the chat's turn can
+  // look up with the store tools; each lookup is recorded by the tool
+  // that ran it, never by the model's word for it (see runTurn).
   const [recent, low, leaders, routed] = await Promise.all([
     searchOrders(
       client,
@@ -119,6 +123,7 @@ export async function storeContextFor(
   const runList = (runs ?? []) as Array<{ status: string }>;
 
   return {
+    store_id: storeRow.id as string,
     shop_domain: storeRow.shop_domain as string,
     timezone: storeRow.timezone as string,
     currency: storeRow.currency as string,
@@ -180,6 +185,13 @@ export type TurnInput = {
   plansAllowed?: boolean;
   /** Module context for the turn, when the owner is looking at one. */
   moduleId?: string | null;
+  /**
+   * Whether the model may look more up with the store tools before it
+   * replies. The chat says yes. The MCP design engine does not: the
+   * client asking has the same tools of its own, and a design turn
+   * spent on lookups is our model budget spent twice.
+   */
+  lookups?: boolean;
   signal?: AbortSignal;
   /**
    * Told each step as it happens, so a caller that can stream has
@@ -202,6 +214,8 @@ export type TurnResult =
       store: StoreContext | null;
       /** What they asked for that this does not do. Possibly empty. */
       unmet: string[];
+      /** What the model looked up with the store tools, in words, as the tools recorded it. */
+      lookedUp: string[];
     }
   | { ok: false; errors: string[]; repairs: number; repairErrors: string[] };
 
@@ -345,6 +359,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     blueprintShown = false,
     plansAllowed = blueprintShown,
     moduleId = null,
+    lookups = false,
     signal,
     onEvent,
   } = input;
@@ -383,6 +398,41 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   const schemas = await schemasFor(client, modules);
   tell({ step: "context", sections: modules.length, rules: (ruleRows ?? []).length });
 
+  // The store tools, when this caller allows them and there is a store
+  // to read. Each lookup is told as it comes back and kept once for the
+  // receipt: a transient retry that runs the same lookup again is still
+  // one thing looked up.
+  const lookedUp: string[] = [];
+  const heard = new Set<string>();
+  const tools =
+    lookups && store?.store_id
+      ? aiStoreTools(
+          {
+            db: client,
+            store: {
+              id: store.store_id,
+              project_id: project.id,
+              shop_domain: store.shop_domain,
+              timezone: store.timezone,
+              currency: store.currency,
+              last_synced_at: store.snapshot?.last_synced_at ?? null,
+            },
+          },
+          {
+            only: LUKE_TOOLS,
+            observe: ({ tool, about, args }) => {
+              const key = `${tool}:${JSON.stringify(args)}`;
+              if (heard.has(key)) return;
+              heard.add(key);
+              lookedUp.push(about);
+              tell({ step: "lookup", about });
+            },
+          }
+        )
+      : null;
+  // Before the prompt is written: it offers lookups only when there are tools to make them.
+  if (store) store.canLookUp = !!tools;
+
   const system = buildSystemPrompt(modules, project.name, project.locale, project.currency, store);
   const userTurn = buildUserMessage(
     message,
@@ -408,7 +458,14 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
 
   for (let attempt = 0; attempt <= MAX_REPAIR_ATTEMPTS; attempt++) {
     tell({ step: "model", attempt: attempt + 1, of: MAX_REPAIR_ATTEMPTS + 1 });
-    raw = await callAnthropicChat(system, [...history, ...attemptTurns], signal);
+    // Tools on the first attempt only: a repair fixes the reply's shape,
+    // and what was looked up is already written into the reply it fixes.
+    raw = await callModel({
+      system,
+      turns: [...history, ...attemptTurns],
+      signal,
+      lookups: attempt === 0 && tools ? { tools } : undefined,
+    });
     parsed = parseReply(raw, modules, currentSchema, currentFeatures, (mid) =>
       schemas.get(mid) ?? null
     );
@@ -499,7 +556,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     }
   }
 
-  return { ok: true, reply: parsed.reply, raw, userTurn, repairs, repairErrors, store, unmet };
+  return { ok: true, reply: parsed.reply, raw, userTurn, repairs, repairErrors, store, unmet, lookedUp };
 }
 
 /**

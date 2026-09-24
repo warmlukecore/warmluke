@@ -148,8 +148,11 @@ browser process to have made the change.
 - The TypeScript and PostgreSQL expression evaluators must remain behaviorally aligned.
 - A multi-plan build spans multiple PostgREST calls, so compensation provides practical
   atomicity rather than one database transaction across the whole batch.
-- The built-in assistant receives a bounded store snapshot plus a routed slice, not an
-  unrestricted tool loop.
+- The built-in assistant receives a bounded store snapshot plus a routed slice, and in the
+  chat may look up more with five read-only store tools (`LUKE_TOOLS` in `engine.ts`), at
+  most three lookups a turn. Each lookup is recorded by the tool that ran it, in the turn's
+  steps and the answer's receipt, never by the model's own word. The MCP design engine
+  does not look things up: the client asking has the same tools.
 - Several large client components centralize coordination. Their behavior is documented
   in [Frontend architecture](frontend.md).
 - The initial schema and a few old comments describe the prototype state; current

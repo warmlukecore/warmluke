@@ -116,6 +116,7 @@ pnpm hooks
 | Admin screens | `check-admin` (live); `check-follow-up` (pure) for the CSV formula guard and the demo stages against 0120 |
 | Model calls | `check-model-errors` (pure): each provider's request as sent, the one-sentence failures, one attempt, the Gemini fallback |
 | Store tools | `check-store-tools` (pure) for one declaration and refusals before reads; `check-ask-store`, `check-leaders`, `check-free-turns`, `check-mcp-limit` (live) through MCP |
+| Luke's lookups | `check-model-errors` (pure) for the loop, the cap and Gemini's JSON mode; `check-luke-lookups` (model, by hand) for a real turn that must look an order up, and one that must not |
 | Overview figures | `check-overview` (live) |
 
 New regression tests should prove behavior rather than source wording. Source-text checks

@@ -424,7 +424,13 @@ export type AssistantReply =
        */
       kind?: AnswerKind;
       message: string;
-      grounding?: { kind: "store_snapshot"; last_synced_at: string | null; shop: string };
+      grounding?: {
+        kind: "store_snapshot";
+        last_synced_at: string | null;
+        shop: string;
+        /** What the turn looked up beyond the snapshot, as the tools recorded it, not as the model said. */
+        looked_up?: string[];
+      };
     }
   | { type: "clarify"; message: string; questions: ClarifyQuestion[] }
   | { type: "blueprint"; message: string; blueprint: Blueprint }
@@ -452,6 +458,8 @@ export type TurnEvent =
   | { step: "context"; sections: number; rules: number }
   /** The model is being asked, for the n-th time of at most `of`. */
   | { step: "model"; attempt: number; of: number }
+  /** The model looked something up with a store tool, and it came back. `about` is what, in words. */
+  | { step: "lookup"; about: string }
   /** The validator has spoken: no problems, or this many going back to the model. */
   | { step: "checked"; problems: number }
   /** A design came out; the pass that finds what it misses is running. */

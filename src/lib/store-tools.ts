@@ -53,11 +53,17 @@ export type StoreTool = {
   inputSchema: JSONSchema7 & { type: "object"; properties: Record<string, JSONSchema7> };
   /** The answer, as a plain object, read with the caller's own client. */
   run: (args: Args, ctx: StoreToolContext) => Promise<unknown>;
+  /** What a call looked up, in a few words for the merchant: "order #1042". */
+  about: (args: Args) => string;
 };
+
+/** A string argument, trimmed, or nothing. */
+const word = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
 
 export const STORE_TOOLS: readonly StoreTool[] = [
   {
     name: "ask_store",
+    about: (a) => (word(a.question) ? `“${word(a.question)}”` : "a question about the store"),
     description:
       "Start here for a question about the shop: who buys most, what sold this month, is #1004 paid, stock of something, how many orders this week. Reads the question, picks the right list and time span, and returns those rows with a line saying what they are. When it cannot tell, it says so and names the tool to use instead.",
     inputSchema: {
@@ -90,6 +96,7 @@ export const STORE_TOOLS: readonly StoreTool[] = [
   },
   {
     name: "store_overview",
+    about: () => "the store's overview",
     description:
       "What is in the merchant's connected Shopify store: the shop domain, its timezone and currency, when it last synced, and how many rows it holds of each list Shopify fills.",
     inputSchema: { type: "object", properties: {} },
@@ -156,6 +163,14 @@ export const STORE_TOOLS: readonly StoreTool[] = [
   },
   {
     name: "search_orders",
+    about: (a) =>
+      word(a.q)
+        ? `orders matching “${word(a.q)}”`
+        : word(a.day)
+          ? `orders on ${word(a.day)}`
+          : word(a.status)
+            ? `${word(a.status)} orders`
+            : "the latest orders",
     description:
       "Find orders in the connected store. A day is read in the store's own timezone, not the caller's — asking for yesterday in New York and getting UTC's yesterday would be a wrong answer.",
     inputSchema: {
@@ -202,6 +217,7 @@ export const STORE_TOOLS: readonly StoreTool[] = [
   },
   {
     name: "get_order",
+    about: (a) => `order #${String(a.order_number ?? "").replace(/^#/, "").trim() || "?"}`,
     description:
       "One order in full, with the items in it. Use this when the merchant asks about a particular order; search_orders lists many and deliberately leaves the contents out.",
     inputSchema: {
@@ -232,6 +248,7 @@ export const STORE_TOOLS: readonly StoreTool[] = [
   },
   {
     name: "search_store",
+    about: (a) => `${word(a.table) ?? "a list"}${word(a.q) ? ` matching “${word(a.q)}”` : ""}`,
     // Named from the one declaration of the lists rather than by hand.
     // This sentence is how the client learns a list exists at all, and
     // it had gone on naming five while the enum below offered nine —
@@ -277,6 +294,7 @@ export const STORE_TOOLS: readonly StoreTool[] = [
   },
   {
     name: "low_stock",
+    about: (a) => `stock at or below ${Number.isFinite(Number(a.threshold ?? 5)) ? Number(a.threshold ?? 5) : 5}`,
     description:
       "Products running out: every variant at or below a number, lowest first, with the location it is short at. Ask with threshold 0 for what is already out of stock.",
     inputSchema: {
@@ -308,15 +326,62 @@ const BY_NAME = new Map(STORE_TOOLS.map((t) => [t.name, t]));
 export const storeTool = (name: unknown): StoreTool | undefined =>
   typeof name === "string" ? BY_NAME.get(name) : undefined;
 
-/** The same tools for the AI SDK, bound to one caller and one store. */
-export function aiStoreTools(ctx: StoreToolContext): Record<string, Tool> {
+/**
+ * How much of one answer a model is handed: about 6,000 tokens. A
+ * search can return two hundred rows, and three of those in a turn
+ * would crowd out the design contract and bill for it. MCP clients get
+ * the whole answer; they asked for that limit themselves.
+ */
+export const MODEL_OUTPUT_CHARS = 24_000;
+
+/**
+ * An answer cut to fit: the longest list is shortened, and the answer
+ * says by how much, so a model never reads a partial list as the whole.
+ */
+export function fitForModel(result: unknown, max = MODEL_OUTPUT_CHARS): unknown {
+  if (JSON.stringify(result ?? null).length <= max || !result || typeof result !== "object" || Array.isArray(result)) {
+    return result;
+  }
+  const out = { ...(result as Record<string, unknown>) };
+  const lists = Object.entries(out).filter((e): e is [string, unknown[]] => Array.isArray(e[1]));
+  if (lists.length === 0) return result;
+  const [key, full] = lists.sort((a, b) => JSON.stringify(b[1]).length - JSON.stringify(a[1]).length)[0];
+  let keep = full.length;
+  while (keep > 0 && JSON.stringify({ ...out, [key]: full.slice(0, keep) }).length > max) keep = Math.floor(keep * 0.7);
+  out[key] = full.slice(0, keep);
+  out.trimmed = `Only the first ${keep} of ${full.length} ${key} are shown here, to fit. Ask for fewer, or narrower, before quoting a total.`;
+  return out;
+}
+
+/** A lookup as it happened: which tool, what it was asked, what it found. */
+export type Lookup = { tool: string; about: string; args: Args; result: unknown };
+
+/**
+ * The same tools for the AI SDK, bound to one caller and one store.
+ * `observe` hears each lookup once it has run; it is how a turn says
+ * what it read, from the call itself rather than from the model.
+ */
+export function aiStoreTools(
+  ctx: StoreToolContext,
+  opts: { only?: readonly string[]; observe?: (lookup: Lookup) => void } = {}
+): Record<string, Tool> {
+  const chosen = opts.only ? STORE_TOOLS.filter((t) => opts.only!.includes(t.name)) : STORE_TOOLS;
   return Object.fromEntries(
-    STORE_TOOLS.map((t) => [
+    chosen.map((t) => [
       t.name,
       tool({
         description: t.description,
         inputSchema: jsonSchema<Args>(t.inputSchema),
-        execute: (input: Args) => t.run(input, ctx),
+        execute: async (input: Args) => {
+          const args = input && typeof input === "object" ? input : {};
+          const result = await t.run(args, ctx);
+          try {
+            opts.observe?.({ tool: t.name, about: t.about(args), args, result });
+          } catch {
+            // A listener that throws does not take the lookup with it.
+          }
+          return fitForModel(result);
+        },
       }),
     ])
   );

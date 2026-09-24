@@ -20,7 +20,8 @@ database decides who may do what.
 | Failures | `ModelError` in `src/lib/ai.ts` | Every failure is one sentence for the merchant; the raw answer goes to the log under `[model]` |
 | Store tools | `src/lib/store-tools.ts` | The six reading tools, declared once: name, description, JSON Schema, `run(args, { db, store })` |
 | MCP | `src/app/api/mcp/route.ts` | Lists `STORE_TOOLS` (adding `shop_domain` and the artifact note) and its own approval flows |
-| Luke's tools | `aiStoreTools(ctx)` in `src/lib/store-tools.ts` | The same tools as AI SDK tools, bound to one caller and one store |
+| Luke's tools | `aiStoreTools(ctx, { only, observe })` in `src/lib/store-tools.ts` | The same tools as AI SDK tools, bound to one caller and one store, cut to fit (`fitForModel`) and heard as they run |
+| Luke's loop | `runTurn` in `src/lib/engine.ts` with `lookups: true`, `callModel` in `src/lib/ai.ts` | Up to three lookups before the JSON reply (`LOOKUP_STEPS`), on the first attempt only; each told as a `lookup` step and kept for the receipt |
 
 ## Rules
 
@@ -47,6 +48,15 @@ database decides who may do what.
    make sense for an outside client (approvals, requests) stay in the MCP route.
 8. **Refuse before reading.** A bad argument returns `{ error: "<sentence>" }` before any
    query. Arguments are read leniently (`"10"` is ten), as clients send them.
+9. **The loop has edges, all handled in `generate`.** A cap reached mid-lookup is answered
+   by one more call with the lookups folded into words and no tools, never by
+   `toolChoice: "none"`: the SDK then drops the tools, and Anthropic refuses tool calls
+   with none declared. Gemini refuses JSON mode beside tools, so `JSON_MODE` stands aside
+   when a call carries them. A tool that is not in `LUKE_TOOLS` is not Luke's; `ask_store`
+   is left out because the turn's question was routed already.
+10. **What was read is told by the tool, not the model.** `observe` hears a lookup once it
+   has run; that is the step the merchant sees and the receipt the answer carries. A prompt
+   offers lookups only when the call has tools (`canLookUp`).
 
 ## Adding a store tool
 
@@ -62,7 +72,10 @@ database decides who may do what.
 - `check-model-errors` (pure) stands in for `fetch`: it reads back each provider's request
   as sent, the one-sentence failures, one attempt only, and the Gemini fallback. Change the
   model layer and this must still pass unchanged, plus a new assertion for what you added.
-- `check-store-tools` (pure): one list, MCP sends it, refusals before any read.
+- `check-store-tools` (pure): one list, MCP sends it, refusals before any read, the words
+  each lookup is told in, the size guard.
+- `check-luke-lookups` (model tier, by hand, cents): a real turn that must look an order
+  up, with the router off so only a lookup can find it, and one that must not.
 - Live, through a real server: start
   `(set -a; . ./.env.check.local; set +a; pnpm exec next dev -p 3101)` and run the checks
   with `ENV_FILE=.env.check.local APP_URL=http://localhost:3101`. Without `ENV_FILE` a

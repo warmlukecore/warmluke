@@ -14,7 +14,8 @@
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-model-errors.mjs
 
-import { callAnthropicChat, ModelError } from "../src/lib/ai.ts";
+import { callAnthropicChat, callModel, ModelError } from "../src/lib/ai.ts";
+import { jsonSchema, tool } from "ai";
 import { isTransient } from "../src/lib/retry.ts";
 
 const fails = [];
@@ -182,6 +183,78 @@ try {
   check(
     "Gemini busy twice: Anthropic answers instead, on the fallback model",
     fell === "from anthropic" && sent.length === 3 && sent[2].body?.model === "claude-fallback"
+  );
+
+  console.log("\nlooking things up before replying");
+  process.env.ANTHROPIC_API_KEY = "test-key";
+  const ran = [];
+  const lookups = (steps) => ({
+    steps,
+    tools: {
+      get_order: tool({
+        description: "One order by number.",
+        inputSchema: jsonSchema({ type: "object", properties: { order_number: { type: "string" } }, required: ["order_number"] }),
+        execute: async (input) => {
+          ran.push(input);
+          return { order_number: input.order_number, financial_status: "PAID", total: 1499 };
+        },
+      }),
+    },
+  });
+  const toolUse = (id, order) => ({
+    status: 200,
+    body: JSON.stringify({
+      id: `msg_${id}`, type: "message", role: "assistant", model: "claude-test",
+      content: [{ type: "tool_use", id, name: "get_order", input: { order_number: order } }],
+      stop_reason: "tool_use", stop_sequence: null, usage: { input_tokens: 10, output_tokens: 5 },
+    }),
+  });
+  sent.length = 0;
+  ran.length = 0;
+  queue.push(toolUse("toolu_1", "1042"), reply('{"type":"answer","message":"#1042 is paid: 1499."}'));
+  const looked = await callModel({
+    system: ["the contract", "this project"],
+    turns: [{ role: "user", content: "is #1042 paid?" }],
+    lookups: lookups(4),
+  });
+  check("it looks the order up, then replies from it", looked === '{"type":"answer","message":"#1042 is paid: 1499."}' && ran.length === 1 && ran[0].order_number === "1042");
+  check("the tool is offered with its schema", sent[0]?.body?.tools?.[0]?.name === "get_order" && sent[0].body.tools[0].input_schema?.required?.[0] === "order_number");
+  const second = JSON.stringify(sent[1]?.body?.messages ?? []);
+  check("and what it found goes back to the model", sent.length === 2 && second.includes('"tool_result"') && second.includes("PAID"));
+  check(
+    "every step still caches the contract and caps the reply",
+    sent.every((r) => r.body?.system?.[0]?.cache_control?.type === "ephemeral" && r.body.max_tokens === 6000)
+  );
+
+  sent.length = 0;
+  ran.length = 0;
+  queue.push(toolUse("toolu_1", "1042"), toolUse("toolu_2", "1043"), reply('{"type":"answer","message":"both paid"}'));
+  const cut = await callModel({ system: "s", turns: [{ role: "user", content: "are #1042 and #1043 paid?" }], lookups: lookups(2) });
+  const fold = sent[2]?.body;
+  check("when the cap comes mid-lookup, it is still answered", cut === '{"type":"answer","message":"both paid"}' && ran.length === 2);
+  check("by one more call, without tools", sent.length === 3 && !fold?.tools && !JSON.stringify(fold?.messages ?? []).includes("tool_use"));
+  check(
+    "carrying what the lookups found, in words",
+    JSON.stringify(fold?.messages ?? []).includes("What your lookups returned") && JSON.stringify(fold?.messages ?? []).includes("1043")
+  );
+
+  sent.length = 0;
+  ran.length = 0;
+  queue.push(
+    {
+      status: 200,
+      body: JSON.stringify({
+        candidates: [{ content: { role: "model", parts: [{ functionCall: { name: "get_order", args: { order_number: "1042" } } }] }, finishReason: "STOP", index: 0 }],
+        usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15 },
+      }),
+    },
+    gemini('{"type":"answer","message":"paid"}')
+  );
+  const g1 = await callModel({ system: "s", turns: [{ role: "user", content: "is #1042 paid?" }], model: "gemini-test", lookups: lookups(4) });
+  check("Gemini looks it up too", g1 === '{"type":"answer","message":"paid"}' && ran.length === 1);
+  check(
+    "and is not asked for JSON mode beside its tools, which it refuses",
+    sent[0]?.body?.tools?.[0]?.functionDeclarations?.[0]?.name === "get_order" && !sent[0].body.generationConfig?.responseMimeType
   );
 
   console.log("\nthe importer's own errors still read as they did");

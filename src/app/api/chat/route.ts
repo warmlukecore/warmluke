@@ -325,6 +325,8 @@ export async function POST(req: Request) {
           currentFeatures,
           blueprintShown,
           moduleId: moduleId ?? null,
+          // Luke may look up what the snapshot does not hold.
+          lookups: true,
           signal: halt.signal,
           onEvent: tell,
         });
@@ -361,6 +363,7 @@ export async function POST(req: Request) {
             kind: "store_snapshot",
             last_synced_at: turn.store?.snapshot?.last_synced_at ?? null,
             shop: turn.store?.shop_domain ?? "",
+            ...(turn.lookedUp.length ? { looked_up: turn.lookedUp } : {}),
           };
         }
 
