@@ -132,7 +132,10 @@ A prompt entered before authentication is stored temporarily in browser storage.
 
 After sign-in the dashboard reads the person's `profiles` row. Anyone who has not
 finished onboarding goes to `/onboarding` first, except a person who only works in
-somebody else's app through an invite. A failed read never blocks the dashboard. The
+somebody else's app through an invite, and Warmluke's own team (administrators), who are
+not a business signing up; they can still open `/onboarding` by hand to see it. The
+accounts screen marks them "Warmluke team" and leaves them out of its figures. A failed
+read never blocks the dashboard. The
 landing-page prompt waits until onboarding is done, then opens in their project with the
 assistant.
 

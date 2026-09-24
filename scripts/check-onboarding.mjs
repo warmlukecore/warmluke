@@ -123,6 +123,7 @@ check("an account from before onboarding existed is too", needsOnboarding({ onbo
 check("somebody who finished is not", !needsOnboarding({ onboarded: true, ownProjects: 0, sharedWithMe: 0 }));
 check("a person only invited into someone else's app is not", !needsOnboarding({ onboarded: false, ownProjects: 0, sharedWithMe: 1 }));
 check("but one with an app of their own as well is", needsOnboarding({ onboarded: false, ownProjects: 1, sharedWithMe: 2 }));
+check("and Warmluke's own team is not, apps or no apps", !needsOnboarding({ onboarded: false, ownProjects: 3, sharedWithMe: 0, staff: true }));
 
 console.log("\ncoming back from Shopify");
 const now = Date.parse("2026-09-23T12:00:00Z");

@@ -175,10 +175,13 @@ export default function Admin() {
     [rows, q]
   );
 
-  // The numbers at the top, from the same rows as the table.
+  // The numbers at the top, from the same rows as the table: the
+  // merchants', not Warmluke's own team, who are not onboarded as a
+  // business and would count as customers who never answered.
   const stats = useMemo(() => {
-    const all = rows ?? [];
+    const all = (rows ?? []).filter((r) => !r.is_superadmin);
     return {
+      team: (rows ?? []).length - all.length,
       total: all.length,
       onboarded: all.filter((r) => r.onboarded_at).length,
       withStore: all.filter((r) => r.stores > 0).length,
@@ -222,7 +225,11 @@ export default function Admin() {
         {rows.length > 0 && (
           <>
             <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <Stat label="Accounts" value={stats.total} sub={`${stats.thisWeek} new this week`} />
+              <Stat
+                label="Accounts"
+                value={stats.total}
+                sub={`${stats.thisWeek} new this week${stats.team ? `, team of ${stats.team} not counted` : ""}`}
+              />
               <Stat label="Finished onboarding" value={stats.onboarded} sub={`of ${stats.total}`} />
               <Stat label="With a store connected" value={stats.withStore} sub={`of ${stats.total}`} />
               <Breakdown label="Where they heard of us" counts={stats.heard} empty="Nobody has said yet" />
@@ -325,6 +332,8 @@ export default function Admin() {
                               </span>
                             )}
                           </div>
+                        ) : r.is_superadmin ? (
+                          <span className="rounded-full bg-tone-info px-2 py-0.5 text-[11px] text-tone-info-fg">Warmluke team</span>
                         ) : (
                           <span className="rounded-full bg-tone-neutral px-2 py-0.5 text-[11px] text-tone-neutral-fg">
                             Hasn&rsquo;t answered yet

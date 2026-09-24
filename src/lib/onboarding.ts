@@ -186,8 +186,12 @@ export function currentStep(s: Signals): Step {
  * somebody else's app. They came through an invite to add rows; asking
  * them how many orders their business takes a month would be asking the
  * wrong person the wrong question.
+ *
+ * Nor Warmluke's own team (an administrator): they are not a business
+ * signing up, and their answers would be counted as a customer's. The
+ * page is still there to open by hand, to see it as a merchant does.
  */
-export function needsOnboarding(a: { onboarded: boolean; ownProjects: number; sharedWithMe: number }): boolean {
-  if (a.onboarded) return false;
+export function needsOnboarding(a: { onboarded: boolean; ownProjects: number; sharedWithMe: number; staff?: boolean }): boolean {
+  if (a.onboarded || a.staff) return false;
   return !(a.ownProjects === 0 && a.sharedWithMe > 0);
 }

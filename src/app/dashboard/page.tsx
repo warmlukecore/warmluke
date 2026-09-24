@@ -276,12 +276,12 @@ function DashboardInner() {
   useEffect(() => {
     if (!user || projectsLoading || gate !== "checking") return;
     let live = true;
-    supabase
-      .from("profiles")
-      .select("onboarded_at")
-      .eq("user_id", user.id)
-      .maybeSingle()
-      .then(({ data, error }) => {
+    Promise.all([
+      supabase.from("profiles").select("onboarded_at").eq("user_id", user.id).maybeSingle(),
+      // Whether they are Warmluke's own team, who are not onboarded as a business.
+      supabase.rpc("abo_my_settings"),
+    ])
+      .then(([{ data, error }, settings]) => {
         if (!live) return;
         // A read that failed never locks anybody out of their projects.
         if (error) {
@@ -289,7 +289,8 @@ function DashboardInner() {
           return;
         }
         const own = projects.filter((p) => p.owner_id === user.id).length;
-        if (needsOnboarding({ onboarded: !!data?.onboarded_at, ownProjects: own, sharedWithMe: projects.length - own })) {
+        const staff = !!settings.data?.[0]?.is_superadmin;
+        if (needsOnboarding({ onboarded: !!data?.onboarded_at, ownProjects: own, sharedWithMe: projects.length - own, staff })) {
           router.replace("/onboarding");
         } else {
           setGate("open");
