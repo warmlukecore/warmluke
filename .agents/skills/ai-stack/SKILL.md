@@ -22,6 +22,7 @@ database decides who may do what.
 | MCP | `src/app/api/mcp/route.ts` | Lists `STORE_TOOLS` (adding `shop_domain` and the artifact note) and its own approval flows |
 | Luke's tools | `aiStoreTools(ctx, { only, observe })` in `src/lib/store-tools.ts` | The same tools as AI SDK tools, bound to one caller and one store, cut to fit (`fitForModel`) and heard as they run |
 | Luke's loop | `runTurn` in `src/lib/engine.ts` with `lookups: true`, `callModel` in `src/lib/ai.ts` | Up to three lookups before the JSON reply (`LOOKUP_STEPS`), on the first attempt only; each told as a `lookup` step and kept for the receipt |
+| Asking to change the shop | `src/lib/store-action-propose.ts` (`proposeStoreAction`, `aiProposeTool`) | One set of gates for MCP and Luke; only ever a request the merchant approves on a card; offered to Luke only when the account's switch is on |
 
 ## Rules
 
@@ -42,7 +43,10 @@ database decides who may do what.
 6. **A tool reads with the caller's client, never the service role.** RLS is what makes
    a tool safe; a tool that needs more is a security-definer function with its own check.
    Store tools never write. Writing goes through `applyPlans` (`abo_build`) or a store
-   action the merchant approves, never a tool's `run()`.
+   action the merchant approves, never a tool's `run()`. A tool may *ask* for a store
+   action (`propose_store_action`), and only through `proposeStoreAction`: it never runs
+   one, and the card's sentence is the server's, never the model's. Anything a change
+   aims at must be handed out by some list's `gives` (`check-store-action-propose`).
 7. **Declare a tool once.** A reading tool Luke and MCP both need goes in `STORE_TOOLS`,
    with the store settled by the caller, never guessed inside the tool. Tools that only
    make sense for an outside client (approvals, requests) stay in the MCP route.

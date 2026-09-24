@@ -117,6 +117,7 @@ pnpm hooks
 | Model calls | `check-model-errors` (pure): each provider's request as sent, the one-sentence failures, one attempt, the Gemini fallback |
 | Store tools | `check-store-tools` (pure) for one declaration and refusals before reads; `check-ask-store`, `check-leaders`, `check-free-turns`, `check-mcp-limit` (live) through MCP |
 | Luke's lookups | `check-model-errors` (pure) for the loop, the cap and Gemini's JSON mode; `check-luke-lookups` (model, by hand) for a real turn that must look an order up, and one that must not |
+| Asking to change the shop | `check-store-action-propose` (pure) for every gate, the server's wording, one request per change and that each target kind is handed out; `check-luke-lookups` (model, by hand) for Luke's real proposal, and none with the switch off |
 | Overview figures | `check-overview` (live) |
 
 New regression tests should prove behavior rather than source wording. Source-text checks

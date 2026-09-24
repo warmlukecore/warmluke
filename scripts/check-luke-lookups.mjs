@@ -12,6 +12,11 @@
 // lookup can find #1001. And a question the snapshot answers must not
 // spend a lookup at all.
 //
+// Then a change to the shop: with the account's switch on, "tag #1003
+// VIP" must become one request waiting for the merchant, aimed at that
+// order's Shopify id, worded by the server, and never run; with it off,
+// the same words ask for nothing. The switch is put back as it was.
+//
 // Model settings (keys, names) come from MODEL_ENV_FILE, .env.local by
 // default, the file the dev server reads them from; nothing else in it
 // is used.
@@ -79,7 +84,7 @@ try {
   const store = must(
     await admin
       .from("stores")
-      .insert({ project_id: project.id, shop_domain: `luke-${stamp}.myshopify.com`, status: "connected", currency: "INR", timezone: "Asia/Kolkata" })
+      .insert({ project_id: project.id, shop_domain: `luke-${stamp}.myshopify.com`, status: "connected", currency: "INR", timezone: "Asia/Kolkata", granted_scopes: ["read_orders", "write_orders", "read_products", "write_products", "read_customers", "write_customers"] })
       .select("id")
       .single()
   );
@@ -90,7 +95,7 @@ try {
         const n = 1001 + i;
         return {
           store_id: store.id,
-          external_id: `o-${stamp}-${n}`,
+          external_id: `gid://shopify/Order/${stamp.replace(/\D/g, "").slice(0, 6) || "7"}${n}`,
           order_number: `#${n}`,
           placed_at: daysAgo(30 - i),
           total: n === 1001 ? 777 : 100 + i,
@@ -143,6 +148,34 @@ try {
   check("is answered", plain.last.reply?.type === "answer" && /1025/.test(plain.last.reply?.message ?? ""));
   check("without spending a lookup", !plain.steps.some((s) => s.step === "lookup"));
   if (plain.steps.some((s) => s.step === "lookup")) show(plain.steps.filter((s) => s.step === "lookup"));
+  console.log("\na change to the shop, asked for");
+  const { data: setting } = await admin.from("account_settings").select("store_actions_enabled").eq("user_id", me.user.id).maybeSingle();
+  const was = setting?.store_actions_enabled ?? false;
+  const setSwitch = async (on) =>
+    must(await admin.from("account_settings").upsert({ user_id: me.user.id, store_actions_enabled: on }, { onConflict: "user_id" }).select("user_id"));
+  const target = must(await admin.from("orders").select("external_id").eq("store_id", store.id).eq("order_number", "#1003").single()).external_id;
+  try {
+    await setSwitch(true);
+    const change = await ask("Please add the tag VIP to order #1003.");
+    const rows = must(await admin.from("store_actions").select("action, status, targets, params, summary, requested_by, client_id").eq("project_id", project.id));
+    check("it becomes one request, waiting for the merchant", rows.length === 1 && rows[0].status === "pending");
+    if (rows.length !== 1) show({ rows, steps: change.steps, last: change.last });
+    const row = rows[0];
+    check("to add the tag VIP, on #1003's own Shopify id", row?.action === "add_tags" && JSON.stringify(row?.params?.tags) === '["VIP"]' && row?.targets?.length === 1 && row.targets[0].id === target);
+    check("asked as the merchant, not as an outside client", row?.requested_by === me.user.id && row?.client_id === null);
+    check("the turn says it asked", change.steps.some((s) => s.step === "proposed" && s.summary === row?.summary));
+    const said = change.last.reply?.message ?? "";
+    check("and the reply says it is waiting for them, not done", /wait|approv|confirm|yes|agree/i.test(said) && !/\b(done|added|tagged)\b(?!.*(once|when|after))/i.test(said.replace(/will be (added|tagged)/gi, "")));
+    show(said);
+
+    await setSwitch(false);
+    const before = rows.length;
+    const refused = await ask("Please add the tag VIP to order #1004.");
+    const after = must(await admin.from("store_actions").select("id").eq("project_id", project.id)).length;
+    check("with the switch off, the same words ask for nothing", after === before && !refused.steps.some((s) => s.step === "proposed"));
+  } finally {
+    await setSwitch(was);
+  }
 } finally {
   await project.remove();
 }

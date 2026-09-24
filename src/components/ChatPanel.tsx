@@ -103,6 +103,7 @@ function TraceLine({ trace }: { trace: { steps: TurnEvent[]; ms: number } }) {
   if (store) parts.push(store.shop ? "Read your store" : "Read your app");
   const looked = trace.steps.filter((s) => s.step === "lookup").length;
   if (looked) parts.push(looked === 1 ? "looked one thing up" : `looked ${looked} things up`);
+  if (trace.steps.some((s) => s.step === "proposed")) parts.push("asked for your yes");
   const tries = trace.steps.filter((s) => s.step === "model").length;
   if (tries === 1) parts.push("thought it through");
   else if (tries > 1) parts.push(`took ${tries} tries`);
@@ -184,6 +185,8 @@ function stepWords(step: TurnEvent): string {
       return step.attempt === 1 ? "Thinking it through…" : `Trying again (${step.attempt} of ${step.of})…`;
     case "lookup":
       return `Looked up ${step.about}`;
+    case "proposed":
+      return `Asked for your yes: ${step.summary}`;
     case "checked":
       return step.problems === 0 ? "Checked the reply" : `Found ${n(step.problems, "problem")} — sending it back`;
     case "gaps":
@@ -841,6 +844,13 @@ export default function ChatPanel({
   useEffect(() => {
     loadShopChanges();
   }, [loadShopChanges]);
+  // Luke asked for a change this turn: the request is already written,
+  // so the card is read now rather than left to the realtime channel,
+  // which a dropped connection would leave silent.
+  const proposedNow = steps.filter((s) => s.step === "proposed").length;
+  useEffect(() => {
+    if (proposedNow > 0) loadShopChanges();
+  }, [proposedNow, loadShopChanges]);
   useEffect(
     () =>
       watchRows(`shop-changes:${projectId}`, [

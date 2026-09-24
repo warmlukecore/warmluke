@@ -460,6 +460,8 @@ export type TurnEvent =
   | { step: "model"; attempt: number; of: number }
   /** The model looked something up with a store tool, and it came back. `about` is what, in words. */
   | { step: "lookup"; about: string }
+  /** A change to the shop was asked for; it waits for the merchant's yes. `summary` is the card's own sentence. */
+  | { step: "proposed"; summary: string }
   /** The validator has spoken: no problems, or this many going back to the model. */
   | { step: "checked"; problems: number }
   /** A design came out; the pass that finds what it misses is running. */

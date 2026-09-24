@@ -92,6 +92,13 @@ with the caller's own client. Every lookup is recorded by the tool that ran it, 
 reached mid-lookup is still answered, in one more call with the results folded into words.
 The MCP design engine does not look things up; the client asking has the same tools.
 
+When the account's `store_actions` switch is on, the chat also offers
+`propose_store_action`, through the same gates as MCP (`store-action-propose.ts`). It only
+ever makes a request: the server writes the card's sentence from the change, the request
+waits on the card under the conversation, and the merchant's yes runs it
+(`POST /api/store-actions`). The same change asked twice in one turn is one request. With
+the switch off the tool is not offered and the prompt does not mention changing the shop.
+
 ## Validation and repair
 
 Parsing removes code fences and normalizes a small set of known aliases, then validates

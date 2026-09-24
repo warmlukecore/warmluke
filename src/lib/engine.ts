@@ -36,6 +36,7 @@ import {
 } from "@/lib/describe";
 import { describeBuild } from "@/lib/judge";
 import { aiStoreTools } from "@/lib/store-tools";
+import { aiProposeTool } from "@/lib/store-action-propose";
 
 /**
  * The store tools Luke may look things up with. Not ask_store: it routes
@@ -391,7 +392,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // system prompt because that prompt is cached across projects.
   // Beside it, what the owner's own connected assistant asked for
   // lately: the one piece of intent that lives outside this thread.
-  const [{ data: ruleRows }, requests] = await Promise.all([
+  const [{ data: ruleRows }, requests, { data: changeOn }] = await Promise.all([
     client
       .from("automations")
       .select("id, name, enabled, module_id, definition")
@@ -399,6 +400,12 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       .order("created_at", { ascending: true })
       .limit(RULES_IN_CONTEXT),
     recentRequests(client, project.id, modules),
+    // Whether Luke may ask for a change in the shop: the account's own
+    // switch, off unless somebody at Warmluke turned it on. Read only
+    // when the tools are on offer at all.
+    lookups && store
+      ? client.rpc("abo_feature", { p_name: "store_actions" })
+      : Promise.resolve({ data: false }),
   ]);
   const rules = describeRules((ruleRows ?? []) as RuleRow[], modules);
 
@@ -413,32 +420,40 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // one thing looked up.
   const lookedUp: string[] = [];
   const heard = new Set<string>();
-  const tools =
+  const toolStore =
     lookups && store?.store_id
-      ? aiStoreTools(
-          {
-            db: client,
-            store: {
-              id: store.store_id,
-              project_id: project.id,
-              shop_domain: store.shop_domain,
-              timezone: store.timezone,
-              currency: store.currency,
-              last_synced_at: store.snapshot?.last_synced_at ?? null,
-            },
+      ? {
+          db: client,
+          store: {
+            id: store.store_id,
+            project_id: project.id,
+            shop_domain: store.shop_domain,
+            timezone: store.timezone,
+            currency: store.currency,
+            last_synced_at: store.snapshot?.last_synced_at ?? null,
           },
-          {
-            only: LUKE_TOOLS,
-            observe: ({ tool, about, args }) => {
-              const key = `${tool}:${JSON.stringify(args)}`;
-              if (heard.has(key)) return;
-              heard.add(key);
-              lookedUp.push(about);
-              tell({ step: "lookup", about });
-            },
-          }
-        )
+        }
       : null;
+  const canChange = !!toolStore && changeOn === true;
+  const tools = toolStore
+    ? {
+        ...aiStoreTools(toolStore, {
+          only: LUKE_TOOLS,
+          observe: ({ tool, about, args }) => {
+            const key = `${tool}:${JSON.stringify(args)}`;
+            if (heard.has(key)) return;
+            heard.add(key);
+            lookedUp.push(about);
+            tell({ step: "lookup", about });
+          },
+        }),
+        // Asking for a change in the shop, when the account allows it.
+        // It only ever makes a request the merchant agrees to or not.
+        ...(canChange
+          ? { propose_store_action: aiProposeTool(toolStore, ({ summary }) => tell({ step: "proposed", summary })) }
+          : {}),
+      }
+    : null;
   // The draft, told only when it changes: a stream of the same words
   // over and over would be a stream of nothing.
   let drafted = "";
@@ -455,8 +470,11 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       }
     : undefined;
 
-  // Before the prompt is written: it offers lookups only when there are tools to make them.
-  if (store) store.canLookUp = !!tools;
+  // Before the prompt is written: it offers only what the tools can do.
+  if (store) {
+    store.canLookUp = !!tools;
+    store.canChange = canChange;
+  }
 
   const system = buildSystemPrompt(modules, project.name, project.locale, project.currency, store);
   const userTurn = buildUserMessage(

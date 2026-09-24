@@ -318,6 +318,8 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     advice:
       'Money: `total` is what the order comes to today, after refunds; `total_original` is what it came to when placed. Do not sum `total` over every row and call it revenue — most of it may be unpaid. Revenue collected = sum(total) where financial_status = "PAID". Awaiting payment (COD) = sum(total) where financial_status = "PENDING". Cancelled = count where cancelled_at is not empty, kept out of both. Average order value = avg(total_original). When a merchant asks for one revenue number, show these apart and say which is which. COD vs prepaid: `gateway` is what paid — "Cash on Delivery (COD)" for COD, otherwise the payment provider. Orders by place = group by ship_city or ship_state. What the total is made of: total = subtotal + shipping + tax, with discount already taken off subtotal. `tax` is owed to a tax authority and is NEVER the merchant\'s income; `shipping` is what the customer was charged for delivery, usually paid straight out again; `subtotal` is the goods. So "what did we actually earn on goods" is sum(subtotal), not sum(total). Any of these can be empty on an order imported before they were read — that means unknown, not zero, so leave those rows out of a total and say how many.',
     view: "store_orders",
+    // A change to the shop is aimed with Shopify's own id (0121).
+    gives: { Order: "shopify_id" },
     order: { field: "placed_at", ascending: false },
     select:
       "id, order_number, placed_at, customer_name, customer_phone, total, total_original, currency, status, fulfilment_status, financial_status, cancelled_at, tags, gateway, discount_codes, ship_city, ship_state, ship_country, subtotal, tax, shipping, discount",
@@ -350,6 +352,8 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     what: 'one row per customer — name, phone, email, city, orders placed, lifetime spend; "top buyers" is this list with defaultSort total_spent desc, "repeat customers" a count stat on it where orders_count >= 2',
     section: { label: "Customers", icon: "users", importedWith: "customers" },
     view: "store_customers",
+    // A change to the shop is aimed with Shopify's own id (0121).
+    gives: { Customer: "shopify_id" },
     order: { field: "name", ascending: true },
     select: "id, name, email, phone, city, orders_count, total_spent",
     columns: [
@@ -661,6 +665,8 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     what: 'one row per product in the catalogue — title, category, vendor, status, tags, and the collections it belongs to; what "our products", "the catalogue" and "what is in the sale" mean',
     section: { label: "Products", icon: "package", importedWith: "products" },
     view: "store_products",
+    // A change to the shop is aimed with Shopify's own id (0121).
+    gives: { Product: "shopify_id" },
     order: { field: "title", ascending: true },
     select: "id, title, product_type, vendor, handle, status, tags, collections",
     columns: [

@@ -108,7 +108,11 @@ route does not attempt an unauthorized direct table update after building.
   can approve it, in the application, and the database refuses an approval from a client
   token. Actions that are not declared (cancelling, refunding, fulfilling, publishing,
   repricing) have no path at all, and `check-action-registry` holds that list to the copy
-  that promises it.
+  that promises it. The gates (switch, registry, Shopify ids, size, what the change needs,
+  granted scopes) live once in `src/lib/store-action-propose.ts`, shared with Luke;
+  `check-store-action-propose` holds them. The store lists hand out the id a change is
+  aimed with: `shopify_id` on orders, products and customers (0121), `inventory_item_id`
+  and `location_id` on stock.
 - A connected client cannot *build* a module deletion, though it may propose one. The
   request waits in the application, where the owner types the section's name to confirm.
   Auto-build never applies such a design, `approve_change` refuses it, and `abo_build`

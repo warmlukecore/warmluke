@@ -99,8 +99,11 @@ is an invalidation mechanism: after a signal, the browser reloads authoritative 
 it does not reconstruct complex state from event payloads alone. The changed row is
 handed to the callback only so it can decide *what* to reload.
 
-Published tables are `modules`, `ui_schemas`, `records`, `build_requests`, and
-`conversations`. Subscriptions:
+Published tables are `modules`, `ui_schemas`, `records`, `build_requests`,
+`conversations`, and `store_actions` (0122; it was listened for but never published, so a
+change an assistant asked for only appeared on reload). The chat panel also reloads the
+waiting changes when a turn reports a `proposed` step, so Luke's own request appears even
+if the channel has dropped. Subscriptions:
 
 | Subscriber | Table | Reload |
 | --- | --- | --- |
