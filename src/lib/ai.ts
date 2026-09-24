@@ -2085,6 +2085,29 @@ export function modelError(provider: Provider, status: number, raw: string): Mod
 const MAX_OUTPUT_TOKENS = 6000;
 
 /**
+ * Which model does which job. Each is a setting, read when a call is
+ * made, so changing a model is a deploy setting and never a code change.
+ * The name also picks the provider: "gemini-…" is Google's, anything
+ * else goes to the Anthropic-format host (api.anthropic.com, or
+ * ANTHROPIC_API_URL, whose model names it must be). The second value is
+ * only for a server nobody configured; docs/reference/environment.md
+ * lists them.
+ */
+const MODEL_JOBS = {
+  /** Designing the app: every reply Luke gives. */
+  design: ["ANTHROPIC_MODEL", "claude-sonnet-4-5"],
+  /** Reading two short texts and naming what is missing. */
+  gap: ["ANTHROPIC_GAP_MODEL", "claude-haiku-4-5-20251001"],
+  /** Where a design goes when Gemini stays busy. */
+  fallback: ["ANTHROPIC_FALLBACK_MODEL", "claude-sonnet-4-5"],
+} as const;
+
+function modelFor(job: keyof typeof MODEL_JOBS): string {
+  const [setting, unconfigured] = MODEL_JOBS[job];
+  return process.env[setting]?.trim() || unconfigured;
+}
+
+/**
  * The provider's fetch, with a dropped connection read as the model
  * being down. The SDK only recognises some network failures; this reads
  * every thrown fetch that way, as the hand-written call did. A stop stays
@@ -2153,7 +2176,7 @@ export async function callAnthropicChat(
    *  rate for it doubled the bill for every blueprint. */
   modelOverride?: string
 ): Promise<string> {
-  const model = modelOverride || process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5";
+  const model = modelOverride || modelFor("design");
 
   // The provider comes from the model id rather than a second setting.
   // One name to change when the Anthropic balance runs out, and no way
@@ -2178,7 +2201,7 @@ export async function callAnthropicChat(
           system,
           turns,
           signal,
-          process.env.ANTHROPIC_FALLBACK_MODEL || "claude-sonnet-4-5"
+          modelFor("fallback")
         );
       }
     }
@@ -2261,7 +2284,7 @@ export async function findGaps(
         },
       ],
       signal,
-      process.env.ANTHROPIC_GAP_MODEL || "claude-haiku-4-5-20251001"
+      modelFor("gap")
     );
     const obj = JSON.parse(stripFences(raw)) as unknown;
     if (!isPlainObject(obj)) return [];
