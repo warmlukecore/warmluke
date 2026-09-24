@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Bricolage_Grotesque, Instrument_Serif, Inter, Manrope } from "next/font/google";
 import "./globals.css";
+import { THEME_SCRIPT } from "@/lib/theme";
+import { ThemeSync } from "@/components/ThemeSync";
 
 // The product's two faces. Twenty-one files reach for font-display,
 // fifteen of them inside the app itself, so these stay exactly as
@@ -50,8 +52,17 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${manrope.variable} ${bricolage.variable} ${instrument.variable} ${inter.variable}`}
+      // The theme is put on <html> by the script below before React
+      // arrives, so the attribute the server never wrote is expected.
+      suppressHydrationWarning
     >
-      <body className="antialiased">{children}</body>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
+      <body className="antialiased">
+        <ThemeSync />
+        {children}
+      </body>
     </html>
   );
 }

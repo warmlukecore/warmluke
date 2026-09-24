@@ -27,9 +27,12 @@ export const STORE = {
   currency: "USD",
   locale: "en-US",
   timezone: "America/New_York",
-  /** Minutes since Shopify was last read. */
-  synced: 6,
 };
+
+/** How often the sample store is read again, as webhooks keep a real one current. */
+export const SYNC_EVERY_MIN = 15;
+/** When the sample store was last read, as of `now`: the latest quarter hour on the clock. */
+export const lastSync = (now: number) => new Date(now - (now % (SYNC_EVERY_MIN * 60_000))).toISOString();
 export const DAYS = 30;
 /** Stock under this is low, the same line the store's own alert would draw. */
 export const LOW_STOCK = 10;

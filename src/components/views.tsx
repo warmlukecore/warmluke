@@ -241,7 +241,7 @@ function actionsFor(
 }
 
 const ACTION_STYLES: Record<string, string> = {
-  primary: "bg-primary text-white hover:bg-primary-hover",
+  primary: "bg-primary text-on-primary hover:bg-primary-hover",
   danger: "bg-critical text-white hover:bg-critical-hover",
   neutral: "border border-line text-fg-muted hover:bg-surface-hover",
 };

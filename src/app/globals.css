@@ -98,6 +98,73 @@
   --shadow-dialog: 0 0 0 1px rgb(0 0 0 / 0.06), 0 24px 64px -12px rgb(0 0 0 / 0.35);
 }
 
+/* The app at night: every product token given its dark value, and
+   nothing else. The screens are built from these tokens only, so they
+   follow; the landing's own palette (ink, quiet, hair, accent) is not
+   here and stays light. Set on <html> for the app (src/lib/theme.ts),
+   or on any one element, as the landing's glimpse of the app does. */
+[data-theme="dark"] {
+  color-scheme: dark;
+  --color-frame: hsl(0 0% 6%);
+  --color-frame-raised: hsl(0 0% 13%);
+  --color-frame-line: hsl(0 0% 18%);
+  --color-frame-fg: hsl(0 0% 86%);
+  --color-frame-fg-muted: hsl(0 0% 56%);
+
+  --color-canvas: hsl(0 0% 9%);
+  --color-surface: hsl(0 0% 12.5%);
+  --color-surface-subdued: hsl(0 0% 11%);
+  --color-surface-hover: hsl(0 0% 16%);
+  --color-line: hsl(0 0% 20%);
+  --color-line-strong: hsl(0 0% 30%);
+
+  --color-fg: hsl(0 0% 93%);
+  --color-fg-muted: hsl(0 0% 67%);
+  --color-fg-faint: hsl(0 0% 50%);
+
+  /* Light on dark, as ink on paper is dark on light. */
+  --color-primary: hsl(0 0% 92%);
+  --color-primary-hover: hsl(0 0% 100%);
+  --color-on-primary: hsl(0 0% 9%);
+  --color-focus: hsl(214 100% 62%);
+  --color-link: hsl(212 100% 70%);
+
+  /* Tints become a deep wash of the hue, the words the light hue. */
+  --color-tone-attention: hsl(33 55% 17%);
+  --color-tone-attention-fg: hsl(36 100% 72%);
+  --color-tone-warning: hsl(50 45% 15%);
+  --color-tone-warning-fg: hsl(52 90% 66%);
+  --color-tone-success: hsl(150 42% 14%);
+  --color-tone-success-fg: hsl(145 60% 64%);
+  --color-tone-info: hsl(210 50% 17%);
+  --color-tone-info-fg: hsl(205 100% 76%);
+  --color-tone-critical: hsl(355 45% 17%);
+  --color-tone-critical-fg: hsl(355 100% 78%);
+  --color-tone-neutral: hsl(0 0% 20%);
+  --color-tone-neutral-fg: hsl(0 0% 72%);
+
+  --color-signal-neutral: hsl(0 0% 45%);
+  --color-critical: hsl(357 72% 52%);
+  --color-critical-hover: hsl(357 72% 58%);
+
+  /* On a dark page a shadow reads as nothing; the hairline carries the edge. */
+  --shadow-card: 0 1px 0 0 rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.07);
+  --shadow-control: 0 1px 0 0 rgb(0 0 0 / 0.5), inset 0 0 0 1px rgb(255 255 255 / 0.08);
+  --shadow-raised: 0 0 0 1px rgb(255 255 255 / 0.08), 0 6px 16px -4px rgb(0 0 0 / 0.6);
+  --shadow-popover: 0 0 0 1px rgb(255 255 255 / 0.09), 0 12px 32px -6px rgb(0 0 0 / 0.7);
+  --shadow-dialog: 0 0 0 1px rgb(255 255 255 / 0.08), 0 24px 64px -12px rgb(0 0 0 / 0.8);
+}
+
+/* Tailwind's dark: follows the app's own switch, not the computer's:
+   for the few raw colours that are not tokens (lib/tone.ts QUIET). */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* A black brand mark, the one logo that would vanish on a dark
+   surface: drawn white at night, wherever it appears. */
+[data-theme="dark"] img[src$="/logos/openai.svg"] {
+  filter: invert(1);
+}
+
 /* The one shadow that makes the dashboard preview float. Kept out of
    the components so the frosted panel and its twin cannot drift. */
 :root {

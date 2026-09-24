@@ -470,7 +470,7 @@ export default function GenericRenderer({
             {editable && (
               <button
                 onClick={() => setAdding(true)}
-                className="mt-3 rounded-lg bg-primary px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary-hover"
+                className="mt-3 rounded-lg bg-primary px-3.5 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-primary-hover"
               >
                 Add the first one
               </button>

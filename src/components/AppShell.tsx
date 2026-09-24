@@ -54,6 +54,7 @@ import { Icon } from "@/components/ui/Icon";
 import { ArrowRight, ChevronRight, Ellipsis, History, LayoutDashboard, Menu, Plus, Search, Settings, Sparkles, Zap } from "lucide-react";
 import { button, iconButton, note } from "@/components/ui/controls";
 import { Logo } from "@/components/ui/Logo";
+import { ThemeToggle } from "@/components/ThemeSync";
 
 /**
  * Rows are fetched a page at a time. Search, filters and stats run over
@@ -1810,12 +1811,13 @@ export default function AppShell({
               <div className="max-w-[9rem] truncate text-[11px] text-frame-fg-muted">{ownerEmail}</div>
             </div>
           </button>
+          <ThemeToggle className="ml-auto rounded-control p-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white" />
           {project && isOwner && (
             <button
               onClick={() => setSettingsOpen(true)}
               aria-label="Project settings"
               title="Rename, currency, delete"
-              className="ml-auto rounded-control p-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white"
+              className="rounded-control p-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white"
             >
               <Settings aria-hidden size={16} strokeWidth={1.75} />
             </button>

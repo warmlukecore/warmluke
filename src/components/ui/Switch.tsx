@@ -29,8 +29,10 @@ export function Switch({
     >
       <span
         aria-hidden
-        className={`h-4 w-4 rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.3)] transition-transform duration-200 ${
-          checked ? "translate-x-[18px]" : "translate-x-0.5"
+        className={`h-4 w-4 rounded-full shadow-[0_1px_2px_rgb(0_0_0/0.3)] transition-transform duration-200 ${
+          // On, the knob wears the colour made for the primary track, so it
+          // still stands out when a dark theme lights that track up.
+          checked ? "translate-x-[18px] bg-on-primary" : "translate-x-0.5 bg-white"
         }`}
       />
     </button>

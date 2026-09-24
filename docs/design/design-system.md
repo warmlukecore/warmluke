@@ -56,7 +56,8 @@ Rules:
 | `Group` | [`ui/Group.tsx`](../../src/components/ui/Group.tsx) | A bordered, headed part of a long form; `danger` for what cannot be undone, always last |
 | `Switch` | [`ui/Switch.tsx`](../../src/components/ui/Switch.tsx) | `role="switch"`; always shown with its state in words beside it |
 | `PasswordInput` | [`ui/PasswordInput.tsx`](../../src/components/ui/PasswordInput.tsx) | A password field with show and hide |
-| `PageFrame` | [`PageFrame.tsx`](../../src/components/PageFrame.tsx) | Dashboard, accounts and demo requests: dark top bar, tabs, account menu, rounded page |
+| `PageFrame` | [`PageFrame.tsx`](../../src/components/PageFrame.tsx) | Dashboard, accounts and demo requests: dark top bar, tabs, theme switch, account menu, rounded page |
+| `ThemeToggle` | [`ThemeSync.tsx`](../../src/components/ThemeSync.tsx) | The light and dark switch, one icon; given `value` and `onChange` it switches only what its owner holds |
 | `OverviewBoard` | [`Overview.tsx`](../../src/components/Overview.tsx) | The store overview drawn from counts already made; `Overview` loads them and hands them to it, and the landing hands it the sample store |
 | `Stat`, `Breakdown` | [`AdminParts.tsx`](../../src/components/AdminParts.tsx) | The admin screens' numbers: a figure with a line under it, and the top answers as bars |
 | `CenteredCard` | [`CenteredCard.tsx`](../../src/components/CenteredCard.tsx) | One card under the mark: sign-in, sign-up, password reset, connect, invite, AI consent |
@@ -75,6 +76,21 @@ drawn. A store status is recognised only in Shopify's own form (capitals and
 underscores, `PARTIALLY_PAID`), so a merchant's own "Pending" in their repairs section is
 never shown as a payment. Everything else gets one of the calm colours, chosen by the
 word, so the same word always looks the same. `check-tone` holds this.
+
+## Light and dark
+
+The app has both. The dark theme is every product token given a night value under
+`[data-theme="dark"]` in `globals.css`, and nothing else: screens built from tokens
+follow without a line of their own. `ThemeToggle` (`components/ThemeSync.tsx`) sits in
+the app's sidebar and the page frame; the choice is kept in the browser and put on
+`<html>` before the first paint (`lib/theme.ts`), so a dark app does not flash white.
+
+- The pages a visitor is sold on (`/`, privacy, terms) stay light whatever was chosen.
+- A primary fill carries `text-on-primary`, never `text-white`: at night primary is light.
+- The calm badge colours in `lib/tone.ts` are the app's only raw colours, so each has a
+  `dark:` pair; `dark:` follows the app's switch, not the computer's.
+- `check-theme` fails a token without a night value, white words on primary, or a calm
+  colour without its pair.
 
 ## Icons and motion
 
@@ -117,9 +133,13 @@ Anything on the landing that may bleed past its column relies on the page root's
 The first screen's dashboard is the app itself, not a drawing of it: `StorePreview`
 draws the app's frame in the product tokens and fills it with the app's own
 `OverviewBoard`, `TableView` and `BoardView`, fed the sample store in
-`lib/sample-store.ts` instead of a database. It is drawn at a laptop's width (the app's
-breakpoints read the window) and zoomed to fit, a phone gets the app's phone layout,
-and it fades out at the bottom: a glimpse, not the whole app. Every figure about
+`lib/sample-store.ts` instead of a database. It is drawn at the visitor's own screen
+size (the app's breakpoints read the window, so any other size would pick a layout
+for a screen it is not on) and zoomed into the column: a laptop sees the laptop app, a
+phone the phone app. It stands on the first screen's bottom edge and fades out there:
+a glimpse, not the whole app. Its theme switch works on the glimpse alone and starts
+light for every visitor; a link out of it (the store's Shopify admin) brings a word
+from Luke instead of a dead page. Every figure about
 "your store" on the landing, Luke's answers and drawings included, is read from that
 one sample, so a change to it changes all of them together. When the app's screens
 change, the glimpse changes with them; nothing needs redrawing.

@@ -86,15 +86,17 @@ export const TONE_CLASSES: Record<Tone, string> = {
  * the same word always looks the same. None of them is a tone: nothing
  * here may read as "needs attention" or "failed" about a category.
  */
+// Each with its night pair: these are the app's only raw colours, so the
+// dark theme's tokens do not reach them (check-theme holds them to it).
 const QUIET = [
-  "bg-sky-100 text-sky-900",
-  "bg-violet-100 text-violet-900",
-  "bg-teal-100 text-teal-900",
-  "bg-indigo-100 text-indigo-900",
-  "bg-lime-100 text-lime-900",
-  "bg-fuchsia-100 text-fuchsia-900",
-  "bg-cyan-100 text-cyan-900",
-  "bg-stone-200 text-stone-800",
+  "bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-200",
+  "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-violet-200",
+  "bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-200",
+  "bg-indigo-100 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-200",
+  "bg-lime-100 text-lime-900 dark:bg-lime-950 dark:text-lime-200",
+  "bg-fuchsia-100 text-fuchsia-900 dark:bg-fuchsia-950 dark:text-fuchsia-200",
+  "bg-cyan-100 text-cyan-900 dark:bg-cyan-950 dark:text-cyan-200",
+  "bg-stone-200 text-stone-800 dark:bg-stone-800 dark:text-stone-200",
 ];
 
 /** One of the calm colours, the same one every time for the same word. */

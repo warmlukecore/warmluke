@@ -62,7 +62,8 @@ import { AskLuke, DemoForm, FloatingNav, LandingTracker, NavLinks, type Ask } fr
 import { whatCanChange, whatNeverChanges } from "@/lib/store-actions";
 import { Logo } from "@/components/ui/Logo";
 import { StorePreview } from "@/components/StorePreview";
-import { FIGURES, FOLLOW_UP, LOW, LOW_STOCK, STORE, Spell, money, spell, variantName } from "@/lib/sample-store";
+import { FIGURES, FOLLOW_UP, LOW, LOW_STOCK, Spell, lastSync, money, spell, variantName } from "@/lib/sample-store";
+import { ago } from "@/lib/when";
 
 export const metadata = {
   title: "Warmluke: one place for your ecommerce business",
@@ -223,14 +224,14 @@ const ASKS: Ask[] = [
     a: "Low stock by variant and location, straight from what Shopify last told us.",
     said: "What's running low?",
     reply: `${Spell(LOW.length)} variants are under ${spell(LOW_STOCK)} at your main location: ${LOW.map((v) => `${variantName(v)} (${v.stock})`).join(", ")}. Want a low-stock board your team can work from?`,
-    from: ["Shopify", `synced ${STORE.synced} min ago`],
+    from: ["Shopify"],
     show: "stock",
   },
   {
     q: "What happened in orders yesterday?",
     a: "Orders for a real calendar day in your store's own timezone. Totals, status, who ordered.",
     reply: yesterdayReply(),
-    from: ["Shopify", `synced ${STORE.synced} min ago`],
+    from: ["Shopify"],
     show: "orders",
   },
   {
@@ -238,7 +239,7 @@ const ASKS: Ask[] = [
     a: "Look somebody up by name, email or phone and see what they bought.",
     said: `Find ${FOLLOW_UP.name}'s orders.`,
     reply: `${FOLLOW_UP.name} has ${spell(FOLLOW_UP.orders.length)} orders this month, ${money(FOLLOW_UP.spent)} in all. The latest, #${FOLLOW_UP.orders[0].number}, is still awaiting payment. Their phone and email are on the order if you want to follow up.`,
-    from: ["Shopify", `synced ${STORE.synced} min ago`],
+    from: ["Shopify"],
     show: "customer",
   },
   {
@@ -548,8 +549,11 @@ export default async function Landing({
       {roll && <style dangerouslySetInnerHTML={{ __html: roll }} />}
       {toolRoll && <style dangerouslySetInnerHTML={{ __html: toolRoll }} />}
 
-      {/* ── The first screen: exactly one viewport ───────────── */}
-      <div className="relative flex h-screen flex-col overflow-hidden">
+      {/* ── The first screen, and the app under it ──────────── */}
+      {/* At least one viewport, not exactly one: the glimpse of the app
+          under the headline is something to click through, and a hero
+          cut to the window height sliced it off wherever the fold fell. */}
+      <div className="relative flex min-h-screen flex-col overflow-hidden">
         {/* The film, and what is behind it.
     
             The white panel is not decoration: it is what a visitor
@@ -596,6 +600,10 @@ export default async function Landing({
               is dark on white, and a frame that goes dark for half a
               second takes the headline with it. */}
           <div className="absolute inset-0 bg-white/55" />
+          {/* The film gives way to the page at the bottom rather than
+              stopping at an edge, and the glimpse of the app fades into
+              the same white. */}
+          <div className="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-b from-transparent to-white" />
         </div>
 
         {/* gap-3 rather than justify-between alone: at 375px with the
@@ -758,7 +766,7 @@ export default async function Landing({
           )}
 
           <div
-            className="rise mt-8 w-full max-w-5xl"
+            className="rise mt-auto w-full max-w-6xl pt-8"
             style={{ "--rise-from": "30px", "--rise-for": "0.8s", "--rise-after": "0.5s" } as React.CSSProperties}
           >
             <StorePreview />
@@ -768,7 +776,11 @@ export default async function Landing({
 
       {/* ── Luke doing real work ─────────────────────────────── */}
       <Section id="luke" title="Ask Luke like you'd ask someone on your team.">
-        <AskLuke asks={ASKS} after={<Cta where="asks">See what Luke could do for your store →</Cta>} />
+        {/* How fresh the store is, said per request: the same clock as the glimpse above. */}
+        <AskLuke
+          asks={ASKS.map((a) => (a.from[0] === "Shopify" ? { ...a, from: [...a.from, `synced ${ago(lastSync(Date.now()), Date.now())}`] } : a))}
+          after={<Cta where="asks">See what Luke could do for your store →</Cta>}
+        />
       </Section>
 
       {/* ── Proactive ────────────────────────────────────────── */}

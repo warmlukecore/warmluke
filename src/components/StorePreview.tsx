@@ -14,7 +14,16 @@
 // zoomed to fit, it fades out at the bottom, and only the overview and
 // the sections a merchant starts with can be opened. Luke's panel is
 // there as it first appears, and pressing it goes to the part of the
-// page that shows Luke working.
+// page that shows Luke working. A link out of the app, to the store's
+// Shopify admin, would lead nowhere for a sample store, so Luke says
+// that instead.
+//
+// Light or dark, as the app can be: the switch in its header is the
+// app's own, working on the glimpse alone. It starts light for every
+// visitor and neither reads nor changes the theme a signed-in person
+// chose for the app: the page that sells the product looks the same to
+// everyone. The clock is the visitor's, and the store is read again
+// every quarter hour, so the greeting and "synced" keep time.
 //
 // Drawn only in the browser: the greeting and the dates are the
 // visitor's today, which the server rendering the page cannot know.
@@ -23,7 +32,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Bell, ChevronRight, ChevronsUpDown, LayoutDashboard, Menu, Plus, RefreshCw, Search, Settings, Sparkles, X, Zap } from "lucide-react";
+import { ArrowUp, Bell, ChevronRight, ChevronsUpDown, LayoutDashboard, Menu, Plus, RefreshCw, Search, Settings, Sparkles, X } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
 import { LukeMark } from "@/components/ui/LukeMark";
 import { Icon } from "@/components/ui/Icon";
@@ -35,6 +44,9 @@ import type { RecordRow, SchemaColumn } from "@/lib/types";
 import { CORE_STORE_TABLES, STORE_TABLES, type StoreTable } from "@/lib/store-read";
 import { LUKE_COPY } from "@/lib/luke-copy";
 import { FormatProvider } from "@/lib/format";
+import { ago } from "@/lib/when";
+import { ThemeToggle } from "@/components/ThemeSync";
+import type { Theme } from "@/lib/theme";
 import {
   CUSTOMERS,
   DAYS,
@@ -48,21 +60,32 @@ import {
   STORE,
   VARIANTS,
   cityOf,
+  lastSync,
   sku,
   type Order,
 } from "@/lib/sample-store";
 
 /**
- * The size the app is drawn at on a laptop, before it is zoomed to fit.
- * The app's own breakpoints read the window, not this box, so it is
- * drawn as wide as the window those breakpoints expect: narrower, and
- * the overview's four figures crowd a canvas they were not laid out for.
+ * The app is drawn at the size of the visitor's own screen, then zoomed
+ * into the page's column: the glimpse on a phone is the app on that
+ * phone, on a laptop the app on that laptop. It has to be. The app's
+ * breakpoints read the window, not this box, so drawn at any other
+ * width its layout would be chosen for a screen it is not on.
+ *
+ * Under the app's own switch (its sidebar docks at lg), the phone
+ * layout; above it, the laptop's, drawn no wider than MAX_W so a wide
+ * monitor's glimpse is not zoomed into words too small to read.
  */
-const WIDE = { w: 1440, h: 820 };
-/** A phone draws the app's phone layout at least this wide, and this tall. */
-const PHONE = { w: 390, h: 700 };
-/** Under this many pixels across, the phone layout. */
-const NARROW_BELOW = 700;
+const APP_DOCKS_AT = 1024;
+const MAX_W = 1440;
+const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
+type Drawn = { w: number; h: number; narrow: boolean };
+function drawnFor(): Drawn {
+  const { innerWidth: vw, innerHeight: vh } = window;
+  return vw < APP_DOCKS_AT
+    ? { w: vw, h: clamp(Math.round(vh * 0.8), 560, 760), narrow: true }
+    : { w: Math.min(MAX_W, vw), h: clamp(vh, 640, 900), narrow: false };
+}
 /** The order a return moves through, so the board's columns read left to right. */
 const STAGES = ["Requested", "Received", "Refunded"];
 /** The section Luke built in the sample store, shown under "Your sections". */
@@ -93,7 +116,7 @@ function overviewOf(now: number): OverviewData {
       status: "connected",
       currency: STORE.currency,
       timezone: STORE.timezone,
-      last_synced_at: new Date(now - STORE.synced * 60_000).toISOString(),
+      last_synced_at: lastSync(now),
     },
     days: DAYS,
     chart_days: chartDays,
@@ -195,44 +218,59 @@ const TRACKER_COLUMNS: SchemaColumn[] = [
 export function StorePreview() {
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState<number | null>(null);
+  const [drawn, setDrawn] = useState<Drawn | null>(null);
   const [now, setNow] = useState(0);
+  const [theme, setTheme] = useState<Theme>("light");
 
   useEffect(() => {
     setNow(Date.now());
+    // Often enough that "synced" and the greeting turn over on time.
+    const tick = setInterval(() => setNow(Date.now()), 30_000);
     const el = box.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width));
-    ro.observe(el);
-    return () => ro.disconnect();
+    // The column and the window change together when a window is
+    // resized or a phone turned, and either changes what is drawn.
+    const measure = () => {
+      if (el) setWidth(el.clientWidth);
+      setDrawn(drawnFor());
+    };
+    const ro = new ResizeObserver(measure);
+    if (el) ro.observe(el);
+    window.addEventListener("resize", measure);
+    return () => {
+      clearInterval(tick);
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
   }, []);
 
-  const narrow = width !== null && width < NARROW_BELOW;
-  // A phone narrower than the phone layout is drawn at that width and zoomed down to fit.
-  const drawn = width === null ? null : narrow ? { w: Math.max(PHONE.w, width), h: PHONE.h } : WIDE;
-  const zoom = width === null || !drawn ? 1 : width / drawn.w;
+  const zoom = width && drawn ? width / drawn.w : 1;
 
   return (
     <section
       aria-label="A glimpse of Warmluke, on a sample store"
-      className="rounded-2xl p-2 md:p-3"
+      // Open at the bottom, standing on the first screen's edge: a window
+      // coming up out of the page, not a card floating above it.
+      className="rounded-t-2xl px-2 pt-2 md:px-3 md:pt-3"
       style={{
         background: "rgb(255 255 255 / 0.55)",
         border: "1px solid rgb(255 255 255 / 0.6)",
+        borderBottom: "none",
         boxShadow: "var(--shadow-dashboard)",
       }}
     >
       {/* The bottom fades out: this is a look in, not the whole app. */}
       <div
         ref={box}
-        className="relative overflow-hidden rounded-xl text-left [mask-image:linear-gradient(to_bottom,black_80%,transparent)]"
-        style={{ height: drawn ? drawn.h * zoom : undefined }}
+        data-theme={theme}
+        className="relative overflow-hidden rounded-t-xl text-left [mask-image:linear-gradient(to_bottom,black_80%,transparent)]"
+        style={{ height: drawn && width ? drawn.h * zoom : undefined }}
       >
-        {!drawn ? (
-          <div className="aspect-[390/700] bg-frame md:aspect-[1440/820]" />
+        {!drawn || !width ? (
+          <div className="aspect-[390/640] bg-frame lg:aspect-[16/10]" />
         ) : (
           <div style={{ width: drawn.w, height: drawn.h, zoom }}>
             <FormatProvider locale={STORE.locale} currency={STORE.currency}>
-              <App now={now} narrow={narrow} />
+              <App now={now} narrow={drawn.narrow} theme={theme} onTheme={setTheme} />
             </FormatProvider>
           </div>
         )}
@@ -241,11 +279,19 @@ export function StorePreview() {
   );
 }
 
-function App({ now, narrow }: { now: number; narrow: boolean }) {
+function App({ now, narrow, theme, onTheme }: { now: number; narrow: boolean; theme: Theme; onTheme: (t: Theme) => void }) {
   const [place, setPlace] = useState<Place>("overview");
   const [navOpen, setNavOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<{ field: string; dir: "asc" | "desc" } | null>(null);
+  const [leaving, setLeaving] = useState(false);
+
+  // Luke's word on a link out of a sample store goes after a while on its own.
+  useEffect(() => {
+    if (!leaving) return;
+    const t = setTimeout(() => setLeaving(false), 7000);
+    return () => clearTimeout(t);
+  }, [leaving]);
   const data = useMemo(() => overviewOf(now), [now]);
   const latest: DetailRow[] = useMemo(
     () => rowsOf("orders", now).slice(0, 6).map((r, i) => ({ id: `latest-${i}`, data: r })),
@@ -347,7 +393,7 @@ function App({ now, narrow }: { now: number; narrow: boolean }) {
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-signal-success" />
           <span className="min-w-0 flex-1 leading-tight">
             Connected
-            <span className="block text-[11px] text-frame-fg-muted">synced {STORE.synced} min ago</span>
+            <span className="block text-[11px] text-frame-fg-muted">synced {ago(lastSync(now), now)}</span>
           </span>
           <span className="flex shrink-0 items-center gap-1 text-frame-fg-muted">
             <RefreshCw aria-hidden size={13} strokeWidth={2} />
@@ -452,6 +498,14 @@ function App({ now, narrow }: { now: number; narrow: boolean }) {
 
   return (
     <div
+      onClickCapture={(e) => {
+        // A link out of the app: the sample store has no admin to open.
+        const a = (e.target as HTMLElement).closest("a[href]");
+        if (a && /^https?:/.test(a.getAttribute("href") ?? "")) {
+          e.preventDefault();
+          setLeaving(true);
+        }
+      }}
       className={`font-ui relative flex h-full overflow-hidden bg-frame text-fg ${narrow ? "" : "gap-2 p-2 pl-0"}`}
       // Headings inside the app are set in the same face as the rest, as
       // the app itself does; the display face belongs to the landing page.
@@ -470,10 +524,7 @@ function App({ now, narrow }: { now: number; narrow: boolean }) {
             <h1 className="truncate text-base font-semibold text-fg sm:text-lg">{title}</h1>
           </div>
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-            <span className={button("secondary")}>
-              <Zap aria-hidden size={15} strokeWidth={1.75} />
-              {!narrow && <span>Rules</span>}
-            </span>
+            <ThemeToggle className={iconButton} value={theme} onChange={onTheme} />
             {narrow && (
               <a href="#luke" aria-label="Ask Luke" data-cta="preview_luke" className={button("primary")}>
                 <Sparkles aria-hidden size={15} strokeWidth={1.75} />
@@ -486,6 +537,23 @@ function App({ now, narrow }: { now: number; narrow: boolean }) {
         </div>
       </main>
       {!narrow && luke}
+      {leaving && (
+        <div role="status" className="pop absolute top-20 left-1/2 z-50 flex w-[26rem] max-w-[calc(100%-2rem)] -translate-x-1/2 items-start gap-3 rounded-card bg-surface p-4 text-left shadow-popover">
+          <LukeMark size="sm" />
+          <div className="min-w-0 flex-1">
+            <div className="text-[13px] font-semibold text-fg">Luke</div>
+            <p className="mt-0.5 text-[13px] leading-relaxed text-fg-muted">
+              That is a sample store, so there is no Shopify admin behind it. Connect yours, and this opens your own.
+            </p>
+            <a href="#book" data-cta="preview_admin_book" onClick={() => setLeaving(false)} className={`${button("primary", "sm")} mt-2.5`}>
+              Book a demo
+            </a>
+          </div>
+          <button onClick={() => setLeaving(false)} aria-label="Close" className={`${iconButton} -mt-1 -mr-1`}>
+            <X aria-hidden size={15} strokeWidth={1.75} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

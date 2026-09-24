@@ -335,7 +335,7 @@ function ClarifyCard({
         <button
           onClick={submit}
           disabled={answered.length === 0}
-          className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-hover disabled:opacity-40"
+          className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-on-primary transition-colors hover:bg-primary-hover disabled:opacity-40"
         >
           Send answers ({answered.length}/{questions.length})
         </button>
@@ -519,7 +519,7 @@ function BlueprintCard({
           <button
             onClick={() => onApprove(chosen)}
             disabled={chosen.length === 0}
-            className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-hover disabled:opacity-40"
+            className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-on-primary transition-colors hover:bg-primary-hover disabled:opacity-40"
           >
             Build {chosen.length === 1 ? "this" : `these ${chosen.length}`}
           </button>
@@ -1357,7 +1357,7 @@ export default function ChatPanel({
                     <button
                       onClick={() => sendShopChange(a.id, "run")}
                       disabled={busy}
-                      className="rounded-lg bg-primary px-2 py-1 text-[10px] font-medium text-white hover:bg-primary-hover disabled:opacity-40"
+                      className="rounded-lg bg-primary px-2 py-1 text-[10px] font-medium text-on-primary hover:bg-primary-hover disabled:opacity-40"
                     >
                       {busy ? "Sending…" : WAITING_BUTTONS.runStoreAction}
                     </button>
@@ -1616,7 +1616,7 @@ export default function ChatPanel({
                     <button
                       onClick={() => buildRequest(r)}
                       disabled={busy}
-                      className="rounded-lg bg-primary px-2 py-1 text-[10px] font-medium text-white hover:bg-primary-hover disabled:opacity-40"
+                      className="rounded-lg bg-primary px-2 py-1 text-[10px] font-medium text-on-primary hover:bg-primary-hover disabled:opacity-40"
                     >
                       {WAITING_BUTTONS.build}
                     </button>
@@ -2162,7 +2162,7 @@ export default function ChatPanel({
                     <button
                       onClick={() => apply(plan, m.id)}
                       disabled={isPending}
-                      className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-hover disabled:opacity-50"
+                      className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-on-primary transition-colors hover:bg-primary-hover disabled:opacity-50"
                     >
                       {answered ? "Dealt with" : isPending ? "Applying…" : "Apply this"}
                     </button>
@@ -2260,7 +2260,7 @@ export default function ChatPanel({
                         buildRequest(r);
                       }}
                       disabled={busy}
-                      className="rounded-lg bg-primary px-2 py-1 text-[10px] font-medium text-white hover:bg-primary-hover disabled:opacity-40"
+                      className="rounded-lg bg-primary px-2 py-1 text-[10px] font-medium text-on-primary hover:bg-primary-hover disabled:opacity-40"
                     >
                       {WAITING_BUTTONS.build}
                     </button>
@@ -2489,7 +2489,7 @@ export default function ChatPanel({
             <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
               <button
                 onClick={() => setWantsPlan(true)}
-                className="rounded-lg bg-primary px-2.5 py-1.5 text-[11px] font-medium text-white hover:bg-primary-hover"
+                className="rounded-lg bg-primary px-2.5 py-1.5 text-[11px] font-medium text-on-primary hover:bg-primary-hover"
               >
                 Get Warmluke AI
               </button>

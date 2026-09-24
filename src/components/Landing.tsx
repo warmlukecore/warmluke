@@ -722,7 +722,7 @@ export function NavLinks() {
           key={n.id}
           href={`#${n.id}`}
           data-cta={`nav_${n.id}`}
-          className={`rounded-full px-3.5 py-1.5 text-sm text-quiet transition-colors hover:bg-white hover:text-ink ${n.wide ? "hidden md:inline" : ""}`}
+          className={`rounded-full px-3.5 py-1.5 text-sm whitespace-nowrap text-quiet transition-colors hover:bg-white hover:text-ink ${n.wide ? "hidden lg:inline" : ""}`}
         >
           {n.label}
         </a>
