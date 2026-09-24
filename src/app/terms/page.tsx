@@ -8,13 +8,12 @@
 // cannot tell what they agreed to has not really agreed to it.
 // ─────────────────────────────────────────────────────────────
 
-import Image from "next/image";
 import Link from "next/link";
 // What the store can have changed, and what it never will, come off
 // the registry — the same words the connect box and the landing page
 // use. A list written here by hand was already wrong once.
 import { whatCanChange, whatNeverChanges } from "@/lib/store-actions";
-import { LOGO } from "@/lib/brand";
+import { Logo } from "@/components/ui/Logo";
 
 export const metadata = {
   title: "Terms · Warmluke",
@@ -40,13 +39,7 @@ export default function Terms() {
       <header className="border-b border-hair">
         <div className="mx-auto flex w-full max-w-2xl items-center justify-between px-4 py-5 sm:px-6">
           <Link href="/" className="flex items-center gap-2">
-            <Image
-              src={LOGO}
-              alt=""
-              width={28}
-              height={28}
-              className="h-7 w-7 object-contain"
-            />
+            <Logo className="h-5" />
             <span className="text-lg font-semibold tracking-tight">Warmluke</span>
           </Link>
           <Link href="/" className="text-sm text-quiet transition-colors hover:text-ink">

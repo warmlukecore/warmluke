@@ -28,12 +28,11 @@ import {
   UserRound,
   type LucideIcon,
 } from "lucide-react";
-import Image from "next/image";
 import { OrdersGlobe } from "@/components/OrdersGlobe";
 import { supabase } from "@/lib/supabase-client";
 import { UTM_KEYS, type Utm } from "@/lib/landing";
 import { bookDemo, type BookingState } from "@/app/actions";
-import { LOGO } from "@/lib/brand";
+import { Logo } from "@/components/ui/Logo";
 
 const SESSION_KEY = "wl_session";
 
@@ -579,7 +578,7 @@ export function FloatingNav({ cta }: { cta: string }) {
         className="flex items-center gap-1 rounded-full border border-hair bg-white/80 p-1 pl-2 shadow-[0_12px_32px_-12px_rgb(0_0_0/0.18)] backdrop-blur-md"
       >
         <a href="#top" data-cta="float_top" aria-label="Back to the top" className="mr-1 flex shrink-0 items-center">
-          <Image src={LOGO} alt="" width={24} height={24} className="h-6 w-6 object-contain" />
+          <Logo className="h-4" />
         </a>
         {NAV.map((n) => (
           <a

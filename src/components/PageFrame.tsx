@@ -6,13 +6,12 @@
 // leaving the product.
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LayoutGrid, LogOut, ShieldCheck } from "lucide-react";
 import { signOut } from "@/lib/auth";
 import { menu, menuItem } from "@/components/ui/controls";
-import { LOGO } from "@/lib/brand";
+import { Logo } from "@/components/ui/Logo";
 
 export function PageFrame({
   email,
@@ -41,7 +40,7 @@ export function PageFrame({
     <div className="font-ui flex min-h-dvh flex-col bg-frame text-fg">
       <header className="flex h-14 shrink-0 items-center gap-2 px-3 sm:px-5">
         <Link href="/dashboard" className="mr-2 flex items-center gap-2.5">
-          <Image src={LOGO} alt="" width={28} height={28} priority className="h-7 w-7 object-contain" />
+          <Logo className="h-5" onDark priority />
           <span className="text-sm font-semibold text-white">Warmluke</span>
         </Link>
         {tab("/dashboard", "Projects", LayoutGrid)}

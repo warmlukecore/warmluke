@@ -2,23 +2,15 @@
 // screens a person passes through on the way somewhere — connecting a
 // store, opening an invite, letting their own AI in.
 
-import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { LOGO } from "@/lib/brand";
+import { Logo } from "@/components/ui/Logo";
 
 export function CenteredCard({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
   return (
     <div className="font-ui flex min-h-dvh flex-col items-center justify-center bg-canvas px-4 py-10">
       <Link href="/" className="mb-6 flex items-center gap-2.5 rounded-control focus-visible:outline-2 focus-visible:outline-focus">
-        <Image
-          src={LOGO}
-          alt=""
-          width={32}
-          height={32}
-          priority
-          className="h-8 w-8 object-contain"
-        />
+        <Logo className="h-6" priority />
         <span className="text-[15px] font-semibold text-fg">Warmluke</span>
       </Link>
       <div

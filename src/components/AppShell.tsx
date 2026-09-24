@@ -51,10 +51,9 @@ import type {
 } from "@/lib/types";
 import { TITLE_MAX } from "@/lib/types";
 import { Icon } from "@/components/ui/Icon";
-import Image from "next/image";
 import { ArrowRight, ChevronRight, Ellipsis, History, LayoutDashboard, Menu, Plus, Search, Settings, Sparkles, Zap } from "lucide-react";
 import { button, iconButton, note } from "@/components/ui/controls";
-import { LOGO } from "@/lib/brand";
+import { Logo } from "@/components/ui/Logo";
 
 /**
  * Rows are fetched a page at a time. Search, filters and stats run over
@@ -1805,13 +1804,7 @@ export default function AppShell({
             className="flex min-w-0 items-center gap-2.5 text-left"
             title="Back to dashboard"
           >
-            <Image
-              src={LOGO}
-              alt=""
-              width={28}
-              height={28}
-              className="h-7 w-7 shrink-0 object-contain"
-            />
+            <Logo className="h-5" onDark />
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold text-white">{project?.name ?? "Warmluke"}</div>
               <div className="max-w-[9rem] truncate text-[11px] text-frame-fg-muted">{ownerEmail}</div>

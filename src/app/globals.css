@@ -395,6 +395,21 @@
   animation: from-left 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* The landing's MCP picture: a stretch of light running the length of a
+   path (pathLength 100) and off its end, then again. */
+@keyframes beam-run {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+.beam-run {
+  stroke-dasharray: 24 300;
+  animation: beam-run 2.8s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+
 /* A text caret, for a prompt that is being typed into. */
 @keyframes caret {
   50% {
@@ -437,6 +452,7 @@ html:has(dialog.wl-dialog[open]) {
   .pop,
   .orbit,
   .orbit-back,
+  .beam-run,
   .caret,
   .word-in,
   .from-right,

@@ -28,7 +28,9 @@ try {
 }
 check("exactly one image is there", !!logo);
 check("and it is really a file", !!logo && statSync(path.join(root, "public", decodeURIComponent(logo))).isFile());
-check("the build reads it", /env:\s*\{[\s\S]*?NEXT_PUBLIC_LOGO:\s*findLogo\(projectDir\)/.test(readFileSync(path.join(root, "next.config.mjs"), "utf8")));
+const config = readFileSync(path.join(root, "next.config.mjs"), "utf8");
+check("the build reads it", /const logo = findLogo\(projectDir\)/.test(config) && /NEXT_PUBLIC_LOGO:\s*logo\b/.test(config));
+check("and measures where the mark sits in it", /NEXT_PUBLIC_LOGO_BOX:\s*logoBox/.test(config));
 
 console.log("\nand nothing names it");
 const walk = (dir) =>

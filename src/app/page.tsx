@@ -35,7 +35,6 @@
 // ─────────────────────────────────────────────────────────────
 
 import { Fragment } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { cookies, headers } from "next/headers";
 import { cycleCss, DEFAULT_HERO, headlineParts, heroById, resolveHero, VARIANT_COOKIE } from "@/lib/landing";
@@ -62,7 +61,7 @@ import {
 } from "lucide-react";
 import { AskLuke, DemoForm, FloatingNav, LandingTracker, NavLinks, type Ask } from "@/components/Landing";
 import { whatCanChange, whatNeverChanges } from "@/lib/store-actions";
-import { LOGO } from "@/lib/brand";
+import { Logo } from "@/components/ui/Logo";
 
 export const metadata = {
   title: "Warmluke: one place for your ecommerce business",
@@ -380,13 +379,7 @@ function Preview() {
         {/* Top bar */}
         <div className="flex items-center gap-3 border-b border-hair px-3 py-2">
           <div className="flex items-center gap-1.5">
-            <Image
-              src={LOGO}
-              alt=""
-              width={20}
-              height={20}
-              className="h-5 w-5 object-contain"
-            />
+            <Logo className="h-3.5" />
             <span className="font-medium text-ink">Warmluke</span>
             <span className="text-quiet">▾</span>
           </div>
@@ -597,36 +590,80 @@ function Hub() {
       <Ring names={CONNECTORS.filter((c) => !c.ready)} inset="7%" seconds={120} turn={45} />
       <Ring names={CONNECTORS.filter((c) => c.ready)} inset="28%" seconds={80} turn={-90} />
       <div className="absolute top-1/2 left-1/2 flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-3xl bg-white shadow-[var(--shadow-dashboard)]">
-        <Image src={LOGO} alt="" width={48} height={48} className="h-12 w-12 object-contain" />
+        <Logo className="h-8" />
       </div>
     </div>
   );
 }
 
-/** Claude or ChatGPT, through MCP, into Warmluke. */
+/**
+ * Claude or ChatGPT, through MCP, into Warmluke: two curved paths meeting
+ * at Warmluke, with light running along each (an animated beam). The
+ * paths are one SVG and the tiles sit on it by the same coordinates, so
+ * a line always ends at the middle of its tile, at any width.
+ */
+const BRIDGE = { w: 480, h: 200, from: [{ name: "Claude", src: "/logos/claude.svg", x: 70, y: 52 }, { name: "ChatGPT", src: "/logos/openai.svg", x: 70, y: 148 }], to: { x: 404, y: 100 } };
+
 function Bridge() {
+  const { w, h, from, to } = BRIDGE;
+  const at = (x: number, y: number) => ({ left: `${(x / w) * 100}%`, top: `${(y / h) * 100}%` });
+  const path = (x: number, y: number) => `M${x} ${y} C ${x + 150} ${y}, ${to.x - 170} ${to.y}, ${to.x} ${to.y}`;
   return (
-    <div aria-hidden="true" className="flex items-center gap-3 rounded-2xl border border-hair bg-neutral-50 px-4 py-5 sm:px-6">
-      <div className="flex shrink-0 flex-col gap-2">
-        {[
-          ["Claude", "/logos/claude.svg"],
-          ["ChatGPT", "/logos/openai.svg"],
-        ].map(([name, src]) => (
-          <div key={name} className="flex items-center gap-2 rounded-xl border border-hair bg-white px-3 py-2 text-xs font-medium text-ink">
-            {/* eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise */}
-            <img src={src} alt="" width={16} height={16} className="h-4 w-4 object-contain" />
-            {name}
+    <div aria-hidden="true" className="rounded-2xl border border-hair bg-neutral-50 p-3">
+      <div className="relative w-full" style={{ aspectRatio: `${w} / ${h}` }}>
+        <svg viewBox={`0 0 ${w} ${h}`} className="absolute inset-0 h-full w-full" fill="none">
+          <defs>
+            <linearGradient id="bridge-light" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2={w} y2="0">
+              <stop offset="0" style={{ stopColor: "var(--color-luke-light)" }} />
+              <stop offset="1" style={{ stopColor: "var(--color-luke)" }} />
+            </linearGradient>
+          </defs>
+          {from.map((f, i) => (
+            <g key={f.name}>
+              <path d={path(f.x, f.y)} strokeWidth="2" style={{ stroke: "rgb(0 0 0 / 0.1)" }} />
+              <path
+                d={path(f.x, f.y)}
+                pathLength={100}
+                strokeWidth="3"
+                strokeLinecap="round"
+                stroke="url(#bridge-light)"
+                className="beam-run"
+                style={{ animationDelay: `${i * 1.4}s` }}
+              />
+            </g>
+          ))}
+        </svg>
+
+        {from.map((f) => (
+          <div key={f.name} className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1" style={at(f.x, f.y)}>
+            <span className="flex h-11 w-11 items-center justify-center rounded-full border border-hair bg-white shadow-[0_6px_20px_-8px_rgb(0_0_0/0.25)]">
+              {/* eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise */}
+              <img src={f.src} alt="" width={20} height={20} className="h-5 w-5 object-contain" />
+            </span>
           </div>
         ))}
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col items-center gap-2">
-        <span className="rounded-full border border-accent/30 bg-white px-2 py-0.5 text-[10px] font-semibold tracking-widest text-accent">
+        {from.map((f) => (
+          <span
+            key={`${f.name}-name`}
+            className="absolute -translate-y-1/2 text-[11px] font-medium text-quiet"
+            style={{ left: `${((f.x + 30) / w) * 100}%`, top: `${((f.y + (f.y < to.y ? -16 : 16)) / h) * 100}%` }}
+          >
+            {f.name}
+          </span>
+        ))}
+
+        <span
+          className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full border border-luke-light/60 bg-white px-2 py-0.5 text-[10px] font-semibold tracking-widest text-luke"
+          style={at(to.x - 170, to.y)}
+        >
           MCP
         </span>
-        <div className="h-px w-full border-t border-dashed border-accent/50" />
-      </div>
-      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white shadow-[var(--shadow-dashboard)]">
-        <Image src={LOGO} alt="" width={36} height={36} className="h-9 w-9 object-contain" />
+
+        <div className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center" style={at(to.x, to.y)}>
+          <span className="flex h-16 w-16 items-center justify-center rounded-2xl border border-hair bg-white shadow-[var(--shadow-dashboard)]">
+            <Logo className="h-7" />
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -742,14 +779,7 @@ export default async function Landing({
             {/* The logo file as it is, with no tile of ours behind it;
                 sized and given dimensions so the navbar does not
                 jump while it loads. */}
-            <Image
-              src={LOGO}
-              alt=""
-              width={28}
-              height={28}
-              priority
-              className="h-7 w-7 object-contain"
-            />
+            <Logo className="h-5" priority />
             <span className="text-lg font-semibold tracking-tight sm:text-xl">Warmluke</span>
           </div>
           <nav className="flex items-center gap-4 text-sm md:gap-6">
@@ -1083,8 +1113,8 @@ export default async function Landing({
         eyebrow="Claude or ChatGPT, connected"
         title="Bring your own AI. Give it the keys to your business."
       >
-        <div className="grid items-center gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-          <p className="max-w-2xl text-quiet">
+        <div className="grid items-center gap-8 lg:grid-cols-2">
+          <p className="max-w-xl text-quiet">
             Warmluke speaks MCP, the standard Claude and ChatGPT use to reach outside tools. Connect
             it once and the assistant you already pay for stops guessing about your business, and
             starts building inside it.
