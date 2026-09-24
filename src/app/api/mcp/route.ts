@@ -18,6 +18,7 @@ import { applyPlans, logClientBuild, putBack } from "@/lib/apply";
 import { undoableFrom } from "@/lib/undo";
 import { noteJudgement } from "@/lib/judge";
 import { STORE_TOOLS, storeTool, type StoreTool } from "@/lib/store-tools";
+import { tapeHeaders } from "@/lib/model-tape";
 import { ACTION_CATALOGUE, PROPOSE_INPUT, proposeStoreAction } from "@/lib/store-action-propose";
 import { ALLOWED_ICONS } from "@/lib/types";
 import type { AssistantPlan, ModuleRow, NextStep, ProjectRow, UiSchema } from "@/lib/types";
@@ -479,7 +480,9 @@ const clientIdOf = (req: Request): string | null => {
   }
 };
 
-const ok = (id: RpcRequest["id"], result: Json) => NextResponse.json({ jsonrpc: "2.0", id, result });
+const ok = (id: RpcRequest["id"], result: Json) =>
+  // tapeHeaders: whether model calls are recorded or played back here; nothing in production.
+  NextResponse.json({ jsonrpc: "2.0", id, result }, { headers: tapeHeaders() });
 
 const rpcError = (id: RpcRequest["id"], code: number, message: string) =>
   NextResponse.json({ jsonrpc: "2.0", id, error: { code, message } });

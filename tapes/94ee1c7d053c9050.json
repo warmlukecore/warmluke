@@ -1,0 +1,16 @@
+{
+  "label": "jev",
+  "asked": "is #2 paid?",
+  "parts": {
+    "system": "74234e98afe7498f",
+    "tools": "74234e98afe7498f",
+    "conversation": "f100446b3b277a1a"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"jev-1.13.0\",\"answers\":{\"list\":{\"type\":\"choice\",\"choice\":\"orders\",\"confidence\":0.94,\"probabilities\":{\"orders\":0.95,\"none\":0.02,\"products\":0.03,\"sales\":0.0,\"customers\":0.0,\"stock\":0.0}},\"window\":{\"type\":\"choice\",\"choice\":\"all\",\"confidence\":0.99,\"probabilities\":{\"yesterday\":0.0,\"today\":0.01,\"this_month\":0.0,\"all\":0.99,\"named_month\":0.0,\"this_week\":0.0,\"last_month\":0.0}},\"month\":{\"type\":\"choice\",\"choice\":\"none\",\"confidence\":0.94,\"probabilities\":{\"jul\":0.0,\"feb\":0.04,\"aug\":0.0,\"jan\":0.0,\"mar\":0.0,\"oct\":0.0,\"jun\":0.0,\"sep\":0.0,\"apr\":0.0,\"none\":0.96,\"dec\":0.0,\"nov\":0.0,\"may\":0.0}},\"kind\":{\"type\":\"choice\",\"choice\":\"lookup\",\"confidence\":0.99,\"probabilities\":{\"build\":0.0,\"lookup\":1.0,\"ranking\":0.0,\"total\":0.0,\"unclear\":0.0}}},\"usage\":{\"input_tokens\":1758,\"output_tokens\":283}}"
+    }
+  ]
+}

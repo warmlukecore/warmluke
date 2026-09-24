@@ -143,7 +143,12 @@ jobs:
       - name: build
         run: pnpm build
 
+      # Model calls are played back from tapes/ (src/lib/model-tape.ts): no
+      # model key is held here, and a check recorded against real models
+      # replays exactly. A call nothing was recorded for fails at once.
       - name: serve
+        env:
+          MODEL_TAPE: replay
         run: |
           (pnpm start > server.log 2>&1 &)
           for i in $(seq 1 60); do curl -sf -o /dev/null http://localhost:3100/login && break; sleep 1; done

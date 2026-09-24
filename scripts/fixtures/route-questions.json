@@ -1,0 +1,257 @@
+{
+  "about": "Forty real merchant questions, half Hinglish, and what the router should make of each: which list, what span, what kind of answer, and for a lookup the word to look for. An entry with route null must not be routed at all: a build request or not a question about the store. Measured first on 2026-09-20 (list 38/40, window 39/40, kind 35/40, commit 634cec1). scripts/check-route-eval.mjs scores it; the baseline is the least the router may score.",
+  "baseline": {
+    "gated": 8,
+    "list": 27,
+    "window": 27,
+    "month": 3,
+    "kind": 25,
+    "needle": 6
+  },
+  "questions": [
+    {
+      "q": "who is my top buyer?",
+      "list": "customers",
+      "window": "all",
+      "kind": "ranking"
+    },
+    {
+      "q": "August ka top buyer kaun tha?",
+      "list": "customers",
+      "window": "named_month",
+      "kind": "ranking",
+      "month": 8
+    },
+    {
+      "q": "best sellers",
+      "list": "sales",
+      "window": "all",
+      "kind": "ranking"
+    },
+    {
+      "q": "is mahine ka best seller kaunsa hai?",
+      "list": "sales",
+      "window": "this_month",
+      "kind": "ranking"
+    },
+    {
+      "q": "kaunsa product is hafte sabse zyada bika?",
+      "list": "sales",
+      "window": "this_week",
+      "kind": "ranking"
+    },
+    {
+      "q": "which product earned the most in March?",
+      "list": "sales",
+      "window": "named_month",
+      "kind": "ranking",
+      "month": 3
+    },
+    {
+      "q": "aaj kitne order aaye?",
+      "list": "orders",
+      "window": "today",
+      "kind": "total"
+    },
+    {
+      "q": "how many orders this week",
+      "list": "orders",
+      "window": "this_week",
+      "kind": "total"
+    },
+    {
+      "q": "revenue this month",
+      "list": "orders",
+      "window": "this_month",
+      "kind": "total"
+    },
+    {
+      "q": "last month ka total kitna tha?",
+      "list": "orders",
+      "window": "last_month",
+      "kind": "total"
+    },
+    {
+      "q": "pending COD ka total kitna hai?",
+      "list": "orders",
+      "window": "all",
+      "kind": "total"
+    },
+    {
+      "q": "how many orders are still unfulfilled",
+      "list": "orders",
+      "window": "all",
+      "kind": "total"
+    },
+    {
+      "q": "is #1004 paid?",
+      "list": "orders",
+      "window": "all",
+      "kind": "lookup",
+      "needle": "#1004"
+    },
+    {
+      "q": "what did order #1002 contain",
+      "list": "orders",
+      "window": "all",
+      "kind": "lookup",
+      "needle": "#1002"
+    },
+    {
+      "q": "Aman ka phone number kya hai",
+      "list": "customers",
+      "window": "all",
+      "kind": "lookup",
+      "needle": "Aman"
+    },
+    {
+      "q": "Priya Sharma ne kitne order kiye?",
+      "list": "customers",
+      "window": "all",
+      "kind": "lookup",
+      "needle": "Priya Sharma"
+    },
+    {
+      "q": "customers from Delhi",
+      "list": "customers",
+      "window": "all",
+      "kind": "lookup",
+      "needle": "Delhi"
+    },
+    {
+      "q": "how many customers do I have",
+      "list": "customers",
+      "window": "all",
+      "kind": "total"
+    },
+    {
+      "q": "repeat customers kitne hain",
+      "list": "customers",
+      "window": "all",
+      "kind": "total"
+    },
+    {
+      "q": "which customers spent the most this month",
+      "list": "customers",
+      "window": "this_month",
+      "kind": "ranking"
+    },
+    {
+      "q": "stock of ski wax",
+      "list": "stock",
+      "window": "all",
+      "kind": "lookup",
+      "needle": "Ski Wax"
+    },
+    {
+      "q": "what is running low?",
+      "list": "stock",
+      "window": "all",
+      "kind": "ranking"
+    },
+    {
+      "q": "kitna maal bacha hai Airdopes ka",
+      "list": "stock",
+      "window": "all",
+      "kind": "lookup",
+      "needle": "Airdopes"
+    },
+    {
+      "q": "how many products are active",
+      "list": "products",
+      "window": "all",
+      "kind": "total"
+    },
+    {
+      "q": "is Snowboard listed?",
+      "list": "products",
+      "window": "all",
+      "kind": "lookup",
+      "needle": "Snowboard"
+    },
+    {
+      "q": "which vendor do we stock the most products from",
+      "list": "products",
+      "window": "all",
+      "kind": "ranking"
+    },
+    {
+      "q": "average order value this week",
+      "list": "orders",
+      "window": "this_week",
+      "kind": "total"
+    },
+    {
+      "q": "top 3 cities by sales",
+      "list": "orders",
+      "window": "all",
+      "kind": "ranking"
+    },
+    {
+      "q": "orders over 5000 from Mumbai",
+      "list": "orders",
+      "window": "all",
+      "kind": "lookup",
+      "needle": "Mumbai"
+    },
+    {
+      "q": "how much did we sell in January",
+      "list": "orders",
+      "window": "named_month",
+      "kind": "total",
+      "month": 1
+    },
+    {
+      "q": "make me a returns section with a reason and refund amount",
+      "route": null,
+      "because": "build"
+    },
+    {
+      "q": "orders me ek column daal do delivery partner ka",
+      "route": null,
+      "because": "build"
+    },
+    {
+      "q": "rename Packing to Dispatch",
+      "route": null,
+      "because": "build"
+    },
+    {
+      "q": "remind me the day before each delivery",
+      "route": null,
+      "because": "build"
+    },
+    {
+      "q": "hi",
+      "route": null,
+      "because": "unclear"
+    },
+    {
+      "q": "make it better",
+      "route": null,
+      "because": "unclear"
+    },
+    {
+      "q": "how do I connect shopify?",
+      "route": null,
+      "because": "unclear"
+    },
+    {
+      "q": "thanks 🙏",
+      "route": null,
+      "because": "unclear"
+    },
+    {
+      "q": "kal ke orders dikhao",
+      "list": "orders",
+      "window": "yesterday",
+      "kind": "lookup"
+    },
+    {
+      "q": "which customers haven't ordered in 3 months",
+      "list": "customers",
+      "window": "all",
+      "kind": "ranking"
+    }
+  ]
+}

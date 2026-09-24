@@ -1,0 +1,16 @@
+{
+  "label": "jev",
+  "asked": "kaunsa product is hafte sabse zyada bika?",
+  "parts": {
+    "system": "74234e98afe7498f",
+    "tools": "74234e98afe7498f",
+    "conversation": "f0e7eb75396dc050"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"jev-1.13.0\",\"answers\":{\"list\":{\"type\":\"choice\",\"choice\":\"sales\",\"confidence\":1.0,\"probabilities\":{\"sales\":1.0,\"stock\":0.0,\"orders\":0.0,\"products\":0.0,\"none\":0.0,\"customers\":0.0}},\"window\":{\"type\":\"choice\",\"choice\":\"this_week\",\"confidence\":0.99,\"probabilities\":{\"yesterday\":0.0,\"last_month\":0.0,\"today\":0.0,\"all\":0.0,\"this_week\":1.0,\"named_month\":0.0,\"this_month\":0.0}},\"month\":{\"type\":\"choice\",\"choice\":\"none\",\"confidence\":1.0,\"probabilities\":{\"jun\":0.0,\"mar\":0.0,\"sep\":0.0,\"none\":1.0,\"jan\":0.0,\"nov\":0.0,\"may\":0.0,\"dec\":0.0,\"oct\":0.0,\"apr\":0.0,\"aug\":0.0,\"feb\":0.0,\"jul\":0.0}},\"kind\":{\"type\":\"choice\",\"choice\":\"ranking\",\"confidence\":0.99,\"probabilities\":{\"total\":0.0,\"ranking\":0.99,\"lookup\":0.01,\"unclear\":0.0,\"build\":0.0}}},\"usage\":{\"input_tokens\":1766,\"output_tokens\":284}}"
+    }
+  ]
+}

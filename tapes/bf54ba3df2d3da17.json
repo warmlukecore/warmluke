@@ -1,0 +1,16 @@
+{
+  "label": "jev",
+  "asked": "what did order #1002 contain",
+  "parts": {
+    "system": "74234e98afe7498f",
+    "tools": "74234e98afe7498f",
+    "conversation": "bb6014ae3a98d301"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"jev-1.13.0\",\"answers\":{\"list\":{\"type\":\"choice\",\"choice\":\"orders\",\"confidence\":0.87,\"probabilities\":{\"orders\":0.89,\"customers\":0.0,\"none\":0.01,\"stock\":0.0,\"products\":0.0,\"sales\":0.1}},\"window\":{\"type\":\"choice\",\"choice\":\"all\",\"confidence\":1.0,\"probabilities\":{\"named_month\":0.0,\"this_month\":0.0,\"today\":0.0,\"last_month\":0.0,\"yesterday\":0.0,\"all\":1.0,\"this_week\":0.0}},\"month\":{\"type\":\"choice\",\"choice\":\"none\",\"confidence\":1.0,\"probabilities\":{\"feb\":0.0,\"sep\":0.0,\"jan\":0.0,\"jul\":0.0,\"jun\":0.0,\"mar\":0.0,\"apr\":0.0,\"nov\":0.0,\"oct\":0.0,\"none\":1.0,\"dec\":0.0,\"aug\":0.0,\"may\":0.0}},\"kind\":{\"type\":\"choice\",\"choice\":\"lookup\",\"confidence\":1.0,\"probabilities\":{\"unclear\":0.0,\"lookup\":1.0,\"build\":0.0,\"total\":0.0,\"ranking\":0.0}}},\"usage\":{\"input_tokens\":1762,\"output_tokens\":283}}"
+    }
+  ]
+}

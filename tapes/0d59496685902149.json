@@ -1,0 +1,16 @@
+{
+  "label": "anthropic",
+  "asked": "figured) CONTEXT — rules already running on this app. Do not propose one that is already here; to change a rule, remove it and add the new one. none USER REQUEST: Is order #1001 paid? How much was it?",
+  "parts": {
+    "system": "6b4a0f816c01b9ec",
+    "tools": "2bc56cb6a649bab0",
+    "conversation": "6cb81da39294bd53"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"content\":[{\"type\":\"thinking\",\"thinking\":\"The user is asking about a specific order #1001. I need to look it up. The orders listed above only go from #1006 to #1025, so #1001 isn't in the printed list. I need to use the store tools to look it up.\",\"signature\":\"14b8c82b07f24b16b6ac45486e314c6e\"},{\"type\":\"tool_use\",\"id\":\"chatcmpl-tool-9f6973b3246f2508\",\"name\":\"get_order\",\"input\":{\"order_number\":\"#1001\"}}],\"id\":\"chatcmpl-___prefill_addr_10.119.15.234:7101___decode_addr_10.119.15.218:7100_07b3222c737d441e9ce0c376dd956657\",\"model\":\"Atria-Dawn-Preview\",\"request_id\":\"req_02c1942c-be46-4611-8823-716113a7517e\",\"role\":\"assistant\",\"stop_reason\":\"tool_use\",\"type\":\"message\",\"usage\":{\"input_tokens\":14060,\"output_tokens\":72}}"
+    }
+  ]
+}

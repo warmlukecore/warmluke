@@ -1,0 +1,4 @@
+{
+  "ANTHROPIC_MODEL": "gemini-3.6-flash",
+  "ANTHROPIC_FALLBACK_MODEL": "Atria-Dawn-Preview"
+}

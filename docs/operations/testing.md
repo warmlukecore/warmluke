@@ -115,11 +115,33 @@ pnpm hooks
 | Onboarding or profiles | `check-onboarding` (pure) and `check-profiles` (live) |
 | Admin screens | `check-admin` (live); `check-follow-up` (pure) for the CSV formula guard and the demo stages against 0120 |
 | Model calls | `check-model-errors` (pure): each provider's request as sent, the one-sentence failures, one attempt, the Gemini fallback |
-| Store tools | `check-store-tools` (pure) for one declaration and refusals before reads; `check-ask-store`, `check-leaders`, `check-free-turns`, `check-mcp-limit` (live) through MCP |
-| Luke's lookups | `check-model-errors` (pure) for the loop, the cap and Gemini's JSON mode; `check-luke-lookups` (model, by hand) for a real turn that must look an order up, and one that must not |
+| Store tools | `check-store-tools` (pure) for one declaration and refusals before reads; `check-ask-store` (live, its router half played back from `tapes/`), `check-leaders`, `check-free-turns`, `check-mcp-limit` (live) through MCP |
+| Luke's lookups | `check-model-errors` (pure) for the loop, the cap and Gemini's JSON mode; `check-luke-lookups` (live, played back from `tapes/`) for a real turn that must look an order up, and one that must not |
+| Model calls in tests | `check-model-tape` (pure) for the recorder itself; `check-route-eval` (pure, played back) for the router on forty real questions against its baseline |
 | Asking to change the shop | `check-store-action-propose` (pure) for every gate, the server's wording, one request per change and that each target kind is handed out; `check-luke-lookups` (model, by hand) for Luke's real proposal, and none with the switch off |
 | Overview figures | `check-overview` (live) |
 
 New regression tests should prove behavior rather than source wording. Source-text checks
 are appropriate only when the invariant itself is a declaration that must remain in one
 place.
+
+## Real models, recorded
+
+Checks that need a model do not call one in CI. `src/lib/model-tape.ts` records a real
+answer once (`MODEL_TAPE=record`) and plays it back after (`MODEL_TAPE=replay`), keyed by
+the whole request, normalised, without the model's name. CI's server runs in replay, so
+`check-luke-lookups` runs there with no key; `check-route-eval` replays by default. A
+request nothing was recorded for fails at once and says what changed: the system prompt,
+the tools or the conversation. Changing what a model is told therefore means recording
+again, and the new answers are reviewed like code. See [`tapes/README.md`](../../tapes/README.md).
+
+The router eval (`scripts/fixtures/route-questions.json`) scores forty real questions, half Hinglish, part by
+part (gated, list, window, month, kind, needle), and fails below the baseline written in the
+file. Recording it measures the real router and its latency; the baseline moves only with
+`EVAL_REBASELINE=1`.
+
+The store checks (`check-store-read`, `check-store-sections`, `check-store-token`,
+`check-webhook-gate`) read only stores outside the throwaway `check …` projects
+(`realStores` in `scripts/owner-session.mjs`). The check project holds no such store today,
+so they report "nothing to check": a seeded store with realistic rows is still to come.
+

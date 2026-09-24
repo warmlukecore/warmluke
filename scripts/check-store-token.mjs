@@ -10,7 +10,7 @@
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { OWNER_EMAIL } from "./owner-session.mjs";
+import { OWNER_EMAIL, realStores } from "./owner-session.mjs";
 
 const env = Object.fromEntries(
   readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
@@ -28,11 +28,7 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
-const { data: store } = await admin
-  .from("stores")
-  .select("id, project_id, access_token")
-  .limit(1)
-  .maybeSingle();
+const [store] = await realStores(admin, "id, project_id, access_token");
 if (!store) {
   console.log("no store connected — nothing to check");
   process.exit(0);

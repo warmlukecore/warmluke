@@ -10,12 +10,12 @@ import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import {
   dayRangeInZone,
-  listStores,
   readStoreRows,
   searchOrders,
   storeOverview,
   storeValues,
 } from "../src/lib/store-read.ts";
+import { realStores } from "./owner-session.mjs";
 
 const fails = [];
 const check = (name, cond) => {
@@ -76,7 +76,7 @@ const db = createClient(
   env.ADAPTIVE_OS_SERVICE_ROLE_KEY
 );
 
-const stores = await listStores(db);
+const stores = await realStores(db, "id, project_id, shop_domain, timezone, currency, last_synced_at");
 if (stores.length === 0) {
   console.log("\nno connected store — the search checks did not run");
 } else {

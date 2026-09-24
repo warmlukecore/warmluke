@@ -83,8 +83,14 @@ database decides who may do what.
   model layer and this must still pass unchanged, plus a new assertion for what you added.
 - `check-store-tools` (pure): one list, MCP sends it, refusals before any read, the words
   each lookup is told in, the size guard.
-- `check-luke-lookups` (model tier, by hand, cents): a real turn that must look an order
-  up, with the router off so only a lookup can find it, and one that must not.
+- `check-luke-lookups` (live, played back from `tapes/`): a real turn that must look an
+  order up, with the router off so only a lookup can find it, one that must not, and a
+  change asked for. The server it talks to must be in the same tape mode (it checks).
+- `check-model-tape` (pure): the recorder. `check-route-eval` (pure, played back): the
+  router on forty real questions, held to its baseline.
+- **Changed a prompt, a tool or a model call?** Its tapes no longer match, on purpose.
+  Record again (`tapes/README.md`), replay with no keys, review the new answers, commit
+  them with the change.
 - Live, through a real server: start
   `(set -a; . ./.env.check.local; set +a; pnpm exec next dev -p 3101)` and run the checks
   with `ENV_FILE=.env.check.local APP_URL=http://localhost:3101`. Without `ENV_FILE` a

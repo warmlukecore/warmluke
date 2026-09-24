@@ -1,0 +1,16 @@
+{
+  "label": "jev",
+  "asked": "is mahine ka best seller kaunsa hai?",
+  "parts": {
+    "system": "74234e98afe7498f",
+    "tools": "74234e98afe7498f",
+    "conversation": "0eacbaaae9caa0f7"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"jev-1.13.0\",\"answers\":{\"list\":{\"type\":\"choice\",\"choice\":\"sales\",\"confidence\":0.99,\"probabilities\":{\"products\":0.0,\"orders\":0.0,\"stock\":0.0,\"customers\":0.0,\"none\":0.0,\"sales\":1.0}},\"window\":{\"type\":\"choice\",\"choice\":\"this_month\",\"confidence\":0.98,\"probabilities\":{\"named_month\":0.0,\"this_month\":0.99,\"today\":0.0,\"yesterday\":0.0,\"last_month\":0.01,\"all\":0.0,\"this_week\":0.0}},\"month\":{\"type\":\"choice\",\"choice\":\"none\",\"confidence\":0.95,\"probabilities\":{\"may\":0.03,\"nov\":0.0,\"dec\":0.0,\"oct\":0.0,\"jun\":0.0,\"jan\":0.0,\"aug\":0.0,\"apr\":0.0,\"none\":0.97,\"mar\":0.0,\"feb\":0.0,\"sep\":0.0,\"jul\":0.0}},\"kind\":{\"type\":\"choice\",\"choice\":\"ranking\",\"confidence\":0.95,\"probabilities\":{\"build\":0.0,\"total\":0.0,\"lookup\":0.03,\"ranking\":0.97,\"unclear\":0.0}}},\"usage\":{\"input_tokens\":1763,\"output_tokens\":284}}"
+    }
+  ]
+}

@@ -21,7 +21,10 @@
 // default, the file the dev server reads them from; nothing else in it
 // is used.
 //
-// Spends model calls, so it runs by hand, not in CI:
+// Recorded against real models by hand, and played back everywhere else
+// (model-tape.ts): the server and this process both need the same mode.
+//   record:  MODEL_TAPE=record, on the dev server and here, with keys
+//   replay:  MODEL_TAPE=replay, on both, no keys, no network
 //   ENV_FILE=.env.check.local APP_URL=http://localhost:3101 \
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-luke-lookups.mjs
 
@@ -37,11 +40,15 @@ const env = Object.fromEntries(
     .map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()])
 );
 const APP = process.env.APP_URL ?? "http://localhost:3100";
+// Played back unless asked to record: free, and the same every run.
+process.env.MODEL_TAPE ??= "replay";
 for (const l of readFileSync(new URL(`../${process.env.MODEL_ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8").split("\n")) {
   const m = l.match(/^(ANTHROPIC_[A-Z_]+|GEMINI_API_KEY)=(.*)$/);
   if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
 }
-delete process.env.TYPESAFE_API_KEY;
+// Set and empty, not deleted: the router is off here, and while replaying a
+// missing key would be a stand-in and the router on.
+process.env.TYPESAFE_API_KEY = "";
 
 const fails = [];
 const check = (name, cond) => {
@@ -69,6 +76,15 @@ async function ask(message) {
     headers: { "content-type": "application/json", authorization: `Bearer ${me.session.access_token}` },
     body: JSON.stringify({ message, projectId: project.id }),
   });
+  // The server has to be doing what this process is doing: recording
+  // with it, or playing back with it. A server making real calls under a
+  // check that plays back would bill for every turn and answer anything.
+  const serverTape = res.headers.get("x-model-tape");
+  if (serverTape !== process.env.MODEL_TAPE) {
+    throw new Error(
+      `the server at ${APP} is ${serverTape ? `in ${serverTape} mode` : "making real model calls"}, and this check is in ${process.env.MODEL_TAPE} mode; start it with MODEL_TAPE=${process.env.MODEL_TAPE}`
+    );
+  }
   const text = await res.text();
   const lines = text.split("\n").filter(Boolean).map((l) => JSON.parse(l));
   return {
@@ -95,7 +111,9 @@ try {
         const n = 1001 + i;
         return {
           store_id: store.id,
-          external_id: `gid://shopify/Order/${stamp.replace(/\D/g, "").slice(0, 6) || "7"}${n}`,
+          // Fixed, not from the stamp: a replayed answer names the id it was
+          // recorded with, and it has to be this run's order too.
+          external_id: `gid://shopify/Order/${9000000 + n}`,
           order_number: `#${n}`,
           placed_at: daysAgo(30 - i),
           total: n === 1001 ? 777 : 100 + i,

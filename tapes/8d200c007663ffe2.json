@@ -1,0 +1,16 @@
+{
+  "label": "jev",
+  "asked": "What was my most recent order number?",
+  "parts": {
+    "system": "74234e98afe7498f",
+    "tools": "74234e98afe7498f",
+    "conversation": "ef33727d4a1026a7"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"jev-1.13.0\",\"answers\":{\"list\":{\"type\":\"choice\",\"choice\":\"orders\",\"confidence\":0.99,\"probabilities\":{\"products\":0.0,\"customers\":0.0,\"sales\":0.0,\"none\":0.01,\"orders\":0.99,\"stock\":0.0}},\"window\":{\"type\":\"choice\",\"choice\":\"all\",\"confidence\":0.98,\"probabilities\":{\"last_month\":0.0,\"named_month\":0.0,\"all\":0.98,\"today\":0.01,\"this_month\":0.0,\"yesterday\":0.0,\"this_week\":0.01}},\"month\":{\"type\":\"choice\",\"choice\":\"none\",\"confidence\":1.0,\"probabilities\":{\"may\":0.0,\"apr\":0.0,\"jan\":0.0,\"oct\":0.0,\"none\":1.0,\"feb\":0.0,\"nov\":0.0,\"aug\":0.0,\"sep\":0.0,\"jul\":0.0,\"mar\":0.0,\"dec\":0.0,\"jun\":0.0}},\"kind\":{\"type\":\"choice\",\"choice\":\"ranking\",\"confidence\":0.42,\"probabilities\":{\"total\":0.0,\"build\":0.0,\"unclear\":0.0,\"ranking\":0.54,\"lookup\":0.46}}},\"usage\":{\"input_tokens\":1761,\"output_tokens\":283}}"
+    }
+  ]
+}

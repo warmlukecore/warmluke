@@ -145,3 +145,20 @@ export async function throwawayProject(admin, ownerId, label) {
     },
   };
 }
+
+/**
+ * The connected stores a store check may read: never the throwaway ones
+ * other checks make ("check …" projects) and remove when they finish.
+ * "Any connected store" picked one of those whenever two runs overlapped
+ * on the check project, and read a store with no token and no orders as
+ * a broken one: four checks failed on 2026-09-24 for nothing.
+ */
+export async function realStores(admin, columns = "id, project_id, shop_domain") {
+  const { data, error } = await admin
+    .from("stores")
+    .select(`${columns}, projects!inner(name)`)
+    .eq("status", "connected")
+    .not("projects.name", "like", "check %");
+  if (error) throw new Error(`could not list the stores to check: ${error.message}`);
+  return (data ?? []).map(({ projects: _project, ...store }) => store);
+}

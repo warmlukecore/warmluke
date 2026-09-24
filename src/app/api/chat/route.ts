@@ -1,6 +1,7 @@
 import { NextResponse, after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getUserClient } from "@/lib/supabase-server";
+import { tapeHeaders } from "@/lib/model-tape";
 import { MAX_REPAIR_ATTEMPTS, runTurn } from "@/lib/engine";
 import { noteJudgement } from "@/lib/judge";
 import type { ChatTurn } from "@/lib/ai";
@@ -494,7 +495,14 @@ export async function POST(req: Request) {
       },
     });
     return new Response(stream, {
-      headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" },
+      headers: {
+        "content-type": "application/x-ndjson; charset=utf-8",
+        "cache-control": "no-store",
+        // Whether this server's model calls are recorded or played back
+        // (model-tape.ts), so a check can tell it is talking to the server
+        // it thinks it is. Never set in production, where taping is off.
+        ...tapeHeaders(),
+      },
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";

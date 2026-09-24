@@ -1,0 +1,16 @@
+{
+  "label": "jev",
+  "asked": "who is my top buyer?",
+  "parts": {
+    "system": "74234e98afe7498f",
+    "tools": "74234e98afe7498f",
+    "conversation": "96d6ea517d1d8807"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"jev-1.13.0\",\"answers\":{\"list\":{\"type\":\"choice\",\"choice\":\"customers\",\"confidence\":1.0,\"probabilities\":{\"stock\":0.0,\"products\":0.0,\"none\":0.0,\"sales\":0.0,\"orders\":0.0,\"customers\":1.0}},\"window\":{\"type\":\"choice\",\"choice\":\"all\",\"confidence\":1.0,\"probabilities\":{\"this_month\":0.0,\"this_week\":0.0,\"named_month\":0.0,\"yesterday\":0.0,\"all\":1.0,\"today\":0.0,\"last_month\":0.0}},\"month\":{\"type\":\"choice\",\"choice\":\"none\",\"confidence\":1.0,\"probabilities\":{\"apr\":0.0,\"oct\":0.0,\"sep\":0.0,\"nov\":0.0,\"jun\":0.0,\"none\":1.0,\"dec\":0.0,\"feb\":0.0,\"jan\":0.0,\"mar\":0.0,\"may\":0.0,\"jul\":0.0,\"aug\":0.0}},\"kind\":{\"type\":\"choice\",\"choice\":\"ranking\",\"confidence\":1.0,\"probabilities\":{\"build\":0.0,\"total\":0.0,\"lookup\":0.0,\"ranking\":1.0,\"unclear\":0.0}}},\"usage\":{\"input_tokens\":1759,\"output_tokens\":283}}"
+    }
+  ]
+}

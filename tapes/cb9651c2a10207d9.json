@@ -1,0 +1,16 @@
+{
+  "label": "anthropic",
+  "asked": "",
+  "parts": {
+    "system": "6b4a0f816c01b9ec",
+    "tools": "2bc56cb6a649bab0",
+    "conversation": "dee9175935250724"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"content\":[{\"type\":\"thinking\",\"thinking\":\"Order #1001: placed 2026-08-25, total 777 INR, status PENDING (not paid), no fulfilment status, no customer, no items. So it's not paid — it's pending (COD awaiting payment). Total was 777 INR.\\n\\nData was last brought from Shopify: never — I should say how fresh it is.\",\"signature\":\"0ed730e0777d47a4ac601115b8996771\"},{\"type\":\"text\",\"text\":\"{\\n  \\\"type\\\": \\\"answer\\\",\\n  \\\"kind\\\": \\\"store\\\",\\n  \\\"message\\\": \\\"Order #1001 is NOT paid — its financial status is PENDING, which on this store means cash on delivery still awaiting payment. It was placed on 2026-08-25 and came to 777 INR. It has no fulfilment status yet, so nothing has shipped either. This was read from the store's own order data, which was last brought from Shopify: never — treat these figures as a snapshot, not live.\\\"\\n}\"}],\"id\":\"chatcmpl-req_222ea92b-1476-4d31-896a-638266bed202\",\"model\":\"Atria-Dawn-Preview\",\"request_id\":\"req_222ea92b-1476-4d31-896a-638266bed202\",\"role\":\"assistant\",\"stop_reason\":\"end_turn\",\"type\":\"message\",\"usage\":{\"input_tokens\":4,\"output_tokens\":192,\"cache_creation_input_tokens\":512,\"cache_read_input_tokens\":13696}}"
+    }
+  ]
+}

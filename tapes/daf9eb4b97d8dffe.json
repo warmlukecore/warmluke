@@ -1,0 +1,16 @@
+{
+  "label": "jev",
+  "asked": "which customers haven't ordered in 3 months",
+  "parts": {
+    "system": "74234e98afe7498f",
+    "tools": "74234e98afe7498f",
+    "conversation": "59b28760380511ef"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"jev-1.13.0\",\"answers\":{\"list\":{\"type\":\"choice\",\"choice\":\"orders\",\"confidence\":0.72,\"probabilities\":{\"orders\":0.77,\"none\":0.0,\"products\":0.0,\"customers\":0.23,\"stock\":0.0,\"sales\":0.0}},\"window\":{\"type\":\"choice\",\"choice\":\"last_month\",\"confidence\":0.35,\"probabilities\":{\"all\":0.36,\"named_month\":0.06,\"today\":0.0,\"yesterday\":0.0,\"last_month\":0.44,\"this_week\":0.01,\"this_month\":0.13}},\"month\":{\"type\":\"choice\",\"choice\":\"none\",\"confidence\":1.0,\"probabilities\":{\"may\":0.0,\"sep\":0.0,\"feb\":0.0,\"oct\":0.0,\"none\":1.0,\"jul\":0.0,\"dec\":0.0,\"aug\":0.0,\"jun\":0.0,\"mar\":0.0,\"nov\":0.0,\"jan\":0.0,\"apr\":0.0}},\"kind\":{\"type\":\"choice\",\"choice\":\"lookup\",\"confidence\":0.83,\"probabilities\":{\"ranking\":0.09,\"build\":0.0,\"total\":0.03,\"unclear\":0.01,\"lookup\":0.87}}},\"usage\":{\"input_tokens\":1762,\"output_tokens\":284}}"
+    }
+  ]
+}

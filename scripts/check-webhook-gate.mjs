@@ -15,6 +15,7 @@ import { createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { webhookAddress } from "../src/lib/shopify.ts";
+import { realStores } from "./owner-session.mjs";
 
 const env = Object.fromEntries(
   readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
@@ -40,11 +41,13 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
-const { data: store, error: lookup } = await admin
-  .from("stores")
-  .select("id, shop_domain")
-  .eq("status", "connected")
-  .maybeSingle();
+let store = null;
+let lookup = null;
+try {
+  [store = null] = await realStores(admin, "id, shop_domain");
+} catch (e) {
+  lookup = e;
+}
 // A query that could not run is not an empty result. This exited 0
 // saying "nothing to check" while the fetch underneath had failed
 // outright — a security check that reports success when it cannot

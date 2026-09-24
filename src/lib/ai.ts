@@ -23,6 +23,7 @@ import {
 } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogle } from "@ai-sdk/google";
+import { keyFor, tapeFetch, tapedSetting } from "@/lib/model-tape";
 import { isStoreTable, storeTableSchema, STORE_TABLES } from "@/lib/store-read";
 // One definition, shared with the Shopify importer rather than copied.
 import { isTransient } from "@/lib/retry";
@@ -2125,7 +2126,8 @@ const MODEL_JOBS = {
 
 function modelFor(job: keyof typeof MODEL_JOBS): string {
   const [setting, unconfigured] = MODEL_JOBS[job];
-  return process.env[setting]?.trim() || unconfigured;
+  // While replaying, the models the tapes were recorded with.
+  return tapedSetting(setting, process.env[setting]?.trim() || undefined) || unconfigured;
 }
 
 /**
@@ -2137,7 +2139,8 @@ function modelFor(job: keyof typeof MODEL_JOBS): string {
 function reaching(provider: Provider): typeof fetch {
   return async (input, init) => {
     try {
-      return await globalThis.fetch(input, init);
+      // Recorded or played back when MODEL_TAPE says so (model-tape.ts).
+      return await tapeFetch(provider, globalThis.fetch)(input, init);
     } catch (e) {
       if (e instanceof Error && e.name === "AbortError") throw e;
       throw modelError(provider, 0, e instanceof Error ? e.message : String(e));
@@ -2357,14 +2360,14 @@ export async function callModel(opts: {
         return await callGemini(model, system, turns, signal, lookups, onText);
       } catch (again) {
         if (!isTransient(again) || signal?.aborted) throw again;
-        if (!process.env.ANTHROPIC_API_KEY) throw again;
+        if (!keyFor(process.env.ANTHROPIC_API_KEY)) throw again;
         // Falls through to Anthropic below, on the fallback model.
         return callModel({ ...opts, model: modelFor("fallback") });
       }
     }
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = keyFor(process.env.ANTHROPIC_API_KEY);
   if (!apiKey) {
     throw new ModelError("unset", "anthropic", 0, "ANTHROPIC_API_KEY is not set");
   }
@@ -2477,7 +2480,7 @@ async function callGemini(
   lookups?: Lookups,
   onText?: (text: string) => void
 ): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = keyFor(process.env.GEMINI_API_KEY);
   if (!apiKey) {
     throw new ModelError("unset", "gemini", 0, `ANTHROPIC_MODEL is "${model}" but GEMINI_API_KEY is not set`);
   }

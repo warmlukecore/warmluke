@@ -7,7 +7,9 @@
 // keeps to its days, a sales span goes through the function, stock
 // goes through the low-stock read. Then the engine, with a real
 // router, is asked a question and a build request; then the MCP tool.
-// The two halves that need the model run only when the key is here.
+// The two halves that need the router are played back from tapes/ by
+// default (model-tape.ts), so they run in CI too; recorded with
+// MODEL_TAPE=record against the real router, with the server recording.
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-ask-store.mjs
 
@@ -16,6 +18,7 @@ import { createClient } from "@supabase/supabase-js";
 import { signInAsCheckUser, throwawayProject } from "./owner-session.mjs";
 import { fetchSlice } from "../src/lib/slice.ts";
 import { storeContextFor } from "../src/lib/engine.ts";
+import { keyFor } from "../src/lib/model-tape.ts";
 
 const env = Object.fromEntries(
   readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
@@ -25,6 +28,7 @@ const env = Object.fromEntries(
 );
 const APP = process.env.APP_URL ?? "http://localhost:3100";
 if (env.TYPESAFE_API_KEY && !process.env.TYPESAFE_API_KEY) process.env.TYPESAFE_API_KEY = env.TYPESAFE_API_KEY;
+process.env.MODEL_TAPE ??= "replay";
 
 const fails = [];
 const check = (name, cond) => {
@@ -111,7 +115,7 @@ try {
   s = await S({ list: "customers", kind: "lookup", needles: ["Nobody"] });
   check("nothing matched is an empty slice, not an error", s?.rows.length === 0 && s?.total === 0);
 
-  if (!process.env.TYPESAFE_API_KEY) {
+  if (!keyFor(process.env.TYPESAFE_API_KEY)) {
     console.log("\n  skip  no TYPESAFE_API_KEY — the engine and the tool were not asked a real question");
   } else {
     console.log("\nthe engine, asked a question and asked for a build");
@@ -145,6 +149,11 @@ try {
         headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${me.session.access_token}` },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: { project_id: project.id, ...args } } }),
       });
+      // The server has to record or play back as this process does, or its
+      // router answers from a different place than this one's.
+      if (res.headers.get("x-model-tape") !== process.env.MODEL_TAPE) {
+        throw new Error(`the server at ${APP} is ${res.headers.get("x-model-tape") ? `in ${res.headers.get("x-model-tape")} mode` : "calling the real router"}, and this check is in ${process.env.MODEL_TAPE} mode; start it with MODEL_TAPE=${process.env.MODEL_TAPE}`);
+      }
       const j = await res.json();
       try { return JSON.parse(j.result.content[0].text); } catch { return j; }
     };

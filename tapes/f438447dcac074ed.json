@@ -1,0 +1,16 @@
+{
+  "label": "jev",
+  "asked": "August ka top buyer kaun tha?",
+  "parts": {
+    "system": "74234e98afe7498f",
+    "tools": "74234e98afe7498f",
+    "conversation": "94a4c670ef6e25ad"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"jev-1.13.0\",\"answers\":{\"list\":{\"type\":\"choice\",\"choice\":\"customers\",\"confidence\":0.69,\"probabilities\":{\"sales\":0.0,\"customers\":0.75,\"products\":0.0,\"stock\":0.0,\"orders\":0.25,\"none\":0.0}},\"window\":{\"type\":\"choice\",\"choice\":\"named_month\",\"confidence\":1.0,\"probabilities\":{\"all\":0.0,\"yesterday\":0.0,\"last_month\":0.0,\"this_month\":0.0,\"named_month\":1.0,\"today\":0.0,\"this_week\":0.0}},\"month\":{\"type\":\"choice\",\"choice\":\"aug\",\"confidence\":1.0,\"probabilities\":{\"jul\":0.0,\"nov\":0.0,\"jan\":0.0,\"sep\":0.0,\"may\":0.0,\"oct\":0.0,\"aug\":1.0,\"apr\":0.0,\"none\":0.0,\"dec\":0.0,\"feb\":0.0,\"mar\":0.0,\"jun\":0.0}},\"kind\":{\"type\":\"choice\",\"choice\":\"ranking\",\"confidence\":0.98,\"probabilities\":{\"lookup\":0.01,\"unclear\":0.0,\"ranking\":0.99,\"total\":0.0,\"build\":0.0}}},\"usage\":{\"input_tokens\":1761,\"output_tokens\":284}}"
+    }
+  ]
+}

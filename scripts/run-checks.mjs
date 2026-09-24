@@ -59,7 +59,7 @@ try {
 // The two that spend money and can disagree with themselves. Named
 // rather than inferred: what makes them different is not visible in
 // the file, it is what the server does when they call propose_change.
-const MODEL = new Set(["check-mcp", "check-auto-build", "check-luke-lookups"]);
+const MODEL = new Set(["check-mcp", "check-auto-build"]);
 
 const classify = (name) => {
   const src = readFileSync(new URL(`./${name}.mjs`, here), "utf8");

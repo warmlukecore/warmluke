@@ -12,10 +12,10 @@ import { createClient } from "@supabase/supabase-js";
 import {
   STORE_TABLES,
   isStoreTable,
-  listStores,
   readStoreRows,
   storeTableSchema,
 } from "../src/lib/store-read.ts";
+import { realStores } from "./owner-session.mjs";
 
 const fails = [];
 const check = (name, cond) => {
@@ -54,7 +54,7 @@ const db = createClient(
   env.ADAPTIVE_OS_SERVICE_ROLE_KEY
 );
 
-const [store] = await listStores(db);
+const [store] = await realStores(db, "id, project_id, shop_domain, timezone, currency, last_synced_at");
 if (!store) {
   console.log("\nno connected store — the row checks did not run");
 } else {
