@@ -11,6 +11,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { LOGO } from "@/lib/brand";
 
 export const metadata = {
   title: "Privacy · Warmluke",
@@ -37,11 +38,11 @@ export default function Privacy() {
         <div className="mx-auto flex w-full max-w-2xl items-center justify-between px-4 py-5 sm:px-6">
           <Link href="/" className="flex items-center gap-2">
             <Image
-              src="/images/logowarmluke.png"
+              src={LOGO}
               alt=""
               width={28}
               height={28}
-              className="h-7 w-7 rounded-lg object-cover"
+              className="h-7 w-7 object-contain"
             />
             <span className="text-lg font-semibold tracking-tight">Warmluke</span>
           </Link>

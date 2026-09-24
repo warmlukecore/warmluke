@@ -1,5 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { findLogo } from "./src/lib/brand-file.mjs";
 
 const projectDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -91,6 +92,11 @@ const securityHeaders = [
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // The logo is whichever image is in public/brand/; the build fails
+  // with a plain message if there is none, or more than one.
+  env: {
+    NEXT_PUBLIC_LOGO: findLogo(projectDir),
+  },
   // Pin the workspace root so stray lockfiles in parent directories
   // (e.g. ~/package-lock.json) don't confuse module resolution.
   turbopack: {

@@ -6,6 +6,15 @@ blocks. The look changes in those places, not screen by screen. The landing and 
 pages have their own editorial style (`font-serif`, `ink`, `accent`) and are outside this
 system.
 
+## The logo
+
+The logo is the one image in `public/brand/`, under any name. The build finds it
+(`src/lib/brand-file.mjs`) and every screen, and the browser tab's icon (`src/app/icon.tsx`),
+shows it through `LOGO` from `src/lib/brand.ts`. To change the logo, put the new file in
+`public/brand/` and take the old one out: the build stops with a plain message if the folder
+holds none or more than one. It is shown as the file is, with `object-contain` and no tile of
+ours behind it. `check-brand` holds this, and fails if a component types an image path.
+
 ## Tokens
 
 Defined once in the `@theme` block of [`src/app/globals.css`](../../src/app/globals.css).

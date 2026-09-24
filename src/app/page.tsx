@@ -62,6 +62,7 @@ import {
 } from "lucide-react";
 import { AskLuke, DemoForm, FloatingNav, LandingTracker, NavLinks, type Ask } from "@/components/Landing";
 import { whatCanChange, whatNeverChanges } from "@/lib/store-actions";
+import { LOGO } from "@/lib/brand";
 
 export const metadata = {
   title: "Warmluke: one place for your ecommerce business",
@@ -380,11 +381,11 @@ function Preview() {
         <div className="flex items-center gap-3 border-b border-hair px-3 py-2">
           <div className="flex items-center gap-1.5">
             <Image
-              src="/images/logowarmluke.png"
+              src={LOGO}
               alt=""
               width={20}
               height={20}
-              className="h-5 w-5 rounded-md object-cover"
+              className="h-5 w-5 object-contain"
             />
             <span className="font-medium text-ink">Warmluke</span>
             <span className="text-quiet">▾</span>
@@ -596,7 +597,7 @@ function Hub() {
       <Ring names={CONNECTORS.filter((c) => !c.ready)} inset="7%" seconds={120} turn={45} />
       <Ring names={CONNECTORS.filter((c) => c.ready)} inset="28%" seconds={80} turn={-90} />
       <div className="absolute top-1/2 left-1/2 flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-3xl bg-white shadow-[var(--shadow-dashboard)]">
-        <Image src="/images/logowarmluke.png" alt="" width={48} height={48} className="h-12 w-12 rounded-xl object-cover" />
+        <Image src={LOGO} alt="" width={48} height={48} className="h-12 w-12 object-contain" />
       </div>
     </div>
   );
@@ -625,7 +626,7 @@ function Bridge() {
         <div className="h-px w-full border-t border-dashed border-accent/50" />
       </div>
       <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white shadow-[var(--shadow-dashboard)]">
-        <Image src="/images/logowarmluke.png" alt="" width={36} height={36} className="h-9 w-9 rounded-lg object-cover" />
+        <Image src={LOGO} alt="" width={36} height={36} className="h-9 w-9 object-contain" />
       </div>
     </div>
   );
@@ -738,17 +739,16 @@ export default async function Landing({
             the gap from eating the button. */}
         <header className="relative z-10 flex items-center justify-between gap-3 px-5 py-5 sm:px-6 md:px-12 lg:px-20">
           <div className="flex shrink-0 items-center gap-2">
-            {/* The mark carries its own dark tile, so it is clipped
-                rather than sat on a background of ours. Sized and
-                given dimensions so the navbar does not jump while
-                it loads. */}
+            {/* The logo file as it is, with no tile of ours behind it;
+                sized and given dimensions so the navbar does not
+                jump while it loads. */}
             <Image
-              src="/images/logowarmluke.png"
+              src={LOGO}
               alt=""
               width={28}
               height={28}
               priority
-              className="h-7 w-7 rounded-lg object-cover"
+              className="h-7 w-7 object-contain"
             />
             <span className="text-lg font-semibold tracking-tight sm:text-xl">Warmluke</span>
           </div>

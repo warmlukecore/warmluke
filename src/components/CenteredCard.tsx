@@ -5,18 +5,19 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { LOGO } from "@/lib/brand";
 
 export function CenteredCard({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
   return (
     <div className="font-ui flex min-h-dvh flex-col items-center justify-center bg-canvas px-4 py-10">
       <Link href="/" className="mb-6 flex items-center gap-2.5 rounded-control focus-visible:outline-2 focus-visible:outline-focus">
         <Image
-          src="/images/logowarmluke.png"
+          src={LOGO}
           alt=""
           width={32}
           height={32}
           priority
-          className="h-8 w-8 rounded-lg object-cover shadow-card"
+          className="h-8 w-8 object-contain"
         />
         <span className="text-[15px] font-semibold text-fg">Warmluke</span>
       </Link>

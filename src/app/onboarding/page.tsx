@@ -45,6 +45,7 @@ import {
   type Option,
   type Step,
 } from "@/lib/onboarding";
+import { LOGO } from "@/lib/brand";
 
 const WATCH_MS = 3000;
 
@@ -437,7 +438,7 @@ function Frame({
       {/* Luke and the steps. On a phone, a bar across the top instead. */}
       <aside className="sticky top-0 hidden h-dvh flex-col border-r border-line bg-surface px-7 py-7 lg:flex">
         <div className="flex items-center gap-2.5">
-          <Image src="/images/logowarmluke.png" alt="" width={26} height={26} priority className="h-[26px] w-[26px] rounded-lg object-cover" />
+          <Image src={LOGO} alt="" width={26} height={26} priority className="h-[26px] w-[26px] object-contain" />
           <span className="text-sm font-semibold">Warmluke</span>
         </div>
 
@@ -506,7 +507,7 @@ function Frame({
 
       <main className="flex min-w-0 flex-col">
         <header className="flex items-center gap-3 border-b border-line bg-surface px-4 py-3 lg:hidden">
-          <Image src="/images/logowarmluke.png" alt="" width={24} height={24} priority className="h-6 w-6 rounded-md object-cover" />
+          <Image src={LOGO} alt="" width={24} height={24} priority className="h-6 w-6 object-contain" />
           <span className="text-sm font-semibold">Warmluke</span>
           <span className="ml-auto text-xs text-fg-muted tabular-nums">
             {at + 1} of {trail.length} · {trail[at]?.text}

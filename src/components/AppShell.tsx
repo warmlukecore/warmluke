@@ -54,6 +54,7 @@ import { Icon } from "@/components/ui/Icon";
 import Image from "next/image";
 import { ArrowRight, ChevronRight, Ellipsis, History, LayoutDashboard, Menu, Plus, Search, Settings, Sparkles, Zap } from "lucide-react";
 import { button, iconButton, note } from "@/components/ui/controls";
+import { LOGO } from "@/lib/brand";
 
 /**
  * Rows are fetched a page at a time. Search, filters and stats run over
@@ -1805,11 +1806,11 @@ export default function AppShell({
             title="Back to dashboard"
           >
             <Image
-              src="/images/logowarmluke.png"
+              src={LOGO}
               alt=""
               width={28}
               height={28}
-              className="h-7 w-7 shrink-0 rounded-lg object-cover"
+              className="h-7 w-7 shrink-0 object-contain"
             />
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold text-white">{project?.name ?? "Warmluke"}</div>
