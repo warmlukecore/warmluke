@@ -81,6 +81,14 @@
   --color-critical: hsl(357 84% 42%);
   --color-critical-hover: hsl(357 84% 35%);
 
+  /* Luke's own colour, and only Luke's: the orb that is its face, and
+     the beam that goes round the composer while it works. Deep to pale,
+     so the orb reads as lit from inside. */
+  --color-luke-deep: hsl(253 71% 28%);
+  --color-luke: hsl(243 75% 59%);
+  --color-luke-light: hsl(246 100% 75%);
+  --color-luke-pale: hsl(252 100% 92%);
+
   --radius-card: 0.75rem;
   --radius-control: 0.5rem;
   --shadow-card: 0 1px 0 0 rgb(0 0 0 / 0.07), 0 0 0 1px rgb(0 0 0 / 0.06);
@@ -160,6 +168,155 @@
   animation: orbit var(--orbit-for, 90s) linear infinite reverse;
 }
 
+/* Luke's face (ui/LukeMark): an orb lit from inside, with two eyes that
+   blink. Pressed, it squashes and springs back. While Luke works
+   (data-state="thinking") the eyes look from side to side and the glow
+   breathes. */
+.luke-orb {
+  background: radial-gradient(
+    circle at 50% 45%,
+    var(--color-luke-deep) 0%,
+    var(--color-luke) 40%,
+    var(--color-luke-light) 68%,
+    var(--color-luke-pale) 100%
+  );
+  box-shadow:
+    0 0 4px 0 rgb(79 70 229 / 0.35),
+    0 0 16px 6px rgb(79 70 229 / 0.18);
+  transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.luke-orb:active {
+  transform: scale(1.12, 1.22);
+}
+.luke-eye {
+  background: linear-gradient(135deg, #fff 0%, var(--color-luke-pale) 100%);
+  animation: luke-blink 3.6s ease-in-out infinite;
+}
+.luke-eye + .luke-eye {
+  animation-delay: 60ms;
+}
+.luke-orb[data-state="thinking"] {
+  animation: luke-breathe 1.8s ease-in-out infinite;
+}
+.luke-orb[data-state="thinking"] .luke-eyes {
+  animation: luke-look 2.6s ease-in-out infinite;
+}
+@keyframes luke-blink {
+  0%,
+  88%,
+  100% {
+    transform: scaleY(1);
+  }
+  93%,
+  97% {
+    transform: scaleY(0.07);
+  }
+}
+@keyframes luke-look {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-22%);
+  }
+  70% {
+    transform: translateX(22%);
+  }
+}
+@keyframes luke-breathe {
+  50% {
+    box-shadow:
+      0 0 6px 0 rgb(79 70 229 / 0.45),
+      0 0 24px 9px rgb(79 70 229 / 0.26);
+  }
+}
+
+/* The composer while Luke works: a beam of Luke's colour travelling
+   round its border. The angle is a registered property so it can be
+   animated; a browser without @property shows the beam standing still,
+   which still says "working". */
+@property --beam-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+.beam {
+  position: relative;
+}
+.beam::before,
+.beam::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  padding: 2px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--beam-angle),
+    transparent 0deg,
+    transparent 230deg,
+    var(--color-luke-pale) 280deg,
+    var(--color-luke-light) 320deg,
+    var(--color-luke) 345deg,
+    transparent 360deg
+  );
+  pointer-events: none;
+  animation: beam 2.4s linear infinite;
+}
+/* ::before is the beam on the border itself; ::after is its glow, the
+   same light blurred and set behind the box. */
+.beam::before {
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+.beam::after {
+  z-index: -1;
+  filter: blur(10px);
+  opacity: 0.55;
+}
+@keyframes beam {
+  to {
+    --beam-angle: 360deg;
+  }
+}
+
+/* Words that are being worked on: a light passing along them. */
+.shimmer {
+  background: linear-gradient(
+      90deg,
+      var(--color-fg-faint) 0%,
+      var(--color-fg-faint) 35%,
+      var(--color-fg) 50%,
+      var(--color-fg-faint) 65%,
+      var(--color-fg-faint) 100%
+    )
+    0 0 / 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 1.8s linear infinite;
+}
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Still words, in a colour that can be read, rather than a light
+     frozen half way along them. */
+  .shimmer {
+    background: none;
+    color: var(--color-fg-muted);
+  }
+}
+
 /* A text caret, for a prompt that is being typed into. */
 @keyframes caret {
   50% {
@@ -203,6 +360,12 @@ html:has(dialog.wl-dialog[open]) {
   .orbit,
   .orbit-back,
   .caret,
+  .luke-eye,
+  .luke-eyes,
+  .luke-orb,
+  .beam::before,
+  .beam::after,
+  .shimmer,
   dialog.wl-dialog[open],
   dialog.wl-dialog[open]::backdrop {
     animation: none;

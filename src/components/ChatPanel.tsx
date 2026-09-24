@@ -1208,7 +1208,7 @@ export default function ChatPanel({
       />
       <div className="border-b border-line px-4 py-3">
         <div className="flex items-center gap-2">
-          <LukeMark />
+          <LukeMark state={busy ? "thinking" : "idle"} />
           <div className="min-w-0">
             <div className="text-sm font-semibold text-fg">Luke</div>
             <div className="truncate text-[11px] text-fg-faint">Describe it, preview it, then it applies</div>
@@ -2180,8 +2180,8 @@ export default function ChatPanel({
               onClick={() => setStepsOpen((o) => !o)}
               className="flex max-w-full items-center gap-1.5 text-left hover:text-fg-muted"
             >
-              <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-signal-neutral" />
-              <span className="min-w-0 truncate">
+              <LukeMark size="xs" state="thinking" />
+              <span className="shimmer min-w-0 truncate">
                 {steps.length ? stepWords(steps[steps.length - 1]) : "Working on it…"}
               </span>
               {stepSeconds >= 2 && <span className="shrink-0 tabular-nums text-fg-faint">{stepSeconds}s</span>}
@@ -2458,7 +2458,13 @@ export default function ChatPanel({
         {/* One quiet box: the words inside it, the send inside it. A
             thick ring and a labelled button made the composer the
             loudest thing on the panel, and the conversation should be. */}
-        <div className="flex items-end gap-2 rounded-2xl border border-line bg-surface px-3 py-2 shadow-card transition-all duration-150 focus-within:border-line-strong focus-within:shadow-md">
+        {/* While Luke works, a beam of its colour goes round the box;
+            focused, the border takes Luke's colour. */}
+        <div
+          className={`flex items-end gap-2 rounded-2xl border border-line bg-surface px-3 py-2 shadow-card transition-all duration-150 focus-within:border-luke-light focus-within:shadow-[0_0_0_3px_rgb(139_126_255/0.14)] ${
+            busy ? "beam" : ""
+          }`}
+        >
           <textarea
             ref={inputRef}
             value={input}
