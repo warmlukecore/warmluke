@@ -6,7 +6,7 @@
 // always Lucide's; they used to be drawn as emoji from four separate
 // maps that had drifted apart. This is the one map now, and a name it
 // does not know falls back to the neutral table rather than to nothing.
-// check-design-system holds that every stored name is drawn here.
+// check-icons holds that every stored name is drawn here.
 // ─────────────────────────────────────────────────────────────
 
 import {
@@ -14,15 +14,19 @@ import {
   Box,
   Calendar,
   ClipboardList,
+  FileText,
   Globe,
   Heart,
   Layers,
+  List,
   MapPin,
   Package,
   Receipt,
+  RotateCcw,
   ScanLine,
   ShoppingCart,
   Table,
+  Tag,
   Target,
   Truck,
   Undo2,
@@ -52,6 +56,11 @@ export const SECTION_ICONS: Readonly<Record<string, LucideIcon>> = {
   banknote: Banknote,
   "map-pin": MapPin,
   layers: Layers,
+  // The store's own sections: returns, discounts, draft orders and their lines.
+  "rotate-ccw": RotateCcw,
+  tag: Tag,
+  "file-text": FileText,
+  list: List,
 };
 
 export function Icon({
