@@ -22,3 +22,7 @@ read and follow `.agents/skills/ui-designer-agent/SKILL.md`. It works from
 Any UI change, by whoever makes it, uses those tokens and blocks, is walked in a real
 browser with Playwright at desktop and phone width, and proposes newer techniques to the
 user with pros and cons instead of adopting them unasked.
+
+Before changing a model call, a model, a tool Luke or an MCP client can call, or Luke's
+loop, read and follow `.agents/skills/ai-stack/SKILL.md`: where each piece lives, the rules
+that keep it safe, and how each is tested.
