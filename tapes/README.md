@@ -43,4 +43,6 @@ say, never by the database's order), and two specs must not send the same reques
 they share one recording and can replay each other's answers (the e2e projects are named
 for their width for that reason). Answers that stop being used can be deleted: a file no request names is never
 read. Review a re-recorded answer the way you would a code change: it is what the checks
-now hold Luke to.
+now hold Luke to. To find the unused ones, log the key the recorder itself used on a full
+replay; never recompute keys from request bodies: the URL is part of the key, and a call
+that does not stream goes to a different one, which is how a needed tape was once deleted.

@@ -167,6 +167,7 @@ try {
   console.log("\na question the snapshot already answers");
   const plain = await ask("What was my most recent order number?");
   check("is answered", plain.last.reply?.type === "answer" && /1025/.test(plain.last.reply?.message ?? ""));
+  if (!/1025/.test(plain.last.reply?.message ?? "")) show(plain.last);
   check("without spending a lookup", !plain.steps.some((s) => s.step === "lookup"));
   if (plain.steps.some((s) => s.step === "lookup")) show(plain.steps.filter((s) => s.step === "lookup"));
   console.log("\na change to the shop, asked for");

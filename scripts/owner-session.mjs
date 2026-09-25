@@ -112,6 +112,11 @@ export async function signInAsCheckUser(client, env) {
   // the diff to explain it. A run starts with the budget it would have
   // on a fresh account.
   await admin.from("mcp_calls").delete().eq("user_id", signed.user.id);
+  // Off, as a fresh account has it. A check that turns it on and is
+  // killed before putting it back left every later run with a different
+  // prompt: Luke is told what he may change, so no recording matched.
+  // The checks that need it on turn it on themselves.
+  await admin.from("account_settings").update({ store_actions_enabled: false }).eq("user_id", signed.user.id);
   return signed;
 }
 
