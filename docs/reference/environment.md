@@ -45,6 +45,12 @@ overdue things, a balance that subtracts what was paid), and needed more repair 
 Opus 5.5 is the design model; Haiku keeps the gap pass, which only compares two short texts.
 One run each: rerun the comparison before changing either, and after any large prompt change.
 
+Later the same day, after teaching the prompt that a date the owner must act by needs a daily
+rule (and "yaad nahi rehta" is "I only find out later"), Opus 5.5 got all 20 scenarios right,
+$3.63 for the run. Two of the harness's checks had been failing correct designs that used a
+computed column (they only looked in features and rules), which likely cost the cheaper models
+a point or two above; their scheduled-rule misses were real.
+
 ## Migration and check tooling
 
 | Variable | Context | Purpose |

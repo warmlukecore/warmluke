@@ -136,10 +136,11 @@ const SCENARIOS = [
     answers: "Invoice number, customer name, product, sale date. Warranty is 12 months. I check on paper bills.",
     // The answer is date arithmetic against the sale date, not a field
     // someone types "in warranty" into and forgets to update.
+    // Anywhere in the plan: a computed column (newSchema.columns[].compute)
+    // is the better answer and was not looked at, so a design that got it
+    // right failed here.
     expect: (b) => {
-      const ops = new Set(
-        b.plans.flatMap((p) => [...opsIn(p.newSchema?.features ?? {}), ...opsIn(p.automation ?? {})])
-      );
+      const ops = new Set(b.plans.flatMap((p) => [...opsIn(p)]));
       const dateAware = ["days_since", "days_until", "date_add", "before", "after"].some((o) => ops.has(o));
       if (!dateAware) return "nothing computes from the sale date — warranty would have to be maintained by hand";
       return null;
@@ -209,11 +210,10 @@ const SCENARIOS = [
     answers: "Customer name phone, total amount, payments received. Amounts vary. About 60 customers.",
     // Money owed is arithmetic on two numbers, not a status someone
     // remembers to flip.
+    // Anywhere in the plan, computed columns included: a balance column
+    // worked out as total minus paid is the best answer, and was failed.
     expect: (b) => {
-      const feat = b.plans.map((p) => p.newSchema?.features ?? {});
-      const ops = new Set(feat.flatMap((f) => [...opsIn(f)]));
-      const rules = rulesOf(b.plans);
-      const arith = ops.has("-") || rules.some((r) => opsIn(r.definition).has("-"));
+      const arith = b.plans.some((p) => opsIn(p).has("-"));
       if (!arith) return "nothing subtracts paid from total — the balance would be kept in someone's head";
       return null;
     },
