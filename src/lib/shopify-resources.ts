@@ -461,7 +461,7 @@ export const SHOPIFY_RESOURCES = {
     root: "orders",
     bulk: {
       query: `{ orders { edges { node {
-    id name createdAt updatedAt cancelledAt tags
+    id name createdAt processedAt updatedAt cancelledAt tags
     displayFinancialStatus displayFulfillmentStatus
     totalPriceSet { shopMoney { amount currencyCode } }
     currentTotalPriceSet { shopMoney { amount currencyCode } }

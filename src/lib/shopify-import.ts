@@ -537,7 +537,7 @@ query($n: Int!, $after: String) {
   orders(first: $n, after: $after, sortKey: CREATED_AT) {
     pageInfo { hasNextPage endCursor }
     nodes {
-      id name createdAt updatedAt cancelledAt tags
+      id name createdAt processedAt updatedAt cancelledAt tags
       displayFinancialStatus displayFulfillmentStatus
       totalPriceSet { shopMoney { amount currencyCode } }
       currentTotalPriceSet { shopMoney { amount currencyCode } }
@@ -573,6 +573,12 @@ export type GqlOrder = {
   id: string;
   name: string;
   createdAt: string;
+  /**
+   * When the order was placed, which an order brought over from another
+   * shop carries from there: createdAt is the day it reached Shopify.
+   * Optional so a node written before this was asked for still types.
+   */
+  processedAt?: string | null;
   updatedAt: string;
   cancelledAt: string | null;
   tags: string[];
@@ -654,7 +660,10 @@ export async function saveOrders(db: SupabaseClient, storeId: string, nodes: Gql
         external_id: o.id,
         order_number: o.name,
         customer_id: o.customer ? (customerId.get(o.customer.id) ?? null) : null,
-        placed_at: o.createdAt,
+        // Shopify's own order date. A shop that moved here from another
+        // platform brings its history in with createdAt set to the day
+        // it arrived, so a year of orders would all land on one day.
+        placed_at: o.processedAt ?? o.createdAt,
         // Today's total, after refunds, under the name the webhook has
         // always used for it — and the original beside it. This used
         // to write the original as `total`, so the same order carried
