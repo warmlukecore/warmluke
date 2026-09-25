@@ -294,20 +294,29 @@ async function finish(db: Db, store: StoreToken, runs: Run[]): Promise<StepResul
     if (stamped) console.error("could not record the sync time:", stamped.message);
   }
 
-  // Rows we hold that the pass did not bring back.
+  // Rows Shopify no longer has.
   //
-  // A pass has just walked the whole of Shopify, so what it imported
-  // IS Shopify's count — no second API call is needed to learn it.
-  // Anything we hold beyond that was removed in Shopify while nobody
-  // was listening: a delete webhook that never arrived, a
+  // Every write marks a row seen (0123), whatever wrote it: a pass, a
+  // webhook, a change made here. So a row the last finished pass did
+  // not write, and nothing wrote while it ran, was not in Shopify then.
+  // Only rows here before the pass began count: one that arrived since
+  // is new, not gone. That is a delete webhook that never arrived, a
   // subscription that lapsed, an outage.
   //
-  // Reported, never deleted. A page that failed quietly, or a bulk
-  // file that came back short, would look exactly like a deletion —
-  // and a wrong delete does not come back. Saying so ends the
-  // silence, which is the actual problem; sweeping rows away would
-  // trade it for a worse one.
-  const drift: Record<string, { holding: number; imported: number }> = {};
+  // Named, and removed only when the pass before this one missed them
+  // too. A page that failed quietly, or a bulk file that came back
+  // short, looks exactly like a deletion once; the same rows missing
+  // from two finished passes is one. Removed the way a delete webhook
+  // removes a row, by the store's owner (the worker's ticket is refused,
+  // and the strip asks again as the owner), and a row taken by mistake
+  // comes back with the next pass that brings it.
+  const { data: taken, error: notTaken } = await db.rpc("abo_store_forget_unseen", { p_store: store.id });
+  if (notTaken && !/not a store of yours|sign in first/.test(notTaken.message)) {
+    console.error("could not remove what Shopify no longer has:", notTaken.message);
+  }
+  const removed = (taken ?? {}) as Record<string, number>;
+
+  const drift: Record<string, { missing: number; examples: string[] }> = {};
   // Null when this caller may not read the row (the worker's ticket
   // reaches commerce rows only); treated as not granted, which only
   // ever narrows what is compared.
@@ -315,29 +324,33 @@ async function finish(db: Db, store: StoreToken, runs: Run[]): Promise<StepResul
   const allOrders = ((grant?.granted_scopes as string[] | null) ?? []).includes(EXTENDED_ORDER_HISTORY_SCOPE);
   for (const [resource, table] of Object.entries(COUNTED)) {
     const run = runs.find((r) => r.resource === resource);
-    const imported = run?.imported ?? 0;
-    let held = db.from(table).select("id", { count: "exact", head: true }).eq("store_id", store.id);
-    // Only rows that were here before the pass began. One a webhook
-    // brought in since is new in Shopify, not gone from it, and a store
-    // taking orders has one within the hour: every new order used to
-    // read as a row Shopify had lost. Before it began, not after it
-    // ended: a bulk export is Shopify's copy from when it started, so
-    // an order placed while it ran is in neither.
-    const since = run?.started_at ?? run?.finished_at;
-    if (since) held = held.lte("created_at", since);
+    if (!run?.started_at) continue;
+    const label = LABEL[table] ?? "id";
+    let unseen = db
+      .from(table)
+      .select(label, { count: "exact" })
+      .eq("store_id", store.id)
+      .lte("created_at", run.started_at)
+      .or(`seen_at.is.null,seen_at.lt."${run.started_at}"`)
+      .limit(3);
     // Without read_all_orders Shopify hands back sixty days of orders,
     // so an older one held here was never going to come back. Compared
     // inside the window, a day short of it so its edge cannot count.
     if (resource === "orders" && !allOrders) {
-      const edge = Date.parse(run?.finished_at ?? new Date().toISOString()) - 59 * 86_400_000;
-      held = held.gte("placed_at", new Date(edge).toISOString());
+      const edge = Date.parse(run.finished_at ?? new Date().toISOString()) - 59 * 86_400_000;
+      unseen = unseen.gte("placed_at", new Date(edge).toISOString());
     }
-    const { count } = await held;
-    const holding = count ?? 0;
-    // Only rows we hold and the pass did not bring back. Fewer than
-    // imported means something arrived by webhook while the pass was
-    // running, which is the system working, not a loss.
-    if (holding > imported) drift[resource] = { holding, imported };
+    const { data, count, error } = await unseen;
+    if (error) {
+      console.error(`could not look for ${resource} Shopify no longer has:`, error.message);
+      continue;
+    }
+    if (count) {
+      const examples = ((data ?? []) as unknown as Array<Record<string, unknown>>)
+        .map((r) => String(r[label] ?? ""))
+        .filter(Boolean);
+      drift[resource] = { missing: count, examples };
+    }
   }
 
   return {
@@ -350,9 +363,10 @@ async function finish(db: Db, store: StoreToken, runs: Run[]): Promise<StepResul
         ? {
             drift,
             drift_note:
-              "These are here but did not come back from Shopify this time — most likely removed there while a webhook was not delivered. Nothing has been deleted.",
+              "These are here but did not come back from Shopify this time, most likely deleted there. If the next check agrees, they are removed here.",
           }
         : {}),
+      ...(Object.keys(removed).length ? { removed } : {}),
       progress: summarise(runs),
     },
   };
@@ -475,6 +489,17 @@ async function advance(
 const COUNTED = Object.fromEntries(
   RESOURCES.filter((r) => SHOPIFY_RESOURCES[r].drift).map((r) => [r, SHOPIFY_RESOURCES[r].tables[0]])
 );
+
+/** What a merchant calls a row of each counted table, to name the ones gone. */
+const LABEL: Record<string, string> = {
+  products: "title",
+  collections: "title",
+  customers: "name",
+  draft_orders: "name",
+  discounts: "title",
+  orders: "order_number",
+  locations: "name",
+};
 
 /** Where each resource stands, with what to call it and which table holds it. */
 function summarise(runs: Array<Partial<Run>>) {

@@ -73,7 +73,10 @@ export default function StoreStrip({
   const [store, setStore] = useState<StoreRow | null | undefined>(undefined);
   const [progress, setProgress] = useState<Progress>({});
   /** Rows we hold that the last pass did not bring back from Shopify. */
-  const [drift, setDrift] = useState<Record<string, { holding: number; imported: number }> | null>(null);
+  // What the last finished check did not bring back, named, and what an
+  // earlier miss confirmed and took away (import-step, 0123).
+  const [drift, setDrift] = useState<Missing | null>(null);
+  const [removed, setRemoved] = useState<Record<string, number> | null>(null);
   const [running, setRunning] = useState(false);
   /** The server is doing the import, so closing the tab stops nothing. */
   const [onServer, setOnServer] = useState(false);
@@ -134,7 +137,8 @@ export default function StoreStrip({
         // branch: it reads nothing from Shopify and says what drifted.
         const { data: last } = await apiFetch("/api/shopify/import", { projectId });
         if (last?.progress) setProgress(last.progress as Progress);
-        setDrift((last?.drift as Record<string, { holding: number; imported: number }> | undefined) ?? null);
+        setDrift((last?.drift as Missing | undefined) ?? null);
+        setRemoved((last?.removed as Record<string, number> | undefined) ?? null);
         return;
       }
       await new Promise((r) => setTimeout(r, WATCH_MS));
@@ -152,7 +156,8 @@ export default function StoreStrip({
       const { ok, data } = await apiFetch("/api/shopify/import", { projectId });
       if (data?.progress) setProgress(data.progress as Progress);
       if (data?.done) {
-        setDrift((data.drift as Record<string, { holding: number; imported: number }> | undefined) ?? null);
+        setDrift((data.drift as Missing | undefined) ?? null);
+        setRemoved((data.removed as Record<string, number> | undefined) ?? null);
       }
       if (!ok) {
         if (data?.retryable && stumbles < IMPORT_RETRIES) {
@@ -338,20 +343,43 @@ export default function StoreStrip({
 
   const lists = Object.values(progress);
   const done = lists.filter((p) => p.status === "done").length;
+  // Every resource counted here is named in the plural ("products").
+  const named = (resource: string, n: number) => {
+    const label = progress[resource]?.label ?? resource;
+    return `${n} ${n === 1 ? label.replace(/s$/, "") : label}`;
+  };
+  // Reconnecting mends a subscription; it cannot bring back or clear a
+  // row, so a row that did not come back offers the check that settles
+  // it instead. It said Reconnect, and the warning never went away.
   const trouble = store.webhook_error
     ? {
         text: "Updates are not coming in",
         why: `Shopify was not asked to send updates: ${store.webhook_error}. Reconnecting asks again.`,
+        act: "reconnect" as const,
       }
     : drift && Object.keys(drift).length > 0
       ? {
-          text: "Some rows are gone from Shopify",
+          // Short enough for the sidebar: the count when it is one kind of row.
+          text:
+            Object.keys(drift).length === 1
+              ? `${named(Object.keys(drift)[0], Object.values(drift)[0].missing)} missing`
+              : "Some rows missing",
           why: `${Object.entries(drift)
-            .map(([resource, d]) => `${d.holding - d.imported} ${progress[resource]?.label ?? resource}`)
+            .map(
+              ([r, d]) =>
+                `${named(r, d.missing)}${d.examples.length ? ` (${d.examples.join(", ")}${d.missing > d.examples.length ? ", …" : ""})` : ""}`
+            )
             .join(
-              ", "
-            )} no longer in Shopify. Nothing has been deleted here. Reconnecting the store re-subscribes its updates.`,
+              "; "
+            )} did not come back on the last check, most likely deleted in Shopify. If the next check agrees, they are removed here.`,
+          act: "check" as const,
         }
+      : null;
+  const removedLine =
+    removed && Object.keys(removed).length > 0
+      ? `Removed ${Object.entries(removed)
+          .map(([r, n]) => named(r, n))
+          .join(", ")}`
       : null;
 
   return (
@@ -394,6 +422,16 @@ export default function StoreStrip({
             <span className="block truncate text-[11px] text-frame-fg-muted">
               synced {ago(store.last_synced_at, now, "not yet")}
             </span>
+            {/* Said once, quietly, where the sync is: what the check took
+                away because Shopify no longer has it. */}
+            {removedLine && (
+              <span
+                className="block truncate text-[11px] text-frame-fg-muted"
+                title={`${removedLine}, deleted in Shopify: two checks in a row did not bring them back.`}
+              >
+                {removedLine}
+              </span>
+            )}
           </span>
           {canManage && (
             <button
@@ -441,10 +479,10 @@ export default function StoreStrip({
           </span>
           {canManage && (
             <button
-              onClick={() => setConnecting(true)}
+              onClick={() => (trouble.act === "check" ? checkNow() : setConnecting(true))}
               className="shrink-0 font-medium text-frame-fg underline-offset-2 hover:underline"
             >
-              Reconnect
+              {trouble.act === "check" ? "Check" : "Reconnect"}
             </button>
           )}
         </Line>
@@ -453,6 +491,9 @@ export default function StoreStrip({
     </>
   );
 }
+
+/** Rows the last finished check did not bring back, by resource: how many, and a few by name. */
+type Missing = Record<string, { missing: number; examples: string[] }>;
 
 /** One line of the store's standing that needs attention, on the dark sidebar. */
 function Line({

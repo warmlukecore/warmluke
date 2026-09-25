@@ -127,7 +127,8 @@ when needed; an expired refresh token requires reconnection.
 - MCP tools have explicit input schemas, row limits, and per-hour call accounting.
 - Project/module/store deletion is owner-only and requires explicit UI confirmation.
 - Undo refuses to overwrite changes made after the target build.
-- Shopify drift detection reports unmatched rows but does not infer deletion.
+- Shopify drift: a row one finished pass did not see is named, never removed; only the
+  store's owner removes, and only rows two finished passes in a row did not see.
 - Customer/shop compliance redaction is intentionally irreversible and tombstoned.
 
 ## Account profiles

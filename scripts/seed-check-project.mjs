@@ -123,6 +123,9 @@ const runs = await admin.from("import_runs").insert(
     resource,
     status: "done",
     imported: nodes[resource].length,
+    // Begun before the rows were written, as an import begins: a row
+    // written before its pass began reads as one Shopify no longer has.
+    started_at: new Date(Date.parse(now) - 60_000).toISOString(),
     finished_at: now,
   }))
 );

@@ -100,15 +100,21 @@ store reliably.
 **Consequence:** New resources must fully declare scopes, query paths, limits, writes,
 topics, and drift behavior.
 
-## ADR-010: Ambiguous Shopify drift is reported, not deleted
+## ADR-010: Shopify drift is named after one pass and removed after two
 
-**Decision:** A full recheck reports locally held rows absent from the latest pass without
-automatically removing them.
+**Decision:** Every write marks its row seen (migration 0123). A row the last finished pass
+did not see is named on the store strip; a row two finished passes in a row did not see is
+removed, the way a delete webhook removes it. Rows no pass could have seen are never
+counted: one that arrived after the pass began, and orders outside the sixty days Shopify
+returns without `read_all_orders`.
 
-**Why:** Missed pages, truncated files, upstream outages, and true deletion can look the
-same; only one interpretation is destructive.
+**Why:** Missed pages, truncated files and outages look like a deletion once; the same rows
+missing from two finished passes is one. Reporting alone, the decision this replaces, left
+deleted rows on screen for good under a warning nothing could clear.
 
-**Consequence:** Operators may need an explicit reconciliation decision after drift.
+**Consequence:** A row removed by mistake returns with the next pass that brings it, under a
+new internal id, so anything that pointed at the old id loses it. Revised 2026-09-26; it
+was "reported, never deleted".
 
 ## ADR-011: MCP transport is stateless
 

@@ -63,7 +63,7 @@ const importCall = (body) =>
 // Everything here is put back: this is a real store with a real import.
 const { data: runsBefore } = await admin
   .from("import_runs")
-  .select("id, resource, status, cursor, imported, finished_at")
+  .select("id, resource, status, cursor, imported, started_at, prev_started_at, finished_at")
   .eq("store_id", store.id);
 const syncedBefore = store.last_synced_at;
 
@@ -119,6 +119,10 @@ try {
       status: r.status,
       cursor: r.cursor,
       imported: r.imported,
+      // When its pass began, too: left to default to now, every row the
+      // store holds would read as one its last pass did not see.
+      started_at: r.started_at,
+      prev_started_at: r.prev_started_at,
       finished_at: r.finished_at,
     });
   }
