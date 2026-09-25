@@ -2054,7 +2054,7 @@ const MODEL_ERROR_WORDS: Record<ModelErrorKind, string> = {
   down: "Luke could not reach its model. Nothing was changed — try again in a minute.",
   refused: "Luke's model would not take this turn. Nothing was changed — try rephrasing, or try again.",
   empty: "Luke's model answered with nothing. Nothing was changed — try again.",
-  unset: "Luke has no model key set on this server. Nothing was changed.",
+  unset: "Luke's model is not set up on this server. Nothing was changed.",
 };
 
 export class ModelError extends Error {
@@ -2105,31 +2105,33 @@ export function modelError(provider: Provider, status: number, raw: string): Mod
 const MAX_OUTPUT_TOKENS = 6000;
 
 /**
- * Which model does which job. Each is a setting, read when a call is
+ * Which model does which job: the setting each one reads, when a call is
  * made, so changing a model is a deploy setting and never a code change.
+ * No model name lives here to fall back on. A default was a model nobody
+ * chose, running without a word wherever one setting was forgotten; now
+ * that server says which setting is missing (ModelError "unset"). What
+ * each is set to, and the measurement behind it, is in
+ * docs/reference/environment.md.
+ *
  * The name also picks the provider: "gemini-…" is Google's, anything
  * else goes to the Anthropic-format host (api.anthropic.com, or
- * ANTHROPIC_API_URL, whose model names it must be). The second value is
- * only for a server nobody configured; docs/reference/environment.md
- * lists them.
+ * ANTHROPIC_API_URL, whose model names it must be).
  */
 const MODEL_JOBS = {
-  /**
-   * Designing the app: every reply Luke gives. Opus 5.5 got nine of ten
-   * real business requests right where Sonnet 5 got five and Haiku 4.5
-   * four, with fewer repair calls (docs/reference/environment.md).
-   */
-  design: ["ANTHROPIC_MODEL", "claude-opus-5-5"],
+  /** Designing the app: every reply Luke gives. */
+  design: "ANTHROPIC_MODEL",
   /** Reading two short texts and naming what is missing. */
-  gap: ["ANTHROPIC_GAP_MODEL", "claude-haiku-4-5-20251001"],
+  gap: "ANTHROPIC_GAP_MODEL",
   /** Where a design goes when Gemini stays busy. */
-  fallback: ["ANTHROPIC_FALLBACK_MODEL", "claude-opus-5-5"],
+  fallback: "ANTHROPIC_FALLBACK_MODEL",
 } as const;
 
 function modelFor(job: keyof typeof MODEL_JOBS): string {
-  const [setting, unconfigured] = MODEL_JOBS[job];
+  const setting = MODEL_JOBS[job];
   // While replaying, the models the tapes were recorded with.
-  return tapedSetting(setting, process.env[setting]?.trim() || undefined) || unconfigured;
+  const model = tapedSetting(setting, process.env[setting]?.trim() || undefined);
+  if (!model) throw new ModelError("unset", "anthropic", 0, `${setting} is not set`);
+  return model;
 }
 
 /**
@@ -2451,9 +2453,12 @@ export async function findGaps(
     const obj = JSON.parse(stripFences(raw)) as unknown;
     if (!isPlainObject(obj)) return [];
     return asStringArray(obj.unmet, 4);
-  } catch {
+  } catch (e) {
     // A design the owner can still read and approve beats no design at
     // all, so a failed or slow gap pass never takes the blueprint with it.
+    // Said, though: a gap pass with no model set skipped every design in
+    // silence.
+    console.error(`gap: ${e instanceof Error ? e.message : "failed"}`);
     return [];
   }
 }

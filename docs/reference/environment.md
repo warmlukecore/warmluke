@@ -10,10 +10,10 @@ test and migration workflows may require additional values in `.env.check.local`
 | `NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL` | Yes | Supabase project URL used by browser, server auth verification, CSP, and public callback clients |
 | `NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY` | Yes | Public Supabase anonymous key; authorization still depends on JWT/RLS |
 | `ANTHROPIC_API_KEY` | For Anthropic models/fallback | Built-in assistant and gap-model access |
-| `ANTHROPIC_MODEL` | No | Main design model; a `gemini-…` name goes to Google, any other name to the Anthropic-format host; defaults to `claude-opus-5-5` (see below) |
+| `ANTHROPIC_MODEL` | For Luke | Main design model; a `gemini-…` name goes to Google, any other name to the Anthropic-format host. Production: `claude-opus-5-5` (see below). No default: unset, Luke says it is not set up |
 | `ANTHROPIC_API_URL` | No | The Messages URL (`…/v1/messages`) of a host speaking Anthropic's API, for testing or a proxy. A proxy must accept the model names in `ANTHROPIC_MODEL`, `ANTHROPIC_GAP_MODEL` and `ANTHROPIC_FALLBACK_MODEL`, or those calls are refused |
-| `ANTHROPIC_GAP_MODEL` | No | Lower-cost model used by the gap pass; defaults to `claude-haiku-4-5-20251001` |
-| `ANTHROPIC_FALLBACK_MODEL` | No | Anthropic fallback after repeated Gemini transient failure (unused when `ANTHROPIC_MODEL` is already Anthropic's); defaults to `claude-opus-5-5` |
+| `ANTHROPIC_GAP_MODEL` | For the gap pass | Lower-cost model used by the gap pass. Production: `claude-haiku-4-5-20251001`. No default: unset, the gap pass is skipped and logs why |
+| `ANTHROPIC_FALLBACK_MODEL` | With a Gemini `ANTHROPIC_MODEL` | Anthropic fallback after repeated Gemini transient failure (unused when `ANTHROPIC_MODEL` is already Anthropic's). Production: `claude-opus-5-5`. No default |
 | `GEMINI_API_KEY` | For Gemini model IDs | Gemini generation access |
 | `TYPESAFE_API_KEY` | No | Enables Jev question routing and asynchronous design judgement |
 | `TYPESAFE_MODEL` | No | Jev model name; defaults to `jev-latest` |

@@ -109,7 +109,23 @@ try {
   } catch (e) {
     unset = e;
   }
-  check("says so in a sentence, and is not retried", unset?.kind === "unset" && /no model key/.test(unset.message) && !isTransient(unset));
+  check("says so in a sentence, and is not retried", unset?.kind === "unset" && /not set up/.test(unset.message) && !isTransient(unset));
+
+  console.log("\nno model named at all");
+  process.env.ANTHROPIC_API_KEY = "test-key";
+  const named = process.env.ANTHROPIC_MODEL;
+  delete process.env.ANTHROPIC_MODEL;
+  let unnamed = null;
+  try {
+    await call();
+  } catch (e) {
+    unnamed = e;
+  }
+  process.env.ANTHROPIC_MODEL = named;
+  check(
+    "is refused the same way, naming the setting, never a model the code picked",
+    unnamed?.kind === "unset" && logged.some((l) => /ANTHROPIC_MODEL is not set/.test(l))
+  );
 
   console.log("\nwhat Anthropic is sent, and what comes back");
   process.env.ANTHROPIC_API_KEY = "test-key";
