@@ -80,6 +80,9 @@ export async function signInAsOwner(client, env, email = OWNER_EMAIL) {
 
 export const CHECK_EMAIL = "check@warmluke.test";
 
+/** Whether this run has put the check account back to fresh yet. */
+let startedClean = false;
+
 /** Signs `client` in as the check user, creating the account once. */
 export async function signInAsCheckUser(client, env) {
   const key = env.ADAPTIVE_OS_SERVICE_ROLE_KEY;
@@ -112,11 +115,21 @@ export async function signInAsCheckUser(client, env) {
   // the diff to explain it. A run starts with the budget it would have
   // on a fresh account.
   await admin.from("mcp_calls").delete().eq("user_id", signed.user.id);
-  // Off, as a fresh account has it. A check that turns it on and is
-  // killed before putting it back left every later run with a different
-  // prompt: Luke is told what he may change, so no recording matched.
-  // The checks that need it on turn it on themselves.
-  await admin.from("account_settings").update({ store_actions_enabled: false }).eq("user_id", signed.user.id);
+  // As a fresh account has them, once per run (a check is a process):
+  // shop changes off, and no designs spent. A check that turned the
+  // switch on and was killed before putting it back left every later run
+  // with a different prompt (Luke is told what he may change), so no
+  // recording matched; an evaluation that ran dozens of designs left the
+  // account over its allowance, so every turn after it was refused. Only
+  // the first sign-in: a check that turns the switch on and then signs in
+  // again (check-as-client) must keep it.
+  if (!startedClean) {
+    startedClean = true;
+    await admin
+      .from("account_settings")
+      .update({ store_actions_enabled: false, turns_used: 0, turns_unlimited: false })
+      .eq("user_id", signed.user.id);
+  }
   return signed;
 }
 

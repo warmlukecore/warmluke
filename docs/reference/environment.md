@@ -10,10 +10,10 @@ test and migration workflows may require additional values in `.env.check.local`
 | `NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL` | Yes | Supabase project URL used by browser, server auth verification, CSP, and public callback clients |
 | `NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY` | Yes | Public Supabase anonymous key; authorization still depends on JWT/RLS |
 | `ANTHROPIC_API_KEY` | For Anthropic models/fallback | Built-in assistant and gap-model access |
-| `ANTHROPIC_MODEL` | No | Main design model; a `gemini-…` name goes to Google, any other name to the Anthropic-format host; defaults to `claude-sonnet-4-5` |
+| `ANTHROPIC_MODEL` | No | Main design model; a `gemini-…` name goes to Google, any other name to the Anthropic-format host; defaults to `claude-opus-5-5` (see below) |
 | `ANTHROPIC_API_URL` | No | The Messages URL (`…/v1/messages`) of a host speaking Anthropic's API, for testing or a proxy. A proxy must accept the model names in `ANTHROPIC_MODEL`, `ANTHROPIC_GAP_MODEL` and `ANTHROPIC_FALLBACK_MODEL`, or those calls are refused |
 | `ANTHROPIC_GAP_MODEL` | No | Lower-cost model used by the gap pass; defaults to `claude-haiku-4-5-20251001` |
-| `ANTHROPIC_FALLBACK_MODEL` | No | Anthropic fallback after repeated Gemini transient failure; defaults to `claude-sonnet-4-5` |
+| `ANTHROPIC_FALLBACK_MODEL` | No | Anthropic fallback after repeated Gemini transient failure (unused when `ANTHROPIC_MODEL` is already Anthropic's); defaults to `claude-opus-5-5` |
 | `GEMINI_API_KEY` | For Gemini model IDs | Gemini generation access |
 | `TYPESAFE_API_KEY` | No | Enables Jev question routing and asynchronous design judgement |
 | `TYPESAFE_MODEL` | No | Jev model name; defaults to `jev-latest` |
@@ -27,6 +27,23 @@ test and migration workflows may require additional values in `.env.check.local`
 `ADAPTIVE_OS_SERVICE_ROLE_KEY` appears in `.env.example` for maintenance/check tooling.
 The application runtime deliberately uses caller-scoped clients and narrow database RPCs
 instead of this key.
+
+### Which model, and why
+
+Chosen on 2026-09-25 by running the same ten business requests from `scripts/check-scenarios.mjs`
+(Hinglish ones included) and `check-luke-lookups` through each model, with cost read from the
+usage Anthropic reported:
+
+| Model | Designs right | Store questions | Cost of the run | Per call |
+| --- | --- | --- | --- | --- |
+| `claude-opus-5-5` | 9 / 10 | 19 / 19 | $1.70 (39 calls) | $0.044 |
+| `claude-sonnet-5` | 5 / 10 | 17 / 19 | $1.25 (48 calls) | $0.026 |
+| `claude-haiku-4-5-20251001` | 4 / 10 | 18 / 19 | $0.37 (49 calls) | $0.0075 |
+
+The cheaper two missed what the merchant asked for about half the time (a daily check for
+overdue things, a balance that subtracts what was paid), and needed more repair calls doing it.
+Opus 5.5 is the design model; Haiku keeps the gap pass, which only compares two short texts.
+One run each: rerun the comparison before changing either, and after any large prompt change.
 
 ## Migration and check tooling
 

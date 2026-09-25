@@ -32,7 +32,10 @@ database decides who may do what.
 2. **No model name in code.** A new job gets a row in `MODEL_JOBS` and a line in
    `docs/reference/environment.md`. A `gemini-…` name goes to Google, anything else to the
    Anthropic-format host, and a proxy (`ANTHROPIC_API_URL`) must serve every name it is
-   sent, or it refuses them.
+   sent, or it refuses them. Choosing a model is measured, not guessed: the comparison in
+   `docs/reference/environment.md` (scenarios and lookups, cost from reported usage) picked
+   Opus 5.5 for design; rerun it before switching. A local `.env.local` may point at a
+   proxy (Atria); real Anthropic runs load `.env.anthropic.local`.
 3. **Retrying is the caller's decision.** Calls pass `maxRetries: 0`; the SDK would
    otherwise try three times unseen. Gemini is retried once, then falls back to Anthropic.
 4. **A reply is text until `parseReply` says otherwise.** Do not use `Output.json()` or a

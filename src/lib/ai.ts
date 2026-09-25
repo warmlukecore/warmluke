@@ -2114,12 +2114,16 @@ const MAX_OUTPUT_TOKENS = 6000;
  * lists them.
  */
 const MODEL_JOBS = {
-  /** Designing the app: every reply Luke gives. */
-  design: ["ANTHROPIC_MODEL", "claude-sonnet-4-5"],
+  /**
+   * Designing the app: every reply Luke gives. Opus 5.5 got nine of ten
+   * real business requests right where Sonnet 5 got five and Haiku 4.5
+   * four, with fewer repair calls (docs/reference/environment.md).
+   */
+  design: ["ANTHROPIC_MODEL", "claude-opus-5-5"],
   /** Reading two short texts and naming what is missing. */
   gap: ["ANTHROPIC_GAP_MODEL", "claude-haiku-4-5-20251001"],
   /** Where a design goes when Gemini stays busy. */
-  fallback: ["ANTHROPIC_FALLBACK_MODEL", "claude-sonnet-4-5"],
+  fallback: ["ANTHROPIC_FALLBACK_MODEL", "claude-opus-5-5"],
 } as const;
 
 function modelFor(job: keyof typeof MODEL_JOBS): string {
