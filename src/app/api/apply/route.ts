@@ -64,7 +64,7 @@ export async function POST(req: Request) {
       }
     }
 
-    const { applied, errors } = await applyPlans(client, projectId, plans, requestId ?? null);
+    const { applied, errors, failedAt } = await applyPlans(client, projectId, plans, requestId ?? null);
 
     if (applied.length === 0) {
       if (requestId) {
@@ -76,7 +76,7 @@ export async function POST(req: Request) {
           p_payload: {},
         });
       }
-      return NextResponse.json({ applied: false, errors }, { status: 422 });
+      return NextResponse.json({ applied: false, errors, failedAt }, { status: 422 });
     }
 
     if (requestId) {

@@ -111,10 +111,39 @@ function awaitingAnswer(messages: ChatMessage[]): boolean {
   return !!last.blueprint || !!last.plan || !!last.questions;
 }
 
+/**
+ * Several plans in one reply, as the card that approves them. Built
+ * here for the live turn and for a reloaded thread alike: the reload
+ * used to show a batch as a line of text, on the belief that a batch
+ * was already applied, and the thread reloads itself as each turn
+ * ends (the turn touches the conversation, which the panel watches) —
+ * so the card appeared and was gone a second later.
+ */
+function batchCard(reply: { message?: string; plans: AssistantPlan[]; next?: NextStep[] }) {
+  return {
+    text: (reply.message ?? "").trim() || "Here is what I would change.",
+    blueprint: {
+      summary: reply.message ?? "",
+      plans: reply.plans,
+      // The workflow and the unmet list belong to a blueprint the
+      // engine wrote. This reply has neither, and the card is honest
+      // about showing nothing rather than inventing steps.
+      workflow: [],
+      next: reply.next,
+    },
+  };
+}
+
 /** What a build did, for whoever has to write it down. */
 export type BuildOutcome = {
   applied: Array<Record<string, unknown>>;
   errors: string[];
+  /** The plan that was refused, by its place in what was sent; nothing stands when one is. */
+  failedAt?: number;
+  /** Another build was already running, so this one never started. */
+  skipped?: true;
+  /** The answer never came back: what the server did is not known here. */
+  unknown?: true;
 };
 
 /** A group's name in the sidebar, with the one thing that adds to it. */
@@ -327,12 +356,12 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         } else if (p.type === "blueprint" && Array.isArray(p.blueprint?.plans)) {
           rebuilt.push({ id: m.id, role: "assistant", text: p.message, blueprint: p.blueprint });
         } else if (p.type === "plans" && Array.isArray(p.plans)) {
-          // A single plan is still actionable; a batch was applied when
-          // it was approved, so it is shown as history, not a live card.
+          // The same card the turn showed. Whether it was dealt with
+          // comes from what follows it in the thread, as for every card.
           rebuilt.push(
             p.plans.length === 1
               ? { id: m.id, role: "assistant", plan: p.plans[0] }
-              : { id: m.id, role: "assistant", text: p.message ?? `${p.plans.length} changes` }
+              : { id: m.id, role: "assistant", ...batchCard(p) }
           );
         } else {
           // A build that recorded what it changed can offer to put it
@@ -361,7 +390,14 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           if (last) last.superseded = true;
         }
       }
-      setChatMessages(rebuilt);
+      // The saved rows carry no trace ("Read your store · 14s"), so a
+      // reply already on screen keeps the one it was shown with.
+      setChatMessages((prev) =>
+        rebuilt.map((m) => {
+          const trace = prev.find((p) => p.id === m.id)?.trace;
+          return trace ? { ...m, trace } : m;
+        })
+      );
     },
     [projectId, rememberConversation]
   );
@@ -470,12 +506,18 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   }, [rememberConversation]);
 
   // ── Data loading (RLS-scoped: only this owner's project) ──
+  // Only the newest answer lands. A build fires several of these (its
+  // own, and one per row the subscription hears), and one sent before a
+  // delete could come back after one sent later, bringing the section back.
+  const modulesAsked = useRef(0);
   const loadModules = useCallback(async () => {
+    const asked = ++modulesAsked.current;
     const { data, error } = await supabase
       .from("modules")
       .select("*")
       .eq("project_id", projectId)
       .order("sort_order", { ascending: true });
+    if (asked !== modulesAsked.current) return;
     if (error) {
       setLoadError(error.message);
       setLoading(false);
@@ -1016,11 +1058,15 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           return;
         }
 
+        // The saved row's id, when it was saved: the thread reloads as
+        // the turn ends, and that is how it knows this reply, trace and all.
+        const id = typeof data.replyId === "string" ? data.replyId : nextChatId();
+
         if (reply.type === "clarify") {
           setChatMessages((prev) => [
             ...prev,
             {
-              id: nextChatId(),
+              id,
               role: "assistant",
               text: reply.message,
               questions: reply.questions,
@@ -1034,7 +1080,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           setChatMessages((prev) => [
             ...prev,
             {
-              id: nextChatId(),
+              id,
               role: "assistant",
               text: reply.message,
               blueprint: reply.blueprint,
@@ -1047,10 +1093,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         // A question answered. Nothing to approve, nothing to build —
         // it goes into the thread as what Luke said and stops there.
         if (reply.type === "answer") {
-          setChatMessages((prev) => [
-            ...prev,
-            { id: nextChatId(), role: "assistant", text: reply.message, trace: trace() },
-          ]);
+          setChatMessages((prev) => [...prev, { id, role: "assistant", text: reply.message, trace: trace() }]);
           return;
         }
 
@@ -1072,29 +1115,11 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         // button that approves them, so there is nothing to build here
         // beyond handing these plans to it.
         if (plans.length > 1) {
-          setChatMessages((prev) => [
-            ...prev,
-            {
-              id: nextChatId(),
-              role: "assistant",
-              text: (reply.message ?? "").trim() || "Here is what I would change.",
-              blueprint: {
-                summary: reply.message ?? "",
-                plans,
-                // The workflow and the unmet list belong to a blueprint
-                // the engine wrote. This reply has neither, and the
-                // card is honest about showing nothing rather than
-                // inventing steps.
-                workflow: [],
-                next: reply.next,
-              },
-              trace: trace(),
-            },
-          ]);
+          setChatMessages((prev) => [...prev, { id, role: "assistant", ...batchCard(reply), trace: trace() }]);
           return;
         }
 
-        setChatMessages((prev) => [...prev, { id: nextChatId(), role: "assistant", plan: plans[0], trace: trace() }]);
+        setChatMessages((prev) => [...prev, { id, role: "assistant", plan: plans[0], trace: trace() }]);
       } catch (e) {
         const aborted = (e as Error)?.name === "AbortError";
         setChatMessages((prev) => [
@@ -1343,7 +1368,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       /** What the design offered to do next; shown once the build lands. */
       next?: NextStep[]
     ): Promise<BuildOutcome> => {
-      if (plans.length === 0 || building) return { applied: [], errors: [] };
+      if (plans.length === 0 || building) return { applied: [], errors: [], skipped: true };
       setBuilding(true);
       // What was asked for, said in the thread before what came of it.
       //
@@ -1442,6 +1467,10 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           return { applied: results, errors: (data.errors as string[]) ?? [] };
         } else {
           const errors = (data.errors as string[] | undefined) ?? [];
+          // A refused design is put back: what it made before the refusal
+          // is deleted again. The sidebar may already have drawn it from
+          // the insert, and asking here does not wait on hearing the delete.
+          void loadModules();
           setChatMessages((prev) => [
             ...prev,
             {
@@ -1462,7 +1491,16 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           errors: (data.errors as string[]) ?? [
             data.already ? "Somebody is already building this." : "The build did not run.",
           ],
+          ...(typeof data.failedAt === "number" ? { failedAt: data.failedAt } : {}),
         };
+      } catch {
+        // The request never came back, so nothing here knows what the
+        // server did. Said plainly, where the card and the request both
+        // read it, rather than thrown at a click handler that drops it.
+        const why = "Could not reach Warmluke, so it is not known whether anything was built. Reload to see.";
+        void loadModules();
+        setChatMessages((prev) => [...prev, { id: nextChatId(), role: "system", text: why }]);
+        return { applied: [], errors: [why], unknown: true };
       } finally {
         setBuilding(false);
       }

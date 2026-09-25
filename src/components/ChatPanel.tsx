@@ -38,12 +38,16 @@ import {
   ChevronRight,
   Copy,
   History,
+  LoaderCircle,
+  type LucideIcon,
+  Minus,
   Pencil,
   Plug,
   Sparkles,
   Square,
   SquarePen,
   TriangleAlert,
+  Undo2,
   X,
   Zap,
 } from "lucide-react";
@@ -366,6 +370,86 @@ function ClarifyCard({
   );
 }
 
+/**
+ * Where one plan of a design stands. Each state carries only what is
+ * true in it (a reason only where something was refused), and the line
+ * that draws it is an exhaustive switch, so a state cannot be added
+ * without saying what it looks like.
+ */
+type PlanStatus =
+  | { kind: "ready" }
+  /** Unticked, or it needs a section that was. */
+  | { kind: "left-out" }
+  /** Built since the design was written. */
+  | { kind: "already-there" }
+  /** The section it changes was removed since. */
+  | { kind: "section-gone" }
+  | { kind: "building" }
+  | { kind: "built" }
+  | { kind: "refused"; why: string }
+  /** Built, then undone because a later one was refused: a design stands whole or not at all. */
+  | { kind: "put-back" }
+  /** After the refused one, so never tried. */
+  | { kind: "not-tried" }
+  /** The answer never came back. */
+  | { kind: "unknown" };
+
+/**
+ * Whether the world has moved on from this plan, as the single-plan
+ * card already asks: a section it would make is there, or the one it
+ * changes is gone. A "#slug" is a section made earlier in the same
+ * design, so it is not looked for here.
+ */
+function staleness(plan: AssistantPlan, modules: ModuleRow[]): "already-there" | "section-gone" | null {
+  if (plan.changeType === "NEW_MODULE") {
+    return plan.newModule && modules.some((m) => m.name === plan.newModule!.name) ? "already-there" : null;
+  }
+  const target = plan.targetModuleId;
+  return target && !target.startsWith("#") && !modules.some((m) => m.id === target) ? "section-gone" : null;
+}
+
+/** A plan's state in words, with a mark that says the same. */
+function PlanStatusLine({ status }: { status: PlanStatus }) {
+  const line = (Mark: LucideIcon, text: string, tone: string, spin = false) => (
+    <div className={`mt-0.5 flex items-start gap-1 text-[11px] leading-relaxed ${tone}`}>
+      <Mark
+        aria-hidden
+        size={12}
+        strokeWidth={2}
+        className={`mt-[3px] shrink-0 ${spin ? "motion-safe:animate-spin" : ""}`}
+      />
+      <span className="min-w-0 line-clamp-2" title={text}>
+        {text}
+      </span>
+    </div>
+  );
+  switch (status.kind) {
+    case "ready":
+    case "left-out":
+      return null;
+    case "already-there":
+      return line(Check, "Already in your app", "text-fg-faint");
+    case "section-gone":
+      return line(TriangleAlert, "Its section was removed, so this is left out", "text-tone-attention-fg");
+    case "building":
+      return line(LoaderCircle, "Building", "text-fg-muted", true);
+    case "built":
+      return line(Check, "Built", "text-tone-success-fg");
+    case "refused":
+      return line(X, `Did not fit: ${status.why}`, "text-tone-critical-fg");
+    case "put-back":
+      return line(Undo2, "Put back, so nothing is left half built", "text-fg-faint");
+    case "not-tried":
+      return line(Minus, "Not built", "text-fg-faint");
+    case "unknown":
+      return line(TriangleAlert, "Not known yet: reload to see", "text-tone-attention-fg");
+    default: {
+      const unreachable: never = status;
+      return unreachable;
+    }
+  }
+}
+
 function BlueprintCard({
   message,
   blueprint,
@@ -385,7 +469,7 @@ function BlueprintCard({
   storeFacts: StoreFacts | null;
   done: boolean;
   /** Receives the exact plans the owner ticked — nothing is regenerated. */
-  onApprove: (plans: AssistantPlan[]) => void;
+  onApprove: (plans: AssistantPlan[]) => Promise<BuildOutcome>;
   onAmend: () => void;
 }) {
   const [dropped, setDropped] = useState<Record<number, boolean>>({});
@@ -414,8 +498,59 @@ function BlueprintCard({
     return refs.some((r) => typeof r === "string" && r.startsWith("#") && droppedSlugs.has(r.slice(1)));
   };
 
-  const chosen = blueprint.plans.filter((p, i) => !dropped[i] && !referencesDropped(p));
+  // What the last Build did, by each plan's place in the design: which
+  // were sent, what was already stale then, and what came back. Session
+  // state; a reloaded card is told by the receipt after it instead.
+  const [run, setRun] = useState<{
+    sent: number[];
+    stale: Record<number, "already-there" | "section-gone">;
+    outcome?: BuildOutcome;
+  } | null>(null);
+  const building = !!run && !run.outcome;
+  // Asked only while the card can still be acted on: once it is built,
+  // every section it made is "already there".
+  const staleOf = (p: AssistantPlan) => (done || run ? null : staleness(p, modules));
+
+  const chosenAt = blueprint.plans
+    .map((p, i) => (!dropped[i] && !referencesDropped(p) && !staleOf(p) ? i : -1))
+    .filter((i) => i >= 0);
+  const chosen = chosenAt.map((i) => blueprint.plans[i]);
   const hasOptional = blueprint.plans.some((p) => p.optional);
+  const nothingLeft = chosen.length === 0 && blueprint.plans.some((p) => staleOf(p));
+
+  const statusOf = (i: number): PlanStatus => {
+    const plan = blueprint.plans[i];
+    if (run) {
+      const k = run.sent.indexOf(i);
+      if (k === -1) return run.stale[i] ? { kind: run.stale[i] } : { kind: "left-out" };
+      const o = run.outcome;
+      if (!o) return { kind: "building" };
+      if (o.unknown) return { kind: "unknown" };
+      if (o.applied.length > 0) return k < o.applied.length ? { kind: "built" } : { kind: "not-tried" };
+      if (o.failedAt === undefined) return { kind: "not-tried" };
+      if (k < o.failedAt) return { kind: "put-back" };
+      if (k === o.failedAt) return { kind: "refused", why: o.errors[0] ?? "it did not fit" };
+      return { kind: "not-tried" };
+    }
+    if (dropped[i] || referencesDropped(plan)) return { kind: "left-out" };
+    const stale = staleOf(plan);
+    return stale ? { kind: stale } : { kind: "ready" };
+  };
+
+  // One build at a time from a card: a second tap while the first is
+  // out does nothing, rather than sending the same design twice.
+  const approve = async () => {
+    if (building || chosen.length === 0) return;
+    const stale: Record<number, "already-there" | "section-gone"> = {};
+    blueprint.plans.forEach((p, i) => {
+      const s = staleness(p, modules);
+      if (s) stale[i] = s;
+    });
+    setRun({ sent: chosenAt, stale });
+    const outcome = await onApprove(chosen);
+    // Nothing started (another build was running): back as it was.
+    setRun(outcome.skipped ? null : { sent: chosenAt, stale, outcome });
+  };
 
   // A design reads as a message: what Luke said, what it would build
   // as one line per thing with the detail behind a caret, what it does
@@ -434,14 +569,15 @@ function BlueprintCard({
         {hasOptional && !done && <div className="text-[11px] text-fg-faint">Untick anything you don&rsquo;t need.</div>}
         {blueprint.plans.map((plan, i) => {
           const summary = describePlan(plan, modules, currentColumns, storeFacts);
-          const off = dropped[i] || referencesDropped(plan);
-          const cascaded = !dropped[i] && off;
+          const status = statusOf(i);
+          const off = status.kind === "left-out" || status.kind === "already-there" || status.kind === "section-gone";
+          const cascaded = !dropped[i] && referencesDropped(plan);
           const hasDetail = summary.lines.length > 0;
           const open = !!expanded[i];
           const toggleDetail = () => hasDetail && setExpanded((p) => ({ ...p, [i]: !p[i] }));
           return (
-            <div key={i} className={`flex items-start gap-1.5 ${off ? "opacity-50" : ""}`}>
-              {plan.optional && !done && !cascaded ? (
+            <div key={i} data-status={status.kind} className={`flex items-start gap-1.5 ${off ? "opacity-50" : ""}`}>
+              {plan.optional && !done && !run && !cascaded && !staleOf(plan) ? (
                 <input
                   type="checkbox"
                   checked={!dropped[i]}
@@ -488,6 +624,7 @@ function BlueprintCard({
                   </span>
                 )}
                 {cascaded && <span className="ml-1.5 text-[11px] text-fg-faint">needs a section you removed</span>}
+                <PlanStatusLine status={status} />
                 {plan.optional && plan.optionalWhy && (
                   <div className="text-[11px] leading-relaxed text-tone-attention-fg">{plan.optionalWhy}</div>
                 )}
@@ -541,14 +678,17 @@ function BlueprintCard({
         </div>
       )}
 
-      {!done && (
+      {!done && nothingLeft && (
+        <div className="text-[11px] text-fg-faint">Nothing left to build: all of this is already in your app.</div>
+      )}
+      {!done && !nothingLeft && (
         <div className="flex items-center gap-3 pt-0.5">
           <button
-            onClick={() => onApprove(chosen)}
-            disabled={chosen.length === 0}
+            onClick={approve}
+            disabled={chosen.length === 0 || building}
             className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-on-primary transition-colors hover:bg-primary-hover disabled:opacity-40"
           >
-            Build {chosen.length === 1 ? "this" : `these ${chosen.length}`}
+            {building ? "Building…" : `Build ${chosen.length === 1 ? "this" : `these ${chosen.length}`}`}
           </button>
           <button onClick={onAmend} className="text-xs text-fg-muted transition-colors hover:text-fg hover:underline">
             Change something
@@ -1903,9 +2043,12 @@ export default function ChatPanel({
                   currentColumns={currentSchema?.columns}
                   storeFacts={storeFacts}
                   done={!!resolvedCards[m.id] || answered}
-                  onApprove={(chosen) => {
+                  onApprove={async (chosen) => {
                     setResolvedCards((prev) => ({ ...prev, [m.id]: true }));
-                    onBuild(chosen, undefined, undefined, m.blueprint?.next);
+                    const outcome = await onBuild(chosen, undefined, undefined, m.blueprint?.next);
+                    // Nothing started, so nothing was answered: the card is live again.
+                    if (outcome.skipped) setResolvedCards((prev) => ({ ...prev, [m.id]: false }));
+                    return outcome;
                   }}
                   onAmend={() => {
                     setInput("Change this in the design: ");

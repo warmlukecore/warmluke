@@ -448,7 +448,9 @@ export async function POST(req: Request) {
         }
         await client.from("conversations").update(patch).eq("id", convId);
 
-        return { conversationId: convId, reply: turn.reply, repairs: turn.repairs };
+        // The reply's row, so the panel can show it under that id and a
+        // reload of the thread knows which reply it already has on screen.
+        return { conversationId: convId, reply: turn.reply, repairs: turn.repairs, replyId };
       } catch (e) {
         return { error: e instanceof Error ? e.message : "Unknown error" };
       } finally {

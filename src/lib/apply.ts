@@ -253,6 +253,12 @@ export async function logClientBuild(
 export type ApplyOutcome = {
   applied: Array<Record<string, unknown>>;
   errors: string[];
+  /**
+   * Where the plan that was refused sat in the list, when one was. The
+   * ones before it were built and put back; the ones after it were not
+   * tried. A design card says which is which instead of "did not fit".
+   */
+  failedAt?: number;
 };
 
 /**
@@ -425,7 +431,7 @@ export async function applyPlans(
   const applied: Array<Record<string, unknown>> = [];
   const errors: string[] = [];
 
-  for (const rawPlan of plans.slice(0, 6)) {
+  for (const [at, rawPlan] of plans.slice(0, 6).entries()) {
     let result: ApplyResult;
     try {
       result = await validateAndApply(client, projectId, rawPlan, recorded);
@@ -449,7 +455,7 @@ export async function applyPlans(
       // Both callers read this to decide whether the request was built.
       applied.length = 0;
     }
-    break;
+    return { applied, errors, failedAt: at };
   }
 
   return { applied, errors };
