@@ -95,7 +95,8 @@ pre-push hook repeats pure checks and adds PAT-only security checks that CI must
 credentials for.
 
 `pnpm lint` is oxlint (`.oxlintrc.json`): correctness rules fail the build, the rest are
-advice. A rule silenced on one line says why on the line above. The workflow's actions are
+advice. `pnpm format` is oxfmt (`.oxfmtrc.json`, 120 columns); CI fails on anything it would
+change, so run it before committing. A rule silenced on one line says why on the line above. The workflow's actions are
 pinned to commit hashes, and Dependabot (`.github/dependabot.yml`) proposes updates weekly:
 npm minor and patch as one pull request, majors alone, actions together. Its pull requests
 run the static job only; the live job needs secrets Dependabot is not given.

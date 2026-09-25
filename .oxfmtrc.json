@@ -1,0 +1,7 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 120,
+  "trailingComma": "es5",
+  "proseWrap": "preserve",
+  "ignorePatterns": [".next/**", "node_modules/**", "tapes/**", "playwright-report/**", "test-results/**", "**/package.json", "pnpm-lock.yaml"]
+}

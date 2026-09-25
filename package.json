@@ -10,6 +10,8 @@
     "start": "next start -p 3100",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src scripts e2e",
+    "format": "oxfmt src scripts e2e playwright.config.ts",
+    "format:check": "oxfmt --check src scripts e2e playwright.config.ts",
     "audit": "pnpm audit --audit-level=high",
     "check": "node scripts/run-checks.mjs",
     "check:pure": "node scripts/run-checks.mjs --tier pure",
@@ -34,6 +36,7 @@
     "@types/node": "^26.5.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
+    "oxfmt": "0.70.0",
     "oxlint": "1.85.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2"

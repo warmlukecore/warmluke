@@ -86,6 +86,11 @@ jobs:
       - name: lint
         run: pnpm lint
 
+      # One style for everyone who writes here, people and agents alike
+      # (.oxfmtrc.json). `pnpm format` fixes what this reports.
+      - name: format
+        run: pnpm format:check
+
       # Public values only. The build prerenders /admin, which makes a
       # Supabase client at module load and refuses to without these;
       # two of the pure checks read the same file.
