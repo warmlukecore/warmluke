@@ -13,18 +13,18 @@
 // A store connected before 0102 has recorded nothing yet; it fills
 // itself in at the next token renewal.
 //
-//   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/shopify-scopes.mjs
-//   ENV_FILE=.env.check.local node … scripts/shopify-scopes.mjs
-//   … scripts/shopify-scopes.mjs some-shop.myshopify.com
+//   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/tools/shopify-scopes.mjs
+//   ENV_FILE=.env.check.local node … scripts/tools/shopify-scopes.mjs
+//   … scripts/tools/shopify-scopes.mjs some-shop.myshopify.com
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { SHOPIFY_API_VERSION } from "../src/lib/shopify.ts";
-import { ensureFreshToken } from "../src/lib/shopify-import.ts";
-import { missingScopes, scopesFor, WEBHOOK_TOPICS } from "../src/lib/shopify-resources.ts";
+import { SHOPIFY_API_VERSION } from "../../src/lib/shopify.ts";
+import { ensureFreshToken } from "../../src/lib/shopify-import.ts";
+import { missingScopes, scopesFor, WEBHOOK_TOPICS } from "../../src/lib/shopify-resources.ts";
 
 const env = Object.fromEntries(
-  readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
+  readFileSync(new URL(`../../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
     .split("\n")
     .filter((l) => l.includes("=") && !l.trim().startsWith("#"))
     .map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()])

@@ -11,19 +11,19 @@
 // That is exactly how the returns query shipped broken. Run this
 // after adding or widening any page query.
 //
-//   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/shopify-query-cost.mjs
+//   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/tools/shopify-query-cost.mjs
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { SHOPIFY_API_VERSION } from "../src/lib/shopify.ts";
-import { ensureFreshToken, PAGE } from "../src/lib/shopify-import.ts";
-import { RESOURCES, SHOPIFY_RESOURCES } from "../src/lib/shopify-resources.ts";
+import { SHOPIFY_API_VERSION } from "../../src/lib/shopify.ts";
+import { ensureFreshToken, PAGE } from "../../src/lib/shopify-import.ts";
+import { RESOURCES, SHOPIFY_RESOURCES } from "../../src/lib/shopify-resources.ts";
 
 /** Shopify's ceiling for one query. Not ours to change. */
 const LIMIT = 1000;
 
 const env = Object.fromEntries(
-  readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
+  readFileSync(new URL(`../../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
     .split("\n")
     .filter((l) => l.includes("=") && !l.trim().startsWith("#"))
     .map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()])

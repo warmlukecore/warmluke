@@ -9,19 +9,19 @@
 // prints what it did and then lists what the store actually has, so
 // the answer comes from Shopify rather than from this script's hopes.
 //
-//   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/subscribe-webhooks.mjs
-//   APP_URL=https://warmluke.vercel.app node ... scripts/subscribe-webhooks.mjs
+//   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/tools/subscribe-webhooks.mjs
+//   APP_URL=https://warmluke.vercel.app node ... scripts/tools/subscribe-webhooks.mjs
 //
 // Callers: none. Run by hand.
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { ensureFreshToken, graphql } from "../src/lib/shopify-import.ts";
-import { subscribeWebhooks } from "../src/lib/shopify-webhooks.ts";
-import { webhookAddress } from "../src/lib/shopify.ts";
+import { ensureFreshToken, graphql } from "../../src/lib/shopify-import.ts";
+import { subscribeWebhooks } from "../../src/lib/shopify-webhooks.ts";
+import { webhookAddress } from "../../src/lib/shopify.ts";
 
 const env = Object.fromEntries(
-  readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
+  readFileSync(new URL(`../../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
     .split("\n")
     .filter((l) => l.includes("=") && !l.trim().startsWith("#"))
     .map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()])

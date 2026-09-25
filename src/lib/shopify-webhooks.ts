@@ -11,7 +11,7 @@
 // So it happens at connect, with the token we were just handed.
 //
 // Callers: src/app/api/shopify/callback/route.ts,
-// scripts/subscribe-webhooks.mjs.
+// scripts/tools/subscribe-webhooks.mjs.
 // ─────────────────────────────────────────────────────────────
 
 import { graphql } from "@/lib/shopify-import";
