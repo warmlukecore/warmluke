@@ -132,7 +132,8 @@ try {
       check("nothing was left out, so nothing to say about that", Array.isArray(row.judge?.unmet) && row.judge.unmet.length === 0);
       check("shown the engine's own words for the build", /Judged/.test(row.built) && /Checked By/.test(row.built));
       check("and that nothing is removed", row.removes === false);
-      check("which model, and how long", typeof row.model === "string" && row.model.startsWith("jev") && row.ms > 0);
+      // A duration, not a positive one: played back, the judge can answer inside a millisecond.
+      check("which model, and how long", typeof row.model === "string" && row.model.startsWith("jev") && Number.isInteger(row.ms) && row.ms >= 0);
       console.log(`     →  addresses ${row.judge.addresses.toFixed(2)} · ${row.model} · ${row.ms}ms`);
     }
   }
