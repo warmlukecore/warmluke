@@ -129,6 +129,21 @@ try {
   check("stock is never counted this way", short.drift?.inventory === undefined);
   check("one short pass removes nothing", short.removed === undefined && (await rowsOf("products")) === products);
 
+  // Their ids here, to know them when they come back.
+  const idsOf = async () =>
+    (
+      (
+        await admin
+          .from("products")
+          .select("id, external_id")
+          .eq("store_id", store.id)
+          .in("external_id", [first.id, second.id])
+      ).data ?? []
+    )
+      .map((r) => `${r.external_id}=${r.id}`)
+      .sort();
+  const ids = await idsOf();
+
   console.log("\nthe same two missing from the next pass as well");
   await pass({ without: [first.id, second.id] });
   const twice = await step();
@@ -140,6 +155,10 @@ try {
   console.log("\na pass that brings them back");
   await pass();
   check("they are here again", (await rowsOf("products")) === products);
+  // The same rows, not new ones: anything that pointed at them still does.
+  check("under the ids they had", JSON.stringify(await idsOf()) === JSON.stringify(ids));
+  const { data: notes } = await owner.from("store_row_tombstones").select("row_id");
+  check("and what was removed is written down where no client reads it", (notes ?? []).length === 0);
   check("and nothing is named", (await step()).drift === undefined);
 
   console.log("\nrows no pass could have seen");

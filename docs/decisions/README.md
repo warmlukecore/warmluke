@@ -112,9 +112,10 @@ returns without `read_all_orders`.
 missing from two finished passes is one. Reporting alone, the decision this replaces, left
 deleted rows on screen for good under a warning nothing could clear.
 
-**Consequence:** A row removed by mistake returns with the next pass that brings it, under a
-new internal id, so anything that pointed at the old id loses it. Revised 2026-09-26; it
-was "reported, never deleted".
+**Consequence:** A row removed by mistake returns with the next pass that brings it, as the
+same row: what was removed is noted (0124), and a row inserted again with the same Shopify id
+takes back the id it had, so anything that pointed at it still does. Notes older than ninety
+days are dropped. Revised 2026-09-26; it was "reported, never deleted".
 
 ## ADR-011: MCP transport is stateless
 
