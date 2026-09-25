@@ -14,7 +14,13 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { StoreToken } from "@/lib/shopify-import";
-import { RESOURCES, SHOPIFY_RESOURCES, importPage, type Resource } from "@/lib/shopify-resources";
+import {
+  EXTENDED_ORDER_HISTORY_SCOPE,
+  RESOURCES,
+  SHOPIFY_RESOURCES,
+  importPage,
+  type Resource,
+} from "@/lib/shopify-resources";
 import { BULK_THRESHOLD, countOf, ingestSlice, pollBulk, startBulk } from "@/lib/shopify-bulk";
 import { ShopifyError } from "@/lib/shopify";
 import { ensureFreshToken } from "@/lib/shopify-import";
@@ -38,13 +44,15 @@ type Run = {
   status: string;
   cursor: string | null;
   imported: number;
+  /** When this resource's current pass began: set at its first import, and again by each recheck. */
+  started_at: string | null;
   finished_at: string | null;
   error: string | null;
   attempts: number | null;
   retry_at: string | null;
 };
 
-const RUN_COLUMNS = "id, resource, status, cursor, imported, finished_at, error, attempts, retry_at";
+const RUN_COLUMNS = "id, resource, status, cursor, imported, started_at, finished_at, error, attempts, retry_at";
 
 export type StepResult = { status: number; body: Record<string, unknown> };
 
@@ -100,7 +108,17 @@ export async function importStep(
   if (opts.recheck && (runs ?? []).length > 0) {
     await db
       .from("import_runs")
-      .update({ status: "pending", cursor: null, imported: 0, finished_at: null, attempts: 0, retry_at: null })
+      .update({
+        status: "pending",
+        cursor: null,
+        imported: 0,
+        // The pass starts now, for every resource: what is here before
+        // this moment is what the pass can be held to.
+        started_at: new Date().toISOString(),
+        finished_at: null,
+        attempts: 0,
+        retry_at: null,
+      })
       .eq("store_id", store.id);
     return { status: 200, body: { done: false, rechecking: true, progress: summarise([]) } };
   }
@@ -290,9 +308,31 @@ async function finish(db: Db, store: StoreToken, runs: Run[]): Promise<StepResul
   // silence, which is the actual problem; sweeping rows away would
   // trade it for a worse one.
   const drift: Record<string, { holding: number; imported: number }> = {};
+  // Null when this caller may not read the row (the worker's ticket
+  // reaches commerce rows only); treated as not granted, which only
+  // ever narrows what is compared.
+  const { data: grant } = await db.from("stores").select("granted_scopes").eq("id", store.id).maybeSingle();
+  const allOrders = ((grant?.granted_scopes as string[] | null) ?? []).includes(EXTENDED_ORDER_HISTORY_SCOPE);
   for (const [resource, table] of Object.entries(COUNTED)) {
-    const imported = runs.find((r) => r.resource === resource)?.imported ?? 0;
-    const { count } = await db.from(table).select("id", { count: "exact", head: true }).eq("store_id", store.id);
+    const run = runs.find((r) => r.resource === resource);
+    const imported = run?.imported ?? 0;
+    let held = db.from(table).select("id", { count: "exact", head: true }).eq("store_id", store.id);
+    // Only rows that were here before the pass began. One a webhook
+    // brought in since is new in Shopify, not gone from it, and a store
+    // taking orders has one within the hour: every new order used to
+    // read as a row Shopify had lost. Before it began, not after it
+    // ended: a bulk export is Shopify's copy from when it started, so
+    // an order placed while it ran is in neither.
+    const since = run?.started_at ?? run?.finished_at;
+    if (since) held = held.lte("created_at", since);
+    // Without read_all_orders Shopify hands back sixty days of orders,
+    // so an older one held here was never going to come back. Compared
+    // inside the window, a day short of it so its edge cannot count.
+    if (resource === "orders" && !allOrders) {
+      const edge = Date.parse(run?.finished_at ?? new Date().toISOString()) - 59 * 86_400_000;
+      held = held.gte("placed_at", new Date(edge).toISOString());
+    }
+    const { count } = await held;
     const holding = count ?? 0;
     // Only rows we hold and the pass did not bring back. Fewer than
     // imported means something arrived by webhook while the pass was
