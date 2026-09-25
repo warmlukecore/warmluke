@@ -74,7 +74,10 @@ select p.proname,
 console.log("security definer functions the public key can run");
 const open = await sql(OPEN_DOORS);
 const unguarded = open.filter((f) => !GUARDED[f.proname]);
-check(`each checks its caller or is a guarded door (${open.length - unguarded.length} guarded doors)`, unguarded.length === 0);
+check(
+  `each checks its caller or is a guarded door (${open.length - unguarded.length} guarded doors)`,
+  unguarded.length === 0
+);
 for (const f of unguarded) console.log(`     → ${f.proname} (anon ${f.anon}, signed in ${f.authed})`);
 const stale = Object.keys(GUARDED).filter((n) => !open.some((f) => f.proname === n));
 check("and the list of guarded doors names only doors that exist", stale.length === 0);

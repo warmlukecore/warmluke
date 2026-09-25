@@ -71,10 +71,7 @@ try {
 
   // select("*") is how it reached a browser in the first place.
   const everything = await staff.from("stores").select("*").eq("id", store.id);
-  check(
-    "and cannot sweep it up with a star",
-    !!everything.error || !everything.data?.[0]?.access_token
-  );
+  check("and cannot sweep it up with a star", !!everything.error || !everything.data?.[0]?.access_token);
 
   // The function is the only way in, and it is not for them.
   const asked = await staff.rpc("abo_store_token", { p_store: store.id });
@@ -102,9 +99,7 @@ if (!signedIn?.session) {
   check("cannot read the token as a column either", !!star.error || !star.data?.[0]?.access_token);
 
   // Because the import has to keep working.
-  const { data: got, error } = await owner
-    .rpc("abo_store_token", { p_store: store.id })
-    .maybeSingle();
+  const { data: got, error } = await owner.rpc("abo_store_token", { p_store: store.id }).maybeSingle();
   check("but the import can still get it", !error && typeof got?.access_token === "string");
   check("with what it needs to renew it", got !== null && "refresh_token" in (got ?? {}));
 }
@@ -121,9 +116,8 @@ if (signedIn?.session) {
   // StoreStrip's query, not an approximation of it: the same columns,
   // filtered the same way. A version that only resembles it can pass
   // while the real one still fails on a column nobody granted.
-  const project = (
-    await admin.from("stores").select("project_id").eq("status", "connected").limit(1).maybeSingle()
-  ).data;
+  const project = (await admin.from("stores").select("project_id").eq("status", "connected").limit(1).maybeSingle())
+    .data;
   const shown = await owner
     .from("stores")
     .select("id, shop_domain, status, webhook_error, last_synced_at")
@@ -139,10 +133,7 @@ if (signedIn?.session) {
   // webhook_error broke, and it broke in silence.
   const money = await owner.from("stores").select("id, currency").limit(1);
   check("the shop's own currency is readable", !money.error);
-  check(
-    "and it is a real currency code",
-    /^[A-Z]{3}$/.test((money.data ?? [])[0]?.currency ?? "")
-  );
+  check("and it is a real currency code", /^[A-Z]{3}$/.test((money.data ?? [])[0]?.currency ?? ""));
 
   // The same trap again, one column later. granted_scopes is what
   // answers "did that reconnect actually take?", and ungranted it

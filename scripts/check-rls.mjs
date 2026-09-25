@@ -21,20 +21,22 @@ const ANON = env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY;
 const SVC = env.ADAPTIVE_OS_SERVICE_ROLE_KEY;
 if (!URL_ || !ANON || !SVC) throw new Error("missing Supabase env");
 
-const api = (jwt) => async (path, init = {}) => {
-  const r = await fetch(`${URL_}/rest/v1/${path}`, {
-    ...init,
-    headers: {
-      apikey: ANON,
-      Authorization: `Bearer ${jwt}`,
-      "Content-Type": "application/json",
-      Prefer: "return=representation",
-      ...init.headers,
-    },
-  });
-  const body = await r.text();
-  return { ok: r.ok, status: r.status, json: body ? JSON.parse(body) : null };
-};
+const api =
+  (jwt) =>
+  async (path, init = {}) => {
+    const r = await fetch(`${URL_}/rest/v1/${path}`, {
+      ...init,
+      headers: {
+        apikey: ANON,
+        Authorization: `Bearer ${jwt}`,
+        "Content-Type": "application/json",
+        Prefer: "return=representation",
+        ...init.headers,
+      },
+    });
+    const body = await r.text();
+    return { ok: r.ok, status: r.status, json: body ? JSON.parse(body) : null };
+  };
 
 async function signup(email) {
   const r = await fetch(`${URL_}/auth/v1/signup`, {
@@ -60,14 +62,35 @@ const stamp = Date.now();
 const owner = await signup(`rls-owner-${stamp}@warmluke.test`);
 const staff = await signup(`rls-staff-${stamp}@warmluke.test`);
 const outsider = await signup(`rls-out-${stamp}@warmluke.test`);
-const O = api(owner.jwt), S = api(staff.jwt), X = api(outsider.jwt);
+const O = api(owner.jwt),
+  S = api(staff.jwt),
+  X = api(outsider.jwt);
 
 try {
   // Owner builds something.
-  const proj = (await O("projects", { method: "POST", body: JSON.stringify({ owner_id: owner.id, name: "RLS check" }) })).json[0];
-  const mod = (await O("modules", { method: "POST", body: JSON.stringify({ project_id: proj.id, name: `orders_${stamp}`, nav_label: "Orders", route: `/orders_${stamp}` }) })).json[0];
-  const rec = (await O("records", { method: "POST", body: JSON.stringify({ module_id: mod.id, project_id: proj.id, data: { stage: "New" } }) })).json[0];
-  const conv = (await O("conversations", { method: "POST", body: JSON.stringify({ project_id: proj.id, title: "secret" }) })).json[0];
+  const proj = (
+    await O("projects", { method: "POST", body: JSON.stringify({ owner_id: owner.id, name: "RLS check" }) })
+  ).json[0];
+  const mod = (
+    await O("modules", {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: proj.id,
+        name: `orders_${stamp}`,
+        nav_label: "Orders",
+        route: `/orders_${stamp}`,
+      }),
+    })
+  ).json[0];
+  const rec = (
+    await O("records", {
+      method: "POST",
+      body: JSON.stringify({ module_id: mod.id, project_id: proj.id, data: { stage: "New" } }),
+    })
+  ).json[0];
+  const conv = (
+    await O("conversations", { method: "POST", body: JSON.stringify({ project_id: proj.id, title: "secret" }) })
+  ).json[0];
 
   console.log("\nbefore joining — a stranger sees nothing");
   check("staff cannot see the project", (await S(`projects?id=eq.${proj.id}`)).json.length === 0);
@@ -104,68 +127,144 @@ try {
       headers: { apikey: ANON, Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-  check("staff can say who they are on the team",
-    (await about(staff.jwt, { p_project: proj.id, p_name: " Meera ", p_role: "warehouse" })).ok);
+  check(
+    "staff can say who they are on the team",
+    (await about(staff.jwt, { p_project: proj.id, p_name: " Meera ", p_role: "warehouse" })).ok
+  );
   const told = (await O(`project_members?id=eq.${seat.id}&select=full_name,team_role`)).json?.[0];
   check("and the owner sees it on the seat", told?.full_name === "Meera" && told?.team_role === "warehouse");
-  check("a role off the list is refused",
-    !(await about(staff.jwt, { p_project: proj.id, p_name: "Meera", p_role: "ceo" })).ok);
-  check("an outsider cannot write themselves onto the team",
-    !(await about(outsider.jwt, { p_project: proj.id, p_name: "Nobody", p_role: "other" })).ok);
+  check(
+    "a role off the list is refused",
+    !(await about(staff.jwt, { p_project: proj.id, p_name: "Meera", p_role: "ceo" })).ok
+  );
+  check(
+    "an outsider cannot write themselves onto the team",
+    !(await about(outsider.jwt, { p_project: proj.id, p_name: "Nobody", p_role: "other" })).ok
+  );
 
   console.log("\nwhat staff CAN do — this is the point of the feature");
   check("staff sees the project", (await S(`projects?id=eq.${proj.id}`)).json.length === 1);
   check("staff sees the sections", (await S(`modules?id=eq.${mod.id}`)).json.length === 1);
   check("staff sees the rows", (await S(`records?id=eq.${rec.id}`)).json.length === 1);
-  check("staff can update a row (mark it Picked)",
-    (await S(`records?id=eq.${rec.id}`, { method: "PATCH", body: JSON.stringify({ data: { stage: "Picked" } }) })).json?.length === 1);
-  check("staff can add a row",
-    (await S("records", { method: "POST", body: JSON.stringify({ module_id: mod.id, project_id: proj.id, data: { stage: "New" } }) })).json?.length === 1);
+  check(
+    "staff can update a row (mark it Picked)",
+    (await S(`records?id=eq.${rec.id}`, { method: "PATCH", body: JSON.stringify({ data: { stage: "Picked" } }) })).json
+      ?.length === 1
+  );
+  check(
+    "staff can add a row",
+    (
+      await S("records", {
+        method: "POST",
+        body: JSON.stringify({ module_id: mod.id, project_id: proj.id, data: { stage: "New" } }),
+      })
+    ).json?.length === 1
+  );
 
   console.log("\nwhat staff CANNOT do");
-  check("staff cannot delete a row",
-    (await S(`records?id=eq.${rec.id}`, { method: "DELETE" })).json?.length === 0);
+  check("staff cannot delete a row", (await S(`records?id=eq.${rec.id}`, { method: "DELETE" })).json?.length === 0);
   check("the row survived that attempt", (await O(`records?id=eq.${rec.id}`)).json.length === 1);
-  check("staff cannot rename a section",
-    (await S(`modules?id=eq.${mod.id}`, { method: "PATCH", body: JSON.stringify({ nav_label: "Hacked" }) })).json?.length === 0);
-  check("staff cannot add a section",
-    !(await S("modules", { method: "POST", body: JSON.stringify({ project_id: proj.id, name: `x_${stamp}`, nav_label: "X", route: `/x_${stamp}` }) })).ok);
+  check(
+    "staff cannot rename a section",
+    (await S(`modules?id=eq.${mod.id}`, { method: "PATCH", body: JSON.stringify({ nav_label: "Hacked" }) })).json
+      ?.length === 0
+  );
+  check(
+    "staff cannot add a section",
+    !(
+      await S("modules", {
+        method: "POST",
+        body: JSON.stringify({ project_id: proj.id, name: `x_${stamp}`, nav_label: "X", route: `/x_${stamp}` }),
+      })
+    ).ok
+  );
   check("staff cannot read the assistant thread", (await S(`conversations?id=eq.${conv.id}`)).json.length === 0);
   check("staff cannot read the rules", (await S(`automations?project_id=eq.${proj.id}`)).json.length === 0);
-  check("staff cannot mint a seat for anyone",
-    !(await S("project_members", { method: "POST", body: JSON.stringify({ project_id: proj.id }) })).ok);
-  check("staff cannot delete the project",
-    (await S(`projects?id=eq.${proj.id}`, { method: "DELETE" })).json?.length === 0);
+  check(
+    "staff cannot mint a seat for anyone",
+    !(await S("project_members", { method: "POST", body: JSON.stringify({ project_id: proj.id }) })).ok
+  );
+  check(
+    "staff cannot delete the project",
+    (await S(`projects?id=eq.${proj.id}`, { method: "DELETE" })).json?.length === 0
+  );
 
   console.log("\ncommerce data is locked to its store the same way");
   // select=id, not the default representation: since 0046 the token
   // columns are not selectable by anyone, so asking for the whole row
   // back is a permission error rather than a store.
-  const store = (await O("stores?select=id", { method: "POST", body: JSON.stringify({ project_id: proj.id, shop_domain: `rls-${stamp}.myshopify.com`, timezone: "Asia/Kolkata", currency: "INR" }) })).json[0];
-  const cust = (await O("customers", { method: "POST", body: JSON.stringify({ store_id: store.id, external_id: `c${stamp}`, name: "Aman K", phone: "9999900000" }) })).json[0];
-  const ord = (await O("orders", { method: "POST", body: JSON.stringify({ store_id: store.id, external_id: `o${stamp}`, order_number: "#1847", customer_id: cust.id, total: 2340, currency: "INR", tags: ["cod"] }) })).json[0];
+  const store = (
+    await O("stores?select=id", {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: proj.id,
+        shop_domain: `rls-${stamp}.myshopify.com`,
+        timezone: "Asia/Kolkata",
+        currency: "INR",
+      }),
+    })
+  ).json[0];
+  const cust = (
+    await O("customers", {
+      method: "POST",
+      body: JSON.stringify({ store_id: store.id, external_id: `c${stamp}`, name: "Aman K", phone: "9999900000" }),
+    })
+  ).json[0];
+  const ord = (
+    await O("orders", {
+      method: "POST",
+      body: JSON.stringify({
+        store_id: store.id,
+        external_id: `o${stamp}`,
+        order_number: "#1847",
+        customer_id: cust.id,
+        total: 2340,
+        currency: "INR",
+        tags: ["cod"],
+      }),
+    })
+  ).json[0];
 
   check("the owner's store saved", !!store?.id);
   check("staff can read the orders", (await S(`orders?id=eq.${ord.id}`)).json.length === 1);
   check("staff can read the customers", (await S(`customers?id=eq.${cust.id}`)).json.length === 1);
-  check("staff cannot change an order",
-    (await S(`orders?id=eq.${ord.id}`, { method: "PATCH", body: JSON.stringify({ total: 1 }) })).json?.length === 0);
-  check("staff cannot connect or alter a store",
-    (await S(`stores?id=eq.${store.id}&select=id`, { method: "PATCH", body: JSON.stringify({ shop_domain: "hijacked.myshopify.com" }) })).json?.length === 0);
+  check(
+    "staff cannot change an order",
+    (await S(`orders?id=eq.${ord.id}`, { method: "PATCH", body: JSON.stringify({ total: 1 }) })).json?.length === 0
+  );
+  check(
+    "staff cannot connect or alter a store",
+    (
+      await S(`stores?id=eq.${store.id}&select=id`, {
+        method: "PATCH",
+        body: JSON.stringify({ shop_domain: "hijacked.myshopify.com" }),
+      })
+    ).json?.length === 0
+  );
   // The dashboard hides Disconnect from staff, but that is only a label.
   // Disconnecting deletes the store and cascades to every order and
   // customer under it, so the real refusal has to be here.
-  check("staff cannot disconnect the store",
-    (await S(`stores?id=eq.${store.id}&select=id`, { method: "DELETE" })).json?.length === 0);
+  check(
+    "staff cannot disconnect the store",
+    (await S(`stores?id=eq.${store.id}&select=id`, { method: "DELETE" })).json?.length === 0
+  );
   check("the store survived that attempt", (await O(`stores?id=eq.${store.id}&select=id`)).json.length === 1);
-  check("staff cannot write the access token",
-    !(await S(`stores?id=eq.${store.id}&select=id`, { method: "PATCH", body: JSON.stringify({ access_token: "stolen" }) })).ok ||
-      (await O(`stores?id=eq.${store.id}&select=id`)).json.length === 1);
+  check(
+    "staff cannot write the access token",
+    !(
+      await S(`stores?id=eq.${store.id}&select=id`, {
+        method: "PATCH",
+        body: JSON.stringify({ access_token: "stolen" }),
+      })
+    ).ok || (await O(`stores?id=eq.${store.id}&select=id`)).json.length === 1
+  );
   // Nor read it — RLS decides rows, so this is a column privilege and
   // it refuses the owner too. check-store-token covers it in full.
-  check("and nobody reads it as a column",
+  check(
+    "and nobody reads it as a column",
     !(await S(`stores?id=eq.${store.id}&select=access_token`)).ok &&
-      !(await O(`stores?id=eq.${store.id}&select=access_token`)).ok);
+      !(await O(`stores?id=eq.${store.id}&select=access_token`)).ok
+  );
 
   console.log("\na Shopify connection can only be completed once");
   // p_shop joined the signature: the nonce says which attempt this is,
@@ -176,11 +275,16 @@ try {
       method: "POST",
       headers: { apikey: ANON, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        p_state: state, p_shop: shop, p_token: "shpat_test", p_timezone: "Asia/Kolkata",
-        p_currency: "INR", p_country: "IN",
+        p_state: state,
+        p_shop: shop,
+        p_token: "shpat_test",
+        p_timezone: "Asia/Kolkata",
+        p_currency: "INR",
+        p_country: "IN",
         // Shopify tokens expire now, so the connect function stores the
         // refresh token and both lifetimes alongside the access token.
-        p_refresh_token: "shprt_test", p_expires_in: 3600,
+        p_refresh_token: "shprt_test",
+        p_expires_in: 3600,
         p_refresh_expires_in: 7776000,
         // And what the grant came with, so a reconnect that granted
         // less than the last one shows as less.
@@ -188,14 +292,18 @@ try {
       }),
     }).then((r) => r.json());
 
-  const pending = (await O("stores?select=id", {
-    method: "POST",
-    body: JSON.stringify({
-      project_id: proj.id, shop_domain: `pend-${stamp}.myshopify.com`, status: "pending",
-      oauth_state: `state-${stamp}`,
-      oauth_state_expires_at: new Date(Date.now() + 600000).toISOString(),
-    }),
-  })).json[0];
+  const pending = (
+    await O("stores?select=id", {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: proj.id,
+        shop_domain: `pend-${stamp}.myshopify.com`,
+        status: "pending",
+        oauth_state: `state-${stamp}`,
+        oauth_state_expires_at: new Date(Date.now() + 600000).toISOString(),
+      }),
+    })
+  ).json[0];
   check("a pending store was created", !!pending?.id);
   check("an unknown state connects nothing", (await rpc(owner.jwt, "made-up-state")) === null);
   check("the real state completes the connection", (await rpc(owner.jwt, `state-${stamp}`)) === proj.id);
@@ -204,36 +312,47 @@ try {
     "a callback naming a different shop connects nothing",
     (await rpc(owner.jwt, `state-${stamp}`, "someone-else.myshopify.com")) === null
   );
-  check("the store is now connected",
-    (await O(`stores?id=eq.${pending.id}&select=status,timezone`)).json[0]?.status === "connected");
-  check("the store kept its own timezone",
-    (await O(`stores?id=eq.${pending.id}&select=timezone`)).json[0]?.timezone === "Asia/Kolkata");
+  check(
+    "the store is now connected",
+    (await O(`stores?id=eq.${pending.id}&select=status,timezone`)).json[0]?.status === "connected"
+  );
+  check(
+    "the store kept its own timezone",
+    (await O(`stores?id=eq.${pending.id}&select=timezone`)).json[0]?.timezone === "Asia/Kolkata"
+  );
   // The nonce is not selectable since 0046 — it is a secret like the
   // token. That it was spent is what the line above already proves:
   // the same state connected nothing the second time.
-  check("and the nonce is not readable either",
-    !(await O(`stores?id=eq.${pending.id}&select=oauth_state`)).ok);
+  check("and the nonce is not readable either", !(await O(`stores?id=eq.${pending.id}&select=oauth_state`)).ok);
 
-  const stale = (await O("stores?select=id", {
-    method: "POST",
-    body: JSON.stringify({
-      project_id: proj.id, shop_domain: `stale-${stamp}.myshopify.com`, status: "pending",
-      oauth_state: `expired-${stamp}`,
-      oauth_state_expires_at: new Date(Date.now() - 1000).toISOString(),
-    }),
-  })).json[0];
+  const stale = (
+    await O("stores?select=id", {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: proj.id,
+        shop_domain: `stale-${stamp}.myshopify.com`,
+        status: "pending",
+        oauth_state: `expired-${stamp}`,
+        oauth_state_expires_at: new Date(Date.now() - 1000).toISOString(),
+      }),
+    })
+  ).json[0];
   check("an expired state connects nothing", (await rpc(owner.jwt, `expired-${stamp}`)) === null);
-  check("the expired store stays pending",
-    (await O(`stores?id=eq.${stale.id}&select=status`)).json[0]?.status === "pending");
-  check("a stranger cannot complete someone else's connection",
-    (await rpc(outsider.jwt, `expired-${stamp}`)) === null);
+  check(
+    "the expired store stays pending",
+    (await O(`stores?id=eq.${stale.id}&select=status`)).json[0]?.status === "pending"
+  );
+  check("a stranger cannot complete someone else's connection", (await rpc(outsider.jwt, `expired-${stamp}`)) === null);
 
   console.log("\nanother merchant's commerce is invisible");
   check("outsider sees no store", (await X(`stores?id=eq.${store.id}&select=id`)).json.length === 0);
   check("outsider sees no orders", (await X(`orders?id=eq.${ord.id}`)).json.length === 0);
   check("outsider sees no customers", (await X(`customers?id=eq.${cust.id}`)).json.length === 0);
-  check("outsider cannot insert into someone else's store",
-    !(await X("orders", { method: "POST", body: JSON.stringify({ store_id: store.id, external_id: "x", total: 1 }) })).ok);
+  check(
+    "outsider cannot insert into someone else's store",
+    !(await X("orders", { method: "POST", body: JSON.stringify({ store_id: store.id, external_id: "x", total: 1 }) }))
+      .ok
+  );
 
   // The newest table naming a merchant's shop, and the only one that
   // says what is about to be CHANGED there. A stranger reading it
@@ -242,23 +361,39 @@ try {
   // because nobody may insert at this table — not even its owner,
   // who goes through abo_action_propose.
   const svc = api(SVC);
-  const act = (await svc("store_actions", {
-    method: "POST",
-    body: JSON.stringify({
-      project_id: proj.id, store_id: store.id, requested_by: owner.id,
-      action: "tag_orders", summary: "Tags one order", targets: [], params: {},
-    }),
-  })).json[0];
-  check("outsider sees no store action", (await X(`store_actions?id=eq.${act.id}`)).json.length === 0);
-  check("the owner does see their own", (await O(`store_actions?id=eq.${act.id}`)).json.length === 1);
-  check("and nobody writes one at the table",
-    !(await O("store_actions", {
+  const act = (
+    await svc("store_actions", {
       method: "POST",
       body: JSON.stringify({
-        project_id: proj.id, store_id: store.id, requested_by: owner.id,
-        action: "tag_orders", summary: "By hand", targets: [], params: {},
+        project_id: proj.id,
+        store_id: store.id,
+        requested_by: owner.id,
+        action: "tag_orders",
+        summary: "Tags one order",
+        targets: [],
+        params: {},
       }),
-    })).ok);
+    })
+  ).json[0];
+  check("outsider sees no store action", (await X(`store_actions?id=eq.${act.id}`)).json.length === 0);
+  check("the owner does see their own", (await O(`store_actions?id=eq.${act.id}`)).json.length === 1);
+  check(
+    "and nobody writes one at the table",
+    !(
+      await O("store_actions", {
+        method: "POST",
+        body: JSON.stringify({
+          project_id: proj.id,
+          store_id: store.id,
+          requested_by: owner.id,
+          action: "tag_orders",
+          summary: "By hand",
+          targets: [],
+          params: {},
+        }),
+      })
+    ).ok
+  );
 
   console.log("\nan outsider is still shut out");
   check("outsider sees no project", (await X(`projects?id=eq.${proj.id}`)).json.length === 0);
@@ -298,10 +433,7 @@ console.log("\nand no table is left outside the wall");
   // The function is the check's own business; if it is missing, say so
   // rather than passing because nothing answered.
   check("every table can be asked about", Array.isArray(naked));
-  check(
-    "and every one of them refuses writes from an AI's token",
-    Array.isArray(naked) && naked.length === 0
-  );
+  check("and every one of them refuses writes from an AI's token", Array.isArray(naked) && naked.length === 0);
   if (Array.isArray(naked) && naked.length > 0) {
     for (const t of naked) console.log(`     ..    unguarded: ${t.tablename ?? t}`);
   }
@@ -336,23 +468,16 @@ console.log("\na project id that is not yours");
     "the shell can tell 'not asked yet' from 'nothing came back'",
     /useState<ProjectRow \| null \| undefined>\(undefined\)/.test(shell)
   );
-  check(
-    "and renders a refusal rather than an empty workspace",
-    /if \(project === null\) \{/.test(shell)
-  );
+  check("and renders a refusal rather than an empty workspace", /if \(project === null\) \{/.test(shell));
   // One screen for "does not exist" and "not yours". Telling them
   // apart is how an outsider learns which ids are real.
   // Scoped to that screen's own copy, not the whole file: "does not
   // exist" is ordinary wording elsewhere in a 1600-line component, and
   // a check that greps everything fails for the wrong reason.
-  const refusal = shell.slice(
-    shell.indexOf("if (project === null) {"),
-    shell.indexOf("<FormatProvider")
-  );
+  const refusal = shell.slice(shell.indexOf("if (project === null) {"), shell.indexOf("<FormatProvider"));
   check(
     "that says the same thing either way",
-    /isn&rsquo;t available/.test(refusal) &&
-      !/(does not exist|doesn&rsquo;t exist|not found|no such)/i.test(refusal)
+    /isn&rsquo;t available/.test(refusal) && !/(does not exist|doesn&rsquo;t exist|not found|no such)/i.test(refusal)
   );
   check("and offers a way back", /\/dashboard/.test(refusal));
 }

@@ -40,10 +40,7 @@ const pick = (v: FormDataEntryValue | null, options: Option[]) => {
   return options.some((o) => o.value === s) ? s : "";
 };
 
-export async function bookDemo(
-  _prev: BookingState,
-  form: FormData
-): Promise<BookingState> {
+export async function bookDemo(_prev: BookingState, form: FormData): Promise<BookingState> {
   const name = text(form.get("name"), 120);
   const email = text(form.get("email"), 160);
   const store = text(form.get("store"), 200);
@@ -77,27 +74,29 @@ export async function bookDemo(
     if (v) utm[k] = v;
   }
 
-  const { error } = await createClient(url, anon).from("landing_events").insert({
-    session_id: text(form.get("session_id"), 64) || crypto.randomUUID().replace(/-/g, ""),
-    variant: text(form.get("variant"), 64) || null,
-    ...utm,
-    // Capped here as well as at the column: a query string long enough
-    // to fail the check would have failed the booking, which is the one
-    // event that must not be lost over a detail nobody reads.
-    landing_path: text(form.get("landing_path"), 500) || null,
-    event: "demo_booked",
-    idem: text(form.get("idem"), 64) || null,
-    payload: {
-      name,
-      email,
-      store,
-      note: text(form.get("note"), 600),
-      team_size,
-      monthly_orders,
-      heard_from,
-      heard_from_detail,
-    },
-  });
+  const { error } = await createClient(url, anon)
+    .from("landing_events")
+    .insert({
+      session_id: text(form.get("session_id"), 64) || crypto.randomUUID().replace(/-/g, ""),
+      variant: text(form.get("variant"), 64) || null,
+      ...utm,
+      // Capped here as well as at the column: a query string long enough
+      // to fail the check would have failed the booking, which is the one
+      // event that must not be lost over a detail nobody reads.
+      landing_path: text(form.get("landing_path"), 500) || null,
+      event: "demo_booked",
+      idem: text(form.get("idem"), 64) || null,
+      payload: {
+        name,
+        email,
+        store,
+        note: text(form.get("note"), 600),
+        team_size,
+        monthly_orders,
+        heard_from,
+        heard_from_detail,
+      },
+    });
 
   if (error) {
     // The same submission arriving twice is the unique index doing its

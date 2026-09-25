@@ -45,12 +45,21 @@ try {
   const store = must(
     await admin
       .from("stores")
-      .insert({ project_id: project.id, shop_domain: `rv-${stamp}.myshopify.com`, status: "connected", currency: "INR", timezone: "Asia/Kolkata" })
+      .insert({
+        project_id: project.id,
+        shop_domain: `rv-${stamp}.myshopify.com`,
+        status: "connected",
+        currency: "INR",
+        timezone: "Asia/Kolkata",
+      })
       .select("id")
       .single()
   );
   const [aman] = must(
-    await admin.from("customers").insert([{ store_id: store.id, external_id: `c-${stamp}`, name: "Aman Kumar" }]).select("id")
+    await admin
+      .from("customers")
+      .insert([{ store_id: store.id, external_id: `c-${stamp}`, name: "Aman Kumar" }])
+      .select("id")
   );
   const order = must(
     await admin
@@ -70,21 +79,47 @@ try {
       .single()
   );
   must(
-    await admin
-      .from("refunds")
-      .insert({ store_id: store.id, order_id: order.id, external_id: `r-${stamp}`, amount: 299, quantity: 1, refunded_at: new Date().toISOString() })
+    await admin.from("refunds").insert({
+      store_id: store.id,
+      order_id: order.id,
+      external_id: `r-${stamp}`,
+      amount: 299,
+      quantity: 1,
+      refunded_at: new Date().toISOString(),
+    })
   );
   const product = must(
     await admin
       .from("products")
-      .insert({ store_id: store.id, external_id: `p-${stamp}`, title: "Boat Airdopes 141", handle: `airdopes-${stamp}`, status: "ACTIVE" })
+      .insert({
+        store_id: store.id,
+        external_id: `p-${stamp}`,
+        title: "Boat Airdopes 141",
+        handle: `airdopes-${stamp}`,
+        status: "ACTIVE",
+      })
       .select("id")
       .single()
   );
   must(
     await admin.from("variants").insert([
-      { store_id: store.id, product_id: product.id, external_id: `v-${stamp}-1`, title: "Black", sku: "BA141-BLK", barcode: "8901234567890", price: 1299 },
-      { store_id: store.id, product_id: product.id, external_id: `v-${stamp}-2`, title: "Blue", sku: "BA141-BLU", price: 1299 },
+      {
+        store_id: store.id,
+        product_id: product.id,
+        external_id: `v-${stamp}-1`,
+        title: "Black",
+        sku: "BA141-BLK",
+        barcode: "8901234567890",
+        price: 1299,
+      },
+      {
+        store_id: store.id,
+        product_id: product.id,
+        external_id: `v-${stamp}-2`,
+        title: "Blue",
+        sku: "BA141-BLU",
+        price: 1299,
+      },
     ])
   );
 
@@ -123,7 +158,13 @@ try {
       p_project: project.id,
       p_request: null,
       p_op: "module_insert",
-      p_payload: { name: table, nav_label: spec.section.label, route: `/modules/${table}`, source_table: table, icon: spec.section.icon },
+      p_payload: {
+        name: table,
+        nav_label: spec.section.label,
+        route: `/modules/${table}`,
+        source_table: table,
+        icon: spec.section.icon,
+      },
     });
     check(`the owner can build a ${spec.section.label} section`, !built.error && !!built.data?.id);
     if (built.error) console.log("     →", built.error.message);

@@ -20,13 +20,7 @@ export type LinkOptions = Record<string, LinkOption[]>;
 
 const LinkContext = createContext<LinkOptions>({});
 
-export function LinkProvider({
-  options,
-  children,
-}: {
-  options: LinkOptions;
-  children: ReactNode;
-}) {
+export function LinkProvider({ options, children }: { options: LinkOptions; children: ReactNode }) {
   return <LinkContext.Provider value={options}>{children}</LinkContext.Provider>;
 }
 

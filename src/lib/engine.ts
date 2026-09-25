@@ -96,11 +96,9 @@ export async function storeContextFor(
   // look up with the store tools; each lookup is recorded by the tool
   // that ran it, never by the model's word for it (see runTurn).
   const [recent, low, leaders, routed] = await Promise.all([
-    searchOrders(
-      client,
-      { id: storeRow.id as string, timezone: storeRow.timezone as string },
-      { limit: 20 }
-    ).catch(() => []),
+    searchOrders(client, { id: storeRow.id as string, timezone: storeRow.timezone as string }, { limit: 20 }).catch(
+      () => []
+    ),
     lowStock(client, storeRow.id as string, { threshold: 10, limit: 15 }).catch(() => []),
     // Whole-store, unlike the two above: the questions these answer are
     // rankings, and a ranking over the latest twenty rows is not one.
@@ -118,10 +116,7 @@ export async function storeContextFor(
       )
     : null;
   const values = await storeValues(client, storeRow.id as string);
-  const { data: runs } = await client
-    .from("import_runs")
-    .select("status")
-    .eq("store_id", storeRow.id);
+  const { data: runs } = await client.from("import_runs").select("status").eq("store_id", storeRow.id);
   const runList = (runs ?? []) as Array<{ status: string }>;
 
   return {
@@ -250,10 +245,7 @@ export type TurnResult =
  * whatever is saved against them, because that is what is rendered,
  * plus any computed columns, which are not the store's and are kept.
  */
-export async function schemasFor(
-  client: SupabaseClient,
-  modules: ModuleRow[]
-): Promise<Map<string, UiSchema>> {
+export async function schemasFor(client: SupabaseClient, modules: ModuleRow[]): Promise<Map<string, UiSchema>> {
   const byModule = new Map<string, UiSchema>();
   if (modules.length === 0) return byModule;
 
@@ -275,10 +267,7 @@ export async function schemasFor(
     if (m.source_table && isStoreTable(m.source_table)) {
       const saved = byModule.get(m.id);
       byModule.set(m.id, {
-        columns: [
-          ...storeTableSchema(m.source_table).columns,
-          ...(saved?.columns ?? []).filter((c) => c.compute),
-        ],
+        columns: [...storeTableSchema(m.source_table).columns, ...(saved?.columns ?? []).filter((c) => c.compute)],
         features: saved?.features ?? null,
       });
     }
@@ -348,9 +337,7 @@ function columnLines(modules: ModuleRow[], schemas: Map<string, UiSchema>): stri
   return modules.map((m) => {
     const cols = schemas.get(m.id)?.columns ?? [];
     const spelled = cols.length
-      ? cols
-          .map((c) => `${c.field} (${c.type}${c.compute ? ", computed" : ""})`)
-          .join(", ")
+      ? cols.map((c) => `${c.field} (${c.type}${c.compute ? ", computed" : ""})`).join(", ")
       : "no fields yet";
     return `- ${m.nav_label} [id ${m.id}]: ${spelled}`;
   });
@@ -403,9 +390,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     // Whether Luke may ask for a change in the shop: the account's own
     // switch, off unless somebody at Warmluke turned it on. Read only
     // when the tools are on offer at all.
-    lookups && store
-      ? client.rpc("abo_feature", { p_name: "store_actions" })
-      : Promise.resolve({ data: false }),
+    lookups && store ? client.rpc("abo_feature", { p_name: "store_actions" }) : Promise.resolve({ data: false }),
   ]);
   const rules = describeRules((ruleRows ?? []) as RuleRow[], modules);
 
@@ -480,7 +465,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   const userTurn = buildUserMessage(
     message,
     moduleId,
-    currentSchema ?? (moduleId ? schemas.get(moduleId) ?? null : null),
+    currentSchema ?? (moduleId ? (schemas.get(moduleId) ?? null) : null),
     currentFeatures,
     rules,
     columnLines(modules, schemas),
@@ -510,9 +495,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       lookups: attempt === 0 && tools ? { tools } : undefined,
       onText: draft,
     });
-    parsed = parseReply(raw, modules, currentSchema, currentFeatures, (mid) =>
-      schemas.get(mid) ?? null
-    );
+    parsed = parseReply(raw, modules, currentSchema, currentFeatures, (mid) => schemas.get(mid) ?? null);
 
     // Structural gate, enforced here rather than trusted to the prompt.
     if (
@@ -580,13 +563,11 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // answered, there is nothing to ask that of, and running it would
   // spend a second model call to compare prose with nothing.
   if (parsed.reply.type !== "clarify" && parsed.reply.type !== "answer") {
-    const plans =
-      parsed.reply.type === "blueprint" ? parsed.reply.blueprint.plans : parsed.reply.plans;
+    const plans = parsed.reply.type === "blueprint" ? parsed.reply.blueprint.plans : parsed.reply.plans;
     const built = describeBuild(plans, modules, currentSchema?.columns, store);
     tell({ step: "gaps" });
     const gaps = await findGaps(message.trim(), built, signal);
-    const existing =
-      parsed.reply.type === "blueprint" ? (parsed.reply.blueprint.unmet ?? []) : [];
+    const existing = parsed.reply.type === "blueprint" ? (parsed.reply.blueprint.unmet ?? []) : [];
     const seen = new Set(existing.map((u) => u.toLowerCase().trim()));
     unmet = [...existing, ...gaps.filter((g) => !seen.has(g.toLowerCase().trim()))].slice(0, 6);
     // The gap pass may have added to what this design cannot do; a
@@ -625,13 +606,8 @@ export function blueprintAsText(
   // A question answered has no design to render — it is already prose.
   if (reply.type === "answer") return reply.message;
 
-  const bp =
-    reply.type === "blueprint"
-      ? reply.blueprint
-      : { summary: reply.message, plans: reply.plans, unmet };
-  const facts = store
-    ? { shop_domain: store.shop_domain, currency: store.currency, counts: store.counts }
-    : null;
+  const bp = reply.type === "blueprint" ? reply.blueprint : { summary: reply.message, plans: reply.plans, unmet };
+  const facts = store ? { shop_domain: store.shop_domain, currency: store.currency, counts: store.counts } : null;
 
   const lines: string[] = [bp.summary ?? "Here is what would be built."];
   for (const plan of bp.plans) {

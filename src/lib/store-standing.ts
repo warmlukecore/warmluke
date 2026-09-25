@@ -35,10 +35,7 @@ export type Standing = {
  * judged at all.
  */
 export function accessRanOut(s: StoreFacts, now: number = Date.now()): boolean {
-  return (
-    !!s.token_expires_at &&
-    (!s.refresh_token_expires_at || Date.parse(s.refresh_token_expires_at) < now)
-  );
+  return !!s.token_expires_at && (!s.refresh_token_expires_at || Date.parse(s.refresh_token_expires_at) < now);
 }
 
 export function storeStanding(s: StoreFacts, now: number = Date.now()): Standing {

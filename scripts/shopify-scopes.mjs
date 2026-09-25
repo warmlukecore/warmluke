@@ -67,10 +67,14 @@ for (const store of stores) {
 
   const recorded = store.granted_scopes ?? null;
   console.log(`  Shopify says : ${live ? live.join(", ") : "—"}`);
-  console.log(`  we recorded  : ${recorded ? [...recorded].sort().join(", ") : "nothing yet (fills in at the next renewal)"}`);
+  console.log(
+    `  we recorded  : ${recorded ? [...recorded].sort().join(", ") : "nothing yet (fills in at the next renewal)"}`
+  );
 
   const short = live ? asked.filter((s) => !live.includes(s)) : missingScopes(recorded);
-  console.log(`  the install asks for ${asked.length}; still missing ${short.length}${short.length ? ": " + short.join(", ") : ""}`);
+  console.log(
+    `  the install asks for ${asked.length}; still missing ${short.length}${short.length ? ": " + short.join(", ") : ""}`
+  );
   if (short.length) console.log("  → a reconnect that finishes is what grants these. Starting one is not enough.");
 
   // Which ones differ, not merely that some do. Shopify's own two
@@ -86,9 +90,11 @@ for (const store of stores) {
       if (onlyLive.length) console.log(`     Shopify has, we did not record: ${onlyLive.join(", ")}`);
       if (onlyOurs.length) console.log(`     we recorded, Shopify does not list: ${onlyOurs.join(", ")}`);
       const matters = [...onlyOurs, ...onlyLive].filter((sc) => asked.includes(sc));
-      console.log(matters.length
-        ? `     of those, these are ones the install asks for: ${matters.join(", ")}`
-        : "     none of them is a scope this app asks for, so nothing here is broken.");
+      console.log(
+        matters.length
+          ? `     of those, these are ones the install asks for: ${matters.join(", ")}`
+          : "     none of them is a scope this app asks for, so nothing here is broken."
+      );
     }
   }
 
@@ -106,11 +112,12 @@ for (const store of stores) {
         query: '{ __type(name: "WebhookSubscriptionTopic") { enumValues(includeDeprecated: false) { name } } }',
       }),
     });
-    const real = new Set((((await r.json()).data?.__type?.enumValues) ?? []).map((v) => v.name));
+    const real = new Set(((await r.json()).data?.__type?.enumValues ?? []).map((v) => v.name));
     if (real.size === 0) throw new Error("Shopify named no topics");
     const invented = WEBHOOK_TOPICS.filter((t) => !real.has(t));
     console.log(`  webhooks     : ${WEBHOOK_TOPICS.length} asked for, ${invented.length} that Shopify does not have`);
-    for (const t of invented) console.log(`     → ${t} is not a topic. Its subscription will fail and this list will go stale.`);
+    for (const t of invented)
+      console.log(`     → ${t} is not a topic. Its subscription will fail and this list will go stale.`);
   } catch (e) {
     console.log(`  could not check the topics: ${e instanceof Error ? e.message : e}`);
   }

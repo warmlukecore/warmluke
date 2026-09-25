@@ -28,31 +28,20 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
-const client = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
-);
+const client = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY);
 const owner = await signInAsCheckUser(client, env);
 if (!owner.session) {
   console.log(`could not sign in as the owner — ${owner.why}`);
   process.exit(1);
 }
 const token = owner.session.access_token;
-const admin = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.ADAPTIVE_OS_SERVICE_ROLE_KEY
-);
+const admin = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
 // A project for this run only — the check user's, not the merchant's.
 const project = await throwawayProject(admin, owner.user.id, "auto-build");
 
 const setAuto = (on) => admin.from("projects").update({ auto_build: on }).eq("id", project.id);
 const sectionCount = async () =>
-  (
-    await admin
-      .from("modules")
-      .select("*", { count: "exact", head: true })
-      .eq("project_id", project.id)
-  ).count;
+  (await admin.from("modules").select("*", { count: "exact", head: true }).eq("project_id", project.id)).count;
 
 /** Drives the tool the way an assistant does. */
 const tool = async (name, args, id = 1) => {
@@ -66,7 +55,12 @@ const tool = async (name, args, id = 1) => {
     // Always named: the check user owns more than one project whenever
     // two checks overlap or one crashed, and "which app?" is not the
     // answer under test.
-    body: JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: { project_id: project.id, ...args } } }),
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id,
+      method: "tools/call",
+      params: { name, arguments: { project_id: project.id, ...args } },
+    }),
   });
   const j = await res.json();
   try {
@@ -80,11 +74,7 @@ const tool = async (name, args, id = 1) => {
 // spends the account's included designs and then cannot run. Owned for the
 // length of the run and handed back, like the setting above.
 const turnsWas = (
-  await admin
-    .from("account_settings")
-    .select("free_turns, turns_used")
-    .eq("user_id", owner.user.id)
-    .single()
+  await admin.from("account_settings").select("free_turns, turns_used").eq("user_id", owner.user.id).single()
 ).data;
 if (turnsWas) {
   await admin
@@ -199,67 +189,55 @@ try {
   }
 
   // The setting's own description is part of the setting. It promised
-// "new sections and example rows" for a day after a new field joined
-// them, and its second line — "anything that changes a section you
-// already have waits" — was untrue while it said so. It now says
-// everything, so everything is what it has to do.
-console.log("\nthe screen describes what it actually does");
-{
-  const settings = readFileSync(
-    new URL("../src/components/ProjectSettings.tsx", import.meta.url),
-    "utf8"
-  );
-  const route = readFileSync(
-    new URL("../src/app/api/mcp/route.ts", import.meta.url),
-    "utf8"
-  );
-  const panel = readFileSync(
-    new URL("../src/components/ChatPanel.tsx", import.meta.url),
-    "utf8"
-  );
-  // Nothing is held back by what kind of change it is any more. A
-  // list of allowed change types anywhere in this path means the
-  // limit grew back.
-  check("no change type is singled out", !/ADDITIVE|BUILT_WITHOUT_ASKING/.test(route));
-  check("and the screen does not promise one", !/Applies on its own:<\/span> new sections/.test(settings));
-  check("the screen says it waits for nothing", /Still waits for you:<\/span> nothing/.test(settings));
-  // The ceiling is gone too, and the quota is what stops a loop now.
-  check("there is no builds-per-day ceiling", !/AUTO_BUILDS_PER_DAY/.test(route));
-  // The one thing the setting must never reach, on or off.
-  check("removing a section is still refused outright", /Removing a section cannot be done from here/.test(route));
-  check("and the screen still says so", /Never, either way:/.test(settings));
-  // A card that asks anyway, with the setting on, has to say why —
-  // otherwise the setting reads as broken, which is what it did.
-  check(
-    "a card that asks anyway says why",
-    /Waiting for you:/.test(panel) && /did not go in/.test(panel)
-  );
-  // And the reason has to have been written down, or the card has
-  // nothing to read.
-  // Through abo_build, because a client's token cannot write at the
-  // table and this reason was never landing for the one caller that
-  // produces it (0078).
-  check(
-    "a failed automatic build records its reason",
-    /p_op: "request_outcome"/.test(route) && !/\.update\(\{ outcome:/.test(route)
-  );
-}
-
-console.log("\nand a new field, which loses nothing");
-{
-  const added = await tool(
-    "propose_change",
-    {
-      request: `In the section On Check ${stamp}, add a text field called Checked By. Keep every existing field.`,
-    },
-    31
-  );
-  check("it is built without asking", added.status === "built" || added.status === "partly built");
-  if (added.status !== "built" && added.status !== "partly built") {
-    console.log(`     → ${JSON.stringify(added).slice(0, 300)}`);
+  // "new sections and example rows" for a day after a new field joined
+  // them, and its second line — "anything that changes a section you
+  // already have waits" — was untrue while it said so. It now says
+  // everything, so everything is what it has to do.
+  console.log("\nthe screen describes what it actually does");
+  {
+    const settings = readFileSync(new URL("../src/components/ProjectSettings.tsx", import.meta.url), "utf8");
+    const route = readFileSync(new URL("../src/app/api/mcp/route.ts", import.meta.url), "utf8");
+    const panel = readFileSync(new URL("../src/components/ChatPanel.tsx", import.meta.url), "utf8");
+    // Nothing is held back by what kind of change it is any more. A
+    // list of allowed change types anywhere in this path means the
+    // limit grew back.
+    check("no change type is singled out", !/ADDITIVE|BUILT_WITHOUT_ASKING/.test(route));
+    check("and the screen does not promise one", !/Applies on its own:<\/span> new sections/.test(settings));
+    check("the screen says it waits for nothing", /Still waits for you:<\/span> nothing/.test(settings));
+    // The ceiling is gone too, and the quota is what stops a loop now.
+    check("there is no builds-per-day ceiling", !/AUTO_BUILDS_PER_DAY/.test(route));
+    // The one thing the setting must never reach, on or off.
+    check("removing a section is still refused outright", /Removing a section cannot be done from here/.test(route));
+    check("and the screen still says so", /Never, either way:/.test(settings));
+    // A card that asks anyway, with the setting on, has to say why —
+    // otherwise the setting reads as broken, which is what it did.
+    check("a card that asks anyway says why", /Waiting for you:/.test(panel) && /did not go in/.test(panel));
+    // And the reason has to have been written down, or the card has
+    // nothing to read.
+    // Through abo_build, because a client's token cannot write at the
+    // table and this reason was never landing for the one caller that
+    // produces it (0078).
+    check(
+      "a failed automatic build records its reason",
+      /p_op: "request_outcome"/.test(route) && !/\.update\(\{ outcome:/.test(route)
+    );
   }
-  if (added.request_id) madeRequests.push(added.request_id);
-}
+
+  console.log("\nand a new field, which loses nothing");
+  {
+    const added = await tool(
+      "propose_change",
+      {
+        request: `In the section On Check ${stamp}, add a text field called Checked By. Keep every existing field.`,
+      },
+      31
+    );
+    check("it is built without asking", added.status === "built" || added.status === "partly built");
+    if (added.status !== "built" && added.status !== "partly built") {
+      console.log(`     → ${JSON.stringify(added).slice(0, 300)}`);
+    }
+    if (added.request_id) madeRequests.push(added.request_id);
+  }
 
   // A rule was the last thing held back: it keeps writing to rows
   // after it is built, so it is not one action but an ongoing one.
@@ -285,13 +263,10 @@ console.log("\nand a new field, which loses nothing");
 
   // The one that must still be refused however the setting is set.
   console.log("\nbut removing a section, never");
-  const removal = await tool(
-    "propose_change",
-    { request: `Delete the section On Check ${stamp} entirely.` },
-    4
-  );
+  const removal = await tool("propose_change", { request: `Delete the section On Check ${stamp} entirely.` }, 4);
   check("it is refused outright", /cannot be done from here/i.test(removal.error ?? ""));
-  if (!/cannot be done from here/i.test(removal.error ?? "")) console.log("     →", JSON.stringify(removal).slice(0, 400));
+  if (!/cannot be done from here/i.test(removal.error ?? ""))
+    console.log("     →", JSON.stringify(removal).slice(0, 400));
   check("and nothing was requested", !removal.request_id);
   if (removal.request_id) madeRequests.push(removal.request_id);
 
@@ -308,15 +283,11 @@ console.log("\nand a new field, which loses nothing");
   // merchant a project that builds without asking — and the next
   // check a failure it did not cause.
   await setAuto(project.auto_build === true);
-  const after = (await admin.from("projects").select("auto_build").eq("id", project.id).single())
-    .data;
+  const after = (await admin.from("projects").select("auto_build").eq("id", project.id).single()).data;
   check("the setting is back as it was", after?.auto_build === (project.auto_build === true));
   if (turnsWas) {
     // What it really spent stays spent; only the ceiling comes back.
-    await admin
-      .from("account_settings")
-      .update({ free_turns: turnsWas.free_turns })
-      .eq("user_id", owner.user.id);
+    await admin.from("account_settings").update({ free_turns: turnsWas.free_turns }).eq("user_id", owner.user.id);
   }
   for (const id of made) await admin.from("modules").delete().eq("id", id);
 

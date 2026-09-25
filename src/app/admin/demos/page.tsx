@@ -144,17 +144,20 @@ export default function DemoRequests() {
 
   const q = query.trim().toLowerCase();
   const found = useMemo(
-    () =>
-      (rows ?? []).filter(
-        (r) => !q || [r.name, r.email, r.store].some((v) => (v ?? "").toLowerCase().includes(q))
-      ),
+    () => (rows ?? []).filter((r) => !q || [r.name, r.email, r.store].some((v) => (v ?? "").toLowerCase().includes(q))),
     [rows, q]
   );
-  const shown = useMemo(() => (stage === "all" ? found : found.filter((r) => (r.stage ?? "new") === stage)), [found, stage]);
+  const shown = useMemo(
+    () => (stage === "all" ? found : found.filter((r) => (r.stage ?? "new") === stage)),
+    [found, stage]
+  );
   // Each stage's count, of what the search found, so the numbers and the list agree.
   const stageOptions = useMemo((): Array<[string, string]> => {
     const n = (v: string) => found.filter((r) => (r.stage ?? "new") === v).length;
-    return [["all", `All ${found.length}`], ...DEMO_STAGES.map((o): [string, string] => [o.value, `${o.label} ${n(o.value)}`])];
+    return [
+      ["all", `All ${found.length}`],
+      ...DEMO_STAGES.map((o): [string, string] => [o.value, `${o.label} ${n(o.value)}`]),
+    ];
   }, [found]);
 
   if (loading || !user || rows === null) {
@@ -204,7 +207,12 @@ export default function DemoRequests() {
 
             <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
               <label className="relative block w-full max-w-xs">
-                <Search aria-hidden size={15} strokeWidth={1.75} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-fg-faint" />
+                <Search
+                  aria-hidden
+                  size={15}
+                  strokeWidth={1.75}
+                  className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-fg-faint"
+                />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
@@ -266,7 +274,9 @@ export default function DemoRequests() {
                             </span>
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5">
-                                <span className="max-w-[14rem] truncate font-medium text-fg">{r.name || "No name given"}</span>
+                                <span className="max-w-[14rem] truncate font-medium text-fg">
+                                  {r.name || "No name given"}
+                                </span>
                                 {r.has_account && r.email && (
                                   <Link
                                     href={`/admin?find=${encodeURIComponent(r.email.trim())}`}
@@ -283,12 +293,22 @@ export default function DemoRequests() {
                                 )}
                               </div>
                               {r.email && (
-                                <a href={`mailto:${r.email}`} className="block max-w-[14rem] truncate text-xs text-link hover:underline">
+                                <a
+                                  href={`mailto:${r.email}`}
+                                  className="block max-w-[14rem] truncate text-xs text-link hover:underline"
+                                >
                                   {r.email}
                                 </a>
                               )}
-                              <div className="text-[11px] whitespace-nowrap text-fg-faint" title={new Date(r.created_at).toLocaleString()}>
-                                {new Date(r.created_at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}
+                              <div
+                                className="text-[11px] whitespace-nowrap text-fg-faint"
+                                title={new Date(r.created_at).toLocaleString()}
+                              >
+                                {new Date(r.created_at).toLocaleDateString(undefined, {
+                                  day: "numeric",
+                                  month: "short",
+                                  year: "numeric",
+                                })}
                                 {" · "}
                                 {ago(r.created_at, now)}
                               </div>
@@ -304,14 +324,19 @@ export default function DemoRequests() {
                             >
                               {labelOf(DEMO_STAGES, r.stage ?? "new")}
                             </button>
-                            {r.follow_up_note && <p className="mt-1 line-clamp-2 text-xs break-words text-fg-muted">{r.follow_up_note}</p>}
+                            {r.follow_up_note && (
+                              <p className="mt-1 line-clamp-2 text-xs break-words text-fg-muted">{r.follow_up_note}</p>
+                            )}
                             {r.followed_up_at ? (
                               <div className="mt-0.5 text-[11px] text-fg-faint">
                                 <span className="break-all">{r.followed_up_by ?? "a former administrator"}</span> ·{" "}
                                 <span className="whitespace-nowrap">{ago(r.followed_up_at, now)}</span>
                               </div>
                             ) : (
-                              <button onClick={() => setOpen(r)} className="mt-1 block text-[11px] text-link hover:underline">
+                              <button
+                                onClick={() => setOpen(r)}
+                                className="mt-1 block text-[11px] text-link hover:underline"
+                              >
                                 Add a note
                               </button>
                             )}
@@ -320,7 +345,12 @@ export default function DemoRequests() {
                         <td className="px-3 py-3 first:pl-4">
                           <div className="min-w-44 max-w-60">
                             {site ? (
-                              <a href={site.href} target="_blank" rel="noopener noreferrer nofollow" className="block truncate font-medium text-link hover:underline">
+                              <a
+                                href={site.href}
+                                target="_blank"
+                                rel="noopener noreferrer nofollow"
+                                className="block truncate font-medium text-link hover:underline"
+                              >
                                 {site.text}
                               </a>
                             ) : (
@@ -337,7 +367,9 @@ export default function DemoRequests() {
                           {r.heard_from ? (
                             <div className="min-w-32 max-w-48">
                               <div className="text-fg">{labelOf(HEARD_OPTIONS, r.heard_from)}</div>
-                              {r.heard_from_detail && <div className="text-xs break-words text-fg-muted">{r.heard_from_detail}</div>}
+                              {r.heard_from_detail && (
+                                <div className="text-xs break-words text-fg-muted">{r.heard_from_detail}</div>
+                              )}
                             </div>
                           ) : (
                             <span className="text-xs text-fg-faint">Not asked</span>
@@ -346,7 +378,11 @@ export default function DemoRequests() {
                         <td className="px-3 py-3 first:pl-4">
                           <div className="min-w-36 max-w-56 text-xs">
                             <div className="text-fg">{source || "Direct"}</div>
-                            {r.utm_campaign && <div className="truncate text-fg-muted" title={r.utm_campaign}>{r.utm_campaign}</div>}
+                            {r.utm_campaign && (
+                              <div className="truncate text-fg-muted" title={r.utm_campaign}>
+                                {r.utm_campaign}
+                              </div>
+                            )}
                             {r.variant && <div className="text-fg-faint">saw the {r.variant} hero</div>}
                           </div>
                         </td>
@@ -363,9 +399,11 @@ export default function DemoRequests() {
                   {shown.length === 0 && (
                     <tr>
                       <td colSpan={6} className="px-4 py-8 text-center text-[13px] text-fg-muted">
-                        {stage === "all"
-                          ? <>No request matches &ldquo;{query}&rdquo;.</>
-                          : `No request ${q ? "that matches is" : "is"} at “${labelOf(DEMO_STAGES, stage)}”.`}
+                        {stage === "all" ? (
+                          <>No request matches &ldquo;{query}&rdquo;.</>
+                        ) : (
+                          `No request ${q ? "that matches is" : "is"} at “${labelOf(DEMO_STAGES, stage)}”.`
+                        )}
                       </td>
                     </tr>
                   )}
@@ -391,7 +429,17 @@ export default function DemoRequests() {
 }
 
 /** Where one request stands, and what we know about it. */
-function FollowUp({ lead, onClose, onSaved, onStale }: { lead: Lead; onClose: () => void; onSaved: () => void; onStale: () => void }) {
+function FollowUp({
+  lead,
+  onClose,
+  onSaved,
+  onStale,
+}: {
+  lead: Lead;
+  onClose: () => void;
+  onSaved: () => void;
+  onStale: () => void;
+}) {
   const [stage, setStage] = useState(lead.stage ?? "new");
   const [text, setText] = useState(lead.follow_up_note ?? "");
   const [saving, setSaving] = useState(false);
@@ -415,7 +463,9 @@ function FollowUp({ lead, onClose, onSaved, onStale }: { lead: Lead; onClose: ()
       onStale();
       setError("Someone else changed this since you opened it. Close this and open it again to see what they wrote.");
     } else {
-      setError(err.code === "PGRST202" ? "This database cannot keep follow-ups yet: apply migration 0120." : err.message);
+      setError(
+        err.code === "PGRST202" ? "This database cannot keep follow-ups yet: apply migration 0120." : err.message
+      );
     }
   }
 
@@ -427,7 +477,9 @@ function FollowUp({ lead, onClose, onSaved, onStale }: { lead: Lead; onClose: ()
       footer={
         <>
           <span className="mr-auto text-[11px] text-fg-faint">
-            {lead.followed_up_at ? `Last changed by ${lead.followed_up_by ?? "a former administrator"}` : "Not followed up yet"}
+            {lead.followed_up_at
+              ? `Last changed by ${lead.followed_up_by ?? "a former administrator"}`
+              : "Not followed up yet"}
           </span>
           <button onClick={onClose} className={button("secondary")}>
             Cancel
@@ -442,12 +494,19 @@ function FollowUp({ lead, onClose, onSaved, onStale }: { lead: Lead; onClose: ()
         {lead.note && (
           <div>
             <div className={label}>What they asked Luke to fix first</div>
-            <p className="rounded-control bg-surface-subdued px-3 py-2 whitespace-pre-line break-words text-fg-muted">{lead.note}</p>
+            <p className="rounded-control bg-surface-subdued px-3 py-2 whitespace-pre-line break-words text-fg-muted">
+              {lead.note}
+            </p>
           </div>
         )}
         <div>
           <div className={label}>Where it stands</div>
-          <Choices options={DEMO_STAGES.map((o): [string, string] => [o.value, o.label])} value={stage} onChange={setStage} disabled={saving} />
+          <Choices
+            options={DEMO_STAGES.map((o): [string, string] => [o.value, o.label])}
+            value={stage}
+            onChange={setStage}
+            disabled={saving}
+          />
         </div>
         <label className="block">
           <span className={label}>Your note</span>
@@ -462,7 +521,8 @@ function FollowUp({ lead, onClose, onSaved, onStale }: { lead: Lead; onClose: ()
             className={`${field} resize-y`}
           />
           <span className={hint}>
-            Only administrators see it.{text.length > NOTE_MAX * 0.9 ? ` ${NOTE_MAX - text.length} characters left.` : ""}
+            Only administrators see it.
+            {text.length > NOTE_MAX * 0.9 ? ` ${NOTE_MAX - text.length} characters left.` : ""}
           </span>
         </label>
         {error && (

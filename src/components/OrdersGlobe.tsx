@@ -32,7 +32,8 @@ export function OrdersGlobe({ className }: { className: string }) {
     const el = canvas.current;
     if (!el) return;
     const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    let globe: { update: (s: { phi?: number; width?: number; height?: number }) => void; destroy: () => void } | null = null;
+    let globe: { update: (s: { phi?: number; width?: number; height?: number }) => void; destroy: () => void } | null =
+      null;
     let frame = 0;
     let phi = 4.4;
     let spin = 0;

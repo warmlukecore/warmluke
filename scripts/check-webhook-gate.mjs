@@ -25,15 +25,9 @@ const env = Object.fromEntries(
 );
 
 // Exactly what a stranger has: the URL and the anon key.
-const stranger = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
-);
+const stranger = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY);
 // Used only to read the store back and to put it right afterwards.
-const admin = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.ADAPTIVE_OS_SERVICE_ROLE_KEY
-);
+const admin = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
 
 const fails = [];
 const check = (name, cond) => {
@@ -61,8 +55,7 @@ if (!store) {
   process.exit(0);
 }
 const countOf = async (table) =>
-  (await admin.from(table).select("*", { count: "exact", head: true }).eq("store_id", store.id))
-    .count;
+  (await admin.from(table).select("*", { count: "exact", head: true }).eq("store_id", store.id)).count;
 
 console.log("holding only the public key");
 /**
@@ -114,10 +107,7 @@ check(
 // The one that mattered most: this erases a merchant's imported data.
 const ordersBefore = await countOf("orders");
 const productsBefore = await countOf("products");
-check(
-  "cannot erase the store",
-  await refused("abo_shopify_shop_redact", { p_shop: store.shop_domain })
-);
+check("cannot erase the store", await refused("abo_shopify_shop_redact", { p_shop: store.shop_domain }));
 check(
   "and the store is still there",
   (await countOf("orders")) === ordersBefore && (await countOf("products")) === productsBefore
@@ -128,7 +118,9 @@ check(
 // the half a stranger has, and says it stopped rather than crashing on
 // an undefined key.
 if (!env.SHOPIFY_CLIENT_SECRET) {
-  console.log("\n  skip  no SHOPIFY_CLIENT_SECRET — nothing was signed as Shopify, so the webhook doors were not tried");
+  console.log(
+    "\n  skip  no SHOPIFY_CLIENT_SECRET — nothing was signed as Shopify, so the webhook doors were not tried"
+  );
   console.log(fails.length === 0 ? "\nthe public key opens nothing" : `\n${fails.length} FAILED`);
   process.exit(fails.length === 0 ? 0 : 1);
 }
@@ -292,7 +284,6 @@ const sweep = () =>
     // This run's marker, not merely "some marker": deleting every
     // marked row would take a concurrent or interrupted run's with it.
     .eq("payload->>warmluke_check", MARK);
-
 
 try {
   const asked = await stranger.rpc("abo_shopify_compliance", {
@@ -465,11 +456,7 @@ try {
     })[1],
   });
   check("a redaction by id removes exactly one", byId.data === 1);
-  const left = await admin
-    .from("customers")
-    .select("external_id")
-    .eq("store_id", store.id)
-    .eq("email", SHARED);
+  const left = await admin.from("customers").select("external_id").eq("store_id", store.id).eq("email", SHARED);
   check(
     "and the one who only shares the address stays",
     (left.data ?? []).length === 1 && left.data[0].external_id === bystander
@@ -486,10 +473,7 @@ try {
     .eq("store_id", store.id)
     .eq("external_id", bystander)
     .maybeSingle();
-  check(
-    "and is not silently frozen by somebody else's redaction",
-    !stillWritable && after.data?.name === "Still here"
-  );
+  check("and is not silently frozen by somebody else's redaction", !stillWritable && after.data?.name === "Still here");
   await admin.from("customers").delete().eq("store_id", store.id).eq("email", SHARED);
 
   // A body wearing both lists belongs to neither topic.
@@ -511,7 +495,10 @@ try {
   );
 
   // "customer": null is not a customer, and neither is a string.
-  for (const [what, value] of [["null", null], ["a string", "banana"]]) {
+  for (const [what, value] of [
+    ["null", null],
+    ["a string", "banana"],
+  ]) {
     const [odd, oddHmac] = signed({
       shop_domain: store.shop_domain,
       customer: value,
@@ -526,34 +513,19 @@ try {
       })
     );
   }
-  const survived = await admin
-    .from("stores")
-    .select("id", { count: "exact", head: true })
-    .eq("id", store.id);
+  const survived = await admin.from("stores").select("id", { count: "exact", head: true }).eq("id", store.id);
   check("and the store is still here", survived.count === 1);
-
 } finally {
   // Whatever the asserts did, this runs: a made-up data request must
   // not outlive the check that invented it.
   // The tombstone and the person it names, both invented here.
-  const sweptGhost = await admin
-    .from("customers")
-    .delete()
-    .eq("store_id", store.id)
-    .eq("email", GHOST_EMAIL);
-  const sweptMark = await admin
-    .from("shopify_redactions")
-    .delete()
-    .eq("store_id", store.id)
-    .eq("email", GHOST_EMAIL);
+  const sweptGhost = await admin.from("customers").delete().eq("store_id", store.id).eq("email", GHOST_EMAIL);
+  const sweptMark = await admin.from("shopify_redactions").delete().eq("store_id", store.id).eq("email", GHOST_EMAIL);
   const sweptExt = await admin
     .from("shopify_redactions")
     .delete()
     .eq("store_id", store.id)
-    .in("external_id", [
-      `gid://shopify/Customer/ghost-${MARK}`,
-      `gid://shopify/Customer/named-${MARK}`,
-    ]);
+    .in("external_id", [`gid://shopify/Customer/ghost-${MARK}`, `gid://shopify/Customer/named-${MARK}`]);
   const sweptShared = await admin
     .from("customers")
     .delete()
@@ -572,10 +544,7 @@ try {
     .eq("payload->>warmluke_check", MARK);
   // A cleanup that could not run is not a clean table. `(null ?? 0) === 0`
   // read as success whether the count was zero or the query had failed.
-  check(
-    "no data request this check invented is left behind",
-    !swept.error && !left.error && left.count === 0
-  );
+  check("no data request this check invented is left behind", !swept.error && !left.error && left.count === 0);
 }
 
 console.log(fails.length === 0 ? "\nthe public key opens nothing" : `\n${fails.length} FAILED`);

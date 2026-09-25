@@ -15,8 +15,6 @@ import { useFormat, type Formatting } from "@/lib/format";
 import { useLinkLabel } from "@/components/LinkContext";
 import { ArrowDown, ArrowUp, Check } from "lucide-react";
 
-
-
 export function compare(a: unknown, b: unknown, type: SchemaColumn["type"]): number {
   if (type === "number" || type === "currency" || type === "percent") {
     return (Number(a) || 0) - (Number(b) || 0);
@@ -30,15 +28,7 @@ export function compare(a: unknown, b: unknown, type: SchemaColumn["type"]): num
   return String(a ?? "").localeCompare(String(b ?? ""));
 }
 
-export function Cell({
-  col,
-  value,
-  currency,
-}: {
-  col: SchemaColumn;
-  value: unknown;
-  currency?: string | null;
-}) {
+export function Cell({ col, value, currency }: { col: SchemaColumn; value: unknown; currency?: string | null }) {
   const fmt = useFormat();
   const linkLabel = useLinkLabel();
   if (value === undefined || value === null || value === "") {
@@ -61,9 +51,7 @@ export function Cell({
       return (
         <span className="font-medium tabular-nums">
           {fmt.money(n, currency)}
-          {rough && (
-            <span className="block text-[11px] font-normal text-fg-faint">{rough}</span>
-          )}
+          {rough && <span className="block text-[11px] font-normal text-fg-faint">{rough}</span>}
         </span>
       );
     }
@@ -78,7 +66,10 @@ export function Cell({
     case "boolean": {
       const yes = value === true || value === "true" || value === "yes" || value === 1;
       return (
-        <span className={`inline-flex items-center gap-1 ${yes ? "text-tone-success-fg" : "text-fg-faint"}`}>{yes && <Check aria-hidden size={13} strokeWidth={2.25} />}{yes ? "Yes" : "No"}</span>
+        <span className={`inline-flex items-center gap-1 ${yes ? "text-tone-success-fg" : "text-fg-faint"}`}>
+          {yes && <Check aria-hidden size={13} strokeWidth={2.25} />}
+          {yes ? "Yes" : "No"}
+        </span>
       );
     }
     case "badge":
@@ -97,11 +88,7 @@ export function Cell({
       );
     case "email":
       return (
-        <a
-          href={`mailto:${String(value)}`}
-          onClick={(e) => e.stopPropagation()}
-          className="text-link hover:underline"
-        >
+        <a href={`mailto:${String(value)}`} onClick={(e) => e.stopPropagation()} className="text-link hover:underline">
           {String(value)}
         </a>
       );
@@ -134,7 +121,10 @@ export function Cell({
         return (
           <span className="inline-flex flex-wrap gap-1">
             {items.map((v, i) => (
-              <span key={`${String(v)}:${i}`} className="rounded-lg bg-tone-neutral px-2 py-0.5 text-xs text-fg-muted no-underline">
+              <span
+                key={`${String(v)}:${i}`}
+                className="rounded-lg bg-tone-neutral px-2 py-0.5 text-xs text-fg-muted no-underline"
+              >
                 {String(v)}
               </span>
             ))}
@@ -162,7 +152,11 @@ export function Badge({ value, dot }: { value: string; dot?: boolean }) {
         <span
           aria-hidden
           className={`h-2 w-2 shrink-0 rounded-full border-[1.5px] border-current ${progress === "complete" ? "bg-current" : ""}`}
-          style={progress === "partial" ? { background: "linear-gradient(90deg, currentColor 50%, transparent 50%)" } : undefined}
+          style={
+            progress === "partial"
+              ? { background: "linear-gradient(90deg, currentColor 50%, transparent 50%)" }
+              : undefined
+          }
         />
       ) : (
         dot && <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-60" />
@@ -189,9 +183,7 @@ function fieldText(
   if (col.type === "currency") {
     const n = Number(v);
     const rowCurrency = col.currencyField ? rec.data?.[col.currencyField] : null;
-    return Number.isNaN(n)
-      ? String(v)
-      : fmt.money(n, typeof rowCurrency === "string" ? rowCurrency : null);
+    return Number.isNaN(n) ? String(v) : fmt.money(n, typeof rowCurrency === "string" ? rowCurrency : null);
   }
   if (col.type === "number") {
     const n = Number(v);
@@ -231,13 +223,8 @@ function withId(rec: RecordRow): Record<string, unknown> {
 }
 
 /** A row action is offered only when its guard matches that row. */
-function actionsFor(
-  actions: FeatureSchema["actions"],
-  rec: RecordRow
-): NonNullable<FeatureSchema["actions"]> {
-  return (actions ?? []).filter(
-    (a) => a.when === undefined || truthy(evalExpr(a.when, withId(rec)))
-  );
+function actionsFor(actions: FeatureSchema["actions"], rec: RecordRow): NonNullable<FeatureSchema["actions"]> {
+  return (actions ?? []).filter((a) => a.when === undefined || truthy(evalExpr(a.when, withId(rec))));
 }
 
 const ACTION_STYLES: Record<string, string> = {
@@ -318,7 +305,13 @@ export function TableView({
                 <span className="inline-flex items-center gap-1">
                   {col.label}
                   <span className="text-fg-faint">
-                    {sort?.field === col.field ? (sort.dir === "asc" ? <ArrowUp aria-hidden size={12} strokeWidth={2} /> : <ArrowDown aria-hidden size={12} strokeWidth={2} />) : null}
+                    {sort?.field === col.field ? (
+                      sort.dir === "asc" ? (
+                        <ArrowUp aria-hidden size={12} strokeWidth={2} />
+                      ) : (
+                        <ArrowDown aria-hidden size={12} strokeWidth={2} />
+                      )
+                    ) : null}
                   </span>
                 </span>
               </th>
@@ -332,37 +325,32 @@ export function TableView({
             // Struck, not hidden: it happened, and it still counts as one.
             const struck = !!rec.data?.cancelled_at;
             return (
-            <tr
-              key={rec.id}
-              onClick={() => onOpen?.(rec)}
-              className={`border-b border-line transition-colors last:border-0 hover:bg-surface-hover ${
-                onOpen ? "cursor-pointer" : ""
-              } ${struck ? "text-fg-faint line-through" : "text-fg"}`}
-            >
-              {columns.map((col) => (
-                <td key={col.field} className="px-3 py-2 align-middle whitespace-nowrap">
-                  <Cell
-                    col={col}
-                    value={rec.data?.[col.field]}
-                    currency={
-                      col.currencyField && typeof rec.data?.[col.currencyField] === "string"
-                        ? (rec.data[col.currencyField] as string)
-                        : null
-                    }
-                  />
-                </td>
-              ))}
-              {hasActions && (
-                <td className="px-3 py-2 text-right">
-                  <ActionButtons
-                    rec={rec}
-                    actions={actions}
-                    onAction={onAction}
-                    busy={busyRecordId === rec.id}
-                  />
-                </td>
-              )}
-            </tr>
+              <tr
+                key={rec.id}
+                onClick={() => onOpen?.(rec)}
+                className={`border-b border-line transition-colors last:border-0 hover:bg-surface-hover ${
+                  onOpen ? "cursor-pointer" : ""
+                } ${struck ? "text-fg-faint line-through" : "text-fg"}`}
+              >
+                {columns.map((col) => (
+                  <td key={col.field} className="px-3 py-2 align-middle whitespace-nowrap">
+                    <Cell
+                      col={col}
+                      value={rec.data?.[col.field]}
+                      currency={
+                        col.currencyField && typeof rec.data?.[col.currencyField] === "string"
+                          ? (rec.data[col.currencyField] as string)
+                          : null
+                      }
+                    />
+                  </td>
+                ))}
+                {hasActions && (
+                  <td className="px-3 py-2 text-right">
+                    <ActionButtons rec={rec} actions={actions} onAction={onAction} busy={busyRecordId === rec.id} />
+                  </td>
+                )}
+              </tr>
             );
           })}
           {records.length === 0 && (
@@ -409,16 +397,12 @@ export function BoardView({
   return (
     <div className="flex gap-3 overflow-x-auto p-3 thin-scroll">
       {groups.map((g) => {
-        const rows = records.filter(
-          (r) => (String(r.data?.[view.groupBy] ?? "").trim() || "Unassigned") === g
-        );
+        const rows = records.filter((r) => (String(r.data?.[view.groupBy] ?? "").trim() || "Unassigned") === g);
         return (
           <div key={g} className="flex w-[72vw] max-w-64 shrink-0 flex-col rounded-xl bg-surface-subdued p-2 sm:w-64">
             <div className="flex items-center justify-between px-1.5 pb-2">
               <Badge value={g} dot />
-              <span className="text-[11px] font-medium text-fg-faint tabular-nums">
-                {rows.length}
-              </span>
+              <span className="text-[11px] font-medium text-fg-faint tabular-nums">{rows.length}</span>
             </div>
             <div className="space-y-2">
               {rows.map((rec) => (
@@ -443,12 +427,7 @@ export function BoardView({
                     );
                   })}
                   <div className="mt-2 empty:mt-0">
-                    <ActionButtons
-                      rec={rec}
-                      actions={actions}
-                      onAction={onAction}
-                      busy={busyRecordId === rec.id}
-                    />
+                    <ActionButtons rec={rec} actions={actions} onAction={onAction} busy={busyRecordId === rec.id} />
                   </div>
                 </div>
               ))}
@@ -519,11 +498,7 @@ export function CalendarView({
         <div className="font-display text-sm font-semibold text-fg">
           {first.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
         </div>
-        {outside > 0 && (
-          <div className="text-[11px] text-fg-faint">
-            {outside} more in other months
-          </div>
-        )}
+        {outside > 0 && <div className="text-[11px] text-fg-faint">{outside} more in other months</div>}
       </div>
       <div className="grid min-w-[560px] grid-cols-7 gap-px overflow-hidden rounded-lg bg-line">
         {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
@@ -537,15 +512,10 @@ export function CalendarView({
         {cells.map((day, i) => {
           const entries = day ? (byDay.get(day) ?? []) : [];
           return (
-            <div
-              key={i}
-              className={`min-h-[84px] bg-surface p-1.5 ${day === null ? "bg-surface-subdued/60" : ""}`}
-            >
+            <div key={i} className={`min-h-[84px] bg-surface p-1.5 ${day === null ? "bg-surface-subdued/60" : ""}`}>
               {day !== null && (
                 <>
-                  <div className="mb-1 text-[11px] font-medium text-fg-faint tabular-nums">
-                    {day}
-                  </div>
+                  <div className="mb-1 text-[11px] font-medium text-fg-faint tabular-nums">{day}</div>
                   <div className="space-y-1">
                     {entries.slice(0, 3).map(({ rec }) => {
                       const colour = view.colorBy
@@ -565,9 +535,7 @@ export function CalendarView({
                       );
                     })}
                     {entries.length > 3 && (
-                      <div className="px-1 text-[10px] text-fg-faint">
-                        +{entries.length - 3} more
-                      </div>
+                      <div className="px-1 text-[10px] text-fg-faint">+{entries.length - 3} more</div>
                     )}
                   </div>
                 </>
@@ -639,12 +607,7 @@ export function CardsView({
             </dl>
           )}
           <div className="mt-2.5 empty:mt-0">
-            <ActionButtons
-              rec={rec}
-              actions={actions}
-              onAction={onAction}
-              busy={busyRecordId === rec.id}
-            />
+            <ActionButtons rec={rec} actions={actions} onAction={onAction} busy={busyRecordId === rec.id} />
           </div>
         </div>
       ))}
@@ -695,12 +658,7 @@ export function ListView({
           {view.badgeField && rec.data?.[view.badgeField] != null && (
             <Badge value={String(rec.data[view.badgeField])} />
           )}
-          <ActionButtons
-            rec={rec}
-            actions={actions}
-            onAction={onAction}
-            busy={busyRecordId === rec.id}
-          />
+          <ActionButtons rec={rec} actions={actions} onAction={onAction} busy={busyRecordId === rec.id} />
         </li>
       ))}
     </ul>

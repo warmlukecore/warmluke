@@ -36,14 +36,7 @@ export type StatResult = {
 type StatCard = { label: string; display: string; groups?: Array<{ key: string; display: string }> };
 import RecordModal from "@/components/RecordModal";
 import ScanBar from "@/components/ScanBar";
-import {
-  BoardView,
-  CalendarView,
-  CardsView,
-  ListView,
-  TableView,
-  compare,
-} from "@/components/views";
+import { BoardView, CalendarView, CardsView, ListView, TableView, compare } from "@/components/views";
 import { useFormat } from "@/lib/format";
 import { evalExpr, truthy, withComputed } from "@/lib/expr";
 import { button } from "@/components/ui/controls";
@@ -103,8 +96,7 @@ export default function GenericRenderer({
   const [busyRecordId, setBusyRecordId] = useState<string | null>(null);
   const [writeError, setWriteError] = useState<string | null>(null);
   const columns = useMemo(() => schema?.columns ?? [], [schema]);
-  const features: FeatureSchema | null =
-    (schema as UiSchema & { features?: FeatureSchema | null })?.features ?? null;
+  const features: FeatureSchema | null = (schema as UiSchema & { features?: FeatureSchema | null })?.features ?? null;
 
   const [search, setSearch] = useState("");
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
@@ -130,10 +122,13 @@ export default function GenericRenderer({
     if (features?.search?.enabled && search.trim()) {
       const q = search.trim().toLowerCase();
       const fields =
-        features.search.fields?.filter((f) => columns.some((c) => c.field === f)) ??
-        columns.map((c) => c.field);
+        features.search.fields?.filter((f) => columns.some((c) => c.field === f)) ?? columns.map((c) => c.field);
       rows = rows.filter((r) =>
-        fields.some((f) => String(r.data?.[f] ?? "").toLowerCase().includes(q))
+        fields.some((f) =>
+          String(r.data?.[f] ?? "")
+            .toLowerCase()
+            .includes(q)
+        )
       );
     }
 
@@ -159,11 +154,7 @@ export default function GenericRenderer({
 
   const rowCurrencyFields = useMemo(
     () => [
-      ...new Set(
-        columns
-          .filter((c) => c.type === "currency" && c.currencyField)
-          .map((c) => c.currencyField as string)
-      ),
+      ...new Set(columns.filter((c) => c.type === "currency" && c.currencyField).map((c) => c.currencyField as string)),
     ],
     [columns]
   );
@@ -195,14 +186,11 @@ export default function GenericRenderer({
   // The browser's own count, over the rows it has. What every section
   // used to show; now only previews, which have nothing else.
   const localResult = (s: StatSpec, rows: RecordRow[]): StatResult => {
-    const matched =
-      s.where !== undefined ? rows.filter((r) => truthy(evalExpr(s.where, r.data ?? {}))) : rows;
+    const matched = s.where !== undefined ? rows.filter((r) => truthy(evalExpr(s.where, r.data ?? {}))) : rows;
     const expr = s.value ?? (s.field ? { field: s.field } : null);
     const agg = (rs: RecordRow[]): number | null => {
       if (s.op === "count") return rs.length;
-      const nums = rs
-        .map((r) => Number(expr ? evalExpr(expr, r.data ?? {}) : 0))
-        .filter((n) => !Number.isNaN(n));
+      const nums = rs.map((r) => Number(expr ? evalExpr(expr, r.data ?? {}) : 0)).filter((n) => !Number.isNaN(n));
       if (nums.length === 0) return s.op === "sum" ? 0 : null;
       const total = nums.reduce((a, b) => a + b, 0);
       return s.op === "sum"
@@ -216,9 +204,7 @@ export default function GenericRenderer({
     const currencies = [
       ...new Set(
         matched.flatMap((r) =>
-          rowCurrencyFields
-            .map((f) => r.data?.[f])
-            .filter((v): v is string => typeof v === "string" && v.length > 0)
+          rowCurrencyFields.map((f) => r.data?.[f]).filter((v): v is string => typeof v === "string" && v.length > 0)
         )
       ),
     ];
@@ -231,8 +217,7 @@ export default function GenericRenderer({
     const groups = [...buckets]
       .map(([key, rs]) => ({ key, value: agg(rs), count: rs.length }))
       .sort(
-        (a, b) =>
-          (b.value ?? -Infinity) - (a.value ?? -Infinity) || b.count - a.count || a.key.localeCompare(b.key)
+        (a, b) => (b.value ?? -Infinity) - (a.value ?? -Infinity) || b.count - a.count || a.key.localeCompare(b.key)
       )
       .slice(0, Math.min(Math.max(s.limit ?? 5, 1), 20));
     return { count: matched.length, value: null, currencies, groups };
@@ -249,8 +234,7 @@ export default function GenericRenderer({
     }
     let live = true;
     const searchFields = features.search?.enabled
-      ? (features.search.fields?.filter((f) => columns.some((c) => c.field === f)) ??
-        columns.map((c) => c.field))
+      ? (features.search.fields?.filter((f) => columns.some((c) => c.field === f)) ?? columns.map((c) => c.field))
       : [];
     const t = setTimeout(() => {
       onStats({
@@ -320,8 +304,7 @@ export default function GenericRenderer({
     onOpen: editable ? (rec: RecordRow) => setEditing(rec) : preview ? undefined : onInspect,
     actions: features?.actions,
     onAction: editable
-      ? (rec: RecordRow, set: Record<string, unknown>) =>
-          runWrite(() => onUpdate!(rec.id, set), rec.id)
+      ? (rec: RecordRow, set: Record<string, unknown>) => runWrite(() => onUpdate!(rec.id, set), rec.id)
       : undefined,
     busyRecordId,
   };
@@ -344,9 +327,7 @@ export default function GenericRenderer({
             sort={effectiveSort}
             onSort={(field) =>
               setSort((prev) =>
-                prev?.field === field
-                  ? { field, dir: prev.dir === "asc" ? "desc" : "asc" }
-                  : { field, dir: "asc" }
+                prev?.field === field ? { field, dir: prev.dir === "asc" ? "desc" : "asc" } : { field, dir: "asc" }
               )
             }
           />
@@ -372,13 +353,8 @@ export default function GenericRenderer({
       {stats.length > 0 && (
         <div className="grid grid-cols-2 gap-2.5 sm:gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {stats.map((s, i) => (
-            <div
-              key={i}
-              className="rounded-card bg-surface px-4 py-3 shadow-card transition-shadow hover:shadow-md"
-            >
-              <div className="text-xs font-medium text-fg-muted">
-                {s.label}
-              </div>
+            <div key={i} className="rounded-card bg-surface px-4 py-3 shadow-card transition-shadow hover:shadow-md">
+              <div className="text-xs font-medium text-fg-muted">{s.label}</div>
               {s.groups ? (
                 <div className="mt-1.5 space-y-0.5">
                   {s.groups.length === 0 ? (
@@ -387,9 +363,7 @@ export default function GenericRenderer({
                     s.groups.map((g) => (
                       <div key={g.key} className="flex items-baseline justify-between gap-2 text-sm">
                         <span className="truncate text-fg">{g.key}</span>
-                        <span className="font-display font-semibold text-fg tabular-nums">
-                          {g.display}
-                        </span>
+                        <span className="font-display font-semibold text-fg tabular-nums">{g.display}</span>
                       </div>
                     ))
                   )}
@@ -418,44 +392,39 @@ export default function GenericRenderer({
         )}
 
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-3.5 py-2.5">
-            {features?.search?.enabled && (
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={features.search.placeholder ?? "Search…"}
-                className="w-full min-w-0 rounded-lg border border-line px-3 py-1.5 text-sm outline-none transition-colors focus:border-focus focus:ring-2 focus:ring-focus/15 sm:w-52"
-              />
-            )}
-            {(features?.filters ?? []).map((fl) => (
-              <select
-                key={fl.field}
-                value={filterValues[fl.field] ?? ""}
-                onChange={(e) =>
-                  setFilterValues((prev) => ({ ...prev, [fl.field]: e.target.value }))
-                }
-                className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm text-fg-muted outline-none transition-colors focus:border-focus"
-              >
-                <option value="">{fl.label}: All</option>
-                {filterOptions(fl.options ?? [], rowsWithComputed, fl.field).map((o) => (
-                  <option key={o} value={o}>
-                    {o}
-                  </option>
-                ))}
-              </select>
-            ))}
-            <span className="ml-auto hidden rounded-lg bg-tone-neutral px-2 py-0.5 text-xs text-fg-muted sm:inline">
-              {VIEW_LABELS[view.type]}
-            </span>
-            {editable && (
-              <button
-                onClick={() => setAdding(true)}
-                className={button("primary", "sm")}
-              >
-                <Plus aria-hidden size={14} strokeWidth={2} />
-                Add
-              </button>
-            )}
-          </div>
+          {features?.search?.enabled && (
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={features.search.placeholder ?? "Search…"}
+              className="w-full min-w-0 rounded-lg border border-line px-3 py-1.5 text-sm outline-none transition-colors focus:border-focus focus:ring-2 focus:ring-focus/15 sm:w-52"
+            />
+          )}
+          {(features?.filters ?? []).map((fl) => (
+            <select
+              key={fl.field}
+              value={filterValues[fl.field] ?? ""}
+              onChange={(e) => setFilterValues((prev) => ({ ...prev, [fl.field]: e.target.value }))}
+              className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm text-fg-muted outline-none transition-colors focus:border-focus"
+            >
+              <option value="">{fl.label}: All</option>
+              {filterOptions(fl.options ?? [], rowsWithComputed, fl.field).map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+            </select>
+          ))}
+          <span className="ml-auto hidden rounded-lg bg-tone-neutral px-2 py-0.5 text-xs text-fg-muted sm:inline">
+            {VIEW_LABELS[view.type]}
+          </span>
+          {editable && (
+            <button onClick={() => setAdding(true)} className={button("primary", "sm")}>
+              <Plus aria-hidden size={14} strokeWidth={2} />
+              Add
+            </button>
+          )}
+        </div>
 
         {writeError && (
           <div className="border-b border-tone-critical/70 px-4 py-2">
@@ -517,12 +486,7 @@ export default function GenericRenderer({
           records={records}
           record={editing}
           busy={saving}
-          onSave={(data) =>
-            runWrite(() =>
-              editing ? onUpdate!(editing.id, data) : onCreate!(data),
-              editing?.id
-            )
-          }
+          onSave={(data) => runWrite(() => (editing ? onUpdate!(editing.id, data) : onCreate!(data)), editing?.id)}
           onDelete={() => runWrite(() => onDelete!(editing!.id), editing?.id)}
           onClose={() => {
             setEditing(null);

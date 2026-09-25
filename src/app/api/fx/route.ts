@@ -43,8 +43,7 @@ const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 const REFUSE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Postgres numeric permits NaN and Infinity, and both survive Number(). */
-const usable = (n: unknown): n is number =>
-  typeof n === "number" && Number.isFinite(n) && n > 0;
+const usable = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n > 0;
 
 export async function GET(req: Request) {
   const auth = await getUserClient(req);
@@ -80,9 +79,7 @@ export async function GET(req: Request) {
   // multiply every amount into NaN here. Checked on the way out, not
   // only on the way in.
   const cachedRate = cached ? Number(cached.rate) : null;
-  const cachedAgeMs = cached
-    ? Date.now() - new Date(cached.fetched_at as string).getTime()
-    : Infinity;
+  const cachedAgeMs = cached ? Date.now() - new Date(cached.fetched_at as string).getTime() : Infinity;
   const cachedUsable = usable(cachedRate) && cachedAgeMs < REFUSE_AFTER_MS;
 
   if (cachedUsable && cachedAgeMs < STALE_AFTER_MS) {

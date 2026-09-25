@@ -126,7 +126,5 @@ try {
   console.log("\ntest user removed");
 }
 
-console.log(
-  fails.length === 0 ? "\nstore sections are created honestly" : `\n${fails.length} FAILED`
-);
+console.log(fails.length === 0 ? "\nstore sections are created honestly" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

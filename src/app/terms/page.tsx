@@ -52,8 +52,7 @@ export default function Terms() {
         <h1 className="font-serif text-2xl font-bold tracking-tight">Terms</h1>
         <p className="mt-2 text-sm text-quiet">Last updated 14 September 2026.</p>
         <p className="mt-4 text-sm leading-relaxed text-neutral-700">
-          Connecting a store to Warmluke means agreeing to what follows, together with
-          the{" "}
+          Connecting a store to Warmluke means agreeing to what follows, together with the{" "}
           <Link className="text-accent underline" href="/privacy">
             privacy policy
           </Link>
@@ -62,63 +61,58 @@ export default function Terms() {
 
         <Section title="What you are agreeing to">
           <p>
-            You give Warmluke read access to the store you connect, so it can copy
-            products, stock, orders and customers and answer questions about them.
+            You give Warmluke read access to the store you connect, so it can copy products, stock, orders and customers
+            and answer questions about them.
           </p>
           <p>
-            Warmluke can also change some things in your store: it can {whatCanChange()}.
-            It never does so on its own. Every change is shown to you first, in plain
-            words, and nothing is sent until you say yes to that exact change. An
-            assistant you have connected can ask for one; it cannot agree to one for you.
+            Warmluke can also change some things in your store: it can {whatCanChange()}. It never does so on its own.
+            Every change is shown to you first, in plain words, and nothing is sent until you say yes to that exact
+            change. An assistant you have connected can ask for one; it cannot agree to one for you.
           </p>
           <p>
-            Anything else in your store, Warmluke does not touch. It has no way to{" "}
-            {whatNeverChanges()} anything: those changes do not exist in the app, so there
-            is nothing to ask for and nothing to agree to.
+            Anything else in your store, Warmluke does not touch. It has no way to {whatNeverChanges()} anything: those
+            changes do not exist in the app, so there is nothing to ask for and nothing to agree to.
           </p>
           <p>You keep ownership of your data. Disconnecting the store deletes our copy.</p>
         </Section>
 
         <Section title="How we handle personal data">
           <p>
-            Your customers&rsquo; personal data is processed only to run the app for
-            you. Never to market to anyone, never sold, never sent to AI model
-            providers.
+            Your customers&rsquo; personal data is processed only to run the app for you. Never to market to anyone,
+            never sold, never sent to AI model providers.
           </p>
           <p>
-            We keep it only while your store is connected, encrypt it at rest and in
-            transit, and isolate it from every other store at the database level.
+            We keep it only while your store is connected, encrypt it at rest and in transit, and isolate it from every
+            other store at the database level.
           </p>
           <p>
-            When a shopper asks to see or erase their data, Shopify tells us and we act
-            on it. Erasing a person leaves your orders intact.
+            When a shopper asks to see or erase their data, Shopify tells us and we act on it. Erasing a person leaves
+            your orders intact.
           </p>
           <p>
-            You are the controller of that data and we are your processor: we act on
-            your instructions and Shopify&rsquo;s, not on our own.
+            You are the controller of that data and we are your processor: we act on your instructions and
+            Shopify&rsquo;s, not on our own.
           </p>
         </Section>
 
         <Section title="Your side">
           <p>
-            Keep your account secure, and only connect stores you are entitled to
-            connect. Do not use the app to break the law or Shopify&rsquo;s own rules.
+            Keep your account secure, and only connect stores you are entitled to connect. Do not use the app to break
+            the law or Shopify&rsquo;s own rules.
           </p>
         </Section>
 
         <Section title="Stopping">
           <p>
-            You can disconnect a store or delete your account at any time, and the data
-            goes with it. We can end an account that is being used to break these terms,
-            and will say why.
+            You can disconnect a store or delete your account at any time, and the data goes with it. We can end an
+            account that is being used to break these terms, and will say why.
           </p>
         </Section>
 
         <Section title="The honest part">
           <p>
-            Warmluke is early software provided as it is. We work to keep it correct and
-            available, but do not promise it never fails, and we are not liable for
-            business losses arising from using it.
+            Warmluke is early software provided as it is. We work to keep it correct and available, but do not promise
+            it never fails, and we are not liable for business losses arising from using it.
           </p>
           <p>
             Questions, or anything above that is unclear:{" "}

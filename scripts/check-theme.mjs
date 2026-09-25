@@ -57,7 +57,9 @@ const walk = (dir) => {
 };
 walk("src/components");
 walk("src/app");
-const white = files.filter((f) => /"[^"\n]*\bbg-primary\b[^"\n]*\btext-white\b|"[^"\n]*\btext-white\b[^"\n]*\bbg-primary\b/.test(read(f)));
+const white = files.filter((f) =>
+  /"[^"\n]*\bbg-primary\b[^"\n]*\btext-white\b|"[^"\n]*\btext-white\b[^"\n]*\bbg-primary\b/.test(read(f))
+);
 check("no bg-primary with text-white", white.length === 0);
 if (white.length) console.log("     →", white.join(", "));
 
@@ -67,8 +69,14 @@ console.log("\nand the few raw colours have a night pair");
 const tone = read("src/lib/tone.ts");
 const quiet = tone.slice(tone.indexOf("const QUIET = ["), tone.indexOf("];", tone.indexOf("const QUIET = [")));
 const swatches = [...quiet.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-check(`all ${swatches.length} calm colours`, swatches.length > 0 && swatches.every((c) => /dark:bg-/.test(c) && /dark:text-/.test(c)));
-check("and dark: follows the app's switch, not the computer's", /@custom-variant dark \(&:where\(\[data-theme="dark"\]/.test(css));
+check(
+  `all ${swatches.length} calm colours`,
+  swatches.length > 0 && swatches.every((c) => /dark:bg-/.test(c) && /dark:text-/.test(c))
+);
+check(
+  "and dark: follows the app's switch, not the computer's",
+  /@custom-variant dark \(&:where\(\[data-theme="dark"\]/.test(css)
+);
 
 console.log("\nand the choice is on the page before it paints");
 const layout = read("src/app/layout.tsx");

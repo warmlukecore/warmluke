@@ -138,12 +138,8 @@ function Section({
     <section id={id} className="border-t border-hair">
       {/* reveal: comes up as it scrolls into view, where the browser can. */}
       <div className="reveal mx-auto w-full max-w-5xl px-5 py-16 sm:py-20">
-        {eyebrow && (
-          <div className="mb-3 text-sm font-medium text-accent">{eyebrow}</div>
-        )}
-        <h2 className="font-serif text-3xl leading-tight tracking-tight text-ink sm:text-[2.75rem]">
-          {title}
-        </h2>
+        {eyebrow && <div className="mb-3 text-sm font-medium text-accent">{eyebrow}</div>}
+        <h2 className="font-serif text-3xl leading-tight tracking-tight text-ink sm:text-[2.75rem]">{title}</h2>
         <div className="mt-6">{children}</div>
       </div>
     </section>
@@ -175,10 +171,7 @@ const CONNECTORS: Array<{ name: string; ready: boolean; logo?: string }> = [
 const logoOf = (name: string) => CONNECTORS.find((c) => c.name === name)?.logo;
 
 /** The few that fit above a headline without crowding it. */
-const HERO_CONNECTORS = [
-  CONNECTORS[0],
-  ...CONNECTORS.filter((c) => !c.ready).slice(0, 3),
-];
+const HERO_CONNECTORS = [CONNECTORS[0], ...CONNECTORS.filter((c) => !c.ready).slice(0, 3)];
 
 /**
  * Each assistant in something close to its own colour.
@@ -275,11 +268,28 @@ const ASKS: Ask[] = [
  */
 const WATCHES: Array<{ area: string; what: string; icon: LucideIcon; when: string; team?: boolean }> = [
   { area: "Inventory", what: "A fast-moving product is approaching low stock.", icon: Package, when: "just now" },
-  { area: "Operations", what: "Orders haven't been dispatched within the expected time.", icon: Truck, when: "12 min ago" },
+  {
+    area: "Operations",
+    what: "Orders haven't been dispatched within the expected time.",
+    icon: Truck,
+    when: "12 min ago",
+  },
   { area: "Returns", what: "Returns suddenly increase for a particular product.", icon: RotateCcw, when: "1 h ago" },
   { area: "Performance", what: "Conversion rate changes significantly.", icon: TrendingUp, when: "3 h ago" },
-  { area: "Marketing", what: "A campaign suddenly starts spending without converting.", icon: Megaphone, when: "yesterday", team: true },
-  { area: "Support", what: "The same customer complaint starts appearing repeatedly.", icon: MessageCircle, when: "yesterday", team: true },
+  {
+    area: "Marketing",
+    what: "A campaign suddenly starts spending without converting.",
+    icon: Megaphone,
+    when: "yesterday",
+    team: true,
+  },
+  {
+    area: "Support",
+    what: "The same customer complaint starts appearing repeatedly.",
+    icon: MessageCircle,
+    when: "yesterday",
+    team: true,
+  },
 ];
 
 /** What a merchant would otherwise go and buy, one app at a time. */
@@ -312,10 +322,7 @@ const FOOTER_LINKS: Array<[string, string]> = [
   ["Terms", "/terms"],
 ];
 
-const BOOK_POINTS = [
-  "Shown on your own store, not a sample one",
-  "Your questions, in your words",
-];
+const BOOK_POINTS = ["Shown on your own store, not a sample one", "Your questions, in your words"];
 
 /**
  * What a connected assistant can actually do, in two lines; the
@@ -393,7 +400,17 @@ function Planet({ name, ready }: { name: string; ready: boolean }) {
 }
 
 /** One ring of the hub, turning; each logo on it turns back so it stays upright. */
-function Ring({ names, inset, seconds, turn }: { names: typeof CONNECTORS; inset: string; seconds: number; turn: number }) {
+function Ring({
+  names,
+  inset,
+  seconds,
+  turn,
+}: {
+  names: typeof CONNECTORS;
+  inset: string;
+  seconds: number;
+  turn: number;
+}) {
   return (
     <div className="orbit absolute" style={{ inset, "--orbit-for": `${seconds}s` } as React.CSSProperties}>
       {names.map((c, i) => (
@@ -433,7 +450,15 @@ function Hub() {
  * paths are one SVG and the tiles sit on it by the same coordinates, so
  * a line always ends at the middle of its tile, at any width.
  */
-const BRIDGE = { w: 480, h: 200, from: [{ name: "Claude", src: "/logos/claude.svg", x: 70, y: 52 }, { name: "ChatGPT", src: "/logos/openai.svg", x: 70, y: 148 }], to: { x: 404, y: 100 } };
+const BRIDGE = {
+  w: 480,
+  h: 200,
+  from: [
+    { name: "Claude", src: "/logos/claude.svg", x: 70, y: 52 },
+    { name: "ChatGPT", src: "/logos/openai.svg", x: 70, y: 148 },
+  ],
+  to: { x: 404, y: 100 },
+};
 
 function Bridge() {
   const { w, h, from, to } = BRIDGE;
@@ -466,7 +491,11 @@ function Bridge() {
         </svg>
 
         {from.map((f) => (
-          <div key={f.name} className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1" style={at(f.x, f.y)}>
+          <div
+            key={f.name}
+            className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1"
+            style={at(f.x, f.y)}
+          >
             <span className="flex h-11 w-11 items-center justify-center rounded-full border border-hair bg-white shadow-[0_6px_20px_-8px_rgb(0_0_0/0.25)]">
               {/* eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise */}
               <img src={f.src} alt="" width={20} height={20} className="h-5 w-5 object-contain" />
@@ -490,7 +519,10 @@ function Bridge() {
           MCP
         </span>
 
-        <div className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center" style={at(to.x, to.y)}>
+        <div
+          className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center"
+          style={at(to.x, to.y)}
+        >
           <span className="flex h-16 w-16 items-center justify-center rounded-2xl border border-hair bg-white shadow-[0_2px_12px_-2px_rgb(0_0_0/0.12)]">
             <Logo className="h-7" />
           </span>
@@ -501,7 +533,6 @@ function Bridge() {
 }
 
 export default async function Landing({
-
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -678,7 +709,11 @@ export default async function Landing({
               ))}
             </span>
             {/* No number: a count invites "which twenty?". */}
-            <a href="#integrations" data-cta="connectors_more" className="whitespace-nowrap transition-colors hover:text-ink">
+            <a
+              href="#integrations"
+              data-cta="connectors_more"
+              className="whitespace-nowrap transition-colors hover:text-ink"
+            >
               <span className="sm:hidden">with our team</span>
               <span className="hidden sm:inline">and more, set up by our team</span>
             </a>
@@ -748,12 +783,15 @@ export default async function Landing({
             {shown.sub}
           </p>
 
-          <div
-            className="rise mt-5 flex items-center gap-3"
-            style={{ "--rise-after": "0.3s" } as React.CSSProperties}
-          >
+          <div className="rise mt-5 flex items-center gap-3" style={{ "--rise-after": "0.3s" } as React.CSSProperties}>
             <Cta where="hero">{shown.cta}</Cta>
-            {shown.secondary ? <Cta where="hero_secondary" tone="quiet">{shown.secondary}</Cta> : <PlayCta />}
+            {shown.secondary ? (
+              <Cta where="hero_secondary" tone="quiet">
+                {shown.secondary}
+              </Cta>
+            ) : (
+              <PlayCta />
+            )}
           </div>
 
           {shown.supporting && (
@@ -778,7 +816,9 @@ export default async function Landing({
       <Section id="luke" title="Ask Luke like you'd ask someone on your team.">
         {/* How fresh the store is, said per request: the same clock as the glimpse above. */}
         <AskLuke
-          asks={ASKS.map((a) => (a.from[0] === "Shopify" ? { ...a, from: [...a.from, `synced ${ago(lastSync(Date.now()), Date.now())}`] } : a))}
+          asks={ASKS.map((a) =>
+            a.from[0] === "Shopify" ? { ...a, from: [...a.from, `synced ${ago(lastSync(Date.now()), Date.now())}`] } : a
+          )}
           after={<Cta where="asks">See what Luke could do for your store →</Cta>}
         />
       </Section>
@@ -788,8 +828,8 @@ export default async function Landing({
         <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
           <div>
             <p className="max-w-xl text-quiet">
-              Traditional dashboards are useful only when somebody remembers to check them. Luke can
-              help monitor the business continuously and surface important changes.
+              Traditional dashboards are useful only when somebody remembers to check them. Luke can help monitor the
+              business continuously and surface important changes.
             </p>
             <p className="font-serif mt-8 text-2xl text-ink sm:text-3xl">
               Less checking dashboards. More knowing what needs your attention.
@@ -832,9 +872,9 @@ export default async function Landing({
       {/* ── Stop adding another app ──────────────────────────── */}
       <Section id="uses" eyebrow="Instead of buying another app" title="Stop adding another app.">
         <p className="max-w-2xl text-quiet">
-          Your business will eventually need something your current software doesn&apos;t do.
-          Usually that means searching the app store, trying three SaaS products, paying another
-          subscription, and changing your workflow around the software.
+          Your business will eventually need something your current software doesn&apos;t do. Usually that means
+          searching the app store, trying three SaaS products, paying another subscription, and changing your workflow
+          around the software.
         </p>
         <div className="mt-8 grid gap-4 lg:grid-cols-2">
           <div className="rounded-2xl border border-hair bg-neutral-50 p-6">
@@ -885,8 +925,8 @@ export default async function Landing({
               Built into your app, shaped around how you already work, and only once you say yes.
             </p>
             <p className="font-serif mt-6 border-t border-hair pt-5 text-xl leading-snug text-ink lg:mt-auto">
-              Your business shouldn&apos;t have to change how it works because another SaaS product
-              was designed for everyone.
+              Your business shouldn&apos;t have to change how it works because another SaaS product was designed for
+              everyone.
             </p>
           </div>
         </div>
@@ -897,9 +937,9 @@ export default async function Landing({
         <div className="grid items-center gap-10 lg:grid-cols-2">
           <div>
             <p className="max-w-xl text-quiet">
-              Your business already has the data. The problem is that it&apos;s spread across different
-              systems. Warmluke brings that context together so Luke can understand the whole picture,
-              not one dashboard at a time.
+              Your business already has the data. The problem is that it&apos;s spread across different systems.
+              Warmluke brings that context together so Luke can understand the whole picture, not one dashboard at a
+              time.
             </p>
             <dl className="mt-8 space-y-6">
               {[
@@ -929,17 +969,20 @@ export default async function Landing({
                   </dd>
                   {!g.ready && (
                     <dd className="mt-2 max-w-md text-sm text-quiet">
-                      Our team connects your ad accounts and WhatsApp, and sets up the reporting
-                      against your orders.
+                      Our team connects your ad accounts and WhatsApp, and sets up the reporting against your orders.
                     </dd>
                   )}
                 </div>
               ))}
             </dl>
             <p className="mt-6 text-sm text-neutral-400">
-              Whatever a growing business runs on: payments, shipping, accounting, marketplaces, the
-              spreadsheet your team actually lives in.{" "}
-              <a href="#book" data-cta="connectors_ask" className="text-accent underline underline-offset-2 hover:opacity-80">
+              Whatever a growing business runs on: payments, shipping, accounting, marketplaces, the spreadsheet your
+              team actually lives in.{" "}
+              <a
+                href="#book"
+                data-cta="connectors_ask"
+                className="text-accent underline underline-offset-2 hover:opacity-80"
+              >
                 Tell us yours on the demo
               </a>
               .
@@ -957,9 +1000,8 @@ export default async function Landing({
       >
         <div className="grid items-center gap-8 lg:grid-cols-2">
           <p className="max-w-xl text-quiet">
-            Warmluke speaks MCP, the standard Claude and ChatGPT use to reach outside tools. Connect
-            it once and the assistant you already pay for stops guessing about your business, and
-            starts building inside it.
+            Warmluke speaks MCP, the standard Claude and ChatGPT use to reach outside tools. Connect it once and the
+            assistant you already pay for stops guessing about your business, and starts building inside it.
           </p>
           <Bridge />
         </div>
@@ -1010,9 +1052,8 @@ export default async function Landing({
                 What would you ask Luke to fix first?
               </h2>
               <p className="mt-4 text-quiet">
-                Connect your ecommerce business to Warmluke and see what Luke could do for your team.
-                No generic sales pitch. Show us how your business works today and we&apos;ll show you
-                what Warmluke can do with it.
+                Connect your ecommerce business to Warmluke and see what Luke could do for your team. No generic sales
+                pitch. Show us how your business works today and we&apos;ll show you what Warmluke can do with it.
               </p>
               <ul className="mt-6 space-y-2.5">
                 {BOOK_POINTS.map((p) => (
@@ -1043,7 +1084,10 @@ export default async function Landing({
             <p className="mt-2 max-w-md text-sm font-medium text-balance text-quiet">
               One intelligent operating layer for your ecommerce business.
             </p>
-            <nav aria-label="Footer" className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-3 text-sm font-medium text-quiet">
+            <nav
+              aria-label="Footer"
+              className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-3 text-sm font-medium text-quiet"
+            >
               {FOOTER_LINKS.map(([label, href]) => (
                 <Link
                   key={href}
@@ -1068,7 +1112,10 @@ export default async function Landing({
         >
           WARMLUKE
         </div>
-        <div aria-hidden="true" className="absolute bottom-32 left-0 h-px w-full bg-gradient-to-r from-transparent via-neutral-300 to-transparent" />
+        <div
+          aria-hidden="true"
+          className="absolute bottom-32 left-0 h-px w-full bg-gradient-to-r from-transparent via-neutral-300 to-transparent"
+        />
         {/* Pressed, it gives and tilts; let go, it springs back past where
             it was. Only that: a link would jump the page away before the
             spring could be seen, and the way back up is the nav's. */}

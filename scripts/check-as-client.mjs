@@ -74,7 +74,9 @@ const tool = async (name, args) => {
   });
   // Only on an answer: the server has to judge as this check expects it to.
   if (res.ok && res.headers.get("x-model-tape") !== process.env.MODEL_TAPE) {
-    throw new Error(`the server at ${APP} is ${res.headers.get("x-model-tape") ? `in ${res.headers.get("x-model-tape")} mode` : "making real model calls"}, and this check is in ${process.env.MODEL_TAPE} mode; start it with MODEL_TAPE=${process.env.MODEL_TAPE}`);
+    throw new Error(
+      `the server at ${APP} is ${res.headers.get("x-model-tape") ? `in ${res.headers.get("x-model-tape")} mode` : "making real model calls"}, and this check is in ${process.env.MODEL_TAPE} mode; start it with MODEL_TAPE=${process.env.MODEL_TAPE}`
+    );
   }
   const j = await res.json();
   try {
@@ -139,8 +141,14 @@ try {
     .from("build_requests")
     .select("client_id, auto_built, status")
     .in("id", madeRequests);
-  check("every row names this client", (rows ?? []).every((r) => r.client_id === me.claims.client_id));
-  check("and records that nobody approved it", (rows ?? []).every((r) => r.auto_built === true && r.status === "built"));
+  check(
+    "every row names this client",
+    (rows ?? []).every((r) => r.client_id === me.claims.client_id)
+  );
+  check(
+    "and records that nobody approved it",
+    (rows ?? []).every((r) => r.auto_built === true && r.status === "built")
+  );
   if (!(rows ?? []).every((r) => r.auto_built === true && r.status === "built")) show(rows);
 
   // Nobody tapped anything, so if the server does not write this
@@ -148,12 +156,26 @@ try {
   // client, the write is the kind RLS refuses — so it is asked here,
   // not assumed from the owner-token checks that passed.
   const { data: thread } = await admin
-    .from("conversations").select("id").eq("project_id", project.id).eq("title", "Changes from your AI").maybeSingle();
+    .from("conversations")
+    .select("id")
+    .eq("project_id", project.id)
+    .eq("title", "Changes from your AI")
+    .maybeSingle();
   const { data: noted } = thread
-    ? await admin.from("messages").select("role, content").eq("conversation_id", thread.id).ilike("content", `%${stamp}%`)
+    ? await admin
+        .from("messages")
+        .select("role, content")
+        .eq("conversation_id", thread.id)
+        .ilike("content", `%${stamp}%`)
     : { data: [] };
-  check("the merchant's thread records what the client built", (noted ?? []).some((m) => m.role === "user"));
-  check("and what came of it", (noted ?? []).some((m) => m.role === "assistant" && m.content.startsWith("✅")));
+  check(
+    "the merchant's thread records what the client built",
+    (noted ?? []).some((m) => m.role === "user")
+  );
+  check(
+    "and what came of it",
+    (noted ?? []).some((m) => m.role === "assistant" && m.content.startsWith("✅"))
+  );
 
   // The judge's row is written through a definer function because a
   // client cannot write at the table. Proven with a client's token, or
@@ -163,7 +185,11 @@ try {
     let judged = null;
     for (let i = 0; i < 40 && !judged; i++) {
       const { data } = await admin
-        .from("judgements").select("source, ref").eq("project_id", project.id).eq("ref", made?.request_id).maybeSingle();
+        .from("judgements")
+        .select("source, ref")
+        .eq("project_id", project.id)
+        .eq("ref", made?.request_id)
+        .maybeSingle();
       judged = data;
       if (!judged) await new Promise((r) => setTimeout(r, 500));
     }
@@ -191,7 +217,11 @@ try {
   const talked = await tool("approve_change", { request_id: waiting?.request_id });
   check("and cannot approve it itself", talked?.status === "waiting for approval");
   check("and is told the merchant does that in Warmluke", /Warmluke/.test(talked?.error ?? talked?.note ?? ""));
-  const { data: still } = await admin.from("build_requests").select("status, approved_at").eq("id", waiting?.request_id).single();
+  const { data: still } = await admin
+    .from("build_requests")
+    .select("status, approved_at")
+    .eq("id", waiting?.request_id)
+    .single();
   check("nothing was stamped", still?.approved_at === null && still?.status === "pending");
 
   // A no, with the merchant's words. reject_change recorded the no
@@ -209,7 +239,11 @@ try {
     reason: "they said they already track this in a spreadsheet",
   });
   check("it is dismissed", refused?.status === "dismissed");
-  const { data: kept } = await admin.from("build_requests").select("status, summary").eq("id", toRefuse?.request_id).single();
+  const { data: kept } = await admin
+    .from("build_requests")
+    .select("status, summary")
+    .eq("id", toRefuse?.request_id)
+    .single();
   check("and the words are kept on the row", /spreadsheet/.test(kept?.summary ?? ""));
   if (!/spreadsheet/.test(kept?.summary ?? "")) show(kept);
 
@@ -228,10 +262,7 @@ try {
   // the difference is the rule and not the caller.
   console.log("\nbut a change to the shop itself is never the client's to approve");
   {
-    await admin
-      .from("account_settings")
-      .update({ store_actions_enabled: true })
-      .eq("user_id", me.userId);
+    await admin.from("account_settings").update({ store_actions_enabled: true }).eq("user_id", me.userId);
     const { data: store } = await admin
       .from("stores")
       .insert({
@@ -241,10 +272,7 @@ try {
       })
       .select("id")
       .single();
-    const owner = createClient(
-      env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-      env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
-    );
+    const owner = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY);
     await signInAsCheckUser(owner, env);
     const { data: action } = await owner.rpc("abo_action_propose", {
       p_project: project.id,
@@ -264,11 +292,7 @@ try {
     const { data: tried } = await asClient.rpc("abo_action_approve", { p_action: action });
     check("the client cannot approve it, with auto-build on", tried?.approved === false);
     check("and is told whose yes it needs", /merchant/i.test(tried?.reason ?? ""));
-    const { data: still } = await admin
-      .from("store_actions")
-      .select("status, approved_at")
-      .eq("id", action)
-      .single();
+    const { data: still } = await admin.from("store_actions").select("status, approved_at").eq("id", action).single();
     check("the row is untouched", still?.status === "pending" && still?.approved_at === null);
 
     // ── Asking for one, through the tool ──────────────────────
@@ -286,7 +310,10 @@ try {
         targets: [{ id: "gid://shopify/Order/1" }],
       });
       check("an action nobody declared is refused", /no change called/i.test(nonsense?.error ?? ""));
-      check("and it is told what there is", Array.isArray(nonsense?.what_can_be_asked_for) && nonsense.what_can_be_asked_for.length > 0);
+      check(
+        "and it is told what there is",
+        Array.isArray(nonsense?.what_can_be_asked_for) && nonsense.what_can_be_asked_for.length > 0
+      );
       check(
         "with whether each can be taken back",
         (nonsense?.what_can_be_asked_for ?? []).every((c) => "can_be_taken_back" in c || "cannot_be_taken_back" in c)
@@ -298,7 +325,10 @@ try {
         params: { tags: ["rush"] },
       });
       check("a number instead of a Shopify id is refused", /cannot be acted on/i.test(badIds?.error ?? ""));
-      check("and the bad one is named back", (badIds?.these ?? []).some((t) => /1042/.test(t)));
+      check(
+        "and the bad one is named back",
+        (badIds?.these ?? []).some((t) => /1042/.test(t))
+      );
 
       const noTag = await tool("propose_store_action", {
         action: "add_tags",
@@ -325,7 +355,10 @@ try {
       check("and the merchant reads what it really does", /^Tags 2 orders "rush"$/.test(asked?.changes ?? ""));
       check("it says nothing changed yet", /waiting for the merchant/i.test(asked?.status ?? ""));
       check("and that this one can be taken back", asked?.can_be_taken_back === true);
-      check("it hands over the steps", (asked?.what_the_merchant_does ?? []).some((x) => /Do it/.test(x)));
+      check(
+        "it hands over the steps",
+        (asked?.what_the_merchant_does ?? []).some((x) => /Do it/.test(x))
+      );
       check("and a link that opens on it", (asked?.open ?? "").includes(asked?.action_id ?? "never"));
 
       const listed = await tool("pending_changes", {});
@@ -352,7 +385,10 @@ try {
 
       const ran = await post({ actionId: asked.action_id, do: "run" });
       check("the merchant's yes reaches the shop road", ran.status === 200);
-      check("and it stops at the scopes nobody granted", /has not allowed|write_orders/i.test((ran.body?.errors ?? []).join(" ")));
+      check(
+        "and it stops at the scopes nobody granted",
+        /has not allowed|write_orders/i.test((ran.body?.errors ?? []).join(" "))
+      );
       check("with the row finished rather than left running", ran.body?.status === "failed");
 
       const twice = await post({ actionId: asked.action_id, do: "run" });
@@ -393,7 +429,11 @@ try {
   if (moduleId) await admin.from("modules").delete().eq("id", moduleId);
   for (const id of madeRequests) await admin.from("build_requests").delete().eq("id", id);
   const { data: thread } = await admin
-    .from("conversations").select("id").eq("project_id", project.id).eq("title", "Changes from your AI").maybeSingle();
+    .from("conversations")
+    .select("id")
+    .eq("project_id", project.id)
+    .eq("title", "Changes from your AI")
+    .maybeSingle();
   if (thread) {
     const { data: msgs } = await admin.from("messages").select("id, content").eq("conversation_id", thread.id);
     const mine = (msgs ?? []).filter((m) => m.content.includes(stamp));

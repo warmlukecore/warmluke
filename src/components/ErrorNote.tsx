@@ -12,9 +12,21 @@ import type { AppError, FixAction } from "@/lib/errors";
 import { CircleX, Info, TriangleAlert, X, type LucideIcon } from "lucide-react";
 
 const TONE: Record<AppError["kind"], { box: string; mark: string; Glyph: LucideIcon }> = {
-  data: { box: "border-tone-attention bg-tone-attention/25 text-tone-attention-fg", mark: "text-signal-attention", Glyph: Info },
-  engine: { box: "border-tone-attention bg-tone-attention/25 text-tone-attention-fg", mark: "text-signal-attention", Glyph: TriangleAlert },
-  system: { box: "border-tone-critical bg-tone-critical/40 text-tone-critical-fg", mark: "text-signal-critical", Glyph: CircleX },
+  data: {
+    box: "border-tone-attention bg-tone-attention/25 text-tone-attention-fg",
+    mark: "text-signal-attention",
+    Glyph: Info,
+  },
+  engine: {
+    box: "border-tone-attention bg-tone-attention/25 text-tone-attention-fg",
+    mark: "text-signal-attention",
+    Glyph: TriangleAlert,
+  },
+  system: {
+    box: "border-tone-critical bg-tone-critical/40 text-tone-critical-fg",
+    mark: "text-signal-critical",
+    Glyph: CircleX,
+  },
 };
 
 export default function ErrorNote({

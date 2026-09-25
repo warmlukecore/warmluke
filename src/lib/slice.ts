@@ -46,29 +46,44 @@ export function windowRange(
   let fromDay: string, toDay: string, label: string;
   switch (route.window) {
     case "today":
-      fromDay = toDay = today; label = "today";
+      fromDay = toDay = today;
+      label = "today";
       break;
     case "yesterday":
-      fromDay = toDay = shift(today, -1); label = "yesterday";
+      fromDay = toDay = shift(today, -1);
+      label = "yesterday";
       break;
     case "this_week":
-      fromDay = shift(today, -6); toDay = today; label = "the last 7 days";
+      fromDay = shift(today, -6);
+      toDay = today;
+      label = "the last 7 days";
       break;
     case "this_month":
-      fromDay = shift(today, -29); toDay = today; label = "the last 30 days";
+      fromDay = shift(today, -29);
+      toDay = today;
+      label = "the last 30 days";
       break;
     case "last_month": {
-      const py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1;
-      fromDay = firstOfMonth(py, pm); toDay = shift(firstOfMonth(y, m), -1); label = "last month";
+      const py = m === 1 ? y - 1 : y,
+        pm = m === 1 ? 12 : m - 1;
+      fromDay = firstOfMonth(py, pm);
+      toDay = shift(firstOfMonth(y, m), -1);
+      label = "last month";
       break;
     }
     case "named_month": {
       if (!route.month) return null;
       // A month not yet reached this year means last year's.
       const yy = route.month > m ? y - 1 : y;
-      const ny = route.month === 12 ? yy + 1 : yy, nm = route.month === 12 ? 1 : route.month + 1;
-      fromDay = firstOfMonth(yy, route.month); toDay = shift(firstOfMonth(ny, nm), -1);
-      label = new Date(`${fromDay}T00:00:00Z`).toLocaleString("en", { month: "long", year: "numeric", timeZone: "UTC" });
+      const ny = route.month === 12 ? yy + 1 : yy,
+        nm = route.month === 12 ? 1 : route.month + 1;
+      fromDay = firstOfMonth(yy, route.month);
+      toDay = shift(firstOfMonth(ny, nm), -1);
+      label = new Date(`${fromDay}T00:00:00Z`).toLocaleString("en", {
+        month: "long",
+        year: "numeric",
+        timeZone: "UTC",
+      });
       break;
     }
     default:
@@ -100,7 +115,8 @@ export function pickNeedles(needles: string[]): string[] {
 const strip = (rows: Array<{ data: Record<string, unknown> }>) =>
   rows.map(({ data }) => {
     const { id: _id, store_id: _sid, ...rest } = data;
-    void _id; void _sid;
+    void _id;
+    void _sid;
     return rest;
   });
 
@@ -131,11 +147,19 @@ export async function fetchSlice(
   // not August's. What answers that is August's orders, each with its
   // customer's name — fifty rows Luke can rank by name itself.
   if (route.list === "customers" && span && route.kind !== "lookup") {
-    const { rows, total } = await readStoreRows(db, store.id, "orders", ROWS, undefined, { field: "total", dir: "desc" }, {
-      field: "placed_at",
-      from: span.fromDay,
-      to: span.toDay,
-    });
+    const { rows, total } = await readStoreRows(
+      db,
+      store.id,
+      "orders",
+      ROWS,
+      undefined,
+      { field: "total", dir: "desc" },
+      {
+        field: "placed_at",
+        from: span.fromDay,
+        to: span.toDay,
+      }
+    );
     return {
       what: `orders placed${when}, biggest first, each with its customer — rank or count customers from these`,
       rows: strip(rows),
@@ -160,8 +184,7 @@ export async function fetchSlice(
             ? { field: "total", dir: "desc" as const }
             : null
       : null;
-  const between =
-    span && route.list === "orders" ? { field: "placed_at", from: span.fromDay, to: span.toDay } : null;
+  const between = span && route.list === "orders" ? { field: "placed_at", from: span.fromDay, to: span.toDay } : null;
   const { rows, total } = await readStoreRows(db, store.id, table, ROWS, needles, sort, between);
   const what =
     route.list === "orders"

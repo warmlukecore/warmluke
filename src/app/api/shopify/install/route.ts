@@ -49,10 +49,7 @@ export async function POST(req: Request) {
 
   const clientId = process.env.SHOPIFY_CLIENT_ID;
   if (!clientId || !process.env.SHOPIFY_CLIENT_SECRET) {
-    return NextResponse.json(
-      { error: "Shopify is not configured on this deployment yet." },
-      { status: 503 }
-    );
+    return NextResponse.json({ error: "Shopify is not configured on this deployment yet." }, { status: 503 });
   }
 
   // Two separate questions, asked separately, because one upsert cannot
@@ -60,11 +57,7 @@ export async function POST(req: Request) {
   // invisible to this caller, so the upsert fails on the policy rather
   // than the unique index — and reporting that as "this project isn't
   // yours" would be wrong and confusing, since the project IS theirs.
-  const { data: mine } = await auth.client
-    .from("projects")
-    .select("id")
-    .eq("id", projectId)
-    .maybeSingle();
+  const { data: mine } = await auth.client.from("projects").select("id").eq("id", projectId).maybeSingle();
   if (!mine) {
     return NextResponse.json({ error: "That project isn't yours." }, { status: 403 });
   }

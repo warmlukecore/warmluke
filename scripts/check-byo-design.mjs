@@ -32,10 +32,7 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
-const client = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
-);
+const client = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY);
 const owner = await signInAsCheckUser(client, env);
 if (!owner.session) {
   console.log(`could not sign in as the owner — ${owner.why}`);
@@ -43,10 +40,7 @@ if (!owner.session) {
 }
 const token = owner.session.access_token;
 const uid = owner.user.id;
-const admin = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.ADAPTIVE_OS_SERVICE_ROLE_KEY
-);
+const admin = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
 // A project for this run only — the check user's, not the merchant's.
 const project = await throwawayProject(admin, uid, "byo-design");
 
@@ -68,7 +62,6 @@ const tool = async (name, args, id = 1) => {
   }
 };
 
-
 // Calls this run makes count against the account's hourly ceiling, so
 // after a few runs the check cannot reach the server it is checking.
 // Its own calls are not a merchant's; they are swept at the end.
@@ -79,8 +72,7 @@ const sweepOwnCalls = async (userId) => {
 
 const stamp = Date.now().toString(36);
 const spent = async () =>
-  (await admin.from("account_settings").select("turns_used").eq("user_id", uid).single()).data
-    .turns_used;
+  (await admin.from("account_settings").select("turns_used").eq("user_id", uid).single()).data.turns_used;
 
 const { data: was, error: settingsError } = await admin
   .from("account_settings")
@@ -109,8 +101,11 @@ try {
   // "operator" / "op" / "type" through eight rejected submissions.
   const shape = String(format?.plan_format ?? "");
   check("it says what a plan looks like", shape.length > 500);
-  check('naming the operator key out loud', /"op": "\*"/.test(shape));
-  check('and putting "view" where it really goes', shape.indexOf('"features": {') < shape.indexOf('"view": { "type": "board"'));
+  check("naming the operator key out loud", /"op": "\*"/.test(shape));
+  check(
+    'and putting "view" where it really goes',
+    shape.indexOf('"features": {') < shape.indexOf('"view": { "type": "board"')
+  );
   check(
     "and it carries a design that actually validates",
     Array.isArray(format?.worked_example?.plans) && format.worked_example.plans.length > 0
@@ -126,11 +121,7 @@ try {
     // Checking it through the dry run proves two things at once: that
     // validate_design changes nothing, and that what design_format
     // hands out is a design this server would actually accept.
-    const dry = await tool(
-      "validate_design",
-      { plans: format.worked_example.plans, project_id: project.id },
-      21
-    );
+    const dry = await tool("validate_design", { plans: format.worked_example.plans, project_id: project.id }, 21);
     check("the example design holds", dry?.status === "holds");
     if (dry?.status !== "holds") console.log(`     said: ${JSON.stringify(dry?.errors ?? dry)}`);
     check("and nothing was put in front of the merchant", !dry?.request_id);
@@ -209,16 +200,15 @@ try {
   const dfmt = await tool("design_format", { project_id: project.id }, 24);
   const orderCols = dfmt?.store_columns?.orders ?? [];
   check("design_format lists the store's columns by table", orderCols.includes("fulfilment_status"));
-  check("and all four tables", ["orders", "customers", "products", "inventory_levels"].every((t) => Array.isArray(dfmt?.store_columns?.[t])));
+  check(
+    "and all four tables",
+    ["orders", "customers", "products", "inventory_levels"].every((t) => Array.isArray(dfmt?.store_columns?.[t]))
+  );
 
   // With the real names, the same design holds — which it did not
   // before either, because the section had no columns to be checked
   // against until it existed.
-  const right = await tool(
-    "submit_design",
-    dashboard("status", "fulfilment_status", "total", "placed_at"),
-    25
-  );
+  const right = await tool("submit_design", dashboard("status", "fulfilment_status", "total", "placed_at"), 25);
   check("and with Warmluke's names it is accepted", right?.status === "waiting for approval");
   if (right?.status !== "waiting for approval") console.log("     →", JSON.stringify(right).slice(0, 400));
   if (right?.request_id) made.push(right.request_id);
@@ -299,15 +289,11 @@ try {
 
   // Approved is not the same as awaiting approval; saying so sent the
   // model back to ask for a yes it already had.
-  await admin
-    .from("build_requests")
-    .update({ approved_at: new Date().toISOString() })
-    .eq("id", good.request_id);
+  await admin.from("build_requests").update({ approved_at: new Date().toISOString() }).eq("id", good.request_id);
   const stamped = await tool("pending_changes", { project_id: project.id }, 8);
   check(
     "an approved one stops asking for approval",
-    (stamped?.waiting ?? []).find((w) => w.request_id === good.request_id)?.state ===
-      "approved, not built yet"
+    (stamped?.waiting ?? []).find((w) => w.request_id === good.request_id)?.state === "approved, not built yet"
   );
 
   // A second connected assistant's request is not this one's to build
@@ -336,11 +322,7 @@ try {
 
   // An id that is not theirs used to answer "nothing is waiting" —
   // the same lie, about the wrong app.
-  const foreign = await tool(
-    "pending_changes",
-    { project_id: "11111111-2222-3333-4444-555555555555" },
-    9
-  );
+  const foreign = await tool("pending_changes", { project_id: "11111111-2222-3333-4444-555555555555" }, 9);
   check("an app that is not theirs is an error", typeof foreign?.error === "string");
   check("not an empty queue", foreign?.total === undefined);
   check("and it names the apps they do have", Array.isArray(foreign?.projects));
@@ -361,10 +343,7 @@ try {
   check("and called what it is", hurt?.state === "partly built");
   check("with the part that worked named", (hurt?.built ?? []).length === 1);
   check("and the part that did not", (hurt?.did_not_build ?? []).length === 1);
-  check(
-    "and it does not send them back to approve_change",
-    /will not finish this one/i.test(hurt?.next_action ?? "")
-  );
+  check("and it does not send them back to approve_change", /will not finish this one/i.test(hurt?.next_action ?? ""));
 
   console.log("\nand a no is a decision, not a silence");
   // Until this existed, a merchant refusing a design inside their own
@@ -404,13 +383,9 @@ try {
   }
 
   const afterNo = await tool("pending_changes", { project_id: project.id }, 14);
-  check(
-    "and it stops waiting",
-    !(afterNo?.waiting ?? []).some((w) => w.request_id === toRefuse.request_id)
-  );
-  const stored = (
-    await admin.from("build_requests").select("status, summary").eq("id", toRefuse.request_id).single()
-  ).data;
+  check("and it stops waiting", !(afterNo?.waiting ?? []).some((w) => w.request_id === toRefuse.request_id));
+  const stored = (await admin.from("build_requests").select("status, summary").eq("id", toRefuse.request_id).single())
+    .data;
   check("the row says so too", stored?.status === "dismissed");
   check("with the merchant's reason kept", /spreadsheet/.test(stored?.summary ?? ""));
 
@@ -423,11 +398,7 @@ try {
   const finished = await tool("reject_change", { request_id: other.id }, 16);
   check("a half-built one cannot be refused", finished?.status === "not rejected");
 
-  const nobody = await tool(
-    "reject_change",
-    { request_id: "11111111-2222-3333-4444-555555555555" },
-    17
-  );
+  const nobody = await tool("reject_change", { request_id: "11111111-2222-3333-4444-555555555555" }, 17);
   check("nor one that is not theirs", nobody?.status === "not rejected");
 
   // The half that was actually going wrong: when nothing waits, the
@@ -484,10 +455,7 @@ try {
         { project_id: project.id, limit: 1, next_before: first.next_before },
         43
       );
-      check(
-        "and the name the answer gives works too",
-        byTheOtherName?.history?.[0]?.request_id === b
-      );
+      check("and the name the answer gives works too", byTheOtherName?.history?.[0]?.request_id === b);
     } else {
       check("there is a cursor to page with", false);
     }
@@ -512,10 +480,7 @@ try {
     "while Warmluke doing the designing still needs a turn",
     typeof paid?.error === "string" && /\b1\b/.test(paid.error) && !paid?.status
   );
-  check(
-    "and now points at the free way instead of a paywall",
-    paid?.do_this_instead === "design_format"
-  );
+  check("and now points at the free way instead of a paywall", paid?.do_this_instead === "design_format");
   if (!paid?.error) console.log(`     propose_change said: ${JSON.stringify(paid).slice(0, 300)}`);
 } finally {
   // Restore real account state before disposable rows or rate-limit
@@ -576,11 +541,7 @@ try {
         .update({ auto_build: project.auto_build === true })
         .eq("id", project.id),
     async () => {
-      const { data, error } = await admin
-        .from("projects")
-        .select("auto_build")
-        .eq("id", project.id)
-        .single();
+      const { data, error } = await admin.from("projects").select("auto_build").eq("id", project.id).single();
       return !error && data?.auto_build === (project.auto_build === true);
     }
   );
@@ -604,12 +565,11 @@ try {
   // Loud, but not a throw: thrown here it would replace the error that
   // sent the run into this block, and that one says what broke.
   check("and everything this check made is cleaned up", cleanupProblems.length === 0);
-  if (cleanupProblems.length > 0) console.log(`     → cleanup failed after three attempts — ${cleanupProblems.join("; ")}`);
+  if (cleanupProblems.length > 0)
+    console.log(`     → cleanup failed after three attempts — ${cleanupProblems.join("; ")}`);
 }
 
 console.log(
-  fails.length === 0
-    ? "\nthey pay for their own thinking, and it is still checked"
-    : `\n${fails.length} FAILED`
+  fails.length === 0 ? "\nthey pay for their own thinking, and it is still checked" : `\n${fails.length} FAILED`
 );
 process.exit(fails.length === 0 ? 0 : 1);

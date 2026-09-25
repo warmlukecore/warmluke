@@ -95,7 +95,8 @@ export default function StorePicker({
     setBusy(null);
     setAdded((prev) => [...prev, ...todo.filter((t) => !failed.includes(t))]);
     onAdded();
-    if (failed.length) setError(`Couldn’t add ${failed.map((t) => STORE_TABLES[t].section.label).join(", ")}. Try again.`);
+    if (failed.length)
+      setError(`Couldn’t add ${failed.map((t) => STORE_TABLES[t].section.label).join(", ")}. Try again.`);
   }
 
   const missingCore = CORE_STORE_TABLES.filter((t) => !added.includes(t));
@@ -149,10 +150,16 @@ export default function StorePicker({
           <header className="flex items-center justify-between gap-3 border-b border-line bg-surface-subdued px-3 py-2.5">
             <div>
               <h3 className="text-[13px] font-semibold text-fg">What a store is run from</h3>
-              <p className="text-xs text-fg-muted">{CORE_STORE_WORDS.charAt(0).toUpperCase() + CORE_STORE_WORDS.slice(1)}.</p>
+              <p className="text-xs text-fg-muted">
+                {CORE_STORE_WORDS.charAt(0).toUpperCase() + CORE_STORE_WORDS.slice(1)}.
+              </p>
             </div>
             {missingCore.length > 0 && (
-              <button onClick={() => add(missingCore, "core")} disabled={busy !== null} className={button("primary", "sm")}>
+              <button
+                onClick={() => add(missingCore, "core")}
+                disabled={busy !== null}
+                className={button("primary", "sm")}
+              >
                 {busy === "core"
                   ? "Adding…"
                   : missingCore.length === CORE_STORE_TABLES.length

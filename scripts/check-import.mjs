@@ -14,7 +14,8 @@ import { shopifyStores } from "./owner-session.mjs";
 
 const env = Object.fromEntries(
   readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
-    .split("\n").filter((l) => l.includes("=") && !l.trim().startsWith("#"))
+    .split("\n")
+    .filter((l) => l.includes("=") && !l.trim().startsWith("#"))
     .map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()])
 );
 
@@ -30,18 +31,24 @@ const [store = null] = await shopifyStores(db, "id, shop_domain, access_token, r
 // Nothing to import from is nothing to check — the way "no project on
 // this account" is elsewhere. Exit 0 and say so: on a database with a
 // store this runs in full, on a blank one it must not read as broken.
-if (!store) { console.log("no connected store — nothing to check"); process.exit(0); }
+if (!store) {
+  console.log("no connected store — nothing to check");
+  process.exit(0);
+}
 console.log(`store: ${store.shop_domain}\n`);
 
 // A resource Shopify refuses is reported, not thrown — one blocked scope
 // would otherwise hide whether everything else imported correctly.
 const blocked = [];
 for (const resource of RESOURCES) {
-  let cursor = null, total = 0, pages = 0;
+  let cursor = null,
+    total = 0,
+    pages = 0;
   try {
     for (;;) {
       const page = await importPage(db, store, resource, cursor);
-      total += page.imported; pages++;
+      total += page.imported;
+      pages++;
       if (!page.hasNext || pages > 40) break;
       cursor = page.cursor;
     }
@@ -54,21 +61,36 @@ for (const resource of RESOURCES) {
 }
 
 console.log("\nwhat landed:");
-for (const t of ["products", "variants", "customers", "orders", "order_line_items", "refunds", "fulfillments", "inventory_levels"]) {
+for (const t of [
+  "products",
+  "variants",
+  "customers",
+  "orders",
+  "order_line_items",
+  "refunds",
+  "fulfillments",
+  "inventory_levels",
+]) {
   const { count } = await db.from(t).select("*", { count: "exact", head: true }).eq("store_id", store.id);
   console.log(`  ${t.padEnd(18)} ${count}`);
 }
 
 const fails = [];
-const check = (name, cond) => { console.log(`  ${cond ? "ok  " : "FAIL"}  ${name}`); if (!cond) fails.push(name); };
+const check = (name, cond) => {
+  console.log(`  ${cond ? "ok  " : "FAIL"}  ${name}`);
+  if (!cond) fails.push(name);
+};
 // Checks whose resource Shopify refused are neither passes nor failures —
 // calling them either would be this script guessing at data it never saw.
 const skipped = [];
-const only = (resource, name, cond) =>
-  blocked.includes(resource) ? skipped.push(name) : check(name, cond());
+const only = (resource, name, cond) => (blocked.includes(resource) ? skipped.push(name) : check(name, cond()));
 
 console.log("\nand whether it is right:");
-const { data: orders } = await db.from("orders").select("order_number, total, currency, tags, cancelled_at, customer_id").eq("store_id", store.id).order("order_number");
+const { data: orders } = await db
+  .from("orders")
+  .select("order_number, total, currency, tags, cancelled_at, customer_id")
+  .eq("store_id", store.id)
+  .order("order_number");
 const o = (name, cond) => only("orders", name, cond);
 o("every order arrived", () => orders.length === 4);
 o("the cancelled one is marked cancelled", () => orders.filter((x) => x.cancelled_at).length === 1);
@@ -77,10 +99,16 @@ o("totals are numbers, not text", () => orders.every((x) => typeof x.total === "
 o("currency came across", () => orders.every((x) => x.currency === "USD"));
 o("orders are linked to customers", () => orders.some((x) => x.customer_id));
 
-const { data: lines } = await db.from("order_line_items").select("sku, quantity, price, variant_id, title").eq("store_id", store.id);
+const { data: lines } = await db
+  .from("order_line_items")
+  .select("sku, quantity, price, variant_id, title")
+  .eq("store_id", store.id);
 o("the multi-line order kept both lines", () => lines.length >= 5);
 o("purchase-time titles were copied", () => lines.every((l) => !!l.title));
-o("a blank SKU did not break the line", () => lines.some((l) => l.sku === null) || lines.every((l) => l.sku !== undefined));
+o(
+  "a blank SKU did not break the line",
+  () => lines.some((l) => l.sku === null) || lines.every((l) => l.sku !== undefined)
+);
 o("lines point at their variant", () => lines.some((l) => l.variant_id));
 
 const { data: dupes } = await db.from("variants").select("sku").eq("store_id", store.id).eq("sku", "BA141-BLK");

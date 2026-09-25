@@ -21,7 +21,9 @@ export default function ScreenError({ error, reset }: { error: Error & { digest?
   const offline = typeof navigator !== "undefined" && !navigator.onLine;
   return (
     <CenteredCard>
-      <h1 className="text-lg font-semibold text-fg">{offline ? "This screen needs the internet" : "Something went wrong on this screen"}</h1>
+      <h1 className="text-lg font-semibold text-fg">
+        {offline ? "This screen needs the internet" : "Something went wrong on this screen"}
+      </h1>
       <p className="mt-1">
         {offline
           ? "You’re offline. Try again once you’re back; nothing you did is lost."

@@ -4,13 +4,7 @@
 // form of them they ever see.
 // ─────────────────────────────────────────────────────────────
 
-import type {
-  AssistantPlan,
-  AutomationDefinition,
-  Expr,
-  FeatureSchema,
-  ModuleRow,
-} from "./types";
+import type { AssistantPlan, AutomationDefinition, Expr, FeatureSchema, ModuleRow } from "./types";
 
 /** Renders an expression tree as something a non-technical owner reads. */
 export function exprText(e: Expr | undefined): string {
@@ -22,21 +16,36 @@ export function exprText(e: Expr | undefined): string {
 
   const a = (e.args ?? []).map(exprText);
   switch (e.op) {
-    case "and": return a.join(" and ");
-    case "or": return a.join(" or ");
-    case "not": return `not ${a[0]}`;
-    case "=": return `${a[0]} is ${a[1]}`;
-    case "!=": return `${a[0]} is not ${a[1]}`;
-    case ">": return `${a[0]} is more than ${a[1]}`;
-    case ">=": return `${a[0]} is at least ${a[1]}`;
-    case "<": return `${a[0]} is less than ${a[1]}`;
-    case "<=": return `${a[0]} is at most ${a[1]}`;
-    case "contains": return `${a[0]} contains “${a[1]}”`;
-    case "starts_with": return `${a[0]} starts with “${a[1]}”`;
-    case "is_empty": return `${a[0]} is blank`;
-    case "is_set": return `${a[0]} is filled in`;
-    case "changed": return `${a[0]} just changed`;
-    case "days_since": return `days since ${a[0]}`;
+    case "and":
+      return a.join(" and ");
+    case "or":
+      return a.join(" or ");
+    case "not":
+      return `not ${a[0]}`;
+    case "=":
+      return `${a[0]} is ${a[1]}`;
+    case "!=":
+      return `${a[0]} is not ${a[1]}`;
+    case ">":
+      return `${a[0]} is more than ${a[1]}`;
+    case ">=":
+      return `${a[0]} is at least ${a[1]}`;
+    case "<":
+      return `${a[0]} is less than ${a[1]}`;
+    case "<=":
+      return `${a[0]} is at most ${a[1]}`;
+    case "contains":
+      return `${a[0]} contains “${a[1]}”`;
+    case "starts_with":
+      return `${a[0]} starts with “${a[1]}”`;
+    case "is_empty":
+      return `${a[0]} is blank`;
+    case "is_set":
+      return `${a[0]} is filled in`;
+    case "changed":
+      return `${a[0]} just changed`;
+    case "days_since":
+      return `days since ${a[0]}`;
     case "count_matching": {
       const args = e.args ?? [];
       const fields = args
@@ -49,15 +58,24 @@ export function exprText(e: Expr | undefined): string {
     }
     case "if":
       return `${a[1]} if ${a[0]}, otherwise ${a[2] ?? "nothing"}`;
-    case "round": return `rounded ${a[0]}`;
-    case "today": return "today";
-    case "now": return "right now";
-    case "+": return a.join(" plus ");
-    case "-": return a.join(" minus ");
-    case "*": return a.join(" times ");
-    case "/": return a.join(" divided by ");
-    case "concat": return a.join(" + ");
-    default: return a.join(` ${e.op} `);
+    case "round":
+      return `rounded ${a[0]}`;
+    case "today":
+      return "today";
+    case "now":
+      return "right now";
+    case "+":
+      return a.join(" plus ");
+    case "-":
+      return a.join(" minus ");
+    case "*":
+      return a.join(" times ");
+    case "/":
+      return a.join(" divided by ");
+    case "concat":
+      return a.join(" + ");
+    default:
+      return a.join(` ${e.op} `);
   }
 }
 
@@ -78,10 +96,7 @@ export type RuleRow = {
  * about a rule that runs every day, or propose a second one beside it.
  * A designer that cannot see what is there designs over the top of it.
  */
-export function describeRules(
-  rules: RuleRow[],
-  modules: Array<{ id: string; nav_label: string }>
-): string[] {
+export function describeRules(rules: RuleRow[], modules: Array<{ id: string; nav_label: string }>): string[] {
   return rules.map((r) => {
     const where = modules.find((m) => m.id === r.module_id)?.nav_label;
     const lines = describeAutomation(r, modules).join("; ");
@@ -133,8 +148,6 @@ export function describeAutomation(
   return out;
 }
 
-
-
 // ── Plans ────────────────────────────────────────────────────
 
 /** Every feature a plan configures, stated from the config itself. */
@@ -142,12 +155,7 @@ export function describeFeaturesFull(f: FeatureSchema, modules: ModuleRow[]): st
   const out: string[] = [];
   if (f.view) {
     const v = f.view;
-    const detail =
-      v.type === "board"
-        ? ` grouped by ${v.groupBy}`
-        : v.type === "calendar"
-          ? ` by ${v.dateField}`
-          : "";
+    const detail = v.type === "board" ? ` grouped by ${v.groupBy}` : v.type === "calendar" ? ` by ${v.dateField}` : "";
     out.push(`Shown as a ${v.type}${detail}`);
   }
   if (f.search?.enabled) {
@@ -207,7 +215,11 @@ export type StoreFacts = {
  * names, because they ask for "Stock" and mean inventory levels.
  */
 const STORE_TOPICS: Array<{ table: string; words: RegExp; noun: string }> = [
-  { table: "fulfillments", words: /\bshipments?\b|\btracking\b|\bcouriers?\b|\bdelivery partners?\b|\bfulfil+ments?\b|\bdispatch(ed|es)?\b/i, noun: "shipments" },
+  {
+    table: "fulfillments",
+    words: /\bshipments?\b|\btracking\b|\bcouriers?\b|\bdelivery partners?\b|\bfulfil+ments?\b|\bdispatch(ed|es)?\b/i,
+    noun: "shipments",
+  },
   // Most specific first. "Order Items" names the order lines, and
   // matched "orders" while this list began with them.
   { table: "order_line_items", words: /\border (line )?items?\b|\bline items?\b/i, noun: "order lines" },
@@ -274,8 +286,7 @@ export function describePlan(
   store?: StoreFacts | null
 ): PlanSummary {
   const warnings = storeOverlap(plan, store ?? null);
-  const withWarnings = (s: PlanSummary): PlanSummary =>
-    warnings.length ? { ...s, warnings } : s;
+  const withWarnings = (s: PlanSummary): PlanSummary => (warnings.length ? { ...s, warnings } : s);
   return withWarnings(describePlanBody(plan, modules, currentColumns));
 }
 
@@ -479,10 +490,7 @@ export function stepsToFinishAction(
   spec: { label: string; confirm: "list" | "typed" } | null
 ): string[] {
   const settled =
-    row.status === "done" ||
-    row.status === "partly_done" ||
-    row.status === "failed" ||
-    row.status === "dismissed";
+    row.status === "done" || row.status === "partly_done" || row.status === "failed" || row.status === "dismissed";
   if (settled) return [];
   const open = `Open ${link} — it opens with this in front of them`;
   if (row.status === "running") {
@@ -539,7 +547,8 @@ export function describeRequests(rows: RequestRow[], modules: ModuleRow[], now =
         const done = titles.slice(0, applied.length || titles.length);
         const parts: string[] = [];
         if (done.length) parts.push(`built: ${done.join("; ")}`);
-        if (errors.length) parts.push(`did not build ${errors.length} of ${plans.length || errors.length}: ${errors[0].slice(0, 120)}`);
+        if (errors.length)
+          parts.push(`did not build ${errors.length} of ${plans.length || errors.length}: ${errors[0].slice(0, 120)}`);
         if (gone.length) parts.push(`since removed: ${gone.join(", ")}`);
         return parts.length ? `${head} → ${parts.join(" · ")}` : head;
       }

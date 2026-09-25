@@ -27,7 +27,13 @@ const store = {
 const section = (nav_label, extra = {}) => ({
   changeType: "NEW_MODULE",
   targetModuleId: null,
-  newModule: { name: nav_label.toLowerCase().replace(/\s+/g, "-"), nav_label, icon: "table", source_table: null, ...extra },
+  newModule: {
+    name: nav_label.toLowerCase().replace(/\s+/g, "-"),
+    nav_label,
+    icon: "table",
+    source_table: null,
+    ...extra,
+  },
   newSchema: { columns: [{ field: "sku", label: "SKU", type: "text" }] },
   explanation: "x",
 });
@@ -44,13 +50,22 @@ console.log("what is refused");
     store
   );
   check("the same rows seeded by a later plan in the batch", seededLater.length === 1);
-  check("a copy of the refunds, seeded", seededCopies([{ ...section("Refund tracker"), newRecords: rows }], store).length === 1);
-  check("a copy of the variants, seeded", seededCopies([{ ...section("Barcode list"), newRecords: rows }], store).length === 1);
+  check(
+    "a copy of the refunds, seeded",
+    seededCopies([{ ...section("Refund tracker"), newRecords: rows }], store).length === 1
+  );
+  check(
+    "a copy of the variants, seeded",
+    seededCopies([{ ...section("Barcode list"), newRecords: rows }], store).length === 1
+  );
 }
 
 console.log("\nwhat still passes");
 {
-  check("the same section with no rows — the merchant's hand list", seededCopies([section("Order SKU Log")], store).length === 0);
+  check(
+    "the same section with no rows — the merchant's hand list",
+    seededCopies([section("Order SKU Log")], store).length === 0
+  );
   check("but it is still warned about", storeOverlap(section("Order SKU Log"), store).length === 1);
   check(
     "the section over the store's list, rows or not",

@@ -27,22 +27,20 @@ export default async function Icon() {
   // The mark as large as fits in 232 of the 256, with the file scaled to match.
   const scale = LOGO_BOX.length === 6 ? Math.min(232 / width, 232 / height) : 256;
   return new ImageResponse(
-    (
-      <div style={{ width: "100%", height: "100%", display: "flex", position: "relative" }}>
-        {/* eslint-disable-next-line @next/next/no-img-element -- ImageResponse draws plain elements */}
-        <img
-          src={`data:${type};base64,${data}`}
-          alt=""
-          width={fileWidth * scale}
-          height={fileHeight * scale}
-          style={{
-            position: "absolute",
-            left: (256 - width * scale) / 2 - left * scale,
-            top: (256 - height * scale) / 2 - top * scale,
-          }}
-        />
-      </div>
-    ),
+    <div style={{ width: "100%", height: "100%", display: "flex", position: "relative" }}>
+      {/* eslint-disable-next-line @next/next/no-img-element -- ImageResponse draws plain elements */}
+      <img
+        src={`data:${type};base64,${data}`}
+        alt=""
+        width={fileWidth * scale}
+        height={fileHeight * scale}
+        style={{
+          position: "absolute",
+          left: (256 - width * scale) / 2 - left * scale,
+          top: (256 - height * scale) / 2 - top * scale,
+        }}
+      />
+    </div>,
     size
   );
 }

@@ -145,11 +145,7 @@ export async function POST(req: Request) {
     }
 
     // RLS ensures this only returns the caller's own project.
-    const { data: project, error: projErr } = await client
-      .from("projects")
-      .select("*")
-      .eq("id", projectId)
-      .limit(1);
+    const { data: project, error: projErr } = await client.from("projects").select("*").eq("id", projectId).limit(1);
     if (projErr) throw new Error(projErr.message);
     const proj = project?.[0] as ProjectRow | undefined;
     if (!proj) {
@@ -166,10 +162,7 @@ export async function POST(req: Request) {
     // The People settings already promise this: they cannot change
     // how the app is built.
     if (proj.owner_id !== auth.userId) {
-      return NextResponse.json(
-        { error: "Only the owner of this app can build with Luke." },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "Only the owner of this app can build with Luke." }, { status: 403 });
     }
 
     // RLS scopes this count to the caller's own conversations.
@@ -259,9 +252,10 @@ export async function POST(req: Request) {
     // sent at the time: that block is a snapshot of the schema as it was,
     // and a thread of stale snapshots both costs tokens and contradicts
     // the fresh one on the newest turn.
-    const history = rows.map(
-      (m): ChatTurn => ({ role: m.role, content: m.role === "user" ? (m.said ?? m.content) : m.content })
-    );
+    const history = rows.map((m): ChatTurn => ({
+      role: m.role,
+      content: m.role === "user" ? (m.said ?? m.content) : m.content,
+    }));
 
     // Has the owner already seen a design for this thread? New sections may
     // only be built after one — otherwise the assistant can skip straight to
@@ -278,9 +272,7 @@ export async function POST(req: Request) {
     // would not pay at all.
     const { data: allowance, error: spendErr } = await client.rpc("abo_spend_turn");
     if (spendErr) throw new Error(spendErr.message);
-    const turns = allowance as
-      | { ok: boolean; used: number; free: number; spend_id?: string }
-      | null;
+    const turns = allowance as { ok: boolean; used: number; free: number; spend_id?: string } | null;
     if (turns && !turns.ok) {
       return NextResponse.json(
         {
@@ -525,22 +517,25 @@ async function persistTurn(
   // SAME created_at and "order by created_at" is a coin flip — the
   // reply came back above the question it answered. Stamp them apart.
   const t = Date.now();
-  const { data, error } = await client.from("messages").insert([
-    {
-      conversation_id: conversationId,
-      role: "user",
-      content: userContent,
-      payload: { kind: "user", text: said },
-      created_at: new Date(t).toISOString(),
-    },
-    {
-      conversation_id: conversationId,
-      role: "assistant",
-      content: assistantRaw,
-      payload: repairErrors.length > 0 ? { ...reply, repairErrors } : reply,
-      created_at: new Date(t + 1).toISOString(),
-    },
-  ]).select("id, role");
+  const { data, error } = await client
+    .from("messages")
+    .insert([
+      {
+        conversation_id: conversationId,
+        role: "user",
+        content: userContent,
+        payload: { kind: "user", text: said },
+        created_at: new Date(t).toISOString(),
+      },
+      {
+        conversation_id: conversationId,
+        role: "assistant",
+        content: assistantRaw,
+        payload: repairErrors.length > 0 ? { ...reply, repairErrors } : reply,
+        created_at: new Date(t + 1).toISOString(),
+      },
+    ])
+    .select("id, role");
   if (error) throw new Error(error.message);
   // The reply's own row, so a judgement written later can point at it.
   return (data?.find((r) => r.role === "assistant")?.id as string | undefined) ?? null;

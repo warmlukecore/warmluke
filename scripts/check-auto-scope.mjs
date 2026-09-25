@@ -32,20 +32,14 @@ const check = (name, cond) => {
 };
 const show = (v) => console.log("     →", JSON.stringify(v).slice(0, 320));
 
-const client = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
-);
+const client = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY);
 const owner = await signInAsCheckUser(client, env);
 if (!owner.session) {
   console.log(`could not sign in as the owner — ${owner.why}`);
   process.exit(1);
 }
 const token = owner.session.access_token;
-const admin = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.ADAPTIVE_OS_SERVICE_ROLE_KEY
-);
+const admin = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
 // A project for this run only — the check user's, not the merchant's.
 // Everything this makes is under it, and remove() takes it all.
 const project = await throwawayProject(admin, owner.user.id, "auto-scope");
@@ -168,9 +162,7 @@ try {
         name: `Scope ${stamp} stamp`,
         definition: {
           trigger: { type: "record_created" },
-          actions: [
-            { type: "set_fields", target: { self: true }, set: { stage: { const: "seen" } } },
-          ],
+          actions: [{ type: "set_fields", target: { self: true }, set: { stage: { const: "seen" } } }],
         },
       },
       explanation: "Marks a new row as seen.",
@@ -277,10 +269,7 @@ try {
   // carrying this run's stamp, and the thread itself only if that was
   // all of them.
   if (aiThreadId) {
-    const { data: msgs } = await admin
-      .from("messages")
-      .select("id, content")
-      .eq("conversation_id", aiThreadId);
+    const { data: msgs } = await admin.from("messages").select("id, content").eq("conversation_id", aiThreadId);
     const mine = (msgs ?? []).filter((m) => m.content.includes(stamp));
     for (const m of mine) await admin.from("messages").delete().eq("id", m.id);
     if (mine.length === (msgs ?? []).length) {

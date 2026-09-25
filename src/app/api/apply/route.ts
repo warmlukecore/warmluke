@@ -99,10 +99,7 @@ export async function POST(req: Request) {
         .maybeSingle();
       const asked = (askedRow as { request?: string; client_id?: string | null } | null) ?? null;
       if (asked?.client_id && asked.request) {
-        const { data: mods } = await client
-          .from("modules")
-          .select("*")
-          .eq("project_id", projectId);
+        const { data: mods } = await client.from("modules").select("*").eq("project_id", projectId);
         const titles = (plans as AssistantPlan[])
           .slice(0, applied.length)
           .map((p) => describePlan(p, (mods ?? []) as ModuleRow[]).title)

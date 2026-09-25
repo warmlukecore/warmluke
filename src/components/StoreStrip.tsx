@@ -73,9 +73,7 @@ export default function StoreStrip({
   const [store, setStore] = useState<StoreRow | null | undefined>(undefined);
   const [progress, setProgress] = useState<Progress>({});
   /** Rows we hold that the last pass did not bring back from Shopify. */
-  const [drift, setDrift] = useState<Record<string, { holding: number; imported: number }> | null>(
-    null
-  );
+  const [drift, setDrift] = useState<Record<string, { holding: number; imported: number }> | null>(null);
   const [running, setRunning] = useState(false);
   /** The server is doing the import, so closing the tab stops nothing. */
   const [onServer, setOnServer] = useState(false);
@@ -154,9 +152,7 @@ export default function StoreStrip({
       const { ok, data } = await apiFetch("/api/shopify/import", { projectId });
       if (data?.progress) setProgress(data.progress as Progress);
       if (data?.done) {
-        setDrift(
-          (data.drift as Record<string, { holding: number; imported: number }> | undefined) ?? null
-        );
+        setDrift((data.drift as Record<string, { holding: number; imported: number }> | undefined) ?? null);
       }
       if (!ok) {
         if (data?.retryable && stumbles < IMPORT_RETRIES) {
@@ -320,11 +316,17 @@ export default function StoreStrip({
     return (
       <>
         <Line tone="attention" icon={<TriangleAlert aria-hidden size={13} strokeWidth={2} />}>
-          <span className="min-w-0 flex-1 truncate" title={removed ? "Warmluke was removed from this store in Shopify" : undefined}>
+          <span
+            className="min-w-0 flex-1 truncate"
+            title={removed ? "Warmluke was removed from this store in Shopify" : undefined}
+          >
             {removed ? "Removed from Shopify" : "Waiting for Shopify"}
           </span>
           {canManage && (
-            <button onClick={() => setConnecting(true)} className="shrink-0 font-medium text-frame-fg underline-offset-2 hover:underline">
+            <button
+              onClick={() => setConnecting(true)}
+              className="shrink-0 font-medium text-frame-fg underline-offset-2 hover:underline"
+            >
               Reconnect
             </button>
           )}
@@ -337,13 +339,18 @@ export default function StoreStrip({
   const lists = Object.values(progress);
   const done = lists.filter((p) => p.status === "done").length;
   const trouble = store.webhook_error
-    ? { text: "Updates are not coming in", why: `Shopify was not asked to send updates: ${store.webhook_error}. Reconnecting asks again.` }
+    ? {
+        text: "Updates are not coming in",
+        why: `Shopify was not asked to send updates: ${store.webhook_error}. Reconnecting asks again.`,
+      }
     : drift && Object.keys(drift).length > 0
       ? {
           text: "Some rows are gone from Shopify",
           why: `${Object.entries(drift)
             .map(([resource, d]) => `${d.holding - d.imported} ${progress[resource]?.label ?? resource}`)
-            .join(", ")} no longer in Shopify. Nothing has been deleted here. Reconnecting the store re-subscribes its updates.`,
+            .join(
+              ", "
+            )} no longer in Shopify. Nothing has been deleted here. Reconnecting the store re-subscribes its updates.`,
         }
       : null;
 
@@ -384,7 +391,9 @@ export default function StoreStrip({
           <span className="h-2 w-2 shrink-0 rounded-full bg-signal-success" />
           <span className="min-w-0 flex-1 leading-tight">
             <span className="block text-[12px] text-frame-fg">{justChecked ? "Up to date" : "Connected"}</span>
-            <span className="block truncate text-[11px] text-frame-fg-muted">synced {ago(store.last_synced_at, now, "not yet")}</span>
+            <span className="block truncate text-[11px] text-frame-fg-muted">
+              synced {ago(store.last_synced_at, now, "not yet")}
+            </span>
           </span>
           {canManage && (
             <button
@@ -431,7 +440,10 @@ export default function StoreStrip({
             {trouble.text}
           </span>
           {canManage && (
-            <button onClick={() => setConnecting(true)} className="shrink-0 font-medium text-frame-fg underline-offset-2 hover:underline">
+            <button
+              onClick={() => setConnecting(true)}
+              className="shrink-0 font-medium text-frame-fg underline-offset-2 hover:underline"
+            >
               Reconnect
             </button>
           )}

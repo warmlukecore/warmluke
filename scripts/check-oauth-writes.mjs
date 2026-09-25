@@ -86,9 +86,7 @@ const rowsTouched = async (clientId, statement) => {
 };
 
 console.log("the same account, signed in to the app");
-const appInsert = await sql(
-  asUser(null, `insert into public.projects (name) values ('written by the app');`)
-);
+const appInsert = await sql(asUser(null, `insert into public.projects (name) values ('written by the app');`));
 // If this fails the restriction is too wide and the app itself is
 // broken — the more dangerous of the two mistakes.
 check("can still create a project", appInsert.status === 201);
@@ -103,24 +101,16 @@ check("cannot create a project", oauthInsert.status !== 201);
 // the count is what has to be checked — not the status.
 check(
   "cannot rename one",
-  (await rowsTouched(
-    "claude-test",
-    `update public.projects set name = 'renamed' where id = '${row.project_id}';`
-  )) === 0
+  (await rowsTouched("claude-test", `update public.projects set name = 'renamed' where id = '${row.project_id}';`)) ===
+    0
 );
 check(
   "cannot delete one",
-  (await rowsTouched(
-    "claude-test",
-    `delete from public.projects where id = '${row.project_id}';`
-  )) === 0
+  (await rowsTouched("claude-test", `delete from public.projects where id = '${row.project_id}';`)) === 0
 );
 check(
   "cannot disconnect the store",
-  (await rowsTouched(
-    "claude-test",
-    `delete from public.stores where project_id = '${row.project_id}';`
-  )) === 0
+  (await rowsTouched("claude-test", `delete from public.stores where project_id = '${row.project_id}';`)) === 0
 );
 
 if (row.module_id) {
@@ -187,10 +177,7 @@ console.log("\nthe one door a client does get");
   const said = (r) => r.body?.message ?? JSON.stringify(r.body);
 
   const bare = await attempt("claude-test");
-  check(
-    "a client cannot build a request nobody approved",
-    said(bare).includes("refused=")
-  );
+  check("a client cannot build a request nobody approved", said(bare).includes("refused="));
 
   await sql(`update public.projects set auto_build = false where id = '${row.project_id}'`);
   const self = await attempt("claude-test", stamping);
@@ -223,10 +210,7 @@ console.log("\nthe one door a client does get");
     set role authenticated;
     select public.abo_approve_request('${reqId}') as said;
   `);
-  check(
-    "the app itself can approve it",
-    /"approved"\s*:\s*true/.test(JSON.stringify(byOwner.body ?? {}))
-  );
+  check("the app itself can approve it", /"approved"\s*:\s*true/.test(JSON.stringify(byOwner.body ?? {})));
   const allowed = await attempt("claude-test");
   check("and then the client may build that", said(allowed).includes("built="));
 
@@ -245,13 +229,8 @@ console.log("\nthe one door a client does get");
 console.log("\nand the app itself is untouched");
 check(
   "a signed-in owner can still rename their project",
-  (await rowsTouched(
-    null,
-    `update public.projects set name = name where id = '${row.project_id}';`
-  )) === 1
+  (await rowsTouched(null, `update public.projects set name = name where id = '${row.project_id}';`)) === 1
 );
 
-console.log(
-  fails.length === 0 ? "\na client's token can read and cannot write" : `\n${fails.length} FAILED`
-);
+console.log(fails.length === 0 ? "\na client's token can read and cannot write" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

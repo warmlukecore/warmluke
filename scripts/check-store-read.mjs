@@ -8,13 +8,7 @@
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import {
-  dayRangeInZone,
-  readStoreRows,
-  searchOrders,
-  storeOverview,
-  storeValues,
-} from "../src/lib/store-read.ts";
+import { dayRangeInZone, readStoreRows, searchOrders, storeOverview, storeValues } from "../src/lib/store-read.ts";
 import { realStores } from "./owner-session.mjs";
 
 const fails = [];
@@ -46,10 +40,7 @@ check(
   Date.parse(spring.to) - Date.parse(spring.from) === 23 * 3600 * 1000
 );
 const fall = dayRangeInZone("2026-11-01", "America/New_York");
-check(
-  "the fall-back day is 25 hours",
-  Date.parse(fall.to) - Date.parse(fall.from) === 25 * 3600 * 1000
-);
+check("the fall-back day is 25 hours", Date.parse(fall.to) - Date.parse(fall.from) === 25 * 3600 * 1000);
 
 check("UTC is left alone", dayRangeInZone("2026-09-14", "UTC").from === "2026-09-14T00:00:00.000Z");
 check(
@@ -71,10 +62,7 @@ const env = Object.fromEntries(
     .filter((l) => l.includes("=") && !l.trim().startsWith("#"))
     .map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()])
 );
-const db = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.ADAPTIVE_OS_SERVICE_ROLE_KEY
-);
+const db = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
 
 const stores = await realStores(db, "id, project_id, shop_domain, timezone, currency, last_synced_at");
 if (stores.length === 0) {
@@ -94,41 +82,49 @@ if (stores.length === 0) {
 
   const all = await searchOrders(db, store, { limit: 100 });
   check("a plain search returns orders", all.length > 0);
-  check("each one carries its money", all.every((o) => typeof o.total === "number"));
+  check(
+    "each one carries its money",
+    all.every((o) => typeof o.total === "number")
+  );
   check(
     "newest first",
     all.every((o, i) => i === 0 || (all[i - 1].placed_at ?? "") >= (o.placed_at ?? ""))
   );
 
   const cancelled = await searchOrders(db, store, { status: "cancelled" });
-  check("cancelled can be asked for on its own", cancelled.every((o) => !!o.cancelled_at));
+  check(
+    "cancelled can be asked for on its own",
+    cancelled.every((o) => !!o.cancelled_at)
+  );
   check("and it is not every order", cancelled.length < all.length);
 
   // The trap: a cancelled order keeps its old financial status, so a
   // status search that ignores cancellation hands back orders that are
   // not really in that state.
   const paid = await searchOrders(db, store, { status: "paid" });
-  check("a status search excludes cancelled orders", paid.every((o) => !o.cancelled_at));
+  check(
+    "a status search excludes cancelled orders",
+    paid.every((o) => !o.cancelled_at)
+  );
 
   check("the limit is honoured", (await searchOrders(db, store, { limit: 1 })).length <= 1);
-  check(
-    "an absurd limit is capped, not obeyed",
-    (await searchOrders(db, store, { limit: 100000 })).length <= 100
-  );
+  check("an absurd limit is capped, not obeyed", (await searchOrders(db, store, { limit: 100000 })).length <= 100);
 
   const withPeople = all.filter((o) => o.customer);
   check("orders carry their customer", withPeople.length > 0);
 
   const phone = withPeople[0]?.customer?.phone;
   if (phone) {
-    check("searching a phone finds that person's orders",
-      (await searchOrders(db, store, { q: phone })).length > 0);
+    check("searching a phone finds that person's orders", (await searchOrders(db, store, { q: phone })).length > 0);
   }
 
   const number = all[0]?.order_number;
   if (number) {
     const byNumber = await searchOrders(db, store, { q: number });
-    check("searching an order number finds it", byNumber.some((o) => o.order_number === number));
+    check(
+      "searching an order number finds it",
+      byNumber.some((o) => o.order_number === number)
+    );
   }
 
   check(
@@ -139,9 +135,7 @@ if (stores.length === 0) {
   const placed = all.find((o) => o.placed_at);
   if (placed) {
     // Asked as the store's own calendar day, which is the whole point.
-    const day = new Intl.DateTimeFormat("en-CA", { timeZone: store.timezone }).format(
-      new Date(placed.placed_at)
-    );
+    const day = new Intl.DateTimeFormat("en-CA", { timeZone: store.timezone }).format(new Date(placed.placed_at));
     const sameDay = await searchOrders(db, store, { day });
     check(
       `an order placed on ${day} is found by that day in ${store.timezone}`,
@@ -163,14 +157,15 @@ if (stores.length === 0) {
     );
 
     const rows = (await readStoreRows(db, store.id, "products", 500)).rows;
-    const real = new Set(
-      rows.map((r) => String(r.data.status ?? "").trim()).filter(Boolean)
-    );
+    const real = new Set(rows.map((r) => String(r.data.status ?? "").trim()).filter(Boolean));
     check(
       "and every one of them is really in the rows",
       status.every((v) => real.has(v))
     );
-    check("nothing that is in the rows is left out", [...real].every((v) => status.includes(v)));
+    check(
+      "nothing that is in the rows is left out",
+      [...real].every((v) => status.includes(v))
+    );
 
     // The field a merchant means by "category". Before it was
     // imported, a category filter could not be built at all.

@@ -96,11 +96,7 @@ export type SubscribeResult = {
  * topics is worth more than a store with none, and the caller is told
  * which two are missing rather than the whole thing being an error.
  */
-export async function subscribeWebhooks(
-  shop: string,
-  token: string,
-  callbackUrl: string
-): Promise<SubscribeResult> {
+export async function subscribeWebhooks(shop: string, token: string, callbackUrl: string): Promise<SubscribeResult> {
   const out: SubscribeResult = { added: [], already: [], moved: [], failed: [] };
 
   // What the shop already has. A subscription pointed at our old
@@ -129,9 +125,7 @@ export async function subscribeWebhooks(
     // loop creates beside whatever is already there and the shop keeps
     // delivering to the old address — the exact failure this listing
     // was added to prevent, wearing the face of a clean run.
-    out.failed.push(
-      `existing subscriptions could not be listed: ${e instanceof Error ? e.message : "failed"}`
-    );
+    out.failed.push(`existing subscriptions could not be listed: ${e instanceof Error ? e.message : "failed"}`);
     return out;
   }
 
@@ -169,9 +163,7 @@ export async function subscribeWebhooks(
             // ends up in stores.webhook_error, which the app shows to
             // every member of the project — and the address is what
             // decides which store a delivery belongs to.
-            out.failed.push(
-              `${topic} (could not be moved): ${userErrors.map((e) => e.message).join("; ")}`
-            );
+            out.failed.push(`${topic} (could not be moved): ${userErrors.map((e) => e.message).join("; ")}`);
           }
         }
         if (settled && !out.moved.includes(topic)) out.already.push(topic);

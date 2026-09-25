@@ -9,12 +9,7 @@
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import {
-  STORE_TABLES,
-  isStoreTable,
-  readStoreRows,
-  storeTableSchema,
-} from "../src/lib/store-read.ts";
+import { STORE_TABLES, isStoreTable, readStoreRows, storeTableSchema } from "../src/lib/store-read.ts";
 import { realStores } from "./owner-session.mjs";
 
 const fails = [];
@@ -49,10 +44,7 @@ const env = Object.fromEntries(
     .filter((l) => l.includes("=") && !l.trim().startsWith("#"))
     .map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()])
 );
-const db = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.ADAPTIVE_OS_SERVICE_ROLE_KEY
-);
+const db = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
 
 const [store] = await realStores(db, "id, project_id, shop_domain, timezone, currency, last_synced_at");
 if (!store) {
@@ -66,7 +58,10 @@ if (!store) {
       continue;
     }
     check(`${table}: the count is the table's, not the page's`, total >= rows.length);
-    check(`${table}: every row has an id to key on`, rows.every((r) => !!r.id));
+    check(
+      `${table}: every row has an id to key on`,
+      rows.every((r) => !!r.id)
+    );
     check(`${table}: and no two rows share one`, new Set(rows.map((r) => r.id)).size === rows.length);
 
     // The real trap. A column the schema promises but flatten never
@@ -96,9 +91,7 @@ if (!store) {
   if (orders.length) {
     check(
       "orders arrive newest first",
-      orders.every(
-        (o, i) => i === 0 || (orders[i - 1].data.placed_at ?? "") >= (o.data.placed_at ?? "")
-      )
+      orders.every((o, i) => i === 0 || (orders[i - 1].data.placed_at ?? "") >= (o.data.placed_at ?? ""))
     );
     check(
       "a date renders as a day, not a timestamp",
@@ -113,7 +106,5 @@ if (!store) {
   }
 }
 
-console.log(
-  fails.length === 0 ? "\nstore-backed sections render real rows" : `\n${fails.length} FAILED`
-);
+console.log(fails.length === 0 ? "\nstore-backed sections render real rows" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

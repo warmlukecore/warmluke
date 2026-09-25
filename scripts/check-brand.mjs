@@ -29,7 +29,10 @@ try {
 check("exactly one image is there", !!logo);
 check("and it is really a file", !!logo && statSync(path.join(root, "public", decodeURIComponent(logo))).isFile());
 const config = readFileSync(path.join(root, "next.config.mjs"), "utf8");
-check("the build reads it", /const logo = findLogo\(projectDir\)/.test(config) && /NEXT_PUBLIC_LOGO:\s*logo\b/.test(config));
+check(
+  "the build reads it",
+  /const logo = findLogo\(projectDir\)/.test(config) && /NEXT_PUBLIC_LOGO:\s*logo\b/.test(config)
+);
 check("and measures where the mark sits in it", /NEXT_PUBLIC_LOGO_BOX:\s*logoBox/.test(config));
 
 console.log("\nand nothing names it");
@@ -48,7 +51,10 @@ check(
   `no file under src/ types a path into ${BRAND_DIR}/ or the old images/${typed.length ? ` (${typed.map((f) => path.relative(root, f)).join(", ")})` : ""}`,
   typed.length === 0
 );
-check("the favicon is drawn from the same file", /from "@\/lib\/brand"/.test(readFileSync(path.join(root, "src/app/icon.tsx"), "utf8")));
+check(
+  "the favicon is drawn from the same file",
+  /from "@\/lib\/brand"/.test(readFileSync(path.join(root, "src/app/icon.tsx"), "utf8"))
+);
 
 console.log(fails.length === 0 ? "\none logo, found everywhere" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

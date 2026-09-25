@@ -62,20 +62,22 @@ if (signInError) throw new Error(`could not sign in the admin-boundary test user
 // signed in. Under the merchant's address, so the admin list can be
 // seen to say that this lead already has an account.
 const bookingSession = `chk_admin_${stamp}`;
-const booked = await createClient(URL_, ANON).from("landing_events").insert({
-  session_id: bookingSession,
-  event: "demo_booked",
-  payload: {
-    name: "Check Lead",
-    email: email.toUpperCase(),
-    store: "check-lead.example",
-    note: "Stock first",
-    team_size: "2_5",
-    monthly_orders: "500_2000",
-    heard_from: "referral",
-    heard_from_detail: "a friend",
-  },
-});
+const booked = await createClient(URL_, ANON)
+  .from("landing_events")
+  .insert({
+    session_id: bookingSession,
+    event: "demo_booked",
+    payload: {
+      name: "Check Lead",
+      email: email.toUpperCase(),
+      store: "check-lead.example",
+      note: "Stock first",
+      team_size: "2_5",
+      monthly_orders: "500_2000",
+      heard_from: "referral",
+      heard_from_detail: "a friend",
+    },
+  });
 if (booked.error) throw new Error(`could not book the test demo: ${booked.error.message}`);
 
 try {
@@ -143,10 +145,7 @@ try {
     (await merchant.rpc("abo_admin_delete_account", { p_user: made.user.id, p_email: email })).error?.code === "42501"
   );
 
-  const auditRead = await merchant
-    .from("admin_account_audit")
-    .select("actor_user_id")
-    .limit(1);
+  const auditRead = await merchant.from("admin_account_audit").select("actor_user_id").limit(1);
   check("cannot read the admin audit trail", !!auditRead.error && !auditRead.data?.length);
 
   // The flag is the whole gate. A merchant who can write this row can
@@ -156,29 +155,20 @@ try {
     .update({ is_superadmin: true })
     .eq("user_id", made.user.id)
     .select();
-  const stored = (
-    await admin
-      .from("account_settings")
-      .select("is_superadmin")
-      .eq("user_id", made.user.id)
-      .single()
-  ).data;
-  check(
-    "cannot make themselves an administrator",
-    !promote.data?.length && stored.is_superadmin === false
-  );
+  const stored = (await admin.from("account_settings").select("is_superadmin").eq("user_id", made.user.id).single())
+    .data;
+  check("cannot make themselves an administrator", !promote.data?.length && stored.is_superadmin === false);
 
   check(
     "cannot insert a row claiming it either",
-    !!(
-      await merchant
-        .from("account_settings")
-        .insert({ user_id: made.user.id, is_superadmin: true })
-    ).error
+    !!(await merchant.from("account_settings").insert({ user_id: made.user.id, is_superadmin: true })).error
   );
 
   const others = await merchant.from("account_settings").select("user_id");
-  check("sees only their own row", (others.data ?? []).every((r) => r.user_id === made.user.id));
+  check(
+    "sees only their own row",
+    (others.data ?? []).every((r) => r.user_id === made.user.id)
+  );
 
   console.log("\nan administrator");
   const { data: su } = await admin
@@ -198,8 +188,14 @@ try {
   } else {
     const all = await owner.rpc("abo_admin_accounts");
     check("can list every account", (all.data ?? []).length > 1);
-    check("the list carries emails", (all.data ?? []).every((r) => !!r.email));
-    check("and counts their projects", (all.data ?? []).every((r) => typeof r.projects === "number"));
+    check(
+      "the list carries emails",
+      (all.data ?? []).every((r) => !!r.email)
+    );
+    check(
+      "and counts their projects",
+      (all.data ?? []).every((r) => typeof r.projects === "number")
+    );
     check(
       "and says whether each allowance is unlimited",
       (all.data ?? []).every((r) => typeof r.turns_unlimited === "boolean")
@@ -215,14 +211,25 @@ try {
     check("and what they wrote", lead?.heard_from_detail === "a friend" && lead?.note === "Stock first");
     check("and that the address already has an account, whatever its case", lead?.has_account === true);
     const times = (leads.data ?? []).map((r) => Date.parse(r.created_at));
-    check("newest first", times.every((t, i) => i === 0 || times[i - 1] >= t));
+    check(
+      "newest first",
+      times.every((t, i) => i === 0 || times[i - 1] >= t)
+    );
 
     console.log("\ninvites to start (0119)");
     check("a merchant cannot list invites", (await merchant.rpc("abo_admin_invites")).error?.code === "42501");
     check(
       "nor make one",
-      (await merchant.rpc("abo_admin_invite_create", { p_email: null, p_full_name: null, p_business_name: null, p_note: "check-admin", p_hours: 72, p_max_uses: 1 }))
-        .error?.code === "42501"
+      (
+        await merchant.rpc("abo_admin_invite_create", {
+          p_email: null,
+          p_full_name: null,
+          p_business_name: null,
+          p_note: "check-admin",
+          p_hours: 72,
+          p_max_uses: 1,
+        })
+      ).error?.code === "42501"
     );
     const named = await owner.rpc("abo_admin_invite_create", {
       p_email: ` ${email.toUpperCase()} `,
@@ -232,23 +239,51 @@ try {
       p_hours: 72,
       p_max_uses: 1,
     });
-    check("an administrator makes an invite for one email", !named.error && typeof named.data === "string" && named.data.length >= 40);
+    check(
+      "an administrator makes an invite for one email",
+      !named.error && typeof named.data === "string" && named.data.length >= 40
+    );
     const stranger = createClient(URL_, ANON);
     const peeked = (await stranger.rpc("abo_invite_peek", { p_token: named.data })).data?.[0];
-    check("the link says what it knew, to whoever holds it", peeked?.state === "open" && peeked?.email === email && peeked?.business_name === "Check Shop");
-    check("a made-up link says only that it is unknown", (await stranger.rpc("abo_invite_peek", { p_token: "made-up" })).data?.[0]?.state === "unknown");
+    check(
+      "the link says what it knew, to whoever holds it",
+      peeked?.state === "open" && peeked?.email === email && peeked?.business_name === "Check Shop"
+    );
+    check(
+      "a made-up link says only that it is unknown",
+      (await stranger.rpc("abo_invite_peek", { p_token: "made-up" })).data?.[0]?.state === "unknown"
+    );
     const took = (await merchant.rpc("abo_invite_claim", { p_token: named.data })).data?.[0];
-    check("its own email takes it, with the name and business", took?.state === "claimed" && took?.full_name === "Check Merchant");
-    check("taking it again is taking it once", (await merchant.rpc("abo_invite_claim", { p_token: named.data })).data?.[0]?.state === "claimed");
+    check(
+      "its own email takes it, with the name and business",
+      took?.state === "claimed" && took?.full_name === "Check Merchant"
+    );
+    check(
+      "taking it again is taking it once",
+      (await merchant.rpc("abo_invite_claim", { p_token: named.data })).data?.[0]?.state === "claimed"
+    );
     const listedInv = ((await owner.rpc("abo_admin_invites")).data ?? []).find((i) => i.token === named.data);
-    check("the list shows it used, and by whom", listedInv?.state === "used" && listedInv?.uses === 1 && listedInv?.claimed_by?.[0]?.email === email);
-    const open = await owner.rpc("abo_admin_invite_create", { p_email: null, p_full_name: null, p_business_name: null, p_note: "check-admin", p_hours: 72, p_max_uses: 3 });
+    check(
+      "the list shows it used, and by whom",
+      listedInv?.state === "used" && listedInv?.uses === 1 && listedInv?.claimed_by?.[0]?.email === email
+    );
+    const open = await owner.rpc("abo_admin_invite_create", {
+      p_email: null,
+      p_full_name: null,
+      p_business_name: null,
+      p_note: "check-admin",
+      p_hours: 72,
+      p_max_uses: 3,
+    });
     const openId = ((await owner.rpc("abo_admin_invites")).data ?? []).find((i) => i.token === open.data)?.id;
     const shorter = await owner.rpc("abo_admin_invite_update", { p_id: openId, p_hours: 24, p_revoke: false });
     const hoursLeft = (Date.parse(shorter.data) - Date.now()) / 3600e3;
     check("an invite can be made to end sooner", !shorter.error && hoursLeft > 23.5 && hoursLeft <= 24.1);
     await owner.rpc("abo_admin_invite_update", { p_id: openId, p_hours: null, p_revoke: true });
-    check("and taken back", (await stranger.rpc("abo_invite_peek", { p_token: open.data })).data?.[0]?.state === "revoked");
+    check(
+      "and taken back",
+      (await stranger.rpc("abo_invite_peek", { p_token: open.data })).data?.[0]?.state === "revoked"
+    );
 
     const off = await owner.rpc("abo_admin_set_feature", {
       p_user: made.user.id,
@@ -284,9 +319,7 @@ try {
       p_feature: "store_actions",
       p_on: true,
     });
-    const afterOn = ((await owner.rpc("abo_admin_accounts")).data ?? []).find(
-      (a) => a.user_id === made.user.id
-    );
+    const afterOn = ((await owner.rpc("abo_admin_accounts")).data ?? []).find((a) => a.user_id === made.user.id);
     check("and can be turned on from here", afterOn?.store_actions_enabled === true);
     check("without disturbing the other two", afterOn?.chat_enabled === false && afterOn?.mcp_enabled === false);
     await owner.rpc("abo_admin_set_feature", {
@@ -294,9 +327,7 @@ try {
       p_feature: "store_actions",
       p_on: false,
     });
-    const afterOff = ((await owner.rpc("abo_admin_accounts")).data ?? []).find(
-      (a) => a.user_id === made.user.id
-    );
+    const afterOff = ((await owner.rpc("abo_admin_accounts")).data ?? []).find((a) => a.user_id === made.user.id);
     check("and off again", afterOff?.store_actions_enabled === false);
 
     // A name outside the two is refused rather than stored: the app
@@ -372,16 +403,11 @@ try {
     const actions = new Set((audit ?? []).map((entry) => entry.action));
     check(
       "every kind of admin change has an audit entry",
-      ["set_feature", "set_turns", "set_unlimited", "reset_turns"].every((action) =>
-        actions.has(action)
-      )
+      ["set_feature", "set_turns", "set_unlimited", "reset_turns"].every((action) => actions.has(action))
     );
     check(
       "the trail names the administrator and target",
-      (audit ?? []).every(
-        (entry) =>
-          entry.actor_user_id === signed.user.id && entry.target_user_id === made.user.id
-      )
+      (audit ?? []).every((entry) => entry.actor_user_id === signed.user.id && entry.target_user_id === made.user.id)
     );
     check(
       "the trail keeps before and after values",
@@ -392,25 +418,49 @@ try {
     const leadId = ((await owner.rpc("abo_admin_demo_requests")).data ?? []).find(
       (r) => r.name === "Check Lead" && r.store === "check-lead.example"
     )?.id;
-    const follow = (who, p_stage, p_note, p_seen) => who.rpc("abo_admin_demo_follow_up", { p_id: leadId, p_stage, p_note, p_seen });
-    check("a merchant cannot follow up a request", (await follow(merchant, "contacted", "x", null)).error?.code === "42501");
+    const follow = (who, p_stage, p_note, p_seen) =>
+      who.rpc("abo_admin_demo_follow_up", { p_id: leadId, p_stage, p_note, p_seen });
+    check(
+      "a merchant cannot follow up a request",
+      (await follow(merchant, "contacted", "x", null)).error?.code === "42501"
+    );
     const first = await follow(owner, "contacted", "  Wrote back  ", null);
     check("an administrator marks one contacted, with a note", !first.error && typeof first.data === "string");
-    check("a second first save is refused, not written over", (await follow(owner, "scheduled", "", null)).error?.code === "PT409");
+    check(
+      "a second first save is refused, not written over",
+      (await follow(owner, "scheduled", "", null)).error?.code === "PT409"
+    );
     const followed = ((await owner.rpc("abo_admin_demo_requests")).data ?? []).find((r) => r.id === leadId);
     check(
       "the list says where it stands, trimmed and signed",
-      followed?.stage === "contacted" && followed?.follow_up_note === "Wrote back" && followed?.followed_up_by === signed.user.email
+      followed?.stage === "contacted" &&
+        followed?.follow_up_note === "Wrote back" &&
+        followed?.followed_up_by === signed.user.email
     );
     // The version as the list gave it, string for string: a Date would lose its microseconds.
     const next = await follow(owner, "scheduled", "Thursday", followed?.followed_up_at);
     check("a save over the version the list gave is taken", !next.error);
-    check("and one over an older version is refused", (await follow(owner, "customer", "", followed?.followed_up_at)).error?.code === "PT409");
-    check("a stage the screen does not offer is refused", (await follow(owner, "won", "", next.data)).error?.code === "22023");
-    check("a merchant cannot read an account's story", (await merchant.rpc("abo_admin_account", { p_user: made.user.id })).error?.code === "42501");
+    check(
+      "and one over an older version is refused",
+      (await follow(owner, "customer", "", followed?.followed_up_at)).error?.code === "PT409"
+    );
+    check(
+      "a stage the screen does not offer is refused",
+      (await follow(owner, "won", "", next.data)).error?.code === "22023"
+    );
+    check(
+      "a merchant cannot read an account's story",
+      (await merchant.rpc("abo_admin_account", { p_user: made.user.id })).error?.code === "42501"
+    );
     const story = (await owner.rpc("abo_admin_account", { p_user: made.user.id })).data;
-    check("the story names the invite they came through, and who made it", story?.invite?.by === signed.user.email && story?.invite?.note === "check-admin");
-    check("the demo they asked for, where it stands now", !!story?.demos?.some((d) => d.id === leadId && d.stage === "scheduled"));
+    check(
+      "the story names the invite they came through, and who made it",
+      story?.invite?.by === signed.user.email && story?.invite?.note === "check-admin"
+    );
+    check(
+      "the demo they asked for, where it stands now",
+      !!story?.demos?.some((d) => d.id === leadId && d.stage === "scheduled")
+    );
     check(
       "and what administrators did, newest first",
       story?.trail?.length > 0 &&
@@ -418,7 +468,10 @@ try {
         story.trail.some((t) => t.action === "set_feature" && t.by === signed.user.email)
     );
     check("and never a store's token", !JSON.stringify(story ?? {}).includes("access_token"));
-    check("an account that does not exist is said to", (await owner.rpc("abo_admin_account", { p_user: crypto.randomUUID() })).error?.code === "P0002");
+    check(
+      "an account that does not exist is said to",
+      (await owner.rpc("abo_admin_account", { p_user: crypto.randomUUID() })).error?.code === "P0002"
+    );
 
     console.log("\ntaking an account off (0118)");
     check(
@@ -438,19 +491,26 @@ try {
     check("the accounts screen says so", listedOff?.suspended === true);
     check(
       "a wrong email does not delete it",
-      (await owner.rpc("abo_admin_delete_account", { p_user: made.user.id, p_email: "someone@else.test" })).error?.code === "22023"
+      (await owner.rpc("abo_admin_delete_account", { p_user: made.user.id, p_email: "someone@else.test" })).error
+        ?.code === "22023"
     );
     const back = await owner.rpc("abo_admin_suspend", { p_user: made.user.id, p_on: false });
     const unbanned = (await admin.auth.admin.getUserById(made.user.id)).data.user?.banned_until;
     check("and restore lets it back in", back.data === false && (!unbanned || Date.parse(unbanned) <= Date.now()));
     await owner.rpc("abo_admin_suspend", { p_user: made.user.id, p_on: true });
     const erased = await owner.rpc("abo_admin_delete_account", { p_user: made.user.id, p_email: email.toUpperCase() });
-    check("with its email typed back, whatever the case, it is deleted", !erased.error && typeof erased.data === "number");
+    check(
+      "with its email typed back, whatever the case, it is deleted",
+      !erased.error && typeof erased.data === "number"
+    );
     check("and is gone", !(await admin.auth.admin.getUserById(made.user.id)).data.user);
-    const trail = (await admin.from("admin_account_audit").select("action, old_value").eq("target_user_id", made.user.id)).data ?? [];
+    const trail =
+      (await admin.from("admin_account_audit").select("action, old_value").eq("target_user_id", made.user.id)).data ??
+      [];
     check(
       "and the trail outlives it, with the address it had",
-      trail.some((t) => t.action === "delete" && t.old_value?.email === email) && trail.some((t) => t.action === "suspend")
+      trail.some((t) => t.action === "delete" && t.old_value?.email === email) &&
+        trail.some((t) => t.action === "suspend")
     );
   }
 } finally {

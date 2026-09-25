@@ -230,9 +230,7 @@ export function resolveHero(input: {
   const explicit = heroById(input.wlVariant);
   if (explicit) return { hero: explicit, source: "url" };
 
-  const byCampaign = heroById(
-    input.utmCampaign ? CAMPAIGN_HEROES[input.utmCampaign.toLowerCase()] : null
-  );
+  const byCampaign = heroById(input.utmCampaign ? CAMPAIGN_HEROES[input.utmCampaign.toLowerCase()] : null);
   if (byCampaign) return { hero: byCampaign, source: "campaign" };
 
   const remembered = heroById(input.assigned);
@@ -241,13 +239,7 @@ export function resolveHero(input: {
   return { hero: assignHero(input.random), source: "experiment" };
 }
 
-export const UTM_KEYS = [
-  "utm_source",
-  "utm_medium",
-  "utm_campaign",
-  "utm_content",
-  "utm_term",
-] as const;
+export const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"] as const;
 
 export type Utm = Partial<Record<(typeof UTM_KEYS)[number], string>>;
 

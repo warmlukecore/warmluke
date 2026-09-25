@@ -30,7 +30,8 @@ async function luke(page: Page) {
  * …"), and a spec that stopped there closed the page on a turn that had
  * not finished, so its last answer was never recorded.
  */
-const finished = (panel: Locator, words: string | RegExp) => panel.locator("details > summary", { hasText: words }).first();
+const finished = (panel: Locator, words: string | RegExp) =>
+  panel.locator("details > summary", { hasText: words }).first();
 
 /** The turn ended in a reply, not in "Luke could not reach its model". */
 async function answered(panel: Locator) {
@@ -49,7 +50,9 @@ async function ask(page: Page, box: Locator, message: string) {
   await box.press("Enter");
   const res = await turn;
   expect(res.status(), "the turn was taken").toBe(200);
-  expect(res.headers()["x-model-tape"], `the server ${TAPE === "replay" ? "plays back" : "records"} its models`).toBe(TAPE);
+  expect(res.headers()["x-model-tape"], `the server ${TAPE === "replay" ? "plays back" : "records"} its models`).toBe(
+    TAPE
+  );
 }
 
 test("a question is answered from the shop's own orders", async ({ signedIn: page, shop }) => {
@@ -70,7 +73,11 @@ test("a question is answered from the shop's own orders", async ({ signedIn: pag
 
 test("a change to the shop waits for a yes", async ({ signedIn: page, shop }) => {
   // The switch is per account and off by default; on for this test only.
-  const { data: before } = await shop.admin.from("account_settings").select("store_actions_enabled").eq("user_id", shop.userId).single();
+  const { data: before } = await shop.admin
+    .from("account_settings")
+    .select("store_actions_enabled")
+    .eq("user_id", shop.userId)
+    .single();
   await shop.admin.from("account_settings").update({ store_actions_enabled: true }).eq("user_id", shop.userId);
   try {
     await page.goto(`/app/${shop.projectId}`);
@@ -79,7 +86,10 @@ test("a change to the shop waits for a yes", async ({ signedIn: page, shop }) =>
     await expect(finished(panel, "asked for your yes")).toBeVisible({ timeout: TURN_MS });
     await answered(panel);
     // Asked for, not done: one request waiting, and nothing applied.
-    const { data: asked } = await shop.admin.from("store_actions").select("action, status, summary").eq("project_id", shop.projectId);
+    const { data: asked } = await shop.admin
+      .from("store_actions")
+      .select("action, status, summary")
+      .eq("project_id", shop.projectId);
     expect(asked?.map((a) => a.action)).toEqual(["add_tags"]);
     expect(asked?.[0]?.status).toBe("pending");
     const bell = page.locator('button[title="What your AI asked for"]:visible').first();
@@ -87,7 +97,10 @@ test("a change to the shop waits for a yes", async ({ signedIn: page, shop }) =>
     await bell.click();
     await expect(page.getByText(asked?.[0]?.summary ?? "#1003").first()).toBeVisible();
   } finally {
-    await shop.admin.from("account_settings").update({ store_actions_enabled: before?.store_actions_enabled ?? false }).eq("user_id", shop.userId);
+    await shop.admin
+      .from("account_settings")
+      .update({ store_actions_enabled: before?.store_actions_enabled ?? false })
+      .eq("user_id", shop.userId);
     await shop.admin.from("store_actions").delete().eq("project_id", shop.projectId);
   }
 });

@@ -42,15 +42,7 @@ export function Stat({ label, value, sub }: { label: string; value: number; sub:
 }
 
 /** The most common answers, as bars against the most common one. */
-export function Breakdown({
-  label,
-  counts,
-  empty,
-}: {
-  label: string;
-  counts: Array<[string, number]>;
-  empty: string;
-}) {
+export function Breakdown({ label, counts, empty }: { label: string; counts: Array<[string, number]>; empty: string }) {
   return (
     <div className={`${card} p-4`}>
       <div className="text-xs font-medium text-fg-muted">{label}</div>
@@ -60,7 +52,9 @@ export function Breakdown({
         <ul className="mt-2 space-y-1.5">
           {counts.map(([k, n]) => (
             <li key={k} className="flex items-center gap-2 text-xs">
-              <span className="w-32 truncate text-fg" title={k}>{k}</span>
+              <span className="w-32 truncate text-fg" title={k}>
+                {k}
+              </span>
               <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-hover">
                 <span
                   className="block h-full rounded-full bg-primary"
@@ -86,7 +80,10 @@ export function topCounts(labels: Array<string | null | undefined>): Array<[stri
 /** A link somebody typed, made safe to follow: https only, shown bare. */
 export function siteLink(raw: string | null | undefined): { href: string; text: string } | null {
   if (!raw) return null;
-  const text = raw.trim().replace(/^https?:\/\//i, "").replace(/\/$/, "");
+  const text = raw
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/$/, "");
   try {
     const u = new URL(`https://${text}`);
     return u.hostname.includes(".") ? { href: u.toString(), text } : null;

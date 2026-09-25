@@ -44,7 +44,11 @@ if (!Array.isArray(rows)) {
 // Messages carry the owner's own field and section names, so the same
 // fault reads as a hundred different strings. Strip the quoted parts to
 // see the fault itself.
-const shape = (msg) => msg.replace(/"[^"]*"/g, "X").replace(/\s+/g, " ").trim();
+const shape = (msg) =>
+  msg
+    .replace(/"[^"]*"/g, "X")
+    .replace(/\s+/g, " ")
+    .trim();
 
 const counts = new Map();
 let withRepairs = 0;

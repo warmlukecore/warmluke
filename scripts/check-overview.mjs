@@ -71,25 +71,91 @@ try {
     .insert({ store_id: store.id, external_id: `c-${stamp}`, name: "Meera" })
     .select("id")
     .single();
-  const order = (n, o) => ({ store_id: store.id, external_id: `o-${stamp}-${n}`, order_number: `#${n}`, currency: "INR", ...o });
+  const order = (n, o) => ({
+    store_id: store.id,
+    external_id: `o-${stamp}-${n}`,
+    order_number: `#${n}`,
+    currency: "INR",
+    ...o,
+  });
   const { error: oe } = await admin.from("orders").insert([
-    order(1, { placed_at: ago(0), total: 1000, total_original: 1000, financial_status: "PAID", fulfilment_status: "UNFULFILLED", customer_id: cust.id }),
-    order(2, { placed_at: ago(0), total: 500, total_original: 500, financial_status: "PENDING", fulfilment_status: "UNFULFILLED", gateway: "Cash on Delivery (COD)" }),
-    order(3, { placed_at: ago(3), total: 200, total_original: 250, financial_status: "PAID", fulfilment_status: "FULFILLED" }),
-    order(4, { placed_at: ago(0), total: 9999, total_original: 9999, financial_status: "PAID", fulfilment_status: "UNFULFILLED", cancelled_at: ago(0) }),
-    order(5, { placed_at: ago(40), total: 777, total_original: 777, financial_status: "PAID", fulfilment_status: "UNFULFILLED" }),
-    order(6, { placed_at: ago(0), total: 50, total_original: 50, financial_status: "PAID", fulfilment_status: "FULFILLED", currency: "USD" }),
-    order(7, { placed_at: ago(1), total: 300, total_original: 300, financial_status: "PENDING", fulfilment_status: "FULFILLED", gateway: "Cash on Delivery (COD)" }),
-    order(8, { placed_at: ago(1), total: 100, total_original: 100, financial_status: "PENDING", fulfilment_status: "FULFILLED", gateway: "Bank Deposit" }),
+    order(1, {
+      placed_at: ago(0),
+      total: 1000,
+      total_original: 1000,
+      financial_status: "PAID",
+      fulfilment_status: "UNFULFILLED",
+      customer_id: cust.id,
+    }),
+    order(2, {
+      placed_at: ago(0),
+      total: 500,
+      total_original: 500,
+      financial_status: "PENDING",
+      fulfilment_status: "UNFULFILLED",
+      gateway: "Cash on Delivery (COD)",
+    }),
+    order(3, {
+      placed_at: ago(3),
+      total: 200,
+      total_original: 250,
+      financial_status: "PAID",
+      fulfilment_status: "FULFILLED",
+    }),
+    order(4, {
+      placed_at: ago(0),
+      total: 9999,
+      total_original: 9999,
+      financial_status: "PAID",
+      fulfilment_status: "UNFULFILLED",
+      cancelled_at: ago(0),
+    }),
+    order(5, {
+      placed_at: ago(40),
+      total: 777,
+      total_original: 777,
+      financial_status: "PAID",
+      fulfilment_status: "UNFULFILLED",
+    }),
+    order(6, {
+      placed_at: ago(0),
+      total: 50,
+      total_original: 50,
+      financial_status: "PAID",
+      fulfilment_status: "FULFILLED",
+      currency: "USD",
+    }),
+    order(7, {
+      placed_at: ago(1),
+      total: 300,
+      total_original: 300,
+      financial_status: "PENDING",
+      fulfilment_status: "FULFILLED",
+      gateway: "Cash on Delivery (COD)",
+    }),
+    order(8, {
+      placed_at: ago(1),
+      total: 100,
+      total_original: 100,
+      financial_status: "PENDING",
+      fulfilment_status: "FULFILLED",
+      gateway: "Bank Deposit",
+    }),
   ]);
   if (oe) throw new Error(`could not seed orders: ${oe.message}`);
-  const { data: prod } = await admin.from("products").insert({ store_id: store.id, external_id: `p-${stamp}`, title: "Vase" }).select("id").single();
+  const { data: prod } = await admin
+    .from("products")
+    .insert({ store_id: store.id, external_id: `p-${stamp}`, title: "Vase" })
+    .select("id")
+    .single();
   const { data: v } = await admin
     .from("variants")
     .insert({ store_id: store.id, external_id: `v-${stamp}`, product_id: prod.id, title: "Blue", tracked: true })
     .select("id")
     .single();
-  await admin.from("inventory_levels").insert({ store_id: store.id, variant_id: v.id, available: 0, on_hand: 0, incoming: 0 });
+  await admin
+    .from("inventory_levels")
+    .insert({ store_id: store.id, variant_id: v.id, available: 0, on_hand: 0, incoming: 0 });
   // One only promised away (on the shelf, none free): watched, after the
   // one with nothing at all.
   const { data: promised } = await admin
@@ -97,7 +163,9 @@ try {
     .insert({ store_id: store.id, external_id: `v4-${stamp}`, product_id: prod.id, title: "Promised", tracked: true })
     .select("id")
     .single();
-  await admin.from("inventory_levels").insert({ store_id: store.id, variant_id: promised.id, available: 0, on_hand: 3 });
+  await admin
+    .from("inventory_levels")
+    .insert({ store_id: store.id, variant_id: promised.id, available: 0, on_hand: 3 });
   // One nobody tracks, and one with stock: neither is anything to watch.
   const { data: others } = await admin
     .from("variants")
@@ -129,13 +197,22 @@ try {
   check("to fulfil counts open work whenever it came in", o?.to_fulfil === 3);
   check("every day of the chart is present", (o?.daily ?? []).length === 14);
   check("today's bar is the same count as orders today", (o?.daily ?? []).at(-1)?.orders === 3);
-  check("stock is counted in the list's own words", o?.stock?.["Out of stock"] === 1 && o?.stock?.["All promised"] === 1);
+  check(
+    "stock is counted in the list's own words",
+    o?.stock?.["Out of stock"] === 1 && o?.stock?.["All promised"] === 1
+  );
   check(
     "only tracked variants with nothing left are watched",
     o?.watching === 2 && (o?.stock_watch ?? []).map((w) => w.variant).join(",") === "Blue,Promised"
   );
-  check("the emptiest first, each with the list's word for it", o?.stock_watch?.[0]?.stock_state === "Out of stock" && o?.stock_watch?.[1]?.stock_state === "All promised");
-  check("and the store is named with its own timezone", o?.store?.timezone === "Asia/Kolkata" && o?.store?.currency === "INR");
+  check(
+    "the emptiest first, each with the list's word for it",
+    o?.stock_watch?.[0]?.stock_state === "Out of stock" && o?.stock_watch?.[1]?.stock_state === "All promised"
+  );
+  check(
+    "and the store is named with its own timezone",
+    o?.store?.timezone === "Asia/Kolkata" && o?.store?.currency === "INR"
+  );
 
   console.log("\nthe windows are the caller's to choose");
   const week = await owner.client.rpc("abo_store_overview", { p_project: p, p_days: 7, p_chart_days: 7 });
@@ -163,9 +240,12 @@ try {
   const none = await owner.client.rpc("abo_store_overview", { p_project: bare });
   check("a project with no store says so, without an error", !none.error && none.data?.store === null);
   const odd = await project("overview-odd-zone");
-  await admin
-    .from("stores")
-    .insert({ project_id: odd, shop_domain: `ovw2-${stamp}.myshopify.com`, status: "connected", timezone: "Mars/Olympus_Mons" });
+  await admin.from("stores").insert({
+    project_id: odd,
+    shop_domain: `ovw2-${stamp}.myshopify.com`,
+    status: "connected",
+    timezone: "Mars/Olympus_Mons",
+  });
   const zone = await owner.client.rpc("abo_store_overview", { p_project: odd });
   check("a timezone Postgres does not know falls back to UTC", !zone.error && zone.data?.store?.timezone === "UTC");
   check("and an empty store is all zeros, not nulls", zone.data?.orders?.today === 0 && zone.data?.to_fulfil === 0);

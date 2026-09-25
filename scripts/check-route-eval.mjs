@@ -50,15 +50,20 @@ for (const item of set.questions) {
   const route = await routeQuestion(item.q, 20_000);
   if (route) took.push(route.ms);
   if (item.route === null) {
-    if (!mark("gated", route === null)) misses.push(`"${item.q}" should not be routed (${item.because}); read as ${route.list}/${route.kind}`);
+    if (!mark("gated", route === null))
+      misses.push(`"${item.q}" should not be routed (${item.because}); read as ${route.list}/${route.kind}`);
     continue;
   }
   const wrong = [];
   if (!mark("list", route?.list === item.list)) wrong.push(`list ${route?.list ?? "none"}≠${item.list}`);
   if (!mark("window", route?.window === item.window)) wrong.push(`window ${route?.window ?? "none"}≠${item.window}`);
-  if (item.month !== undefined && !mark("month", route?.month === item.month)) wrong.push(`month ${route?.month ?? "none"}≠${item.month}`);
+  if (item.month !== undefined && !mark("month", route?.month === item.month))
+    wrong.push(`month ${route?.month ?? "none"}≠${item.month}`);
   if (!mark("kind", route?.kind === item.kind)) wrong.push(`kind ${route?.kind ?? "none"}≠${item.kind}`);
-  if (item.needle !== undefined && !mark("needle", !!route?.needles.some((n) => n.toLowerCase() === item.needle.toLowerCase())))
+  if (
+    item.needle !== undefined &&
+    !mark("needle", !!route?.needles.some((n) => n.toLowerCase() === item.needle.toLowerCase()))
+  )
     wrong.push(`needle "${item.needle}" not among the words looked for`);
   if (wrong.length) misses.push(`"${item.q}": ${route ? wrong.join(", ") : "not routed at all"}`);
 }
@@ -71,7 +76,9 @@ for (const p of PARTS) {
   const floor = set.baseline?.[p];
   const below = floor !== undefined && s.ok < floor;
   if (below) fails.push(p);
-  console.log(`  ${below ? "FAIL" : "ok  "}  ${p.padEnd(7)} ${String(s.ok).padStart(2)}/${s.of} (${pct(s)}%)${floor !== undefined ? `, at least ${floor}` : ""}`);
+  console.log(
+    `  ${below ? "FAIL" : "ok  "}  ${p.padEnd(7)} ${String(s.ok).padStart(2)}/${s.of} (${pct(s)}%)${floor !== undefined ? `, at least ${floor}` : ""}`
+  );
 }
 if (misses.length) {
   console.log("\nwhat it got wrong");
@@ -81,7 +88,9 @@ if (recording && took.length) {
   const sorted = [...took].sort((a, b) => a - b);
   const at = (q) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
   const slow = took.filter((ms) => ms > TURN_MS).length;
-  console.log(`\nhow long: median ${at(0.5)} ms, 95th ${at(0.95)} ms; ${slow} of ${took.length} took longer than a chat turn waits (${TURN_MS} ms)`);
+  console.log(
+    `\nhow long: median ${at(0.5)} ms, 95th ${at(0.95)} ms; ${slow} of ${took.length} took longer than a chat turn waits (${TURN_MS} ms)`
+  );
 }
 
 if (!set.baseline) {
@@ -99,5 +108,9 @@ if (!set.baseline) {
   console.log("\nbaseline raised to what it scored now");
 }
 
-console.log(fails.length === 0 ? "\nthe router reads questions at least as well as it did" : `\n${fails.length} FAILED: ${fails.join(", ")} scored below the baseline`);
+console.log(
+  fails.length === 0
+    ? "\nthe router reads questions at least as well as it did"
+    : `\n${fails.length} FAILED: ${fails.join(", ")} scored below the baseline`
+);
 process.exit(fails.length === 0 ? 0 : 1);

@@ -115,7 +115,10 @@ console.log("\na plain-plans reply");
     null,
     null
   );
-  check("carries its follow-up the same way", plans.ok && plans.reply.type === "plans" && plans.reply.next?.length === 1);
+  check(
+    "carries its follow-up the same way",
+    plans.ok && plans.reply.type === "plans" && plans.reply.next?.length === 1
+  );
 }
 
 console.log(

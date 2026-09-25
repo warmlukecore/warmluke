@@ -28,10 +28,7 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
-const client = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
-);
+const client = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY);
 const { data: owner } = await client.auth.signInWithPassword({
   email: OWNER_EMAIL,
   password: process.env.OWNER_PASSWORD ?? "",
@@ -115,9 +112,7 @@ try {
     check(
       "and its rows",
       await heard("records", `project_id=eq.${projectId}`, async () => {
-        await client
-          .from("records")
-          .insert({ project_id: projectId, module_id: moduleId, data: {} });
+        await client.from("records").insert({ project_id: projectId, module_id: moduleId, data: {} });
       })
     );
   }

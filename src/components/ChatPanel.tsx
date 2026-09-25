@@ -31,7 +31,22 @@ import type {
   UiSchema,
 } from "@/lib/types";
 import { Icon } from "@/components/ui/Icon";
-import { ArrowUp, Bell, Check, ChevronRight, Copy, History, Pencil, Plug, Sparkles, Square, SquarePen, TriangleAlert, X, Zap } from "lucide-react";
+import {
+  ArrowUp,
+  Bell,
+  Check,
+  ChevronRight,
+  Copy,
+  History,
+  Pencil,
+  Plug,
+  Sparkles,
+  Square,
+  SquarePen,
+  TriangleAlert,
+  X,
+  Zap,
+} from "lucide-react";
 import { button } from "@/components/ui/controls";
 import { LukeMark } from "@/components/ui/LukeMark";
 import { LUKE_COPY } from "@/lib/luke-copy";
@@ -113,12 +128,20 @@ function TraceLine({ trace }: { trace: { steps: TurnEvent[]; ms: number } }) {
   return (
     <details className="group text-[11px] text-fg-faint">
       <summary className="cursor-pointer list-none select-none truncate hover:text-fg-muted">
-        <ChevronRight aria-hidden size={14} strokeWidth={2} className="inline shrink-0 align-[-2px] transition-transform duration-150 group-open:rotate-90" />
+        <ChevronRight
+          aria-hidden
+          size={14}
+          strokeWidth={2}
+          className="inline shrink-0 align-[-2px] transition-transform duration-150 group-open:rotate-90"
+        />
         {parts.join(" · ")} · {secs}s
       </summary>
       <ul className="mt-0.5 space-y-0.5 pl-3.5 text-fg-faint">
         {trace.steps.map((s, i) => (
-          <li key={i} className="flex items-center gap-1.5 truncate"><Check aria-hidden size={12} strokeWidth={2.25} className="shrink-0 text-tone-success-fg" />{stepWords(s)}</li>
+          <li key={i} className="flex items-center gap-1.5 truncate">
+            <Check aria-hidden size={12} strokeWidth={2.25} className="shrink-0 text-tone-success-fg" />
+            {stepWords(s)}
+          </li>
         ))}
       </ul>
     </details>
@@ -194,7 +217,6 @@ function stepWords(step: TurnEvent): string {
   }
 }
 
-
 function describeFeatures(f: NonNullable<AssistantPlan["features"]>): string[] {
   const out: string[] = [];
   if (f.search?.enabled) out.push(`Search${f.search.fields?.length ? ` over ${f.search.fields.join(", ")}` : ""}`);
@@ -205,7 +227,6 @@ function describeFeatures(f: NonNullable<AssistantPlan["features"]>): string[] {
   if (out.length === 0) out.push("No features — plain table");
   return out;
 }
-
 
 // ── Discovery cards ──────────────────────────────────────────
 // These are the human-in-the-loop steps that happen BEFORE anything
@@ -218,10 +239,7 @@ function describeFeatures(f: NonNullable<AssistantPlan["features"]>): string[] {
  * state, so every question read "(skipped)" even though the owner had
  * answered it. Read them back out of that reply instead.
  */
-function answersFromReply(
-  text: string,
-  questions: ClarifyQuestion[]
-): Record<string, string> {
+function answersFromReply(text: string, questions: ClarifyQuestion[]): Record<string, string> {
   const out: Record<string, string> = {};
   for (const block of text.split("\n\n")) {
     const at = block.indexOf("\n\u2192 ");
@@ -248,10 +266,7 @@ function ClarifyCard({
   onSubmit: (composed: string) => void;
 }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const prior = useMemo(
-    () => (reply ? answersFromReply(reply, questions) : {}),
-    [reply, questions]
-  );
+  const prior = useMemo(() => (reply ? answersFromReply(reply, questions) : {}), [reply, questions]);
   const shown = (id: string) => (answers[id] ?? "").trim() || (prior[id] ?? "");
   const answered = questions.filter((q) => (answers[q.id] ?? "").trim().length > 0);
 
@@ -383,9 +398,7 @@ function BlueprintCard({
   // Dropping an optional section takes with it anything that pointed at
   // it, so the owner can never approve a rule aimed at nothing.
   const droppedSlugs = new Set(
-    blueprint.plans
-      .map((p, i) => (dropped[i] ? p.newModule?.name : null))
-      .filter((n): n is string => !!n)
+    blueprint.plans.map((p, i) => (dropped[i] ? p.newModule?.name : null)).filter((n): n is string => !!n)
   );
   const referencesDropped = (p: AssistantPlan) => {
     const refs = [
@@ -398,9 +411,7 @@ function BlueprintCard({
             : null
       ),
     ];
-    return refs.some(
-      (r) => typeof r === "string" && r.startsWith("#") && droppedSlugs.has(r.slice(1))
-    );
+    return refs.some((r) => typeof r === "string" && r.startsWith("#") && droppedSlugs.has(r.slice(1)));
   };
 
   const chosen = blueprint.plans.filter((p, i) => !dropped[i] && !referencesDropped(p));
@@ -420,9 +431,7 @@ function BlueprintCard({
       )}
 
       <div className="space-y-1">
-        {hasOptional && !done && (
-          <div className="text-[11px] text-fg-faint">Untick anything you don&rsquo;t need.</div>
-        )}
+        {hasOptional && !done && <div className="text-[11px] text-fg-faint">Untick anything you don&rsquo;t need.</div>}
         {blueprint.plans.map((plan, i) => {
           const summary = describePlan(plan, modules, currentColumns, storeFacts);
           const off = dropped[i] || referencesDropped(plan);
@@ -449,7 +458,12 @@ function BlueprintCard({
                   }`}
                 >
                   {hasDetail ? (
-                    <ChevronRight aria-hidden size={13} strokeWidth={2} className={`transition-transform duration-150 ${open ? "rotate-90" : ""}`} />
+                    <ChevronRight
+                      aria-hidden
+                      size={13}
+                      strokeWidth={2}
+                      className={`transition-transform duration-150 ${open ? "rotate-90" : ""}`}
+                    />
                   ) : (
                     "·"
                   )}
@@ -463,7 +477,8 @@ function BlueprintCard({
                   {summary.title}
                   {hasDetail && !open && (
                     <span className="text-fg-faint">
-                      {" "}· {summary.lines.length} detail{summary.lines.length === 1 ? "" : "s"}
+                      {" "}
+                      · {summary.lines.length} detail{summary.lines.length === 1 ? "" : "s"}
                     </span>
                   )}
                 </button>
@@ -501,7 +516,12 @@ function BlueprintCard({
       {blueprint.workflow.length > 0 && (
         <details className="group text-[11px]">
           <summary className="cursor-pointer list-none select-none text-fg-faint hover:text-fg-muted">
-            <ChevronRight aria-hidden size={14} strokeWidth={2} className="inline shrink-0 align-[-2px] transition-transform duration-150 group-open:rotate-90" />
+            <ChevronRight
+              aria-hidden
+              size={14}
+              strokeWidth={2}
+              className="inline shrink-0 align-[-2px] transition-transform duration-150 group-open:rotate-90"
+            />
             How it flows
           </summary>
           <ol className="mt-1 space-y-1 pl-3.5">
@@ -644,9 +664,12 @@ export default function ChatPanel({
   const [typing, setTyping] = useState(false);
   const [strokes, setStrokes] = useState(0);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (typingTimer.current) clearTimeout(typingTimer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (typingTimer.current) clearTimeout(typingTimer.current);
+    },
+    []
+  );
   const [copied, setCopied] = useState(false);
   /** The bubble being corrected, and the words as they stand. */
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -730,9 +753,7 @@ export default function ChatPanel({
    * built without asking now, so a card that is here anyway is a card
    * that failed — and saying nothing made the setting look broken.
    */
-  const whyItIsAsking = (r: {
-    outcome: { applied?: unknown[]; errors?: string[] } | null;
-  }): string | null => {
+  const whyItIsAsking = (r: { outcome: { applied?: unknown[]; errors?: string[] } | null }): string | null => {
     const errors = r.outcome?.errors ?? [];
     if (errors.length === 0) return null;
     return `it was tried on its own and did not go in — ${errors.slice(0, 2).join("; ")}`;
@@ -838,8 +859,7 @@ export default function ChatPanel({
         targets: (a.targets ?? null) as Array<{ id: string }> | null,
         created_at: a.created_at as string,
         outcome: (a.outcome ?? null) as { done?: string[]; errors?: string[] } | null,
-        shop_domain:
-          (a.stores as { shop_domain?: string } | null)?.shop_domain ?? null,
+        shop_domain: (a.stores as { shop_domain?: string } | null)?.shop_domain ?? null,
       }))
     );
   }, [projectId]);
@@ -1204,11 +1224,12 @@ export default function ChatPanel({
         ids: list.map((c) => c.client_id),
         // The newest of them: one assistant, whichever registration
         // it happened to use last.
-        lastCall: list
-          .map((c) => c.last_call)
-          .filter((d): d is string => !!d)
-          .sort()
-          .at(-1) ?? null,
+        lastCall:
+          list
+            .map((c) => c.last_call)
+            .filter((d): d is string => !!d)
+            .sort()
+            .at(-1) ?? null,
         calls24h: list.reduce((n, c) => n + Number(c.calls_24h ?? 0), 0),
         count: list.length,
       }))
@@ -1256,22 +1277,22 @@ export default function ChatPanel({
             {/* Always there, so it is found in the same place whether or
                 not anything is waiting; an empty bell says so when opened. */}
             <button
-                onClick={() => {
-                  setBellOpen((o) => !o);
-                  setThreadsOpen(false);
-                }}
-                title="What your AI asked for"
-                aria-expanded={bellOpen}
-                aria-label={pendingCount > 0 ? `${pendingCount} want your attention` : "Nothing waiting on you"}
-                className={`relative inline-flex h-8 min-w-8 items-center justify-center gap-1 rounded-control px-1.5 transition-colors hover:bg-surface-hover hover:text-fg ${bellOpen ? "bg-surface-hover text-fg" : "text-fg-muted"}`}
-              >
-                <Bell aria-hidden size={16} strokeWidth={1.75} />
-                {pendingCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-signal-critical px-1 text-[9px] font-semibold text-white ring-2 ring-surface">
-                    {pendingCount}
-                  </span>
-                )}
-              </button>
+              onClick={() => {
+                setBellOpen((o) => !o);
+                setThreadsOpen(false);
+              }}
+              title="What your AI asked for"
+              aria-expanded={bellOpen}
+              aria-label={pendingCount > 0 ? `${pendingCount} want your attention` : "Nothing waiting on you"}
+              className={`relative inline-flex h-8 min-w-8 items-center justify-center gap-1 rounded-control px-1.5 transition-colors hover:bg-surface-hover hover:text-fg ${bellOpen ? "bg-surface-hover text-fg" : "text-fg-muted"}`}
+            >
+              <Bell aria-hidden size={16} strokeWidth={1.75} />
+              {pendingCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-signal-critical px-1 text-[9px] font-semibold text-white ring-2 ring-surface">
+                  {pendingCount}
+                </span>
+              )}
+            </button>
             {/* A fresh conversation, the one before kept under History.
                 Offered once there is one to leave: on an empty thread it
                 would do nothing. */}
@@ -1301,183 +1322,189 @@ export default function ChatPanel({
             )}
             {bellOpen && (
               <div className="pop thin-scroll absolute top-full right-0 z-50 mt-1.5 max-h-96 w-80 space-y-2 overflow-y-auto rounded-card bg-surface p-2 shadow-popover">
-        {requests.length === 0 && shopChanges.length === 0 && (
-          <div className="flex flex-col items-center px-4 py-6 text-center">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-canvas text-fg-faint">
-              <Bell aria-hidden size={16} strokeWidth={1.75} />
-            </span>
-            <div className="mt-2.5 text-[13px] font-medium text-fg">Nothing waiting on you</div>
-            <p className="mt-1 text-xs leading-relaxed text-fg-muted">
-              When your own AI asks for a section or a change to your shop, it shows up here for your yes.
-            </p>
-          </div>
-        )}
-        {/* Changes to the shop, above the designs. Not a different
+                {requests.length === 0 && shopChanges.length === 0 && (
+                  <div className="flex flex-col items-center px-4 py-6 text-center">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-canvas text-fg-faint">
+                      <Bell aria-hidden size={16} strokeWidth={1.75} />
+                    </span>
+                    <div className="mt-2.5 text-[13px] font-medium text-fg">Nothing waiting on you</div>
+                    <p className="mt-1 text-xs leading-relaxed text-fg-muted">
+                      When your own AI asks for a section or a change to your shop, it shows up here for your yes.
+                    </p>
+                  </div>
+                )}
+                {/* Changes to the shop, above the designs. Not a different
             colour — a different first line. The words are what say
             this one leaves the building, and a second palette would
             only be one more thing to learn. */}
-        {shopChanges.map((a) => {
-          const spec = actionSpec(a.action);
-          const waiting = a.status === "pending";
-          const going = a.status === "approved" || a.status === "running";
-          const busy = sending === a.id;
-          const touched = a.targets?.length ?? 0;
-          // Fails closed. An entry that asks for a word to be typed
-          // has nowhere here to type it, and running it anyway would
-          // skip the whole reason it asked.
-          const canRun = waiting && !!spec && spec.confirm === "list";
-          return (
-            <div
-              key={a.id}
-              className={`rounded-xl border px-2.5 py-2 ${
-                waiting || going ? "border-tone-attention bg-tone-attention/25" : "border-line bg-surface-subdued"
-              }`}
-            >
-              <div className="text-[10px] font-semibold tracking-widest text-tone-attention-fg">
-                IN YOUR SHOP{a.shop_domain ? ` · ${a.shop_domain}` : ""}
-              </div>
-              <div className="mt-1 text-[12px] leading-relaxed text-fg">{a.summary}</div>
-              <div className="mt-1 text-[10px] text-fg-muted">
-                {touched > 0 ? `${touched} ${touched === 1 ? "thing" : "things"}` : "nothing named"}
-                {spec ? (spec.undo ? " · can be undone" : " · cannot be undone") : " · not recognised"}
-              </div>
-              {spec?.undoNote && !spec.undo && (
-                <div className="mt-1 text-[10px] leading-relaxed text-fg-muted">{spec.undoNote}</div>
-              )}
-              {!spec && (
-                <div className="mt-1 text-[10px] leading-relaxed text-tone-critical-fg">
-                  Warmluke does not recognise this change, so it cannot be done from here.
-                </div>
-              )}
-              {spec && waiting && spec.confirm !== "list" && (
-                <div className="mt-1 text-[10px] leading-relaxed text-tone-critical-fg">
-                  This one has to be confirmed in a way this panel does not offer yet.
-                </div>
-              )}
-              {going && <div className="mt-1 text-[10px] text-tone-attention-fg">Going out to the shop…</div>}
-              {(a.status === "done" || a.status === "partly_done" || a.status === "failed") && (
-                <div className="mt-1 text-[10px] leading-relaxed text-fg-muted">
-                  {a.status === "done"
-                    ? `Done · ${(a.outcome?.done ?? []).length} changed`
-                    : a.status === "partly_done"
-                      ? `Partly done · ${(a.outcome?.done ?? []).length} changed, ${(a.outcome?.errors ?? []).length} did not`
-                      : "Did not happen"}
-                  {(a.outcome?.errors ?? []).length > 0 && (
-                    <div className="mt-1 text-tone-critical-fg">{(a.outcome?.errors ?? [])[0]}</div>
-                  )}
-                </div>
-              )}
-              {waiting && (
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                  {canRun && (
-                    <button
-                      onClick={() => sendShopChange(a.id, "run")}
-                      disabled={busy}
-                      className="rounded-lg bg-primary px-2 py-1 text-[10px] font-medium text-on-primary hover:bg-primary-hover disabled:opacity-40"
+                {shopChanges.map((a) => {
+                  const spec = actionSpec(a.action);
+                  const waiting = a.status === "pending";
+                  const going = a.status === "approved" || a.status === "running";
+                  const busy = sending === a.id;
+                  const touched = a.targets?.length ?? 0;
+                  // Fails closed. An entry that asks for a word to be typed
+                  // has nowhere here to type it, and running it anyway would
+                  // skip the whole reason it asked.
+                  const canRun = waiting && !!spec && spec.confirm === "list";
+                  return (
+                    <div
+                      key={a.id}
+                      className={`rounded-xl border px-2.5 py-2 ${
+                        waiting || going
+                          ? "border-tone-attention bg-tone-attention/25"
+                          : "border-line bg-surface-subdued"
+                      }`}
                     >
-                      {busy ? "Sending…" : WAITING_BUTTONS.runStoreAction}
-                    </button>
-                  )}
-                  <button
-                    onClick={() => sendShopChange(a.id, "dismiss")}
-                    disabled={busy}
-                    className="ml-auto text-[10px] text-tone-attention-fg hover:underline disabled:opacity-40"
-                  >
-                    Not now
-                  </button>
-                </div>
-              )}
-            </div>
-          );
-        })}
-        {requests.map((r) => {
-          const done = r.status === "built";
-          const half = r.status === "partly_built";
-          // A finished thing does not belong in the live area at full
-          // height. It sat there for a week, taller than the chat,
-          // describing something the merchant dealt with yesterday —
-          // and naming a section they may since have deleted.
-          // A half-built one is never collapsed away. It is not a
-          // finished thing being kept for the record; it is a section
-          // sitting there with part of what was asked for, and the
-          // only screen that can say so.
-          if (half) {
-            const missed = r.outcome?.errors ?? [];
-            return (
-              <div
-                key={r.id}
-                className="space-y-1 rounded-lg border border-tone-attention/70 bg-tone-attention/25 px-2.5 py-2"
-              >
-                <div className="text-[11px] font-medium text-tone-attention-fg">
-                  <TriangleAlert aria-hidden size={13} className="mr-1 inline align-[-2px]" />Only part of this was built
-                </div>
-                <div className="text-[11px] text-fg-muted">{r.request}</div>
-                {missed.length > 0 && (
-                  <ul className="list-disc space-y-0.5 pl-4 text-[10px] text-tone-attention-fg">
-                    {missed.slice(0, 3).map((e, i) => (
-                      <li key={i}>{e}</li>
-                    ))}
-                  </ul>
-                )}
-                <div className="text-[10px] text-fg-muted">
-                  Ask for the missing part again — this one cannot be finished.
-                </div>
-                <button
-                  onClick={() => dismissRequest(r.id)}
-                  className="text-[10px] text-fg-muted hover:underline"
-                >
-                  Dismiss
-                </button>
-              </div>
-            );
-          }
+                      <div className="text-[10px] font-semibold tracking-widest text-tone-attention-fg">
+                        IN YOUR SHOP{a.shop_domain ? ` · ${a.shop_domain}` : ""}
+                      </div>
+                      <div className="mt-1 text-[12px] leading-relaxed text-fg">{a.summary}</div>
+                      <div className="mt-1 text-[10px] text-fg-muted">
+                        {touched > 0 ? `${touched} ${touched === 1 ? "thing" : "things"}` : "nothing named"}
+                        {spec ? (spec.undo ? " · can be undone" : " · cannot be undone") : " · not recognised"}
+                      </div>
+                      {spec?.undoNote && !spec.undo && (
+                        <div className="mt-1 text-[10px] leading-relaxed text-fg-muted">{spec.undoNote}</div>
+                      )}
+                      {!spec && (
+                        <div className="mt-1 text-[10px] leading-relaxed text-tone-critical-fg">
+                          Warmluke does not recognise this change, so it cannot be done from here.
+                        </div>
+                      )}
+                      {spec && waiting && spec.confirm !== "list" && (
+                        <div className="mt-1 text-[10px] leading-relaxed text-tone-critical-fg">
+                          This one has to be confirmed in a way this panel does not offer yet.
+                        </div>
+                      )}
+                      {going && <div className="mt-1 text-[10px] text-tone-attention-fg">Going out to the shop…</div>}
+                      {(a.status === "done" || a.status === "partly_done" || a.status === "failed") && (
+                        <div className="mt-1 text-[10px] leading-relaxed text-fg-muted">
+                          {a.status === "done"
+                            ? `Done · ${(a.outcome?.done ?? []).length} changed`
+                            : a.status === "partly_done"
+                              ? `Partly done · ${(a.outcome?.done ?? []).length} changed, ${(a.outcome?.errors ?? []).length} did not`
+                              : "Did not happen"}
+                          {(a.outcome?.errors ?? []).length > 0 && (
+                            <div className="mt-1 text-tone-critical-fg">{(a.outcome?.errors ?? [])[0]}</div>
+                          )}
+                        </div>
+                      )}
+                      {waiting && (
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          {canRun && (
+                            <button
+                              onClick={() => sendShopChange(a.id, "run")}
+                              disabled={busy}
+                              className="rounded-lg bg-primary px-2 py-1 text-[10px] font-medium text-on-primary hover:bg-primary-hover disabled:opacity-40"
+                            >
+                              {busy ? "Sending…" : WAITING_BUTTONS.runStoreAction}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => sendShopChange(a.id, "dismiss")}
+                            disabled={busy}
+                            className="ml-auto text-[10px] text-tone-attention-fg hover:underline disabled:opacity-40"
+                          >
+                            Not now
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {requests.map((r) => {
+                  const done = r.status === "built";
+                  const half = r.status === "partly_built";
+                  // A finished thing does not belong in the live area at full
+                  // height. It sat there for a week, taller than the chat,
+                  // describing something the merchant dealt with yesterday —
+                  // and naming a section they may since have deleted.
+                  // A half-built one is never collapsed away. It is not a
+                  // finished thing being kept for the record; it is a section
+                  // sitting there with part of what was asked for, and the
+                  // only screen that can say so.
+                  if (half) {
+                    const missed = r.outcome?.errors ?? [];
+                    return (
+                      <div
+                        key={r.id}
+                        className="space-y-1 rounded-lg border border-tone-attention/70 bg-tone-attention/25 px-2.5 py-2"
+                      >
+                        <div className="text-[11px] font-medium text-tone-attention-fg">
+                          <TriangleAlert aria-hidden size={13} className="mr-1 inline align-[-2px]" />
+                          Only part of this was built
+                        </div>
+                        <div className="text-[11px] text-fg-muted">{r.request}</div>
+                        {missed.length > 0 && (
+                          <ul className="list-disc space-y-0.5 pl-4 text-[10px] text-tone-attention-fg">
+                            {missed.slice(0, 3).map((e, i) => (
+                              <li key={i}>{e}</li>
+                            ))}
+                          </ul>
+                        )}
+                        <div className="text-[10px] text-fg-muted">
+                          Ask for the missing part again — this one cannot be finished.
+                        </div>
+                        <button
+                          onClick={() => dismissRequest(r.id)}
+                          className="text-[10px] text-fg-muted hover:underline"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    );
+                  }
 
-          if (done && !openBuilt[r.id]) {
-            return (
-              <div
-                key={r.id}
-                className="flex items-center gap-2 rounded-lg border border-line bg-surface-subdued px-2.5 py-1.5"
-              >
-                <span className="min-w-0 flex-1 truncate text-[10px] text-fg-faint">
-                  Built by your AI
-                  {r.built_at ? ` · ${new Date(r.built_at).toLocaleDateString()}` : ""} ·{" "}
-                  {r.request}
-                </span>
-                <button
-                  onClick={() => setOpenBuilt((p) => ({ ...p, [r.id]: true }))}
-                  className="shrink-0 text-[10px] text-fg-muted hover:underline"
-                >
-                  Show
-                </button>
-                <button
-                  onClick={() => dismissRequest(r.id)}
-                  aria-label="Hide this"
-                  className="shrink-0 text-[11px] text-fg-faint hover:text-fg-muted"
-                >
-                  <X aria-hidden size={14} strokeWidth={2} />
-                </button>
-              </div>
-            );
-          }
-          return (
-            <div
-              key={r.id}
-              className={`rounded-xl border px-3 py-2.5 ${
-                done ? "border-line bg-surface-subdued" : "border-tone-attention/70 bg-tone-attention/25"
-              }`}
-            >
-              <div
-                className={`text-[10px] font-semibold tracking-widest uppercase ${
-                  done ? "text-fg-faint" : "text-tone-attention-fg"
-                }`}
-              >
-                {done
-                  ? `Built by your AI${r.built_at ? ` · ${new Date(r.built_at).toLocaleString()}` : ""}`
-                  : "Asked for by your AI"}
-              </div>
-              <div className="mt-2">
-              <p className={`text-[11px] leading-relaxed font-medium ${done ? "text-fg" : "text-tone-attention-fg"}`}>{r.request}</p>
-              {/* What changes their mind stays out in the open: the
+                  if (done && !openBuilt[r.id]) {
+                    return (
+                      <div
+                        key={r.id}
+                        className="flex items-center gap-2 rounded-lg border border-line bg-surface-subdued px-2.5 py-1.5"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-[10px] text-fg-faint">
+                          Built by your AI
+                          {r.built_at ? ` · ${new Date(r.built_at).toLocaleDateString()}` : ""} · {r.request}
+                        </span>
+                        <button
+                          onClick={() => setOpenBuilt((p) => ({ ...p, [r.id]: true }))}
+                          className="shrink-0 text-[10px] text-fg-muted hover:underline"
+                        >
+                          Show
+                        </button>
+                        <button
+                          onClick={() => dismissRequest(r.id)}
+                          aria-label="Hide this"
+                          className="shrink-0 text-[11px] text-fg-faint hover:text-fg-muted"
+                        >
+                          <X aria-hidden size={14} strokeWidth={2} />
+                        </button>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div
+                      key={r.id}
+                      className={`rounded-xl border px-3 py-2.5 ${
+                        done ? "border-line bg-surface-subdued" : "border-tone-attention/70 bg-tone-attention/25"
+                      }`}
+                    >
+                      <div
+                        className={`text-[10px] font-semibold tracking-widest uppercase ${
+                          done ? "text-fg-faint" : "text-tone-attention-fg"
+                        }`}
+                      >
+                        {done
+                          ? `Built by your AI${r.built_at ? ` · ${new Date(r.built_at).toLocaleString()}` : ""}`
+                          : "Asked for by your AI"}
+                      </div>
+                      <div className="mt-2">
+                        <p
+                          className={`text-[11px] leading-relaxed font-medium ${done ? "text-fg" : "text-tone-attention-fg"}`}
+                        >
+                          {r.request}
+                        </p>
+                        {/* What changes their mind stays out in the open: the
                   warning, and what they asked for that this does not
                   do. The field-by-field detail folds away — it is how
                   the thing is built, not whether they want it.
@@ -1485,184 +1512,178 @@ export default function ChatPanel({
                   Rendered from the plans, the same source the
                   sentences their AI read out were generated from, so
                   the two cannot drift. */}
-              {r.plans?.length ? (
-                <div className="mt-1.5 space-y-1.5">
-                  {r.plans.map((plan, i) => {
-                    const d = describePlan(plan, modules, undefined, storeFacts);
-                    return (
-                      <div key={i}>
-                        <div
-                          className={`text-[11px] font-semibold ${done ? "text-fg" : "text-tone-attention-fg"}`}
-                        >
-                          {d.title}
-                        </div>
-                        {d.warnings?.map((w, k) => (
-                          <div
-                            key={k}
-                            className="mt-1 rounded border border-tone-attention bg-tone-attention/40 px-2 py-1.5 text-[11px] leading-relaxed text-tone-attention-fg"
-                          >
-                            {w}
-                          </div>
-                        ))}
-                        {d.lines.length > 0 && (
-                          <details className="mt-1">
-                            <summary
-                              className={`cursor-pointer list-none text-[10px] hover:underline ${
-                                done ? "text-fg-muted" : "text-tone-attention-fg"
-                              }`}
-                            >
-                              {done ? "What was built" : "Show details"}
-                            </summary>
-                            <ul
-                              className={`mt-1 space-y-0.5 text-[11px] leading-relaxed ${
-                                done ? "text-fg-muted" : "text-tone-attention-fg/90"
-                              }`}
-                            >
-                              {d.lines.map((l, k) => (
-                                <li key={k}>· {l}</li>
-                              ))}
-                            </ul>
-                          </details>
-                        )}
-                      </div>
-                    );
-                  })}
-                  {r.unmet?.length ? (
-                    <div
-                      className={`text-[11px] leading-relaxed ${done ? "text-fg-muted" : "text-tone-attention-fg"}`}
-                    >
-                      <span className="font-semibold">Not covered:</span>{" "}
-                      {r.unmet.join(" · ")}
-                    </div>
-                  ) : null}
-                  {/* The setting is on and this is asking anyway. Without
+                        {r.plans?.length ? (
+                          <div className="mt-1.5 space-y-1.5">
+                            {r.plans.map((plan, i) => {
+                              const d = describePlan(plan, modules, undefined, storeFacts);
+                              return (
+                                <div key={i}>
+                                  <div
+                                    className={`text-[11px] font-semibold ${done ? "text-fg" : "text-tone-attention-fg"}`}
+                                  >
+                                    {d.title}
+                                  </div>
+                                  {d.warnings?.map((w, k) => (
+                                    <div
+                                      key={k}
+                                      className="mt-1 rounded border border-tone-attention bg-tone-attention/40 px-2 py-1.5 text-[11px] leading-relaxed text-tone-attention-fg"
+                                    >
+                                      {w}
+                                    </div>
+                                  ))}
+                                  {d.lines.length > 0 && (
+                                    <details className="mt-1">
+                                      <summary
+                                        className={`cursor-pointer list-none text-[10px] hover:underline ${
+                                          done ? "text-fg-muted" : "text-tone-attention-fg"
+                                        }`}
+                                      >
+                                        {done ? "What was built" : "Show details"}
+                                      </summary>
+                                      <ul
+                                        className={`mt-1 space-y-0.5 text-[11px] leading-relaxed ${
+                                          done ? "text-fg-muted" : "text-tone-attention-fg/90"
+                                        }`}
+                                      >
+                                        {d.lines.map((l, k) => (
+                                          <li key={k}>· {l}</li>
+                                        ))}
+                                      </ul>
+                                    </details>
+                                  )}
+                                </div>
+                              );
+                            })}
+                            {r.unmet?.length ? (
+                              <div
+                                className={`text-[11px] leading-relaxed ${done ? "text-fg-muted" : "text-tone-attention-fg"}`}
+                              >
+                                <span className="font-semibold">Not covered:</span> {r.unmet.join(" · ")}
+                              </div>
+                            ) : null}
+                            {/* The setting is on and this is asking anyway. Without
                       a reason here the card reads as the setting not
                       working — which is exactly what it looked like. */}
-                  {!done && (r.outcome?.errors?.length ?? 0) > 0 ? (
-                    // Tried on its own and did not go in. The errors
-                    // are the design's, so Luke can correct the design
-                    // — and the correction waits for a yes like any
-                    // other change.
-                    <ErrorNote
-                      compact
-                      onFix={onFix}
-                      error={engineError(
-                        autoBuild
-                          ? "It was tried on its own and did not go in."
-                          : "This could not be built as it is.",
-                        r.outcome!.errors!,
-                        fixPrompt({
-                          what: r.request,
-                          tried: r.plans,
-                          errors: r.outcome!.errors!,
-                        })
-                      )}
-                    />
-                  ) : !done && autoBuild && whyItIsAsking(r) ? (
-                    <div className="rounded-lg border border-tone-attention bg-tone-attention/40 px-2 py-1.5 text-[11px] leading-relaxed text-tone-attention-fg">
-                      <span className="font-semibold">Waiting for you:</span>{" "}
-                      {whyItIsAsking(r)}
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                // A request made before designs were attached, or one
-                // whose design could not be rebuilt. The text it was
-                // stored with is all there is.
-                r.summary && (
-                  <div className="mt-1.5 rounded-lg bg-surface/70 px-2.5 py-2 text-[11px] leading-relaxed whitespace-pre-wrap text-tone-attention-fg">
-                    {r.summary}
-                  </div>
-                )
-              )}
-              {!done && (
-              // Wrapping, because the confirm step puts five things on
-              // this row — a name to type, Remove it, Cancel, Change
-              // it first, Dismiss — and the panel is 300px at its
-              // narrowest. Without it the row ran off the side and
-              // took a horizontal scrollbar with it, so the button
-              // that says "Change it first" sat outside the card.
-              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                {r.plans?.length ? (
-                  removalsIn(r.plans).length ? (
-                    confirmFor === r.id ? (
-                      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                        <input
-                          autoFocus
-                          value={confirmText}
-                          onChange={(e) => setConfirmText(e.target.value)}
-                          placeholder={removalsIn(r.plans).join(", ")}
-                          aria-label={`Type ${removalsIn(r.plans).join(", ")} to confirm removing it`}
-                          // Shrinks rather than pushing the row wide:
-                          // the name being typed is short, and the
-                          // buttons beside it are what must stay
-                          // reachable.
-                          className="w-36 min-w-0 max-w-full flex-shrink rounded-lg border border-tone-attention px-2 py-1 text-[10px] text-tone-attention-fg outline-none placeholder:text-fg-faint"
-                        />
-                        <button
-                          onClick={() => buildRequest(r)}
-                          disabled={busy || confirmText.trim() !== removalsIn(r.plans).join(", ")}
-                          className="rounded-lg bg-critical px-2 py-1 text-[10px] font-medium text-white hover:bg-critical-hover disabled:opacity-40"
-                        >
-                          {WAITING_BUTTONS.confirmRemoval}
-                        </button>
-                        <button
-                          onClick={() => {
-                            setConfirmFor(null);
-                            setConfirmText("");
-                          }}
-                          className="text-[10px] text-tone-attention-fg hover:underline"
-                        >
-                          Cancel
-                        </button>
+                            {!done && (r.outcome?.errors?.length ?? 0) > 0 ? (
+                              // Tried on its own and did not go in. The errors
+                              // are the design's, so Luke can correct the design
+                              // — and the correction waits for a yes like any
+                              // other change.
+                              <ErrorNote
+                                compact
+                                onFix={onFix}
+                                error={engineError(
+                                  autoBuild
+                                    ? "It was tried on its own and did not go in."
+                                    : "This could not be built as it is.",
+                                  r.outcome!.errors!,
+                                  fixPrompt({
+                                    what: r.request,
+                                    tried: r.plans,
+                                    errors: r.outcome!.errors!,
+                                  })
+                                )}
+                              />
+                            ) : !done && autoBuild && whyItIsAsking(r) ? (
+                              <div className="rounded-lg border border-tone-attention bg-tone-attention/40 px-2 py-1.5 text-[11px] leading-relaxed text-tone-attention-fg">
+                                <span className="font-semibold">Waiting for you:</span> {whyItIsAsking(r)}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : (
+                          // A request made before designs were attached, or one
+                          // whose design could not be rebuilt. The text it was
+                          // stored with is all there is.
+                          r.summary && (
+                            <div className="mt-1.5 rounded-lg bg-surface/70 px-2.5 py-2 text-[11px] leading-relaxed whitespace-pre-wrap text-tone-attention-fg">
+                              {r.summary}
+                            </div>
+                          )
+                        )}
+                        {!done && (
+                          // Wrapping, because the confirm step puts five things on
+                          // this row — a name to type, Remove it, Cancel, Change
+                          // it first, Dismiss — and the panel is 300px at its
+                          // narrowest. Without it the row ran off the side and
+                          // took a horizontal scrollbar with it, so the button
+                          // that says "Change it first" sat outside the card.
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            {r.plans?.length ? (
+                              removalsIn(r.plans).length ? (
+                                confirmFor === r.id ? (
+                                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                    <input
+                                      autoFocus
+                                      value={confirmText}
+                                      onChange={(e) => setConfirmText(e.target.value)}
+                                      placeholder={removalsIn(r.plans).join(", ")}
+                                      aria-label={`Type ${removalsIn(r.plans).join(", ")} to confirm removing it`}
+                                      // Shrinks rather than pushing the row wide:
+                                      // the name being typed is short, and the
+                                      // buttons beside it are what must stay
+                                      // reachable.
+                                      className="w-36 min-w-0 max-w-full flex-shrink rounded-lg border border-tone-attention px-2 py-1 text-[10px] text-tone-attention-fg outline-none placeholder:text-fg-faint"
+                                    />
+                                    <button
+                                      onClick={() => buildRequest(r)}
+                                      disabled={busy || confirmText.trim() !== removalsIn(r.plans).join(", ")}
+                                      className="rounded-lg bg-critical px-2 py-1 text-[10px] font-medium text-white hover:bg-critical-hover disabled:opacity-40"
+                                    >
+                                      {WAITING_BUTTONS.confirmRemoval}
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        setConfirmFor(null);
+                                        setConfirmText("");
+                                      }}
+                                      className="text-[10px] text-tone-attention-fg hover:underline"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => {
+                                      setConfirmFor(r.id);
+                                      setConfirmText("");
+                                    }}
+                                    disabled={busy}
+                                    className="rounded-lg border border-tone-critical px-2 py-1 text-[10px] font-medium text-tone-critical-fg hover:bg-tone-critical/40 disabled:opacity-40"
+                                  >
+                                    {WAITING_BUTTONS.openRemoval}
+                                  </button>
+                                )
+                              ) : (
+                                <button
+                                  onClick={() => buildRequest(r)}
+                                  disabled={busy}
+                                  className="rounded-lg bg-primary px-2 py-1 text-[10px] font-medium text-on-primary hover:bg-primary-hover disabled:opacity-40"
+                                >
+                                  {WAITING_BUTTONS.build}
+                                </button>
+                              )
+                            ) : null}
+                            {features.chat && (
+                              <button
+                                onClick={() => openRequest(r)}
+                                disabled={opening !== null}
+                                className="rounded-lg border border-tone-attention px-2 py-1 text-[10px] font-medium text-tone-attention-fg hover:bg-tone-attention/40 disabled:opacity-50"
+                              >
+                                {opening === r.id ? "Designing…" : r.plans?.length ? "Change it first" : "Design it"}
+                              </button>
+                            )}
+                            <button
+                              onClick={() => dismissRequest(r.id)}
+                              className="ml-auto text-[10px] text-tone-attention-fg hover:underline"
+                            >
+                              Dismiss
+                            </button>
+                          </div>
+                        )}
                       </div>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          setConfirmFor(r.id);
-                          setConfirmText("");
-                        }}
-                        disabled={busy}
-                        className="rounded-lg border border-tone-critical px-2 py-1 text-[10px] font-medium text-tone-critical-fg hover:bg-tone-critical/40 disabled:opacity-40"
-                      >
-                        {WAITING_BUTTONS.openRemoval}
-                      </button>
-                    )
-                  ) : (
-                    <button
-                      onClick={() => buildRequest(r)}
-                      disabled={busy}
-                      className="rounded-lg bg-primary px-2 py-1 text-[10px] font-medium text-on-primary hover:bg-primary-hover disabled:opacity-40"
-                    >
-                      {WAITING_BUTTONS.build}
-                    </button>
-                  )
-                ) : null}
-                {features.chat && (
-                  <button
-                    onClick={() => openRequest(r)}
-                    disabled={opening !== null}
-                    className="rounded-lg border border-tone-attention px-2 py-1 text-[10px] font-medium text-tone-attention-fg hover:bg-tone-attention/40 disabled:opacity-50"
-                  >
-                    {opening === r.id
-                      ? "Designing…"
-                      : r.plans?.length
-                        ? "Change it first"
-                        : "Design it"}
-                  </button>
-                )}
-                <button
-                  onClick={() => dismissRequest(r.id)}
-                  className="ml-auto text-[10px] text-tone-attention-fg hover:underline"
-                >
-                  Dismiss
-                </button>
-              </div>
-              )}
-            </div>
-          </div>
-          );
-        })}
+                    </div>
+                  );
+                })}
               </div>
             )}
             {threadsOpen && (
@@ -1687,9 +1708,7 @@ export default function ChatPanel({
                       }`}
                     >
                       <div className="truncate font-medium">{t.title ?? "Untitled"}</div>
-                      <div className="text-[10px] text-fg-faint">
-                        {new Date(t.updated_at).toLocaleString()}
-                      </div>
+                      <div className="text-[10px] text-fg-faint">{new Date(t.updated_at).toLocaleString()}</div>
                     </button>
                     {/* Threads accumulate — six of them called "hello"
                         before there was any way to be rid of one. */}
@@ -1704,10 +1723,7 @@ export default function ChatPanel({
                         >
                           Delete
                         </button>
-                        <button
-                          onClick={() => setConfirmThread(null)}
-                          className="text-fg-faint hover:underline"
-                        >
+                        <button onClick={() => setConfirmThread(null)} className="text-fg-faint hover:underline">
                           Keep
                         </button>
                       </span>
@@ -1736,10 +1752,7 @@ export default function ChatPanel({
       </div>
 
       {/* Messages */}
-      <div
-        ref={listRef}
-        className="flex-1 space-y-4 overflow-y-auto px-4 py-4 thin-scroll"
-      >
+      <div ref={listRef} className="flex-1 space-y-4 overflow-y-auto px-4 py-4 thin-scroll">
         {/* Four invented problems used to sit here — a double-booked
             slot, parts coming off a job. They were written to show what
             the engine can do, and to a shop selling phone cases they
@@ -1791,10 +1804,7 @@ export default function ChatPanel({
                       className="w-full resize-none bg-transparent text-sm break-words text-fg outline-none"
                     />
                     <div className="mt-1 flex items-center justify-end gap-3 text-[11px]">
-                      <button
-                        onClick={() => setEditingId(null)}
-                        className="text-fg-muted hover:text-fg"
-                      >
+                      <button onClick={() => setEditingId(null)} className="text-fg-muted hover:text-fg">
                         Cancel
                       </button>
                       <button
@@ -1972,8 +1982,8 @@ export default function ChatPanel({
                 className="rounded-xl border border-line bg-surface-subdued px-3 py-2 text-xs text-fg-muted"
               >
                 <span className="font-medium text-fg-muted">Out of date</span> — “
-                {plan.newModule?.nav_label ?? plan.explanation}” already changed since this was
-                proposed, so there is nothing left to apply.
+                {plan.newModule?.nav_label ?? plan.explanation}” already changed since this was proposed, so there is
+                nothing left to apply.
               </div>
             );
           }
@@ -2046,7 +2056,8 @@ export default function ChatPanel({
                   <div className="space-y-1.5 rounded-lg bg-surface-subdued px-3 py-2 text-xs text-fg-muted">
                     {plan.moduleUpdate.nav_label && (
                       <div>
-                        <Pencil aria-hidden size={12} className="mr-1 inline align-[-1px]" />Rename: <b>{targetModule?.nav_label}</b> → <b>{plan.moduleUpdate.nav_label}</b>
+                        <Pencil aria-hidden size={12} className="mr-1 inline align-[-1px]" />
+                        Rename: <b>{targetModule?.nav_label}</b> → <b>{plan.moduleUpdate.nav_label}</b>
                       </div>
                     )}
                     {plan.moduleUpdate.icon && (
@@ -2064,7 +2075,8 @@ export default function ChatPanel({
                 {plan.changeType === "MODULE_DELETE" && targetModule && (
                   <div className="rounded-lg border border-tone-critical/70 bg-tone-critical/40 px-3 py-2 text-xs text-tone-critical-fg">
                     <div className="font-semibold">
-                      <TriangleAlert aria-hidden size={13} className="mr-1 inline align-[-2px]" />Delete “{targetModule.nav_label}” and all its records?
+                      <TriangleAlert aria-hidden size={13} className="mr-1 inline align-[-2px]" />
+                      Delete “{targetModule.nav_label}” and all its records?
                     </div>
                     <div className="mt-1">
                       Type <b>“{targetModule.nav_label}”</b> below to confirm.
@@ -2093,7 +2105,8 @@ export default function ChatPanel({
                 {plan.changeType === "AUTOMATION_ADD" && plan.automation && (
                   <div className="rounded-lg border border-tone-success bg-tone-success/30 px-3 py-2.5">
                     <div className="text-[11px] font-semibold text-tone-success-fg">
-                      <Zap aria-hidden size={12} className="mr-1 inline align-[-1px]" />{plan.automation.name}
+                      <Zap aria-hidden size={12} className="mr-1 inline align-[-1px]" />
+                      {plan.automation.name}
                     </div>
                     <ul className="mt-1 space-y-0.5">
                       {describeAutomation(plan.automation, modules).map((line, i) => (
@@ -2146,9 +2159,7 @@ export default function ChatPanel({
                   <div className="space-y-2">
                     <input
                       value={deleteConfirm[m.id] ?? ""}
-                      onChange={(e) =>
-                        setDeleteConfirm((prev) => ({ ...prev, [m.id]: e.target.value }))
-                      }
+                      onChange={(e) => setDeleteConfirm((prev) => ({ ...prev, [m.id]: e.target.value }))}
                       placeholder={`Type "${targetModule.nav_label}" to enable deletion`}
                       className="w-full rounded-lg border border-tone-critical/70 px-3 py-1.5 text-xs outline-none focus:border-tone-critical focus:ring-2 focus:ring-tone-critical/60"
                     />
@@ -2157,8 +2168,7 @@ export default function ChatPanel({
                         onClick={() => apply(plan, m.id)}
                         disabled={
                           isPending ||
-                          (deleteConfirm[m.id] ?? "").trim().toLowerCase() !==
-                            targetModule.nav_label.toLowerCase()
+                          (deleteConfirm[m.id] ?? "").trim().toLowerCase() !== targetModule.nav_label.toLowerCase()
                         }
                         className="flex-1 rounded-lg bg-critical px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-critical-hover disabled:opacity-40"
                       >
@@ -2217,13 +2227,21 @@ export default function ChatPanel({
               </span>
               {stepSeconds >= 2 && <span className="shrink-0 tabular-nums text-fg-faint">{stepSeconds}s</span>}
               {steps.length > 1 && (
-                <ChevronRight aria-hidden size={13} strokeWidth={2} className={`shrink-0 text-fg-faint transition-transform duration-150 ${stepsOpen ? "rotate-90" : ""}`} />
+                <ChevronRight
+                  aria-hidden
+                  size={13}
+                  strokeWidth={2}
+                  className={`shrink-0 text-fg-faint transition-transform duration-150 ${stepsOpen ? "rotate-90" : ""}`}
+                />
               )}
             </button>
             {stepsOpen && steps.length > 1 && (
               <ul className="mt-1 space-y-0.5 pl-3 text-fg-faint">
                 {steps.slice(0, -1).map((s, i) => (
-                  <li key={i} className="flex items-center gap-1.5 truncate"><Check aria-hidden size={12} strokeWidth={2.25} className="shrink-0 text-tone-success-fg" />{stepWords(s)}</li>
+                  <li key={i} className="flex items-center gap-1.5 truncate">
+                    <Check aria-hidden size={12} strokeWidth={2.25} className="shrink-0 text-tone-success-fg" />
+                    {stepWords(s)}
+                  </li>
                 ))}
               </ul>
             )}
@@ -2329,10 +2347,15 @@ export default function ChatPanel({
                 it can be. */}
             <span aria-hidden className="flex -space-x-1.5">
               {(() => {
-                const theirs = [...new Set(assistants.map((c) => assistantLogo(c.name)).filter((l): l is string => !!l))];
+                const theirs = [
+                  ...new Set(assistants.map((c) => assistantLogo(c.name)).filter((l): l is string => !!l)),
+                ];
                 return theirs.length ? theirs : ["/logos/claude.svg", "/logos/openai.svg"];
               })().map((src) => (
-                <span key={src} className="flex h-6 w-6 items-center justify-center rounded-full border border-line bg-surface shadow-card">
+                <span
+                  key={src}
+                  className="flex h-6 w-6 items-center justify-center rounded-full border border-line bg-surface shadow-card"
+                >
                   {/* eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise */}
                   <img src={src} alt="" width={13} height={13} className="h-3.5 w-3.5 object-contain" />
                 </span>
@@ -2359,8 +2382,8 @@ export default function ChatPanel({
 
           <div className="mt-2.5 space-y-2.5">
             <p className="text-xs leading-relaxed text-fg-muted">
-              Add Warmluke as a custom connector with this address. It reads your store, and
-              anything it wants to build comes back here for you to approve.
+              Add Warmluke as a custom connector with this address. It reads your store, and anything it wants to build
+              comes back here for you to approve.
             </p>
             <div className="flex items-center gap-1 rounded-control border border-line bg-surface-subdued py-1 pr-1 pl-2.5">
               <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-fg" title={mcpUrl}>
@@ -2399,7 +2422,10 @@ export default function ChatPanel({
                     ? `${working ? "Working" : "Quiet"} · last used ${since(c.lastCall)}${working ? ` · ${c.calls24h} today` : ""}`
                     : "Connected, not used yet";
                   return (
-                    <li key={c.name} className="flex items-center gap-2.5 border-b border-line px-2.5 py-2 last:border-b-0">
+                    <li
+                      key={c.name}
+                      className="flex items-center gap-2.5 border-b border-line px-2.5 py-2 last:border-b-0"
+                    >
                       <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-control border border-line bg-surface">
                         {logo ? (
                           // eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise
@@ -2508,8 +2534,8 @@ export default function ChatPanel({
               You have used all {turns.free} included {turns.free === 1 ? "design" : "designs"}
             </div>
             <p className="mt-1 text-[11px] leading-relaxed text-fg-muted">
-              Asking about your store still works, and anything already designed can still
-              be built. Designing something new is the part that needs Warmluke AI.
+              Asking about your store still works, and anything already designed can still be built. Designing something
+              new is the part that needs Warmluke AI.
             </p>
             <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
               <button
@@ -2532,8 +2558,8 @@ export default function ChatPanel({
             </div>
             {wantsPlan && (
               <div className="mt-2.5 rounded-lg border border-line bg-surface px-2.5 py-2 text-[11px] leading-relaxed text-fg-muted">
-                Still being built — it releases soon. Until then your own Claude or ChatGPT
-                does the asking, and Warmluke keeps building what you have already approved.
+                Still being built — it releases soon. Until then your own Claude or ChatGPT does the asking, and
+                Warmluke keeps building what you have already approved.
                 <button
                   onClick={() => setWantsPlan(false)}
                   className="mt-1.5 block text-[10px] text-fg-faint hover:underline"
@@ -2552,76 +2578,81 @@ export default function ChatPanel({
             : "Ask us to turn Luke on for you."}
         </div>
       ) : (
-      <div className="border-t border-line p-3">
-        {/* One quiet box: the words inside it, the send inside it. A
+        <div className="border-t border-line p-3">
+          {/* One quiet box: the words inside it, the send inside it. A
             thick ring and a labelled button made the composer the
             loudest thing on the panel, and the conversation should be. */}
-        {/* While Luke works, a beam of its colour goes round the box;
+          {/* While Luke works, a beam of its colour goes round the box;
             while they type, a beam in the page's ink, flaring with each
             key. Focused, the border takes Luke's colour. */}
-        <div
-          data-stroke={strokes % 2}
-          className={`flex items-end gap-2 rounded-2xl border border-line bg-surface px-3 py-2 shadow-card transition-all duration-150 focus-within:border-luke-light focus-within:shadow-[0_0_0_3px_rgb(139_126_255/0.14)] ${
-            busy ? "beam" : typing ? "beam beam-ink" : ""
-          }`}
-        >
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              setStrokes((n) => n + 1);
-              setTyping(true);
-              if (typingTimer.current) clearTimeout(typingTimer.current);
-              typingTimer.current = setTimeout(() => setTyping(false), 1200);
-              // Grows with what is typed, up to a few lines, and
-              // shrinks back; a fixed two rows was mostly empty.
-              e.target.style.height = "auto";
-              e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                send();
-              }
-            }}
-            rows={1}
-            placeholder={LUKE_COPY.placeholder}
-            className="max-h-40 flex-1 resize-none bg-transparent py-0.5 text-[13px] leading-6 text-fg outline-none placeholder:text-fg-faint"
-          />
-          <button
-            onClick={() => (canStop ? onStop() : send())}
-            disabled={busy && !canStop ? true : !canStop && !input.trim()}
-            aria-label={canStop ? "Stop" : "Send"}
-            title={canStop ? "Stop" : busy ? "Building…" : "Send"}
-            className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary transition-all duration-150 hover:bg-primary-hover active:scale-95 disabled:bg-line-strong disabled:text-surface"
+          <div
+            data-stroke={strokes % 2}
+            className={`flex items-end gap-2 rounded-2xl border border-line bg-surface px-3 py-2 shadow-card transition-all duration-150 focus-within:border-luke-light focus-within:shadow-[0_0_0_3px_rgb(139_126_255/0.14)] ${
+              busy ? "beam" : typing ? "beam beam-ink" : ""
+            }`}
           >
-            {canStop ? (
-              <Square aria-hidden size={11} strokeWidth={0} fill="currentColor" />
-            ) : (
-              <ArrowUp aria-hidden size={16} strokeWidth={2.25} />
-            )}
-          </button>
-        </div>
-        <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 text-[10px] text-fg-faint">
-          <span>{LUKE_COPY.promise}</span>
-          {/* From the engine's own registry, one tap away rather than
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => {
+                setInput(e.target.value);
+                setStrokes((n) => n + 1);
+                setTyping(true);
+                if (typingTimer.current) clearTimeout(typingTimer.current);
+                typingTimer.current = setTimeout(() => setTyping(false), 1200);
+                // Grows with what is typed, up to a few lines, and
+                // shrinks back; a fixed two rows was mostly empty.
+                e.target.style.height = "auto";
+                e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  send();
+                }
+              }}
+              rows={1}
+              placeholder={LUKE_COPY.placeholder}
+              className="max-h-40 flex-1 resize-none bg-transparent py-0.5 text-[13px] leading-6 text-fg outline-none placeholder:text-fg-faint"
+            />
+            <button
+              onClick={() => (canStop ? onStop() : send())}
+              disabled={busy && !canStop ? true : !canStop && !input.trim()}
+              aria-label={canStop ? "Stop" : "Send"}
+              title={canStop ? "Stop" : busy ? "Building…" : "Send"}
+              className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary transition-all duration-150 hover:bg-primary-hover active:scale-95 disabled:bg-line-strong disabled:text-surface"
+            >
+              {canStop ? (
+                <Square aria-hidden size={11} strokeWidth={0} fill="currentColor" />
+              ) : (
+                <ArrowUp aria-hidden size={16} strokeWidth={2.25} />
+              )}
+            </button>
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 text-[10px] text-fg-faint">
+            <span>{LUKE_COPY.promise}</span>
+            {/* From the engine's own registry, one tap away rather than
               repeated on every design. The assistant is told to flag
               anything it cannot do, but a prompt instruction is not a
               guarantee; the list is here whether or not it mentions it. */}
-          <details className="group">
-            <summary className="cursor-pointer list-none select-none hover:text-fg-muted">
-              What Luke can&rsquo;t do
-<ChevronRight aria-hidden size={11} strokeWidth={2} className="ml-0.5 inline align-[-1px] transition-transform duration-150 group-open:rotate-90" />
-            </summary>
-            <ul className="mt-1 space-y-0.5 pl-3">
-              {NOT_SUPPORTED.map((n) => (
-                <li key={n.id}>{n.label}</li>
-              ))}
-            </ul>
-          </details>
+            <details className="group">
+              <summary className="cursor-pointer list-none select-none hover:text-fg-muted">
+                What Luke can&rsquo;t do
+                <ChevronRight
+                  aria-hidden
+                  size={11}
+                  strokeWidth={2}
+                  className="ml-0.5 inline align-[-1px] transition-transform duration-150 group-open:rotate-90"
+                />
+              </summary>
+              <ul className="mt-1 space-y-0.5 pl-3">
+                {NOT_SUPPORTED.map((n) => (
+                  <li key={n.id}>{n.label}</li>
+                ))}
+              </ul>
+            </details>
+          </div>
         </div>
-      </div>
       )}
     </aside>
   );

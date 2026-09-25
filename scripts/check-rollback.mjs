@@ -171,7 +171,10 @@ console.log("\nthe second plan is refused");
     out.errors.some((e) => /Nothing was built/.test(e))
   );
   check("the section that was created is gone", tables.modules.length === 0);
-  check("the undo actually ran", ops.some((o) => o.op === "module_delete"));
+  check(
+    "the undo actually ran",
+    ops.some((o) => o.op === "module_delete")
+  );
   // Reversed, so a section's contents come out before the section —
   // this must not depend on which foreign keys happen to cascade.
   const deleteAt = ops.findIndex((o) => o.op === "module_delete");

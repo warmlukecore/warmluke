@@ -94,9 +94,7 @@ try {
   console.log("\nand the token has to come from the shop it names");
   const wrongShop = await connect(`state-a-${stamp}`, "someone-else.myshopify.com");
   check("a callback for another shop connects nothing", wrongShop.data === null);
-  const stillPending = (
-    await admin.from("stores").select("status, access_token").eq("id", mine.id).single()
-  ).data;
+  const stillPending = (await admin.from("stores").select("status, access_token").eq("id", mine.id).single()).data;
   check("and writes no token onto that row", stillPending.access_token === null);
   check("which stays unconnected", stillPending.status === "pending");
 
@@ -107,9 +105,7 @@ try {
   // whether a reconnect widened a token was to make a call and read
   // the refusal — so a reconnect that never happened looked exactly
   // like one that did, for as long as nobody asked Shopify.
-  const grant = (
-    await admin.from("stores").select("granted_scopes").eq("id", mine.id).single()
-  ).data;
+  const grant = (await admin.from("stores").select("granted_scopes").eq("id", mine.id).single()).data;
   check("and the scopes it came with are kept", String(grant?.granted_scopes) === "read_orders,read_products");
 
   // The case this column exists for: connecting again with less than
@@ -123,10 +119,11 @@ try {
     })
     .eq("id", mine.id);
   await connect(`state-again-${stamp}`, DOMAIN, ["read_orders"]);
-  const narrower = (
-    await admin.from("stores").select("granted_scopes").eq("id", mine.id).single()
-  ).data;
-  check("a narrower reconnect replaces them rather than adding to them", String(narrower?.granted_scopes) === "read_orders");
+  const narrower = (await admin.from("stores").select("granted_scopes").eq("id", mine.id).single()).data;
+  check(
+    "a narrower reconnect replaces them rather than adding to them",
+    String(narrower?.granted_scopes) === "read_orders"
+  );
 
   console.log("\nand only one of them ends up holding the shop");
   const loser = await connect(`state-b-${stamp}`, DOMAIN);
@@ -141,10 +138,7 @@ try {
   check("leaving exactly one connected store", connected.count === 1);
 
   console.log("\nand a failure to subscribe is written down");
-  await admin
-    .from("stores")
-    .update({ webhook_error: "ORDERS_CREATE: not approved for this scope" })
-    .eq("id", mine.id);
+  await admin.from("stores").update({ webhook_error: "ORDERS_CREATE: not approved for this scope" }).eq("id", mine.id);
   const said = (await admin.from("stores").select("webhook_error").eq("id", mine.id).single()).data;
   check("the reason is kept, not only logged", /not approved/.test(said.webhook_error ?? ""));
 
@@ -199,15 +193,10 @@ try {
       p_shop: SHADOWED,
       p_product: { id: external, title: "Landed", updated_at: new Date().toISOString() },
     });
-    const landed = (
-      await admin.from("products").select("store_id").eq("external_id", external).maybeSingle()
-    ).data;
+    const landed = (await admin.from("products").select("store_id").eq("external_id", external).maybeSingle()).data;
     check("the write lands on the connected store", landed?.store_id === real);
     check("and never on the pending one that got there first", landed?.store_id !== squatter);
-    const { error: sweptProduct } = await admin
-      .from("products")
-      .delete()
-      .eq("external_id", external);
+    const { error: sweptProduct } = await admin.from("products").delete().eq("external_id", external);
     check("the product this check invented is removed", !sweptProduct);
   }
 
@@ -232,14 +221,9 @@ try {
     .from("stores")
     .select("id", { count: "exact", head: true })
     .in("shop_domain", [DOMAIN, SHADOWED]);
-  check(
-    "no store this check invented is left behind",
-    swept && !left.error && left.count === 0
-  );
+  check("no store this check invented is left behind", swept && !left.error && left.count === 0);
 }
 
 await project.remove();
-console.log(
-  fails.length === 0 ? "\na shop belongs to whoever proved it" : `\n${fails.length} FAILED`
-);
+console.log(fails.length === 0 ? "\na shop belongs to whoever proved it" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

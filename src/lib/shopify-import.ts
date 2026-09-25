@@ -15,13 +15,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isTransient } from "@/lib/retry";
-import {
-  SHOPIFY_API_VERSION,
-  ShopifyError,
-  grantedScopes,
-  refreshAccessToken,
-  tokenNeedsRefresh,
-} from "@/lib/shopify";
+import { SHOPIFY_API_VERSION, ShopifyError, grantedScopes, refreshAccessToken, tokenNeedsRefresh } from "@/lib/shopify";
 
 /** What the token functions below need off a store row. */
 export type StoreToken = {
@@ -56,10 +50,7 @@ export async function ensureFreshToken(
   // store whose grant is fine — because this process simply has no app
   // credentials — sends them to do work that cannot help.
   if (!env.SHOPIFY_CLIENT_ID || !env.SHOPIFY_CLIENT_SECRET) {
-    throw new ShopifyError(
-      "not_configured",
-      "Shopify isn't configured here, so the access token can't be renewed."
-    );
+    throw new ShopifyError("not_configured", "Shopify isn't configured here, so the access token can't be renewed.");
   }
   if (!store.refresh_token) {
     throw new ShopifyError(
@@ -177,9 +168,10 @@ export async function graphql<T>(
     } catch (e) {
       // A dropped connection mid-import is the commonest failure of
       // all and says nothing about the request.
-      last = new ShopifyError("shopify_unavailable", `Could not reach Shopify: ${
-        e instanceof Error ? e.message : "network error"
-      }.`);
+      last = new ShopifyError(
+        "shopify_unavailable",
+        `Could not reach Shopify: ${e instanceof Error ? e.message : "network error"}.`
+      );
       pause = waitFor(attempt);
       continue;
     }
@@ -239,13 +231,23 @@ query($n: Int!, $after: String) {
 }`;
 
 export type GqlProduct = {
-  id: string; title: string; handle: string; status: string; tags: string[]; updatedAt: string;
+  id: string;
+  title: string;
+  handle: string;
+  status: string;
+  tags: string[];
+  updatedAt: string;
   // What a merchant calls a category, and who it came from.
-  productType?: string | null; vendor?: string | null;
+  productType?: string | null;
+  vendor?: string | null;
   variants: {
     nodes: Array<{
-      id: string; title: string; sku: string | null; barcode: string | null;
-      price: string; updatedAt: string;
+      id: string;
+      title: string;
+      sku: string | null;
+      barcode: string | null;
+      price: string;
+      updatedAt: string;
       // Carried so a stock webhook, which names the item and not the
       // variant, can find the row it belongs to.
       //
@@ -267,21 +269,23 @@ export type GqlProduct = {
  * this code. Two ways in, one set of rules about what a row looks
  * like — a second copy would drift the first time a column moved.
  */
-export async function saveProducts(
-  db: SupabaseClient, storeId: string, nodes: GqlProduct[]
-): Promise<void> {
+export async function saveProducts(db: SupabaseClient, storeId: string, nodes: GqlProduct[]): Promise<void> {
   if (nodes.length === 0) return;
   const { data: saved, error } = await db
     .from("products")
     .upsert(
       nodes.map((p) => ({
-        store_id: storeId, external_id: p.id, title: p.title, handle: p.handle,
+        store_id: storeId,
+        external_id: p.id,
+        title: p.title,
+        handle: p.handle,
         status: p.status,
         // Shopify sends "" for a product with no type; a blank is not
         // a category, and a dropdown offering one helps nobody.
         product_type: p.productType?.trim() || null,
         vendor: p.vendor?.trim() || null,
-        tags: p.tags ?? [], updated_at: p.updatedAt,
+        tags: p.tags ?? [],
+        updated_at: p.updatedAt,
       })),
       { onConflict: "store_id,external_id" }
     )
@@ -291,8 +295,12 @@ export async function saveProducts(
   const byExternal = new Map((saved ?? []).map((r) => [r.external_id as string, r.id as string]));
   const variants = nodes.flatMap((p) =>
     p.variants.nodes.map((v) => ({
-      store_id: storeId, product_id: byExternal.get(p.id) ?? null, external_id: v.id,
-      title: v.title, sku: v.sku, barcode: v.barcode,
+      store_id: storeId,
+      product_id: byExternal.get(p.id) ?? null,
+      external_id: v.id,
+      title: v.title,
+      sku: v.sku,
+      barcode: v.barcode,
       price: v.price ? Number(v.price) : null,
       cost: v.inventoryItem?.unitCost?.amount ? Number(v.inventoryItem.unitCost.amount) : null,
       // A variant Shopify does not count stock for reads zero
@@ -343,9 +351,7 @@ export type GqlCart = {
 };
 
 /** Writes a batch of abandoned carts. */
-export async function saveCarts(
-  db: SupabaseClient, storeId: string, nodes: GqlCart[]
-): Promise<void> {
+export async function saveCarts(db: SupabaseClient, storeId: string, nodes: GqlCart[]): Promise<void> {
   if (nodes.length === 0) return;
 
   // Linked to the customer row when we hold one, and still written
@@ -360,7 +366,8 @@ export async function saveCarts(
   const rows = nodes.map((c) => {
     const items = c.lineItems?.nodes ?? [];
     return {
-      store_id: storeId, external_id: c.id,
+      store_id: storeId,
+      external_id: c.id,
       customer_id: c.customer?.id ? (customerId.get(c.customer.id) ?? null) : null,
       // Kept beside the link, because a redaction names a person by
       // Shopify's id and this is the only place a cart carries it.
@@ -403,24 +410,28 @@ query($n: Int!, $after: String) {
 }`;
 
 export type GqlCollection = {
-  id: string; title: string; handle: string;
-  sortOrder?: string | null; updatedAt?: string | null;
+  id: string;
+  title: string;
+  handle: string;
+  sortOrder?: string | null;
+  updatedAt?: string | null;
   productsCount?: { count: number } | null;
   /** Which products are in it. Cut at a limit on the paged road. */
   products: { nodes: Array<{ id: string }> };
 };
 
 /** Writes a batch of collections and what is in them. */
-export async function saveCollections(
-  db: SupabaseClient, storeId: string, nodes: GqlCollection[]
-): Promise<void> {
+export async function saveCollections(db: SupabaseClient, storeId: string, nodes: GqlCollection[]): Promise<void> {
   if (nodes.length === 0) return;
 
   const { data: saved, error } = await db
     .from("collections")
     .upsert(
       nodes.map((c) => ({
-        store_id: storeId, external_id: c.id, title: c.title, handle: c.handle,
+        store_id: storeId,
+        external_id: c.id,
+        title: c.title,
+        handle: c.handle,
         sort_order: c.sortOrder ?? null,
         // Shopify's own count, which is the whole collection even when
         // this page carried only the first hundred of it.
@@ -482,23 +493,33 @@ query($n: Int!, $after: String) {
 }`;
 
 export type GqlCustomer = {
-  id: string; displayName: string | null; email: string | null; phone: string | null;
-  numberOfOrders: string; tags: string[]; updatedAt: string;
+  id: string;
+  displayName: string | null;
+  email: string | null;
+  phone: string | null;
+  numberOfOrders: string;
+  tags: string[];
+  updatedAt: string;
   /** Lifetime spend, Shopify's own figure. Absent on old bulk files. */
   amountSpent?: { amount: string; currencyCode: string } | null;
   defaultAddress: { city: string | null; zip: string | null } | null;
 };
 
 /** Writes a batch of customers. Shared with the bulk importer. */
-export async function saveCustomers(
-  db: SupabaseClient, storeId: string, nodes: GqlCustomer[]
-): Promise<void> {
+export async function saveCustomers(db: SupabaseClient, storeId: string, nodes: GqlCustomer[]): Promise<void> {
   if (nodes.length > 0) {
     const { error } = await db.from("customers").upsert(
       nodes.map((c) => ({
-        store_id: storeId, external_id: c.id, name: c.displayName, email: c.email,
-        phone: c.phone, city: c.defaultAddress?.city ?? null, postal_code: c.defaultAddress?.zip ?? null,
-        tags: c.tags ?? [], orders_count: Number(c.numberOfOrders ?? 0), updated_at: c.updatedAt,
+        store_id: storeId,
+        external_id: c.id,
+        name: c.displayName,
+        email: c.email,
+        phone: c.phone,
+        city: c.defaultAddress?.city ?? null,
+        postal_code: c.defaultAddress?.zip ?? null,
+        tags: c.tags ?? [],
+        orders_count: Number(c.numberOfOrders ?? 0),
+        updated_at: c.updatedAt,
         total_spent: c.amountSpent?.amount ? Number(c.amountSpent.amount) : null,
       })),
       { onConflict: "store_id,external_id" }
@@ -549,8 +570,14 @@ query($n: Int!, $after: String) {
 }`;
 
 export type GqlOrder = {
-  id: string; name: string; createdAt: string; updatedAt: string; cancelledAt: string | null;
-  tags: string[]; displayFinancialStatus: string | null; displayFulfillmentStatus: string | null;
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  cancelledAt: string | null;
+  tags: string[];
+  displayFinancialStatus: string | null;
+  displayFulfillmentStatus: string | null;
   totalPriceSet: { shopMoney: { amount: string; currencyCode: string } };
   /** What the order comes to today, after refunds. Absent on old bulk files. */
   currentTotalPriceSet?: { shopMoney: { amount: string; currencyCode: string } } | null;
@@ -572,9 +599,18 @@ export type GqlOrder = {
   paymentGatewayNames?: string[] | null;
   discountCodes?: string[] | null;
   shippingAddress?: { city: string | null; provinceCode: string | null; countryCode: string | null } | null;
-  lineItems: { nodes: Array<{ id: string; title: string; variantTitle?: string | null; quantity: number; sku: string | null;
-    variant: { id: string } | null; product: { id: string } | null;
-    originalUnitPriceSet: { shopMoney: { amount: string } } | null }> };
+  lineItems: {
+    nodes: Array<{
+      id: string;
+      title: string;
+      variantTitle?: string | null;
+      quantity: number;
+      sku: string | null;
+      variant: { id: string } | null;
+      product: { id: string } | null;
+      originalUnitPriceSet: { shopMoney: { amount: string } } | null;
+    }>;
+  };
   refunds: Array<{ id: string; createdAt: string; totalRefundedSet: { shopMoney: { amount: string } } | null }>;
   /**
    * The money itself, as opposed to what the order says about it.
@@ -587,16 +623,18 @@ export type GqlOrder = {
    * the bank. Absent on old bulk files.
    */
   transactions?: Array<{
-    id: string; kind: string; status: string; gateway: string | null;
-    processedAt: string | null; test: boolean;
+    id: string;
+    kind: string;
+    status: string;
+    gateway: string | null;
+    processedAt: string | null;
+    test: boolean;
     amountSet: { shopMoney: { amount: string; currencyCode: string } } | null;
   }> | null;
 };
 
 /** Writes a batch of orders, their lines and refunds. */
-export async function saveOrders(
-  db: SupabaseClient, storeId: string, nodes: GqlOrder[]
-): Promise<void> {
+export async function saveOrders(db: SupabaseClient, storeId: string, nodes: GqlOrder[]): Promise<void> {
   if (nodes.length === 0) return;
 
   // Customers may not be imported yet, and an order whose customer is
@@ -612,7 +650,9 @@ export async function saveOrders(
     .from("orders")
     .upsert(
       nodes.map((o) => ({
-        store_id: storeId, external_id: o.id, order_number: o.name,
+        store_id: storeId,
+        external_id: o.id,
+        order_number: o.name,
         customer_id: o.customer ? (customerId.get(o.customer.id) ?? null) : null,
         placed_at: o.createdAt,
         // Today's total, after refunds, under the name the webhook has
@@ -628,8 +668,12 @@ export async function saveOrders(
         discount: money(o.currentTotalDiscountsSet),
         shipping: money(o.totalShippingPriceSet),
         currency: o.totalPriceSet?.shopMoney?.currencyCode ?? null,
-        financial_status: o.displayFinancialStatus, fulfilment_status: o.displayFulfillmentStatus,
-        cancelled_at: o.cancelledAt, tags: o.tags ?? [], source: "shopify", updated_at: o.updatedAt,
+        financial_status: o.displayFinancialStatus,
+        fulfilment_status: o.displayFulfillmentStatus,
+        cancelled_at: o.cancelledAt,
+        tags: o.tags ?? [],
+        source: "shopify",
+        updated_at: o.updatedAt,
         gateway: o.paymentGatewayNames?.[0] ?? null,
         discount_codes: o.discountCodes ?? [],
         ship_city: o.shippingAddress?.city ?? null,
@@ -643,27 +687,38 @@ export async function saveOrders(
 
   const orderId = new Map((saved ?? []).map((r) => [r.external_id as string, r.id as string]));
 
-  const variantIds = [...new Set(nodes.flatMap((o) => o.lineItems.nodes.map((l) => l.variant?.id).filter(Boolean)) as string[])];
+  const variantIds = [
+    ...new Set(nodes.flatMap((o) => o.lineItems.nodes.map((l) => l.variant?.id).filter(Boolean)) as string[]),
+  ];
   const { data: vrows } = variantIds.length
     ? await db.from("variants").select("id, external_id").eq("store_id", storeId).in("external_id", variantIds)
     : { data: [] };
   const variantId = new Map((vrows ?? []).map((v) => [v.external_id as string, v.id as string]));
 
-  const productIds = [...new Set(nodes.flatMap((o) => o.lineItems.nodes.map((l) => l.product?.id).filter(Boolean)) as string[])];
+  const productIds = [
+    ...new Set(nodes.flatMap((o) => o.lineItems.nodes.map((l) => l.product?.id).filter(Boolean)) as string[]),
+  ];
   const { data: prows } = productIds.length
     ? await db.from("products").select("id, external_id").eq("store_id", storeId).in("external_id", productIds)
     : { data: [] };
   const productId = new Map((prows ?? []).map((p) => [p.external_id as string, p.id as string]));
 
-  const lines = nodes.flatMap((o) =>
-    o.lineItems.nodes.map((l) => ({
-      store_id: storeId, order_id: orderId.get(o.id)!, external_id: l.id,
-      product_id: l.product ? (productId.get(l.product.id) ?? null) : null,
-      variant_id: l.variant ? (variantId.get(l.variant.id) ?? null) : null,
-      title: l.title, variant_title: l.variantTitle ?? null, sku: l.sku, quantity: l.quantity,
-      price: l.originalUnitPriceSet?.shopMoney?.amount ? Number(l.originalUnitPriceSet.shopMoney.amount) : null,
-    }))
-  ).filter((l) => l.order_id);
+  const lines = nodes
+    .flatMap((o) =>
+      o.lineItems.nodes.map((l) => ({
+        store_id: storeId,
+        order_id: orderId.get(o.id)!,
+        external_id: l.id,
+        product_id: l.product ? (productId.get(l.product.id) ?? null) : null,
+        variant_id: l.variant ? (variantId.get(l.variant.id) ?? null) : null,
+        title: l.title,
+        variant_title: l.variantTitle ?? null,
+        sku: l.sku,
+        quantity: l.quantity,
+        price: l.originalUnitPriceSet?.shopMoney?.amount ? Number(l.originalUnitPriceSet.shopMoney.amount) : null,
+      }))
+    )
+    .filter((l) => l.order_id);
 
   if (lines.length > 0) {
     // Replaced rather than merged: a line removed from an order in
@@ -675,43 +730,49 @@ export async function saveOrders(
     if (le) throw new Error(le.message);
   }
 
-  const refunds = nodes.flatMap((o) =>
-    (o.refunds ?? []).map((r) => ({
-      store_id: storeId, order_id: orderId.get(o.id)!, external_id: r.id,
-      amount: r.totalRefundedSet?.shopMoney?.amount ? Number(r.totalRefundedSet.shopMoney.amount) : null,
-      // No quantity: that is the refunds pass's to write (below). A
-      // row this creates starts at the column's default and is filled
-      // in there; a row that already has one keeps it.
-      refunded_at: r.createdAt,
-    }))
-  ).filter((r) => r.order_id);
+  const refunds = nodes
+    .flatMap((o) =>
+      (o.refunds ?? []).map((r) => ({
+        store_id: storeId,
+        order_id: orderId.get(o.id)!,
+        external_id: r.id,
+        amount: r.totalRefundedSet?.shopMoney?.amount ? Number(r.totalRefundedSet.shopMoney.amount) : null,
+        // No quantity: that is the refunds pass's to write (below). A
+        // row this creates starts at the column's default and is filled
+        // in there; a row that already has one keeps it.
+        refunded_at: r.createdAt,
+      }))
+    )
+    .filter((r) => r.order_id);
   if (refunds.length > 0) {
     // On the Shopify id, not on `id` — that is a generated uuid the
     // importer never supplies, so the conflict never matched and every
     // pass inserted the same refunds again.
-    const { error: re } = await db
-      .from("refunds")
-      .upsert(refunds, { onConflict: "store_id,external_id" });
+    const { error: re } = await db.from("refunds").upsert(refunds, { onConflict: "store_id,external_id" });
     if (re) throw new Error(re.message);
   }
 
-  const paid = nodes.flatMap((o) =>
-    (o.transactions ?? []).map((t) => ({
-      store_id: storeId, order_id: orderId.get(o.id)!, external_id: t.id,
-      kind: t.kind, status: t.status, gateway: t.gateway ?? null,
-      amount: t.amountSet?.shopMoney?.amount ? Number(t.amountSet.shopMoney.amount) : null,
-      currency: t.amountSet?.shopMoney?.currencyCode ?? null,
-      // A test transaction is not money. Kept rather than dropped, so
-      // a merchant looking for the one they made can find it, and
-      // excluded from every total by the list that reads them.
-      test: t.test === true,
-      processed_at: t.processedAt,
-    }))
-  ).filter((t) => t.order_id);
+  const paid = nodes
+    .flatMap((o) =>
+      (o.transactions ?? []).map((t) => ({
+        store_id: storeId,
+        order_id: orderId.get(o.id)!,
+        external_id: t.id,
+        kind: t.kind,
+        status: t.status,
+        gateway: t.gateway ?? null,
+        amount: t.amountSet?.shopMoney?.amount ? Number(t.amountSet.shopMoney.amount) : null,
+        currency: t.amountSet?.shopMoney?.currencyCode ?? null,
+        // A test transaction is not money. Kept rather than dropped, so
+        // a merchant looking for the one they made can find it, and
+        // excluded from every total by the list that reads them.
+        test: t.test === true,
+        processed_at: t.processedAt,
+      }))
+    )
+    .filter((t) => t.order_id);
   if (paid.length > 0) {
-    const { error: te } = await db
-      .from("order_transactions")
-      .upsert(paid, { onConflict: "store_id,external_id" });
+    const { error: te } = await db.from("order_transactions").upsert(paid, { onConflict: "store_id,external_id" });
     if (te) throw new Error(te.message);
   }
 }
@@ -742,21 +803,26 @@ query($n: Int!, $after: String) {
 export type GqlRefundedOrder = {
   id: string;
   refunds: Array<{
-    id: string; createdAt: string; totalRefundedSet: { shopMoney: { amount: string } } | null;
+    id: string;
+    createdAt: string;
+    totalRefundedSet: { shopMoney: { amount: string } } | null;
     refundLineItems: { nodes: Array<{ quantity: number }> };
   }>;
 };
 
 /** Writes the refunds of a batch of orders — amount, when, and how many units. */
-export async function saveRefunds(
-  db: SupabaseClient, storeId: string, nodes: GqlRefundedOrder[]
-): Promise<void> {
+export async function saveRefunds(db: SupabaseClient, storeId: string, nodes: GqlRefundedOrder[]): Promise<void> {
   const withRefunds = nodes.filter((o) => (o.refunds ?? []).length > 0);
   if (withRefunds.length === 0) return;
 
   const { data: known } = await db
-    .from("orders").select("id, external_id").eq("store_id", storeId)
-    .in("external_id", withRefunds.map((o) => o.id));
+    .from("orders")
+    .select("id, external_id")
+    .eq("store_id", storeId)
+    .in(
+      "external_id",
+      withRefunds.map((o) => o.id)
+    );
   const orderId = new Map((known ?? []).map((r) => [r.external_id as string, r.id as string]));
 
   // An order not imported yet is nothing to hang a refund on. The
@@ -766,7 +832,9 @@ export async function saveRefunds(
     const id = orderId.get(o.id);
     if (!id) return [];
     return o.refunds.map((r) => ({
-      store_id: storeId, order_id: id, external_id: r.id,
+      store_id: storeId,
+      order_id: id,
+      external_id: r.id,
       amount: r.totalRefundedSet?.shopMoney?.amount ? Number(r.totalRefundedSet.shopMoney.amount) : null,
       quantity: (r.refundLineItems?.nodes ?? []).reduce((n, x) => n + (x.quantity ?? 0), 0),
       refunded_at: r.createdAt,
@@ -800,22 +868,29 @@ query($n: Int!, $after: String) {
 export type GqlFulfilledOrder = {
   id: string;
   fulfillments: Array<{
-    id: string; status: string; displayStatus: string | null;
-    createdAt: string; updatedAt: string; deliveredAt: string | null;
+    id: string;
+    status: string;
+    displayStatus: string | null;
+    createdAt: string;
+    updatedAt: string;
+    deliveredAt: string | null;
     trackingInfo: Array<{ company: string | null; number: string | null; url: string | null }>;
   }>;
 };
 
 /** Writes the shipments of a batch of orders — courier, tracking, status. */
-export async function saveFulfillments(
-  db: SupabaseClient, storeId: string, nodes: GqlFulfilledOrder[]
-): Promise<void> {
+export async function saveFulfillments(db: SupabaseClient, storeId: string, nodes: GqlFulfilledOrder[]): Promise<void> {
   const shipped = nodes.filter((o) => (o.fulfillments ?? []).length > 0);
   if (shipped.length === 0) return;
 
   const { data: known } = await db
-    .from("orders").select("id, external_id").eq("store_id", storeId)
-    .in("external_id", shipped.map((o) => o.id));
+    .from("orders")
+    .select("id, external_id")
+    .eq("store_id", storeId)
+    .in(
+      "external_id",
+      shipped.map((o) => o.id)
+    );
   const orderId = new Map((known ?? []).map((r) => [r.external_id as string, r.id as string]));
 
   // An order not imported yet is nothing to hang a shipment on; the
@@ -826,13 +901,22 @@ export async function saveFulfillments(
     return o.fulfillments.map((f) => {
       const tracking = f.trackingInfo ?? [];
       return {
-        store_id: storeId, order_id: id, external_id: f.id,
-        status: f.status ?? null, shipment_status: f.displayStatus ?? null,
+        store_id: storeId,
+        order_id: id,
+        external_id: f.id,
+        status: f.status ?? null,
+        shipment_status: f.displayStatus ?? null,
         carrier: tracking.find((t) => t.company)?.company ?? null,
         // Several parcels under one shipment carry several numbers.
-        tracking_number: tracking.map((t) => t.number).filter(Boolean).join(", ") || null,
+        tracking_number:
+          tracking
+            .map((t) => t.number)
+            .filter(Boolean)
+            .join(", ") || null,
         tracking_url: tracking.find((t) => t.url)?.url ?? null,
-        shipped_at: f.createdAt, delivered_at: f.deliveredAt ?? null, updated_at: f.updatedAt,
+        shipped_at: f.createdAt,
+        delivered_at: f.deliveredAt ?? null,
+        updated_at: f.updatedAt,
       };
     });
   });
@@ -870,20 +954,24 @@ export type GqlLocation = {
   isActive: boolean;
   fulfillsOnlineOrders?: boolean | null;
   address?: {
-    address1?: string | null; city?: string | null;
-    province?: string | null; provinceCode?: string | null;
-    country?: string | null; countryCode?: string | null; zip?: string | null;
+    address1?: string | null;
+    city?: string | null;
+    province?: string | null;
+    provinceCode?: string | null;
+    country?: string | null;
+    countryCode?: string | null;
+    zip?: string | null;
   } | null;
 };
 
 /** Writes a batch of locations. */
-export async function saveLocations(
-  db: SupabaseClient, storeId: string, nodes: GqlLocation[]
-): Promise<void> {
+export async function saveLocations(db: SupabaseClient, storeId: string, nodes: GqlLocation[]): Promise<void> {
   if (nodes.length === 0) return;
   const { error } = await db.from("locations").upsert(
     nodes.map((l) => ({
-      store_id: storeId, external_id: l.id, name: l.name,
+      store_id: storeId,
+      external_id: l.id,
+      name: l.name,
       // A location switched off still holds stock and still appears
       // on old orders, so it is kept and marked rather than dropped.
       active: l.isActive ?? null,
@@ -948,34 +1036,37 @@ const qty = (list: Array<{ name?: string; quantity: number }> | undefined, name:
   list?.find((q) => q.name === name)?.quantity ?? 0;
 
 /** Writes a batch of stock levels. */
-export async function saveInventory(
-  db: SupabaseClient, storeId: string, nodes: GqlStock[]
-): Promise<void> {
+export async function saveInventory(db: SupabaseClient, storeId: string, nodes: GqlStock[]): Promise<void> {
   const ids = nodes.map((v) => v.id);
   const { data: vrows } = ids.length
     ? await db.from("variants").select("id, external_id").eq("store_id", storeId).in("external_id", ids)
     : { data: [] };
   const variantId = new Map((vrows ?? []).map((v) => [v.external_id as string, v.id as string]));
 
-  const levels = nodes.flatMap((v) =>
-    (v.inventoryItem?.inventoryLevels.nodes ?? []).map((l) => ({
-      store_id: storeId, variant_id: variantId.get(v.id) ?? null,
-      location_id: l.location?.id ?? null,
-      location_name: l.location?.name ?? "",
-      available: qty(l.quantities, "available"),
-      // What is physically there, what is spoken for by orders not
-      // yet shipped, and what is on its way. "Available" is on_hand
-      // minus committed, so a shop can have stock and be unable to
-      // sell it, which is the thing a merchant most wants warning of.
-      on_hand: qty(l.quantities, "on_hand"),
-      committed: qty(l.quantities, "committed"),
-      incoming: qty(l.quantities, "incoming"),
-      updated_at: new Date().toISOString(),
-    }))
-  ).filter((l) => l.variant_id);
+  const levels = nodes
+    .flatMap((v) =>
+      (v.inventoryItem?.inventoryLevels.nodes ?? []).map((l) => ({
+        store_id: storeId,
+        variant_id: variantId.get(v.id) ?? null,
+        location_id: l.location?.id ?? null,
+        location_name: l.location?.name ?? "",
+        available: qty(l.quantities, "available"),
+        // What is physically there, what is spoken for by orders not
+        // yet shipped, and what is on its way. "Available" is on_hand
+        // minus committed, so a shop can have stock and be unable to
+        // sell it, which is the thing a merchant most wants warning of.
+        on_hand: qty(l.quantities, "on_hand"),
+        committed: qty(l.quantities, "committed"),
+        incoming: qty(l.quantities, "incoming"),
+        updated_at: new Date().toISOString(),
+      }))
+    )
+    .filter((l) => l.variant_id);
 
   if (levels.length > 0) {
-    const { error } = await db.from("inventory_levels").upsert(levels, { onConflict: "store_id,variant_id,location_id" });
+    const { error } = await db
+      .from("inventory_levels")
+      .upsert(levels, { onConflict: "store_id,variant_id,location_id" });
     if (error) throw new Error(error.message);
   }
 }
@@ -1045,9 +1136,7 @@ export type GqlDraftOrder = {
 };
 
 /** Writes a batch of draft orders and the lines on them. */
-export async function saveDraftOrders(
-  db: SupabaseClient, storeId: string, nodes: GqlDraftOrder[]
-): Promise<void> {
+export async function saveDraftOrders(db: SupabaseClient, storeId: string, nodes: GqlDraftOrder[]): Promise<void> {
   if (nodes.length === 0) return;
 
   // The two things a draft points at that we may already hold. Both
@@ -1112,8 +1201,22 @@ export async function saveDraftOrders(
   // Products and variants the lines point at. A custom item points at
   // neither — #D1 in the dev store is one — and is still a real line
   // on a real draft, so it is written with both left null.
-  const productIds = [...new Set(kept.flatMap((d) => d.lineItems?.nodes ?? []).map((l) => l.product?.id).filter(Boolean) as string[])];
-  const variantIds = [...new Set(kept.flatMap((d) => d.lineItems?.nodes ?? []).map((l) => l.variant?.id).filter(Boolean) as string[])];
+  const productIds = [
+    ...new Set(
+      kept
+        .flatMap((d) => d.lineItems?.nodes ?? [])
+        .map((l) => l.product?.id)
+        .filter(Boolean) as string[]
+    ),
+  ];
+  const variantIds = [
+    ...new Set(
+      kept
+        .flatMap((d) => d.lineItems?.nodes ?? [])
+        .map((l) => l.variant?.id)
+        .filter(Boolean) as string[]
+    ),
+  ];
   const [prods, vars] = await Promise.all([
     productIds.length
       ? db.from("products").select("id, external_id").eq("store_id", storeId).in("external_id", productIds)
@@ -1227,9 +1330,7 @@ export function splitDiscountType(typename?: string | null): { method: string | 
 }
 
 /** Writes a batch of discounts. */
-export async function saveDiscounts(
-  db: SupabaseClient, storeId: string, nodes: GqlDiscount[]
-): Promise<void> {
+export async function saveDiscounts(db: SupabaseClient, storeId: string, nodes: GqlDiscount[]): Promise<void> {
   if (nodes.length === 0) return;
 
   const rows = nodes.map((n) => {
@@ -1292,8 +1393,7 @@ export async function saveDiscounts(
 // what comes back. This costs 716. An order with more than five
 // returns, or a return with more than twenty lines, trips the child
 // limits below and goes the bulk way, which has no limits at all.
-export const RETURNING =
-  "return_status:return_requested OR return_status:in_progress OR return_status:returned";
+export const RETURNING = "return_status:return_requested OR return_status:in_progress OR return_status:returned";
 
 /**
  * A line of a return, as both concrete shapes leave it.
@@ -1362,9 +1462,7 @@ export type GqlReturningOrder = {
 };
 
 /** Writes a batch of returns and what is coming back in them. */
-export async function saveReturns(
-  db: SupabaseClient, storeId: string, nodes: GqlReturningOrder[]
-): Promise<void> {
+export async function saveReturns(db: SupabaseClient, storeId: string, nodes: GqlReturningOrder[]): Promise<void> {
   if (nodes.length === 0) return;
 
   // An order carrying no return is not a mistake: the filter asks for
@@ -1377,7 +1475,10 @@ export async function saveReturns(
     .from("orders")
     .select("id, external_id")
     .eq("store_id", storeId)
-    .in("external_id", withReturns.map((o) => o.id));
+    .in(
+      "external_id",
+      withReturns.map((o) => o.id)
+    );
   const orderId = new Map((orders ?? []).map((r) => [r.external_id as string, r.id as string]));
 
   const rows = withReturns.flatMap((o) => {
@@ -1409,14 +1510,14 @@ export async function saveReturns(
   if (error) throw new Error(error.message);
   const returnId = new Map((saved ?? []).map((r) => [r.external_id as string, r.id as string]));
 
-  const lineNodes = withReturns
-    .flatMap((o) => o.returns.nodes)
-    .filter((r) => returnId.has(r.id));
+  const lineNodes = withReturns.flatMap((o) => o.returns.nodes).filter((r) => returnId.has(r.id));
   const allLines = lineNodes.flatMap((r) => r.returnLineItems?.nodes ?? []);
-  const productIds = [...new Set(allLines
-    .map((l) => l.fulfillmentLineItem?.lineItem?.product?.id).filter(Boolean) as string[])];
-  const variantIds = [...new Set(allLines
-    .map((l) => l.fulfillmentLineItem?.lineItem?.variant?.id).filter(Boolean) as string[])];
+  const productIds = [
+    ...new Set(allLines.map((l) => l.fulfillmentLineItem?.lineItem?.product?.id).filter(Boolean) as string[]),
+  ];
+  const variantIds = [
+    ...new Set(allLines.map((l) => l.fulfillmentLineItem?.lineItem?.variant?.id).filter(Boolean) as string[]),
+  ];
   const [prods, vars] = await Promise.all([
     productIds.length
       ? db.from("products").select("id, external_id").eq("store_id", storeId).in("external_id", productIds)
@@ -1516,19 +1617,23 @@ export type GqlPayout = {
   issuedAt?: string | null;
   net?: { amount?: string | null; currencyCode?: string | null } | null;
   summary?: {
-    chargesGross?: Money; chargesFee?: Money;
-    refundsFeeGross?: Money; refundsFee?: Money;
-    adjustmentsGross?: Money; adjustmentsFee?: Money;
-    reservedFundsGross?: Money; reservedFundsFee?: Money;
-    retriedPayoutsGross?: Money; retriedPayoutsFee?: Money;
-    advanceGross?: Money; advanceFees?: Money;
+    chargesGross?: Money;
+    chargesFee?: Money;
+    refundsFeeGross?: Money;
+    refundsFee?: Money;
+    adjustmentsGross?: Money;
+    adjustmentsFee?: Money;
+    reservedFundsGross?: Money;
+    reservedFundsFee?: Money;
+    retriedPayoutsGross?: Money;
+    retriedPayoutsFee?: Money;
+    advanceGross?: Money;
+    advanceFees?: Money;
   } | null;
 };
 
 /** Writes a batch of payouts. */
-export async function savePayouts(
-  db: SupabaseClient, storeId: string, nodes: GqlPayout[]
-): Promise<void> {
+export async function savePayouts(db: SupabaseClient, storeId: string, nodes: GqlPayout[]): Promise<void> {
   if (nodes.length === 0) return;
   const n = (m: Money) => (m?.amount != null ? Number(m.amount) : null);
 

@@ -20,11 +20,7 @@ export type RecordDraft = Record<string, unknown>;
  * as a filter, plus every value already in use. Derived, so a field
  * nobody configured still offers the values the owner actually types.
  */
-function optionsFor(
-  field: string,
-  features: FeatureSchema | null,
-  records: RecordRow[]
-): string[] {
+function optionsFor(field: string, features: FeatureSchema | null, records: RecordRow[]): string[] {
   const configured = features?.filters?.find((f) => f.field === field)?.options ?? [];
   const seen = new Set<string>(configured);
   for (const r of records) {
@@ -92,14 +88,7 @@ function Field({
   }
 
   if (col.type === "longtext") {
-    return (
-      <textarea
-        value={str}
-        onChange={(e) => onChange(e.target.value)}
-        rows={3}
-        className={`${base} resize-y`}
-      />
-    );
+    return <textarea value={str} onChange={(e) => onChange(e.target.value)} rows={3} className={`${base} resize-y`} />;
   }
 
   if ((col.type === "badge" || col.type === "dropdown") && options.length > 0) {
@@ -207,11 +196,7 @@ export default function RecordModal({
                 {busy ? "Deleting…" : "Really delete"}
               </button>
             ) : (
-              <button
-                onClick={() => setConfirmingDelete(true)}
-                disabled={busy}
-                className={button("critical-plain")}
-              >
+              <button onClick={() => setConfirmingDelete(true)} disabled={busy} className={button("critical-plain")}>
                 Delete
               </button>
             ))}

@@ -25,11 +25,20 @@ import { CenteredCard } from "@/components/CenteredCard";
 import { PasswordInput } from "@/components/ui/PasswordInput";
 import { button, field, label, note } from "@/components/ui/controls";
 
-type Peek = { state: string; email: string | null; full_name: string | null; business_name: string | null; expires_at: string | null };
+type Peek = {
+  state: string;
+  email: string | null;
+  full_name: string | null;
+  business_name: string | null;
+  expires_at: string | null;
+};
 
 /** Why a link that is not open does not work, and what to do instead. */
 const CLOSED: Record<string, { title: string; body: string }> = {
-  expired: { title: "This invite has run out", body: "Ask whoever sent it for a fresh link. You can also sign up without one." },
+  expired: {
+    title: "This invite has run out",
+    body: "Ask whoever sent it for a fresh link. You can also sign up without one.",
+  },
   used: { title: "This invite has already been used", body: "If that was you, sign in. If not, ask for a new link." },
   revoked: { title: "This invite was withdrawn", body: "Ask whoever sent it if you should have a new one." },
   unknown: { title: "This link isn’t an invite we know", body: "Check it was copied whole, or ask for a new one." },
@@ -40,7 +49,13 @@ const CLOSED: Record<string, { title: string; body: string }> = {
 };
 
 const until = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+  new Date(iso).toLocaleString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 
 export default function StartPage() {
   const router = useRouter();
@@ -156,7 +171,9 @@ export default function StartPage() {
     const c = CLOSED[closed ?? "unknown"] ?? CLOSED.unknown;
     return (
       <CenteredCard>
-        <h1 className="text-lg font-semibold text-fg">{error && !closed ? "The invite couldn’t be opened" : c.title}</h1>
+        <h1 className="text-lg font-semibold text-fg">
+          {error && !closed ? "The invite couldn’t be opened" : c.title}
+        </h1>
         <p className="mt-1 text-[13px] text-fg-muted">{error && !closed ? error : c.body}</p>
         <div className="mt-5 flex gap-2">
           {closed === "someone_else" ? (
@@ -219,7 +236,12 @@ export default function StartPage() {
               placeholder="you@company.com"
             />
             {named && (
-              <Lock aria-hidden size={14} strokeWidth={1.75} className="absolute top-1/2 right-3 -translate-y-1/2 text-fg-faint" />
+              <Lock
+                aria-hidden
+                size={14}
+                strokeWidth={1.75}
+                className="absolute top-1/2 right-3 -translate-y-1/2 text-fg-faint"
+              />
             )}
           </div>
           {named && (

@@ -52,8 +52,7 @@ const ask = (message, signal) =>
     signal,
   });
 const used = async () =>
-  (await admin.from("account_settings").select("turns_used").eq("user_id", me.user.id).single()).data
-    ?.turns_used;
+  (await admin.from("account_settings").select("turns_used").eq("user_id", me.user.id).single()).data?.turns_used;
 // Waits for the counter to read `want`, up to a few seconds: the
 // refund lands after the model call is cut off, not before.
 const usedSettles = async (want) => {
@@ -95,7 +94,10 @@ try {
   check("the turn comes as lines", (res.headers.get("content-type") ?? "").includes("x-ndjson"));
   const turn = await readTurn(res);
   const order = turn.steps.map((s) => s.step).join(",");
-  check("taken, read the store, read the app, asked the model — in that order", order.startsWith("accepted,store,context,model"));
+  check(
+    "taken, read the store, read the app, asked the model — in that order",
+    order.startsWith("accepted,store,context,model")
+  );
   if (!order.startsWith("accepted,store,context,model")) show(order);
   const first = turn.steps.find((s) => s.step === "model");
   check("the first ask says it is the first of three", first?.attempt === 1 && first?.of === 3);
@@ -111,13 +113,21 @@ try {
   // checked without the model is said.
   const modelDown = !turn.data.reply && typeof turn.data.error === "string";
   if (modelDown) {
-    console.log(`  skip  the model was not there — the stream ended in its error: ${String(turn.data.error).slice(0, 80)}`);
+    console.log(
+      `  skip  the model was not there — the stream ended in its error: ${String(turn.data.error).slice(0, 80)}`
+    );
     check("and the error is the last line, not a dropped stream", typeof turn.data.error === "string");
   } else {
-    check("checked the reply, and the reply is the last line", /,checked/.test(order) && !!turn.data.reply && !!turn.data.conversationId);
+    check(
+      "checked the reply, and the reply is the last line",
+      /,checked/.test(order) && !!turn.data.reply && !!turn.data.conversationId
+    );
     if (!turn.data.reply) show(turn.data);
   }
-  check(modelDown ? "a turn the model failed is given back" : "a greeting is not a design, so the turn is given back", (await used()) === before);
+  check(
+    modelDown ? "a turn the model failed is given back" : "a greeting is not a design, so the turn is given back",
+    (await used()) === before
+  );
 
   console.log("\na turn the browser walked out of comes back");
   // Read the first line — the turn has been spent by then — and let

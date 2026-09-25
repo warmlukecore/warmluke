@@ -388,7 +388,10 @@ export const SHOPIFY_RESOURCES = {
           }
           const parentOrder = orders.get(l.__parentId);
           if (parentOrder) {
-            const ret = { ...(l as unknown as GqlReturningOrder["returns"]["nodes"][number]), returnLineItems: { nodes: [] } };
+            const ret = {
+              ...(l as unknown as GqlReturningOrder["returns"]["nodes"][number]),
+              returnLineItems: { nodes: [] },
+            };
             parentOrder.returns.nodes.push(ret);
             returnOf.set(l.id!, ret);
             continue;
@@ -407,8 +410,14 @@ export const SHOPIFY_RESOURCES = {
     save: (db, storeId, nodes) => saveReturns(db, storeId, nodes as GqlReturningOrder[]),
     // Eight topics, one meaning: the state of a return changed.
     webhooks: [
-      "RETURNS_REQUEST", "RETURNS_APPROVE", "RETURNS_DECLINE", "RETURNS_CANCEL",
-      "RETURNS_CLOSE", "RETURNS_REOPEN", "RETURNS_PROCESS", "RETURNS_UPDATE",
+      "RETURNS_REQUEST",
+      "RETURNS_APPROVE",
+      "RETURNS_DECLINE",
+      "RETURNS_CANCEL",
+      "RETURNS_CLOSE",
+      "RETURNS_REOPEN",
+      "RETURNS_PROCESS",
+      "RETURNS_UPDATE",
     ],
     tables: ["returns", "return_line_items"],
     // Not compared. The pass counts ORDERS in a returning state and
@@ -663,8 +672,7 @@ export const isResource = (v: unknown): v is Resource =>
  * already asks for, so a scope cannot end up declared twice, and it
  * has to be deleted from here when its resource is written.
  */
-export const PLANNED_SCOPES = [
-] as const;
+export const PLANNED_SCOPES = [] as const;
 
 /** Every read scope any resource needs, once each, in resource order. Read-only by construction. */
 export const SHOPIFY_SCOPES: readonly string[] = [
@@ -696,9 +704,7 @@ export const EXTENDED_ORDER_HISTORY_SCOPE = "read_all_orders";
  */
 export function scopesFor(env = process.env): string[] {
   const asked = [...new Set([...SHOPIFY_SCOPES, ...ACTION_SCOPES])];
-  return env.SHOPIFY_READ_ALL_ORDERS === "true"
-    ? [...asked, EXTENDED_ORDER_HISTORY_SCOPE]
-    : asked;
+  return env.SHOPIFY_READ_ALL_ORDERS === "true" ? [...asked, EXTENDED_ORDER_HISTORY_SCOPE] : asked;
 }
 
 /**
@@ -711,10 +717,7 @@ export function scopesFor(env = process.env): string[] {
  * demonstrably working and sending its owner to reconnect for scopes
  * they may already hold is worse than staying quiet.
  */
-export function missingScopes(
-  granted: readonly string[] | null | undefined,
-  env = process.env
-): string[] {
+export function missingScopes(granted: readonly string[] | null | undefined, env = process.env): string[] {
   if (!granted || granted.length === 0) return [];
   return scopesFor(env).filter((s) => !granted.includes(s));
 }

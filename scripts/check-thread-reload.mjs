@@ -26,10 +26,7 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
-const client = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
-);
+const client = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY);
 const { data: owner } = await client.auth.signInWithPassword({
   email: OWNER_EMAIL,
   password: process.env.OWNER_PASSWORD ?? "",
@@ -39,10 +36,7 @@ if (!owner?.session) {
   process.exit(0);
 }
 const token = owner.session.access_token;
-const admin = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.ADAPTIVE_OS_SERVICE_ROLE_KEY
-);
+const admin = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
 const { data: project } = await admin.from("projects").select("id").limit(1).single();
 
 // The row recordOutcome() writes, written the same way it writes it.
@@ -79,7 +73,10 @@ try {
   const listed = await get(new URLSearchParams({ projectId: project.id }));
   check("names no thread", listed.conversationId === null);
   check("and returns no messages", (listed.messages ?? []).length === 0);
-  check("but still lists the threads", (listed.threads ?? []).some((t) => t.id === thread.id));
+  check(
+    "but still lists the threads",
+    (listed.threads ?? []).some((t) => t.id === thread.id)
+  );
 } finally {
   await admin.from("conversations").delete().eq("id", thread.id);
   console.log("\nthe test thread is removed");

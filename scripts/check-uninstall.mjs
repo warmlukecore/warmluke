@@ -125,7 +125,10 @@ const erasedUninstalled = await sql(
     { status: "uninstalled", connectedAt: "now() - interval '1 hour'" }
   )
 );
-check("so is one Shopify said was uninstalled, however recently connected", Number(last(erasedUninstalled, "left_behind")) === 0);
+check(
+  "so is one Shopify said was uninstalled, however recently connected",
+  Number(last(erasedUninstalled, "left_behind")) === 0
+);
 
 console.log("\nand not a store connected again since");
 const spared = await sql(
@@ -143,5 +146,7 @@ const asNobody = await sql(
 );
 check("and nobody outside can ask for an erasure directly", refusedWith(asNobody, /permission denied/));
 
-console.log(fails.length === 0 ? "\nremoved means removed, and erased means the right store" : `\n${fails.length} FAILED`);
+console.log(
+  fails.length === 0 ? "\nremoved means removed, and erased means the right store" : `\n${fails.length} FAILED`
+);
 process.exit(fails.length === 0 ? 0 : 1);

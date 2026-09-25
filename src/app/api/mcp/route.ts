@@ -90,7 +90,8 @@ const TOOLS = [
   {
     name: "read_section",
     description:
-      "How a section in the merchant's Warmluke app is put together — its fields, its filters, its stats, where its rows come from — and its rows when it holds its own. Call it with no arguments to list the sections. Use this before guessing why something on screen behaves the way it does." + RENDER_NOTE,
+      "How a section in the merchant's Warmluke app is put together — its fields, its filters, its stats, where its rows come from — and its rows when it holds its own. Call it with no arguments to list the sections. Use this before guessing why something on screen behaves the way it does." +
+      RENDER_NOTE,
     inputSchema: {
       type: "object",
       properties: {
@@ -98,7 +99,7 @@ const TOOLS = [
         history: {
           type: "boolean",
           description:
-            "Return how this section has changed instead of its rows: every version, newest first, with when it was made, who by, and the fields it held. Use it to answer \"what did this look like before?\" and to propose putting it back.",
+            'Return how this section has changed instead of its rows: every version, newest first, with when it was made, who by, and the fields it held. Use it to answer "what did this look like before?" and to propose putting it back.',
         },
         limit: { type: "number", description: "Up to 200. Defaults to 50." },
         project_id: { type: "string", description: "Which app, when they have more than one." },
@@ -142,7 +143,7 @@ const TOOLS = [
   {
     name: "build_history",
     description:
-      "What has actually been built in this app, newest first — including the ones that only partly worked, and what did not. Use it to answer \"what changed last week?\", to check whether something was already done before proposing it again, and to see whether an earlier build left anything unfinished.",
+      'What has actually been built in this app, newest first — including the ones that only partly worked, and what did not. Use it to answer "what changed last week?", to check whether something was already done before proposing it again, and to see whether an earlier build left anything unfinished.',
     inputSchema: {
       type: "object",
       properties: {
@@ -253,7 +254,8 @@ const TOOLS = [
     name: "propose_store_action",
     description:
       "Ask for something to be changed IN the merchant's Shopify shop itself — a tag on some orders, a note, a stock count. Warmluke writes the sentence they will read, from the change, not from you. Nothing happens until they agree to it in Warmluke, and you cannot agree for them: a change to a live shop is theirs alone, whatever the app's auto-build setting says. Call it once per kind of change; the answer says what they have to do next. What can be asked for: " +
-      ACTION_CATALOGUE.map((c) => `${c.action} (${c.does})`).join(", ") + ".",
+      ACTION_CATALOGUE.map((c) => `${c.action} (${c.does})`).join(", ") +
+      ".",
     inputSchema: {
       ...PROPOSE_INPUT,
       properties: {
@@ -328,18 +330,13 @@ const openAt = (origin: string, projectId: string, requestId?: string | null) =>
 // rows on its own afterwards.
 
 /** What went in, in the words the panel already uses for a build. */
-function builtLine(
-  plans: AssistantPlan[],
-  modules: ModuleRow[],
-  errors: string[]
-): string {
+function builtLine(plans: AssistantPlan[], modules: ModuleRow[], errors: string[]): string {
   const titles = plans.map((p) => describePlan(p, modules).title).filter(Boolean);
   const shown = titles.slice(0, 3).join(" · ");
   const rest = titles.length - 3;
   const head = `✅ ${shown}${rest > 0 ? ` · and ${rest} more` : ""}`;
   return errors.length ? `${head} — the rest stopped on an error.` : `${head}.`;
 }
-
 
 /**
  * The rules on a project, or on one section of it.
@@ -427,8 +424,7 @@ const shapeRequest = (
     // all. A finished, dismissed or taken-over one came back as yours
     // to approve, which is an id the model cannot act on.
     you_can_approve_it:
-      (r.status === "pending" || r.status === "building") &&
-      (client === null || r.client_id === client),
+      (r.status === "pending" || r.status === "building") && (client === null || r.client_id === client),
     ...(r.outcome
       ? {
           built: r.outcome.applied ?? [],
@@ -538,201 +534,93 @@ async function settleDesign(opts: {
       }
     : {};
 
-      // ── Does this one get to skip the merchant? ──────────────
-      //
-      // The switch says they are willing; this decides whether THIS
-      // design qualifies. The setting says everything, so the only
-      // thing left to decide is whether there is anything to build.
-      // The switch means everything now, so the only design that
-      // cannot be built on its own is one with nothing in it.
-      const autoReason = plans.length === 0 ? "there is nothing to build" : null;
-      const wantsAuto = project.auto_build === true;
+  // ── Does this one get to skip the merchant? ──────────────
+  //
+  // The switch says they are willing; this decides whether THIS
+  // design qualifies. The setting says everything, so the only
+  // thing left to decide is whether there is anything to build.
+  // The switch means everything now, so the only design that
+  // cannot be built on its own is one with nothing in it.
+  const autoReason = plans.length === 0 ? "there is nothing to build" : null;
+  const wantsAuto = project.auto_build === true;
 
-      // A design that removes a section is now proposed like any
-       // other, and built like no other.
-       //
-       // It used to be refused here outright, so "delete the Variants
-       // section" was a dead end: no request, no card, nothing for the
-       // merchant to act on but a sentence telling them to go and find
-       // it themselves. The refusal was aimed at the right thing —
-       // removal takes every row and does not come back, and the one
-       // confirmation that guards it is typing the section's name,
-       // which a chat window cannot ask for. But refusing the REQUEST
-       // was never what protected them; refusing the BUILD is.
-       //
-       // So it waits in Warmluke, where that name is typed. Never
-       // automatically, whatever the project's setting says, and
-       // approve_change still refuses it.
-      const gone = removals(plans);
+  // A design that removes a section is now proposed like any
+  // other, and built like no other.
+  //
+  // It used to be refused here outright, so "delete the Variants
+  // section" was a dead end: no request, no card, nothing for the
+  // merchant to act on but a sentence telling them to go and find
+  // it themselves. The refusal was aimed at the right thing —
+  // removal takes every row and does not come back, and the one
+  // confirmation that guards it is typing the section's name,
+  // which a chat window cannot ask for. But refusing the REQUEST
+  // was never what protected them; refusing the BUILD is.
+  //
+  // So it waits in Warmluke, where that name is typed. Never
+  // automatically, whatever the project's setting says, and
+  // approve_change still refuses it.
+  const gone = removals(plans);
 
-      const automatic = wantsAuto && autoReason === null && gone.length === 0;
-      // Why an automatic build did not happen, when it was meant to.
-      let autoFailed: string[] = [];
+  const automatic = wantsAuto && autoReason === null && gone.length === 0;
+  // Why an automatic build did not happen, when it was meant to.
+  let autoFailed: string[] = [];
 
-      const { data: requestId, error: err } = await db.rpc("abo_mcp_propose", {
-        p_project: project.id,
-        p_request: request,
-        p_plans: plans,
-        p_summary: design,
-        // Stored apart from the rendered text because the card keeps
-        // this visible while the details fold away: everything else
-        // can be rebuilt from the plans, this cannot.
-        p_unmet: unmet,
-        // And the follow-ups, for the same reason. With auto-build
-        // off the build happens in approve_change hours later, and
-        // nothing there could have known what this design offered.
-        p_next: followUps.length ? followUps : null,
-      });
-      if (err) return ok(id, text({ error: err.message }));
-      charged?.();
+  const { data: requestId, error: err } = await db.rpc("abo_mcp_propose", {
+    p_project: project.id,
+    p_request: request,
+    p_plans: plans,
+    p_summary: design,
+    // Stored apart from the rendered text because the card keeps
+    // this visible while the details fold away: everything else
+    // can be rebuilt from the plans, this cannot.
+    p_unmet: unmet,
+    // And the follow-ups, for the same reason. With auto-build
+    // off the build happens in approve_change hours later, and
+    // nothing there could have known what this design offered.
+    p_next: followUps.length ? followUps : null,
+  });
+  if (err) return ok(id, text({ error: err.message }));
+  charged?.();
 
-      // A second opinion on the design — Luke's or the assistant's own
-      // — taken after this answer has gone out, and written down where
-      // nothing reads it yet.
-      after(() =>
-        noteJudgement(db, {
-          projectId: project.id,
-          source: "mcp",
-          ref: requestId as string,
-          request,
-          plans,
-          modules: moduleList,
-          store,
-          unmet,
-        })
-      );
+  // A second opinion on the design — Luke's or the assistant's own
+  // — taken after this answer has gone out, and written down where
+  // nothing reads it yet.
+  after(() =>
+    noteJudgement(db, {
+      projectId: project.id,
+      source: "mcp",
+      ref: requestId as string,
+      request,
+      plans,
+      modules: moduleList,
+      store,
+      unmet,
+    })
+  );
 
-
-      if (automatic) {
-        // auto-build IS the approval — given in Warmluke, on this
-        // project, before any of this was asked for. The stamp records
-        // that, so the row says who agreed and when.
-        //
-        // And the answer is read. It was not: abo_approve_request can
-        // refuse — it is the only place that decides whether a client
-        // may stamp anything — and this went straight on to apply
-        // plans that abo_build then rejected one by one for want of an
-        // approved_at. The failure arrived as a list of write errors
-        // about permissions, never as the reason it was actually
-        // refused.
-        const { data: nod } = await db.rpc("abo_approve_request", { p_request: requestId });
-        const approval = nod as { approved: boolean; reason?: string } | null;
-        if (!approval?.approved) {
-          return ok(
-            id,
-            text({
-              status: "waiting for approval",
-              request_id: requestId,
-              design,
-              not_automatic_because:
-                approval?.reason ?? "the merchant has to approve this one in Warmluke",
-              note: "Nothing has changed yet. Read this design back to the merchant, then read them what_the_merchant_does — it is what actually finishes this.",
-              what_the_merchant_does: stepsToFinish(
-                { status: "pending", plans },
-                openAt(origin, project.id, requestId as string)
-              ),
-              open: openAt(origin, project.id, requestId as string),
-            })
-          );
-        }
-        const { applied, errors } = await applyPlans(db, project.id, plans, requestId as string);
-        if (applied.length > 0) {
-          await db.rpc("abo_build", {
-            p_project: project.id,
-            p_request: requestId,
-            p_op: "request_built",
-            // What really happened, not that something happened. With
-            // errors in it the row lands as partly_built. And that
-            // nobody tapped anything — inside the same write, because
-            // this used to be a second one straight at the table, and
-            // a connected client is not allowed to write at the table.
-            // For every build a real assistant made, it silently did
-            // not land, and the row read as approved by the merchant.
-            p_payload: { applied, errors, auto_built: true },
-          });
-          // Written here, not by the browser. Nobody tapped anything —
-          // that is the whole point of automatic builds — so if this
-          // did not record it, the app would change and the merchant's
-          // history would stay blank.
-          await logClientBuild(db, project.id, request, builtLine(plans, moduleList, errors), applied);
-          return ok(
-            id,
-            text({
-              status: errors.length ? "partly built" : "built",
-              note: "This app builds without waiting for approval. Tell the merchant what was built — it is already live and shows in their panel. They can carry on here, or open Warmluke and ask Luke inside it; both reach the same app.",
-              ...whatNext,
-              // Named even though nobody has to approve it. An
-              // automatic build was the one answer that came back
-              // without an id, so an assistant that built something
-              // had no way to refer to it afterwards — not in
-              // build_history, not to the merchant. It is the same id
-              // every other answer here carries.
-              request_id: requestId,
-              built: applied,
-              ...(errors.length ? { not_built: errors.slice(0, 3) } : {}),
-              design,
-              // Built already, so there is nothing to finish — but a
-              // half-built one has a card worth opening, and this
-              // says so or stays quiet, from the row itself.
-              ...(errors.length
-                ? {
-                    what_the_merchant_does: stepsToFinish(
-                      { status: "partly_built", plans },
-                      openAt(origin, project.id, requestId as string)
-                    ),
-                  }
-                : {}),
-              open: openAt(origin, project.id, requestId as string),
-            })
-          );
-        }
-        // Nothing applied. It stays a request for a person to look at
-        // rather than being reported as done — but the reason it could
-        // not be built used to be dropped right here, and the answer
-        // was an ordinary "waiting for approval". So a merchant with
-        // automatic builds switched on saw it silently stop working,
-        // and nothing anywhere said why. Carried out instead.
-        autoFailed = errors;
-        // Recorded on the request, not only returned to the assistant.
-        // The merchant looks at a card in Warmluke, not at the tool's
-        // answer — and a card that asks with the setting on has to be
-        // able to say why, or it reads as the setting not working.
-        // Through abo_build, not at the table: a client cannot write
-        // there, and this reason was never landing for the one kind
-        // of caller that produces it.
-        await db.rpc("abo_build", {
-          p_project: project.id,
-          p_request: requestId,
-          p_op: "request_outcome",
-          p_payload: { applied: [], errors },
-        });
-      }
-
+  if (automatic) {
+    // auto-build IS the approval — given in Warmluke, on this
+    // project, before any of this was asked for. The stamp records
+    // that, so the row says who agreed and when.
+    //
+    // And the answer is read. It was not: abo_approve_request can
+    // refuse — it is the only place that decides whether a client
+    // may stamp anything — and this went straight on to apply
+    // plans that abo_build then rejected one by one for want of an
+    // approved_at. The failure arrived as a list of write errors
+    // about permissions, never as the reason it was actually
+    // refused.
+    const { data: nod } = await db.rpc("abo_approve_request", { p_request: requestId });
+    const approval = nod as { approved: boolean; reason?: string } | null;
+    if (!approval?.approved) {
       return ok(
         id,
         text({
-          // Said plainly so the model reports it plainly: nothing has
-          // been built, and somebody still has to say yes.
           status: "waiting for approval",
-          note: "Nothing has changed yet. Read this design back to the merchant word for word. If they approve, call approve_change with the request_id. If they leave it and come back later, check pending_changes rather than trusting this id — they may have dealt with it in Warmluke.",
           request_id: requestId,
           design,
-          ...whatNext,
-          ...(gone.length
-            ? {
-                cannot_be_approved_from_here: `This removes ${gone.join(", ")}, and removal takes every row in it. It is waiting in Warmluke, where the merchant types the section's name to confirm. Do not call approve_change for it — say plainly that this one they have to confirm themselves.`,
-              }
-            : {}),
-          // When the merchant has asked for automatic builds, say why
-          // this one still needs them. Otherwise they are left
-          // wondering why the setting did nothing.
-          ...(autoFailed.length > 0
-            ? {
-                not_automatic_because: `it could not be built: ${autoFailed.slice(0, 3).join("; ")}`,
-              }
-            : wantsAuto && autoReason
-              ? { not_automatic_because: autoReason }
-              : {}),
+          not_automatic_because: approval?.reason ?? "the merchant has to approve this one in Warmluke",
+          note: "Nothing has changed yet. Read this design back to the merchant, then read them what_the_merchant_does — it is what actually finishes this.",
           what_the_merchant_does: stepsToFinish(
             { status: "pending", plans },
             openAt(origin, project.id, requestId as string)
@@ -741,6 +629,112 @@ async function settleDesign(opts: {
         })
       );
     }
+    const { applied, errors } = await applyPlans(db, project.id, plans, requestId as string);
+    if (applied.length > 0) {
+      await db.rpc("abo_build", {
+        p_project: project.id,
+        p_request: requestId,
+        p_op: "request_built",
+        // What really happened, not that something happened. With
+        // errors in it the row lands as partly_built. And that
+        // nobody tapped anything — inside the same write, because
+        // this used to be a second one straight at the table, and
+        // a connected client is not allowed to write at the table.
+        // For every build a real assistant made, it silently did
+        // not land, and the row read as approved by the merchant.
+        p_payload: { applied, errors, auto_built: true },
+      });
+      // Written here, not by the browser. Nobody tapped anything —
+      // that is the whole point of automatic builds — so if this
+      // did not record it, the app would change and the merchant's
+      // history would stay blank.
+      await logClientBuild(db, project.id, request, builtLine(plans, moduleList, errors), applied);
+      return ok(
+        id,
+        text({
+          status: errors.length ? "partly built" : "built",
+          note: "This app builds without waiting for approval. Tell the merchant what was built — it is already live and shows in their panel. They can carry on here, or open Warmluke and ask Luke inside it; both reach the same app.",
+          ...whatNext,
+          // Named even though nobody has to approve it. An
+          // automatic build was the one answer that came back
+          // without an id, so an assistant that built something
+          // had no way to refer to it afterwards — not in
+          // build_history, not to the merchant. It is the same id
+          // every other answer here carries.
+          request_id: requestId,
+          built: applied,
+          ...(errors.length ? { not_built: errors.slice(0, 3) } : {}),
+          design,
+          // Built already, so there is nothing to finish — but a
+          // half-built one has a card worth opening, and this
+          // says so or stays quiet, from the row itself.
+          ...(errors.length
+            ? {
+                what_the_merchant_does: stepsToFinish(
+                  { status: "partly_built", plans },
+                  openAt(origin, project.id, requestId as string)
+                ),
+              }
+            : {}),
+          open: openAt(origin, project.id, requestId as string),
+        })
+      );
+    }
+    // Nothing applied. It stays a request for a person to look at
+    // rather than being reported as done — but the reason it could
+    // not be built used to be dropped right here, and the answer
+    // was an ordinary "waiting for approval". So a merchant with
+    // automatic builds switched on saw it silently stop working,
+    // and nothing anywhere said why. Carried out instead.
+    autoFailed = errors;
+    // Recorded on the request, not only returned to the assistant.
+    // The merchant looks at a card in Warmluke, not at the tool's
+    // answer — and a card that asks with the setting on has to be
+    // able to say why, or it reads as the setting not working.
+    // Through abo_build, not at the table: a client cannot write
+    // there, and this reason was never landing for the one kind
+    // of caller that produces it.
+    await db.rpc("abo_build", {
+      p_project: project.id,
+      p_request: requestId,
+      p_op: "request_outcome",
+      p_payload: { applied: [], errors },
+    });
+  }
+
+  return ok(
+    id,
+    text({
+      // Said plainly so the model reports it plainly: nothing has
+      // been built, and somebody still has to say yes.
+      status: "waiting for approval",
+      note: "Nothing has changed yet. Read this design back to the merchant word for word. If they approve, call approve_change with the request_id. If they leave it and come back later, check pending_changes rather than trusting this id — they may have dealt with it in Warmluke.",
+      request_id: requestId,
+      design,
+      ...whatNext,
+      ...(gone.length
+        ? {
+            cannot_be_approved_from_here: `This removes ${gone.join(", ")}, and removal takes every row in it. It is waiting in Warmluke, where the merchant types the section's name to confirm. Do not call approve_change for it — say plainly that this one they have to confirm themselves.`,
+          }
+        : {}),
+      // When the merchant has asked for automatic builds, say why
+      // this one still needs them. Otherwise they are left
+      // wondering why the setting did nothing.
+      ...(autoFailed.length > 0
+        ? {
+            not_automatic_because: `it could not be built: ${autoFailed.slice(0, 3).join("; ")}`,
+          }
+        : wantsAuto && autoReason
+          ? { not_automatic_because: autoReason }
+          : {}),
+      what_the_merchant_does: stepsToFinish(
+        { status: "pending", plans },
+        openAt(origin, project.id, requestId as string)
+      ),
+      open: openAt(origin, project.id, requestId as string),
+    })
+  );
+}
 
 export async function POST(req: Request) {
   // Required by the spec: without it a page on another origin could
@@ -871,18 +865,12 @@ export async function POST(req: Request) {
       const { data: projects } = await db.from("projects").select("*");
       const list = (projects ?? []) as ProjectRow[];
       const wantedProject = (args.project_id as string | undefined)?.trim();
-      const project = wantedProject
-        ? list.find((p) => p.id === wantedProject)
-        : list.length === 1
-          ? list[0]
-          : null;
+      const project = wantedProject ? list.find((p) => p.id === wantedProject) : list.length === 1 ? list[0] : null;
       if (!project) {
         return ok(
           id,
           text({
-            error: list.length
-              ? "Which app is this for? Pass project_id."
-              : "This account has no app yet.",
+            error: list.length ? "Which app is this for? Pass project_id." : "This account has no app yet.",
             projects: list.map((p) => ({ id: p.id, name: p.name })),
           })
         );
@@ -909,9 +897,7 @@ export async function POST(req: Request) {
       // one silently agreed.
       const { data: allowance, error: spendErr } = await db.rpc("abo_spend_turn");
       if (spendErr) throw new Error(spendErr.message);
-      const turns = allowance as
-        | { ok: boolean; used: number; free: number; spend_id?: string }
-        | null;
+      const turns = allowance as { ok: boolean; used: number; free: number; spend_id?: string } | null;
       if (!turns || !turns.ok) {
         return ok(
           id,
@@ -928,7 +914,8 @@ export async function POST(req: Request) {
             // open with no limit on it.
             note: "That counter is only for designs Warmluke writes. Write this one yourself instead: call design_format, then submit_design. It is checked by the same validator, goes to the merchant the same way, and does not touch the counter.",
             do_this_instead: "design_format",
-            reading_still_works: "orders, stock, products, customers — and pending_changes says what, if anything, is still waiting to be approved",
+            reading_still_works:
+              "orders, stock, products, customers — and pending_changes says what, if anything, is still waiting to be approved",
             open: openAt(new URL(req.url).origin, project.id),
           })
         );
@@ -990,8 +977,7 @@ export async function POST(req: Request) {
         }
 
         const design = blueprintAsText(turn.reply, moduleList, turn.store, turn.unmet);
-        const plans =
-          turn.reply.type === "blueprint" ? turn.reply.blueprint.plans : turn.reply.plans;
+        const plans = turn.reply.type === "blueprint" ? turn.reply.blueprint.plans : turn.reply.plans;
 
         return await settleDesign({
           db,
@@ -1025,11 +1011,7 @@ export async function POST(req: Request) {
       const { data: projects } = await db.from("projects").select("id, name");
       const list = projects ?? [];
       const wanted = (args.project_id as string | undefined)?.trim();
-      const project = wanted
-        ? list.find((p) => p.id === wanted)
-        : list.length === 1
-          ? list[0]
-          : null;
+      const project = wanted ? list.find((p) => p.id === wanted) : list.length === 1 ? list[0] : null;
       if (!project) {
         return ok(
           id,
@@ -1265,9 +1247,7 @@ export async function POST(req: Request) {
           // grew past a page of it.
           total,
           showing: rows.length,
-          ...(total > rows.length
-            ? { has_more: `${total - rows.length} older ones are not listed here.` }
-            : {}),
+          ...(total > rows.length ? { has_more: `${total - rows.length} older ones are not listed here.` } : {}),
           ...(shopChanges.length
             ? {
                 waiting_store_changes: shopChanges,
@@ -1287,7 +1267,10 @@ export async function POST(req: Request) {
               // said nothing about where to go or what to press. Both
               // come from the row, so neither can drift from it.
               open: where,
-              what_the_merchant_does: stepsToFinish({ ...(r as RequestRow), plans: (r as RequestRow).plans ?? [] }, where),
+              what_the_merchant_does: stepsToFinish(
+                { ...(r as RequestRow), plans: (r as RequestRow).plans ?? [] },
+                where
+              ),
               next_action:
                 r.status === "partly_built"
                   ? "Some of this was built and some was not. Tell the merchant exactly which, and ask for the missing part again as a new request — approve_change will not finish this one."
@@ -1339,9 +1322,7 @@ export async function POST(req: Request) {
 
       let q = db
         .from("build_requests")
-        .select(
-          "id, project_id, request, summary, status, approved_at, created_at, built_at, client_id, outcome"
-        )
+        .select("id, project_id, request, summary, status, approved_at, created_at, built_at, client_id, outcome")
         // Everything that happened, not only what worked. A history
         // that hides the failures is the reason none of this was
         // trustworthy in the first place.
@@ -1412,9 +1393,7 @@ export async function POST(req: Request) {
         p_reason: reason || null,
       });
       if (rErr) return ok(id, text({ error: rErr.message }));
-      const answer = said as
-        | { rejected: boolean; already?: boolean; status?: string; reason?: string }
-        | null;
+      const answer = said as { rejected: boolean; already?: boolean; status?: string; reason?: string } | null;
 
       if (!answer?.rejected) {
         return ok(
@@ -1469,14 +1448,9 @@ export async function POST(req: Request) {
           // What each list is, in the same words Luke reads — so a
           // client asked for "a SKU list for my orders" finds the list
           // that already is one, instead of building a hand-typed copy.
-          store_lists: Object.fromEntries(
-            Object.entries(STORE_TABLES).map(([table, spec]) => [table, spec.what])
-          ),
+          store_lists: Object.fromEntries(Object.entries(STORE_TABLES).map(([table, spec]) => [table, spec.what])),
           store_columns: Object.fromEntries(
-            Object.entries(STORE_TABLES).map(([table, spec]) => [
-              table,
-              spec.columns.map((c) => c.field),
-            ])
+            Object.entries(STORE_TABLES).map(([table, spec]) => [table, spec.columns.map((c) => c.field)])
           ),
           // What a stat over each table should be — the same words Luke
           // reads, from the same place, so the two doors cannot disagree
@@ -1509,18 +1483,12 @@ export async function POST(req: Request) {
       const { data: projects } = await db.from("projects").select("*");
       const list = (projects ?? []) as ProjectRow[];
       const wantedProject = (args.project_id as string | undefined)?.trim();
-      const project = wantedProject
-        ? list.find((p) => p.id === wantedProject)
-        : list.length === 1
-          ? list[0]
-          : null;
+      const project = wantedProject ? list.find((p) => p.id === wantedProject) : list.length === 1 ? list[0] : null;
       if (!project) {
         return ok(
           id,
           text({
-            error: list.length
-              ? "Which app is this for? Pass project_id."
-              : "This account has no app yet.",
+            error: list.length ? "Which app is this for? Pass project_id." : "This account has no app yet.",
             projects: list.map((p) => ({ id: p.id, name: p.name })),
           })
         );
@@ -1563,8 +1531,7 @@ export async function POST(req: Request) {
       if (checked.reply.type === "answer") {
         return ok(id, text({ error: "That reads as a question, not a change to make." }));
       }
-      const plans =
-        checked.reply.type === "blueprint" ? checked.reply.blueprint.plans : checked.reply.plans;
+      const plans = checked.reply.type === "blueprint" ? checked.reply.blueprint.plans : checked.reply.plans;
 
       // Made-up rows beside the store's own are refused here as they
       // are in Luke's own loop: a client once seeded four invented
@@ -1603,7 +1570,10 @@ export async function POST(req: Request) {
         // The card is read by a person who has to recognise what they
         // asked for. Falling back to the design's own words beats an
         // empty line.
-        plans.map((pl) => pl.explanation).filter(Boolean).join(" ") ||
+        plans
+          .map((pl) => pl.explanation)
+          .filter(Boolean)
+          .join(" ") ||
         "A change designed by their own assistant";
 
       return settleDesign({
@@ -1652,7 +1622,7 @@ export async function POST(req: Request) {
           id,
           text({
             error: "That build was not made through this assistant, so it cannot be put back from here.",
-            note: "The merchant can put it back themselves: its receipt in Warmluke has a \"Put it back\" link.",
+            note: 'The merchant can put it back themselves: its receipt in Warmluke has a "Put it back" link.',
             open: openAt(new URL(req.url).origin, target.project_id),
           })
         );
@@ -1699,7 +1669,7 @@ export async function POST(req: Request) {
           text({
             status: "waiting for the merchant",
             would_put_back: what,
-            note: "This app asks before it changes anything, and an undo is a change. Tell them the fastest way is the build's own receipt in Warmluke, which has a \"Put it back\" link on it.",
+            note: 'This app asks before it changes anything, and an undo is a change. Tell them the fastest way is the build\'s own receipt in Warmluke, which has a "Put it back" link on it.',
             open: openAt(new URL(req.url).origin, target.project_id),
           })
         );
@@ -1760,7 +1730,10 @@ export async function POST(req: Request) {
         | undefined;
       if (!reqRow) return ok(id, text({ error: "No such request on this account." }));
       if (reqRow.status === "built") {
-        return ok(id, text({ status: "already built", note: "This design was already applied. Nothing was built again." }));
+        return ok(
+          id,
+          text({ status: "already built", note: "This design was already applied. Nothing was built again." })
+        );
       }
       if (reqRow.status === "opened") {
         return ok(
@@ -1772,7 +1745,10 @@ export async function POST(req: Request) {
         );
       }
       if (reqRow.status === "dismissed") {
-        return ok(id, text({ error: "The merchant dismissed this request. Propose it again if they changed their mind." }));
+        return ok(
+          id,
+          text({ error: "The merchant dismissed this request. Propose it again if they changed their mind." })
+        );
       }
       if (!reqRow.plans?.length) {
         return ok(
@@ -1826,10 +1802,12 @@ export async function POST(req: Request) {
           id,
           text({
             status: "waiting for approval",
-            error:
-              "Warmluke needs the merchant's yes from inside their own app before this is built.",
+            error: "Warmluke needs the merchant's yes from inside their own app before this is built.",
             note: "Tell them it is waiting in Warmluke — the bell in the assistant panel. If they would rather you built these without asking each time, they can turn auto-build on for this app.",
-            what_the_merchant_does: stepsToFinish(reqRow, openAt(new URL(req.url).origin, reqRow.project_id, reqRow.id)),
+            what_the_merchant_does: stepsToFinish(
+              reqRow,
+              openAt(new URL(req.url).origin, reqRow.project_id, reqRow.id)
+            ),
             open: openAt(new URL(req.url).origin, reqRow.project_id, reqRow.id),
             reason: approval?.reason,
           })
@@ -1872,10 +1850,7 @@ export async function POST(req: Request) {
       // Approved inside their own Claude, so the browser never saw it
       // and never wrote it down. Read after the build, so a section it
       // just created is named rather than shown as an unknown id.
-      const { data: builtMods } = await db
-        .from("modules")
-        .select("*")
-        .eq("project_id", reqRow.project_id);
+      const { data: builtMods } = await db.from("modules").select("*").eq("project_id", reqRow.project_id);
       await logClientBuild(
         db,
         reqRow.project_id,
@@ -1974,7 +1949,11 @@ export async function POST(req: Request) {
       if (!asked.ok) {
         return ok(
           id,
-          text(asked.reconnect ? { ...asked.answer, open: openAt(new URL(req.url).origin, store.project_id) } : asked.answer)
+          text(
+            asked.reconnect
+              ? { ...asked.answer, open: openAt(new URL(req.url).origin, store.project_id) }
+              : asked.answer
+          )
         );
       }
       const { id: actionId, action: wantedAction, summary, targets, spec } = asked;
@@ -1992,11 +1971,7 @@ export async function POST(req: Request) {
             ? { can_be_taken_back: true }
             : { cannot_be_taken_back: spec.undoNote ?? "This one cannot be undone." }),
           note: "Nothing has changed in the shop. Read them what this does, then read them what_the_merchant_does — and do not offer to do it for them, because you cannot.",
-          what_the_merchant_does: stepsToFinishAction(
-            { status: "pending", action: wantedAction },
-            where,
-            spec
-          ),
+          what_the_merchant_does: stepsToFinishAction({ status: "pending", action: wantedAction }, where, spec),
           open: where,
         })
       );

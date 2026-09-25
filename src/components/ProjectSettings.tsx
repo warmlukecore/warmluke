@@ -103,7 +103,9 @@ export default function ProjectSettings({
     if (tab !== "store" || shop !== undefined) return;
     supabase
       .from("stores")
-      .select("id, shop_domain, status, connected_at, last_synced_at, currency, timezone, webhook_error, token_expires_at, refresh_token_expires_at")
+      .select(
+        "id, shop_domain, status, connected_at, last_synced_at, currency, timezone, webhook_error, token_expires_at, refresh_token_expires_at"
+      )
       .eq("project_id", project.id)
       .maybeSingle()
       .then(({ data, error: e }) => {
@@ -228,11 +230,7 @@ export default function ProjectSettings({
   async function remove() {
     setBusy(true);
     setError(null);
-    const { ok, data } = await apiFetch(
-      "/api/projects",
-      { id: project.id, confirmName: confirm },
-      "DELETE"
-    );
+    const { ok, data } = await apiFetch("/api/projects", { id: project.id, confirmName: confirm }, "DELETE");
     setBusy(false);
     if (!ok || data.error) {
       setError((data.error as string) ?? "Couldn't delete.");
@@ -266,19 +264,23 @@ export default function ProjectSettings({
             </button>
           </>
         ) : (
-        <>
-          <span className="text-xs text-fg-muted">{dirty ? "Unsaved changes" : ""}</span>
-          <button onClick={onClose} className={`${button("plain")} ml-auto`}>
-            Cancel
-          </button>
-          <button onClick={save} disabled={busy || !dirty || !name.trim()} className={button("primary")}>
-            {busy && !confirmingDelete ? "Saving…" : "Save changes"}
-          </button>
-        </>
+          <>
+            <span className="text-xs text-fg-muted">{dirty ? "Unsaved changes" : ""}</span>
+            <button onClick={onClose} className={`${button("plain")} ml-auto`}>
+              Cancel
+            </button>
+            <button onClick={save} disabled={busy || !dirty || !name.trim()} className={button("primary")}>
+              {busy && !confirmingDelete ? "Saving…" : "Save changes"}
+            </button>
+          </>
         )
       }
     >
-      <div role="tablist" aria-label="Settings" className="sticky -top-4 z-10 -mx-5 -mt-4 mb-4 flex gap-4 border-b border-line bg-surface px-5">
+      <div
+        role="tablist"
+        aria-label="Settings"
+        className="sticky -top-4 z-10 -mx-5 -mt-4 mb-4 flex gap-4 border-b border-line bg-surface px-5"
+      >
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -290,7 +292,9 @@ export default function ProjectSettings({
             }`}
           >
             {t.text}
-            {t.count ? <span className="ml-1.5 rounded-full bg-surface-hover px-1.5 text-[11px] text-fg-muted">{t.count}</span> : null}
+            {t.count ? (
+              <span className="ml-1.5 rounded-full bg-surface-hover px-1.5 text-[11px] text-fg-muted">{t.count}</span>
+            ) : null}
           </button>
         ))}
       </div>
@@ -304,64 +308,63 @@ export default function ProjectSettings({
       {tab === "general" && (
         <div className="space-y-4">
           <Group title="Details" description="What the project is called, and how it writes money and dates.">
-          <div>
-            <label htmlFor="project-name" className={label}>
-              Name
-            </label>
-            <input id="project-name" value={name} onChange={(e) => setName(e.target.value)} className={field} />
-          </div>
+            <div>
+              <label htmlFor="project-name" className={label}>
+                Name
+              </label>
+              <input id="project-name" value={name} onChange={(e) => setName(e.target.value)} className={field} />
+            </div>
 
-          <div>
-            <label htmlFor="project-locale" className={label}>
-              Locale and default currency
-            </label>
-            <select
-              id="project-locale"
-              value={chose ? `${locale}|${currency}` : "default"}
-              onChange={(e) => {
-                if (e.target.value === "default") {
-                  setChose(false);
-                  return;
-                }
-                const [l, c] = e.target.value.split("|");
-                setChose(true);
-                setLocale(l);
-                setCurrency(c);
-              }}
-              className={field}
-            >
-              {/* Without this, a project that has never been touched
+            <div>
+              <label htmlFor="project-locale" className={label}>
+                Locale and default currency
+              </label>
+              <select
+                id="project-locale"
+                value={chose ? `${locale}|${currency}` : "default"}
+                onChange={(e) => {
+                  if (e.target.value === "default") {
+                    setChose(false);
+                    return;
+                  }
+                  const [l, c] = e.target.value.split("|");
+                  setChose(true);
+                  setLocale(l);
+                  setCurrency(c);
+                }}
+                className={field}
+              >
+                {/* Without this, a project that has never been touched
                   showed "India — ₹" as though somebody had picked it,
                   and there was no way back to not having picked. */}
-              <option value="default">Follow each shop — no second currency shown</option>
-              {LOCALES.map((o) => (
-                <option key={o.locale} value={`${o.locale}|${o.currency}`}>
-                  {o.label}
-                </option>
-              ))}
-              {chose && !LOCALES.some((o) => o.locale === locale && o.currency === currency) && (
-                <option value={`${locale}|${currency}`}>
-                  {locale} — {currency}
-                </option>
-              )}
-            </select>
-            <div className={hint}>
-              {chose ? (
-                <>
-                  Amounts look like {preview.money(123456.5)} · dates like{" "}
-                  {preview.date("2026-03-14")}. Shopify amounts still show in Shopify&rsquo;s own
-                  currency, with a rough {currency} figure underneath at today&rsquo;s rate.
-                </>
-              ) : (
-                <>
-                  Shopify amounts show in whatever currency the shop recorded them in, and nothing
-                  else is put beside them. Pick a country above if you would also like a rough
-                  figure in your own currency — it is an estimate at today&rsquo;s rate, not
-                  something to reconcile against.
-                </>
-              )}
+                <option value="default">Follow each shop — no second currency shown</option>
+                {LOCALES.map((o) => (
+                  <option key={o.locale} value={`${o.locale}|${o.currency}`}>
+                    {o.label}
+                  </option>
+                ))}
+                {chose && !LOCALES.some((o) => o.locale === locale && o.currency === currency) && (
+                  <option value={`${locale}|${currency}`}>
+                    {locale} — {currency}
+                  </option>
+                )}
+              </select>
+              <div className={hint}>
+                {chose ? (
+                  <>
+                    Amounts look like {preview.money(123456.5)} · dates like {preview.date("2026-03-14")}. Shopify
+                    amounts still show in Shopify&rsquo;s own currency, with a rough {currency} figure underneath at
+                    today&rsquo;s rate.
+                  </>
+                ) : (
+                  <>
+                    Shopify amounts show in whatever currency the shop recorded them in, and nothing else is put beside
+                    them. Pick a country above if you would also like a rough figure in your own currency — it is an
+                    estimate at today&rsquo;s rate, not something to reconcile against.
+                  </>
+                )}
+              </div>
             </div>
-          </div>
           </Group>
 
           <Group title="Delete this project" danger>
@@ -375,8 +378,7 @@ export default function ProjectSettings({
             ) : (
               <div className="space-y-2.5">
                 <div className={note.critical}>
-                  This removes every section, row, rule and conversation in{" "}
-                  <b>{project.name}</b>. It cannot be undone.
+                  This removes every section, row, rule and conversation in <b>{project.name}</b>. It cannot be undone.
                 </div>
                 <input
                   autoFocus
@@ -412,7 +414,10 @@ export default function ProjectSettings({
           {shop === undefined ? (
             <div className="h-40 animate-pulse rounded-card bg-surface-hover" aria-busy />
           ) : shop === null ? (
-            <Group title="Connect a store" description="Orders, products, customers and stock come across on their own, and keep up as they change.">
+            <Group
+              title="Connect a store"
+              description="Orders, products, customers and stock come across on their own, and keep up as they change."
+            >
               <ConnectShopify projectId={project.id} anotherBrowser onCancel={() => setTab("general")} />
             </Group>
           ) : (
@@ -420,7 +425,12 @@ export default function ProjectSettings({
               <Group title="Connection">
                 {(() => {
                   const standing = storeStanding(shop);
-                  const dot = standing.tone === "ok" ? "bg-signal-success" : standing.tone === "busy" ? "bg-signal-info" : "bg-signal-attention";
+                  const dot =
+                    standing.tone === "ok"
+                      ? "bg-signal-success"
+                      : standing.tone === "busy"
+                        ? "bg-signal-info"
+                        : "bg-signal-attention";
                   return (
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="min-w-0">
@@ -454,7 +464,16 @@ export default function ProjectSettings({
                 )}
                 <dl className="grid gap-x-6 gap-y-3 border-t border-line pt-4 sm:grid-cols-2">
                   {[
-                    ["Connected", shop.connected_at ? new Date(shop.connected_at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "Not yet"],
+                    [
+                      "Connected",
+                      shop.connected_at
+                        ? new Date(shop.connected_at).toLocaleDateString(undefined, {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                          })
+                        : "Not yet",
+                    ],
                     ["Last synced", ago(shop.last_synced_at, Date.now(), "Not yet")],
                     ["Currency", shop.currency ?? "Not known yet"],
                     ["Timezone", shop.timezone ?? "Not known yet"],
@@ -475,17 +494,21 @@ export default function ProjectSettings({
               <Group title="Disconnect this store" danger>
                 {!confirmingDisconnect ? (
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <p className="text-xs text-fg-muted">Everything imported from it is deleted here. The store itself is untouched.</p>
-                    <button onClick={() => setConfirmingDisconnect(true)} className={button("critical-secondary", "sm")}>
+                    <p className="text-xs text-fg-muted">
+                      Everything imported from it is deleted here. The store itself is untouched.
+                    </p>
+                    <button
+                      onClick={() => setConfirmingDisconnect(true)}
+                      className={button("critical-secondary", "sm")}
+                    >
                       Disconnect
                     </button>
                   </div>
                 ) : (
                   <div className="space-y-2.5">
                     <div className={note.critical}>
-                      Disconnect {shop.shop_domain}? Everything imported from it — products, stock,
-                      orders and customers — is deleted. Your Shopify store itself is untouched, and
-                      you can connect it again later.
+                      Disconnect {shop.shop_domain}? Everything imported from it — products, stock, orders and customers
+                      — is deleted. Your Shopify store itself is untouched, and you can connect it again later.
                     </div>
                     <div className="flex gap-2">
                       <button onClick={disconnect} disabled={disconnecting} className={button("critical")}>
@@ -504,7 +527,10 @@ export default function ProjectSettings({
       )}
 
       {tab === "ai" && (
-        <Group title="Designs your own AI asks for" description="From Claude or ChatGPT, connected to this project over MCP.">
+        <Group
+          title="Designs your own AI asks for"
+          description="From Claude or ChatGPT, connected to this project over MCP."
+        >
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="text-[13px] font-medium text-fg">Build without asking me first</div>
@@ -524,23 +550,19 @@ export default function ProjectSettings({
                 below it — "anything that changes a section you
                 already have" — untrue. */}
             <div>
-              <span className="font-medium text-fg">Applies on its own:</span> everything your
-              AI is allowed to design — new sections, example rows, new fields, changes to
-              sections you already have, and rules that run by themselves afterwards.
+              <span className="font-medium text-fg">Applies on its own:</span> everything your AI is allowed to design —
+              new sections, example rows, new fields, changes to sections you already have, and rules that run by
+              themselves afterwards.
             </div>
             <div>
-              <span className="font-medium text-fg">Still waits for you:</span> nothing. Turn
-              this off and every design waits for your yes instead.
+              <span className="font-medium text-fg">Still waits for you:</span> nothing. Turn this off and every design
+              waits for your yes instead.
             </div>
             <div>
-              <span className="font-medium text-fg">Never, either way:</span> removing a
-              section. That one is typed out by you, in Warmluke, and your AI cannot ask
-              for it at all.
+              <span className="font-medium text-fg">Never, either way:</span> removing a section. That one is typed out
+              by you, in Warmluke, and your AI cannot ask for it at all.
             </div>
-            <div>
-              Whatever it builds appears in the panel with what was asked for, and you can
-              delete it.
-            </div>
+            <div>Whatever it builds appears in the panel with what was asked for, and you can delete it.</div>
           </div>
         </Group>
       )}
@@ -549,10 +571,8 @@ export default function ProjectSettings({
         <div className="space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <p className="max-w-sm text-xs leading-relaxed text-fg-muted">
-              Share a link and whoever opens it can use this app — see the
-              sections, add rows, update them. They cannot change how the app
-              is built, read your conversation with Luke, or delete
-              anything.
+              Share a link and whoever opens it can use this app — see the sections, add rows, update them. They cannot
+              change how the app is built, read your conversation with Luke, or delete anything.
             </p>
             <button onClick={addSeat} disabled={adding} className={button("primary", "sm")}>
               <UserPlus aria-hidden size={14} strokeWidth={2} />
@@ -580,14 +600,19 @@ export default function ProjectSettings({
                       {(seat.full_name ?? seat.email).charAt(0).toUpperCase()}
                     </span>
                   ) : (
-                    <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-dashed border-line-strong text-fg-faint">
+                    <span
+                      aria-hidden
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-dashed border-line-strong text-fg-faint"
+                    >
                       <Link2 size={14} strokeWidth={1.75} />
                     </span>
                   )}
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px] text-fg">
                       {seat.full_name ?? seat.email ?? "Link not opened yet"}
-                      {seat.team_role && <span className="text-fg-muted"> · {labelOf(MEMBER_ROLE_OPTIONS, seat.team_role)}</span>}
+                      {seat.team_role && (
+                        <span className="text-fg-muted"> · {labelOf(MEMBER_ROLE_OPTIONS, seat.team_role)}</span>
+                      )}
                     </div>
                     <div className="truncate text-[11px] text-fg-faint">
                       {seat.full_name && seat.email ? `${seat.email} · ` : ""}

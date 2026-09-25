@@ -29,10 +29,7 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
-const client = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
-);
+const client = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY);
 const { data: owner } = await client.auth.signInWithPassword({
   email: OWNER_EMAIL,
   password: process.env.OWNER_PASSWORD ?? "",
@@ -41,10 +38,7 @@ if (!owner?.session) {
   console.log("no OWNER_PASSWORD given — nothing to check");
   process.exit(0);
 }
-const admin = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.ADAPTIVE_OS_SERVICE_ROLE_KEY
-);
+const admin = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
 const { data: project } = await admin.from("projects").select("id").limit(1).single();
 
 const stamp = Date.now().toString(36);
@@ -66,9 +60,7 @@ try {
       conversation_id: thread.id,
       role: i % 2 ? "user" : "assistant",
       content: `turn ${i} ${stamp}`,
-      payload: i % 2
-        ? { text: `turn ${i} ${stamp}` }
-        : { type: "applied", message: `turn ${i} ${stamp}` },
+      payload: i % 2 ? { text: `turn ${i} ${stamp}` } : { type: "applied", message: `turn ${i} ${stamp}` },
       created_at: new Date(Date.now() - (TURNS - i) * 60000).toISOString(),
     });
   }
@@ -81,14 +73,19 @@ try {
   const json = await res.json();
   const said = (json.messages ?? []).map((m) => m.payload?.text ?? m.payload?.message ?? "");
 
-  check("the newest message is there", said.some((t) => t.includes(`turn ${TURNS} `)));
-  check("and the oldest too, at this length", said.some((t) => t.includes(`turn 1 `)));
+  check(
+    "the newest message is there",
+    said.some((t) => t.includes(`turn ${TURNS} `))
+  );
+  check(
+    "and the oldest too, at this length",
+    said.some((t) => t.includes(`turn 1 `))
+  );
   // Order is not decoration: a conversation read backwards is worse
   // than half a conversation.
   check(
     "oldest first, newest last",
-    said.findIndex((t) => t.includes(`turn 1 `)) <
-      said.findIndex((t) => t.includes(`turn ${TURNS} `))
+    said.findIndex((t) => t.includes(`turn 1 `)) < said.findIndex((t) => t.includes(`turn ${TURNS} `))
   );
 
   // The half that was actually broken: with more messages than the
@@ -101,7 +98,10 @@ try {
     .order("created_at", { ascending: false })
     .limit(WINDOW);
   const kept = (newest.data ?? []).map((m) => m.content);
-  check(`the last ${WINDOW} are the ones kept`, kept.some((t) => t.includes(`turn ${TURNS} `)));
+  check(
+    `the last ${WINDOW} are the ones kept`,
+    kept.some((t) => t.includes(`turn ${TURNS} `))
+  );
   check("and the very first is dropped", !kept.some((t) => t === `turn 1 ${stamp}`));
 } finally {
   // Messages cascade with the conversation.
@@ -113,7 +113,5 @@ try {
   check("nothing this check said is left in any thread", (count ?? 0) === 0);
 }
 
-console.log(
-  fails.length === 0 ? "\nit remembers the end of the conversation" : `\n${fails.length} FAILED`
-);
+console.log(fails.length === 0 ? "\nit remembers the end of the conversation" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

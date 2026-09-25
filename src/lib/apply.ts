@@ -14,13 +14,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { undoableFrom, type UndoStep } from "@/lib/undo";
 import { validatePlan } from "@/lib/ai";
-import type {
-  AssistantPlan,
-  FeatureSchema,
-  ModuleRow,
-  UiSchema,
-  UiSchemaRow,
-} from "@/lib/types";
+import type { AssistantPlan, FeatureSchema, ModuleRow, UiSchema, UiSchemaRow } from "@/lib/types";
 
 type SchemaJsonWithFeatures = UiSchema & { features?: FeatureSchema | null };
 type Db = SupabaseClient;
@@ -138,7 +132,9 @@ export async function putBack(
           ([k, v]) => v !== undefined && String((now as Record<string, unknown>)[k] ?? "") !== String(v ?? "")
         );
         if (movedSince) {
-          couldNot.push(`${step.what} — the section has been changed again since, and that change is not this one's to undo`);
+          couldNot.push(
+            `${step.what} — the section has been changed again since, and that change is not this one's to undo`
+          );
           continue;
         }
         await write("module_update", { module_id: step.moduleId, ...step.was });
@@ -266,9 +262,7 @@ export type ApplyOutcome = {
  * the opposite op — which is the only reason this is small enough to
  * be worth having.
  */
-type Undo =
-  | { kind: "op"; op: string; payload: Record<string, unknown> }
-  | { kind: "stranded"; what: string };
+type Undo = { kind: "op"; op: string; payload: Record<string, unknown> } | { kind: "stranded"; what: string };
 
 /**
  * Records how to reverse each write as it happens.
@@ -500,9 +494,7 @@ function resolveSlugRefs(plan: AssistantPlan, modules: ModuleRow[]): void {
   }
 }
 
-type ApplyResult =
-  | { ok: true; applied: Record<string, unknown> }
-  | { ok: false; errors: string[] };
+type ApplyResult = { ok: true; applied: Record<string, unknown> } | { ok: false; errors: string[] };
 
 async function validateAndApply(
   client: Db,

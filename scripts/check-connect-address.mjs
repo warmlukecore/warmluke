@@ -63,7 +63,10 @@ try {
     ["a page of text", "a".repeat(5000)],
   ]) {
     const r = await install(shop);
-    check(`${what}: 400 with a reason`, r.status === 400 && typeof r.body.error === "string" && r.body.error.length > 0);
+    check(
+      `${what}: 400 with a reason`,
+      r.status === 400 && typeof r.body.error === "string" && r.body.error.length > 0
+    );
   }
   const custom = await install("mystore.com");
   check("a shop's own domain: 400", custom.status === 400);

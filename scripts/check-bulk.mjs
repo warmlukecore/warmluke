@@ -154,10 +154,7 @@ console.log("\nand the same file read in slices");
   const { db, written } = recorder();
   const { imported, calls } = await readAll(db, "products", file.url);
   check("it took several reads", calls > 3);
-  check(
-    "and still wrote every product exactly once",
-    imported === 12 && written.products.length === 12
-  );
+  check("and still wrote every product exactly once", imported === 12 && written.products.length === 12);
   check("and every variant exactly once", written.variants.length === 24);
   check(
     "with nothing torn in half",
@@ -282,7 +279,10 @@ console.log("\nshipments come by their own file, inline in their orders");
   const file = await serve(jsonl(rows));
   const { db, written } = recorder({ orders: [{ external_id: "gid://shopify/Order/1" }] });
   await readAll(db, "fulfillments", file.url);
-  check("the shipment lands on its order", (written.fulfillments ?? []).length === 1 && written.fulfillments[0].order_id === "orders-0");
+  check(
+    "the shipment lands on its order",
+    (written.fulfillments ?? []).length === 1 && written.fulfillments[0].order_id === "orders-0"
+  );
   check("with its courier", written.fulfillments[0].carrier === "Delhivery");
   check("every parcel's number", written.fulfillments[0].tracking_number === "DL1, DL2");
   check("and where it stands", written.fulfillments[0].shipment_status === "IN_TRANSIT");
@@ -311,9 +311,22 @@ console.log("\nhow many units went back comes by its own page");
       ],
     },
     // Never imported: nothing to hang its refund on, so it waits.
-    { id: "gid://shopify/Order/9", refunds: [{ id: "gid://shopify/Refund/9", createdAt: "2026-01-02T00:00:00Z", totalRefundedSet: null, refundLineItems: { nodes: [{ quantity: 4 }] } }] },
+    {
+      id: "gid://shopify/Order/9",
+      refunds: [
+        {
+          id: "gid://shopify/Refund/9",
+          createdAt: "2026-01-02T00:00:00Z",
+          totalRefundedSet: null,
+          refundLineItems: { nodes: [{ quantity: 4 }] },
+        },
+      ],
+    },
   ]);
-  check("the refund lands on its order", (written.refunds ?? []).length === 1 && written.refunds[0].order_id === "orders-0");
+  check(
+    "the refund lands on its order",
+    (written.refunds ?? []).length === 1 && written.refunds[0].order_id === "orders-0"
+  );
   check("with the units summed", written.refunds[0].quantity === 3);
   check("and the amount", written.refunds[0].amount === 25);
 }

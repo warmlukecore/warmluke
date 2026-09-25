@@ -21,10 +21,7 @@ const env = Object.fromEntries(
     .filter((l) => l.includes("=") && !l.trim().startsWith("#"))
     .map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()])
 );
-const db = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.ADAPTIVE_OS_SERVICE_ROLE_KEY
-);
+const db = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
 
 const fails = [];
 const check = (name, cond) => {
@@ -53,14 +50,11 @@ if (!store) {
   process.exit(0);
 }
 
-const send = (order, shop = store.shop_domain) =>
-  db.rpc("abo_shopify_upsert_order", { p_shop: shop, p_order: order });
+const send = (order, shop = store.shop_domain) => db.rpc("abo_shopify_upsert_order", { p_shop: shop, p_order: order });
 
 const orderCount = async () =>
-  (await db.from("orders").select("*", { count: "exact", head: true }).eq("store_id", store.id))
-    .count;
-const idOf = async (ext) =>
-  (await db.from("orders").select("id").eq("external_id", ext).single()).data.id;
+  (await db.from("orders").select("*", { count: "exact", head: true }).eq("store_id", store.id)).count;
+const idOf = async (ext) => (await db.from("orders").select("id").eq("external_id", ext).single()).data.id;
 
 const before = await orderCount();
 
@@ -127,22 +121,19 @@ const { count: nowLines } = await db
 check("a removed line is gone, not left behind", nowLines === 0);
 check(
   "and tags cleared rather than kept",
-  (await db.from("orders").select("tags").eq("external_id", existing.external_id).single()).data
-    .tags.length === 0
+  (await db.from("orders").select("tags").eq("external_id", existing.external_id).single()).data.tags.length === 0
 );
 
 console.log("\nrequests that should change nothing");
-check("an order for a shop we do not hold is ignored",
-  (await send({ id: 1, name: "#x" }, "not-ours.myshopify.com")).data === 0);
+check(
+  "an order for a shop we do not hold is ignored",
+  (await send({ id: 1, name: "#x" }, "not-ours.myshopify.com")).data === 0
+);
 check("and wrote no row", (await orderCount()) === before);
 check("an order with no id is ignored", (await send({ name: "#no-id" })).data === 0);
 
 console.log("\nthe store is marked fresh, which is what the assistant reports");
-const { data: s } = await db
-  .from("stores")
-  .select("last_synced_at")
-  .eq("id", store.id)
-  .single();
+const { data: s } = await db.from("stores").select("last_synced_at").eq("id", store.id).single();
 check("last_synced_at moved to now", Date.now() - Date.parse(s.last_synced_at) < 60_000);
 
 console.log("\nputting the order back the way the importer had it");

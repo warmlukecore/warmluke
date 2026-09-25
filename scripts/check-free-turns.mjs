@@ -56,7 +56,9 @@ console.log("a turn that designed nothing is not an included design");
   // costing something, and a new way to fail cannot forget the refund.
   check(
     "the chat charges only once a design is written down",
-    /persistTurn\([\s\S]{0,1200}reply\.type === "plans" \|\| turn\.reply\.type === "blueprint"\) \{\s*refundable = null/.test(chat)
+    /persistTurn\([\s\S]{0,1200}reply\.type === "plans" \|\| turn\.reply\.type === "blueprint"\) \{\s*refundable = null/.test(
+      chat
+    )
   );
   check(
     "stated as what a design is, so a new reply type is free by default",
@@ -89,10 +91,7 @@ console.log("a turn that designed nothing is not an included design");
   );
   // Both still charge up front. A client in a loop has to pay for its
   // own stop, or the cap caps nothing.
-  check(
-    "both still charge before the model runs",
-    /abo_spend_turn/.test(chat) && /abo_spend_turn/.test(mcp)
-  );
+  check("both still charge before the model runs", /abo_spend_turn/.test(chat) && /abo_spend_turn/.test(mcp));
 }
 
 // ── The counter itself, under a throwaway account ───────────────
@@ -120,9 +119,8 @@ try {
   check("the third is refused", third?.ok === false);
   check("and says what the allowance was", third?.free === 2);
 
-  const afterRefusal = (
-    await admin.from("account_settings").select("turns_used").eq("user_id", made.user.id).single()
-  ).data;
+  const afterRefusal = (await admin.from("account_settings").select("turns_used").eq("user_id", made.user.id).single())
+    .data;
   // A refusal that still counted would push the account further away
   // from the allowance every time it retried.
   check("a refusal spends nothing", afterRefusal.turns_used === 2);
@@ -149,7 +147,10 @@ try {
       user.rpc("abo_refund_turn", { p_spend: g }).then((r) => r.data)
     )
   );
-  check("a refund without the right id is refused", guessed.every((r) => r?.refunded !== true));
+  check(
+    "a refund without the right id is refused",
+    guessed.every((r) => r?.refunded !== true)
+  );
 
   const real = (await user.rpc("abo_refund_turn", { p_spend: paid.spend_id })).data;
   check("with it, the turn comes back", real?.refunded === true);
@@ -158,14 +159,12 @@ try {
 
   // Spending straight through PostgREST still teaches them nothing:
   // the id they learn refunds the turn they just burned.
-  const burnt = (
-    await admin.from("account_settings").select("turns_used").eq("user_id", made.user.id).single()
-  ).data.turns_used;
+  const burnt = (await admin.from("account_settings").select("turns_used").eq("user_id", made.user.id).single()).data
+    .turns_used;
   const own = (await user.rpc("abo_spend_turn")).data;
   await user.rpc("abo_refund_turn", { p_spend: own.spend_id });
-  const afterOwn = (
-    await admin.from("account_settings").select("turns_used").eq("user_id", made.user.id).single()
-  ).data.turns_used;
+  const afterOwn = (await admin.from("account_settings").select("turns_used").eq("user_id", made.user.id).single()).data
+    .turns_used;
   check("spending it themselves nets them nothing", afterOwn === burnt);
 
   // And the id from an earlier turn is spent, not a spare key.
@@ -181,26 +180,16 @@ try {
 
   console.log("\nand two at once cannot both slip through");
   // Read-then-write left a gap: both requests saw one left.
-  await admin
-    .from("account_settings")
-    .update({ free_turns: 5, turns_used: 4 })
-    .eq("user_id", made.user.id);
-  const race = await Promise.all(
-    Array.from({ length: 6 }, () => user.rpc("abo_spend_turn").then((r) => r.data))
-  );
+  await admin.from("account_settings").update({ free_turns: 5, turns_used: 4 }).eq("user_id", made.user.id);
+  const race = await Promise.all(Array.from({ length: 6 }, () => user.rpc("abo_spend_turn").then((r) => r.data)));
   check("only the last one is allowed", race.filter((r) => r?.ok).length === 1);
-  const final = (
-    await admin.from("account_settings").select("turns_used").eq("user_id", made.user.id).single()
-  ).data.turns_used;
+  const final = (await admin.from("account_settings").select("turns_used").eq("user_id", made.user.id).single()).data
+    .turns_used;
   check("and the allowance is not overspent", final === 5);
 
   console.log("\nand it cannot be gamed");
   const nowAt = (
-    await admin
-      .from("account_settings")
-      .select("turns_used, free_turns")
-      .eq("user_id", made.user.id)
-      .single()
+    await admin.from("account_settings").select("turns_used, free_turns").eq("user_id", made.user.id).single()
   ).data;
   const forged = await user
     .from("account_settings")
@@ -208,17 +197,11 @@ try {
     .eq("user_id", made.user.id)
     .select();
   const stillThere = (
-    await admin
-      .from("account_settings")
-      .select("turns_used, free_turns")
-      .eq("user_id", made.user.id)
-      .single()
+    await admin.from("account_settings").select("turns_used, free_turns").eq("user_id", made.user.id).single()
   ).data;
   check(
     "a merchant cannot reset their own count",
-    !forged.data?.length &&
-      stillThere.turns_used === nowAt.turns_used &&
-      stillThere.free_turns === nowAt.free_turns
+    !forged.data?.length && stillThere.turns_used === nowAt.turns_used && stillThere.free_turns === nowAt.free_turns
   );
   check(
     "nor grant themselves more",
@@ -242,15 +225,10 @@ if (!signedIn?.session) {
 } else {
   const token = signedIn.session.access_token;
   const uid = signedIn.user.id;
-  const was = (
-    await admin.from("account_settings").select("free_turns, turns_used").eq("user_id", uid).single()
-  ).data;
+  const was = (await admin.from("account_settings").select("free_turns, turns_used").eq("user_id", uid).single()).data;
 
   const setAllowance = (free, used) =>
-    admin
-      .from("account_settings")
-      .update({ free_turns: free, turns_used: used })
-      .eq("user_id", uid);
+    admin.from("account_settings").update({ free_turns: free, turns_used: used }).eq("user_id", uid);
 
   const tool = async (name, args) => {
     const res = await fetch(`${APP}/api/mcp`, {
@@ -319,7 +297,6 @@ if (!signedIn?.session) {
     console.log("\nwith nothing left");
     await setAllowance(1, 1);
 
-
     const chat = await fetch(`${APP}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -332,11 +309,11 @@ if (!signedIn?.session) {
     // own Claude runs the same engine.
     const proposed = await tool("propose_change", { request: "Add a Suppliers section." });
     // Same reason as check-byo-design: the refusal is the thing, not the
-  // noun it uses for the allowance.
-  check(
-    "designing through their own AI refuses too",
-    typeof proposed?.error === "string" && proposed?.do_this_instead === "design_format"
-  );
+    // noun it uses for the allowance.
+    check(
+      "designing through their own AI refuses too",
+      typeof proposed?.error === "string" && proposed?.do_this_instead === "design_format"
+    );
 
     // And the half that costs nothing stays open, or the whole pitch
     // — bring your own assistant — is untrue.
@@ -347,23 +324,13 @@ if (!signedIn?.session) {
     const sections = await tool("read_section", {});
     check("and reading their own sections", Array.isArray(sections?.sections));
 
-    const spent = (
-      await admin.from("account_settings").select("turns_used").eq("user_id", uid).single()
-    ).data;
+    const spent = (await admin.from("account_settings").select("turns_used").eq("user_id", uid).single()).data;
     check("none of which spent anything", spent.turns_used === 1);
   } finally {
     await setAllowance(was.free_turns, was.turns_used);
-    const after = (
-      await admin
-        .from("account_settings")
-        .select("free_turns, turns_used")
-        .eq("user_id", uid)
-        .single()
-    ).data;
-    check(
-      "the account is back as it was",
-      after.free_turns === was.free_turns && after.turns_used === was.turns_used
-    );
+    const after = (await admin.from("account_settings").select("free_turns, turns_used").eq("user_id", uid).single())
+      .data;
+    check("the account is back as it was", after.free_turns === was.free_turns && after.turns_used === was.turns_used);
   }
 }
 
@@ -406,11 +373,7 @@ if (!signedIn?.session) {
     check("but the assistant refuses them", res.status === 403);
 
     const theirs = (
-      await admin
-        .from("account_settings")
-        .select("turns_used")
-        .eq("user_id", staff.user.id)
-        .maybeSingle()
+      await admin.from("account_settings").select("turns_used").eq("user_id", staff.user.id).maybeSingle()
     ).data;
     check("and it cost them nothing", (theirs?.turns_used ?? 0) === 0);
   } finally {
@@ -433,7 +396,5 @@ try {
 } catch (e) {
   console.log(`could not remove the throwaway project: ${e instanceof Error ? e.message : e}`);
 }
-console.log(
-  fails.length === 0 ? "\nit charges for the engine and nothing else" : `\n${fails.length} FAILED`
-);
+console.log(fails.length === 0 ? "\nit charges for the engine and nothing else" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

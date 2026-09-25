@@ -51,13 +51,34 @@ console.log("\nonly a real shop domain gets through");
 check("a normal store is accepted", normalizeShopDomain("carefone.myshopify.com") === "carefone.myshopify.com");
 check("case and spaces are normalised", normalizeShopDomain("  CareFone.MyShopify.com ") === "carefone.myshopify.com");
 check("hyphens are fine", normalizeShopDomain("care-fone-2.myshopify.com").startsWith("care-fone-2"));
-check("a lookalike host is refused", refuses(() => normalizeShopDomain("evil.com")));
-check("a suffix trick is refused", refuses(() => normalizeShopDomain("evil.com?x=.myshopify.com")));
-check("a prefix trick is refused", refuses(() => normalizeShopDomain("notmyshopify.com")));
-check("a subdomain trick is refused", refuses(() => normalizeShopDomain("shop.myshopify.com.evil.com")));
-check("a leading hyphen is refused", refuses(() => normalizeShopDomain("-shop.myshopify.com")));
-check("an empty domain is refused", refuses(() => normalizeShopDomain("")));
-check("an overlong domain is refused", refuses(() => normalizeShopDomain("a".repeat(260) + ".myshopify.com")));
+check(
+  "a lookalike host is refused",
+  refuses(() => normalizeShopDomain("evil.com"))
+);
+check(
+  "a suffix trick is refused",
+  refuses(() => normalizeShopDomain("evil.com?x=.myshopify.com"))
+);
+check(
+  "a prefix trick is refused",
+  refuses(() => normalizeShopDomain("notmyshopify.com"))
+);
+check(
+  "a subdomain trick is refused",
+  refuses(() => normalizeShopDomain("shop.myshopify.com.evil.com"))
+);
+check(
+  "a leading hyphen is refused",
+  refuses(() => normalizeShopDomain("-shop.myshopify.com"))
+);
+check(
+  "an empty domain is refused",
+  refuses(() => normalizeShopDomain(""))
+);
+check(
+  "an overlong domain is refused",
+  refuses(() => normalizeShopDomain("a".repeat(260) + ".myshopify.com"))
+);
 
 // ── What a merchant types, read the way they mean it ─────────────
 //
@@ -127,10 +148,18 @@ console.log("\nand what a merchant types is read the way they mean it");
   check("and says where the real address is", /Settings/.test(custom.hint ?? "") && /Domains/.test(custom.hint ?? ""));
 
   // Whatever the road, the answer passes the check the callback uses.
-  const inputs = ["mystore", "MyStore.myshopify.com", "https://admin.shopify.com/store/abc-9", "x/", "a1.myshopify.com"];
+  const inputs = [
+    "mystore",
+    "MyStore.myshopify.com",
+    "https://admin.shopify.com/store/abc-9",
+    "x/",
+    "a1.myshopify.com",
+  ];
   const accepted = inputs.map(readShopAddress).filter((r) => "domain" in r);
-  check("what it accepts, the strict check accepts too",
-    accepted.length === inputs.length && accepted.every((r) => !refuses(() => normalizeShopDomain(r.domain))));
+  check(
+    "what it accepts, the strict check accepts too",
+    accepted.length === inputs.length && accepted.every((r) => !refuses(() => normalizeShopDomain(r.domain)))
+  );
 
   // The callback reads what came back from Shopify and must stay
   // strict: forgiveness is for people typing, never for a redirect
@@ -155,7 +184,10 @@ const url = new URL(
 );
 check("it points at the merchant's own store", url.host === "carefone.myshopify.com");
 check("it carries the state back", url.searchParams.get("state") === "abc-123");
-check("every resource scope is a read", SHOPIFY_SCOPES.every((s) => s.startsWith("read_")));
+check(
+  "every resource scope is a read",
+  SHOPIFY_SCOPES.every((s) => s.startsWith("read_"))
+);
 // This used to say "no write scope is requested", and that was the
 // guarantee while the app could only read. It cannot say that any
 // more — so it says the stronger thing instead: the only writes
@@ -173,22 +205,46 @@ check(
   "and every write an action needs is asked for",
   ACTION_SCOPES.every((s) => writesAsked.includes(s))
 );
-check("nothing is asked for that is neither a read nor an action's write", askedFor.every((s) => s.startsWith("read_") || ACTION_SCOPES.includes(s)));
-check("a bad shop cannot build a URL", refuses(() => authorizeUrl({ shop: "evil.com", clientId: "x", redirectUri: "y", state: "z", scopes: [] })));
+check(
+  "nothing is asked for that is neither a read nor an action's write",
+  askedFor.every((s) => s.startsWith("read_") || ACTION_SCOPES.includes(s))
+);
+check(
+  "a bad shop cannot build a URL",
+  refuses(() => authorizeUrl({ shop: "evil.com", clientId: "x", redirectUri: "y", state: "z", scopes: [] }))
+);
 
 console.log("\nthe scope Shopify has to approve stays out until it has");
 // Asking for an unapproved scope fails the whole authorization, not
 // just that one scope — so a store that would otherwise connect
 // perfectly well cannot connect at all.
 check("it is absent by default", !scopesFor({}).includes(EXTENDED_ORDER_HISTORY_SCOPE));
-check("it is absent when the flag is off", !scopesFor({ SHOPIFY_READ_ALL_ORDERS: "false" }).includes(EXTENDED_ORDER_HISTORY_SCOPE));
-check("it appears once the flag is on", scopesFor({ SHOPIFY_READ_ALL_ORDERS: "true" }).includes(EXTENDED_ORDER_HISTORY_SCOPE));
-check("the other scopes are unaffected", SHOPIFY_SCOPES.every((sc) => scopesFor({}).includes(sc)));
-check("the authorize URL never carries it by default", !url.searchParams.get("scope")?.includes(EXTENDED_ORDER_HISTORY_SCOPE));
+check(
+  "it is absent when the flag is off",
+  !scopesFor({ SHOPIFY_READ_ALL_ORDERS: "false" }).includes(EXTENDED_ORDER_HISTORY_SCOPE)
+);
+check(
+  "it appears once the flag is on",
+  scopesFor({ SHOPIFY_READ_ALL_ORDERS: "true" }).includes(EXTENDED_ORDER_HISTORY_SCOPE)
+);
+check(
+  "the other scopes are unaffected",
+  SHOPIFY_SCOPES.every((sc) => scopesFor({}).includes(sc))
+);
+check(
+  "the authorize URL never carries it by default",
+  !url.searchParams.get("scope")?.includes(EXTENDED_ORDER_HISTORY_SCOPE)
+);
 
 console.log("\neach resource is declared once, and the rest is derived from it");
-check("every resource asks for at least one scope", RESOURCES.every((r) => SHOPIFY_RESOURCES[r].scopes.length > 0));
-check("every scope a resource asks for is in the install", RESOURCES.every((r) => SHOPIFY_RESOURCES[r].scopes.every((s) => SHOPIFY_SCOPES.includes(s))));
+check(
+  "every resource asks for at least one scope",
+  RESOURCES.every((r) => SHOPIFY_RESOURCES[r].scopes.length > 0)
+);
+check(
+  "every scope a resource asks for is in the install",
+  RESOURCES.every((r) => SHOPIFY_RESOURCES[r].scopes.every((s) => SHOPIFY_SCOPES.includes(s)))
+);
 check("no scope is asked for twice", new Set(SHOPIFY_SCOPES).size === SHOPIFY_SCOPES.length);
 // Asked for ahead of the resource that will use them, so that every
 // merchant reconnects once rather than once per pack. The moment a
@@ -198,10 +254,22 @@ const claimed = new Set(RESOURCES.flatMap((r) => SHOPIFY_RESOURCES[r].scopes));
 for (const s of PLANNED_SCOPES) {
   check(`"${s}" is still waiting for its resource`, !claimed.has(s));
 }
-check("every planned scope is a read", PLANNED_SCOPES.every((s) => s.startsWith("read_")));
-check("and is in what the install asks for", PLANNED_SCOPES.every((s) => SHOPIFY_SCOPES.includes(s)));
-check("every resource writes at least one table", RESOURCES.every((r) => SHOPIFY_RESOURCES[r].tables.length > 0));
-check("a resource with no bulk road still has a page", RESOURCES.every((r) => SHOPIFY_RESOURCES[r].bulk || SHOPIFY_RESOURCES[r].page.includes("$after")));
+check(
+  "every planned scope is a read",
+  PLANNED_SCOPES.every((s) => s.startsWith("read_"))
+);
+check(
+  "and is in what the install asks for",
+  PLANNED_SCOPES.every((s) => SHOPIFY_SCOPES.includes(s))
+);
+check(
+  "every resource writes at least one table",
+  RESOURCES.every((r) => SHOPIFY_RESOURCES[r].tables.length > 0)
+);
+check(
+  "a resource with no bulk road still has a page",
+  RESOURCES.every((r) => SHOPIFY_RESOURCES[r].bulk || SHOPIFY_RESOURCES[r].page.includes("$after"))
+);
 
 // store-read cannot import the registry — the chat panel imports it,
 // and the registry reaches node:crypto — so the two lists are kept
@@ -212,7 +280,10 @@ const written = [...new Set(RESOURCES.flatMap((r) => SHOPIFY_RESOURCES[r].tables
 for (const t of written) check(`"${t}" is counted in a store's copy`, COUNTED.includes(t));
 for (const t of COUNTED) check(`"${t}" is a table some resource writes`, written.includes(t));
 check("no topic is listened for twice", new Set(WEBHOOK_TOPICS).size === WEBHOOK_TOPICS.length);
-check("a child limit names a real path", RESOURCES.every((r) => SHOPIFY_RESOURCES[r].children.every((c) => c.path.length > 0 && c.limit > 0)));
+check(
+  "a child limit names a real path",
+  RESOURCES.every((r) => SHOPIFY_RESOURCES[r].children.every((c) => c.path.length > 0 && c.limit > 0))
+);
 
 // A topic subscribed in TypeScript and unhandled in SQL is a webhook
 // that arrives, is signed, and is dropped on the floor — the store goes
@@ -220,7 +291,9 @@ check("a child limit names a real path", RESOURCES.every((r) => SHOPIFY_RESOURCE
 // dispatcher is the latest migration that defines it.
 console.log("\nevery topic a resource listens for lands somewhere in the database");
 const DEFINES = "create or replace function public.abo_shopify_webhook(";
-const migrations = readdirSync(new URL("../supabase/migrations", import.meta.url)).filter((f) => f.endsWith(".sql")).sort();
+const migrations = readdirSync(new URL("../supabase/migrations", import.meta.url))
+  .filter((f) => f.endsWith(".sql"))
+  .sort();
 const defines = migrations.filter((f) =>
   readFileSync(new URL(`../supabase/migrations/${f}`, import.meta.url), "utf8").includes(DEFINES)
 );
@@ -245,28 +318,46 @@ console.log("\nand every topic about the app itself lands too");
   const route = readFileSync(new URL("../src/app/api/shopify/webhooks/[token]/route.ts", import.meta.url), "utf8");
   const block = hooks.match(/LIFECYCLE_TOPICS[^=]*=\s*\{([^}]*)\}/)?.[1] ?? "";
   const lifecycle = [...block.matchAll(/([A-Z_]+):\s*"([a-z_]+)"/g)].map((m) => ({ topic: m[1], fn: m[2] }));
-  const allSql = migrations.map((f) => readFileSync(new URL(`../supabase/migrations/${f}`, import.meta.url), "utf8")).join("\n");
+  const allSql = migrations
+    .map((f) => readFileSync(new URL(`../supabase/migrations/${f}`, import.meta.url), "utf8"))
+    .join("\n");
   check("the app's own topics are declared", lifecycle.length > 0);
-  check("app/uninstalled is one of them", lifecycle.some((l) => l.topic === "APP_UNINSTALLED"));
-  check("every one is subscribed at connect", /SUBSCRIBED[^;]*LIFECYCLE_TOPICS/.test(hooks) && /for \(const topic of SUBSCRIBED\)/.test(hooks));
+  check(
+    "app/uninstalled is one of them",
+    lifecycle.some((l) => l.topic === "APP_UNINSTALLED")
+  );
+  check(
+    "every one is subscribed at connect",
+    /SUBSCRIBED[^;]*LIFECYCLE_TOPICS/.test(hooks) && /for \(const topic of SUBSCRIBED\)/.test(hooks)
+  );
   check("and the webhook route sends them past the dispatcher", /LIFECYCLE_TOPICS\[/.test(route));
   for (const { topic, fn } of lifecycle) {
     check(`${topic}'s ${fn} is defined by a migration`, allSql.includes(`create or replace function public.${fn}(`));
     check(`and it is not also a resource topic`, !WEBHOOK_TOPICS.includes(topic));
   }
   // The erasure spares a store connected after the uninstall it is about.
-  const redact = migrations.filter((f) =>
-    readFileSync(new URL(`../supabase/migrations/${f}`, import.meta.url), "utf8").toLowerCase().includes("function public.abo_shopify_shop_redact(p_shop text)")
-  ).at(-1);
+  const redact = migrations
+    .filter((f) =>
+      readFileSync(new URL(`../supabase/migrations/${f}`, import.meta.url), "utf8")
+        .toLowerCase()
+        .includes("function public.abo_shopify_shop_redact(p_shop text)")
+    )
+    .at(-1);
   const redactSql = redact ? readFileSync(new URL(`../supabase/migrations/${redact}`, import.meta.url), "utf8") : "";
-  check("shop/redact spares a store connected in the last 48 hours", /connected_at > now\(\) - interval '48 hours'/.test(redactSql));
+  check(
+    "shop/redact spares a store connected in the last 48 hours",
+    /connected_at > now\(\) - interval '48 hours'/.test(redactSql)
+  );
 }
 
 console.log("\nwhat a grant came with is read from the grant");
 // Shopify reports the granted scopes as one comma-separated string,
 // and how it spaces them is not ours to rely on.
 check("a plain list is split", String(grantedScopes("read_orders,read_products")) === "read_orders,read_products");
-check("spaces around the commas are dropped", String(grantedScopes(" read_orders , read_products ")) === "read_orders,read_products");
+check(
+  "spaces around the commas are dropped",
+  String(grantedScopes(" read_orders , read_products ")) === "read_orders,read_products"
+);
 check("a single scope is a list of one", grantedScopes("read_orders")?.length === 1);
 // Null, never [], for every shape of nothing: a store whose grant was
 // never recorded is unknown, and a caller that reads [] as "granted
@@ -281,12 +372,21 @@ check("an empty grant is treated as unknown too", missingScopes([]).length === 0
 check("a full grant reports nothing missing", missingScopes(scopesFor({}), {}).length === 0);
 // The case this exists for: a token from before the scopes were added.
 const older = scopesFor({}).filter((s) => !PLANNED_SCOPES.includes(s));
-check("a grant from before the new scopes names them", PLANNED_SCOPES.every((s) => missingScopes(older, {}).includes(s)));
-check("and names nothing the token already holds", missingScopes(older, {}).every((s) => !older.includes(s)));
+check(
+  "a grant from before the new scopes names them",
+  PLANNED_SCOPES.every((s) => missingScopes(older, {}).includes(s))
+);
+check(
+  "and names nothing the token already holds",
+  missingScopes(older, {}).every((s) => !older.includes(s))
+);
 // A grant wider than the install asked for is a reconnect from a
 // deployment that asked for more, not a fault.
 check("a wider grant reports nothing missing", missingScopes([...scopesFor({}), "read_themes"], {}).length === 0);
-check("the flag-gated scope counts once it is asked for", missingScopes(scopesFor({}), { SHOPIFY_READ_ALL_ORDERS: "true" }).includes(EXTENDED_ORDER_HISTORY_SCOPE));
+check(
+  "the flag-gated scope counts once it is asked for",
+  missingScopes(scopesFor({}), { SHOPIFY_READ_ALL_ORDERS: "true" }).includes(EXTENDED_ORDER_HISTORY_SCOPE)
+);
 
 console.log("\nand the callback and the function agree on the arguments");
 // PostgREST refuses an rpc call naming a parameter the function does
@@ -295,7 +395,9 @@ console.log("\nand the callback and the function agree on the arguments");
 // that is spent. Nothing else in the build compares these two.
 const CONNECT = "create or replace function public.abo_shopify_connect(";
 const connectIn = migrations.filter((f) =>
-  readFileSync(new URL(`../supabase/migrations/${f}`, import.meta.url), "utf8").toLowerCase().includes(CONNECT)
+  readFileSync(new URL(`../supabase/migrations/${f}`, import.meta.url), "utf8")
+    .toLowerCase()
+    .includes(CONNECT)
 );
 const connectSql = readFileSync(new URL(`../supabase/migrations/${connectIn.at(-1)}`, import.meta.url), "utf8");
 const signature = connectSql.slice(connectSql.toLowerCase().indexOf(CONNECT)).split(") returns")[0];
@@ -330,33 +432,75 @@ const base = {
 const good = { ...base, hmac: sign(base) };
 
 check("a genuine callback passes", !refuses(() => verifyCallbackHmac(good, SECRET, now)));
-check("a tampered shop is refused", refuses(() => verifyCallbackHmac({ ...good, shop: "evil.myshopify.com" }, SECRET, now)));
-check("a swapped code is refused", refuses(() => verifyCallbackHmac({ ...good, code: "other-code" }, SECRET, now)));
-check("a missing signature is refused", refuses(() => verifyCallbackHmac(base, SECRET, now)));
-check("a wrong secret is refused", refuses(() => verifyCallbackHmac(good, "wrong-secret", now)));
-check("a malformed signature is refused", refuses(() => verifyCallbackHmac({ ...good, hmac: "nothex" }, SECRET, now)));
-check("a short signature is refused", refuses(() => verifyCallbackHmac({ ...good, hmac: "ab".repeat(8) }, SECRET, now)));
+check(
+  "a tampered shop is refused",
+  refuses(() => verifyCallbackHmac({ ...good, shop: "evil.myshopify.com" }, SECRET, now))
+);
+check(
+  "a swapped code is refused",
+  refuses(() => verifyCallbackHmac({ ...good, code: "other-code" }, SECRET, now))
+);
+check(
+  "a missing signature is refused",
+  refuses(() => verifyCallbackHmac(base, SECRET, now))
+);
+check(
+  "a wrong secret is refused",
+  refuses(() => verifyCallbackHmac(good, "wrong-secret", now))
+);
+check(
+  "a malformed signature is refused",
+  refuses(() => verifyCallbackHmac({ ...good, hmac: "nothex" }, SECRET, now))
+);
+check(
+  "a short signature is refused",
+  refuses(() => verifyCallbackHmac({ ...good, hmac: "ab".repeat(8) }, SECRET, now))
+);
 
 console.log("\nand it has to be recent");
 const old = { ...base, timestamp: String(Math.floor(now.getTime() / 1000) - 600) };
-check("a ten-minute-old callback is refused", refuses(() => verifyCallbackHmac({ ...old, hmac: sign(old) }, SECRET, now)));
+check(
+  "a ten-minute-old callback is refused",
+  refuses(() => verifyCallbackHmac({ ...old, hmac: sign(old) }, SECRET, now))
+);
 const future = { ...base, timestamp: String(Math.floor(now.getTime() / 1000) + 600) };
-check("a future-dated callback is refused", refuses(() => verifyCallbackHmac({ ...future, hmac: sign(future) }, SECRET, now)));
+check(
+  "a future-dated callback is refused",
+  refuses(() => verifyCallbackHmac({ ...future, hmac: sign(future) }, SECRET, now))
+);
 const fresh = { ...base, timestamp: String(Math.floor(now.getTime() / 1000) - 60) };
-check("a one-minute-old callback still passes", !refuses(() => verifyCallbackHmac({ ...fresh, hmac: sign(fresh) }, SECRET, now)));
-check("a missing timestamp is refused", refuses(() => verifyCallbackHmac({ ...good, timestamp: undefined }, SECRET, now)));
+check(
+  "a one-minute-old callback still passes",
+  !refuses(() => verifyCallbackHmac({ ...fresh, hmac: sign(fresh) }, SECRET, now))
+);
+check(
+  "a missing timestamp is refused",
+  refuses(() => verifyCallbackHmac({ ...good, timestamp: undefined }, SECRET, now))
+);
 
 console.log("\nand a webhook body has to be signed too");
 const body = JSON.stringify({ shop_domain: "acme.myshopify.com", customer: { id: 12345 } });
 const digest = (b, secret = SECRET) => createHmac("sha256", secret).update(b, "utf8").digest("base64");
 check("a correctly signed body passes", !refuses(() => verifyWebhookHmac(body, digest(body), SECRET)));
-check("an unsigned body is refused", refuses(() => verifyWebhookHmac(body, null, SECRET)));
-check("a body signed with another secret is refused", refuses(() => verifyWebhookHmac(body, digest(body, "wrong"), SECRET)));
+check(
+  "an unsigned body is refused",
+  refuses(() => verifyWebhookHmac(body, null, SECRET))
+);
+check(
+  "a body signed with another secret is refused",
+  refuses(() => verifyWebhookHmac(body, digest(body, "wrong"), SECRET))
+);
 // The one that matters: a tampered body keeps the old, still-valid-looking
 // signature. Verifying the parsed object instead of the bytes would pass this.
 const tampered = JSON.stringify({ shop_domain: "attacker.myshopify.com", customer: { id: 12345 } });
-check("a tampered body is refused", refuses(() => verifyWebhookHmac(tampered, digest(body), SECRET)));
-check("a short signature is refused", refuses(() => verifyWebhookHmac(body, "YWJj", SECRET)));
+check(
+  "a tampered body is refused",
+  refuses(() => verifyWebhookHmac(tampered, digest(body), SECRET))
+);
+check(
+  "a short signature is refused",
+  refuses(() => verifyWebhookHmac(body, "YWJj", SECRET))
+);
 
 console.log("\nand an expiring token is renewed before it dies");
 const at = (mins) => new Date(now.getTime() + mins * 60_000).toISOString();
@@ -383,11 +527,18 @@ console.log("\nand a merchant Shopify sends us is only believed when Shopify sig
   const SECRET = "check-app-secret";
   const ORIGIN = "https://warmluke.example";
   const signed = (q, secret = SECRET) => {
-    const message = Object.entries(q).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`).join("&");
+    const message = Object.entries(q)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`)
+      .join("&");
     return { ...q, hmac: createHmac("sha256", secret).update(message).digest("hex") };
   };
   const at = (seconds) => String(Math.floor(Date.now() / 1000) + seconds);
-  const install = { shop: "mystore.myshopify.com", timestamp: at(0), host: "YWRtaW4uc2hvcGlmeS5jb20vc3RvcmUvbXlzdG9yZQ" };
+  const install = {
+    shop: "mystore.myshopify.com",
+    timestamp: at(0),
+    host: "YWRtaW4uc2hvcGlmeS5jb20vc3RvcmUvbXlzdG9yZQ",
+  };
   const go = (query, project) => entryTarget({ query, secret: SECRET, origin: ORIGIN, project });
   const where = (r) => new URL(r.to);
 
@@ -395,11 +546,18 @@ console.log("\nand a merchant Shopify sends us is only believed when Shopify sig
   check("a signed install goes to the connect page", ok.ok && where(ok).pathname === "/connect");
   check("with the store Shopify named", where(ok).searchParams.get("shop") === "mystore.myshopify.com");
   const PROJECT = "11111111-2222-3333-4444-555555555555";
-  check("and the project they tapped from, when there is one", where(go(signed(install), PROJECT)).searchParams.get("project") === PROJECT);
-  check("a cookie that is not a project id is not carried", !where(go(signed(install), "../../admin")).searchParams.has("project"));
+  check(
+    "and the project they tapped from, when there is one",
+    where(go(signed(install), PROJECT)).searchParams.get("project") === PROJECT
+  );
+  check(
+    "a cookie that is not a project id is not carried",
+    !where(go(signed(install), "../../admin")).searchParams.has("project")
+  );
   check("an id is only an id", isProjectId(PROJECT) && !isProjectId("x") && !isProjectId(`${PROJECT}'`));
 
-  const refusedTo = (r) => !r.ok && where(r).pathname === "/dashboard" && where(r).searchParams.get("shopify") === "failed";
+  const refusedTo = (r) =>
+    !r.ok && where(r).pathname === "/dashboard" && where(r).searchParams.get("shopify") === "failed";
   check("unsigned: refused", refusedTo(go(install)));
   check("signed with another secret: refused", refusedTo(go(signed(install, "not-ours"))));
   check("a store swapped after signing: refused", refusedTo(go({ ...signed(install), shop: "evil.myshopify.com" })));
@@ -407,7 +565,10 @@ console.log("\nand a merchant Shopify sends us is only believed when Shopify sig
   check("a signed but crooked shop: refused", refusedTo(go(signed({ ...install, shop: "evil.com?x=.myshopify.com" }))));
 
   // The one-tap link is configuration, and must stay Shopify's.
-  check("the listing is a one-tap link", installLink("https://apps.shopify.com/warmluke") === "https://apps.shopify.com/warmluke");
+  check(
+    "the listing is a one-tap link",
+    installLink("https://apps.shopify.com/warmluke") === "https://apps.shopify.com/warmluke"
+  );
   check("so is Shopify's admin", !!installLink("https://admin.shopify.com/oauth/install?client_id=x"));
   check("none configured: none", installLink(undefined) === null && installLink("") === null);
   check("another host: none", installLink("https://evil.example/apps.shopify.com") === null);
@@ -416,11 +577,20 @@ console.log("\nand a merchant Shopify sends us is only believed when Shopify sig
   check("userinfo in front: none", installLink("https://evil@apps.shopify.com/warmluke") === null);
   check("not a URL: none", installLink("apps.shopify.com/warmluke") === null);
   // With no listing, Shopify's own install link, from the client id.
-  check("a client id gives Shopify's install link",
-    installLinkFor("2fbfb378521dd14d5be638893ae3f97c") === "https://admin.shopify.com/oauth/install?client_id=2fbfb378521dd14d5be638893ae3f97c");
-  check("and that link is one installLink accepts", installLink(installLinkFor("2fbfb378521dd14d5be638893ae3f97c")) !== null);
+  check(
+    "a client id gives Shopify's install link",
+    installLinkFor("2fbfb378521dd14d5be638893ae3f97c") ===
+      "https://admin.shopify.com/oauth/install?client_id=2fbfb378521dd14d5be638893ae3f97c"
+  );
+  check(
+    "and that link is one installLink accepts",
+    installLink(installLinkFor("2fbfb378521dd14d5be638893ae3f97c")) !== null
+  );
   check("no client id: no link", installLinkFor(undefined) === null && installLinkFor("") === null);
-  check("a client id that could smuggle a query in: no link", installLinkFor("abc&redirect_uri=https://evil.example") === null);
+  check(
+    "a client id that could smuggle a query in: no link",
+    installLinkFor("abc&redirect_uri=https://evil.example") === null
+  );
 
   // Where signing in sends them next.
   check("our own page is followed", ownPath("/connect?shop=mystore.myshopify.com"));
@@ -429,18 +599,31 @@ console.log("\nand a merchant Shopify sends us is only believed when Shopify sig
   check("nothing is not", !ownPath(null) && !ownPath(undefined) && !ownPath(""));
 
   const proxySrc = readFileSync(new URL("../src/proxy.ts", import.meta.url), "utf8");
-  check("the site's root passes Shopify's query on untouched",
-    /has\("shop"\) && req\.nextUrl\.searchParams\.has\("hmac"\)/.test(proxySrc) && /api\/shopify\/entry\$\{req\.nextUrl\.search\}/.test(proxySrc));
+  check(
+    "the site's root passes Shopify's query on untouched",
+    /has\("shop"\) && req\.nextUrl\.searchParams\.has\("hmac"\)/.test(proxySrc) &&
+      /api\/shopify\/entry\$\{req\.nextUrl\.search\}/.test(proxySrc)
+  );
   const entrySrc = readFileSync(new URL("../src/app/api/shopify/entry/route.ts", import.meta.url), "utf8");
   check("the entry writes nothing", !/\.from\(|\.rpc\(|insert|update\(/.test(entrySrc));
   check("and spends the project hint", /cookies\.delete\(CONNECT_PROJECT_COOKIE\)/.test(entrySrc));
   const startSrc = readFileSync(new URL("../src/app/api/shopify/start/route.ts", import.meta.url), "utf8");
-  check("one tap goes to the listing, else Shopify's own link, and nowhere else",
-    /installLink\(process\.env\.NEXT_PUBLIC_SHOPIFY_INSTALL_URL\) \?\? installLinkFor\(process\.env\.SHOPIFY_CLIENT_ID\)/.test(startSrc));
-  check("and ?check only answers", /searchParams\.has\("check"\)\) return NextResponse\.json\(\{ oneTap: !!to \}\)/.test(startSrc));
+  check(
+    "one tap goes to the listing, else Shopify's own link, and nowhere else",
+    /installLink\(process\.env\.NEXT_PUBLIC_SHOPIFY_INSTALL_URL\) \?\? installLinkFor\(process\.env\.SHOPIFY_CLIENT_ID\)/.test(
+      startSrc
+    )
+  );
+  check(
+    "and ?check only answers",
+    /searchParams\.has\("check"\)\) return NextResponse\.json\(\{ oneTap: !!to \}\)/.test(startSrc)
+  );
   for (const page of ["login", "signup"]) {
     const src = readFileSync(new URL(`../src/app/${page}/page.tsx`, import.meta.url), "utf8");
-    check(`${page} follows next only through ownPath`, /if \(ownPath\(next\)\)/.test(src) && !/next\?\.startsWith/.test(src));
+    check(
+      `${page} follows next only through ownPath`,
+      /if \(ownPath\(next\)\)/.test(src) && !/next\?\.startsWith/.test(src)
+    );
   }
 }
 
@@ -469,15 +652,26 @@ console.log("\nand an import ticket reaches exactly the tables the importer writ
   writes.add("import_runs");
   const missingGrant = [...writes].filter((t) => !granted.has(t));
   const extraGrant = [...granted].filter((t) => !writes.has(t));
-  check(`every table the importer writes is granted${missingGrant.length ? `: missing ${missingGrant}` : ""}`, missingGrant.length === 0);
+  check(
+    `every table the importer writes is granted${missingGrant.length ? `: missing ${missingGrant}` : ""}`,
+    missingGrant.length === 0
+  );
   check(`and nothing else is${extraGrant.length ? `: ${extraGrant}` : ""}`, extraGrant.length === 0);
-  check("never the store row, its actions, or its privacy requests",
-    !["stores", "store_actions", "shopify_data_requests", "projects", "modules", "records"].some((t) => granted.has(t)));
-  check("the policies are for anon and a ticket only", /for all to anon/.test(sql) && !/to (authenticated|public)[^;]*abo_import_holds/.test(sql));
+  check(
+    "never the store row, its actions, or its privacy requests",
+    !["stores", "store_actions", "shopify_data_requests", "projects", "modules", "records"].some((t) => granted.has(t))
+  );
+  check(
+    "the policies are for anon and a ticket only",
+    /for all to anon/.test(sql) && !/to (authenticated|public)[^;]*abo_import_holds/.test(sql)
+  );
 
   // The worker holds no secret: its authority is the ticket it is sent.
   const worker = readFileSync(new URL("../src/app/api/shopify/import/worker/route.ts", import.meta.url), "utf8");
-  check("the worker uses the ticket client and nothing stronger", /ticketClient\(ticket\)/.test(worker) && !/SERVICE_ROLE|getUserClient/.test(worker));
+  check(
+    "the worker uses the ticket client and nothing stronger",
+    /ticketClient\(ticket\)/.test(worker) && !/SERVICE_ROLE|getUserClient/.test(worker)
+  );
   check("and never writes the ticket to a log", !/console\.\w+\([^)]*ticket/.test(worker));
   const src = readdirSync(new URL("../src", import.meta.url), { recursive: true })
     .filter((f) => /\.(ts|tsx)$/.test(f))

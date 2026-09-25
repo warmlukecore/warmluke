@@ -76,16 +76,20 @@ function ShopifyStatus({
         // imported rows are still here until Shopify asks for them to
         // be erased; reconnecting picks them up again.
         store.status === "uninstalled"
-        ? { tone: "text-tone-attention-fg", dot: "bg-signal-attention", text: "Removed from Shopify, reconnect to use it again" }
+        ? {
+            tone: "text-tone-attention-fg",
+            dot: "bg-signal-attention",
+            text: "Removed from Shopify, reconnect to use it again",
+          }
         : expired
-        ? { tone: "text-tone-attention-fg", dot: "bg-signal-attention", text: "Shopify access ran out" }
-        : {
-            tone: "text-fg-muted",
-            dot: "bg-signal-success",
-            text: store.last_synced_at
-              ? `Synced ${new Date(store.last_synced_at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`
-              : "Not imported yet",
-          };
+          ? { tone: "text-tone-attention-fg", dot: "bg-signal-attention", text: "Shopify access ran out" }
+          : {
+              tone: "text-fg-muted",
+              dot: "bg-signal-success",
+              text: store.last_synced_at
+                ? `Synced ${new Date(store.last_synced_at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`
+                : "Not imported yet",
+            };
 
   return (
     <div className="space-y-1">
@@ -103,8 +107,8 @@ function ShopifyStatus({
           // though a different program is asking.
           <div className={`${note.critical} mt-2`}>
             <p className="font-medium">
-              Disconnect {store.shop_domain}? Everything imported from it — products,
-              stock, orders and customers — is deleted.
+              Disconnect {store.shop_domain}? Everything imported from it — products, stock, orders and customers — is
+              deleted.
             </p>
             <p className="mt-1 opacity-80">
               Your Shopify store itself is untouched, and you can connect it again later.
@@ -119,18 +123,14 @@ function ShopifyStatus({
             </div>
           </div>
         ) : (
-        <div className="-ml-2.5 flex items-center gap-0.5 pt-1">
-          <button onClick={onReconnect} disabled={busy} className={button("plain", "sm")}>
-            Reconnect
-          </button>
-          <button
-            onClick={onAskDisconnect}
-            disabled={busy}
-            className={button("critical-plain", "sm")}
-          >
-            Disconnect
-          </button>
-        </div>
+          <div className="-ml-2.5 flex items-center gap-0.5 pt-1">
+            <button onClick={onReconnect} disabled={busy} className={button("plain", "sm")}>
+              Reconnect
+            </button>
+            <button onClick={onAskDisconnect} disabled={busy} className={button("critical-plain", "sm")}>
+              Disconnect
+            </button>
+          </div>
         )
       ) : (
         // A member can see the store but not change it; a button that
@@ -218,8 +218,7 @@ function DashboardInner() {
   const [confirmDisconnect, setConfirmDisconnect] = useState<string | null>(null);
   const connectFailure =
     searchParams.get("shopify") === "failed"
-      ? (CONNECT_FAILURE[searchParams.get("reason") ?? ""] ??
-        "The store couldn't be connected. Try again.")
+      ? (CONNECT_FAILURE[searchParams.get("reason") ?? ""] ?? "The store couldn't be connected. Try again.")
       : null;
 
   useEffect(() => {
@@ -227,10 +226,7 @@ function DashboardInner() {
   }, [loading, user, router]);
 
   const loadProjects = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("projects")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const { data, error } = await supabase.from("projects").select("*").order("created_at", { ascending: false });
     if (error) {
       console.error(error.message);
     } else {
@@ -246,9 +242,7 @@ function DashboardInner() {
       .select(
         "id, project_id, shop_domain, status, currency, timezone, last_synced_at, token_expires_at, refresh_token_expires_at"
       );
-    setStores(
-      Object.fromEntries(((storeRows ?? []) as StoreRow[]).map((st) => [st.project_id, st]))
-    );
+    setStores(Object.fromEntries(((storeRows ?? []) as StoreRow[]).map((st) => [st.project_id, st])));
 
     // What their own AI is waiting on them for, per app.
     //
@@ -280,22 +274,28 @@ function DashboardInner() {
       supabase.from("profiles").select("onboarded_at").eq("user_id", user.id).maybeSingle(),
       // Whether they are Warmluke's own team, who are not onboarded as a business.
       supabase.rpc("abo_my_settings"),
-    ])
-      .then(([{ data, error }, settings]) => {
-        if (!live) return;
-        // A read that failed never locks anybody out of their projects.
-        if (error) {
-          setGate("open");
-          return;
-        }
-        const own = projects.filter((p) => p.owner_id === user.id).length;
-        const staff = !!settings.data?.[0]?.is_superadmin;
-        if (needsOnboarding({ onboarded: !!data?.onboarded_at, ownProjects: own, sharedWithMe: projects.length - own, staff })) {
-          router.replace("/onboarding");
-        } else {
-          setGate("open");
-        }
-      });
+    ]).then(([{ data, error }, settings]) => {
+      if (!live) return;
+      // A read that failed never locks anybody out of their projects.
+      if (error) {
+        setGate("open");
+        return;
+      }
+      const own = projects.filter((p) => p.owner_id === user.id).length;
+      const staff = !!settings.data?.[0]?.is_superadmin;
+      if (
+        needsOnboarding({
+          onboarded: !!data?.onboarded_at,
+          ownProjects: own,
+          sharedWithMe: projects.length - own,
+          staff,
+        })
+      ) {
+        router.replace("/onboarding");
+      } else {
+        setGate("open");
+      }
+    });
     return () => {
       live = false;
     };
@@ -381,7 +381,12 @@ function DashboardInner() {
 
         {projects.length >= SEARCH_FROM && (
           <label className="relative mt-5 block max-w-xs">
-            <Search aria-hidden size={15} strokeWidth={1.75} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-fg-faint" />
+            <Search
+              aria-hidden
+              size={15}
+              strokeWidth={1.75}
+              className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-fg-faint"
+            />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -422,8 +427,8 @@ function DashboardInner() {
               <>
                 <h2 className="mt-4 text-base font-semibold text-fg">Nothing here yet</h2>
                 <p className="mt-1.5 max-w-md text-[13px] leading-relaxed text-fg-muted">
-                  Create your first project and describe the problem you&rsquo;re stuck on.
-                  It asks how you work, then builds the app around it.
+                  Create your first project and describe the problem you&rsquo;re stuck on. It asks how you work, then
+                  builds the app around it.
                 </p>
                 <button onClick={() => createAndBuild()} disabled={creating} className={`${button("primary")} mt-5`}>
                   <Plus aria-hidden size={15} strokeWidth={2} />
@@ -519,9 +524,7 @@ function DashboardInner() {
       {settingsFor && (
         <ProjectSettings
           project={settingsFor}
-          onSaved={(updated) =>
-            setProjects((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))
-          }
+          onSaved={(updated) => setProjects((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))}
           onDeleted={(id) => setProjects((prev) => prev.filter((x) => x.id !== id))}
           onClose={() => setSettingsFor(null)}
           onStoreChanged={loadProjects}

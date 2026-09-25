@@ -57,7 +57,13 @@ export type Account = {
   last_sign_in_at?: string | null;
   // 0118: whether they may sign in, and the apps they were invited into.
   suspended?: boolean;
-  memberships?: Array<{ project: string; owner: string | null; name: string | null; role: string | null; joined_at: string | null }>;
+  memberships?: Array<{
+    project: string;
+    owner: string | null;
+    name: string | null;
+    role: string | null;
+    joined_at: string | null;
+  }>;
 };
 
 type Story = {
@@ -66,11 +72,23 @@ type Story = {
     name: string;
     created_at: string;
     members: number;
-    stores: Array<{ domain: string | null; status: string; connected_at: string | null; last_synced_at: string | null; problem: string | null }>;
+    stores: Array<{
+      domain: string | null;
+      status: string;
+      connected_at: string | null;
+      last_synced_at: string | null;
+      problem: string | null;
+    }>;
   }>;
   invite: { by: string | null; note: string | null; made_at: string; claimed_at: string } | null;
   demos: Array<{ id: string; at: string; store: string | null; note: string | null; stage: string }>;
-  trail: Array<{ action: string; old_value: Record<string, unknown> | null; new_value: Record<string, unknown> | null; at: string; by: string | null }>;
+  trail: Array<{
+    action: string;
+    old_value: Record<string, unknown> | null;
+    new_value: Record<string, unknown> | null;
+    at: string;
+    by: string | null;
+  }>;
 };
 
 /** The switches, by the names the accounts table gives them. */
@@ -98,7 +116,8 @@ function said({ action, old_value, new_value }: Story["trail"][number]): string 
   }
 }
 
-const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+const day = (iso: string) =>
+  new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -136,29 +155,33 @@ export function AccountDetail({ account: a, now, onClose }: { account: Account; 
   }, [a.user_id]);
 
   const site = siteLink(a.website);
-  const told = ([
-    ["Business", a.business_name],
-    ["Role", labelOf(ROLE_OPTIONS, a.role)],
-    ["Orders a month", labelOf(ORDER_OPTIONS, a.monthly_orders)],
-    ["Sells on", labelOf(PLATFORM_OPTIONS, a.platform)],
-    ["Team", labelOf(TEAM_OPTIONS, a.team_size)],
+  const told = (
     [
-      "Website",
-      site ? (
-        // A value in a [label, value] pair, not a list item: the rows are keyed by label where they render.
-        // oxlint-disable-next-line react/jsx-key
-        <a href={site.href} target="_blank" rel="noopener noreferrer nofollow" className="text-link hover:underline">
-          {site.text}
-        </a>
-      ) : (
-        a.website
-      ),
-    ],
-    [
-      "Heard of us",
-      a.heard_from ? `${labelOf(HEARD_OPTIONS, a.heard_from)}${a.heard_from_detail ? ` (${a.heard_from_detail})` : ""}` : null,
-    ],
-  ] as Array<[string, ReactNode]>).filter(([, v]) => !!v);
+      ["Business", a.business_name],
+      ["Role", labelOf(ROLE_OPTIONS, a.role)],
+      ["Orders a month", labelOf(ORDER_OPTIONS, a.monthly_orders)],
+      ["Sells on", labelOf(PLATFORM_OPTIONS, a.platform)],
+      ["Team", labelOf(TEAM_OPTIONS, a.team_size)],
+      [
+        "Website",
+        site ? (
+          // A value in a [label, value] pair, not a list item: the rows are keyed by label where they render.
+          // oxlint-disable-next-line react/jsx-key
+          <a href={site.href} target="_blank" rel="noopener noreferrer nofollow" className="text-link hover:underline">
+            {site.text}
+          </a>
+        ) : (
+          a.website
+        ),
+      ],
+      [
+        "Heard of us",
+        a.heard_from
+          ? `${labelOf(HEARD_OPTIONS, a.heard_from)}${a.heard_from_detail ? ` (${a.heard_from_detail})` : ""}`
+          : null,
+      ],
+    ] as Array<[string, ReactNode]>
+  ).filter(([, v]) => !!v);
 
   return (
     <Dialog
@@ -166,8 +189,13 @@ export function AccountDetail({ account: a, now, onClose }: { account: Account; 
       title={a.full_name || a.email}
       description={
         <>
-          {a.full_name ? `${a.email} · ` : ""}joined {day(a.created_at)} · {ago(a.last_sign_in_at, now, "never signed in")}
-          {a.suspended && <span className="ml-1.5 rounded-full bg-tone-critical px-1.5 py-px text-[10px] font-medium text-tone-critical-fg">suspended</span>}
+          {a.full_name ? `${a.email} · ` : ""}joined {day(a.created_at)} ·{" "}
+          {ago(a.last_sign_in_at, now, "never signed in")}
+          {a.suspended && (
+            <span className="ml-1.5 rounded-full bg-tone-critical px-1.5 py-px text-[10px] font-medium text-tone-critical-fg">
+              suspended
+            </span>
+          )}
         </>
       }
       onClose={onClose}
@@ -188,7 +216,9 @@ export function AccountDetail({ account: a, now, onClose }: { account: Account; 
           ) : (
             <p className="text-fg-muted">Nothing yet.</p>
           )}
-          {!a.is_superadmin && !a.onboarded_at && <p className="mt-2 text-xs text-tone-attention-fg">Onboarding not finished.</p>}
+          {!a.is_superadmin && !a.onboarded_at && (
+            <p className="mt-2 text-xs text-tone-attention-fg">Onboarding not finished.</p>
+          )}
         </Section>
 
         {error ? (
@@ -207,28 +237,39 @@ export function AccountDetail({ account: a, now, onClose }: { account: Account; 
               <ul className="space-y-1.5">
                 {story.invite && (
                   <li>
-                    Through an invite{story.invite.by ? ` from ${story.invite.by}` : ""}, made {day(story.invite.made_at)}, used{" "}
-                    {ago(story.invite.claimed_at, now)}.
-                    {story.invite.note && <span className="block text-xs text-fg-muted">&ldquo;{story.invite.note}&rdquo;</span>}
+                    Through an invite{story.invite.by ? ` from ${story.invite.by}` : ""}, made{" "}
+                    {day(story.invite.made_at)}, used {ago(story.invite.claimed_at, now)}.
+                    {story.invite.note && (
+                      <span className="block text-xs text-fg-muted">&ldquo;{story.invite.note}&rdquo;</span>
+                    )}
                   </li>
                 )}
                 {story.demos.map((d) => (
                   <li key={d.id} className="flex flex-wrap items-center gap-x-1.5">
                     Asked for a demo {ago(d.at, now)}
                     {d.store ? ` for ${d.store}` : ""}
-                    <span className={`rounded-full px-1.5 py-px text-[10px] font-medium ${STAGE_TONE[d.stage] ?? STAGE_TONE.new}`}>
+                    <span
+                      className={`rounded-full px-1.5 py-px text-[10px] font-medium ${STAGE_TONE[d.stage] ?? STAGE_TONE.new}`}
+                    >
                       {labelOf(DEMO_STAGES, d.stage)}
                     </span>
-                    <Link href={`/admin/demos?find=${encodeURIComponent(a.email)}`} className="text-xs text-link hover:underline">
+                    <Link
+                      href={`/admin/demos?find=${encodeURIComponent(a.email)}`}
+                      className="text-xs text-link hover:underline"
+                    >
                       Open
                     </Link>
                   </li>
                 ))}
-                {!story.invite && story.demos.length === 0 && <li className="text-fg-muted">Signed up on their own.</li>}
+                {!story.invite && story.demos.length === 0 && (
+                  <li className="text-fg-muted">Signed up on their own.</li>
+                )}
               </ul>
             </Section>
 
-            <Section title={story.projects.length === 1 ? "The app they own" : `Apps they own (${story.projects.length})`}>
+            <Section
+              title={story.projects.length === 1 ? "The app they own" : `Apps they own (${story.projects.length})`}
+            >
               {story.projects.length === 0 ? (
                 <p className="text-fg-muted">None.</p>
               ) : (
@@ -249,12 +290,16 @@ export function AccountDetail({ account: a, now, onClose }: { account: Account; 
                               <span className="font-medium text-fg">{s.domain ?? "A store"}</span>
                               <span
                                 className={`rounded-full px-1.5 py-px text-[10px] font-medium ${
-                                  s.status === "connected" ? "bg-tone-success text-tone-success-fg" : "bg-tone-neutral text-tone-neutral-fg"
+                                  s.status === "connected"
+                                    ? "bg-tone-success text-tone-success-fg"
+                                    : "bg-tone-neutral text-tone-neutral-fg"
                                 }`}
                               >
                                 {s.status}
                               </span>
-                              {s.status === "connected" && <span className="text-fg-muted">synced {ago(s.last_synced_at, now, "never")}</span>}
+                              {s.status === "connected" && (
+                                <span className="text-fg-muted">synced {ago(s.last_synced_at, now, "never")}</span>
+                              )}
                             </div>
                             {s.problem && <div className={`${note.critical} mt-1`}>{s.problem}</div>}
                           </div>

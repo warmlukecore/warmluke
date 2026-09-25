@@ -1,28 +1,14 @@
 "use client";
 
 import { createContext, useContext, useMemo, type ReactNode } from "react";
-import {
-  DEFAULT_CURRENCY,
-  DEFAULT_LOCALE,
-  makeFormatting,
-  type ApproxRate,
-  type Formatting,
-} from "@/lib/money";
+import { DEFAULT_CURRENCY, DEFAULT_LOCALE, makeFormatting, type ApproxRate, type Formatting } from "@/lib/money";
 
 // The formatting itself lives in money.ts, which has no React in it.
 // Re-exported here so every existing import of "@/lib/format" keeps
 // working.
-export {
-  DEFAULT_CURRENCY,
-  DEFAULT_LOCALE,
-  makeFormatting,
-  type ApproxRate,
-  type Formatting,
-};
+export { DEFAULT_CURRENCY, DEFAULT_LOCALE, makeFormatting, type ApproxRate, type Formatting };
 
-const FormatContext = createContext<Formatting>(
-  makeFormatting(DEFAULT_LOCALE, DEFAULT_CURRENCY)
-);
+const FormatContext = createContext<Formatting>(makeFormatting(DEFAULT_LOCALE, DEFAULT_CURRENCY));
 
 export function FormatProvider({
   locale,

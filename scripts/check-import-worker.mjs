@@ -112,7 +112,10 @@ try {
   check("it knows which store it is for", held?.[0]?.id === A && held?.[0]?.access_token === "fake-token-wl-worker-a");
   const { error: wroteA } = await w
     .from("products")
-    .upsert({ store_id: A, external_id: `gid://shopify/Product/a-${tag}`, title: "A's" }, { onConflict: "store_id,external_id" });
+    .upsert(
+      { store_id: A, external_id: `gid://shopify/Product/a-${tag}`, title: "A's" },
+      { onConflict: "store_id,external_id" }
+    );
   check("it can write that store's products", !wroteA);
   const { data: readA } = await w.from("products").select("id").eq("store_id", A);
   check("and read them back", (readA ?? []).length === 1);
@@ -126,9 +129,18 @@ try {
   check("not another store's rows", (readB ?? []).length === 0);
   const { error: wroteB } = await w.from("products").insert({ store_id: B, external_id: `x-${tag}`, title: "no" });
   check("nor write into another store", !!wroteB);
-  const { error: progressB } = await w.from("import_runs").insert({ store_id: B, resource: RESOURCES[0], status: "done" });
+  const { error: progressB } = await w
+    .from("import_runs")
+    .insert({ store_id: B, resource: RESOURCES[0], status: "done" });
   check("nor another store's progress", !!progressB);
-  for (const table of ["projects", "modules", "records", "account_settings", "store_actions", "shopify_data_requests"]) {
+  for (const table of [
+    "projects",
+    "modules",
+    "records",
+    "account_settings",
+    "store_actions",
+    "shopify_data_requests",
+  ]) {
     const { data } = await w.from(table).select("*").limit(5);
     check(`not ${table}`, (data ?? []).length === 0);
   }
@@ -158,9 +170,14 @@ try {
   const guess = withTicket(randomBytes(32).toString("hex"));
   const { data: guessHeld } = await guess.rpc("abo_import_store");
   check("a guessed ticket: no store", (guessHeld ?? []).length === 0);
-  const { error: guessWrote } = await guess.from("products").insert({ store_id: A, external_id: `g-${tag}`, title: "no" });
+  const { error: guessWrote } = await guess
+    .from("products")
+    .insert({ store_id: A, external_id: `g-${tag}`, title: "no" });
   check("a guessed ticket: no writes", !!guessWrote);
-  await admin.from("import_leases").update({ expires_at: new Date(Date.now() - 1000).toISOString() }).eq("store_id", A);
+  await admin
+    .from("import_leases")
+    .update({ expires_at: new Date(Date.now() - 1000).toISOString() })
+    .eq("store_id", A);
   const { data: lapsedHeld } = await w.rpc("abo_import_store");
   check("a lapsed ticket: no store", (lapsedHeld ?? []).length === 0);
   const { error: lapsedWrote } = await w.from("products").insert({ store_id: A, external_id: `l-${tag}`, title: "no" });
@@ -174,8 +191,14 @@ try {
   const w2 = withTicket(t2);
   const { data: stretched } = await w2.rpc("abo_import_renew", { p_seconds: 999999 });
   const { data: leased } = await admin.from("import_leases").select("expires_at").eq("store_id", A).single();
-  check("a renewal is capped at ten minutes", stretched === true && Date.parse(leased.expires_at) <= Date.now() + 601_000);
-  await admin.from("import_leases").update({ taken_at: new Date(Date.now() - 31 * 60_000).toISOString() }).eq("store_id", A);
+  check(
+    "a renewal is capped at ten minutes",
+    stretched === true && Date.parse(leased.expires_at) <= Date.now() + 601_000
+  );
+  await admin
+    .from("import_leases")
+    .update({ taken_at: new Date(Date.now() - 31 * 60_000).toISOString() })
+    .eq("store_id", A);
   const { data: tooOld } = await w2.rpc("abo_import_renew", { p_seconds: 360 });
   check("and not at all half an hour after it was minted", tooOld === false);
   await w2.rpc("abo_import_release");
@@ -195,7 +218,10 @@ try {
       body: JSON.stringify(p),
     }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
   const kicked = await asOwner({ projectId: mine.id, kick: true });
-  check("the owner may, and hears there is no worker here", kicked.status === 200 && kicked.body.kicked === "not_configured");
+  check(
+    "the owner may, and hears there is no worker here",
+    kicked.status === 200 && kicked.body.kicked === "not_configured"
+  );
   const { error: notYours } = await owner.rpc("abo_import_kick", { p_store: S });
   check("nobody may for a store that is not theirs", !!notYours);
   const { error: anonKick } = await nobody.rpc("abo_import_kick", { p_store: A });
@@ -263,5 +289,7 @@ try {
   if (stranger) await admin.auth.admin.deleteUser(stranger);
 }
 
-console.log(fails.length === 0 ? "\na ticket opens one store's rows, and only while it lives" : `\n${fails.length} FAILED`);
+console.log(
+  fails.length === 0 ? "\na ticket opens one store's rows, and only while it lives" : `\n${fails.length} FAILED`
+);
 process.exit(fails.length === 0 ? 0 : 1);

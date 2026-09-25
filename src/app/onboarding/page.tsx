@@ -119,7 +119,9 @@ export default function Onboarding() {
       setReady(true);
       return;
     }
-    const row = profile.data as (Partial<Record<keyof Answers, string | null>> & { onboarded_at?: string | null }) | null;
+    const row = profile.data as
+      | (Partial<Record<keyof Answers, string | null>> & { onboarded_at?: string | null })
+      | null;
     // Finished once is finished: this is not a page to be sent back to.
     if (row?.onboarded_at) {
       router.replace("/dashboard");
@@ -137,7 +139,11 @@ export default function Onboarding() {
       const meta = user.user_metadata as { full_name?: string; name?: string; business_name?: string } | undefined;
       const name = meta?.full_name || meta?.name || "";
       const business = meta?.business_name || "";
-      const seed = (a: Answers) => ({ ...a, full_name: a.full_name || name, business_name: a.business_name || business });
+      const seed = (a: Answers) => ({
+        ...a,
+        full_name: a.full_name || name,
+        business_name: a.business_name || business,
+      });
       setAnswers(seed);
       setDraft(seed);
     }
@@ -228,7 +234,10 @@ export default function Onboarding() {
 
   if (loading || !user || !ready) {
     return (
-      <div className="font-ui flex min-h-dvh flex-col items-center justify-center gap-4 bg-canvas text-fg" role="status">
+      <div
+        className="font-ui flex min-h-dvh flex-col items-center justify-center gap-4 bg-canvas text-fg"
+        role="status"
+      >
         <LukeMark size="lg" state="thinking" />
         <span className="shimmer text-[13px]">Setting things up</span>
       </div>
@@ -285,7 +294,9 @@ export default function Onboarding() {
               <div className="space-y-8">
                 <div className="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3">
                   <span className="h-2 w-2 shrink-0 rounded-full bg-signal-success" />
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{connected.store?.shop_domain}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">
+                    {connected.store?.shop_domain}
+                  </span>
                   <span className="text-xs text-fg-muted">Connected</span>
                 </div>
                 <Actions onBack={() => revisit("about")} onNext={() => onward()} next="Continue" />
@@ -312,7 +323,11 @@ export default function Onboarding() {
             )}
           </Screen>
         ) : shown === "assistant" ? (
-          <Assistant connected={assistants} onBack={() => revisit("store")} onDone={() => onward({ assistant: true })} />
+          <Assistant
+            connected={assistants}
+            onBack={() => revisit("store")}
+            onDone={() => onward({ assistant: true })}
+          />
         ) : shown === "preparing" ? (
           <Screen
             eyebrow="Your store"
@@ -502,7 +517,12 @@ function Frame({
 
         <div className="mt-auto flex items-center gap-2 border-t border-line pt-4 text-xs text-fg-muted">
           <span className="min-w-0 flex-1 truncate">{email}</span>
-          <button onClick={() => signOut(router)} className={button("plain", "sm")} aria-label="Sign out" title="Sign out">
+          <button
+            onClick={() => signOut(router)}
+            className={button("plain", "sm")}
+            aria-label="Sign out"
+            title="Sign out"
+          >
             <LogOut aria-hidden size={14} strokeWidth={1.75} />
           </button>
         </div>
@@ -520,7 +540,10 @@ function Frame({
           </button>
         </header>
         <div className="h-0.5 bg-line lg:hidden">
-          <div className="h-full bg-primary transition-[width] duration-500" style={{ width: `${((at + 1) / trail.length) * 100}%` }} />
+          <div
+            className="h-full bg-primary transition-[width] duration-500"
+            style={{ width: `${((at + 1) / trail.length) * 100}%` }}
+          />
         </div>
 
         <div className="flex flex-1 justify-center px-5 pt-10 pb-16 sm:px-8 lg:pt-[12vh]">
@@ -528,9 +551,7 @@ function Frame({
             {/* On a phone, Luke and what it says sit above the question. */}
             <div className="mb-8 flex items-start gap-3 lg:hidden">
               <LukeMark size="sm" state={shown === "preparing" ? "thinking" : "idle"} />
-              <p className="pt-1 text-[13px] leading-relaxed text-fg-muted">
-                {line}
-              </p>
+              <p className="pt-1 text-[13px] leading-relaxed text-fg-muted">{line}</p>
             </div>
             {children}
           </div>
@@ -712,7 +733,8 @@ function AboutYou({
     setA(nextA);
     onDraft(nextA);
   };
-  const set = (k: keyof Answers) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => update(k, e.target.value);
+  const set = (k: keyof Answers) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    update(k, e.target.value);
   const shown = (k: keyof Answers) => (tried === q ? wrong[k] : undefined);
   const detail = heardDetailPrompt(a.heard_from);
 
@@ -767,34 +789,104 @@ function AboutYou({
     <form onSubmit={save} noValidate>
       <div key={q} className={dir}>
         {q === 0 ? (
-          <Screen eyebrow={eyebrow} title="First, who are we talking to?" lede="So Warmluke fits the way your business already works. It takes a minute.">
+          <Screen
+            eyebrow={eyebrow}
+            title="First, who are we talking to?"
+            lede="So Warmluke fits the way your business already works. It takes a minute."
+          >
             <div className="grid gap-5 sm:grid-cols-2">
-              <Text id="full_name" text="Your name" value={a.full_name} onChange={set("full_name")} error={shown("full_name")} max={NAME_MAX} autoComplete="name" autoFocus />
-              <Text id="business_name" text="Business name" value={a.business_name} onChange={set("business_name")} error={shown("business_name")} max={BUSINESS_MAX} autoComplete="organization" />
+              <Text
+                id="full_name"
+                text="Your name"
+                value={a.full_name}
+                onChange={set("full_name")}
+                error={shown("full_name")}
+                max={NAME_MAX}
+                autoComplete="name"
+                autoFocus
+              />
+              <Text
+                id="business_name"
+                text="Business name"
+                value={a.business_name}
+                onChange={set("business_name")}
+                error={shown("business_name")}
+                max={BUSINESS_MAX}
+                autoComplete="organization"
+              />
             </div>
           </Screen>
         ) : q === 1 ? (
           <Screen eyebrow={eyebrow} title={`What do you do at ${business}?`}>
-            <Choices label="Your role" options={ROLE_OPTIONS} value={a.role} onPick={(v) => choose("role", v)} error={shown("role")} />
+            <Choices
+              label="Your role"
+              options={ROLE_OPTIONS}
+              value={a.role}
+              onPick={(v) => choose("role", v)}
+              error={shown("role")}
+            />
           </Screen>
         ) : q === 2 ? (
           <Screen eyebrow={eyebrow} title="How many orders a month?">
-            <Choices label="Orders a month" options={ORDER_OPTIONS} value={a.monthly_orders} onPick={(v) => choose("monthly_orders", v)} error={shown("monthly_orders")} />
+            <Choices
+              label="Orders a month"
+              options={ORDER_OPTIONS}
+              value={a.monthly_orders}
+              onPick={(v) => choose("monthly_orders", v)}
+              error={shown("monthly_orders")}
+            />
           </Screen>
         ) : q === 3 ? (
           <Screen eyebrow={eyebrow} title="Where does the store run?">
-            <Choices label="Where your store runs" options={PLATFORM_OPTIONS} value={a.platform} onPick={(v) => choose("platform", v)} error={shown("platform")} />
+            <Choices
+              label="Where your store runs"
+              options={PLATFORM_OPTIONS}
+              value={a.platform}
+              onPick={(v) => choose("platform", v)}
+              error={shown("platform")}
+            />
             <div className="mt-6">
-              <Text id="website" text="Website" value={a.website} onChange={set("website")} error={shown("website")} max={TEXT_MAX} optional placeholder="yourstore.com" autoComplete="url" />
+              <Text
+                id="website"
+                text="Website"
+                value={a.website}
+                onChange={set("website")}
+                error={shown("website")}
+                max={TEXT_MAX}
+                optional
+                placeholder="yourstore.com"
+                autoComplete="url"
+              />
             </div>
           </Screen>
         ) : (
           <Screen eyebrow={eyebrow} title="Two last things, both optional.">
-            <Choices label="Team size" options={TEAM_OPTIONS} value={a.team_size} onPick={(v) => choose("team_size", a.team_size === v ? "" : v)} compact />
+            <Choices
+              label="Team size"
+              options={TEAM_OPTIONS}
+              value={a.team_size}
+              onPick={(v) => choose("team_size", a.team_size === v ? "" : v)}
+              compact
+            />
             <div className="mt-6 grid gap-5 sm:grid-cols-2">
-              <Pick id="heard_from" text="How did you hear about us?" value={a.heard_from} onChange={set("heard_from")} options={HEARD_OPTIONS} error={shown("heard_from")} optional />
+              <Pick
+                id="heard_from"
+                text="How did you hear about us?"
+                value={a.heard_from}
+                onChange={set("heard_from")}
+                options={HEARD_OPTIONS}
+                error={shown("heard_from")}
+                optional
+              />
               {detail && (
-                <Text id="heard_from_detail" text={detail} value={a.heard_from_detail} onChange={set("heard_from_detail")} error={shown("heard_from_detail")} max={TEXT_MAX} />
+                <Text
+                  id="heard_from_detail"
+                  text={detail}
+                  value={a.heard_from_detail}
+                  onChange={set("heard_from_detail")}
+                  error={shown("heard_from_detail")}
+                  max={TEXT_MAX}
+                />
               )}
             </div>
           </Screen>
@@ -802,7 +894,12 @@ function AboutYou({
       </div>
       {error && <div className={`${note.critical} mt-6`}>{error}</div>}
       <div className="mt-8">
-        <Actions onBack={q > 0 ? back : undefined} next={busy ? "Saving…" : last ? "Save and continue" : "Continue"} busy={busy} submit />
+        <Actions
+          onBack={q > 0 ? back : undefined}
+          next={busy ? "Saving…" : last ? "Save and continue" : "Continue"}
+          busy={busy}
+          submit
+        />
       </div>
     </form>
   );
@@ -845,7 +942,11 @@ function Choices({
 
   return (
     <div>
-      <div role="radiogroup" aria-label={text} className={`grid gap-2 ${compact ? "grid-cols-2 sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+      <div
+        role="radiogroup"
+        aria-label={text}
+        className={`grid gap-2 ${compact ? "grid-cols-2 sm:grid-cols-3" : "sm:grid-cols-2"}`}
+      >
         {options.map((o, i) => {
           const on = o.value === value;
           return (
@@ -856,7 +957,9 @@ function Choices({
               aria-checked={on}
               onClick={() => onPick(o.value)}
               className={`group flex min-h-11 items-center gap-3 rounded-control border bg-surface px-3 py-2.5 text-left text-sm transition-[border-color,box-shadow,background-color] duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${
-                on ? "border-primary shadow-[0_0_0_1px_var(--color-primary)]" : "border-line hover:border-line-strong hover:bg-surface-hover"
+                on
+                  ? "border-primary shadow-[0_0_0_1px_var(--color-primary)]"
+                  : "border-line hover:border-line-strong hover:bg-surface-hover"
               }`}
             >
               {!compact && (
@@ -1075,7 +1178,12 @@ function ImportList({ progress }: { progress: Progress }) {
             {done ? (
               <Check aria-hidden size={15} strokeWidth={2} className="text-signal-success" />
             ) : (
-              <LoaderCircle aria-hidden size={15} strokeWidth={1.75} className="animate-spin text-fg-faint motion-reduce:animate-none" />
+              <LoaderCircle
+                aria-hidden
+                size={15}
+                strokeWidth={1.75}
+                className="animate-spin text-fg-faint motion-reduce:animate-none"
+              />
             )}
             <span className={`flex-1 ${done ? "text-fg" : "shimmer"}`}>{p.label}</span>
             <span className="text-xs text-fg-muted tabular-nums">{p.imported.toLocaleString()}</span>
@@ -1114,7 +1222,14 @@ function Done({
     { to: "about", what: "About you", value: business ? `${name} · ${business}` : name, set: true },
     { to: "store", what: "Store", value: shop ?? "Not connected yet", set: !!shop },
     ...(assistantOffered
-      ? [{ to: "assistant" as Step, what: "Your AI", value: names.length ? names.join(", ") : "Not connected yet", set: names.length > 0 }]
+      ? [
+          {
+            to: "assistant" as Step,
+            what: "Your AI",
+            value: names.length ? names.join(", ") : "Not connected yet",
+            set: names.length > 0,
+          },
+        ]
       : []),
   ];
   return (

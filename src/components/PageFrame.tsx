@@ -29,7 +29,9 @@ export function PageFrame({
       href={href}
       aria-current={path === href ? "page" : undefined}
       className={`inline-flex h-8 items-center gap-1.5 rounded-control px-2.5 text-[13px] font-medium transition-colors ${
-        path === href ? "bg-frame-raised text-white" : "text-frame-fg-muted hover:bg-frame-raised/60 hover:text-frame-fg"
+        path === href
+          ? "bg-frame-raised text-white"
+          : "text-frame-fg-muted hover:bg-frame-raised/60 hover:text-frame-fg"
       }`}
     >
       <Glyph aria-hidden size={15} strokeWidth={1.75} />

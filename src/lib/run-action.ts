@@ -22,12 +22,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { graphql } from "@/lib/shopify-import";
 import { ShopifyError } from "@/lib/shopify";
-import {
-  actionSpec,
-  MOST_TARGETS,
-  type ActionParams,
-  type ActionTarget,
-} from "@/lib/store-actions";
+import { actionSpec, MOST_TARGETS, type ActionParams, type ActionTarget } from "@/lib/store-actions";
 
 export interface ActionRun {
   /** What the row says now: done, partly_done, failed — or why nothing ran. */
@@ -58,16 +53,14 @@ export async function runAction(
   const { data: claimed, error: claimError } = await db.rpc("abo_action_claim", {
     p_action: actionId,
   });
-  const claim = claimed as
-    | {
-        claimed: boolean;
-        status?: string;
-        action?: string;
-        store_id?: string;
-        targets?: ActionTarget[];
-        params?: ActionParams;
-      }
-    | null;
+  const claim = claimed as {
+    claimed: boolean;
+    status?: string;
+    action?: string;
+    store_id?: string;
+    targets?: ActionTarget[];
+    params?: ActionParams;
+  } | null;
 
   if (claimError) return { status: "failed", done: [], errors: [claimError.message] };
   if (!claim?.claimed) {
@@ -121,9 +114,7 @@ export async function runAction(
               `This store has not allowed Warmluke to ${short.join(", ")}. Reconnect it to grant that, then ask again. Nothing was changed.`
             );
           } else {
-            const { data: secret } = await db
-              .rpc("abo_store_token", { p_store: store.id })
-              .maybeSingle();
+            const { data: secret } = await db.rpc("abo_store_token", { p_store: store.id }).maybeSingle();
             const token = (secret as { access_token?: string } | null)?.access_token;
             if (!token) {
               errors.push("Warmluke could not read this store's access token.");

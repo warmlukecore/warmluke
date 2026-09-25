@@ -47,5 +47,12 @@ export async function measureLogo(root, src) {
     sharp(file).trim().toBuffer({ resolveWithObject: true }),
     sharp(file).metadata(),
   ]);
-  return [Math.abs(info.trimOffsetLeft ?? 0), Math.abs(info.trimOffsetTop ?? 0), info.width, info.height, meta.width, meta.height].join(",");
+  return [
+    Math.abs(info.trimOffsetLeft ?? 0),
+    Math.abs(info.trimOffsetTop ?? 0),
+    info.width,
+    info.height,
+    meta.width,
+    meta.height,
+  ].join(",");
 }

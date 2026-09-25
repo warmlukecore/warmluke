@@ -30,10 +30,7 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
-const client = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
-);
+const client = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY);
 const { data: owner } = await client.auth.signInWithPassword({
   email: OWNER_EMAIL,
   password: process.env.OWNER_PASSWORD ?? "",
@@ -42,10 +39,7 @@ if (!owner?.session) {
   console.log("no OWNER_PASSWORD given — nothing to check");
   process.exit(0);
 }
-const admin = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.ADAPTIVE_OS_SERVICE_ROLE_KEY
-);
+const admin = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
 const { data: project } = await admin.from("projects").select("id").limit(1).single();
 
 // Calls this run makes count against the hourly ceiling; its own are
@@ -129,10 +123,7 @@ try {
   const mine = (all?.history ?? []).filter((h) => String(h.asked_for).endsWith(stamp));
   check("the finished ones are there", mine.length === 3);
   check("newest first", mine[0]?.asked_for.includes("gone"));
-  check(
-    "and what is still waiting is not",
-    !JSON.stringify(mine).includes(`history waiting ${stamp}`)
-  );
+  check("and what is still waiting is not", !JSON.stringify(mine).includes(`history waiting ${stamp}`));
   check("it says where the waiting ones live", /pending_changes/.test(all?.note ?? ""));
 
   console.log("\nand the ones that only half worked");
@@ -140,10 +131,7 @@ try {
   check("are not described as built", half?.state === "partly built");
   check("with the part that worked named", (half?.built ?? []).length === 1);
   check("and the part that did not", (half?.did_not_build ?? []).length === 1);
-  check(
-    "and the whole answer warns about them",
-    /only partly worked/i.test(all?.needs_attention ?? "")
-  );
+  check("and the whole answer warns about them", /only partly worked/i.test(all?.needs_attention ?? ""));
 
   const whole = mine.find((h) => h.asked_for.includes("whole"));
   check("a finished one is just built", whole?.state === "built");
@@ -175,19 +163,11 @@ try {
   );
 
   console.log("\nand an app that is not theirs");
-  const foreign = await tool(
-    "build_history",
-    { project_id: "11111111-2222-3333-4444-555555555555" },
-    4
-  );
+  const foreign = await tool("build_history", { project_id: "11111111-2222-3333-4444-555555555555" }, 4);
   check("is an error, not an empty history", typeof foreign?.error === "string");
   check("and names the apps they do have", Array.isArray(foreign?.projects));
 } finally {
-  await admin
-    .from("mcp_calls")
-    .delete()
-    .eq("user_id", owner.user.id)
-    .gte("created_at", runStartedAt);
+  await admin.from("mcp_calls").delete().eq("user_id", owner.user.id).gte("created_at", runStartedAt);
   for (const id of made) await admin.from("build_requests").delete().eq("id", id);
   const { count } = await admin
     .from("build_requests")

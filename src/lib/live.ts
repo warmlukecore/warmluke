@@ -68,8 +68,7 @@ export function watchRows(channelName: string, watches: Watch[]): () => void {
         ...(w.filter ? { filter: w.filter } : {}),
       } as never,
       // A delete carries no new row, which is why this is optional.
-      (((p: { new?: Record<string, unknown> }) =>
-        coalesce(w.onChange, p?.new)) as unknown) as never
+      ((p: { new?: Record<string, unknown> }) => coalesce(w.onChange, p?.new)) as unknown as never
     );
   }
 

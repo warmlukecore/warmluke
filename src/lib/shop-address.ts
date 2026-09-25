@@ -61,8 +61,7 @@ export type ShopAddress =
       hint?: string;
     };
 
-const WHERE_TO_FIND =
-  "It ends in .myshopify.com. In Shopify, open Settings, then Domains, and it is listed there.";
+const WHERE_TO_FIND = "It ends in .myshopify.com. In Shopify, open Settings, then Domains, and it is listed there.";
 
 /**
  * The store a merchant meant, from whatever they typed or pasted.
@@ -154,14 +153,7 @@ export function readShopAddress(input: string): ShopAddress {
   // a path, "https://https://mystore.myshopify.com" and
   // "http//mystore.myshopify.com" would read as the stores "https"
   // and "http" — a guess, and a wrong one.
-  if (
-    !host.includes(".") &&
-    HANDLE.test(host) &&
-    url.pathname === "/" &&
-    !url.search &&
-    !url.port &&
-    !url.username
-  ) {
+  if (!host.includes(".") && HANDLE.test(host) && url.pathname === "/" && !url.search && !url.port && !url.username) {
     return strict(`${host}${SUFFIX}`);
   }
 

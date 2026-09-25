@@ -23,11 +23,7 @@ const columns = [
 ];
 const scan = (set) => {
   const errors = [];
-  validateFeatures(
-    { scanMode: { lookupField: "barcode", action: { label: "Verify", set } } },
-    columns,
-    errors
-  );
+  validateFeatures({ scanMode: { lookupField: "barcode", action: { label: "Verify", set } } }, columns, errors);
   return errors;
 };
 
@@ -58,10 +54,7 @@ check(
     },
   }).length === 0
 );
-check(
-  "non-number fields are left alone",
-  scan({ item_status: { const: "Verified" } }).length === 0
-);
+check("non-number fields are left alone", scan({ item_status: { const: "Verified" } }).length === 0);
 
 console.log("\nthe engine states what scanning does, not the model");
 const blueprint = parseReply(
@@ -83,7 +76,12 @@ const blueprint = parseReply(
           newModule: { name: "order-items", nav_label: "Order Items", icon: "package" },
           newSchema: {
             columns,
-            features: { scanMode: { lookupField: "barcode", action: { label: "Verify", set: { item_status: { const: "Verified" } } } } },
+            features: {
+              scanMode: {
+                lookupField: "barcode",
+                action: { label: "Verify", set: { item_status: { const: "Verified" } } },
+              },
+            },
           },
           explanation: "Every product in an order, scanned to verify.",
         },
@@ -100,10 +98,22 @@ if (!blueprint.ok) {
 } else {
   const steps = blueprint.reply.blueprint.workflow.map((w) => w.step);
   check("the model's scan claim is dropped", !steps.some((s) => /kuch nahi hoga/.test(s)));
-  check("the engine's own scan step is added", steps.some((s) => /refused on screen/.test(s)));
-  check("it names the real lookup field", steps.some((s) => /Scan a barcode/.test(s)));
-  check("the ambiguous-code behaviour is stated", steps.some((s) => /asks which one/.test(s)));
-  check("the owner's real-world steps survive", steps.some((s) => /Order aata hai/.test(s)));
+  check(
+    "the engine's own scan step is added",
+    steps.some((s) => /refused on screen/.test(s))
+  );
+  check(
+    "it names the real lookup field",
+    steps.some((s) => /Scan a barcode/.test(s))
+  );
+  check(
+    "the ambiguous-code behaviour is stated",
+    steps.some((s) => /asks which one/.test(s))
+  );
+  check(
+    "the owner's real-world steps survive",
+    steps.some((s) => /Order aata hai/.test(s))
+  );
 }
 
 console.log("\na scanner that was never built cannot be described either");
@@ -139,7 +149,10 @@ if (!noScanner.ok) {
   const steps = noScanner.reply.blueprint.workflow.map((w) => w.step);
   check("a promised-but-absent scanner is not described", !steps.some((s) => /scan/i.test(s)));
   check("no invented scan step is added either", !steps.some((s) => /refused on screen/.test(s)));
-  check("the real steps still survive", steps.some((s) => /Order aata hai/.test(s)));
+  check(
+    "the real steps still survive",
+    steps.some((s) => /Order aata hai/.test(s))
+  );
 }
 
 console.log("\nevery gate that recommends a way out has one that opens");
@@ -185,9 +198,7 @@ const overdueRule = parseReply(
                 ],
               },
             },
-            actions: [
-              { type: "set_fields", target: { self: true }, set: { status: { const: "Overdue" } } },
-            ],
+            actions: [{ type: "set_fields", target: { self: true }, set: { status: { const: "Overdue" } } }],
           },
         },
       },
@@ -197,10 +208,7 @@ const overdueRule = parseReply(
   { columns: tools },
   null
 );
-check(
-  "the schedule shape the clock-write rejection recommends validates",
-  overdueRule.ok === true
-);
+check("the schedule shape the clock-write rejection recommends validates", overdueRule.ok === true);
 if (!overdueRule.ok) console.log("     ", overdueRule.errors.join(" | "));
 
 console.log("\nonly a transient failure is worth retrying");
@@ -219,8 +227,14 @@ const permanent = [
   "Gemini API error 404: model not found",
   "GEMINI_API_KEY is not set.",
 ];
-check("busy, rate-limited and broken all retry", transient.every((m) => isTransient(new Error(m))));
-check("rejected, unauthorised and missing do not", permanent.every((m) => !isTransient(new Error(m))));
+check(
+  "busy, rate-limited and broken all retry",
+  transient.every((m) => isTransient(new Error(m)))
+);
+check(
+  "rejected, unauthorised and missing do not",
+  permanent.every((m) => !isTransient(new Error(m)))
+);
 
 console.log(fails.length === 0 ? "\nall gates hold" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

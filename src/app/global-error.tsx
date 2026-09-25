@@ -14,7 +14,10 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
           <h1 className="text-lg font-semibold text-fg">Warmluke couldn’t load</h1>
           <p className="mt-1">Trying again usually works. If it keeps happening, tell us.</p>
           {error.digest && <p className="mt-2 font-mono text-[11px] text-fg-faint">Reference {error.digest}</p>}
-          <button onClick={reset} className="mt-5 rounded-control bg-primary px-3 py-2 text-[13px] font-medium text-on-primary">
+          <button
+            onClick={reset}
+            className="mt-5 rounded-control bg-primary px-3 py-2 text-[13px] font-medium text-on-primary"
+          >
             Try again
           </button>
         </div>

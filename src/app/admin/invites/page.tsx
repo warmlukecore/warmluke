@@ -56,13 +56,24 @@ const STATE: Record<Invite["state"], [string, string]> = {
 
 const linkFor = (token: string) => `${window.location.origin}/start/${token}`;
 const when = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+  new Date(iso).toLocaleString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 
 /** "in 2 days" or "3 h ago", for a moment either side of now. */
 function relative(iso: string, now: number) {
   const ms = Date.parse(iso) - now;
   const mins = Math.round(Math.abs(ms) / 60000);
-  const say = mins < 60 ? `${Math.max(1, mins)} min` : mins < 48 * 60 ? `${Math.round(mins / 60)} h` : `${Math.round(mins / 1440)} days`;
+  const say =
+    mins < 60
+      ? `${Math.max(1, mins)} min`
+      : mins < 48 * 60
+        ? `${Math.round(mins / 60)} h`
+        : `${Math.round(mins / 1440)} days`;
   return ms >= 0 ? `in ${say}` : `${say} ago`;
 }
 
@@ -222,13 +233,25 @@ export default function Invites() {
                   <label htmlFor="inv-name" className={label}>
                     Their name <span className="font-normal text-fg-faint">(optional)</span>
                   </label>
-                  <input id="inv-name" value={fullName} onChange={(e) => setFullName(e.target.value)} maxLength={120} className={field} />
+                  <input
+                    id="inv-name"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    maxLength={120}
+                    className={field}
+                  />
                 </div>
                 <div>
                   <label htmlFor="inv-business" className={label}>
                     Their business <span className="font-normal text-fg-faint">(optional)</span>
                   </label>
-                  <input id="inv-business" value={business} onChange={(e) => setBusiness(e.target.value)} maxLength={160} className={field} />
+                  <input
+                    id="inv-business"
+                    value={business}
+                    onChange={(e) => setBusiness(e.target.value)}
+                    maxLength={160}
+                    className={field}
+                  />
                 </div>
                 <div>
                   <label htmlFor="inv-note" className={label}>
@@ -274,7 +297,9 @@ export default function Invites() {
                       />
                     )}
                   </div>
-                  {named && <p className="mt-1.5 text-[11px] text-fg-faint">An invite for one email is for that one person.</p>}
+                  {named && (
+                    <p className="mt-1.5 text-[11px] text-fg-faint">An invite for one email is for that one person.</p>
+                  )}
                 </div>
               </div>
 
@@ -289,18 +314,26 @@ export default function Invites() {
                   <div className="flex flex-wrap items-center gap-2">
                     <code className="min-w-0 flex-1 truncate font-mono text-xs">{linkFor(made.token)}</code>
                     <button type="button" onClick={() => copy(made.token)} className={button("secondary", "sm")}>
-                      {copied === made.token ? <Check aria-hidden size={13} strokeWidth={2} /> : <Copy aria-hidden size={13} strokeWidth={2} />}
+                      {copied === made.token ? (
+                        <Check aria-hidden size={13} strokeWidth={2} />
+                      ) : (
+                        <Copy aria-hidden size={13} strokeWidth={2} />
+                      )}
                       {copied === made.token ? "Copied" : "Copy link"}
                     </button>
                   </div>
-                  <p className="mt-1.5 text-xs">Send it to them however you talk to them. It works until {when(made.until)}.</p>
+                  <p className="mt-1.5 text-xs">
+                    Send it to them however you talk to them. It works until {when(made.until)}.
+                  </p>
                 </div>
               )}
             </form>
 
             <div className={`${card} thin-scroll mt-6 overflow-x-auto`}>
               {rows.length === 0 ? (
-                <p className="px-4 py-8 text-center text-[13px] text-fg-muted">No invites yet. The first one you make appears here.</p>
+                <p className="px-4 py-8 text-center text-[13px] text-fg-muted">
+                  No invites yet. The first one you make appears here.
+                </p>
               ) : (
                 <table className="w-full text-left text-[13px]">
                   <thead className="border-b border-line bg-surface-subdued text-xs text-fg-muted">
@@ -323,7 +356,9 @@ export default function Invites() {
                             <div className="max-w-64 min-w-44">
                               <div className="truncate font-medium text-fg">{r.email ?? "Anyone with the link"}</div>
                               {(r.full_name || r.business_name) && (
-                                <div className="truncate text-xs text-fg-muted">{[r.full_name, r.business_name].filter(Boolean).join(" · ")}</div>
+                                <div className="truncate text-xs text-fg-muted">
+                                  {[r.full_name, r.business_name].filter(Boolean).join(" · ")}
+                                </div>
                               )}
                               {r.note && (
                                 <div className="truncate text-[11px] text-fg-faint" title={r.note}>
@@ -333,7 +368,11 @@ export default function Invites() {
                             </div>
                           </td>
                           <td className="px-3 py-3">
-                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${tone}`}>{stateText}</span>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${tone}`}
+                            >
+                              {stateText}
+                            </span>
                             <div className="mt-1 text-[11px] text-fg-faint tabular-nums">
                               {r.uses} of {r.max_uses} used
                             </div>
@@ -359,7 +398,11 @@ export default function Invites() {
                               <div className={`${note.attention} min-w-56`}>
                                 <p>Withdraw this link? Anyone who opens it after this is told it was withdrawn.</p>
                                 <div className="mt-2 flex gap-1.5">
-                                  <button onClick={() => change(r.id, { revoke: true })} disabled={busy === r.id} className={button("critical", "sm")}>
+                                  <button
+                                    onClick={() => change(r.id, { revoke: true })}
+                                    disabled={busy === r.id}
+                                    className={button("critical", "sm")}
+                                  >
                                     Withdraw
                                   </button>
                                   <button onClick={() => setWithdrawing(null)} className={button("plain", "sm")}>
@@ -372,7 +415,12 @@ export default function Invites() {
                                 <div className="mb-1.5 text-xs text-fg-muted">End it, from now, in</div>
                                 <div className="flex flex-wrap gap-1">
                                   {LASTS.map(([h, text]) => (
-                                    <button key={h} onClick={() => change(r.id, { hours: h })} disabled={busy === r.id} className={button("secondary", "sm")}>
+                                    <button
+                                      key={h}
+                                      onClick={() => change(r.id, { hours: h })}
+                                      disabled={busy === r.id}
+                                      className={button("secondary", "sm")}
+                                    >
                                       {text}
                                     </button>
                                   ))}

@@ -30,13 +30,19 @@ const check = (name, cond) => {
 
 const session = `chk_cap_${Date.now()}`;
 const book = (i) =>
-  visitor.from("landing_events").insert({ session_id: session, event: "demo_booked", idem: `cap${i}`, payload: { name: "Cap check" } });
+  visitor
+    .from("landing_events")
+    .insert({ session_id: session, event: "demo_booked", idem: `cap${i}`, payload: { name: "Cap check" } });
 
 try {
   console.log("a visitor who clicks around, then books");
-  const clicks = await visitor
-    .from("landing_events")
-    .insert(Array.from({ length: 60 }, (_, i) => ({ session_id: session, event: "cta_click", payload: { cta: `preview_${i}` } })));
+  const clicks = await visitor.from("landing_events").insert(
+    Array.from({ length: 60 }, (_, i) => ({
+      session_id: session,
+      event: "cta_click",
+      payload: { cta: `preview_${i}` },
+    }))
+  );
   check("sixty clicks in an hour are taken", !clicks.error);
   const more = await visitor.from("landing_events").insert({ session_id: session, event: "cta_click" });
   check("the sixty-first is refused", more.error?.code === "53400");
@@ -45,7 +51,10 @@ try {
 
   console.log("\nand a script that books over and over");
   const next = await Promise.all([2, 3, 4, 5].map(book));
-  check("five bookings in an hour are taken", next.every((r) => !r.error));
+  check(
+    "five bookings in an hour are taken",
+    next.every((r) => !r.error)
+  );
   const sixth = await book(6);
   check("the sixth is refused", sixth.error?.code === "53400");
 } finally {

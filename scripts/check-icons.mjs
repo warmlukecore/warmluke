@@ -26,7 +26,9 @@ const drawn = new Set([...body.matchAll(/^\s*"?([a-z0-9-]+)"?:\s*[A-Z]/gm)].map(
 const types = read("src/lib/types.ts");
 const allowedAt = types.indexOf("export const ALLOWED_ICONS");
 const allowed = [...types.slice(allowedAt, types.indexOf("]", allowedAt)).matchAll(/"([a-z0-9-]+)"/g)].map((m) => m[1]);
-const store = [...new Set([...read("src/lib/store-read.ts").matchAll(/section: \{[^}]*icon: "([a-z0-9-]+)"/g)].map((m) => m[1]))];
+const store = [
+  ...new Set([...read("src/lib/store-read.ts").matchAll(/section: \{[^}]*icon: "([a-z0-9-]+)"/g)].map((m) => m[1])),
+];
 
 console.log("every icon a section can have is drawn");
 check(`the map draws ${drawn.size} names`, drawn.size > 0);

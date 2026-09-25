@@ -42,10 +42,7 @@ export async function POST(req: Request) {
       .maybeSingle();
     const steps = ((msg?.payload as { undo?: UndoStep[] } | null)?.undo ?? []) as UndoStep[];
     if (steps.length === 0) {
-      return NextResponse.json(
-        { error: "There is nothing on that message to put back." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "There is nothing on that message to put back." }, { status: 400 });
     }
 
     const { done, couldNot } = await putBack(client, projectId, steps);
@@ -68,10 +65,7 @@ export async function POST(req: Request) {
     // put-back the second tab never hears about is the same stale
     // screen by another road.
     if (thread) {
-      await client
-        .from("conversations")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", thread);
+      await client.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", thread);
     }
 
     return NextResponse.json({ done, couldNot, message: line });

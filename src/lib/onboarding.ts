@@ -204,7 +204,12 @@ export function currentStep(s: Signals): Step {
  * signing up, and their answers would be counted as a customer's. The
  * page is still there to open by hand, to see it as a merchant does.
  */
-export function needsOnboarding(a: { onboarded: boolean; ownProjects: number; sharedWithMe: number; staff?: boolean }): boolean {
+export function needsOnboarding(a: {
+  onboarded: boolean;
+  ownProjects: number;
+  sharedWithMe: number;
+  staff?: boolean;
+}): boolean {
   if (a.onboarded || a.staff) return false;
   return !(a.ownProjects === 0 && a.sharedWithMe > 0);
 }

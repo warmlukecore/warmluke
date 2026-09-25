@@ -21,8 +21,5 @@ export function isTransient(e: unknown): boolean {
     return kind === "busy" || kind === "down";
   }
   const msg = e instanceof Error ? e.message : String(e);
-  return (
-    /\b(429|500|502|503|504)\b/.test(msg) ||
-    /overload|unavailable|high load|timeout|throttl/i.test(msg)
-  );
+  return /\b(429|500|502|503|504)\b/.test(msg) || /overload|unavailable|high load|timeout|throttl/i.test(msg);
 }

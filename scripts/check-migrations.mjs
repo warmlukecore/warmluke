@@ -17,16 +17,24 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
-const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
+const files = readdirSync(dir)
+  .filter((f) => f.endsWith(".sql"))
+  .sort();
 const numbered = files.map((f) => ({ f, n: /^(\d{4})_/.exec(f)?.[1] }));
 
 console.log("every migration is named for its place in line");
-check("all of them are NNNN_name.sql", numbered.every((x) => x.n !== undefined));
+check(
+  "all of them are NNNN_name.sql",
+  numbered.every((x) => x.n !== undefined)
+);
 const nums = numbered.map((x) => x.n).filter(Boolean);
 const dups = nums.filter((n, i) => nums.indexOf(n) !== i);
 check("no two share a number", dups.length === 0);
 if (dups.length) console.log("     →", [...new Set(dups)].join(", "));
-const gaps = nums.slice(1).map((n, i) => [nums[i], n]).filter(([a, b]) => Number(b) - Number(a) !== 1);
+const gaps = nums
+  .slice(1)
+  .map((n, i) => [nums[i], n])
+  .filter(([a, b]) => Number(b) - Number(a) !== 1);
 check("and there are no gaps", gaps.length === 0);
 if (gaps.length) console.log("     →", gaps.map(([a, b]) => `${a}→${b}`).join(", "));
 

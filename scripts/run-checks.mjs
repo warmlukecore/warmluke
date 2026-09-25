@@ -42,7 +42,7 @@ const noServer = args.includes("--no-server");
 // Which .env file the checks read. The check project's, in CI; the
 // laptop's, by default. Passed down as ENV_FILE, which every script
 // honours.
-const envFile = args.includes("--env") ? args[args.indexOf("--env") + 1] : process.env.ENV_FILE ?? ".env.local";
+const envFile = args.includes("--env") ? args[args.indexOf("--env") + 1] : (process.env.ENV_FILE ?? ".env.local");
 process.env.ENV_FILE = envFile;
 let envKeys = new Set();
 try {
@@ -109,7 +109,9 @@ const chosen = checks
 
 if (listOnly) {
   for (const c of chosen) console.log(`${c.tier.padEnd(6)} ${c.name}${c.hook ? "  (ts)" : ""}`);
-  console.log(`\n${checks.length} checks: ${["pure", "live", "model"].map((t) => `${checks.filter((c) => c.tier === t).length} ${t}`).join(", ")}`);
+  console.log(
+    `\n${checks.length} checks: ${["pure", "live", "model"].map((t) => `${checks.filter((c) => c.tier === t).length} ${t}`).join(", ")}`
+  );
   process.exit(0);
 }
 
@@ -118,7 +120,9 @@ const APP = process.env.APP_URL ?? "http://localhost:3100";
 let serverUp = true;
 let serverWhy = `needs a server at ${APP}; none is up`;
 if (chosen.some((c) => c.needsServer)) {
-  serverUp = await fetch(`${APP}/login`).then((r) => r.ok).catch(() => false);
+  serverUp = await fetch(`${APP}/login`)
+    .then((r) => r.ok)
+    .catch(() => false);
   // Up is not enough: the build on 3100 is inlined with one project's
   // keys, and the env file names one project. When they differ, every
   // check that talks to the server through the env file's session is
@@ -155,7 +159,9 @@ if (chosen.some((c) => c.needsServer)) {
     }
   }
   if (!serverUp && !noServer) {
-    console.log(`the live checks that need a server cannot run: ${serverWhy} — start the right one, or pass --no-server`);
+    console.log(
+      `the live checks that need a server cannot run: ${serverWhy} — start the right one, or pass --no-server`
+    );
     process.exit(2);
   }
 }
@@ -193,7 +199,10 @@ for (const c of chosen) {
     failed.push(c.name);
     const out = `${run.stdout}${run.stderr}`;
     // What went red, not the whole transcript.
-    const lines = out.split("\n").filter((l) => /FAIL|→|Error|could not|Cannot/.test(l)).slice(0, 8);
+    const lines = out
+      .split("\n")
+      .filter((l) => /FAIL|→|Error|could not|Cannot/.test(l))
+      .slice(0, 8);
     for (const l of lines) console.log(`        ${l.trim().slice(0, 160)}`);
   }
 }

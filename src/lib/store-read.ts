@@ -81,15 +81,8 @@ export type StoreOverview = StoreBrief & {
  * eight thousand orders, and an assistant answering "how many customers
  * do I have" should not be guessing from one page of rows.
  */
-export async function storeOverview(
-  db: SupabaseClient,
-  storeId: string
-): Promise<StoreOverview | null> {
-  const { data: store, error } = await db
-    .from("stores")
-    .select(BRIEF)
-    .eq("id", storeId)
-    .maybeSingle();
+export async function storeOverview(db: SupabaseClient, storeId: string): Promise<StoreOverview | null> {
+  const { data: store, error } = await db.from("stores").select(BRIEF).eq("id", storeId).maybeSingle();
   if (error) throw new Error(error.message);
   if (!store) return null;
 
@@ -128,11 +121,7 @@ export type StoreLeaders = {
  * sells" — read over the whole store, so Luke and a connected
  * assistant can answer rather than say "build a section".
  */
-export async function storeLeaders(
-  db: SupabaseClient,
-  storeId: string,
-  limit = 5
-): Promise<StoreLeaders> {
+export async function storeLeaders(db: SupabaseClient, storeId: string, limit = 5): Promise<StoreLeaders> {
   const [c, p] = await Promise.all([
     db
       .from("customers")
@@ -308,8 +297,7 @@ type TableSpec = {
 };
 
 /** PostgREST embeds a to-one relation as a one-element array or an object; either way, the one row. */
-const one = <T,>(v: T | T[] | null | undefined): T | null =>
-  Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
+const one = <T>(v: T | T[] | null | undefined): T | null => (Array.isArray(v) ? (v[0] ?? null) : (v ?? null));
 
 export const STORE_TABLES: Record<StoreTable, TableSpec> = {
   orders: {
@@ -451,8 +439,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     section: { label: "Payments", icon: "banknote", importedWith: "orders" },
     view: "store_transactions",
     order: { field: "processed_at", ascending: false },
-    select:
-      "id, order_id, order_number, processed_at, customer_name, kind, status, gateway, amount, currency, test",
+    select: "id, order_id, order_number, processed_at, customer_name, kind, status, gateway, amount, currency, test",
     columns: [
       { field: "order_number", label: "Order", type: "text" },
       { field: "processed_at", label: "When", type: "date" },
@@ -634,7 +621,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
   },
   draft_order_items: {
     advice:
-      'One row per line on a draft order. custom_item = true is a line the merchant typed rather than picked from the catalogue, so it matches no product and no SKU — leaving those out of a total under-counts a real quote. line_total = quantity x price. price is what it is actually being sold for, after any by-hand discount, which is the ordinary reason a draft exists.',
+      "One row per line on a draft order. custom_item = true is a line the merchant typed rather than picked from the catalogue, so it matches no product and no SKU — leaving those out of a total under-counts a real quote. line_total = quantity x price. price is what it is actually being sold for, after any by-hand discount, which is the ordinary reason a draft exists.",
     label: "Shopify draft order items",
     what: 'one row per line inside a draft order — what was quoted, how many and at what price; what "what is in that quote" and "what did we offer them" mean',
     section: { label: "Draft order items", icon: "list", importedWith: "drafts" },
@@ -741,7 +728,15 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
  * product title helps nobody.
  */
 const SEARCHABLE: Record<StoreTable, string[]> = {
-  orders: ["order_number", "customer_name", "financial_status", "fulfilment_status", "gateway", "ship_city", "ship_state"],
+  orders: [
+    "order_number",
+    "customer_name",
+    "financial_status",
+    "fulfilment_status",
+    "gateway",
+    "ship_city",
+    "ship_state",
+  ],
   fulfillments: ["order_number", "customer_name", "carrier", "tracking_number", "shipment_status"],
   transactions: ["order_number", "customer_name", "gateway", "kind", "status"],
   customers: ["name", "email", "phone", "city"],
@@ -765,8 +760,7 @@ const SEARCHABLE: Record<StoreTable, string[]> = {
   variants: ["product", "variant", "sku", "barcode"],
 };
 
-export const isStoreTable = (v: unknown): v is StoreTable =>
-  typeof v === "string" && v in STORE_TABLES;
+export const isStoreTable = (v: unknown): v is StoreTable => typeof v === "string" && v in STORE_TABLES;
 
 /** The schema a section gets when it is pointed at a store table. */
 export function storeTableSchema(table: StoreTable): { columns: SchemaColumn[] } {
@@ -811,7 +805,10 @@ export async function readStoreRows(
   // Appended rather than written into each spec's select, so the two
   // cannot drift and nobody has to remember the rule twice.
   const wanted = [
-    ...spec.select.split(",").map((c) => c.trim()).filter(Boolean),
+    ...spec.select
+      .split(",")
+      .map((c) => c.trim())
+      .filter(Boolean),
     ...Object.values(spec.gives ?? {}),
   ];
   const selectWithIds = [...new Set(wanted)].join(", ");
@@ -820,9 +817,7 @@ export async function readStoreRows(
   // customer never synced since total_spent arrived is not the top
   // buyer, and not the bottom one either.
   if (ordered) query = query.order(ordered.field, { ascending: ordered.dir === "asc", nullsFirst: false });
-  query = query
-    .order(spec.order.field, { ascending: spec.order.ascending })
-    .limit(Math.min(Math.max(limit, 1), 500));
+  query = query.order(spec.order.field, { ascending: spec.order.ascending }).limit(Math.min(Math.max(limit, 1), 500));
 
   // Commas and parentheses end an or() clause early, so a search for
   // "Shirt, blue" would silently become a search for "Shirt".
@@ -904,7 +899,10 @@ export async function readRelated(
     .order(spec.order.field, { ascending: spec.order.ascending })
     .limit(limit);
   if (error) throw new Error(error.message);
-  return ((data ?? []) as unknown as Array<Record<string, unknown>>).map((row) => ({ id: row.id as string, data: row }));
+  return ((data ?? []) as unknown as Array<Record<string, unknown>>).map((row) => ({
+    id: row.id as string,
+    data: row,
+  }));
 }
 
 /**
@@ -937,7 +935,10 @@ export async function ordersOfCustomer(
     .in("id", wanted)
     .order(spec.order.field, { ascending: spec.order.ascending });
   if (e2) throw new Error(e2.message);
-  return ((data ?? []) as unknown as Array<Record<string, unknown>>).map((row) => ({ id: row.id as string, data: row }));
+  return ((data ?? []) as unknown as Array<Record<string, unknown>>).map((row) => ({
+    id: row.id as string,
+    data: row,
+  }));
 }
 
 export type OrderSearch = {
@@ -999,9 +1000,7 @@ export async function searchOrders(
     // A cancelled order keeps its last financial status, so asking for
     // "paid" and being handed cancelled ones would be a wrong answer
     // rather than a generous one.
-    q = q
-      .is("cancelled_at", null)
-      .or(`financial_status.eq.${search.status},fulfilment_status.eq.${search.status}`);
+    q = q.is("cancelled_at", null).or(`financial_status.eq.${search.status},fulfilment_status.eq.${search.status}`);
   }
 
   // Both of these end up inside a PostgREST or() expression, where a
@@ -1058,7 +1057,9 @@ export async function lowStock(
   db: SupabaseClient,
   storeId: string,
   { threshold = 5, limit = 50 }: { threshold?: number; limit?: number } = {}
-): Promise<Array<{ product: string | null; variant: string | null; sku: string | null; location: string; available: number }>> {
+): Promise<
+  Array<{ product: string | null; variant: string | null; sku: string | null; location: string; available: number }>
+> {
   const { data, error } = await db
     .from("inventory_levels")
     .select("available, location_name, variants(title, sku, products(title))")
@@ -1074,18 +1075,22 @@ export async function lowStock(
   // an unbroken tie reshuffles between reads.
   // ponytail: a tie across the limit's edge can still swap which row is cut; sort in SQL if that ever shows.
   const name = (x: { product: string | null; variant: string | null }) => `${x.product ?? ""} ${x.variant ?? ""}`;
-  return (data ?? []).map((r) => {
-    const row = r as unknown as Record<string, unknown>;
-    const v = one(row.variants as { title?: string; sku?: string; products?: unknown } | null);
-    const p = one(v?.products as { title?: string } | null);
-    return {
-      product: p?.title ?? null,
-      variant: v?.title ?? null,
-      sku: v?.sku ?? null,
-      location: (row.location_name as string) || "—",
-      available: (row.available as number) ?? 0,
-    };
-  }).sort((a, b) => a.available - b.available || a.location.localeCompare(b.location) || name(a).localeCompare(name(b)));
+  return (data ?? [])
+    .map((r) => {
+      const row = r as unknown as Record<string, unknown>;
+      const v = one(row.variants as { title?: string; sku?: string; products?: unknown } | null);
+      const p = one(v?.products as { title?: string } | null);
+      return {
+        product: p?.title ?? null,
+        variant: v?.title ?? null,
+        sku: v?.sku ?? null,
+        location: (row.location_name as string) || "—",
+        available: (row.available as number) ?? 0,
+      };
+    })
+    .sort(
+      (a, b) => a.available - b.available || a.location.localeCompare(b.location) || name(a).localeCompare(name(b))
+    );
 }
 
 /**
@@ -1158,10 +1163,7 @@ const FILTERABLE: Array<[StoreTable, string]> = [
 /** Above this many distinct values it is a search box, not a dropdown. */
 const MAX_CHOICES = 25;
 
-export async function storeValues(
-  db: SupabaseClient,
-  storeId: string
-): Promise<Record<string, string[]>> {
+export async function storeValues(db: SupabaseClient, storeId: string): Promise<Record<string, string[]>> {
   const out: Record<string, string[]> = {};
 
   await Promise.all(
@@ -1190,6 +1192,8 @@ export async function storeValues(
 
   // In FILTERABLE's order, not the order the reads happened to finish in.
   return Object.fromEntries(
-    FILTERABLE.map(([table, column]) => `${table}.${column}`).filter((k) => k in out).map((k) => [k, out[k]])
+    FILTERABLE.map(([table, column]) => `${table}.${column}`)
+      .filter((k) => k in out)
+      .map((k) => [k, out[k]])
   );
 }

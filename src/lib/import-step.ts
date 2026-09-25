@@ -114,12 +114,10 @@ export async function importStep(
   const have = new Set((runs ?? []).map((r) => r.resource));
   const absent = RESOURCES.filter((r) => !have.has(r));
   if (absent.length) {
-    const { error } = await db
-      .from("import_runs")
-      .upsert(
-        absent.map((resource) => ({ store_id: store.id, resource, status: "pending" })),
-        { onConflict: "store_id,resource", ignoreDuplicates: true }
-      );
+    const { error } = await db.from("import_runs").upsert(
+      absent.map((resource) => ({ store_id: store.id, resource, status: "pending" })),
+      { onConflict: "store_id,resource", ignoreDuplicates: true }
+    );
     if (error) console.error("could not record the resources to import:", error.message);
     ({ data: runs } = await db.from("import_runs").select(RUN_COLUMNS).eq("store_id", store.id).returns<Run[]>());
   }
@@ -225,8 +223,7 @@ export async function importStep(
       attempts,
       // When to try again with nobody watching — or never, until the
       // merchant says so.
-      retry_at:
-        retryable && attempts < MOST_ATTEMPTS ? new Date(Date.now() + waitAfter(attempts)).toISOString() : null,
+      retry_at: retryable && attempts < MOST_ATTEMPTS ? new Date(Date.now() + waitAfter(attempts)).toISOString() : null,
     };
     // A failure must never be the newest thing written. Two callers can
     // both be here while one of them succeeded in between, and this row

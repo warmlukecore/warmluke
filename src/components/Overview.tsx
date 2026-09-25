@@ -52,7 +52,13 @@ type Money = {
  * the answer; the page labels from them and keeps no copy of its own.
  */
 export type OverviewData = {
-  store: { shop_domain: string; status: string; currency: string; timezone: string; last_synced_at: string | null } | null;
+  store: {
+    shop_domain: string;
+    status: string;
+    currency: string;
+    timezone: string;
+    last_synced_at: string | null;
+  } | null;
   days?: number;
   chart_days?: number;
   today?: string;
@@ -192,7 +198,9 @@ export function OverviewBoard({
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   const store = data.store;
-  const money = [...(data.money ?? [])].sort((a, b) => (a.currency === store.currency ? -1 : b.currency === store.currency ? 1 : 0));
+  const money = [...(data.money ?? [])].sort((a, b) =>
+    a.currency === store.currency ? -1 : b.currency === store.currency ? 1 : 0
+  );
   const main = money[0] ?? null;
   const others = money.slice(1);
   const orders = data.orders ?? { today: 0, yesterday: 0, window: 0 };
@@ -233,7 +241,8 @@ export function OverviewBoard({
       {store.status === "uninstalled" && (
         <div className={`${note.attention} flex items-center gap-2 text-[13px]`}>
           <TriangleAlert aria-hidden size={15} strokeWidth={2} className="shrink-0" />
-          Warmluke was removed from this store in Shopify. What was imported is still here; reconnect from the menu to keep it current.
+          Warmluke was removed from this store in Shopify. What was imported is still here; reconnect from the menu to
+          keep it current.
         </div>
       )}
       {importing && (
@@ -332,7 +341,9 @@ export function OverviewBoard({
                       </span>
                       <span className="shrink-0 text-right">
                         <span className="block text-[13px] font-semibold text-fg tabular-nums">
-                          {r.data.total != null ? fmt.money(Number(r.data.total), (r.data.currency as string | undefined) ?? null) : ""}
+                          {r.data.total != null
+                            ? fmt.money(Number(r.data.total), (r.data.currency as string | undefined) ?? null)
+                            : ""}
                         </span>
                         {typeof r.data.status === "string" && <StatusDot value={r.data.status} />}
                       </span>
@@ -381,7 +392,9 @@ export function OverviewBoard({
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[13px] font-medium text-fg">
                           {String(r.data.product ?? "")}
-                          {r.data.variant ? <span className="font-normal text-fg-muted"> · {String(r.data.variant)}</span> : null}
+                          {r.data.variant ? (
+                            <span className="font-normal text-fg-muted"> · {String(r.data.variant)}</span>
+                          ) : null}
                         </span>
                         <span className="block truncate text-[11px] text-fg-muted">
                           {[r.data.location_name, r.data.sku].filter(Boolean).map(String).join(" · ")}
@@ -391,7 +404,9 @@ export function OverviewBoard({
                         <span className="block text-[13px] font-semibold text-fg tabular-nums">
                           {fmt.number(Number(r.data.available ?? 0))} left
                         </span>
-                        <span className={`block text-[11px] ${out ? "text-tone-critical-fg" : "text-tone-attention-fg"}`}>
+                        <span
+                          className={`block text-[11px] ${out ? "text-tone-critical-fg" : "text-tone-attention-fg"}`}
+                        >
                           {[
                             state,
                             onHand > 0 ? `${fmt.number(onHand)} on hand` : "",
@@ -461,7 +476,9 @@ function Kpi({
           />
         )}
       </div>
-      <div className="mt-3 truncate text-[22px] leading-7 font-semibold tracking-tight text-fg tabular-nums">{value}</div>
+      <div className="mt-3 truncate text-[22px] leading-7 font-semibold tracking-tight text-fg tabular-nums">
+        {value}
+      </div>
       <div className="mt-1 line-clamp-2 text-xs text-fg-muted" title={sub}>
         {sub}
       </div>
@@ -512,12 +529,19 @@ function Chart({ daily }: { daily: Array<{ day: string; orders: number }> }) {
             <span>0</span>
           </div>
           <div className="relative min-w-0 flex-1">
-            <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 bottom-5 flex flex-col justify-between">
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 top-0 bottom-5 flex flex-col justify-between"
+            >
               <span className="border-t border-dashed border-line" />
               <span className="border-t border-dashed border-line" />
               <span className="border-t border-line" />
             </div>
-            <div className="relative flex h-36 items-end gap-1" role="img" aria-label={`Orders per day over the last ${daily.length} days, ${total} in all`}>
+            <div
+              className="relative flex h-36 items-end gap-1"
+              role="img"
+              aria-label={`Orders per day over the last ${daily.length} days, ${total} in all`}
+            >
               {daily.map((d, i) => {
                 const date = new Date(`${d.day}T00:00:00`);
                 const isToday = i === daily.length - 1;
@@ -546,7 +570,9 @@ function Chart({ daily }: { daily: Array<{ day: string; orders: number }> }) {
                         </span>
                       </div>
                     </div>
-                    <span className={`mt-1.5 h-3.5 text-[10px] leading-none ${isToday ? "font-semibold text-fg" : "text-fg-faint"}`}>
+                    <span
+                      className={`mt-1.5 h-3.5 text-[10px] leading-none ${isToday ? "font-semibold text-fg" : "text-fg-faint"}`}
+                    >
                       {isToday ? "Today" : date.toLocaleDateString(undefined, { weekday: "narrow" })}
                     </span>
                   </div>
@@ -578,7 +604,11 @@ function Panel({
       <header className="flex items-center gap-2 border-b border-line px-4 py-3">
         <span className="text-fg-muted">{icon}</span>
         <h3 className="text-[13px] font-semibold text-fg">{title}</h3>
-        {aside && <span className="rounded-full bg-tone-attention px-1.5 py-px text-[11px] font-medium text-tone-attention-fg">{aside}</span>}
+        {aside && (
+          <span className="rounded-full bg-tone-attention px-1.5 py-px text-[11px] font-medium text-tone-attention-fg">
+            {aside}
+          </span>
+        )}
         {action && (
           <button onClick={action.onClick} className={`${button("plain", "sm")} -mr-2 ml-auto`}>
             {action.label}

@@ -31,8 +31,7 @@ const env = Object.fromEntries(
 Object.assign(process.env, env);
 
 const admin = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
-const { data: store } = await admin
-  .from("stores").select("*").eq("status", "connected").limit(1).maybeSingle();
+const { data: store } = await admin.from("stores").select("*").eq("status", "connected").limit(1).maybeSingle();
 if (!store) {
   console.log("no connected store — nothing to price against");
   process.exit(0);
@@ -67,5 +66,7 @@ for (const resource of RESOURCES) {
   if (refused) over++;
   console.log(`  ${resource.padEnd(12)} ${String(cost ?? "?").padStart(5)}  ${bar}${note}`);
 }
-console.log(over ? `\n${over} query/queries would be refused on every store.` : "\nevery page query fits inside one request.");
+console.log(
+  over ? `\n${over} query/queries would be refused on every store.` : "\nevery page query fits inside one request."
+);
 process.exit(over === 0 ? 0 : 1);

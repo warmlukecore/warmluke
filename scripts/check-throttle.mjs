@@ -62,8 +62,7 @@ const FINE = { status: 200, body: { data: { products: { nodes: [] } } } };
 // the fake instead — the same call, a different destination.
 const realFetch = globalThis.fetch;
 const pointAt = (host) => {
-  globalThis.fetch = (url, init) =>
-    realFetch(String(url).replace(/^https:\/\/[^/]+/, `http://${host}`), init);
+  globalThis.fetch = (url, init) => realFetch(String(url).replace(/^https:\/\/[^/]+/, `http://${host}`), init);
 };
 
 try {
@@ -96,9 +95,7 @@ try {
 
   console.log("\nbut a real refusal is not retried");
   {
-    const fake = await fakeShopify([
-      { status: 200, body: { errors: [{ message: "Field 'nope' doesn't exist" }] } },
-    ]);
+    const fake = await fakeShopify([{ status: 200, body: { errors: [{ message: "Field 'nope' doesn't exist" }] } }]);
     pointAt(fake.host);
     let message = "";
     try {

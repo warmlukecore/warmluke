@@ -32,10 +32,7 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
-const client = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
-);
+const client = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY);
 const { data: owner } = await client.auth.signInWithPassword({
   email: OWNER_EMAIL,
   password: process.env.OWNER_PASSWORD ?? "",
@@ -44,10 +41,7 @@ if (!owner?.session) {
   console.log("no OWNER_PASSWORD given — nothing to check");
   process.exit(0);
 }
-const admin = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.ADAPTIVE_OS_SERVICE_ROLE_KEY
-);
+const admin = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
 
 // A store a real Shopify answers for: the import route asks it.
 const [store = null] = await shopifyStores(admin, "id, project_id, last_synced_at");
@@ -77,32 +71,21 @@ try {
   // A store that has finished importing, with a known finish time.
   const finished = "2026-01-02T03:04:05+00:00";
   for (const r of runsBefore ?? []) {
-    await admin
-      .from("import_runs")
-      .update({ status: "done", cursor: null, finished_at: finished })
-      .eq("id", r.id);
+    await admin.from("import_runs").update({ status: "done", cursor: null, finished_at: finished }).eq("id", r.id);
   }
-  await admin
-    .from("stores")
-    .update({ last_synced_at: "2020-01-01T00:00:00+00:00" })
-    .eq("id", store.id);
+  await admin.from("stores").update({ last_synced_at: "2020-01-01T00:00:00+00:00" }).eq("id", store.id);
 
   console.log("asking a store that has already finished");
   const done = await importCall({});
   check("it says there is nothing left to walk", done.body?.done === true);
   // The whole point. This used to be now(), so the app claimed a fresh
   // sync for a request that read nothing from Shopify.
-  const after = (
-    await admin.from("stores").select("last_synced_at").eq("id", store.id).single()
-  ).data;
+  const after = (await admin.from("stores").select("last_synced_at").eq("id", store.id).single()).data;
   check(
     "and dates the sync from when it really finished",
     new Date(after.last_synced_at).getTime() === new Date(finished).getTime()
   );
-  check(
-    "not from the moment of asking",
-    new Date(after.last_synced_at).getTime() < Date.now() - 60000
-  );
+  check("not from the moment of asking", new Date(after.last_synced_at).getTime() < Date.now() - 60000);
   check("it says how to look again", /recheck/i.test(done.body?.note ?? ""));
 
   console.log("\nand asked to look again");
@@ -110,10 +93,7 @@ try {
   check("it starts over rather than refusing", again.body?.rechecking === true);
   check("and is no longer done", again.body?.done === false);
 
-  const reset = await admin
-    .from("import_runs")
-    .select("status, cursor, finished_at")
-    .eq("store_id", store.id);
+  const reset = await admin.from("import_runs").select("status, cursor, finished_at").eq("store_id", store.id);
   check(
     "every resource is waiting to be walked",
     (reset.data ?? []).every((r) => r.status === "pending" && r.cursor === null)
@@ -143,14 +123,9 @@ try {
     });
   }
   await admin.from("stores").update({ last_synced_at: syncedBefore }).eq("id", store.id);
-  const back = (
-    await admin.from("stores").select("last_synced_at").eq("id", store.id).single()
-  ).data;
+  const back = (await admin.from("stores").select("last_synced_at").eq("id", store.id).single()).data;
   check("the store is back as it was", back.last_synced_at === syncedBefore);
-  const rows = await admin
-    .from("import_runs")
-    .select("id", { count: "exact", head: true })
-    .eq("store_id", store.id);
+  const rows = await admin.from("import_runs").select("id", { count: "exact", head: true }).eq("store_id", store.id);
   check("with its import history intact", (rows.count ?? 0) === (runsBefore ?? []).length);
 }
 

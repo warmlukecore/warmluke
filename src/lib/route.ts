@@ -18,14 +18,7 @@ import { askJev } from "@/lib/jev";
 import type { StoreTable } from "@/lib/store-read";
 
 export type RouteList = "orders" | "customers" | "products" | "stock" | "sales";
-export type RouteWindow =
-  | "today"
-  | "yesterday"
-  | "this_week"
-  | "this_month"
-  | "last_month"
-  | "named_month"
-  | "all";
+export type RouteWindow = "today" | "yesterday" | "this_week" | "this_month" | "last_month" | "named_month" | "all";
 export type RouteKind = "ranking" | "lookup" | "total";
 
 export type Route = {
@@ -74,7 +67,14 @@ const QUESTIONS = {
     criteria: {
       orders: {
         what: "Orders placed in the shop — order numbers, when placed, totals, paid or pending or cancelled, who ordered, and any money made over a period",
-        examples: ["how many orders today", "is #1004 paid", "revenue this week", "pending COD total", "how much did we sell in January", "top cities by sales"],
+        examples: [
+          "how many orders today",
+          "is #1004 paid",
+          "revenue this week",
+          "pending COD total",
+          "how much did we sell in January",
+          "top cities by sales",
+        ],
       },
       customers: {
         what: "The people who buy — names, phones, emails, cities, how many orders each has placed, lifetime spend",
@@ -109,10 +109,19 @@ const QUESTIONS = {
       today: { what: "Today only", examples: ["aaj kitne order aaye", "today's revenue"] },
       yesterday: { what: "Yesterday only", examples: ["kal ke orders", "yesterday's sales"] },
       this_week: { what: "The last seven days, or this week", examples: ["orders this week", "is hafte"] },
-      this_month: { what: "The last thirty days, or this month", examples: ["revenue this month", "is mahine ka best seller"] },
+      this_month: {
+        what: "The last thirty days, or this month",
+        examples: ["revenue this month", "is mahine ka best seller"],
+      },
       last_month: { what: "The previous calendar month", examples: ["last month's orders", "pichhle mahine"] },
-      named_month: { what: "A month named by name — January, August, March", examples: ["August ka top buyer", "orders in March"] },
-      all: { what: "No time span mentioned, or explicitly all time / ever / total", examples: ["who is my top buyer", "how many customers do I have", "best sellers"] },
+      named_month: {
+        what: "A month named by name — January, August, March",
+        examples: ["August ka top buyer", "orders in March"],
+      },
+      all: {
+        what: "No time span mentioned, or explicitly all time / ever / total",
+        examples: ["who is my top buyer", "how many customers do I have", "best sellers"],
+      },
     },
   },
   month: {
@@ -130,11 +139,26 @@ const QUESTIONS = {
       not_for: "Which list it is about",
     },
     criteria: {
-      ranking: { what: "The top, the most, the biggest, the best, sorted by something — a ranked list or its first entry", examples: ["top buyer", "best sellers", "which city buys most", "sabse zyada"] },
-      lookup: { what: "One particular thing by name or number — an order, a customer, a product, a stock level", examples: ["is #1004 paid", "Aman ka phone", "stock of ski wax"] },
-      total: { what: "How many, how much, a sum, an average, a count", examples: ["how many orders today", "revenue this week", "kitne customers hain"] },
-      build: { what: "A request to build, add, change or remove something in the app — not a question", examples: ["make a section", "add a column", "rename Packing"] },
-      unclear: { what: "Small talk, a how-to about the app, or too vague to say", examples: ["hi", "make it better", "how do I connect shopify"] },
+      ranking: {
+        what: "The top, the most, the biggest, the best, sorted by something — a ranked list or its first entry",
+        examples: ["top buyer", "best sellers", "which city buys most", "sabse zyada"],
+      },
+      lookup: {
+        what: "One particular thing by name or number — an order, a customer, a product, a stock level",
+        examples: ["is #1004 paid", "Aman ka phone", "stock of ski wax"],
+      },
+      total: {
+        what: "How many, how much, a sum, an average, a count",
+        examples: ["how many orders today", "revenue this week", "kitne customers hain"],
+      },
+      build: {
+        what: "A request to build, add, change or remove something in the app — not a question",
+        examples: ["make a section", "add a column", "rename Packing"],
+      },
+      unclear: {
+        what: "Small talk, a how-to about the app, or too vague to say",
+        examples: ["hi", "make it better", "how do I connect shopify"],
+      },
     },
   },
 };
@@ -155,7 +179,10 @@ const STOP = new Set(
 export function candidates(text: string): string[] {
   const out = new Set<string>();
   for (const m of text.matchAll(/#\d+/g)) out.add(m[0]);
-  const words = text.replace(/[?!.,;:()"“”']/g, " ").split(/\s+/).filter(Boolean);
+  const words = text
+    .replace(/[?!.,;:()"“”']/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
   for (let i = 0; i < words.length; i++) {
     const w = words[i];
     if (STOP.has(w.toLowerCase()) || /^\d+$/.test(w) || w.length < 3) continue;

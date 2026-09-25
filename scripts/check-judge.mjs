@@ -169,7 +169,9 @@ console.log("\nand once, for real");
   delete process.env.TYPESAFE_API_URL;
   const envFile = new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url);
   const fromFile = existsSync(envFile)
-    ? (readFileSync(envFile, "utf8").match(/^TYPESAFE_API_KEY=(.+)$/m)?.[1]?.trim() ?? "")
+    ? (readFileSync(envFile, "utf8")
+        .match(/^TYPESAFE_API_KEY=(.+)$/m)?.[1]
+        ?.trim() ?? "")
     : "";
   const key = realKey || fromFile;
   if (!key) {

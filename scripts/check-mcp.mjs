@@ -26,14 +26,8 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
-const admin = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.ADAPTIVE_OS_SERVICE_ROLE_KEY
-);
-const client = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
-);
+const admin = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
+const client = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY);
 const stamp = Date.now();
 const email = `mcp_${stamp}@example.com`;
 const password = `pw_${stamp}_aA1!`;
@@ -86,11 +80,15 @@ for (const m of ["initialize", "tools/list", "ping"]) {
 }
 
 console.log("\nthe handshake a client does before anything else");
-const init = await rpc("initialize", {
-  protocolVersion: "2025-06-18",
-  capabilities: {},
-  clientInfo: { name: "check", version: "0" },
-}, strangerToken);
+const init = await rpc(
+  "initialize",
+  {
+    protocolVersion: "2025-06-18",
+    capabilities: {},
+    clientInfo: { name: "check", version: "0" },
+  },
+  strangerToken
+);
 check("initialize answers", init.status === 200 && !!init.json?.result);
 check("it names a protocol version", !!init.json?.result?.protocolVersion);
 check("it declares tools", !!init.json?.result?.capabilities?.tools);
@@ -144,15 +142,16 @@ check("a newer protocol revision still connects", (await ping("2026-06-18")).sta
 check("so does one from before", (await ping("2024-11-05")).status === 200);
 check("something that is not a version is refused", (await ping("banana")).status === 400);
 
-const negotiated = await rpc("initialize", {
-  protocolVersion: "2025-06-18",
-  capabilities: {},
-  clientInfo: { name: "check", version: "0" },
-}, strangerToken);
-check(
-  "a known revision is echoed back, not overridden",
-  negotiated.json?.result?.protocolVersion === "2025-06-18"
+const negotiated = await rpc(
+  "initialize",
+  {
+    protocolVersion: "2025-06-18",
+    capabilities: {},
+    clientInfo: { name: "check", version: "0" },
+  },
+  strangerToken
 );
+check("a known revision is echoed back, not overridden", negotiated.json?.result?.protocolVersion === "2025-06-18");
 
 const badOrigin = await fetch(MCP, {
   method: "POST",
@@ -168,25 +167,31 @@ check("a request from another origin is refused", badOrigin.status === 403);
 const unknown = await rpc("does/not/exist", {}, strangerToken);
 check("an unknown method is a JSON-RPC error, not a crash", unknown.json?.error?.code === -32601);
 
-const challenge = (
-  await fetch(MCP, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
-  })
-).headers.get("www-authenticate") ?? "";
+const challenge =
+  (
+    await fetch(MCP, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+    })
+  ).headers.get("www-authenticate") ?? "";
 
 console.log("\nthe discovery a client reads after that 401");
 const metaUrl = challenge.match(/resource_metadata="([^"]+)"/)?.[1];
 const meta = await fetch(metaUrl).then((r) => r.json());
 check("it names this endpoint as the resource", meta.resource === MCP);
-check("and names an authorization server", Array.isArray(meta.authorization_servers) && meta.authorization_servers.length > 0);
+check(
+  "and names an authorization server",
+  Array.isArray(meta.authorization_servers) && meta.authorization_servers.length > 0
+);
 // Clients differ on whether they append the resource path.
 const withPath = await fetch(`${APP}/.well-known/oauth-protected-resource/api/mcp`);
 check("the path-suffixed form resolves too", withPath.status === 200);
 
 const asUrl = `${meta.authorization_servers[0]}/.well-known/oauth-authorization-server`;
-const as = await fetch(asUrl).then((r) => r.json()).catch(() => null);
+const as = await fetch(asUrl)
+  .then((r) => r.json())
+  .catch(() => null);
 check("the authorization server is really there", !!as?.authorization_endpoint);
 // Without dynamic registration a client cannot connect at all: nobody
 // is going to hand ChatGPT a client id by hand.
@@ -197,11 +202,7 @@ try {
   check(
     "propose_change is refused",
     !!toolText(
-      await rpc(
-        "tools/call",
-        { name: "propose_change", arguments: { request: "delete everything" } },
-        strangerToken
-      )
+      await rpc("tools/call", { name: "propose_change", arguments: { request: "delete everything" } }, strangerToken)
     )?.error
   );
 
@@ -209,19 +210,9 @@ try {
   // The whole security model in one check: a signed-in stranger with a
   // valid token sees nothing, because RLS decides — not this route.
   const theirs = await rpc("tools/call", { name: "store_overview", arguments: {} }, strangerToken);
-  check(
-    "a signed-in stranger is told there is no store",
-    /no shopify store/i.test(toolText(theirs)?.error ?? "")
-  );
-  const theirOrders = await rpc(
-    "tools/call",
-    { name: "search_orders", arguments: { limit: 100 } },
-    strangerToken
-  );
-  check(
-    "and cannot search orders either",
-    /no shopify store/i.test(toolText(theirOrders)?.error ?? "")
-  );
+  check("a signed-in stranger is told there is no store", /no shopify store/i.test(toolText(theirs)?.error ?? ""));
+  const theirOrders = await rpc("tools/call", { name: "search_orders", arguments: { limit: 100 } }, strangerToken);
+  check("and cannot search orders either", /no shopify store/i.test(toolText(theirOrders)?.error ?? ""));
 
   console.log("\nthe owner's own store");
   const owner = await signInAsOwner(client, env);
@@ -243,92 +234,70 @@ try {
     const cancelled = toolText(
       await rpc("tools/call", { name: "search_orders", arguments: { status: "cancelled" } }, t)
     );
-    check("cancelled can be asked for", (cancelled?.orders ?? []).every((o) => !!o.cancelled_at));
+    check(
+      "cancelled can be asked for",
+      (cancelled?.orders ?? []).every((o) => !!o.cancelled_at)
+    );
 
     // A malformed day silently ignored would answer about every order
     // ever placed, which is the worst kind of wrong: plausible.
-    const bad = toolText(
-      await rpc("tools/call", { name: "search_orders", arguments: { day: "14/09/2026" } }, t)
-    );
+    const bad = toolText(await rpc("tools/call", { name: "search_orders", arguments: { day: "14/09/2026" } }, t));
     check("a malformed day is refused, not ignored", /is not a date/.test(bad?.error ?? ""));
 
-    const capped = toolText(
-      await rpc("tools/call", { name: "search_orders", arguments: { limit: 100000 } }, t)
-    );
+    const capped = toolText(await rpc("tools/call", { name: "search_orders", arguments: { limit: 100000 } }, t));
     check("an absurd limit is capped", (capped?.count ?? 0) <= 100);
 
     console.log("\nreading the rest of the store");
-    const one = toolText(
-      await rpc("tools/call", { name: "search_store", arguments: { table: "products" } }, t)
-    );
+    const one = toolText(await rpc("tools/call", { name: "search_store", arguments: { table: "products" } }, t));
     check("products come back", (one?.showing ?? 0) > 0);
     check("with the total, not only the page", (one?.matched ?? 0) >= (one?.showing ?? 0));
     check("and the store's own currency", one?.currency === over?.currency);
 
     const searched = toolText(
-      await rpc(
-        "tools/call",
-        { name: "search_store", arguments: { table: "products", q: one.rows[0].title } },
-        t
-      )
+      await rpc("tools/call", { name: "search_store", arguments: { table: "products", q: one.rows[0].title } }, t)
     );
     check("searching by title narrows it", (searched?.matched ?? 0) < (one?.matched ?? 0));
     // A comma ends an or() clause early, so this used to search for
     // the first half and quietly answer about the wrong thing.
     const comma = toolText(
-      await rpc(
-        "tools/call",
-        { name: "search_store", arguments: { table: "products", q: "nothing, at all" } },
-        t
-      )
+      await rpc("tools/call", { name: "search_store", arguments: { table: "products", q: "nothing, at all" } }, t)
     );
     check("punctuation in a search does not break it", comma?.matched === 0);
     check(
       "a table nobody has is named, with what there is",
       Array.isArray(
-        toolText(
-          await rpc("tools/call", { name: "search_store", arguments: { table: "invoices" } }, t)
-        )?.available
+        toolText(await rpc("tools/call", { name: "search_store", arguments: { table: "invoices" } }, t))?.available
       )
     );
 
-    const stock = toolText(
-      await rpc("tools/call", { name: "low_stock", arguments: { threshold: 100000 } }, t)
-    );
+    const stock = toolText(await rpc("tools/call", { name: "low_stock", arguments: { threshold: 100000 } }, t));
     check("low stock lists what is running out", (stock?.count ?? 0) > 0);
     check("lowest first", stock.rows[0].available <= stock.rows[stock.rows.length - 1].available);
     check("each row says where it is short", !!stock.rows[0].location);
     check(
       "a negative threshold is refused, not guessed at",
       /must be a number/.test(
-        toolText(
-          await rpc("tools/call", { name: "low_stock", arguments: { threshold: -1 } }, t)
-        )?.error ?? ""
+        toolText(await rpc("tools/call", { name: "low_stock", arguments: { threshold: -1 } }, t))?.error ?? ""
       )
     );
 
     const anOrder = all.orders?.[0]?.order_number;
     if (anOrder) {
-      const detail = toolText(
-        await rpc("tools/call", { name: "get_order", arguments: { order_number: anOrder } }, t)
-      );
+      const detail = toolText(await rpc("tools/call", { name: "get_order", arguments: { order_number: anOrder } }, t));
       check("one order comes back in full", detail?.order_number === anOrder);
       check("with the items in it", Array.isArray(detail?.items));
       // Merchants say 1003; the order is stored as #1003.
       const bare = String(anOrder).replace("#", "");
       check(
         "asked for without the hash, it is still found",
-        toolText(
-          await rpc("tools/call", { name: "get_order", arguments: { order_number: bare } }, t)
-        )?.order_number === anOrder
+        toolText(await rpc("tools/call", { name: "get_order", arguments: { order_number: bare } }, t))?.order_number ===
+          anOrder
       );
     }
     check(
       "an order that does not exist says so",
       /No order/.test(
-        toolText(
-          await rpc("tools/call", { name: "get_order", arguments: { order_number: "#999999" } }, t)
-        )?.error ?? ""
+        toolText(await rpc("tools/call", { name: "get_order", arguments: { order_number: "#999999" } }, t))?.error ?? ""
       )
     );
 
@@ -338,9 +307,7 @@ try {
     check(
       "a section that does not exist says so",
       /No section/.test(
-        toolText(
-          await rpc("tools/call", { name: "read_section", arguments: { section: "nope" } }, t)
-        )?.error ?? ""
+        toolText(await rpc("tools/call", { name: "read_section", arguments: { section: "nope" } }, t))?.error ?? ""
       )
     );
     const storeBacked = (listed.sections ?? []).find((x) => /Shopify/.test(x.rows_from));
@@ -350,55 +317,51 @@ try {
       check(
         "a Shopify-backed section points at search_store instead",
         /search_store/.test(
-          toolText(
-            await rpc(
-              "tools/call",
-              { name: "read_section", arguments: { section: storeBacked.section } },
-              t
-            )
-          )?.note ?? ""
+          toolText(await rpc("tools/call", { name: "read_section", arguments: { section: storeBacked.section } }, t))
+            ?.note ?? ""
         )
       );
     }
 
     console.log("\nasking for something to be built");
-  // This whole section is about a design that waits for approval, so
-  // the setting that skips approval has to be off while it runs. It
-  // was on once and the check crashed on a request_id that was never
-  // returned — a check that depends on a setting has to own it.
-  // Reads above were the merchant's — the store is theirs. Everything
-  // from here writes, so it is the check user's, on a project that
-  // exists for this run. auto_build starts off on a new project, which
-  // is what this section needs and no longer has to arrange.
-  const checker = await signInAsCheckUser(
-    createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY),
-    env
-  );
-  if (!checker.session) throw new Error(`no check user: ${checker.why}`);
-  const tc = checker.session.access_token;
-  projectRow = await throwawayProject(admin, checker.user.id, "mcp");
-  // And the same goes for the free-build counter. Every run of this
-  // check spends some, so after a few runs the account has none left
-  // and the design it is about to ask for never happens. A check that
-  // depends on a number has to own that number too.
-  turnsWas = (
+    // This whole section is about a design that waits for approval, so
+    // the setting that skips approval has to be off while it runs. It
+    // was on once and the check crashed on a request_id that was never
+    // returned — a check that depends on a setting has to own it.
+    // Reads above were the merchant's — the store is theirs. Everything
+    // from here writes, so it is the check user's, on a project that
+    // exists for this run. auto_build starts off on a new project, which
+    // is what this section needs and no longer has to arrange.
+    const checker = await signInAsCheckUser(
+      createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY),
+      env
+    );
+    if (!checker.session) throw new Error(`no check user: ${checker.why}`);
+    const tc = checker.session.access_token;
+    projectRow = await throwawayProject(admin, checker.user.id, "mcp");
+    // And the same goes for the free-build counter. Every run of this
+    // check spends some, so after a few runs the account has none left
+    // and the design it is about to ask for never happens. A check that
+    // depends on a number has to own that number too.
+    turnsWas = (
+      await admin.from("account_settings").select("free_turns, turns_used").eq("user_id", checker.user.id).single()
+    ).data;
+    ownerId = checker.user.id;
     await admin
       .from("account_settings")
-      .select("free_turns, turns_used")
-      .eq("user_id", checker.user.id)
-      .single()
-  ).data;
-  ownerId = checker.user.id;
-  await admin
-    .from("account_settings")
-    .update({ free_turns: (turnsWas?.turns_used ?? 0) + 20 })
-    .eq("user_id", ownerId);
+      .update({ free_turns: (turnsWas?.turns_used ?? 0) + 20 })
+      .eq("user_id", ownerId);
     // The whole point of the design: the merchant hears the plan
     // before anything is built, and hears it in words generated from
     // the plans rather than from the model's prose.
-    const before = await admin.from("modules").select("*", { count: "exact", head: true }).eq("project_id", projectRow.id);
+    const before = await admin
+      .from("modules")
+      .select("*", { count: "exact", head: true })
+      .eq("project_id", projectRow.id);
     const ask = async (request) =>
-      toolText(await rpc("tools/call", { name: "propose_change", arguments: { request, project_id: projectRow.id } }, tc));
+      toolText(
+        await rpc("tools/call", { name: "propose_change", arguments: { request, project_id: projectRow.id } }, tc)
+      );
     let proposed = await ask(
       "Add a section called Packing Checks with the order number, who packed it, and whether it is done."
     );
@@ -419,7 +382,10 @@ try {
     check("and it comes back with the design", (proposed?.design ?? "").length > 20);
     check("and it says nothing has changed yet", /nothing has changed/i.test(proposed?.note ?? ""));
     check("with somewhere for the merchant to go", /\/app\//.test(proposed?.open ?? ""));
-    const after = await admin.from("modules").select("*", { count: "exact", head: true }).eq("project_id", projectRow.id);
+    const after = await admin
+      .from("modules")
+      .select("*", { count: "exact", head: true })
+      .eq("project_id", projectRow.id);
     check("no section was created", after.count === before.count);
 
     const { data: stored } = await admin
@@ -444,7 +410,10 @@ try {
     if (!(built?.status === "built" || built?.status === "partly built")) {
       console.log("     \u2192", JSON.stringify(built).slice(0, 400));
     }
-    const afterBuild = await admin.from("modules").select("*", { count: "exact", head: true }).eq("project_id", projectRow.id);
+    const afterBuild = await admin
+      .from("modules")
+      .select("*", { count: "exact", head: true })
+      .eq("project_id", projectRow.id);
     check("and the section is really there", afterBuild.count > before.count);
 
     const again = await approve(proposed.request_id);
@@ -455,7 +424,10 @@ try {
     const { data: madeModules } = await admin
       .from("modules")
       .select("id")
-      .eq("project_id", (await admin.from("build_requests").select("project_id").eq("id", proposed.request_id).single()).data.project_id)
+      .eq(
+        "project_id",
+        (await admin.from("build_requests").select("project_id").eq("id", proposed.request_id).single()).data.project_id
+      )
       .ilike("nav_label", "%packing%");
     for (const m of madeModules ?? []) await admin.from("modules").delete().eq("id", m.id);
 
@@ -463,7 +435,11 @@ try {
       "an empty request is refused",
       /say what/i.test(
         toolText(
-          await rpc("tools/call", { name: "propose_change", arguments: { request: "   ", project_id: projectRow.id } }, tc)
+          await rpc(
+            "tools/call",
+            { name: "propose_change", arguments: { request: "   ", project_id: projectRow.id } },
+            tc
+          )
         )?.error ?? ""
       )
     );
@@ -473,11 +449,7 @@ try {
     await admin.from("build_requests").delete().eq("id", proposed.request_id);
 
     const noSuchShop = toolText(
-      await rpc(
-        "tools/call",
-        { name: "store_overview", arguments: { shop_domain: "nope.myshopify.com" } },
-        t
-      )
+      await rpc("tools/call", { name: "store_overview", arguments: { shop_domain: "nope.myshopify.com" } }, t)
     );
     check("an unknown shop is named, with what is available", Array.isArray(noSuchShop?.available));
   }
@@ -486,10 +458,7 @@ try {
   if (turnsWas && ownerId) {
     // The turns this check really spent stay spent; only the ceiling
     // it raised comes back down.
-    await admin
-      .from("account_settings")
-      .update({ free_turns: turnsWas.free_turns })
-      .eq("user_id", ownerId);
+    await admin.from("account_settings").update({ free_turns: turnsWas.free_turns }).eq("user_id", ownerId);
   }
   await admin.from("mcp_calls").delete().gte("created_at", runStartedAt);
   await admin.auth.admin.deleteUser(made.user.id);

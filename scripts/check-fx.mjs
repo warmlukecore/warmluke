@@ -29,10 +29,7 @@ console.log("source currencies stay attached to their amounts");
     "an imported dollar amount stays a dollar amount",
     fmt.money(100, "USD").includes("$") && fmt.money(100, "USD").includes("100")
   );
-  check(
-    "formatting never changes the numeric amount",
-    fmt.money(95.96, "USD").includes("95.96")
-  );
+  check("formatting never changes the numeric amount", fmt.money(95.96, "USD").includes("95.96"));
 }
 
 console.log("\nthe estimate is an estimate, and only where it can be true");
@@ -63,11 +60,12 @@ console.log("\nthe estimate is an estimate, and only where it can be true");
   check("with no rate at all there is no second line", noRate.approx(100, "USD") === null);
   check("and the amount is unaffected", noRate.money(100, "USD").includes("100"));
 
-  for (const bad of [{ ...rate, rate: 0 }, { ...rate, rate: -1 }, { ...rate, rate: NaN }]) {
-    check(
-      `a rate of ${bad.rate} is refused`,
-      makeFormatting("en-IN", "INR", bad).approx(100, "USD") === null
-    );
+  for (const bad of [
+    { ...rate, rate: 0 },
+    { ...rate, rate: -1 },
+    { ...rate, rate: NaN },
+  ]) {
+    check(`a rate of ${bad.rate} is refused`, makeFormatting("en-IN", "INR", bad).approx(100, "USD") === null);
   }
 }
 
@@ -77,10 +75,7 @@ console.log("\nand it is actually wired up");
   const storeRead = readFileSync(new URL("../src/lib/store-read.ts", import.meta.url), "utf8");
   const views = readFileSync(new URL("../src/components/views.tsx", import.meta.url), "utf8");
   const ai = readFileSync(new URL("../src/lib/ai.ts", import.meta.url), "utf8");
-  const renderer = readFileSync(
-    new URL("../src/components/GenericRenderer.tsx", import.meta.url),
-    "utf8"
-  );
+  const renderer = readFileSync(new URL("../src/components/GenericRenderer.tsx", import.meta.url), "utf8");
 
   // This effect was silently lost to a bad edit once before: the state
   // existed, the route existed, nothing called it, and the feature was
@@ -88,15 +83,9 @@ console.log("\nand it is actually wired up");
   check("something asks for a rate", /apiFetch\(`\/api\/fx/.test(shell));
   check("and does something with the answer", /setFx\(/.test(shell));
   check("only when the two currencies differ", /from === to/.test(shell));
-  check(
-    "the route it calls exists",
-    existsSync(new URL("../src/app/api/fx/route.ts", import.meta.url))
-  );
+  check("the route it calls exists", existsSync(new URL("../src/app/api/fx/route.ts", import.meta.url)));
   check("the rate reaches the formatter", /approxRate=\{sectionApprox\}/.test(shell));
-  check(
-    "in the section and the chat preview alike",
-    (shell.match(/approxRate=\{sectionApprox\}/g) ?? []).length >= 2
-  );
+  check("in the section and the chat preview alike", (shell.match(/approxRate=\{sectionApprox\}/g) ?? []).length >= 2);
   // The whole point of the flag: a project sitting on the untouched
   // INR default has not asked for anything, and must not be shown a
   // rupee estimate of a dollar shop.
@@ -113,10 +102,7 @@ console.log("\nand it is actually wired up");
     /store\.currency !== project\?\.currency/.test(shell)
   );
 
-  const projects = readFileSync(
-    new URL("../src/app/api/projects/route.ts", import.meta.url),
-    "utf8"
-  );
+  const projects = readFileSync(new URL("../src/app/api/projects/route.ts", import.meta.url), "utf8");
   // Taken from the form, never inferred. Inferring it from "a currency
   // arrived in the payload" meant renaming the project switched on a
   // rupee estimate, because the form posts every field at once.
@@ -126,16 +112,10 @@ console.log("\nand it is actually wired up");
       !/patch\.currency_set_by_user = true/.test(projects)
   );
 
-  const settings = readFileSync(
-    new URL("../src/components/ProjectSettings.tsx", import.meta.url),
-    "utf8"
-  );
+  const settings = readFileSync(new URL("../src/components/ProjectSettings.tsx", import.meta.url), "utf8");
   // A project nobody has touched used to show "India — ₹" as though it
   // had been picked, with no way back to not having picked.
-  check(
-    "the dropdown offers not choosing at all",
-    /<option value="default">/.test(settings)
-  );
+  check("the dropdown offers not choosing at all", /<option value="default">/.test(settings));
   check(
     "and it is what an untouched project shows",
     /value=\{chose \? `\$\{locale\}\|\$\{currency\}` : "default"\}/.test(settings)
@@ -147,10 +127,7 @@ console.log("\nand it is actually wired up");
   check("cells format with the row currency", /fmt\.money\(n, currency\)/.test(views));
   check("and render the estimate under it", /fmt\.approx\(n, currency\)/.test(views));
   check("assistant snapshots label each order from its row", /o\.currency \?\? store\.currency/.test(ai));
-  check(
-    "mixed-currency stats are refused rather than summed",
-    renderer.includes('"Mixed currencies"')
-  );
+  check("mixed-currency stats are refused rather than summed", renderer.includes('"Mixed currencies"'));
   check(
     "the section and chat preview share the same source-currency default",
     (shell.match(/currency=\{sectionMoneyCurrency\}/g) ?? []).length >= 2
@@ -158,7 +135,10 @@ console.log("\nand it is actually wired up");
 
   // The reader has to be told what the small number is, or it becomes
   // a figure somebody quietly trusts.
-  check("the screen says the estimate is today's rate", /rough\s*\n?\s*conversion at today/.test(shell) || /rough conversion at today/.test(shell));
+  check(
+    "the screen says the estimate is today's rate",
+    /rough\s*\n?\s*conversion at today/.test(shell) || /rough conversion at today/.test(shell)
+  );
   // The note is one short line now; the promise in it is the same.
   check("and says not to reconcile with it", /never to reconcile|not for\s+reconciling/.test(shell));
 }

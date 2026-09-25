@@ -54,7 +54,10 @@ export default function AutomationsPanel({
       const { data: runRows } = await supabase
         .from("automation_runs")
         .select("*")
-        .in("automation_id", list.map((r) => r.id))
+        .in(
+          "automation_id",
+          list.map((r) => r.id)
+        )
         .order("created_at", { ascending: false })
         .limit(200);
       const latest: Record<string, RunSummary> = {};
@@ -76,17 +79,13 @@ export default function AutomationsPanel({
   async function toggle(rule: AutomationRow) {
     setBusyId(rule.id);
     setError(null);
-    const { error: e } = await supabase
-      .from("automations")
-      .update({ enabled: !rule.enabled })
-      .eq("id", rule.id);
+    const { error: e } = await supabase.from("automations").update({ enabled: !rule.enabled }).eq("id", rule.id);
     if (e) setError(e.message);
     else await load();
     setBusyId(null);
   }
 
-  const moduleName = (id: string | null) =>
-    modules.find((m) => m.id === id)?.nav_label ?? "—";
+  const moduleName = (id: string | null) => modules.find((m) => m.id === id)?.nav_label ?? "—";
 
   return (
     <Dialog
@@ -113,8 +112,7 @@ export default function AutomationsPanel({
             </span>
             <div className="mt-3 text-[13px] font-medium text-fg">No rules yet</div>
             <p className="mx-auto mt-1 max-w-xs text-xs leading-relaxed text-fg-muted">
-              Ask Luke for something like &ldquo;when a job is marked done, take
-              the parts off my stock&rdquo;.
+              Ask Luke for something like &ldquo;when a job is marked done, take the parts off my stock&rdquo;.
             </p>
           </div>
         )}
@@ -132,7 +130,9 @@ export default function AutomationsPanel({
                   <div className="text-xs text-fg-muted">on {moduleName(rule.module_id)}</div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <span className="text-xs text-fg-muted">{busyId === rule.id ? "…" : rule.enabled ? "On" : "Off"}</span>
+                  <span className="text-xs text-fg-muted">
+                    {busyId === rule.id ? "…" : rule.enabled ? "On" : "Off"}
+                  </span>
                   <Switch
                     checked={rule.enabled}
                     onChange={() => toggle(rule)}
@@ -143,27 +143,39 @@ export default function AutomationsPanel({
               </div>
 
               <ul className="mt-2 space-y-0.5 border-t border-line pt-2">
-                {describeAutomation({ name: rule.name, definition: rule.definition }, modules).map(
-                  (line, i) => (
-                    <li key={i} className="text-xs leading-relaxed text-fg-muted">
-                      {line}
-                    </li>
-                  )
-                )}
+                {describeAutomation({ name: rule.name, definition: rule.definition }, modules).map((line, i) => (
+                  <li key={i} className="text-xs leading-relaxed text-fg-muted">
+                    {line}
+                  </li>
+                ))}
               </ul>
 
               <div className="mt-2 text-[11px] text-fg-faint">
                 {run ? (
                   <>
                     {run.ok ? (
-                      <><Check aria-hidden size={12} strokeWidth={2.25} className="mr-1 inline align-[-1px] text-signal-success" />Last ran</>
+                      <>
+                        <Check
+                          aria-hidden
+                          size={12}
+                          strokeWidth={2.25}
+                          className="mr-1 inline align-[-1px] text-signal-success"
+                        />
+                        Last ran
+                      </>
                     ) : (
-                      <><TriangleAlert aria-hidden size={12} strokeWidth={2} className="mr-1 inline align-[-1px] text-signal-attention" />Last attempt failed</>
+                      <>
+                        <TriangleAlert
+                          aria-hidden
+                          size={12}
+                          strokeWidth={2}
+                          className="mr-1 inline align-[-1px] text-signal-attention"
+                        />
+                        Last attempt failed
+                      </>
                     )}{" "}
                     {new Date(run.at).toLocaleString()}
-                    {run.detail && typeof run.detail.rows === "number" && (
-                      <> · {run.detail.rows} row(s) changed</>
-                    )}
+                    {run.detail && typeof run.detail.rows === "number" && <> · {run.detail.rows} row(s) changed</>}
                   </>
                 ) : (
                   "Hasn't run yet"

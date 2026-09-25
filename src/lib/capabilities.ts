@@ -70,7 +70,7 @@ export const OPERATORS = {
   },
   count_matching: {
     arity: [1, 6],
-    doc: "how many OTHER rows in this section match. A { field } arg means the sibling must share this row's value for it; an operator arg is a test run against the sibling, where { field } reads the SIBLING's value. So `count_matching(order_id, verified != \"Complete\")` is \"how many of this order's other lines are still unverified\" — `= 0` on the row being finished means it was the last one. Use `> 0` with fields alone to catch a duplicate or a clash",
+    doc: 'how many OTHER rows in this section match. A { field } arg means the sibling must share this row\'s value for it; an operator arg is a test run against the sibling, where { field } reads the SIBLING\'s value. So `count_matching(order_id, verified != "Complete")` is "how many of this order\'s other lines are still unverified" — `= 0` on the row being finished means it was the last one. Use `> 0` with fields alone to catch a duplicate or a clash',
     group: "compare",
     serverOnly: true,
   },
@@ -175,7 +175,7 @@ export const TRIGGERS = {
   record_created: "a row is added",
   record_updated: "a row is changed",
   schedule:
-    "nobody touched anything — re-checks every row on its own. This is the only way to catch things that go quiet: an unpaid invoice, a job nobody moved, a follow-up never made. Needs \"every\": hourly, daily or weekly, and its \"when\" picks which rows to act on",
+    'nobody touched anything — re-checks every row on its own. This is the only way to catch things that go quiet: an unpaid invoice, a job nobody moved, a follow-up never made. Needs "every": hourly, daily or weekly, and its "when" picks which rows to act on',
 } as const;
 
 export type TriggerType = keyof typeof TRIGGERS;
@@ -190,9 +190,7 @@ export const AUTOMATION_ACTIONS = {
 } as const;
 
 export type AutomationActionType = keyof typeof AUTOMATION_ACTIONS;
-export const AUTOMATION_ACTION_TYPES = Object.keys(
-  AUTOMATION_ACTIONS
-) as AutomationActionType[];
+export const AUTOMATION_ACTION_TYPES = Object.keys(AUTOMATION_ACTIONS) as AutomationActionType[];
 
 // ── Aggregations ─────────────────────────────────────────────
 

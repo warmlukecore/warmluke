@@ -75,7 +75,12 @@ export function undoableFrom(applied: unknown[]): UndoStep[] {
         version: e.version,
         what: e.changeType === "FIELD_ADD" ? "the fields it added" : "the layout it changed",
       });
-    } else if (e.changeType === "RECORD_SEED" && typeof e.moduleId === "string" && Array.isArray(e.recordIds) && e.recordIds.length) {
+    } else if (
+      e.changeType === "RECORD_SEED" &&
+      typeof e.moduleId === "string" &&
+      Array.isArray(e.recordIds) &&
+      e.recordIds.length
+    ) {
       out.push({
         kind: "rows",
         moduleId: e.moduleId,

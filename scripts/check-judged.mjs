@@ -39,10 +39,7 @@ const check = (name, cond) => {
 const show = (v) => console.log("     →", JSON.stringify(v).slice(0, 320));
 
 const admin = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
-const client = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
-);
+const client = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY);
 const owner = await signInAsCheckUser(client, env);
 if (!owner.session) throw new Error(`no check user: ${owner.why}`);
 const project = await throwawayProject(admin, owner.user.id, "judged");
@@ -64,7 +61,9 @@ const tool = async (name, args) => {
   });
   // Only on an answer: the server has to judge as this check expects it to.
   if (res.ok && res.headers.get("x-model-tape") !== process.env.MODEL_TAPE) {
-    throw new Error(`the server at ${APP} is ${res.headers.get("x-model-tape") ? `in ${res.headers.get("x-model-tape")} mode` : "making real model calls"}, and this check is in ${process.env.MODEL_TAPE} mode; start it with MODEL_TAPE=${process.env.MODEL_TAPE}`);
+    throw new Error(
+      `the server at ${APP} is ${res.headers.get("x-model-tape") ? `in ${res.headers.get("x-model-tape")} mode` : "making real model calls"}, and this check is in ${process.env.MODEL_TAPE} mode; start it with MODEL_TAPE=${process.env.MODEL_TAPE}`
+    );
   }
   const j = await res.json();
   try {
@@ -129,11 +128,17 @@ try {
         "with a probability that the build does what was asked",
         typeof row.judge?.addresses === "number" && row.judge.addresses >= 0 && row.judge.addresses <= 1
       );
-      check("nothing was left out, so nothing to say about that", Array.isArray(row.judge?.unmet) && row.judge.unmet.length === 0);
+      check(
+        "nothing was left out, so nothing to say about that",
+        Array.isArray(row.judge?.unmet) && row.judge.unmet.length === 0
+      );
       check("shown the engine's own words for the build", /Judged/.test(row.built) && /Checked By/.test(row.built));
       check("and that nothing is removed", row.removes === false);
       // A duration, not a positive one: played back, the judge can answer inside a millisecond.
-      check("which model, and how long", typeof row.model === "string" && row.model.startsWith("jev") && Number.isInteger(row.ms) && row.ms >= 0);
+      check(
+        "which model, and how long",
+        typeof row.model === "string" && row.model.startsWith("jev") && Number.isInteger(row.ms) && row.ms >= 0
+      );
       console.log(`     →  addresses ${row.judge.addresses.toFixed(2)} · ${row.model} · ${row.ms}ms`);
     }
   }

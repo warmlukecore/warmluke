@@ -29,9 +29,7 @@ const registry = entries.filter((e) => e.body.includes("arity:")).map((e) => e.n
 
 // Server-only operators live in Postgres alone; expr.ts is not expected
 // to implement them, and validation forbids them in browser contexts.
-const serverOnly = new Set(
-  entries.filter((e) => e.body.includes("serverOnly: true")).map((e) => e.name)
-);
+const serverOnly = new Set(entries.filter((e) => e.body.includes("serverOnly: true")).map((e) => e.name));
 
 if (registry.length === 0) {
   console.error("Could not read operators from capabilities.ts");
@@ -63,10 +61,7 @@ if (missingInExpr.length) {
 }
 
 if (missingInDescribe.length) {
-  console.error(
-    "✗ Advertised but unreadable in src/lib/describe.ts:",
-    missingInDescribe.join(", ")
-  );
+  console.error("✗ Advertised but unreadable in src/lib/describe.ts:", missingInDescribe.join(", "));
   failed = true;
 } else {
   console.log(`✓ describe.ts can phrase all ${registry.length} advertised operators`);
@@ -84,16 +79,16 @@ if (!url || !token) {
     const n = { op, args: [] };
     const arity = { today: 0, now: 0 }[op];
     if (arity !== 0) {
-      n.args =
-        op === "changed" || op === "count_matching"
-          ? [{ field: "a" }]
-          : [{ const: 1 }, { const: 1 }];
+      n.args = op === "changed" || op === "count_matching" ? [{ field: "a" }] : [{ const: 1 }, { const: 1 }];
     }
     return n;
   };
 
   const selects = registry
-    .map((op, i) => `public.abo_eval('${JSON.stringify(probeFor(op))}'::jsonb, '{"a":1}'::jsonb, '{}'::jsonb, '{}'::jsonb) as op${i}`)
+    .map(
+      (op, i) =>
+        `public.abo_eval('${JSON.stringify(probeFor(op))}'::jsonb, '{"a":1}'::jsonb, '{}'::jsonb, '{}'::jsonb) as op${i}`
+    )
     .join(", ");
 
   const res = await fetch(url, {

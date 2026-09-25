@@ -173,8 +173,17 @@ function ConnectInner() {
                 <p className="mt-1">Which project is it for?</p>
                 <div className="mt-3 divide-y divide-line overflow-hidden rounded-control border border-line">
                   {eligible.map((p) => (
-                    <label key={p.id} className="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-fg transition-colors hover:bg-surface-hover has-[:checked]:bg-surface-subdued">
-                      <input type="radio" name="project" checked={pick === p.id} onChange={() => setChosen(p.id)} className="accent-primary" />
+                    <label
+                      key={p.id}
+                      className="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-fg transition-colors hover:bg-surface-hover has-[:checked]:bg-surface-subdued"
+                    >
+                      <input
+                        type="radio"
+                        name="project"
+                        checked={pick === p.id}
+                        onChange={() => setChosen(p.id)}
+                        className="accent-primary"
+                      />
                       {p.name}
                     </label>
                   ))}
@@ -194,7 +203,10 @@ function ConnectInner() {
                   : "Start a project for this store:"}
               </p>
             )}
-            <button onClick={newProject} className="mt-3 text-[13px] text-fg-muted underline decoration-line-strong underline-offset-2 hover:text-fg">
+            <button
+              onClick={newProject}
+              className="mt-3 text-[13px] text-fg-muted underline decoration-line-strong underline-offset-2 hover:text-fg"
+            >
               New project for {shop.replace(/\.myshopify\.com$/, "")}
             </button>
           </>

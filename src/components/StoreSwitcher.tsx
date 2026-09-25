@@ -87,7 +87,10 @@ export default function StoreSwitcher({
           shop: s.shop_domain,
           // Importing while a list has not started or is under way; a list
           // that stopped is not importing, and the store's own line says so.
-          standing: storeStanding({ ...s, importing: runs.length === 0 || runs.some((r) => r.status !== "done" && r.status !== "failed") }),
+          standing: storeStanding({
+            ...s,
+            importing: runs.length === 0 || runs.some((r) => r.status !== "done" && r.status !== "failed"),
+          }),
         });
       }
     }
@@ -145,9 +148,20 @@ export default function StoreSwitcher({
             : "flex max-w-[11rem] items-center gap-1.5 rounded-control bg-surface px-2.5 py-1.5 text-[13px] text-fg shadow-control transition-colors hover:bg-surface-hover sm:max-w-[16rem]"
         }
       >
-        {current ? <StoreTile shop={current.shop} tone={current.standing.tone} onFrame={inSidebar} /> : <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-signal-neutral" />}
-        <span className={`truncate ${inSidebar ? "flex-1 text-left font-medium" : ""}`}>{current ? handle(current.shop) : "No store"}</span>
-        <ChevronsUpDown aria-hidden size={14} strokeWidth={1.75} className={inSidebar ? "text-frame-fg-muted" : "text-fg-faint"} />
+        {current ? (
+          <StoreTile shop={current.shop} tone={current.standing.tone} onFrame={inSidebar} />
+        ) : (
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-signal-neutral" />
+        )}
+        <span className={`truncate ${inSidebar ? "flex-1 text-left font-medium" : ""}`}>
+          {current ? handle(current.shop) : "No store"}
+        </span>
+        <ChevronsUpDown
+          aria-hidden
+          size={14}
+          strokeWidth={1.75}
+          className={inSidebar ? "text-frame-fg-muted" : "text-fg-faint"}
+        />
       </button>
 
       {open && (
@@ -219,7 +233,9 @@ function StoreTile({ shop, tone, onFrame = false }: { shop: string; tone: Standi
       >
         {handle(shop).charAt(0).toUpperCase()}
       </span>
-      <span className={`absolute -right-0.5 -bottom-0.5 h-2 w-2 rounded-full ring-2 ${onFrame ? "ring-frame" : "ring-surface"} ${DOT[tone]}`} />
+      <span
+        className={`absolute -right-0.5 -bottom-0.5 h-2 w-2 rounded-full ring-2 ${onFrame ? "ring-frame" : "ring-surface"} ${DOT[tone]}`}
+      />
     </span>
   );
 }

@@ -15,13 +15,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ChevronRight } from "lucide-react";
 import { supabase } from "@/lib/supabase-client";
-import {
-  RELATED,
-  STORE_TABLES,
-  ordersOfCustomer,
-  readRelated,
-  type StoreTable,
-} from "@/lib/store-read";
+import { RELATED, STORE_TABLES, ordersOfCustomer, readRelated, type StoreTable } from "@/lib/store-read";
 import type { SchemaColumn } from "@/lib/types";
 import { Dialog } from "@/components/ui/Dialog";
 import { Group } from "@/components/ui/Group";
@@ -80,9 +74,7 @@ export default function StoreRecordDetail({
   storeId: string;
   onClose: () => void;
 }) {
-  const [stack, setStack] = useState<Frame[]>([
-    { table, row, columns: columns ?? STORE_TABLES[table].columns },
-  ]);
+  const [stack, setStack] = useState<Frame[]>([{ table, row, columns: columns ?? STORE_TABLES[table].columns }]);
   const top = stack[stack.length - 1];
   const spec = STORE_TABLES[top.table];
 
@@ -100,17 +92,32 @@ export default function StoreRecordDetail({
         // A line, payment, shipment or refund belongs to an order: show it first.
         if (top.table !== "orders" && parentOrder) {
           reads.push(
-            readRelated(supabase, storeId, "orders", "id", parentOrder, 1).then((rows) => ({ title: "Order", table: "orders", rows, kind: "parent" as const }))
+            readRelated(supabase, storeId, "orders", "id", parentOrder, 1).then((rows) => ({
+              title: "Order",
+              table: "orders",
+              rows,
+              kind: "parent" as const,
+            }))
           );
         }
         if (top.table === "customers") {
           reads.push(
-            ordersOfCustomer(supabase, storeId, top.row.id).then((rows) => ({ title: "Orders", table: "orders", rows, kind: "children" as const }))
+            ordersOfCustomer(supabase, storeId, top.row.id).then((rows) => ({
+              title: "Orders",
+              table: "orders",
+              rows,
+              kind: "children" as const,
+            }))
           );
         }
         for (const rel of RELATED[top.table] ?? []) {
           reads.push(
-            readRelated(supabase, storeId, rel.table, rel.by, top.row.id).then((rows) => ({ title: rel.title, table: rel.table, rows, kind: "children" as const }))
+            readRelated(supabase, storeId, rel.table, rel.by, top.row.id).then((rows) => ({
+              title: rel.title,
+              table: rel.table,
+              rows,
+              kind: "children" as const,
+            }))
           );
         }
         const out = await Promise.all(reads);

@@ -36,10 +36,7 @@ const sql = (query) =>
     body: JSON.stringify({ query }),
   });
 
-const client = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
-);
+const client = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY);
 const { data: owner } = await client.auth.signInWithPassword({
   email: OWNER_EMAIL,
   password: process.env.OWNER_PASSWORD ?? "",
@@ -51,11 +48,9 @@ if (!owner?.session) {
 const token = owner.session.access_token;
 const uid = owner.user.id;
 
-const db = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY,
-  { global: { headers: { Authorization: `Bearer ${token}` } } }
-);
+const db = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY, {
+  global: { headers: { Authorization: `Bearer ${token}` } },
+});
 const { data: projects } = await db.from("projects").select("id").limit(1);
 const projectId = projects?.[0]?.id;
 

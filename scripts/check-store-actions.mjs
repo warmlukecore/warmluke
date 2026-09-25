@@ -54,8 +54,7 @@ const project = await throwawayProject(admin, me.user.id, "store-actions");
 const stamp = Date.now().toString(36);
 
 /** Turns the account switch on or off under us, the way an admin would. */
-const feature = (on) =>
-  admin.from("account_settings").update({ store_actions_enabled: on }).eq("user_id", me.user.id);
+const feature = (on) => admin.from("account_settings").update({ store_actions_enabled: on }).eq("user_id", me.user.id);
 
 // A real entry from the registry, not a name that reads like one.
 // This defaulted to "tag_orders" — which nothing declares — and
@@ -89,9 +88,9 @@ try {
     .single();
 
   console.log("the action this check leans on is really declared");
-check(`"${REAL}" is in the registry`, !!actionSpec(REAL));
+  check(`"${REAL}" is in the registry`, !!actionSpec(REAL));
 
-console.log("the switch is off until somebody turns it on");
+  console.log("the switch is off until somebody turns it on");
   await feature(false);
   {
     const { data, error } = await propose(store.id);
@@ -231,7 +230,11 @@ console.log("the switch is off until somebody turns it on");
     check("and says the store never allowed it", /write_orders/.test(run.errors.join(" ")));
     check("and what to do about it", /reconnect/i.test(run.errors.join(" ")));
     check("and that nothing changed", /nothing was changed/i.test(run.errors.join(" ")));
-    const { data: row } = await admin.from("store_actions").select("status, outcome, resolved_at").eq("id", id).single();
+    const { data: row } = await admin
+      .from("store_actions")
+      .select("status, outcome, resolved_at")
+      .eq("id", id)
+      .single();
     check("the row is finished, not left running", row.status === "failed" && !!row.resolved_at);
     check("with the reason kept on it", (row.outcome?.errors ?? []).length === 1);
 
@@ -273,7 +276,6 @@ console.log("the switch is off until somebody turns it on");
     check("too much at once is refused", run.status === "failed");
     check("and the ceiling is named", new RegExp(String(MOST_TARGETS)).test(run.errors.join(" ")));
   }
-
 } finally {
   const { error: sweepError, count: swept } = await admin
     .from("projects")
@@ -288,5 +290,7 @@ console.log("the switch is off until somebody turns it on");
   console.log("\nthe project is gone and the switch is back where it was");
 }
 
-console.log(fails.length === 0 ? "\nnothing reaches a shop without a yes, and never twice" : `\n${fails.length} FAILED`);
+console.log(
+  fails.length === 0 ? "\nnothing reaches a shop without a yes, and never twice" : `\n${fails.length} FAILED`
+);
 process.exit(fails.length === 0 ? 0 : 1);

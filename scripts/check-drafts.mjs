@@ -55,7 +55,14 @@ try {
   const orderExt = `gid://shopify/Order/${stamp}9`;
   const { data: order } = await admin
     .from("orders")
-    .insert({ store_id: store.id, external_id: orderExt, order_number: "#9001", total: 1299, currency: "USD", source: "shopify" })
+    .insert({
+      store_id: store.id,
+      external_id: orderExt,
+      order_number: "#9001",
+      total: 1299,
+      currency: "USD",
+      source: "shopify",
+    })
     .select("id")
     .single();
   const productExt = `gid://shopify/Product/${stamp}7`;
@@ -96,7 +103,10 @@ try {
           {
             id: `gid://shopify/DraftOrderLineItem/${stamp}A`,
             title: "Custom Snowboard",
-            sku: null, quantity: 1, variant: null, product: null,
+            sku: null,
+            quantity: 1,
+            variant: null,
+            product: null,
             originalUnitPriceSet: { shopMoney: { amount: "200.0" } },
             discountedUnitPriceSet: { shopMoney: { amount: "200.0" } },
           },
@@ -105,8 +115,10 @@ try {
           {
             id: `gid://shopify/DraftOrderLineItem/${stamp}B`,
             title: "Clear Phone Case",
-            sku: "CASE-L", quantity: 2,
-            variant: null, product: { id: productExt },
+            sku: "CASE-L",
+            quantity: 2,
+            variant: null,
+            product: { id: productExt },
             originalUnitPriceSet: { shopMoney: { amount: "299.0" } },
             discountedUnitPriceSet: { shopMoney: { amount: "249.0" } },
           },
@@ -118,7 +130,13 @@ try {
   const imported = await row();
   check("the draft is written", !!imported);
   check("with its own number", imported?.name === "#D1");
-  check("and the four money parts apart", Number(imported?.total) === 230 && Number(imported?.subtotal) === 200 && Number(imported?.shipping) === 30 && Number(imported?.tax) === 0);
+  check(
+    "and the four money parts apart",
+    Number(imported?.total) === 230 &&
+      Number(imported?.subtotal) === 200 &&
+      Number(imported?.shipping) === 30 &&
+      Number(imported?.tax) === 0
+  );
   check("its tags", String(imported?.tags) === "cod,wholesale");
   check("and no order, because it is still open", imported?.order_id === null && imported?.order_external_id === null);
 
@@ -156,7 +174,14 @@ try {
       order_id: orderExt,
       line_items: [
         { id: `${stamp}C`, title: "Custom Snowboard", sku: null, quantity: 1, price: "200.00" },
-        { id: `${stamp}D`, title: "Clear Phone Case", sku: "CASE-L", quantity: 2, price: "249.00", product_id: productExt },
+        {
+          id: `${stamp}D`,
+          title: "Clear Phone Case",
+          sku: "CASE-L",
+          quantity: 2,
+          price: "249.00",
+          product_id: productExt,
+        },
       ],
     },
   });
@@ -167,33 +192,57 @@ try {
   check("it wrote a draft", !!viaHook);
   // The whole point of this check.
   check("with the status in the same case as the import's", viaHook?.status === "COMPLETED");
-  check("the same four money parts", Number(viaHook?.total) === 230 && Number(viaHook?.subtotal) === 200 && Number(viaHook?.shipping) === 30 && Number(viaHook?.tax) === 0);
+  check(
+    "the same four money parts",
+    Number(viaHook?.total) === 230 &&
+      Number(viaHook?.subtotal) === 200 &&
+      Number(viaHook?.shipping) === 30 &&
+      Number(viaHook?.tax) === 0
+  );
   check("the same tags, split the same way", String(viaHook?.tags) === "cod,wholesale");
   // Without this a completed draft and the order it became are two
   // sales in every total that covers both lists.
   check("and it names the order it became", viaHook?.order_id === order.id);
   const hookLines = await lines(viaHook.id);
   check("its lines are written too", hookLines.length === 2);
-  check("the typed one with no product here as well", hookLines.find((l) => l.title === "Custom Snowboard")?.product_id === null);
+  check(
+    "the typed one with no product here as well",
+    hookLines.find((l) => l.title === "Custom Snowboard")?.product_id === null
+  );
   check("and the picked one joined", hookLines.find((l) => l.title === "Clear Phone Case")?.product_id === product.id);
 
   console.log("\nand a line the merchant removed goes");
   await saveDraftOrders(admin, store.id, [
     {
-      id: draftExt, name: "#D1", status: "OPEN", email: "quote@example.test", tags: ["cod"],
-      createdAt: "2026-09-14T05:35:34Z", updatedAt: "2026-09-16T05:35:34Z", completedAt: null,
+      id: draftExt,
+      name: "#D1",
+      status: "OPEN",
+      email: "quote@example.test",
+      tags: ["cod"],
+      createdAt: "2026-09-14T05:35:34Z",
+      updatedAt: "2026-09-16T05:35:34Z",
+      completedAt: null,
       invoiceUrl: "https://example.test/invoices/abc",
       totalPriceSet: { shopMoney: { amount: "200.0", currencyCode: "USD" } },
       subtotalPriceSet: { shopMoney: { amount: "200.0" } },
       totalTaxSet: { shopMoney: { amount: "0.0" } },
       totalShippingPriceSet: { shopMoney: { amount: "0.0" } },
-      customer: null, order: null,
-      lineItems: { nodes: [{
-        id: `gid://shopify/DraftOrderLineItem/${stamp}A`, title: "Custom Snowboard",
-        sku: null, quantity: 1, variant: null, product: null,
-        originalUnitPriceSet: { shopMoney: { amount: "200.0" } },
-        discountedUnitPriceSet: { shopMoney: { amount: "200.0" } },
-      }] },
+      customer: null,
+      order: null,
+      lineItems: {
+        nodes: [
+          {
+            id: `gid://shopify/DraftOrderLineItem/${stamp}A`,
+            title: "Custom Snowboard",
+            sku: null,
+            quantity: 1,
+            variant: null,
+            product: null,
+            originalUnitPriceSet: { shopMoney: { amount: "200.0" } },
+            discountedUnitPriceSet: { shopMoney: { amount: "200.0" } },
+          },
+        ],
+      },
     },
   ]);
   const after = await lines(imported.id);
@@ -212,10 +261,13 @@ try {
   check("the list is readable", !viewErr);
   check("it holds both drafts", (view ?? []).length === 2);
   check('an open one reads as "Open"', view?.find((d) => d.name === "#D1")?.state === "Open");
-  check('a completed one says it became an order', view?.find((d) => d.name === "#D2")?.state === "Became an order");
+  check("a completed one says it became an order", view?.find((d) => d.name === "#D2")?.state === "Became an order");
   check("and names which order", view?.find((d) => d.name === "#D2")?.became_order === "#9001");
   // Nobody attached: the address is the only thing to call them.
-  check("a draft with no customer falls back to the email", view?.find((d) => d.name === "#D1")?.customer_name === "quote@example.test");
+  check(
+    "a draft with no customer falls back to the email",
+    view?.find((d) => d.name === "#D1")?.customer_name === "quote@example.test"
+  );
   check("and the line count comes with it", Number(view?.find((d) => d.name === "#D1")?.items) === 1);
 
   const { data: items } = await admin
@@ -224,7 +276,10 @@ try {
     .eq("store_id", store.id)
     .eq("draft", "#D2")
     .order("title");
-  check("the items list adds the line up", Number(items?.find((i) => i.title === "Clear Phone Case")?.line_total) === 498);
+  check(
+    "the items list adds the line up",
+    Number(items?.find((i) => i.title === "Clear Phone Case")?.line_total) === 498
+  );
   check("and marks the typed line as custom", items?.find((i) => i.title === "Custom Snowboard")?.custom_item === true);
 } finally {
   await admin.from("projects").delete().eq("id", project.id);

@@ -29,10 +29,7 @@ console.log("the case that shipped");
 
   const matched = products.filter((r) => matchesFilter(r, "status", "active"));
   check("choosing active finds the active ones", matched.length === 17);
-  check(
-    "and draft finds the draft one",
-    products.filter((r) => matchesFilter(r, "status", "draft")).length === 1
-  );
+  check("and draft finds the draft one", products.filter((r) => matchesFilter(r, "status", "draft")).length === 1);
 
   const options = filterOptions(declared, products, "status");
   check("three choices, not six", options.length === 3);
@@ -90,16 +87,10 @@ console.log("\nand the ones it would have hit next");
 
   const winter = tagged.filter((r) => matchesFilter(r, "tags", "Winter"));
   check("picking one finds every row carrying it", winter.length === 2);
-  check(
-    "and not the rows without it",
-    tagged.filter((r) => matchesFilter(r, "tags", "cases")).length === 1
-  );
+  check("and not the rows without it", tagged.filter((r) => matchesFilter(r, "tags", "cases")).length === 1);
 
   // An option designed before any of this, spelling out the whole list.
-  check(
-    "a choice that is itself a list still matches",
-    matchesFilter(tagged[0], "tags", "Accessory, Sport, Winter")
-  );
+  check("a choice that is itself a list still matches", matchesFilter(tagged[0], "tags", "Accessory, Sport, Winter"));
 
   // A field that holds the array itself, not the joined string.
   const raw = [{ data: { tags: ["Snow", "Winter"] } }];

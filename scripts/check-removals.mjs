@@ -30,10 +30,7 @@ const check = (name, cond) => {
 console.log("a removal may be asked for");
 // The refusal that used to sit in propose_change. Its return left the
 // merchant a sentence and no card.
-check(
-  "proposing one is not refused",
-  !/Removing a section cannot be done from here/.test(mcp)
-);
+check("proposing one is not refused", !/Removing a section cannot be done from here/.test(mcp));
 check("the design still says which sections would go", /const gone = removals\(plans\);/.test(mcp));
 
 console.log("\nand never built without a person");
@@ -43,10 +40,7 @@ check(
   "auto-build cannot reach it",
   /const automatic = wantsAuto && autoReason === null && gone\.length === 0;/.test(mcp)
 );
-check(
-  "approving from chat still refuses",
-  /This design removes a section, which cannot be built from here/.test(mcp)
-);
+check("approving from chat still refuses", /This design removes a section, which cannot be built from here/.test(mcp));
 // And says so about the WHOLE request. A merchant's assistant read
 // the refusal, saw one removal and one ordinary change in the same
 // design, and offered to approve "the other half" — which there is
@@ -57,10 +51,7 @@ check(
   "and says the rest of the design waits with it",
   /the_rest_of_this_design/.test(mcp) && /no part of it can be approved from here/.test(mcp)
 );
-check(
-  "and the design note says to propose the two apart",
-  /A request is approved whole or not at all/.test(mcp)
-);
+check("and the design note says to propose the two apart", /A request is approved whole or not at all/.test(mcp));
 // Belt and braces, and the only one an attacker cannot argue with:
 // the database refuses the write whatever the route believes.
 check(
@@ -75,7 +66,9 @@ check("the card knows which sections a design removes", /const removalsIn = \(pl
 // button, because a disabled button is a suggestion.
 check(
   "building refuses until the typed name matches",
-  /const removing = removalsIn\(r\.plans\);\s*\n\s*if \(removing\.length && confirmText\.trim\(\) !== removing\.join\(", "\)\) return;/.test(panel)
+  /const removing = removalsIn\(r\.plans\);\s*\n\s*if \(removing\.length && confirmText\.trim\(\) !== removing\.join\(", "\)\) return;/.test(
+    panel
+  )
 );
 check(
   "and the button is not the only thing stopping it",

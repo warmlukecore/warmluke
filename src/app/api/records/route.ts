@@ -55,10 +55,7 @@ export async function POST(req: Request) {
     };
 
     if (!action || !projectId || !moduleId) {
-      return NextResponse.json(
-        { error: "action, projectId and moduleId are required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "action, projectId and moduleId are required" }, { status: 400 });
     }
 
     // RLS returns nothing for a module the caller doesn't own.
@@ -132,11 +129,7 @@ export async function POST(req: Request) {
       }
       // Merge rather than replace: a partial edit (a row action setting one
       // field) must not blank out everything it didn't mention.
-      const { data: existing } = await client
-        .from("records")
-        .select("data")
-        .eq("id", recordId)
-        .limit(1);
+      const { data: existing } = await client.from("records").select("data").eq("id", recordId).limit(1);
       const prev = (existing?.[0]?.data ?? {}) as Record<string, unknown>;
 
       const { data: updated, error } = await client

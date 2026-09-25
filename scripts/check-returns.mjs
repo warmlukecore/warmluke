@@ -80,9 +80,17 @@ check("an orphaned line is dropped rather than thrown over", orphan.length === 0
 
 console.log("\nand a page at its limit is known to be cut");
 const [byReturn, byLine] = SHOPIFY_RESOURCES.returns.children.map((c) => c.limit);
-const atLimit = { id: ORDER_A, returns: { nodes: Array.from({ length: byReturn }, (_, i) => ({ id: `r${i}`, returnLineItems: { nodes: [] } })) } };
+const atLimit = {
+  id: ORDER_A,
+  returns: { nodes: Array.from({ length: byReturn }, (_, i) => ({ id: `r${i}`, returnLineItems: { nodes: [] } })) },
+};
 check(`${byReturn} returns on one order means go bulk`, childrenWereCut("returns", [atLimit]));
-const deepLimit = { id: ORDER_A, returns: { nodes: [{ id: "r", returnLineItems: { nodes: Array.from({ length: byLine }, (_, i) => ({ id: `l${i}` })) } }] } };
+const deepLimit = {
+  id: ORDER_A,
+  returns: {
+    nodes: [{ id: "r", returnLineItems: { nodes: Array.from({ length: byLine }, (_, i) => ({ id: `l${i}` })) } }],
+  },
+};
 // The one a single-level check would miss: the lines are two lists
 // down, inside each return.
 check(`${byLine} lines inside one return does too`, childrenWereCut("returns", [deepLimit]));
@@ -103,45 +111,83 @@ const shop = `ret-${stamp}.myshopify.com`;
 
 try {
   const { data: store } = await admin
-    .from("stores").insert({ project_id: project.id, shop_domain: shop, status: "connected" })
-    .select("id").single();
+    .from("stores")
+    .insert({ project_id: project.id, shop_domain: shop, status: "connected" })
+    .select("id")
+    .single();
   const { data: customer } = await admin
-    .from("customers").insert({ store_id: store.id, external_id: `gid://shopify/Customer/${stamp}`, name: "Aman Kumar" })
-    .select("id").single();
+    .from("customers")
+    .insert({ store_id: store.id, external_id: `gid://shopify/Customer/${stamp}`, name: "Aman Kumar" })
+    .select("id")
+    .single();
   const orderExt = `gid://shopify/Order/${stamp}1`;
   const { data: order } = await admin
-    .from("orders").insert({ store_id: store.id, external_id: orderExt, order_number: "#1004", customer_id: customer.id, total: 1299, currency: "USD", source: "shopify" })
-    .select("id").single();
+    .from("orders")
+    .insert({
+      store_id: store.id,
+      external_id: orderExt,
+      order_number: "#1004",
+      customer_id: customer.id,
+      total: 1299,
+      currency: "USD",
+      source: "shopify",
+    })
+    .select("id")
+    .single();
   const productExt = `gid://shopify/Product/${stamp}2`;
   const { data: product } = await admin
-    .from("products").insert({ store_id: store.id, external_id: productExt, title: "Clear Phone Case" })
-    .select("id").single();
+    .from("products")
+    .insert({ store_id: store.id, external_id: productExt, title: "Clear Phone Case" })
+    .select("id")
+    .single();
 
   const eightDaysAgo = new Date(Date.now() - 8 * 86400_000).toISOString();
   const retExt = `gid://shopify/Return/${stamp}3`;
   await saveReturns(admin, store.id, [
     {
       id: orderExt,
-      returns: { nodes: [{
-        id: retExt, name: "#1004-R1", status: "OPEN", totalQuantity: 3,
-        createdAt: eightDaysAgo, closedAt: null,
-        returnLineItems: { nodes: [
-          // Verified: reaches back to what was bought.
+      returns: {
+        nodes: [
           {
-            id: `gid://shopify/ReturnLineItem/${stamp}A`, quantity: 2, refundedQuantity: 1,
-            returnReasonNote: "Too tight on the camera bump",
-            returnReasonDefinition: { handle: "size-too-small", name: "Size too small" },
-            fulfillmentLineItem: { lineItem: { id: "li-1", title: "Clear Phone Case", sku: "CASE-L", variant: null, product: { id: productExt } } },
+            id: retExt,
+            name: "#1004-R1",
+            status: "OPEN",
+            totalQuantity: 3,
+            createdAt: eightDaysAgo,
+            closedAt: null,
+            returnLineItems: {
+              nodes: [
+                // Verified: reaches back to what was bought.
+                {
+                  id: `gid://shopify/ReturnLineItem/${stamp}A`,
+                  quantity: 2,
+                  refundedQuantity: 1,
+                  returnReasonNote: "Too tight on the camera bump",
+                  returnReasonDefinition: { handle: "size-too-small", name: "Size too small" },
+                  fulfillmentLineItem: {
+                    lineItem: {
+                      id: "li-1",
+                      title: "Clear Phone Case",
+                      sku: "CASE-L",
+                      variant: null,
+                      product: { id: productExt },
+                    },
+                  },
+                },
+                // Unverified: the interface's other shape, which carries no
+                // link to a product at all. Null here is right, not missing.
+                {
+                  id: `gid://shopify/UnverifiedReturnLineItem/${stamp}B`,
+                  quantity: 1,
+                  refundedQuantity: 0,
+                  returnReasonNote: null,
+                  returnReasonDefinition: { handle: "unwanted", name: "Unwanted" },
+                },
+              ],
+            },
           },
-          // Unverified: the interface's other shape, which carries no
-          // link to a product at all. Null here is right, not missing.
-          {
-            id: `gid://shopify/UnverifiedReturnLineItem/${stamp}B`, quantity: 1, refundedQuantity: 0,
-            returnReasonNote: null,
-            returnReasonDefinition: { handle: "unwanted", name: "Unwanted" },
-          },
-        ] },
-      }] },
+        ],
+      },
     },
     // An order the filter returned that has no return on it any more.
     { id: `gid://shopify/Order/${stamp}9`, returns: { nodes: [] } },
@@ -153,31 +199,65 @@ try {
   check("with the status upper case", saved[0]?.status === "OPEN");
   check("and the day it was asked for", saved[0]?.requested_at !== null);
 
-  const lines = (await admin.from("return_line_items").select("*").eq("return_id", saved[0].id).order("quantity")).data ?? [];
+  const lines =
+    (await admin.from("return_line_items").select("*").eq("return_id", saved[0].id).order("quantity")).data ?? [];
   check("both lines are written", lines.length === 2);
   const unverified = lines.find((l) => l.quantity === 1);
   const verified = lines.find((l) => l.quantity === 2);
   check("the verified line reaches its product", verified?.product_id === product.id && verified?.sku === "CASE-L");
-  check("the unverified one has no product, and is still kept", unverified?.product_id === null && unverified?.title === null);
+  check(
+    "the unverified one has no product, and is still kept",
+    unverified?.product_id === null && unverified?.title === null
+  );
   check("the reason is in words, not a constant", verified?.reason === "Size too small");
   check("the customer's own note comes too", verified?.reason_note === "Too tight on the camera bump");
-  check("and how much has actually been paid back", verified?.refunded_quantity === 1 && unverified?.refunded_quantity === 0);
+  check(
+    "and how much has actually been paid back",
+    verified?.refunded_quantity === 1 && unverified?.refunded_quantity === 0
+  );
 
   console.log("\nand a line dropped in Shopify goes");
-  await saveReturns(admin, store.id, [{
-    id: orderExt,
-    returns: { nodes: [{
-      id: retExt, name: "#1004-R1", status: "CLOSED", totalQuantity: 2,
-      createdAt: eightDaysAgo, closedAt: new Date().toISOString(),
-      returnLineItems: { nodes: [{
-        id: `gid://shopify/ReturnLineItem/${stamp}A`, quantity: 2, refundedQuantity: 2,
-        returnReasonNote: "Too tight on the camera bump",
-        returnReasonDefinition: { handle: "size-too-small", name: "Size too small" },
-        fulfillmentLineItem: { lineItem: { id: "li-1", title: "Clear Phone Case", sku: "CASE-L", variant: null, product: { id: productExt } } },
-      }] },
-    }] },
-  }]);
-  check("one line left, not two", ((await admin.from("return_line_items").select("id").eq("return_id", saved[0].id)).data ?? []).length === 1);
+  await saveReturns(admin, store.id, [
+    {
+      id: orderExt,
+      returns: {
+        nodes: [
+          {
+            id: retExt,
+            name: "#1004-R1",
+            status: "CLOSED",
+            totalQuantity: 2,
+            createdAt: eightDaysAgo,
+            closedAt: new Date().toISOString(),
+            returnLineItems: {
+              nodes: [
+                {
+                  id: `gid://shopify/ReturnLineItem/${stamp}A`,
+                  quantity: 2,
+                  refundedQuantity: 2,
+                  returnReasonNote: "Too tight on the camera bump",
+                  returnReasonDefinition: { handle: "size-too-small", name: "Size too small" },
+                  fulfillmentLineItem: {
+                    lineItem: {
+                      id: "li-1",
+                      title: "Clear Phone Case",
+                      sku: "CASE-L",
+                      variant: null,
+                      product: { id: productExt },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ]);
+  check(
+    "one line left, not two",
+    ((await admin.from("return_line_items").select("id").eq("return_id", saved[0].id)).data ?? []).length === 1
+  );
 
   console.log("\nand what a merchant reads");
   const view = (await admin.from("store_returns").select("*").eq("store_id", store.id).single()).data;
@@ -196,19 +276,34 @@ try {
 
   console.log("\nand why things come back");
   const reasons = (await admin.from("return_reasons").select("*").eq("store_id", store.id)).data ?? [];
-  check("the product and its reason are grouped", reasons.some((r) => r.title === "Clear Phone Case" && r.reason === "Size too small" && Number(r.units_returned) === 2));
+  check(
+    "the product and its reason are grouped",
+    reasons.some(
+      (r) => r.title === "Clear Phone Case" && r.reason === "Size too small" && Number(r.units_returned) === 2
+    )
+  );
 
   console.log("\nand the webhook road finds the same return");
   const { data: n, error: hookErr } = await admin.rpc("abo_shopify_upsert_return", {
     p_shop: shop,
-    p_r: { admin_graphql_api_id: retExt, name: "#1004-R1", status: "closed", total_quantity: 2, order_id: orderExt, updated_at: new Date().toISOString() },
+    p_r: {
+      admin_graphql_api_id: retExt,
+      name: "#1004-R1",
+      status: "closed",
+      total_quantity: 2,
+      order_id: orderExt,
+      updated_at: new Date().toISOString(),
+    },
   });
   check("the webhook is accepted", !hookErr && n === 1);
   if (hookErr) console.log("     →", hookErr.message);
   const after = (await admin.from("returns").select("*").eq("external_id", retExt).single()).data;
   check("with the status in the import's case", after?.status === "CLOSED");
   check("and it did not lose the day it was asked for", after?.requested_at !== null);
-  check("nor its lines", ((await admin.from("return_line_items").select("id").eq("return_id", saved[0].id)).data ?? []).length === 1);
+  check(
+    "nor its lines",
+    ((await admin.from("return_line_items").select("id").eq("return_id", saved[0].id)).data ?? []).length === 1
+  );
 
   // A return for an order nobody has imported is not invented.
   const { data: nothing } = await admin.rpc("abo_shopify_upsert_return", {
@@ -221,5 +316,7 @@ try {
   console.log("\nthe project is gone");
 }
 
-console.log(fails.length === 0 ? "\nthe goods coming back, kept apart from the money going out" : `\n${fails.length} FAILED`);
+console.log(
+  fails.length === 0 ? "\nthe goods coming back, kept apart from the money going out" : `\n${fails.length} FAILED`
+);
 process.exit(fails.length === 0 ? 0 : 1);

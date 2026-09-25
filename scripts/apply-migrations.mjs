@@ -113,8 +113,16 @@ const dir = new URL("../supabase/migrations/", import.meta.url);
 // where it lives; it is idempotent, so recording it on production is
 // all that is needed there.
 const BASE = { f: "0001_schema.sql", url: new URL("../supabase/schema.sql", import.meta.url) };
-const files = [BASE, ...readdirSync(dir).filter((f) => f.endsWith(".sql")).sort().map((f) => ({ f, url: new URL(f, dir) }))];
-console.log(`${REF}: ${files.length} migrations in the repo, ${done.size} already in the ledger${recordOnly ? " — recording only" : ""}`);
+const files = [
+  BASE,
+  ...readdirSync(dir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((f) => ({ f, url: new URL(f, dir) })),
+];
+console.log(
+  `${REF}: ${files.length} migrations in the repo, ${done.size} already in the ledger${recordOnly ? " — recording only" : ""}`
+);
 
 let applied = 0;
 for (const { f, url } of files) {
@@ -135,7 +143,9 @@ for (const { f, url } of files) {
   } else {
     console.log(`noted ${f}`);
   }
-  await run(`insert into public.abo_migrations (version, name, recorded_only) values ('${version}', '${q(f)}', ${recordOnly});`);
+  await run(
+    `insert into public.abo_migrations (version, name, recorded_only) values ('${version}', '${q(f)}', ${recordOnly});`
+  );
   applied++;
 }
 const skipped = files.filter(({ f }) => done.has(/^(\d{4})_/.exec(f)?.[1])).length;

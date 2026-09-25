@@ -23,13 +23,9 @@ export function ticketClient(ticket: string): SupabaseClient {
   });
 }
 
-export async function getUserClient(
-  req: Request
-): Promise<{ client: SupabaseClient; userId: string } | null> {
+export async function getUserClient(req: Request): Promise<{ client: SupabaseClient; userId: string } | null> {
   const authHeader = req.headers.get("authorization") ?? "";
-  const token = authHeader.toLowerCase().startsWith("bearer ")
-    ? authHeader.slice(7).trim()
-    : null;
+  const token = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : null;
   if (!token || !url || !anonKey) return null;
 
   // Verify the token directly (client.auth.getUser would override

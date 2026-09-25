@@ -60,8 +60,7 @@ if (!row) {
   console.log("could not make a project to test against — is the check user there?");
   process.exit(1);
 }
-const dropProject = () =>
-  sql(`delete from public.projects where id = '${row.project_id}'`);
+const dropProject = () => sql(`delete from public.projects where id = '${row.project_id}'`);
 
 const claims = (clientId) =>
   JSON.stringify({
@@ -108,8 +107,11 @@ const approved = (clientId) => `
 `;
 
 const REQ = "'11111111-1111-1111-1111-111111111111'::uuid";
-const mk = (req, op = "module_insert", payload = `'{"name":"door-test","nav_label":"Door","route":"/modules/door-test"}'::jsonb`) =>
-  `select public.abo_build('${row.project_id}'::uuid, ${req}, '${op}', ${payload});`;
+const mk = (
+  req,
+  op = "module_insert",
+  payload = `'{"name":"door-test","nav_label":"Door","route":"/modules/door-test"}'::jsonb`
+) => `select public.abo_build('${row.project_id}'::uuid, ${req}, '${op}', ${payload});`;
 
 const failed = (res) => res.status !== 201;
 const said = (res, needle) => JSON.stringify(res.body ?? "").includes(needle);
@@ -119,10 +121,7 @@ check("can build without naming a request", !failed(await scenario(null, "", mk(
 
 console.log("\na token given to an AI client");
 check("cannot build with no request", failed(await scenario("claude-test", "", mk("null::uuid"))));
-check(
-  "cannot build against a request that does not exist",
-  failed(await scenario("claude-test", "", mk(REQ)))
-);
+check("cannot build against a request that does not exist", failed(await scenario("claude-test", "", mk(REQ))));
 check(
   "cannot build against a pending request it raised",
   failed(await scenario("claude-test", pending("claude-test"), mk(REQ)))
@@ -140,8 +139,7 @@ check(
   failed(
     await scenario(
       "claude-test",
-      approved("claude-test") +
-        `update public.build_requests set status = 'built' where id = ${REQ};`,
+      approved("claude-test") + `update public.build_requests set status = 'built' where id = ${REQ};`,
       mk(REQ)
     )
   )
@@ -151,8 +149,7 @@ check(
   failed(
     await scenario(
       "claude-test",
-      approved("claude-test") +
-        `update public.build_requests set status = 'dismissed' where id = ${REQ};`,
+      approved("claude-test") + `update public.build_requests set status = 'dismissed' where id = ${REQ};`,
       mk(REQ)
     )
   )
@@ -171,13 +168,7 @@ check(
 );
 check(
   "while the app still can",
-  !failed(
-    await scenario(
-      null,
-      "",
-      mk("null::uuid", "module_delete", `'{"module_id":"${row.project_id}"}'::jsonb`)
-    )
-  )
+  !failed(await scenario(null, "", mk("null::uuid", "module_delete", `'{"module_id":"${row.project_id}"}'::jsonb`)))
 );
 
 console.log("\na section over the store is the store's");
@@ -330,29 +321,20 @@ check(
   "with the setting off, a client cannot stamp its own",
   !OK(await scenario("claude-test", autoOff + pending("claude-test"), nod()))
 );
-check(
-  "with it on, it can",
-  OK(await scenario("claude-test", autoOn + pending("claude-test"), nod()))
-);
+check("with it on, it can", OK(await scenario("claude-test", autoOn + pending("claude-test"), nod())));
 // The one 0076 exists for. Six already built today used to make this
 // a no, while the screen said nothing waits.
 check(
   "and the sixth of the day is not refused",
   OK(await scenario("claude-test", autoOn + alreadyBuilt(6) + pending("claude-test"), nod()))
 );
-check(
-  "nor the fiftieth",
-  OK(await scenario("claude-test", autoOn + alreadyBuilt(50) + pending("claude-test"), nod()))
-);
+check("nor the fiftieth", OK(await scenario("claude-test", autoOn + alreadyBuilt(50) + pending("claude-test"), nod())));
 // What the cap was standing in for is still here.
 check(
   "but not another client's request",
   !OK(await scenario("claude-test", autoOn + pending("some-other-client"), nod()))
 );
-check(
-  "nor one that does not exist",
-  !OK(await scenario("claude-test", autoOn, nod()))
-);
+check("nor one that does not exist", !OK(await scenario("claude-test", autoOn, nod())));
 // The merchant tapping Build in Warmluke is not automation and was
 // never capped — it must not start being.
 check(

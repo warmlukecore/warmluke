@@ -70,9 +70,7 @@ export type AutomationAction =
   | {
       type: "set_fields";
       /** The row that fired the rule, or rows matched in another section. */
-      target:
-        | { self: true }
-        | { module_id: string; match: { field: string; to: Expr } };
+      target: { self: true } | { module_id: string; match: { field: string; to: Expr } };
       /** field -> expression evaluated per matched row. */
       set: Record<string, Expr>;
     }

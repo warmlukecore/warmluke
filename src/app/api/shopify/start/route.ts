@@ -28,8 +28,7 @@ const REMEMBER_SECONDS = 15 * 60;
  */
 export function GET(req: Request) {
   const url = new URL(req.url);
-  const to =
-    installLink(process.env.NEXT_PUBLIC_SHOPIFY_INSTALL_URL) ?? installLinkFor(process.env.SHOPIFY_CLIENT_ID);
+  const to = installLink(process.env.NEXT_PUBLIC_SHOPIFY_INSTALL_URL) ?? installLinkFor(process.env.SHOPIFY_CLIENT_ID);
   if (url.searchParams.has("check")) return NextResponse.json({ oneTap: !!to });
   if (!to) return NextResponse.redirect(`${url.origin}/dashboard`);
 

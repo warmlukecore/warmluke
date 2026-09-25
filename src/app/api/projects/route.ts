@@ -10,10 +10,7 @@ export async function GET(req: Request) {
   if (!auth) {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
   }
-  const { data, error } = await auth.client
-    .from("projects")
-    .select("*")
-    .order("created_at", { ascending: false });
+  const { data, error } = await auth.client.from("projects").select("*").order("created_at", { ascending: false });
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -108,11 +105,7 @@ export async function PATCH(req: Request) {
   }
 
   // RLS means a project the caller doesn't own simply matches nothing.
-  const { data, error } = await auth.client
-    .from("projects")
-    .update(patch)
-    .eq("id", id)
-    .select();
+  const { data, error } = await auth.client.from("projects").update(patch).eq("id", id).select();
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -140,20 +133,13 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: "id is required" }, { status: 400 });
   }
 
-  const { data: found } = await auth.client
-    .from("projects")
-    .select("id, name")
-    .eq("id", id)
-    .limit(1);
+  const { data: found } = await auth.client.from("projects").select("id, name").eq("id", id).limit(1);
   const project = found?.[0] as { id: string; name: string } | undefined;
   if (!project) {
     return NextResponse.json({ error: "Project not found." }, { status: 404 });
   }
   if ((confirmName ?? "").trim().toLowerCase() !== project.name.trim().toLowerCase()) {
-    return NextResponse.json(
-      { error: "Type the project's name exactly to delete it." },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Type the project's name exactly to delete it." }, { status: 400 });
   }
 
   const { error } = await auth.client.from("projects").delete().eq("id", id);

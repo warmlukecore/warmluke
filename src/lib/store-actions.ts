@@ -90,7 +90,10 @@ export interface StoreActionSpec {
   errors: (data: unknown) => string[];
   /** The action that puts this one back, when there is one. */
   undo:
-    | ((targets: ActionTarget[], params: ActionParams) => {
+    | ((
+        targets: ActionTarget[],
+        params: ActionParams
+      ) => {
         action: string;
         targets: ActionTarget[];
         params: ActionParams;
@@ -158,11 +161,7 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
     confirm: "list",
     say: (targets, params) => `Tags ${kinds(targets)} "${tagsOf(params).join('", "')}"`,
     check: (targets, params) =>
-      targets.length === 0
-        ? "Nothing was named to tag."
-        : tagsOf(params).length === 0
-          ? "No tag was given."
-          : null,
+      targets.length === 0 ? "Nothing was named to tag." : tagsOf(params).length === 0 ? "No tag was given." : null,
     mutation: `mutation AddTags($id: ID!, $tags: [String!]!) {
       tagsAdd(id: $id, tags: $tags) { node { id } userErrors { field message } }
     }`,
@@ -179,11 +178,7 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
     confirm: "list",
     say: (targets, params) => `Takes "${tagsOf(params).join('", "')}" off ${kinds(targets)}`,
     check: (targets, params) =>
-      targets.length === 0
-        ? "Nothing was named."
-        : tagsOf(params).length === 0
-          ? "No tag was given."
-          : null,
+      targets.length === 0 ? "Nothing was named." : tagsOf(params).length === 0 ? "No tag was given." : null,
     mutation: `mutation RemoveTags($id: ID!, $tags: [String!]!) {
       tagsRemove(id: $id, tags: $tags) { node { id } userErrors { field message } }
     }`,
@@ -275,9 +270,7 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
 export const ACTIONS: readonly string[] = Object.keys(STORE_ACTIONS);
 
 /** Every write scope the actions need, once each. */
-export const ACTION_SCOPES: readonly string[] = [
-  ...new Set(ACTIONS.flatMap((a) => STORE_ACTIONS[a].scopes)),
-];
+export const ACTION_SCOPES: readonly string[] = [...new Set(ACTIONS.flatMap((a) => STORE_ACTIONS[a].scopes))];
 
 /**
  * What Warmluke can change in a merchant's shop, as one phrase:

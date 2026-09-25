@@ -183,7 +183,12 @@ function Pick({
   }, [open, active]);
 
   function show() {
-    setActive(Math.max(0, options.findIndex((o) => o.value === value)));
+    setActive(
+      Math.max(
+        0,
+        options.findIndex((o) => o.value === value)
+      )
+    );
     setOpen(true);
   }
 
@@ -285,7 +290,9 @@ function Pick({
               }`}
             >
               {o.label}
-              {o.value === value && <Check aria-hidden="true" className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} />}
+              {o.value === value && (
+                <Check aria-hidden="true" className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} />
+              )}
             </li>
           ))}
         </ul>
@@ -327,7 +334,12 @@ export function DemoForm({ variant }: { variant: string }) {
   // JavaScript off these stay empty and the action makes its own — the
   // booking still arrives, it just is not joined to the earlier events.
   useEffect(() => {
-    setCtx({ session: sessionId(), path: landingPath(), utm: utmFromUrl(), idem: crypto.randomUUID().replace(/-/g, "") });
+    setCtx({
+      session: sessionId(),
+      path: landingPath(),
+      utm: utmFromUrl(),
+      idem: crypto.randomUUID().replace(/-/g, ""),
+    });
   }, []);
 
   function began() {
@@ -339,12 +351,8 @@ export function DemoForm({ variant }: { variant: string }) {
   if (state.ok) {
     return (
       <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-8 text-center">
-        <div className="font-serif text-xl text-emerald-800">
-          Got it. We&apos;ll be in touch.
-        </div>
-        <p className="mt-2 text-sm text-quiet">
-          We&apos;ll write to set up a time that suits you.
-        </p>
+        <div className="font-serif text-xl text-emerald-800">Got it. We&apos;ll be in touch.</div>
+        <p className="mt-2 text-sm text-quiet">We&apos;ll write to set up a time that suits you.</p>
       </div>
     );
   }
@@ -376,7 +384,13 @@ export function DemoForm({ variant }: { variant: string }) {
 
       <input name="name" required aria-label="Your name" placeholder="Your name" className={INPUT} />
       <input name="email" type="email" required aria-label="Work email" placeholder="Work email" className={INPUT} />
-      <input name="store" required aria-label="Your store URL" placeholder="Your store URL" className={`${INPUT} sm:col-span-2`} />
+      <input
+        name="store"
+        required
+        aria-label="Your store URL"
+        placeholder="Your store URL"
+        className={`${INPUT} sm:col-span-2`}
+      />
       <Pick name="team_size" label="People on the team" options={TEAM_OPTIONS} onPick={() => setUnpicked(false)} />
       <Pick name="monthly_orders" label="Orders a month" options={ORDER_OPTIONS} onPick={() => setUnpicked(false)} />
       <Pick
@@ -457,7 +471,8 @@ const ASK_ICON: Record<Show, LucideIcon> = {
  * disagree, with each other or with the dashboard at the top.
  */
 function Artifact({ show }: { show: Show }) {
-  const card = "w-full max-w-[17rem] rounded-xl border border-hair bg-white p-3.5 shadow-[0_24px_48px_-20px_rgb(49_46_129/0.35)]";
+  const card =
+    "w-full max-w-[17rem] rounded-xl border border-hair bg-white p-3.5 shadow-[0_24px_48px_-20px_rgb(49_46_129/0.35)]";
   const head = "mb-2.5 flex items-center justify-between text-xs font-medium text-neutral-500";
   if (show === "stock") {
     const rows = LOW.map((v): [string, number] => [variantName(v), v.stock]);
@@ -474,7 +489,10 @@ function Artifact({ show }: { show: Show }) {
                 <span className="shrink-0 tabular-nums">{n} left</span>
               </div>
               <div className="mt-1 h-1.5 rounded-full bg-neutral-100">
-                <div className={`h-1.5 rounded-full ${n < LOW_STOCK / 2 ? "bg-rose-400" : "bg-amber-400"}`} style={{ width: `${(n / LOW_STOCK) * 100}%` }} />
+                <div
+                  className={`h-1.5 rounded-full ${n < LOW_STOCK / 2 ? "bg-rose-400" : "bg-amber-400"}`}
+                  style={{ width: `${(n / LOW_STOCK) * 100}%` }}
+                />
               </div>
             </div>
           ))}
@@ -492,13 +510,18 @@ function Artifact({ show }: { show: Show }) {
         </div>
         <div className="flex h-16 items-end gap-1.5">
           {week.map((n, i) => (
-            <div key={i} className={`flex-1 rounded-t ${i === week.length - 1 ? "bg-accent" : "bg-accent/25"}`} style={{ height: `${(n / top) * 100}%` }} />
+            <div
+              key={i}
+              className={`flex-1 rounded-t ${i === week.length - 1 ? "bg-accent" : "bg-accent/25"}`}
+              style={{ height: `${(n / top) * 100}%` }}
+            />
           ))}
         </div>
         <div className="mt-2.5 flex items-baseline justify-between gap-3 text-xs">
           <span className="text-quiet">Yesterday</span>
           <span className="text-ink">
-            <span className="font-serif text-lg">{FIGURES.yesterday.orders}</span> orders · {money(FIGURES.yesterday.collected)}
+            <span className="font-serif text-lg">{FIGURES.yesterday.orders}</span> orders ·{" "}
+            {money(FIGURES.yesterday.collected)}
           </span>
         </div>
       </div>
@@ -510,7 +533,10 @@ function Artifact({ show }: { show: Show }) {
       <div className={card}>
         <div className="flex items-center gap-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-full bg-accent/10 text-sm font-semibold text-accent">
-            {FOLLOW_UP.name.split(" ").map((w) => w[0]).join("")}
+            {FOLLOW_UP.name
+              .split(" ")
+              .map((w) => w[0])
+              .join("")}
           </span>
           <div className="min-w-0">
             <div className="text-sm font-medium text-ink">{FOLLOW_UP.name}</div>
@@ -536,7 +562,11 @@ function Artifact({ show }: { show: Show }) {
         ["Received", "bg-neutral-400"],
         ["Refunded", "bg-accent"],
       ] as const
-    ).map(([name, tone]): [string, number, string] => [name, Math.min(3, RETURNS.filter((r) => r.stage === name).length), tone]);
+    ).map(([name, tone]): [string, number, string] => [
+      name,
+      Math.min(3, RETURNS.filter((r) => r.stage === name).length),
+      tone,
+    ]);
     return (
       <div className={card}>
         <div className={head}>
@@ -618,40 +648,40 @@ export function AskLuke({ asks, after }: { asks: Ask[]; after?: React.ReactNode 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-10">
       <div className="flex flex-col gap-8">
-      <div role="tablist" aria-label="Questions to ask Luke" className="flex flex-col gap-2">
-        {asks.map((x, i) => {
-          const Icon = ASK_ICON[x.show];
-          const on = i === at;
-          return (
-            <button
-              key={x.q}
-              role="tab"
-              aria-selected={on}
-              aria-controls={panel}
-              data-cta={`ask_${i + 1}`}
-              onClick={() => setAt(i)}
-              className={`group flex items-start gap-3 rounded-2xl border px-3.5 py-3 text-left transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
-                on
-                  ? "border-accent/40 bg-white shadow-[0_12px_32px_-16px_rgb(49_46_129/0.35)]"
-                  : "border-hair bg-white/70 hover:border-neutral-300 hover:bg-white"
-              }`}
-            >
-              <span
-                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-colors ${
-                  on ? "bg-accent text-white" : "bg-neutral-100 text-neutral-500 group-hover:text-ink"
+        <div role="tablist" aria-label="Questions to ask Luke" className="flex flex-col gap-2">
+          {asks.map((x, i) => {
+            const Icon = ASK_ICON[x.show];
+            const on = i === at;
+            return (
+              <button
+                key={x.q}
+                role="tab"
+                aria-selected={on}
+                aria-controls={panel}
+                data-cta={`ask_${i + 1}`}
+                onClick={() => setAt(i)}
+                className={`group flex items-start gap-3 rounded-2xl border px-3.5 py-3 text-left transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+                  on
+                    ? "border-accent/40 bg-white shadow-[0_12px_32px_-16px_rgb(49_46_129/0.35)]"
+                    : "border-hair bg-white/70 hover:border-neutral-300 hover:bg-white"
                 }`}
               >
-                <Icon aria-hidden="true" className="h-4 w-4" strokeWidth={1.75} />
-              </span>
-              <span className="min-w-0 pt-1">
-                <span className="block font-serif text-[1.05rem] leading-snug text-ink">&ldquo;{x.q}&rdquo;</span>
-                {on && <span className="mt-1 block text-sm leading-relaxed text-quiet">{x.a}</span>}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-      {after && <div>{after}</div>}
+                <span
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-colors ${
+                    on ? "bg-accent text-white" : "bg-neutral-100 text-neutral-500 group-hover:text-ink"
+                  }`}
+                >
+                  <Icon aria-hidden="true" className="h-4 w-4" strokeWidth={1.75} />
+                </span>
+                <span className="min-w-0 pt-1">
+                  <span className="block font-serif text-[1.05rem] leading-snug text-ink">&ldquo;{x.q}&rdquo;</span>
+                  {on && <span className="mt-1 block text-sm leading-relaxed text-quiet">{x.a}</span>}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {after && <div>{after}</div>}
       </div>
 
       <div className="relative isolate pt-24 sm:pt-28 lg:pt-20 lg:pr-12">
@@ -668,10 +698,7 @@ export function AskLuke({ asks, after }: { asks: Ask[]; after?: React.ReactNode 
             <span className="h-2.5 w-2.5 rounded-full bg-neutral-200" />
             <span className="ml-2 text-xs text-neutral-400">Warmluke · Luke</span>
           </div>
-          <div
-            aria-hidden="true"
-            className="absolute -top-3.5 right-6"
-          >
+          <div aria-hidden="true" className="absolute -top-3.5 right-6">
             <span className="flex items-center gap-1.5 rounded-full border border-hair bg-white px-2.5 py-1 text-[11px] text-ink shadow-[0_12px_24px_-12px_rgb(0_0_0/0.3)]">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
               Shopify connected

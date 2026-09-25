@@ -19,7 +19,6 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Group } from "@/components/ui/Group";
 import { button, field, hint, label as labelClass, note } from "@/components/ui/controls";
 
-
 interface Impact {
   records: number;
   children: Array<{ id: string; nav_label: string }>;
@@ -55,9 +54,7 @@ export default function ModuleSettings({
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       fetch(`/api/modules?projectId=${projectId}&id=${module.id}`, {
-        headers: data.session?.access_token
-          ? { Authorization: `Bearer ${data.session.access_token}` }
-          : {},
+        headers: data.session?.access_token ? { Authorization: `Bearer ${data.session.access_token}` } : {},
       })
         .then((r) => r.json())
         .then((j) => setImpact(j as Impact))
@@ -68,9 +65,7 @@ export default function ModuleSettings({
   const hasChildren = (impact?.children.length ?? 0) > 0;
   // Only top-level sections can be parents, and a section with children
   // can't itself be nested — that's the one-level rule.
-  const parentOptions = modules.filter(
-    (m) => m.id !== module.id && !m.parent_id && !hasChildren
-  );
+  const parentOptions = modules.filter((m) => m.id !== module.id && !m.parent_id && !hasChildren);
   const dirty =
     label.trim() !== module.nav_label ||
     icon !== module.icon ||
@@ -106,11 +101,7 @@ export default function ModuleSettings({
   async function remove() {
     setBusy(true);
     setError(null);
-    const { ok, data } = await apiFetch(
-      "/api/modules",
-      { id: module.id, projectId, confirmName: confirm },
-      "DELETE"
-    );
+    const { ok, data } = await apiFetch("/api/modules", { id: module.id, projectId, confirmName: confirm }, "DELETE");
     setBusy(false);
     if (!ok || data.error) {
       setError((data.error as string) ?? "Couldn't delete.");
@@ -140,73 +131,75 @@ export default function ModuleSettings({
         {error && <ErrorNote error={asError(error)} />}
 
         <Group title="Details" description="How it shows in the menu, and where.">
-        <div>
-          <label htmlFor="section-name" className={labelClass}>
-            Name
-          </label>
-          <input id="section-name" value={label} onChange={(e) => setLabel(e.target.value)} className={field} />
-        </div>
+          <div>
+            <label htmlFor="section-name" className={labelClass}>
+              Name
+            </label>
+            <input id="section-name" value={label} onChange={(e) => setLabel(e.target.value)} className={field} />
+          </div>
 
-        <div>
-          <div className={labelClass}>Icon</div>
-          <IconPicker value={icon} onChange={setIcon} />
-        </div>
+          <div>
+            <div className={labelClass}>Icon</div>
+            <IconPicker value={icon} onChange={setIcon} />
+          </div>
 
-        <div>
-          <label htmlFor="section-parent" className={labelClass}>
-            Sits inside
-          </label>
-          <select
-            id="section-parent"
-            value={parentId}
-            onChange={(e) => setParentId(e.target.value)}
-            disabled={hasChildren}
-            className={field}
-          >
-            <option value="">Nothing — it sits at the top</option>
-            {parentOptions.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.nav_label}
-              </option>
-            ))}
-          </select>
-          {hasChildren && (
-            <div className={hint}>
-              This section has {impact!.children.length} inside it, so it stays at the top.
-              Sections nest one level only.
-            </div>
-          )}
-        </div>
+          <div>
+            <label htmlFor="section-parent" className={labelClass}>
+              Sits inside
+            </label>
+            <select
+              id="section-parent"
+              value={parentId}
+              onChange={(e) => setParentId(e.target.value)}
+              disabled={hasChildren}
+              className={field}
+            >
+              <option value="">Nothing — it sits at the top</option>
+              {parentOptions.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.nav_label}
+                </option>
+              ))}
+            </select>
+            {hasChildren && (
+              <div className={hint}>
+                This section has {impact!.children.length} inside it, so it stays at the top. Sections nest one level
+                only.
+              </div>
+            )}
+          </div>
         </Group>
 
         <Group title="Rows" description="Where this section's rows come from.">
-        <div>
-          <label htmlFor="section-source" className={labelClass}>
-            Rows come from
-          </label>
-          <select id="section-source" value={source} onChange={(e) => setSource(e.target.value)} className={field}>
-            <option value="">Rows added in this section</option>
-            {Object.entries(STORE_TABLES).map(([table, spec]) => (
-              <option key={table} value={table}>
-                {spec.label}
-              </option>
-            ))}
-          </select>
-          <div className={hint}>
-            {source
-              ? // Said before they save, not after: switching replaces
-                // the columns, and rows they typed stop being shown.
-                "These rows come from Shopify and cannot be edited here — the import owns them. Rows added in this section stay in the database but are hidden while this is on, and the columns are replaced to match the store."
-              : "This section holds rows you or your staff add."}
+          <div>
+            <label htmlFor="section-source" className={labelClass}>
+              Rows come from
+            </label>
+            <select id="section-source" value={source} onChange={(e) => setSource(e.target.value)} className={field}>
+              <option value="">Rows added in this section</option>
+              {Object.entries(STORE_TABLES).map(([table, spec]) => (
+                <option key={table} value={table}>
+                  {spec.label}
+                </option>
+              ))}
+            </select>
+            <div className={hint}>
+              {source
+                ? // Said before they save, not after: switching replaces
+                  // the columns, and rows they typed stop being shown.
+                  "These rows come from Shopify and cannot be edited here — the import owns them. Rows added in this section stay in the database but are hidden while this is on, and the columns are replaced to match the store."
+                : "This section holds rows you or your staff add."}
+            </div>
           </div>
-        </div>
         </Group>
 
         <Group title="Delete this section" danger>
           {!confirmingDelete ? (
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-fg-muted">
-                {impact ? `${impact.records} row${impact.records === 1 ? "" : "s"} go with it.` : "Its rows go with it."}
+                {impact
+                  ? `${impact.records} row${impact.records === 1 ? "" : "s"} go with it.`
+                  : "Its rows go with it."}
               </p>
               <button onClick={() => setConfirmingDelete(true)} className={button("critical-secondary", "sm")}>
                 Delete section
@@ -226,8 +219,8 @@ export default function ModuleSettings({
               </div>
               {blocked && (
                 <div className={note.attention}>
-                  These rules write to this section and would stop working:{" "}
-                  {impact!.blockedBy.join(", ")}. Turn them off in Rules first.
+                  These rules write to this section and would stop working: {impact!.blockedBy.join(", ")}. Turn them
+                  off in Rules first.
                 </div>
               )}
               <input

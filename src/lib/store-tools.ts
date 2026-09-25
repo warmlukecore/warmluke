@@ -217,7 +217,12 @@ export const STORE_TOOLS: readonly StoreTool[] = [
   },
   {
     name: "get_order",
-    about: (a) => `order #${String(a.order_number ?? "").replace(/^#/, "").trim() || "?"}`,
+    about: (a) =>
+      `order #${
+        String(a.order_number ?? "")
+          .replace(/^#/, "")
+          .trim() || "?"
+      }`,
     description:
       "One order in full, with the items in it. Use this when the merchant asks about a particular order; search_orders lists many and deliberately leaves the contents out.",
     inputSchema: {
@@ -313,7 +318,8 @@ export const STORE_TOOLS: readonly StoreTool[] = [
       return {
         threshold,
         count: rows.length,
-        note: rows.length === 0 ? `Nothing is at or below ${threshold}.` : "Counts are as of the last sync from Shopify.",
+        note:
+          rows.length === 0 ? `Nothing is at or below ${threshold}.` : "Counts are as of the last sync from Shopify.",
         rows,
       };
     },

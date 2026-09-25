@@ -35,7 +35,6 @@ function explain(status: number, message?: string, hint?: string): string {
   return message ?? "Couldn't reach Shopify. Try again in a moment.";
 }
 
-
 /** How often a page waiting on another browser looks for the store. */
 const WAIT_MS = 3000;
 /** And for how long, which is as long as Shopify's own approval lasts. */
@@ -238,9 +237,11 @@ export default function ConnectShopify({
           ) : (
             <div className="space-y-1">
               <p>
-                {copied === "yes" ? "Link copied." : "Copy this link:"} Open it in the browser where
-                Shopify is signed in, and sign in to Warmluke there.{" "}
-                {waiting ? "This page updates when the store connects." : "This page stopped waiting — reload it once you have connected."}
+                {copied === "yes" ? "Link copied." : "Copy this link:"} Open it in the browser where Shopify is signed
+                in, and sign in to Warmluke there.{" "}
+                {waiting
+                  ? "This page updates when the store connects."
+                  : "This page stopped waiting — reload it once you have connected."}
               </p>
               {copied === "no" && (
                 <input
@@ -282,10 +283,7 @@ export default function ConnectShopify({
             {busy ? "Opening Shopify…" : submitLabel}
           </button>
         )}
-        <button
-          onClick={onCancel}
-          className={button("plain")}
-        >
+        <button onClick={onCancel} className={button("plain")}>
           {cancelLabel}
         </button>
       </div>

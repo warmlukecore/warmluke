@@ -40,11 +40,23 @@ console.log("\na span, as days in the shop's zone");
   check("today is one day", w("today")?.fromDay === "2026-09-20" && w("today")?.toDay === "2026-09-20");
   check("and starts at the shop's midnight, not the server's", w("today")?.from === "2026-09-19T18:30:00.000Z");
   check("yesterday", w("yesterday")?.fromDay === "2026-09-19" && w("yesterday")?.toDay === "2026-09-19");
-  check("the last seven days end today", w("this_week")?.fromDay === "2026-09-14" && w("this_week")?.toDay === "2026-09-20");
+  check(
+    "the last seven days end today",
+    w("this_week")?.fromDay === "2026-09-14" && w("this_week")?.toDay === "2026-09-20"
+  );
   check("the last thirty too", w("this_month")?.fromDay === "2026-08-22");
-  check("last month is the whole of August", w("last_month")?.fromDay === "2026-08-01" && w("last_month")?.toDay === "2026-08-31");
-  check("a named month this year", w("named_month", 8)?.fromDay === "2026-08-01" && w("named_month", 8)?.label === "August 2026");
-  check("a month not yet reached is last year's", w("named_month", 12)?.fromDay === "2025-12-01" && w("named_month", 12)?.toDay === "2025-12-31");
+  check(
+    "last month is the whole of August",
+    w("last_month")?.fromDay === "2026-08-01" && w("last_month")?.toDay === "2026-08-31"
+  );
+  check(
+    "a named month this year",
+    w("named_month", 8)?.fromDay === "2026-08-01" && w("named_month", 8)?.label === "August 2026"
+  );
+  check(
+    "a month not yet reached is last year's",
+    w("named_month", 12)?.fromDay === "2025-12-01" && w("named_month", 12)?.toDay === "2025-12-31"
+  );
   check("February knows its length", w("named_month", 2)?.toDay === "2026-02-28");
   check("all time is no span", w("all") === null);
   check("a named month with no month is no span", w("named_month", null) === null);
@@ -65,7 +77,13 @@ function fakeJev(reply) {
   return new Promise((resolve) => {
     server.listen(0, "127.0.0.1", () => {
       process.env.TYPESAFE_API_URL = `http://127.0.0.1:${server.address().port}/v1/systemone`;
-      resolve({ calls: () => calls, close: () => { server.closeAllConnections(); return new Promise((r) => server.close(r)); } });
+      resolve({
+        calls: () => calls,
+        close: () => {
+          server.closeAllConnections();
+          return new Promise((r) => server.close(r));
+        },
+      });
     });
   });
 }
@@ -95,14 +113,20 @@ const routed = async (o, text = "who is my top buyer?") => {
   return r;
 };
 check("sure about a question: a route", (await routed({}))?.list === "customers");
-check("with the words to look up along", (await routed({ kind: "lookup" }, "Aman ka phone number"))?.needles.includes("Aman"));
+check(
+  "with the words to look up along",
+  (await routed({ kind: "lookup" }, "Aman ka phone number"))?.needles.includes("Aman")
+);
 check("not sure which list: nothing", (await routed({ listC: 0.4 })) === null);
 check("not sure what kind: nothing", (await routed({ kindC: 0.3 })) === null);
 check("a request to build: nothing", (await routed({ kind: "build" })) === null);
 check("small talk: nothing", (await routed({ kind: "unclear", list: "none" })) === null);
 check("not about any list: nothing", (await routed({ list: "none" })) === null);
 check("a named month carries its number", (await routed({ window: "named_month", month: "aug" }))?.month === 8);
-check("a named month with no name falls back to all time", (await routed({ window: "named_month", month: "none" }))?.window === "all");
+check(
+  "a named month with no name falls back to all time",
+  (await routed({ window: "named_month", month: "none" }))?.window === "all"
+);
 check("a span the code does not know reads as all time", (await routed({ window: "fortnight" }))?.window === "all");
 {
   const jev = await fakeJev({ status: 500, body: { error: "boom" } });
@@ -117,7 +141,10 @@ check("a span the code does not know reads as all time", (await routed({ window:
 {
   const jev = await fakeJev({ hang: true });
   const t0 = Date.now();
-  check("a slow model: nothing, and soon", (await routeQuestion("who is my top buyer?", 300)) === null && Date.now() - t0 < 2000);
+  check(
+    "a slow model: nothing, and soon",
+    (await routeQuestion("who is my top buyer?", 300)) === null && Date.now() - t0 < 2000
+  );
   await jev.close();
 }
 check("two letters are not a question", (await routed({}, "hi")) === null);
@@ -126,14 +153,20 @@ console.log("\nand once, for real");
 {
   delete process.env.TYPESAFE_API_URL;
   const envFile = new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url);
-  const fromFile = existsSync(envFile) ? (readFileSync(envFile, "utf8").match(/^TYPESAFE_API_KEY=(.+)$/m)?.[1]?.trim() ?? "") : "";
+  const fromFile = existsSync(envFile)
+    ? (readFileSync(envFile, "utf8")
+        .match(/^TYPESAFE_API_KEY=(.+)$/m)?.[1]
+        ?.trim() ?? "")
+    : "";
   const key = realKey || fromFile;
   if (!key) {
     console.log("  skip  no TYPESAFE_API_KEY — the real call was not made");
   } else {
     process.env.TYPESAFE_API_KEY = key;
     const r = await routeQuestion("August ka top buyer kaun tha?");
-    console.log(`  →     ${r ? `${r.list} · ${r.window} · month ${r.month} · ${r.kind} · list ${Math.round(r.confidence.list * 100)}% kind ${Math.round(r.confidence.kind * 100)}% · ${r.ms}ms` : "no route"}`);
+    console.log(
+      `  →     ${r ? `${r.list} · ${r.window} · month ${r.month} · ${r.kind} · list ${Math.round(r.confidence.list * 100)}% kind ${Math.round(r.confidence.kind * 100)}% · ${r.ms}ms` : "no route"}`
+    );
     check("a real question routes", r !== null);
     check("to customers, ranked, in August", r?.list === "customers" && r?.kind === "ranking" && r?.month === 8);
     const b = await routeQuestion("make me a returns section with a reason and refund amount");

@@ -42,7 +42,10 @@ const env = Object.fromEntries(
 const APP = process.env.APP_URL ?? "http://localhost:3100";
 // Played back unless asked to record: free, and the same every run.
 process.env.MODEL_TAPE ??= "replay";
-for (const l of readFileSync(new URL(`../${process.env.MODEL_ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8").split("\n")) {
+for (const l of readFileSync(
+  new URL(`../${process.env.MODEL_ENV_FILE ?? ".env.local"}`, import.meta.url),
+  "utf8"
+).split("\n")) {
   const m = l.match(/^(ANTHROPIC_[A-Z_]+|GEMINI_API_KEY)=(.*)$/);
   if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
 }
@@ -89,7 +92,10 @@ async function ask(message) {
     );
   }
   const text = await res.text();
-  const lines = text.split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  const lines = text
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => JSON.parse(l));
   return {
     status: res.status,
     lines,
@@ -103,7 +109,21 @@ try {
   const store = must(
     await admin
       .from("stores")
-      .insert({ project_id: project.id, shop_domain: `luke-${stamp}.myshopify.com`, status: "connected", currency: "INR", timezone: "Asia/Kolkata", granted_scopes: ["read_orders", "write_orders", "read_products", "write_products", "read_customers", "write_customers"] })
+      .insert({
+        project_id: project.id,
+        shop_domain: `luke-${stamp}.myshopify.com`,
+        status: "connected",
+        currency: "INR",
+        timezone: "Asia/Kolkata",
+        granted_scopes: [
+          "read_orders",
+          "write_orders",
+          "read_products",
+          "write_products",
+          "read_customers",
+          "write_customers",
+        ],
+      })
       .select("id")
       .single()
   );
@@ -138,10 +158,18 @@ try {
   check("with the facts right: 777, and not paid", unpaid(reply?.message));
   if (reply) show(reply.message);
   const told = out.steps.filter((s) => s.step === "lookup").map((s) => s.about);
-  check("and every lookup it told is on the receipt", JSON.stringify(reply?.grounding?.looked_up ?? []) === JSON.stringify(told));
+  check(
+    "and every lookup it told is on the receipt",
+    JSON.stringify(reply?.grounding?.looked_up ?? []) === JSON.stringify(told)
+  );
   const drafts = out.words.filter(Boolean);
   check("its words arrived as they were written", drafts.length >= 1);
-  check("growing toward the reply, and ending as its message", !!reply?.message && drafts.every((d) => reply.message.startsWith(d.trimEnd()) || d === reply.message) && (drafts.at(-1) === reply.message || reply.message.startsWith(drafts.at(-1))));
+  check(
+    "growing toward the reply, and ending as its message",
+    !!reply?.message &&
+      drafts.every((d) => reply.message.startsWith(d.trimEnd()) || d === reply.message) &&
+      (drafts.at(-1) === reply.message || reply.message.startsWith(drafts.at(-1)))
+  );
   if (drafts.length) show(drafts.slice(-3));
   check("and nothing came after the reply", "reply" in (out.lines.at(-1) ?? {}));
 
@@ -158,7 +186,10 @@ try {
   });
   check("no rows for #1001 were routed in", !steps.find((e) => e.step === "store")?.read);
   check("the turn answers", turn.ok && turn.reply.type === "answer");
-  check("by looking the order up, and saying so as it happened", steps.some((e) => e.step === "lookup" && /1001/.test(e.about)));
+  check(
+    "by looking the order up, and saying so as it happened",
+    steps.some((e) => e.step === "lookup" && /1001/.test(e.about))
+  );
   check("with the facts it read: 777, and not paid", turn.ok && unpaid(turn.reply.message));
   if (turn.ok) show(turn.reply.message);
   check("and the turn keeps what it looked up, for the receipt", turn.ok && turn.lookedUp.some((a) => /1001/.test(a)));
@@ -171,30 +202,65 @@ try {
   check("without spending a lookup", !plain.steps.some((s) => s.step === "lookup"));
   if (plain.steps.some((s) => s.step === "lookup")) show(plain.steps.filter((s) => s.step === "lookup"));
   console.log("\na change to the shop, asked for");
-  const { data: setting } = await admin.from("account_settings").select("store_actions_enabled").eq("user_id", me.user.id).maybeSingle();
+  const { data: setting } = await admin
+    .from("account_settings")
+    .select("store_actions_enabled")
+    .eq("user_id", me.user.id)
+    .maybeSingle();
   const was = setting?.store_actions_enabled ?? false;
   const setSwitch = async (on) =>
-    must(await admin.from("account_settings").upsert({ user_id: me.user.id, store_actions_enabled: on }, { onConflict: "user_id" }).select("user_id"));
-  const target = must(await admin.from("orders").select("external_id").eq("store_id", store.id).eq("order_number", "#1003").single()).external_id;
+    must(
+      await admin
+        .from("account_settings")
+        .upsert({ user_id: me.user.id, store_actions_enabled: on }, { onConflict: "user_id" })
+        .select("user_id")
+    );
+  const target = must(
+    await admin.from("orders").select("external_id").eq("store_id", store.id).eq("order_number", "#1003").single()
+  ).external_id;
   try {
     await setSwitch(true);
     const change = await ask("Please add the tag VIP to order #1003.");
-    const rows = must(await admin.from("store_actions").select("action, status, targets, params, summary, requested_by, client_id").eq("project_id", project.id));
+    const rows = must(
+      await admin
+        .from("store_actions")
+        .select("action, status, targets, params, summary, requested_by, client_id")
+        .eq("project_id", project.id)
+    );
     check("it becomes one request, waiting for the merchant", rows.length === 1 && rows[0].status === "pending");
     if (rows.length !== 1) show({ rows, steps: change.steps, last: change.last });
     const row = rows[0];
-    check("to add the tag VIP, on #1003's own Shopify id", row?.action === "add_tags" && JSON.stringify(row?.params?.tags) === '["VIP"]' && row?.targets?.length === 1 && row.targets[0].id === target);
-    check("asked as the merchant, not as an outside client", row?.requested_by === me.user.id && row?.client_id === null);
-    check("the turn says it asked", change.steps.some((s) => s.step === "proposed" && s.summary === row?.summary));
+    check(
+      "to add the tag VIP, on #1003's own Shopify id",
+      row?.action === "add_tags" &&
+        JSON.stringify(row?.params?.tags) === '["VIP"]' &&
+        row?.targets?.length === 1 &&
+        row.targets[0].id === target
+    );
+    check(
+      "asked as the merchant, not as an outside client",
+      row?.requested_by === me.user.id && row?.client_id === null
+    );
+    check(
+      "the turn says it asked",
+      change.steps.some((s) => s.step === "proposed" && s.summary === row?.summary)
+    );
     const said = change.last.reply?.message ?? "";
-    check("and the reply says it is waiting for them, not done", /wait|approv|confirm|yes|agree/i.test(said) && !/\b(done|added|tagged)\b(?!.*(once|when|after))/i.test(said.replace(/will be (added|tagged)/gi, "")));
+    check(
+      "and the reply says it is waiting for them, not done",
+      /wait|approv|confirm|yes|agree/i.test(said) &&
+        !/\b(done|added|tagged)\b(?!.*(once|when|after))/i.test(said.replace(/will be (added|tagged)/gi, ""))
+    );
     show(said);
 
     await setSwitch(false);
     const before = rows.length;
     const refused = await ask("Please add the tag VIP to order #1004.");
     const after = must(await admin.from("store_actions").select("id").eq("project_id", project.id)).length;
-    check("with the switch off, the same words ask for nothing", after === before && !refused.steps.some((s) => s.step === "proposed"));
+    check(
+      "with the switch off, the same words ask for nothing",
+      after === before && !refused.steps.some((s) => s.step === "proposed")
+    );
   } finally {
     await setSwitch(was);
   }

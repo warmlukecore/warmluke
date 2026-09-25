@@ -39,16 +39,25 @@ const check = (name, cond) => {
 console.log("a list is found wherever its root says it is");
 const page = { pageInfo: { hasNextPage: false, endCursor: "x" }, nodes: [{ id: "a" }] };
 check("one step down, as every other resource is", pageAt({ orders: page }, "orders")?.nodes.length === 1);
-check("two steps down, as payouts are", pageAt({ shopifyPaymentsAccount: { payouts: page } }, "shopifyPaymentsAccount.payouts")?.nodes.length === 1);
+check(
+  "two steps down, as payouts are",
+  pageAt({ shopifyPaymentsAccount: { payouts: page } }, "shopifyPaymentsAccount.payouts")?.nodes.length === 1
+);
 // The case that is most of the world: no Shopify Payments at all.
-check("a null account reads as no page, not a crash", pageAt({ shopifyPaymentsAccount: null }, "shopifyPaymentsAccount.payouts") === null);
+check(
+  "a null account reads as no page, not a crash",
+  pageAt({ shopifyPaymentsAccount: null }, "shopifyPaymentsAccount.payouts") === null
+);
 check("a missing account does too", pageAt({}, "shopifyPaymentsAccount.payouts") === null);
 check("and so does nothing at all", pageAt(null, "shopifyPaymentsAccount.payouts") === null);
 // Half a page is not a page.
 check("a page with no nodes array is refused", pageAt({ orders: { pageInfo: {} } }, "orders") === null);
 check("a page with no pageInfo is refused", pageAt({ orders: { nodes: [] } }, "orders") === null);
 check("an empty page is still a page", pageAt({ orders: { pageInfo: {}, nodes: [] } }, "orders")?.nodes.length === 0);
-check("the payouts resource points two steps down", SHOPIFY_RESOURCES.payouts.root === "shopifyPaymentsAccount.payouts");
+check(
+  "the payouts resource points two steps down",
+  SHOPIFY_RESOURCES.payouts.root === "shopifyPaymentsAccount.payouts"
+);
 // No topic exists, and saying so out loud stops somebody adding one
 // that Shopify will refuse to subscribe.
 check("and subscribes to no webhook, because none exists", SHOPIFY_RESOURCES.payouts.webhooks.length === 0);
@@ -68,34 +77,47 @@ try {
   const { data: store } = await admin
     .from("stores")
     .insert({ project_id: project.id, shop_domain: `pay-${stamp}.myshopify.com`, status: "connected" })
-    .select("id").single();
+    .select("id")
+    .single();
 
   const money = (a) => ({ amount: a });
   await savePayouts(admin, store.id, [
     {
       id: `gid://shopify/ShopifyPaymentsPayout/${stamp}1`,
-      status: "PAID", transactionType: "DEPOSIT", issuedAt: "2026-09-18T00:00:00Z",
+      status: "PAID",
+      transactionType: "DEPOSIT",
+      issuedAt: "2026-09-18T00:00:00Z",
       net: { amount: "4182.55", currencyCode: "USD" },
       summary: {
-        chargesGross: money("4500.00"), chargesFee: money("130.50"),
-        refundsFeeGross: money("200.00"), refundsFee: money("5.00"),
-        adjustmentsGross: money("20.00"), adjustmentsFee: money("1.95"),
-        reservedFundsGross: money("0.00"), reservedFundsFee: money("0.00"),
-        retriedPayoutsGross: money("0.00"), retriedPayoutsFee: money("0.00"),
-        advanceGross: money("0.00"), advanceFees: money("0.00"),
+        chargesGross: money("4500.00"),
+        chargesFee: money("130.50"),
+        refundsFeeGross: money("200.00"),
+        refundsFee: money("5.00"),
+        adjustmentsGross: money("20.00"),
+        adjustmentsFee: money("1.95"),
+        reservedFundsGross: money("0.00"),
+        reservedFundsFee: money("0.00"),
+        retriedPayoutsGross: money("0.00"),
+        retriedPayoutsFee: money("0.00"),
+        advanceGross: money("0.00"),
+        advanceFees: money("0.00"),
       },
     },
     // Money going the other way. The row that makes a naive sum lie.
     {
       id: `gid://shopify/ShopifyPaymentsPayout/${stamp}2`,
-      status: "PAID", transactionType: "WITHDRAWAL", issuedAt: "2026-09-19T00:00:00Z",
+      status: "PAID",
+      transactionType: "WITHDRAWAL",
+      issuedAt: "2026-09-19T00:00:00Z",
       net: { amount: "300.00", currencyCode: "USD" },
       summary: { chargesGross: money("0.00"), chargesFee: money("0.00") },
     },
     // Not in the bank yet, and a summary Shopify did not fill in.
     {
       id: `gid://shopify/ShopifyPaymentsPayout/${stamp}3`,
-      status: "SCHEDULED", transactionType: "DEPOSIT", issuedAt: "2026-09-22T00:00:00Z",
+      status: "SCHEDULED",
+      transactionType: "DEPOSIT",
+      issuedAt: "2026-09-22T00:00:00Z",
       net: { amount: "910.00", currencyCode: "USD" },
       summary: null,
     },
@@ -106,13 +128,22 @@ try {
   const [deposit, withdrawal, scheduled] = rows;
   check("the net is what Shopify said moved", Number(deposit?.net) === 4182.55);
   check("with its currency", deposit?.currency === "USD");
-  check("every component is kept, so the parts explain the whole", Number(deposit?.charges_gross) === 4500 && Number(deposit?.charges_fee) === 130.5 && Number(deposit?.refunds_gross) === 200 && Number(deposit?.adjustments_fee) === 1.95);
+  check(
+    "every component is kept, so the parts explain the whole",
+    Number(deposit?.charges_gross) === 4500 &&
+      Number(deposit?.charges_fee) === 130.5 &&
+      Number(deposit?.refunds_gross) === 200 &&
+      Number(deposit?.adjustments_fee) === 1.95
+  );
   check("a withdrawal is marked as one", withdrawal?.kind === "WITHDRAWAL");
   check("and a deposit as one", deposit?.kind === "DEPOSIT");
   check("a payout still on its way says so", scheduled?.status === "SCHEDULED");
   // Null, never zero: a summary Shopify did not send is unknown, and
   // zero would be a payout with no fees, which is a different claim.
-  check("a missing summary leaves the parts unknown, not zero", scheduled?.charges_gross === null && scheduled?.charges_fee === null);
+  check(
+    "a missing summary leaves the parts unknown, not zero",
+    scheduled?.charges_gross === null && scheduled?.charges_fee === null
+  );
 
   console.log("\nand what a merchant reads");
   const view = (await admin.from("store_payouts").select("*").eq("store_id", store.id).order("issued_at")).data ?? [];
@@ -130,7 +161,8 @@ try {
   const { data: other } = await admin
     .from("stores")
     .insert({ project_id: project.id, shop_domain: `nopay-${stamp}.myshopify.com`, status: "connected" })
-    .select("id").single();
+    .select("id")
+    .single();
   await savePayouts(admin, other.id, []);
   const empty = (await admin.from("store_payouts").select("id").eq("store_id", other.id)).data ?? [];
   check("no rows, and no error", empty.length === 0);
@@ -139,5 +171,7 @@ try {
   console.log("\nthe project is gone");
 }
 
-console.log(fails.length === 0 ? "\nwhat reached the bank, kept apart from what was charged" : `\n${fails.length} FAILED`);
+console.log(
+  fails.length === 0 ? "\nwhat reached the bank, kept apart from what was charged" : `\n${fails.length} FAILED`
+);
 process.exit(fails.length === 0 ? 0 : 1);

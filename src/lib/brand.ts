@@ -9,7 +9,4 @@ export const LOGO = process.env.NEXT_PUBLIC_LOGO as string;
  * top, width and height, then the file's width and height. Empty when it
  * could not be measured, and the logo is shown whole.
  */
-export const LOGO_BOX: number[] = (process.env.NEXT_PUBLIC_LOGO_BOX ?? "")
-  .split(",")
-  .filter(Boolean)
-  .map(Number);
+export const LOGO_BOX: number[] = (process.env.NEXT_PUBLIC_LOGO_BOX ?? "").split(",").filter(Boolean).map(Number);

@@ -52,9 +52,7 @@ function ConsentInner() {
   useEffect(() => {
     (async () => {
       if (!authorizationId) {
-        setError(
-          "This link is missing its authorization. Start again from the app you're connecting."
-        );
+        setError("This link is missing its authorization. Start again from the app you're connecting.");
         setLoading(false);
         return;
       }
@@ -69,8 +67,7 @@ function ConsentInner() {
         return;
       }
 
-      const { data, error: err } =
-        await supabase.auth.oauth.getAuthorizationDetails(authorizationId);
+      const { data, error: err } = await supabase.auth.oauth.getAuthorizationDetails(authorizationId);
       if (err) {
         setError(err.message);
         setLoading(false);
@@ -134,17 +131,14 @@ function ConsentInner() {
 
   return (
     <Shell>
-      <h1 className="text-base font-semibold text-fg">
-        {name} wants access to your store
-      </h1>
+      <h1 className="text-base font-semibold text-fg">{name} wants access to your store</h1>
       <p className="mt-2">
-        It will be able to see your Shopify products, customers and orders through
-        Warmluke, and to ask for changes: to this app, and to your shop.
+        It will be able to see your Shopify products, customers and orders through Warmluke, and to ask for changes: to
+        this app, and to your shop.
       </p>
       <p className="mt-2">
-        Asking is all it can do. A change to your shop waits for you to agree to it
-        here, every time, and it cannot agree for you. A change to this app waits the
-        same way, unless you have turned on automatic builds.
+        Asking is all it can do. A change to your shop waits for you to agree to it here, every time, and it cannot
+        agree for you. A change to this app waits the same way, unless you have turned on automatic builds.
       </p>
 
       <ul className="mt-5 space-y-2 rounded-control bg-surface-subdued px-3 py-2.5">
@@ -157,23 +151,15 @@ function ConsentInner() {
       </ul>
 
       <p className="mt-5 text-xs text-fg-faint">
-        Sends you back to <span className="font-medium text-fg-muted">{host}</span>. If you don&rsquo;t
-        recognise that, say no.
+        Sends you back to <span className="font-medium text-fg-muted">{host}</span>. If you don&rsquo;t recognise that,
+        say no.
       </p>
 
       <div className="mt-6 flex gap-2">
-        <button
-          onClick={() => decide(true)}
-          disabled={!!busy}
-          className={`${button("primary", "lg")} flex-1`}
-        >
+        <button onClick={() => decide(true)} disabled={!!busy} className={`${button("primary", "lg")} flex-1`}>
           {busy === "approve" ? "Allowing…" : "Allow"}
         </button>
-        <button
-          onClick={() => decide(false)}
-          disabled={!!busy}
-          className={button("secondary", "lg")}
-        >
+        <button onClick={() => decide(false)} disabled={!!busy} className={button("secondary", "lg")}>
           {busy === "deny" ? "…" : "No"}
         </button>
       </div>

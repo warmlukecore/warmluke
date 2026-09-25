@@ -17,10 +17,7 @@ async function rulesPointingAt(
   projectId: string,
   moduleId: string
 ): Promise<string[]> {
-  const { data } = await client
-    .from("automations")
-    .select("*")
-    .eq("project_id", projectId);
+  const { data } = await client.from("automations").select("*").eq("project_id", projectId);
   const names: string[] = [];
   for (const a of (data ?? []) as AutomationRow[]) {
     if (a.module_id === moduleId) continue; // goes with the section anyway
@@ -68,9 +65,7 @@ export async function POST(req: Request) {
   if (!auth) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
   const { client } = auth;
 
-  const { projectId, nav_label, icon, parent_id, fields, source_table } = (await req
-    .json()
-    .catch(() => ({}))) as {
+  const { projectId, nav_label, icon, parent_id, fields, source_table } = (await req.json().catch(() => ({}))) as {
     projectId?: string;
     nav_label?: string;
     icon?: string;
@@ -84,8 +79,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "projectId and a name are required" }, { status: 400 });
   }
   const label = nav_label.trim().slice(0, 60);
-  const chosenIcon =
-    icon && (ALLOWED_ICONS as readonly string[]).includes(icon) ? icon : "table";
+  const chosenIcon = icon && (ALLOWED_ICONS as readonly string[]).includes(icon) ? icon : "table";
 
   // A section built on the store takes its columns from the store, not
   // from whatever fields the caller sent: the two have to agree or the
@@ -101,10 +95,7 @@ export async function POST(req: Request) {
       .eq("status", "connected")
       .maybeSingle();
     if (!store) {
-      return NextResponse.json(
-        { error: "No Shopify store is connected to this project yet." },
-        { status: 409 }
-      );
+      return NextResponse.json({ error: "No Shopify store is connected to this project yet." }, { status: 409 });
     }
   }
 
@@ -144,10 +135,7 @@ export async function POST(req: Request) {
   }
 
   // Slugs are unique per project, so make room for a second "Notes".
-  const { data: existing } = await client
-    .from("modules")
-    .select("name, sort_order")
-    .eq("project_id", projectId);
+  const { data: existing } = await client.from("modules").select("name, sort_order").eq("project_id", projectId);
   const taken = new Set((existing ?? []).map((m) => (m as ModuleRow).name));
   const base = toSlug(label);
   let slug = base;
@@ -279,10 +267,7 @@ export async function PATCH(req: Request) {
         .eq("status", "connected")
         .maybeSingle();
       if (!store) {
-        return NextResponse.json(
-          { error: "No Shopify store is connected to this project yet." },
-          { status: 409 }
-        );
+        return NextResponse.json({ error: "No Shopify store is connected to this project yet." }, { status: 409 });
       }
       storeSchemaFor = source_table;
     }
@@ -293,12 +278,7 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
   }
 
-  const { data, error } = await client
-    .from("modules")
-    .update(patch)
-    .eq("id", id)
-    .eq("project_id", projectId)
-    .select();
+  const { data, error } = await client.from("modules").update(patch).eq("id", id).eq("project_id", projectId).select();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!data?.length) return NextResponse.json({ error: "Section not found." }, { status: 404 });
 
@@ -359,10 +339,7 @@ export async function DELETE(req: Request) {
   if (!mod) return NextResponse.json({ error: "Section not found." }, { status: 404 });
 
   if ((confirmName ?? "").trim().toLowerCase() !== mod.nav_label.trim().toLowerCase()) {
-    return NextResponse.json(
-      { error: "Type the section's name exactly to delete it." },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Type the section's name exactly to delete it." }, { status: 400 });
   }
 
   const orphaned = await rulesPointingAt(client, projectId, id);

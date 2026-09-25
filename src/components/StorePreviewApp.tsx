@@ -21,7 +21,20 @@
 // ─────────────────────────────────────────────────────────────
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowUp, Bell, ChevronRight, ChevronsUpDown, LayoutDashboard, Menu, Plus, RefreshCw, Search, Settings, Sparkles, X } from "lucide-react";
+import {
+  ArrowUp,
+  Bell,
+  ChevronRight,
+  ChevronsUpDown,
+  LayoutDashboard,
+  Menu,
+  Plus,
+  RefreshCw,
+  Search,
+  Settings,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
 import { LukeMark } from "@/components/ui/LukeMark";
 import { Icon } from "@/components/ui/Icon";
@@ -151,7 +164,12 @@ function rowsOf(table: StoreTable, now: number): Array<Record<string, unknown>> 
         status: "ACTIVE",
       }));
     case "customers":
-      return CUSTOMERS.map((c) => ({ name: c.name, city: cityOf(c.name), orders_count: c.orders.length, total_spent: c.spent }));
+      return CUSTOMERS.map((c) => ({
+        name: c.name,
+        city: cityOf(c.name),
+        orders_count: c.orders.length,
+        total_spent: c.spent,
+      }));
     default:
       return [...VARIANTS]
         .sort((a, b) => a.stock - b.stock)
@@ -169,7 +187,14 @@ function rowsOf(table: StoreTable, now: number): Array<Record<string, unknown>> 
 }
 
 const asRecords = (rows: Array<Record<string, unknown>>, module: string): RecordRow[] =>
-  rows.map((data, i) => ({ id: `${module}-${i}`, project_id: "sample", module_id: module, data, created_at: "", updated_at: "" }));
+  rows.map((data, i) => ({
+    id: `${module}-${i}`,
+    project_id: "sample",
+    module_id: module,
+    data,
+    created_at: "",
+    updated_at: "",
+  }));
 
 /** A section's own columns, only those the sample store fills: an empty column is noise in a glimpse. */
 const columnsFor = (table: StoreTable, rows: Array<Record<string, unknown>>): SchemaColumn[] =>
@@ -183,7 +208,17 @@ const TRACKER_COLUMNS: SchemaColumn[] = [
   { field: "refund", label: "Refund", type: "currency" },
 ];
 
-function App({ now, narrow, theme, onTheme }: { now: number; narrow: boolean; theme: Theme; onTheme: (t: Theme) => void }) {
+function App({
+  now,
+  narrow,
+  theme,
+  onTheme,
+}: {
+  now: number;
+  narrow: boolean;
+  theme: Theme;
+  onTheme: (t: Theme) => void;
+}) {
   const [place, setPlace] = useState<Place>("overview");
   const [navOpen, setNavOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -198,7 +233,10 @@ function App({ now, narrow, theme, onTheme }: { now: number; narrow: boolean; th
   }, [leaving]);
   const data = useMemo(() => overviewOf(now), [now]);
   const latest: DetailRow[] = useMemo(
-    () => rowsOf("orders", now).slice(0, 6).map((r, i) => ({ id: `latest-${i}`, data: r })),
+    () =>
+      rowsOf("orders", now)
+        .slice(0, 6)
+        .map((r, i) => ({ id: `latest-${i}`, data: r })),
     [now]
   );
 
@@ -207,10 +245,15 @@ function App({ now, narrow, theme, onTheme }: { now: number; narrow: boolean; th
     setSort(null);
     setNavOpen(false);
   };
-  const store = CORE_STORE_TABLES.map((t) => ({ id: t, label: STORE_TABLES[t].section.label, icon: STORE_TABLES[t].section.icon }));
+  const store = CORE_STORE_TABLES.map((t) => ({
+    id: t,
+    label: STORE_TABLES[t].section.label,
+    icon: STORE_TABLES[t].section.icon,
+  }));
   const q = query.trim().toLowerCase();
   const shows = (label: string) => !q || label.toLowerCase().includes(q);
-  const title = place === "overview" ? "Overview" : place === TRACKER.id ? TRACKER.label : STORE_TABLES[place].section.label;
+  const title =
+    place === "overview" ? "Overview" : place === TRACKER.id ? TRACKER.label : STORE_TABLES[place].section.label;
 
   const item = (id: Place, label: string, glyph: React.ReactNode) => (
     <div
@@ -244,7 +287,9 @@ function App({ now, narrow, theme, onTheme }: { now: number; narrow: boolean; th
   const sidebar = (
     <aside
       className={`flex w-60 shrink-0 flex-col overflow-hidden bg-frame text-frame-fg ${
-        narrow ? `absolute inset-y-0 left-0 z-40 transition-transform duration-200 ${navOpen ? "translate-x-0" : "-translate-x-full"}` : ""
+        narrow
+          ? `absolute inset-y-0 left-0 z-40 transition-transform duration-200 ${navOpen ? "translate-x-0" : "-translate-x-full"}`
+          : ""
       }`}
     >
       <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
@@ -254,7 +299,11 @@ function App({ now, narrow, theme, onTheme }: { now: number; narrow: boolean; th
           <div className="max-w-[9rem] truncate text-[11px] text-frame-fg-muted">{STORE.email}</div>
         </div>
         {narrow ? (
-          <button onClick={() => setNavOpen(false)} aria-label="Close sections" className="ml-auto rounded-control p-1.5 text-frame-fg-muted hover:bg-frame-raised hover:text-white">
+          <button
+            onClick={() => setNavOpen(false)}
+            aria-label="Close sections"
+            className="ml-auto rounded-control p-1.5 text-frame-fg-muted hover:bg-frame-raised hover:text-white"
+          >
             <X aria-hidden size={16} strokeWidth={1.75} />
           </button>
         ) : (
@@ -277,7 +326,8 @@ function App({ now, narrow, theme, onTheme }: { now: number; narrow: boolean; th
         </label>
       </div>
       <nav aria-label="Sample store" className="flex-1 overflow-y-auto px-3 py-1">
-        {shows("Overview") && item("overview", "Overview", <LayoutDashboard aria-hidden size={16} strokeWidth={1.75} />)}
+        {shows("Overview") &&
+          item("overview", "Overview", <LayoutDashboard aria-hidden size={16} strokeWidth={1.75} />)}
         {store.some((s) => shows(s.label)) && heading("Store")}
         {store.filter((s) => shows(s.label)).map((s) => item(s.id, s.label, <Icon name={s.icon} />))}
         {shows(TRACKER.label) && heading("Your sections")}
@@ -327,7 +377,13 @@ function App({ now, narrow, theme, onTheme }: { now: number; narrow: boolean; th
       const records = asRecords(
         [...RETURNS]
           .sort((a, b) => STAGES.indexOf(a.stage) - STAGES.indexOf(b.stage))
-          .map((r) => ({ order: `#${r.order.number}`, item: r.item, reason: r.reason, stage: r.stage, refund: r.order.total })),
+          .map((r) => ({
+            order: `#${r.order.number}`,
+            item: r.item,
+            reason: r.reason,
+            stage: r.stage,
+            refund: r.order.total,
+          })),
         TRACKER.id
       );
       return (
@@ -342,7 +398,10 @@ function App({ now, narrow, theme, onTheme }: { now: number; narrow: boolean; th
     const rows = rowsOf(place, now);
     const columns = columnsFor(place, rows);
     const col = sort ? columns.find((c) => c.field === sort.field) : undefined;
-    const sorted = col && sort ? [...rows].sort((a, b) => compare(a[col.field], b[col.field], col.type) * (sort.dir === "asc" ? 1 : -1)) : rows;
+    const sorted =
+      col && sort
+        ? [...rows].sort((a, b) => compare(a[col.field], b[col.field], col.type) * (sort.dir === "asc" ? 1 : -1))
+        : rows;
     const records = asRecords(sorted, place);
     return (
       <div className="overflow-hidden rounded-card bg-surface shadow-card">
@@ -351,7 +410,11 @@ function App({ now, narrow, theme, onTheme }: { now: number; narrow: boolean; th
           records={records}
           allRecordCount={records.length}
           sort={sort}
-          onSort={(field) => setSort((s) => (s?.field === field ? { field, dir: s.dir === "asc" ? "desc" : "asc" } : { field, dir: "asc" }))}
+          onSort={(field) =>
+            setSort((s) =>
+              s?.field === field ? { field, dir: s.dir === "asc" ? "desc" : "asc" } : { field, dir: "asc" }
+            )
+          }
         />
       </div>
     );
@@ -374,7 +437,11 @@ function App({ now, narrow, theme, onTheme }: { now: number; narrow: boolean; th
         <h2 className="mt-4 text-lg font-semibold text-fg">{LUKE_COPY.emptyTitle}</h2>
         <p className="mt-1.5 max-w-xs text-[13px] leading-relaxed text-fg-muted">{LUKE_COPY.emptyBody}</p>
       </div>
-      <a href="#mcp" data-cta="preview_own_ai" className="flex items-center gap-2.5 border-t border-line px-4 py-2.5 text-[13px] transition-colors hover:bg-surface-hover">
+      <a
+        href="#mcp"
+        data-cta="preview_own_ai"
+        className="flex items-center gap-2.5 border-t border-line px-4 py-2.5 text-[13px] transition-colors hover:bg-surface-hover"
+      >
         <span className="flex -space-x-1.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logos/claude.svg" alt="" className="h-6 w-6 rounded-full bg-surface p-1 ring-1 ring-line" />
@@ -417,7 +484,9 @@ function App({ now, narrow, theme, onTheme }: { now: number; narrow: boolean; th
     >
       {narrow && navOpen && <div onClick={() => setNavOpen(false)} className="absolute inset-0 z-30 bg-black/40" />}
       {sidebar}
-      <main className={`flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas ${narrow ? "" : "rounded-card shadow-card"}`}>
+      <main
+        className={`flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas ${narrow ? "" : "rounded-card shadow-card"}`}
+      >
         <header className="flex items-center justify-between gap-2 border-b border-line bg-canvas px-3 py-3 sm:px-6 sm:py-3.5">
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             {narrow && (
@@ -436,20 +505,31 @@ function App({ now, narrow, theme, onTheme }: { now: number; narrow: boolean; th
             )}
           </div>
         </header>
-        <div key={place} className="thin-scroll rise flex-1 overflow-y-auto p-4 [--rise-after:0s] [--rise-for:0.3s] [--rise-from:6px] sm:p-6">
+        <div
+          key={place}
+          className="thin-scroll rise flex-1 overflow-y-auto p-4 [--rise-after:0s] [--rise-for:0.3s] [--rise-from:6px] sm:p-6"
+        >
           {canvas()}
         </div>
       </main>
       {!narrow && luke}
       {leaving && (
-        <div role="status" className="pop absolute top-20 left-1/2 z-50 flex w-[26rem] max-w-[calc(100%-2rem)] -translate-x-1/2 items-start gap-3 rounded-card bg-surface p-4 text-left shadow-popover">
+        <div
+          role="status"
+          className="pop absolute top-20 left-1/2 z-50 flex w-[26rem] max-w-[calc(100%-2rem)] -translate-x-1/2 items-start gap-3 rounded-card bg-surface p-4 text-left shadow-popover"
+        >
           <LukeMark size="sm" />
           <div className="min-w-0 flex-1">
             <div className="text-[13px] font-semibold text-fg">Luke</div>
             <p className="mt-0.5 text-[13px] leading-relaxed text-fg-muted">
               That is a sample store, so there is no Shopify admin behind it. Connect yours, and this opens your own.
             </p>
-            <a href="#book" data-cta="preview_admin_book" onClick={() => setLeaving(false)} className={`${button("primary", "sm")} mt-2.5`}>
+            <a
+              href="#book"
+              data-cta="preview_admin_book"
+              onClick={() => setLeaving(false)}
+              className={`${button("primary", "sm")} mt-2.5`}
+            >
               Book a demo
             </a>
           </div>

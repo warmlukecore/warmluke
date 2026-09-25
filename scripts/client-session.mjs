@@ -29,10 +29,7 @@ const b64url = (buf) => Buffer.from(buf).toString("base64url");
  * function the checks already build.
  */
 export async function signInAsClient(env, app, email = undefined) {
-  const anon = createClient(
-    env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-    env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
-  );
+  const anon = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY);
   // The check user by default: a client that builds things must build
   // them on a project that exists for the run, not the merchant's.
   const owner = email ? await signInAsOwner(anon, env, email) : await signInAsCheckUser(anon, env);
@@ -41,9 +38,7 @@ export async function signInAsClient(env, app, email = undefined) {
   const resource = await fetch(`${app}/.well-known/oauth-protected-resource`).then((r) => r.json());
   const as = resource.authorization_servers?.[0];
   if (!as) return { token: null, why: "the resource document names no authorization server" };
-  const meta = await fetch(`${as.replace(/\/$/, "")}/.well-known/oauth-authorization-server`).then((r) =>
-    r.json()
-  );
+  const meta = await fetch(`${as.replace(/\/$/, "")}/.well-known/oauth-authorization-server`).then((r) => r.json());
 
   // 1. A client, registered the way claude.ai registers itself.
   const redirectUri = `${app}/oauth/check-callback`;
@@ -59,7 +54,8 @@ export async function signInAsClient(env, app, email = undefined) {
     }),
   }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) }));
   const clientId = reg.body?.client_id;
-  if (!clientId) return { token: null, why: `registration refused: ${reg.status} ${JSON.stringify(reg.body).slice(0, 200)}` };
+  if (!clientId)
+    return { token: null, why: `registration refused: ${reg.status} ${JSON.stringify(reg.body).slice(0, 200)}` };
 
   // 2. Ask for a code. The server answers with a redirect to the app's
   //    consent page carrying an authorization_id.
@@ -86,8 +82,7 @@ export async function signInAsClient(env, app, email = undefined) {
   // 3. Approve, as the signed-in owner — the consent page's button.
   //    Details first, exactly as the page does: approving an
   //    authorization the session has not yet looked at is "not found".
-  const { data: details, error: detailsErr } =
-    await anon.auth.oauth.getAuthorizationDetails(authorizationId);
+  const { data: details, error: detailsErr } = await anon.auth.oauth.getAuthorizationDetails(authorizationId);
   if (detailsErr) {
     return { token: null, why: `consent details refused: ${detailsErr.message} (from ${consent.slice(0, 120)})` };
   }
@@ -115,7 +110,8 @@ export async function signInAsClient(env, app, email = undefined) {
     }),
   }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) }));
   const token = tok.body?.access_token;
-  if (!token) return { token: null, why: `token exchange refused: ${tok.status} ${JSON.stringify(tok.body).slice(0, 200)}` };
+  if (!token)
+    return { token: null, why: `token exchange refused: ${tok.status} ${JSON.stringify(tok.body).slice(0, 200)}` };
 
   const claims = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8"));
 

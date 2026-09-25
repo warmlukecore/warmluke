@@ -15,13 +15,7 @@ const SIZES = {
   xl: { box: "h-24 w-24", eye: "h-5 w-3", gap: "gap-4", grain: true },
 } as const;
 
-export function LukeMark({
-  size = "sm",
-  state = "idle",
-}: {
-  size?: keyof typeof SIZES;
-  state?: "idle" | "thinking";
-}) {
+export function LukeMark({ size = "sm", state = "idle" }: { size?: keyof typeof SIZES; state?: "idle" | "thinking" }) {
   const s = SIZES[size];
   const grain = `luke-grain-${useId().replace(/\W/g, "")}`;
   return (

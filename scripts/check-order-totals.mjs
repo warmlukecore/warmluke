@@ -47,7 +47,8 @@ const { data: store } = await admin
   .single();
 
 const row = async (ext) =>
-  (await admin.from("orders").select("total, total_original").eq("store_id", store.id).eq("external_id", ext).single()).data;
+  (await admin.from("orders").select("total, total_original").eq("store_id", store.id).eq("external_id", ext).single())
+    .data;
 const money = (amount) => ({ shopMoney: { amount, currencyCode: "USD" } });
 
 try {
@@ -55,12 +56,22 @@ try {
   // Placed at 597, 50 refunded since: Shopify says 547 today.
   await saveOrders(admin, store.id, [
     {
-      id: `gid://shopify/Order/${stamp}1`, name: "#9001",
-      createdAt: "2026-09-14T10:00:00Z", updatedAt: "2026-09-15T10:00:00Z", cancelledAt: null, tags: [],
-      displayFinancialStatus: "PARTIALLY_REFUNDED", displayFulfillmentStatus: "FULFILLED",
-      totalPriceSet: money("597.00"), currentTotalPriceSet: money("547.00"),
-      customer: null, lineItems: { nodes: [] }, refunds: [],
-      paymentGatewayNames: ["manual"], discountCodes: [], shippingAddress: { city: "Pune", provinceCode: "MH", countryCode: "IN" },
+      id: `gid://shopify/Order/${stamp}1`,
+      name: "#9001",
+      createdAt: "2026-09-14T10:00:00Z",
+      updatedAt: "2026-09-15T10:00:00Z",
+      cancelledAt: null,
+      tags: [],
+      displayFinancialStatus: "PARTIALLY_REFUNDED",
+      displayFulfillmentStatus: "FULFILLED",
+      totalPriceSet: money("597.00"),
+      currentTotalPriceSet: money("547.00"),
+      customer: null,
+      lineItems: { nodes: [] },
+      refunds: [],
+      paymentGatewayNames: ["manual"],
+      discountCodes: [],
+      shippingAddress: { city: "Pune", provinceCode: "MH", countryCode: "IN" },
       // 2650 of goods, 100 postage, 147 tax, 50 given away.
       currentSubtotalPriceSet: money("2650.00"),
       currentTotalTaxSet: money("147.00"),
@@ -70,38 +81,90 @@ try {
       // merchant made themselves. Collected is 547, and only if the
       // test one is left out.
       transactions: [
-        { id: `gid://shopify/OrderTransaction/${stamp}A`, kind: "SALE", status: "SUCCESS", gateway: "razorpay", processedAt: "2026-09-14T10:01:00Z", test: false, amountSet: { shopMoney: { amount: "597.00", currencyCode: "USD" } } },
-        { id: `gid://shopify/OrderTransaction/${stamp}B`, kind: "REFUND", status: "SUCCESS", gateway: "razorpay", processedAt: "2026-09-15T11:00:00Z", test: false, amountSet: { shopMoney: { amount: "50.00", currencyCode: "USD" } } },
-        { id: `gid://shopify/OrderTransaction/${stamp}C`, kind: "SALE", status: "SUCCESS", gateway: "bogus", processedAt: "2026-09-14T09:00:00Z", test: true, amountSet: { shopMoney: { amount: "999.00", currencyCode: "USD" } } },
+        {
+          id: `gid://shopify/OrderTransaction/${stamp}A`,
+          kind: "SALE",
+          status: "SUCCESS",
+          gateway: "razorpay",
+          processedAt: "2026-09-14T10:01:00Z",
+          test: false,
+          amountSet: { shopMoney: { amount: "597.00", currencyCode: "USD" } },
+        },
+        {
+          id: `gid://shopify/OrderTransaction/${stamp}B`,
+          kind: "REFUND",
+          status: "SUCCESS",
+          gateway: "razorpay",
+          processedAt: "2026-09-15T11:00:00Z",
+          test: false,
+          amountSet: { shopMoney: { amount: "50.00", currencyCode: "USD" } },
+        },
+        {
+          id: `gid://shopify/OrderTransaction/${stamp}C`,
+          kind: "SALE",
+          status: "SUCCESS",
+          gateway: "bogus",
+          processedAt: "2026-09-14T09:00:00Z",
+          test: true,
+          amountSet: { shopMoney: { amount: "999.00", currencyCode: "USD" } },
+        },
       ],
     },
   ]);
   const imported = await row(`gid://shopify/Order/${stamp}1`);
   check("total is what it comes to today", Number(imported?.total) === 547);
   check("and the original is kept beside it", Number(imported?.total_original) === 597);
-  const { data: importedPlace } = await admin.from("orders").select("gateway, ship_city, ship_state").eq("store_id", store.id).eq("external_id", `gid://shopify/Order/${stamp}1`).single();
-  check("what paid and where it went came across", importedPlace?.gateway === "manual" && importedPlace?.ship_city === "Pune" && importedPlace?.ship_state === "MH");
+  const { data: importedPlace } = await admin
+    .from("orders")
+    .select("gateway, ship_city, ship_state")
+    .eq("store_id", store.id)
+    .eq("external_id", `gid://shopify/Order/${stamp}1`)
+    .single();
+  check(
+    "what paid and where it went came across",
+    importedPlace?.gateway === "manual" && importedPlace?.ship_city === "Pune" && importedPlace?.ship_state === "MH"
+  );
 
   console.log("\nwhat the total is made of");
   const parts = async (ext) =>
-    (await admin.from("orders").select("total, subtotal, tax, shipping, discount").eq("store_id", store.id).eq("external_id", ext).single()).data;
+    (
+      await admin
+        .from("orders")
+        .select("total, subtotal, tax, shipping, discount")
+        .eq("store_id", store.id)
+        .eq("external_id", ext)
+        .single()
+    ).data;
   const made = await parts(`gid://shopify/Order/${stamp}1`);
-  check("the goods, the postage, the tax and the giveaway all landed",
-    Number(made?.subtotal) === 2650 && Number(made?.shipping) === 100 && Number(made?.tax) === 147 && Number(made?.discount) === 50);
+  check(
+    "the goods, the postage, the tax and the giveaway all landed",
+    Number(made?.subtotal) === 2650 &&
+      Number(made?.shipping) === 100 &&
+      Number(made?.tax) === 147 &&
+      Number(made?.discount) === 50
+  );
   // The reason the parts exist at all: the headline number is not
   // what the merchant earned on goods.
-  check("and they are not the same as the total", Number(made?.total) === 547 && Number(made?.subtotal) !== Number(made?.total));
+  check(
+    "and they are not the same as the total",
+    Number(made?.total) === 547 && Number(made?.subtotal) !== Number(made?.total)
+  );
 
   console.log("\nand the money itself, not what the order says about it");
   const ledger = async () =>
-    (await admin.from("order_transactions").select("kind, status, amount, gateway, test").eq("store_id", store.id)).data ?? [];
+    (await admin.from("order_transactions").select("kind, status, amount, gateway, test").eq("store_id", store.id))
+      .data ?? [];
   let paid = await ledger();
   check("every transaction landed", paid.length === 3);
   // The whole reason this list exists. financial_status says
   // PARTIALLY_REFUNDED and nothing more; these say what moved.
   const collected = (rows) =>
-    rows.filter((t) => !t.test && t.status === "SUCCESS" && ["SALE", "CAPTURE"].includes(t.kind)).reduce((n, t) => n + Number(t.amount), 0) -
-    rows.filter((t) => !t.test && t.status === "SUCCESS" && t.kind === "REFUND").reduce((n, t) => n + Number(t.amount), 0);
+    rows
+      .filter((t) => !t.test && t.status === "SUCCESS" && ["SALE", "CAPTURE"].includes(t.kind))
+      .reduce((n, t) => n + Number(t.amount), 0) -
+    rows
+      .filter((t) => !t.test && t.status === "SUCCESS" && t.kind === "REFUND")
+      .reduce((n, t) => n + Number(t.amount), 0);
   check("collected is the sale less the refund", collected(paid) === 547);
   check("and the test payment is not money", paid.some((t) => t.test) && collected(paid) !== 1546);
 
@@ -114,9 +177,15 @@ try {
     p_order: {
       id: hookId,
       admin_graphql_api_id: `gid://shopify/Order/${stamp}1`,
-      name: "#9001", created_at: "2026-09-14T10:00:00Z", updated_at: "2026-09-15T12:00:00Z",
-      financial_status: "partially_refunded", fulfillment_status: "fulfilled",
-      total_price: "597.00", current_total_price: "547.00", currency: "USD", tags: "",
+      name: "#9001",
+      created_at: "2026-09-14T10:00:00Z",
+      updated_at: "2026-09-15T12:00:00Z",
+      financial_status: "partially_refunded",
+      fulfillment_status: "fulfilled",
+      total_price: "597.00",
+      current_total_price: "547.00",
+      currency: "USD",
+      tags: "",
       line_items: [{ id: 1, title: "A thing", variant_title: "Blue", sku: "X", quantity: 2, price: "298.50" }],
       payment_gateway_names: ["Cash on Delivery (COD)"],
       // REST spells them flat, in snake case, and puts shipping only
@@ -130,16 +199,22 @@ try {
       // A shipment rides inside the order on this road too.
       fulfillments: [
         {
-          id: 501, status: "success", shipment_status: "in_transit",
-          tracking_company: "Delhivery", tracking_number: "DL123", tracking_url: "https://t/DL123",
-          created_at: "2026-09-15T09:00:00Z", updated_at: "2026-09-15T09:00:00Z",
+          id: 501,
+          status: "success",
+          shipment_status: "in_transit",
+          tracking_company: "Delhivery",
+          tracking_number: "DL123",
+          tracking_url: "https://t/DL123",
+          created_at: "2026-09-15T09:00:00Z",
+          updated_at: "2026-09-15T09:00:00Z",
         },
       ],
       // A refund raises orders/updated, and the payload carries every
       // refund the order has — this road used to write none of them.
       refunds: [
         {
-          id: 77, created_at: "2026-09-15T11:00:00Z",
+          id: 77,
+          created_at: "2026-09-15T11:00:00Z",
           transactions: [{ kind: "refund", status: "success", amount: "50.00" }],
           refund_line_items: [{ quantity: 1, subtotal: "50.00" }],
         },
@@ -152,22 +227,53 @@ try {
   check("and lands on the same total", Number(hooked?.total) === 547);
   check("and the same original", Number(hooked?.total_original) === 597);
   const { data: hookedLines } = await admin.from("order_line_items").select("variant_title").eq("store_id", store.id);
-  check("the line kept its variant", (hookedLines ?? []).some((l) => l.variant_title === "Blue"));
-  const { data: hookedRefunds } = await admin.from("refunds").select("amount, quantity, external_id").eq("store_id", store.id);
+  check(
+    "the line kept its variant",
+    (hookedLines ?? []).some((l) => l.variant_title === "Blue")
+  );
+  const { data: hookedRefunds } = await admin
+    .from("refunds")
+    .select("amount, quantity, external_id")
+    .eq("store_id", store.id);
   check("the refund landed by webhook", (hookedRefunds ?? []).length === 1);
   check("with what was given back", Number(hookedRefunds?.[0]?.amount) === 50);
   check("and how many units", hookedRefunds?.[0]?.quantity === 1);
-  check("on the Shopify id, so the import lands on the same row", hookedRefunds?.[0]?.external_id === "gid://shopify/Refund/77");
-  const { data: hookedOrder } = await admin.from("orders").select("gateway, discount_codes, ship_city, ship_state, ship_country").eq("store_id", store.id).eq("external_id", `gid://shopify/Order/${hookId}`).single();
+  check(
+    "on the Shopify id, so the import lands on the same row",
+    hookedRefunds?.[0]?.external_id === "gid://shopify/Refund/77"
+  );
+  const { data: hookedOrder } = await admin
+    .from("orders")
+    .select("gateway, discount_codes, ship_city, ship_state, ship_country")
+    .eq("store_id", store.id)
+    .eq("external_id", `gid://shopify/Order/${hookId}`)
+    .single();
   check("what paid, by webhook", hookedOrder?.gateway === "Cash on Delivery (COD)");
   check("the code used", hookedOrder?.discount_codes?.[0] === "WELCOME10");
-  check("and where it went", hookedOrder?.ship_city === "Pune" && hookedOrder?.ship_state === "MH" && hookedOrder?.ship_country === "IN");
+  check(
+    "and where it went",
+    hookedOrder?.ship_city === "Pune" && hookedOrder?.ship_state === "MH" && hookedOrder?.ship_country === "IN"
+  );
   const hookedParts = await parts(`gid://shopify/Order/${hookId}`);
-  check("the parts read the same by webhook",
-    Number(hookedParts?.subtotal) === 2650 && Number(hookedParts?.tax) === 147 && Number(hookedParts?.discount) === 50 && Number(hookedParts?.shipping) === 100);
-  const shipments = async () => (await admin.from("fulfillments").select("external_id, carrier, tracking_number, shipment_status, delivered_at").eq("store_id", store.id)).data ?? [];
+  check(
+    "the parts read the same by webhook",
+    Number(hookedParts?.subtotal) === 2650 &&
+      Number(hookedParts?.tax) === 147 &&
+      Number(hookedParts?.discount) === 50 &&
+      Number(hookedParts?.shipping) === 100
+  );
+  const shipments = async () =>
+    (
+      await admin
+        .from("fulfillments")
+        .select("external_id, carrier, tracking_number, shipment_status, delivered_at")
+        .eq("store_id", store.id)
+    ).data ?? [];
   let shipped = await shipments();
-  check("the shipment landed with the order", shipped.length === 1 && shipped[0].external_id === "gid://shopify/Fulfillment/501");
+  check(
+    "the shipment landed with the order",
+    shipped.length === 1 && shipped[0].external_id === "gid://shopify/Fulfillment/501"
+  );
   check("with its courier and number", shipped[0]?.carrier === "Delhivery" && shipped[0]?.tracking_number === "DL123");
 
   console.log("\nmoney arriving later, by its own topic");
@@ -177,8 +283,14 @@ try {
   const { error: te } = await admin.rpc("abo_shopify_upsert_transaction", {
     p_shop: shop,
     p_tx: {
-      id: 9001, order_id: hookId, kind: "capture", status: "success",
-      gateway: "cash_on_delivery", amount: "547.00", currency: "USD", test: false,
+      id: 9001,
+      order_id: hookId,
+      kind: "capture",
+      status: "success",
+      gateway: "cash_on_delivery",
+      amount: "547.00",
+      currency: "USD",
+      test: false,
       processed_at: "2026-09-20T18:00:00Z",
     },
   });
@@ -195,9 +307,15 @@ try {
   const { error: fe } = await admin.rpc("abo_shopify_upsert_fulfillment", {
     p_shop: shop,
     p_f: {
-      id: 501, order_id: hookId, status: "success", shipment_status: "delivered",
-      tracking_company: "Delhivery", tracking_numbers: ["DL123", "DL124"], tracking_urls: ["https://t/DL123"],
-      created_at: "2026-09-15T09:00:00Z", updated_at: "2026-09-17T09:00:00Z",
+      id: 501,
+      order_id: hookId,
+      status: "success",
+      shipment_status: "delivered",
+      tracking_company: "Delhivery",
+      tracking_numbers: ["DL123", "DL124"],
+      tracking_urls: ["https://t/DL123"],
+      created_at: "2026-09-15T09:00:00Z",
+      updated_at: "2026-09-17T09:00:00Z",
     },
   });
   check("the webhook is accepted", !fe);
@@ -210,11 +328,19 @@ try {
   console.log("\nan order that was never refunded");
   await saveOrders(admin, store.id, [
     {
-      id: `gid://shopify/Order/${stamp}2`, name: "#9002",
-      createdAt: "2026-09-14T10:00:00Z", updatedAt: "2026-09-14T10:00:00Z", cancelledAt: null, tags: [],
-      displayFinancialStatus: "PENDING", displayFulfillmentStatus: "UNFULFILLED",
-      totalPriceSet: money("1299.00"), currentTotalPriceSet: money("1299.00"),
-      customer: null, lineItems: { nodes: [] }, refunds: [],
+      id: `gid://shopify/Order/${stamp}2`,
+      name: "#9002",
+      createdAt: "2026-09-14T10:00:00Z",
+      updatedAt: "2026-09-14T10:00:00Z",
+      cancelledAt: null,
+      tags: [],
+      displayFinancialStatus: "PENDING",
+      displayFulfillmentStatus: "UNFULFILLED",
+      totalPriceSet: money("1299.00"),
+      currentTotalPriceSet: money("1299.00"),
+      customer: null,
+      lineItems: { nodes: [] },
+      refunds: [],
     },
   ]);
   const plain = await row(`gid://shopify/Order/${stamp}2`);
@@ -223,39 +349,66 @@ try {
   console.log("\nan order from before these fields were read");
   await saveOrders(admin, store.id, [
     {
-      id: `gid://shopify/Order/${stamp}4`, name: "#9004",
-      createdAt: "2026-09-14T10:00:00Z", updatedAt: "2026-09-14T10:00:00Z", cancelledAt: null, tags: [],
-      displayFinancialStatus: "PAID", displayFulfillmentStatus: "FULFILLED",
-      totalPriceSet: money("500.00"), currentTotalPriceSet: money("500.00"),
-      customer: null, lineItems: { nodes: [] }, refunds: [],
+      id: `gid://shopify/Order/${stamp}4`,
+      name: "#9004",
+      createdAt: "2026-09-14T10:00:00Z",
+      updatedAt: "2026-09-14T10:00:00Z",
+      cancelledAt: null,
+      tags: [],
+      displayFinancialStatus: "PAID",
+      displayFulfillmentStatus: "FULFILLED",
+      totalPriceSet: money("500.00"),
+      currentTotalPriceSet: money("500.00"),
+      customer: null,
+      lineItems: { nodes: [] },
+      refunds: [],
     },
   ]);
   const silent = await parts(`gid://shopify/Order/${stamp}4`);
   // The distinction the whole column set turns on. A shop that
   // charges no tax says zero; a file that never mentioned tax says
   // nothing, and reporting the second as the first invents a fact.
-  check("says nothing rather than zero", silent?.tax === null && silent?.subtotal === null && silent?.shipping === null);
+  check(
+    "says nothing rather than zero",
+    silent?.tax === null && silent?.subtotal === null && silent?.shipping === null
+  );
 
   console.log("\nan old bulk file, before Shopify sent the current total");
   await saveOrders(admin, store.id, [
     {
-      id: `gid://shopify/Order/${stamp}3`, name: "#9003",
-      createdAt: "2026-09-14T10:00:00Z", updatedAt: "2026-09-14T10:00:00Z", cancelledAt: null, tags: [],
-      displayFinancialStatus: "PAID", displayFulfillmentStatus: "FULFILLED",
+      id: `gid://shopify/Order/${stamp}3`,
+      name: "#9003",
+      createdAt: "2026-09-14T10:00:00Z",
+      updatedAt: "2026-09-14T10:00:00Z",
+      cancelledAt: null,
+      tags: [],
+      displayFinancialStatus: "PAID",
+      displayFulfillmentStatus: "FULFILLED",
       totalPriceSet: money("149.00"),
-      customer: null, lineItems: { nodes: [] }, refunds: [],
+      customer: null,
+      lineItems: { nodes: [] },
+      refunds: [],
     },
   ]);
   const legacy = await row(`gid://shopify/Order/${stamp}3`);
-  check("falls back to the original rather than nothing", Number(legacy?.total) === 149 && Number(legacy?.total_original) === 149);
+  check(
+    "falls back to the original rather than nothing",
+    Number(legacy?.total) === 149 && Number(legacy?.total_original) === 149
+  );
 
   console.log("\nand what a designer is told");
   const advice = STORE_TABLES.orders.advice ?? "";
-  check("revenue is the paid rows, not every row", /financial_status = "PAID"/.test(advice) && /Do not sum `total` over every row/.test(advice));
+  check(
+    "revenue is the paid rows, not every row",
+    /financial_status = "PAID"/.test(advice) && /Do not sum `total` over every row/.test(advice)
+  );
   check("awaiting payment is named on its own", /PENDING/.test(advice));
   check("cancelled is kept out", /cancelled_at/.test(advice));
   check("order value is the original", /avg\(total_original\)/.test(advice));
-  check("and the section shows the original beside the total", STORE_TABLES.orders.columns.some((c) => c.field === "total_original"));
+  check(
+    "and the section shows the original beside the total",
+    STORE_TABLES.orders.columns.some((c) => c.field === "total_original")
+  );
 } finally {
   await project.remove();
   console.log("\nthe project is gone");

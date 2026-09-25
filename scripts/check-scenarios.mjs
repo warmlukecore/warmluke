@@ -50,9 +50,7 @@ const opsIn = (node, found = new Set()) => {
 const rulesOf = (plans) => plans.filter((p) => p.automation).map((p) => p.automation);
 const storedWrites = (plans) =>
   rulesOf(plans).flatMap((r) =>
-    (r.definition.actions ?? []).flatMap((a) =>
-      a.type === "set_fields" ? Object.values(a.set ?? {}) : []
-    )
+    (r.definition.actions ?? []).flatMap((a) => (a.type === "set_fields" ? Object.values(a.set ?? {}) : []))
   );
 
 const SCENARIOS = [
@@ -60,8 +58,7 @@ const SCENARIOS = [
     name: "library",
     problem:
       "I run a small library. People borrow books and just never bring them back, and I only notice when someone else asks for that book",
-    answers:
-      "I note member name, phone, book title, and the date they took it. Loans are 14 days. Just me.",
+    answers: "I note member name, phone, book title, and the date they took it. Loans are 14 days. Just me.",
     // Being told without looking is the whole ask, so a schedule rule
     // is the only shape that answers it.
     expect: (b) => {
@@ -86,8 +83,7 @@ const SCENARIOS = [
   },
   {
     name: "packing",
-    problem:
-      "Mere packer galat product bhej rahe hain. Customer complain karta hai tab pata chalta hai",
+    problem: "Mere packer galat product bhej rahe hain. Customer complain karta hai tab pata chalta hai",
     answers:
       "Barcode scanner hai, SKU likha hota hai. Orders website se aate hain. Sirf main khud pack karta hoon. Similar dikhne wale products mix ho jate hain, size ya colour galat chala jata hai, quantity kam ya zyada pack hoti hai",
     // The owner named three faults; the third is the one a design can
@@ -95,9 +91,7 @@ const SCENARIOS = [
     // counting records a perfect pack every time, so the short pack they
     // asked us to catch becomes the one thing nobody can ever find.
     expect: (b) => {
-      const scans = b.plans
-        .map((p) => p.newSchema?.features?.scanMode)
-        .filter(Boolean);
+      const scans = b.plans.map((p) => p.newSchema?.features?.scanMode).filter(Boolean);
       // They named three faults and own a scanner. A design with no
       // verification step solves none of it, which is allowed — saying
       // so is not. Silence here hands back the manual process they came
@@ -124,8 +118,7 @@ const SCENARIOS = [
   // ── Detection: the owner finds out too late ──────────────────
   {
     name: "expiry",
-    problem:
-      "I run a chemist shop. Medicines expire on the shelf and I find out when a customer points at the date",
+    problem: "I run a chemist shop. Medicines expire on the shelf and I find out when a customer points at the date",
     answers: "Medicine name, batch number, expiry date, quantity. Just me and one helper.",
     // Nothing about a stored expiry date notices itself. Only a rule
     // that runs on its own can tell them before the customer does.
@@ -140,12 +133,13 @@ const SCENARIOS = [
     name: "warranty",
     problem:
       "Customers come back saying the product is under warranty and I have no way to check, so I end up repairing free",
-    answers:
-      "Invoice number, customer name, product, sale date. Warranty is 12 months. I check on paper bills.",
+    answers: "Invoice number, customer name, product, sale date. Warranty is 12 months. I check on paper bills.",
     // The answer is date arithmetic against the sale date, not a field
     // someone types "in warranty" into and forgets to update.
     expect: (b) => {
-      const ops = new Set(b.plans.flatMap((p) => [...opsIn(p.newSchema?.features ?? {}), ...opsIn(p.automation ?? {})]));
+      const ops = new Set(
+        b.plans.flatMap((p) => [...opsIn(p.newSchema?.features ?? {}), ...opsIn(p.automation ?? {})])
+      );
       const dateAware = ["days_since", "days_until", "date_add", "before", "after"].some((o) => ops.has(o));
       if (!dateAware) return "nothing computes from the sale date — warranty would have to be maintained by hand";
       return null;
@@ -153,9 +147,9 @@ const SCENARIOS = [
   },
   {
     name: "service-due",
-    problem:
-      "I sell water purifiers with yearly servicing. I forget which customer is due and lose the AMC renewal",
-    answers: "Customer name phone, model, installation date, last service date. Service every 12 months. 300 customers.",
+    problem: "I sell water purifiers with yearly servicing. I forget which customer is due and lose the AMC renewal",
+    answers:
+      "Customer name phone, model, installation date, last service date. Service every 12 months. 300 customers.",
     expect: (b) => {
       const rules = rulesOf(b.plans);
       if (!rules.some((r) => r.definition.trigger.type === "schedule"))
@@ -181,8 +175,7 @@ const SCENARIOS = [
   },
   {
     name: "capacity",
-    problem:
-      "Mere tuition batch me 20 seat hain par main zyada admission le leta hoon aur phir jagah nahi hoti",
+    problem: "Mere tuition batch me 20 seat hain par main zyada admission le leta hoon aur phir jagah nahi hoti",
     answers: "Student naam, phone, batch ka naam, fees. Har batch me 20 seat. Main khud entry karta hoon.",
     expect: (b) => {
       const rules = rulesOf(b.plans);
@@ -212,8 +205,7 @@ const SCENARIOS = [
   },
   {
     name: "partial-payment",
-    problem:
-      "Customers pay in parts and I lose track of who still owes me how much. I only realise at month end",
+    problem: "Customers pay in parts and I lose track of who still owes me how much. I only realise at month end",
     answers: "Customer name phone, total amount, payments received. Amounts vary. About 60 customers.",
     // Money owed is arithmetic on two numbers, not a status someone
     // remembers to flip.
@@ -230,8 +222,7 @@ const SCENARIOS = [
   // ── Asked for something the platform cannot do ───────────────
   {
     name: "whatsapp",
-    problem:
-      "I want to send WhatsApp reminders to customers whose payment is pending, and also track the payments",
+    problem: "I want to send WhatsApp reminders to customers whose payment is pending, and also track the payments",
     answers: "Customer name, phone, amount, due date. About 80 customers. Just me.",
     // Half the request is impossible. It must be said in the owner's
     // own words, not silently replaced with a status field and hoped for.
@@ -244,8 +235,7 @@ const SCENARIOS = [
   },
   {
     name: "customer-portal",
-    problem:
-      "I want my customers to log in and see their order status themselves so they stop calling me",
+    problem: "I want my customers to log in and see their order status themselves so they stop calling me",
     answers: "Order number, customer name phone, status. 200 orders a month.",
     expect: (b) => {
       const said = (b.unmet ?? []).some((u) => /customer|login|log in|portal|themselves|see/i.test(u));
@@ -255,8 +245,7 @@ const SCENARIOS = [
   },
   {
     name: "photo-proof",
-    problem:
-      "Delivery boys should click a photo at delivery so customers cannot claim they never got it",
+    problem: "Delivery boys should click a photo at delivery so customers cannot claim they never got it",
     answers: "Order number, customer address, delivery boy name, delivery time. 50 deliveries a day.",
     expect: (b) => {
       const said = (b.unmet ?? []).some((u) => /photo|picture|image|proof|click/i.test(u));
@@ -288,9 +277,7 @@ const SCENARIOS = [
     expect: (b) => {
       const modules = b.plans.filter((p) => p.newModule);
       if (modules.length < 2) return "one section cannot hold many items per order";
-      const linked = modules.some((p) =>
-        (p.newSchema?.columns ?? []).some((c) => c.type === "link")
-      );
+      const linked = modules.some((p) => (p.newSchema?.columns ?? []).some((c) => c.type === "link"));
       if (!linked) return "the two sections are not linked — the items float free of their order";
       return null;
     },
@@ -299,10 +286,8 @@ const SCENARIOS = [
   // ── Language and phrasing ────────────────────────────────────
   {
     name: "hindi-heavy",
-    problem:
-      "Meri dukaan me udhaar bahut chalta hai. Kisne kitna udhaar liya aur kab tak dena hai, yaad nahi rehta",
-    answers:
-      "Grahak ka naam aur phone, kitna udhaar, kab liya, kab tak dena hai. Roz ke 20-30 grahak. Sirf main.",
+    problem: "Meri dukaan me udhaar bahut chalta hai. Kisne kitna udhaar liya aur kab tak dena hai, yaad nahi rehta",
+    answers: "Grahak ka naam aur phone, kitna udhaar, kab liya, kab tak dena hai. Roz ke 20-30 grahak. Sirf main.",
     // The labels the owner reads must be their words, not a translation
     // into business English they never used.
     expect: (b) => {
@@ -340,8 +325,7 @@ const SCENARIOS = [
   },
   {
     name: "wrong-tool",
-    problem:
-      "I need proper accounting with GST returns and balance sheet for my shop",
+    problem: "I need proper accounting with GST returns and balance sheet for my shop",
     answers: "Sales, purchases, GST rates, monthly returns. Turnover about 50 lakh.",
     // This is not what the platform is. Saying so plainly beats building
     // a tracker the owner will trust for a statutory filing.
@@ -436,7 +420,12 @@ for (const s of SCENARIOS) {
   if (reply?.type !== "blueprint") {
     console.log(`FAIL — expected a blueprint, got ${reply?.type ?? JSON.stringify(turn).slice(0, 120)}`);
     failed++;
-    results.push({ name: s.name, ok: false, why: `no blueprint (${reply?.type ?? "error"})`, repairs: turn.repairs ?? 0 });
+    results.push({
+      name: s.name,
+      ok: false,
+      why: `no blueprint (${reply?.type ?? "error"})`,
+      repairs: turn.repairs ?? 0,
+    });
     continue;
   }
 

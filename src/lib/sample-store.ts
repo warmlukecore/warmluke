@@ -52,7 +52,23 @@ export const VARIANTS: Variant[] = [
 ];
 
 // Fifteen and eight share no factor, so every pairing comes up before any repeats.
-const FIRST = ["Priya", "Aman", "Sara", "Rahul", "Neha", "Arjun", "Kavya", "Rohan", "Ishita", "Vikram", "Ananya", "Zoya", "Dev", "Meera", "Kabir"];
+const FIRST = [
+  "Priya",
+  "Aman",
+  "Sara",
+  "Rahul",
+  "Neha",
+  "Arjun",
+  "Kavya",
+  "Rohan",
+  "Ishita",
+  "Vikram",
+  "Ananya",
+  "Zoya",
+  "Dev",
+  "Meera",
+  "Kabir",
+];
 const LAST = ["Sharma", "Kumar", "Iqbal", "Verma", "Gupta", "Mehta", "Nair", "Das"];
 const CITIES = ["Brooklyn", "Austin", "Seattle", "Denver", "Chicago", "Portland", "Boston"];
 const PEOPLE = 44;
@@ -116,20 +132,29 @@ export const sku = (v: Variant) => `BC-${101 + VARIANTS.indexOf(v)}`;
 export const cityOf = (name: string) => CITIES[[...name].reduce((h, c) => h + c.charCodeAt(0), 0) % CITIES.length];
 
 /** Every refund is a return that finished; a few recent orders are still on their way back. */
-export const RETURNS: Array<{ order: Order; item: string; reason: string; stage: ReturnStage }> = ORDERS.flatMap((o, k) => {
-  const stage: ReturnStage | null =
-    o.payment === "refunded"
-      ? "Refunded"
-      : o.payment === "paid" && o.sent && k % 17 === 3 && o.daysAgo < 12
-        ? k % 2
-          ? "Received"
-          : "Requested"
-        : null;
-  return stage ? [{ order: o, item: variantName(VARIANTS[o.lines[0].variant]), reason: REASONS[k % REASONS.length], stage }] : [];
-});
+export const RETURNS: Array<{ order: Order; item: string; reason: string; stage: ReturnStage }> = ORDERS.flatMap(
+  (o, k) => {
+    const stage: ReturnStage | null =
+      o.payment === "refunded"
+        ? "Refunded"
+        : o.payment === "paid" && o.sent && k % 17 === 3 && o.daysAgo < 12
+          ? k % 2
+            ? "Received"
+            : "Requested"
+          : null;
+    return stage
+      ? [{ order: o, item: variantName(VARIANTS[o.lines[0].variant]), reason: REASONS[k % REASONS.length], stage }]
+      : [];
+  }
+);
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
-const usdShort = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 });
+const usdShort = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
 const usdWhole = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
 /** $4,120.50 with cents, $4,121 whole, or $4.1K short. */
@@ -147,7 +172,11 @@ export const OUT = VARIANTS.filter((v) => v.stock <= 0);
 export const CUSTOMERS = [...new Set(ORDERS.map((o) => o.customer))]
   .map((name) => {
     const theirs = ORDERS.filter((o) => o.customer === name);
-    return { name, orders: theirs, spent: theirs.filter((o) => o.payment !== "refunded").reduce((s, o) => s + o.total, 0) };
+    return {
+      name,
+      orders: theirs,
+      spent: theirs.filter((o) => o.payment !== "refunded").reduce((s, o) => s + o.total, 0),
+    };
   })
   .sort((a, b) => b.orders.length - a.orders.length || b.orders[0].number - a.orders[0].number);
 

@@ -17,7 +17,9 @@ export function Group({
 }) {
   return (
     <section className={`overflow-hidden rounded-card border ${danger ? "border-tone-critical" : "border-line"}`}>
-      <header className={`border-b px-4 py-3 ${danger ? "border-tone-critical/70 bg-tone-critical/20" : "border-line bg-surface-subdued"}`}>
+      <header
+        className={`border-b px-4 py-3 ${danger ? "border-tone-critical/70 bg-tone-critical/20" : "border-line bg-surface-subdued"}`}
+      >
         <h3 className={`text-[13px] font-semibold ${danger ? "text-tone-critical-fg" : "text-fg"}`}>{title}</h3>
         {description && <p className="mt-0.5 text-xs leading-relaxed text-fg-muted">{description}</p>}
       </header>

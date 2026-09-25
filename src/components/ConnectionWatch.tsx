@@ -248,7 +248,11 @@ function Hop() {
       if (e.code !== "Space" && e.key !== "ArrowUp") return;
       // Only when nothing else on the page is being typed into or pressed.
       const el = document.activeElement as HTMLElement | null;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "BUTTON" || el.isContentEditable)) return;
+      if (
+        el &&
+        (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "BUTTON" || el.isContentEditable)
+      )
+        return;
       e.preventDefault();
       jumpRef.current();
     };
@@ -272,7 +276,9 @@ function Hop() {
         className="h-24 w-full cursor-pointer touch-none rounded-lg bg-surface-subdued"
       />
       <div className="mt-1.5 flex items-center justify-between text-[11px] text-fg-faint tabular-nums">
-        <span>{phase === "ready" ? "Tap or press space to play" : phase === "over" ? "Tap to go again" : "Tap to jump"}</span>
+        <span>
+          {phase === "ready" ? "Tap or press space to play" : phase === "over" ? "Tap to go again" : "Tap to jump"}
+        </span>
         <span>
           {score} · best {best}
         </span>

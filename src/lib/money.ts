@@ -16,7 +16,6 @@
 // row; India is the default, not the only choice.
 // ─────────────────────────────────────────────────────────────
 
-
 export interface Formatting {
   locale: string;
   currency: string;
@@ -59,11 +58,7 @@ export interface ApproxRate {
   asOf: string | null;
 }
 
-export function makeFormatting(
-  locale: string,
-  currency: string,
-  approxRate?: ApproxRate | null
-): Formatting {
+export function makeFormatting(locale: string, currency: string, approxRate?: ApproxRate | null): Formatting {
   // Intl throws on a malformed tag; a bad stored value must not blank
   // out every number on the page.
   const safeLocale = (() => {

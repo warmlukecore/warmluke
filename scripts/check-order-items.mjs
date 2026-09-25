@@ -72,7 +72,9 @@ try {
   const [aman] = must(
     await admin
       .from("customers")
-      .insert([{ store_id: store.id, external_id: `c-${stamp}`, name: "Aman Kumar", orders_count: 2, total_spent: 3494 }])
+      .insert([
+        { store_id: store.id, external_id: `c-${stamp}`, name: "Aman Kumar", orders_count: 2, total_spent: 3494 },
+      ])
       .select("id")
   );
   const order = async (n, extra = {}) =>
@@ -98,9 +100,25 @@ try {
   const o2 = await order(1002, { cancelled_at: new Date().toISOString() });
   must(
     await admin.from("order_line_items").insert([
-      { store_id: store.id, order_id: o1, title: "Boat Airdopes 141", variant_title: "Black", sku: "BA141-BLK", quantity: 2, price: 1299 },
+      {
+        store_id: store.id,
+        order_id: o1,
+        title: "Boat Airdopes 141",
+        variant_title: "Black",
+        sku: "BA141-BLK",
+        quantity: 2,
+        price: 1299,
+      },
       { store_id: store.id, order_id: o1, title: "Clear Phone Case", sku: "CASE-M", quantity: 1, price: 299 },
-      { store_id: store.id, order_id: o2, title: "Boat Airdopes 141", variant_title: "Black", sku: "BA141-BLK", quantity: 3, price: 1299 },
+      {
+        store_id: store.id,
+        order_id: o2,
+        title: "Boat Airdopes 141",
+        variant_title: "Black",
+        sku: "BA141-BLK",
+        quantity: 3,
+        price: 1299,
+      },
     ])
   );
 
@@ -110,9 +128,14 @@ try {
   const first = all.rows[0].data;
   check(
     "each carries its order's number, day and customer",
-    first.order_number?.startsWith("#") && /^\d{4}-\d{2}-\d{2}$/.test(first.placed_at) && first.customer_name === "Aman Kumar"
+    first.order_number?.startsWith("#") &&
+      /^\d{4}-\d{2}-\d{2}$/.test(first.placed_at) &&
+      first.customer_name === "Aman Kumar"
   );
-  check("and the line's own total", all.rows.some((r) => r.data.sku === "CASE-M" && Number(r.data.line_total) === 299));
+  check(
+    "and the line's own total",
+    all.rows.some((r) => r.data.sku === "CASE-M" && Number(r.data.line_total) === 299)
+  );
   const cancelled = all.rows.find((r) => r.data.order_number === "#1002");
   check("a cancelled order's line says so, and is still here", cancelled?.data.status === "Cancelled");
 
@@ -129,7 +152,13 @@ try {
     p_project: project.id,
     p_request: null,
     p_op: "module_insert",
-    p_payload: { name: "order-items", nav_label: "Order items", route: "/modules/order-items", source_table: "order_line_items", icon: "receipt" },
+    p_payload: {
+      name: "order-items",
+      nav_label: "Order items",
+      route: "/modules/order-items",
+      source_table: "order_line_items",
+      icon: "receipt",
+    },
   });
   check("the owner can build one", !built.error && !!built.data?.id);
   if (built.error) console.log("     →", built.error.message);
@@ -138,7 +167,12 @@ try {
   const stats = await client.rpc("abo_section_stats", {
     p_module: built.data?.id,
     p_stats: [
-      { label: "Units", op: "sum", field: "quantity", where: { op: "!=", args: [{ field: "status" }, { const: "Cancelled" }] } },
+      {
+        label: "Units",
+        op: "sum",
+        field: "quantity",
+        where: { op: "!=", args: [{ field: "status" }, { const: "Cancelled" }] },
+      },
       { label: "Lines", op: "count" },
     ],
     p_scope: {},

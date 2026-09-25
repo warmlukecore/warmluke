@@ -72,10 +72,12 @@ try {
     (await admin.from("abandoned_checkouts").select("external_id, email").eq("store_id", store.id)).data ?? [];
 
   console.log("a cart from somebody who never became a customer");
-  await admin.from("abandoned_checkouts").insert([
-    cart(`gid://shopify/AbandonedCheckout/${stamp}A`, gone),
-    cart(`gid://shopify/AbandonedCheckout/${stamp}B`, stays),
-  ]);
+  await admin
+    .from("abandoned_checkouts")
+    .insert([
+      cart(`gid://shopify/AbandonedCheckout/${stamp}A`, gone),
+      cart(`gid://shopify/AbandonedCheckout/${stamp}B`, stays),
+    ]);
   check("both are here to begin with", (await carts()).length === 2);
 
   console.log("\nand a redaction naming only an email");
@@ -88,7 +90,10 @@ try {
   const after = await carts();
   check("their cart is gone", !after.some((c) => c.email === gone));
   // The half that matters: one request must not sweep up everybody.
-  check("and the other person's is untouched", after.some((c) => c.email === stays));
+  check(
+    "and the other person's is untouched",
+    after.some((c) => c.email === stays)
+  );
 
   console.log("\nand the next import cannot bring them back");
   // Exactly what saveCarts does on the following pass.
@@ -124,7 +129,10 @@ try {
   const left = await carts();
   check("the linked cart is gone", !left.some((c) => c.external_id.endsWith(`${stamp}C`)));
   check("and so is the one that was never linked", !left.some((c) => c.external_id.endsWith(`${stamp}D`)));
-  check("and the unrelated person is still here", left.some((c) => c.email === stays));
+  check(
+    "and the unrelated person is still here",
+    left.some((c) => c.email === stays)
+  );
   const { count: stillCustomer } = await admin
     .from("customers")
     .select("id", { count: "exact", head: true })
@@ -155,10 +163,9 @@ try {
   const drafts = async () =>
     (await admin.from("draft_orders").select("external_id, email").eq("store_id", store.id)).data ?? [];
 
-  await admin.from("draft_orders").insert([
-    draft(`gid://shopify/DraftOrder/${stamp}A`, goneD),
-    draft(`gid://shopify/DraftOrder/${stamp}B`, staysD),
-  ]);
+  await admin
+    .from("draft_orders")
+    .insert([draft(`gid://shopify/DraftOrder/${stamp}A`, goneD), draft(`gid://shopify/DraftOrder/${stamp}B`, staysD)]);
   check("both drafts are here to begin with", (await drafts()).length === 2);
 
   const { error: e4 } = await admin.rpc("abo_shopify_customer_redact_email", {
@@ -169,11 +176,12 @@ try {
   if (e4) console.log("     →", e4.message);
   const leftDrafts = await drafts();
   check("their draft is gone", !leftDrafts.some((d) => d.email === goneD));
-  check("and the other person's is untouched", leftDrafts.some((d) => d.email === staysD));
+  check(
+    "and the other person's is untouched",
+    leftDrafts.some((d) => d.email === staysD)
+  );
   // The trigger, on the new table: the next import must not undo it.
-  const { error: e5 } = await admin
-    .from("draft_orders")
-    .insert(draft(`gid://shopify/DraftOrder/${stamp}A`, goneD));
+  const { error: e5 } = await admin.from("draft_orders").insert(draft(`gid://shopify/DraftOrder/${stamp}A`, goneD));
   check("writing it again raises nothing", !e5);
   check("and it is still gone", !(await drafts()).some((d) => d.email === goneD));
 
@@ -189,7 +197,10 @@ try {
   if (e6) console.log("     →", e6.message);
   const afterId = await drafts();
   check("the draft naming them by id is gone", !afterId.some((d) => d.external_id.endsWith(`${stamp}C`)));
-  check("and the unrelated draft is still here", afterId.some((d) => d.email === staysD));
+  check(
+    "and the unrelated draft is still here",
+    afterId.some((d) => d.email === staysD)
+  );
 } finally {
   await admin.from("projects").delete().eq("id", project.id);
   console.log("\nthe project is gone");

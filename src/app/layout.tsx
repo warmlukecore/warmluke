@@ -42,13 +42,10 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: "Warmluke",
-  description:
-    "Schema-driven business apps, generated in real-time through natural language.",
+  description: "Schema-driven business apps, generated in real-time through natural language.",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html
       lang="en"

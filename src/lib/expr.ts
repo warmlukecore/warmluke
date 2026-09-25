@@ -63,10 +63,7 @@ function isoToday(): string {
  * Returns the original object untouched when the section has no
  * computed columns, which is almost all of them.
  */
-export function withComputed(
-  columns: SchemaColumn[],
-  data: Row
-): Row {
+export function withComputed(columns: SchemaColumn[], data: Row): Row {
   let out: Row | null = null;
   for (const c of columns) {
     if (!c.compute) continue;
@@ -76,12 +73,7 @@ export function withComputed(
   return out ?? data;
 }
 
-export function evalExpr(
-  node: Expr | unknown,
-  rec: Row,
-  prev: Row = {},
-  target: Row = {}
-): unknown {
+export function evalExpr(node: Expr | unknown, rec: Row, prev: Row = {}, target: Row = {}): unknown {
   if (node === null || typeof node !== "object") return node;
   const n = node as Record<string, unknown>;
 
@@ -124,9 +116,13 @@ export function evalExpr(
       return cmp(at(0), at(1)) <= 0;
 
     case "contains":
-      return txt(at(0)).toLowerCase().includes(txt(at(1)).toLowerCase());
+      return txt(at(0))
+        .toLowerCase()
+        .includes(txt(at(1)).toLowerCase());
     case "starts_with":
-      return txt(at(0)).toLowerCase().startsWith(txt(at(1)).toLowerCase());
+      return txt(at(0))
+        .toLowerCase()
+        .startsWith(txt(at(1)).toLowerCase());
 
     case "is_empty":
       return txt(at(0)) === "";

@@ -16,7 +16,10 @@
 export type RecordRow = { data?: Record<string, unknown> | null };
 
 /** How a value is compared: the way a person reads it, not the bytes. */
-const key = (v: unknown) => String(v ?? "").trim().toLowerCase();
+const key = (v: unknown) =>
+  String(v ?? "")
+    .trim()
+    .toLowerCase();
 
 /**
  * The things one cell names. A tag list is not one value.
@@ -33,9 +36,7 @@ const key = (v: unknown) => String(v ?? "").trim().toLowerCase();
  * column type is what should say so.
  */
 const parts = (v: unknown): string[] =>
-  (Array.isArray(v) ? v.map((x) => String(x ?? "")) : String(v ?? "").split(","))
-    .map((s) => s.trim())
-    .filter(Boolean);
+  (Array.isArray(v) ? v.map((x) => String(x ?? "")) : String(v ?? "").split(",")).map((s) => s.trim()).filter(Boolean);
 
 /**
  * Does this row belong under this choice?

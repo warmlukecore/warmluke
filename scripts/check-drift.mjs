@@ -33,10 +33,7 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
-const client = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
-);
+const client = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY);
 const { data: owner } = await client.auth.signInWithPassword({
   email: OWNER_EMAIL,
   password: process.env.OWNER_PASSWORD ?? "",
@@ -45,10 +42,7 @@ if (!owner?.session) {
   console.log("no OWNER_PASSWORD given — nothing to check");
   process.exit(0);
 }
-const admin = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.ADAPTIVE_OS_SERVICE_ROLE_KEY
-);
+const admin = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
 // A store a real Shopify answers for: the import route asks it.
 const [store = null] = await shopifyStores(admin, "id, project_id");
 if (!store) {
@@ -67,8 +61,7 @@ const ask = () =>
   }).then((r) => r.json());
 
 const rowsOf = async (table) =>
-  (await admin.from(table).select("id", { count: "exact", head: true }).eq("store_id", store.id))
-    .count ?? 0;
+  (await admin.from(table).select("id", { count: "exact", head: true }).eq("store_id", store.id)).count ?? 0;
 
 const { data: runsBefore } = await admin
   .from("import_runs")
@@ -92,10 +85,7 @@ try {
 
   // A finished pass that agrees with what is here.
   for (const r of runsBefore ?? []) {
-    await admin
-      .from("import_runs")
-      .update({ status: "done", cursor: null, finished_at: finished })
-      .eq("id", r.id);
+    await admin.from("import_runs").update({ status: "done", cursor: null, finished_at: finished }).eq("id", r.id);
   }
   await set("products", products);
   await set("customers", customers);
@@ -143,10 +133,7 @@ try {
       })
       .eq("id", r.id);
   }
-  const back = await admin
-    .from("import_runs")
-    .select("resource, imported, status")
-    .eq("store_id", store.id);
+  const back = await admin.from("import_runs").select("resource, imported, status").eq("store_id", store.id);
   check(
     "the import history is back as it was",
     (back.data ?? []).every((r) => {
@@ -156,7 +143,5 @@ try {
   );
 }
 
-console.log(
-  fails.length === 0 ? "\nwhat is missing is said, not swept" : `\n${fails.length} FAILED`
-);
+console.log(fails.length === 0 ? "\nwhat is missing is said, not swept" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

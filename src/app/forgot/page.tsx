@@ -51,9 +51,8 @@ export default function Forgot() {
           </span>
           <h1 className="mt-4 text-lg font-semibold tracking-tight text-fg">Check your email</h1>
           <p className="mt-2">
-            If <span className="font-medium text-fg">{email.trim()}</span> has an account, a
-            link to set a new password is on its way. It works once, and expires in an
-            hour.
+            If <span className="font-medium text-fg">{email.trim()}</span> has an account, a link to set a new password
+            is on its way. It works once, and expires in an hour.
           </p>
           <Link href="/login" className={`${button("secondary")} mt-5 w-full`}>
             Back to sign in

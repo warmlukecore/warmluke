@@ -51,8 +51,7 @@ const jobsSchema = {
 };
 const schemas = (id) => (id === MOD ? jobsSchema : null);
 
-const run = (plans, lookup) =>
-  parseReply(JSON.stringify({ plans }), modules, null, null, lookup);
+const run = (plans, lookup) => parseReply(JSON.stringify({ plans }), modules, null, null, lookup);
 
 // ── The design that was actually accepted ────────────────────
 console.log("the design that got through");
@@ -69,9 +68,7 @@ console.log("the design that got through");
           source_table: "inventory_levels",
         },
         newSchema: {
-          columns: [
-            { field: "alert_status", label: "Alert Status", type: "dropdown", options: ["Low Stock", "OK"] },
-          ],
+          columns: [{ field: "alert_status", label: "Alert Status", type: "dropdown", options: ["Low Stock", "OK"] }],
         },
         features: { filters: [{ field: "alert_status", options: ["Low Stock", "OK"] }] },
         explanation: "Flags stock that is running out.",
@@ -84,10 +81,7 @@ console.log("the design that got through");
   // The message has to be answerable. "That column does not exist" sends
   // the next attempt guessing again; naming the columns ends it.
   check("and it names the columns that do exist", /available/.test(said) && /sku/.test(said));
-  check(
-    "and says a stored column cannot be added to one",
-    /alert_status is not one of them/.test(said)
-  );
+  check("and says a stored column cannot be added to one", /alert_status is not one of them/.test(said));
   // The rejection has to leave a way forward, or it is the same
   // dead end in politer words.
   check("while pointing at the thing that does work", /"compute" expression/.test(said));
@@ -155,10 +149,7 @@ console.log("\na feature naming a column that isn't there");
   // route passed no schema for anything.
   const blind = run(plans, undefined);
   check("and with no schema at all it is still refused", !blind.ok);
-  check(
-    "saying so rather than passing",
-    /No current schema found/.test((blind.errors ?? []).join(" "))
-  );
+  check("saying so rather than passing", /No current schema found/.test((blind.errors ?? []).join(" ")));
 }
 
 // ── The label the renderer prints ────────────────────────────
@@ -219,7 +210,16 @@ console.log("\nthe spellings that cost eight submissions");
             action: {
               type: "set_fields",
               target: { self: true },
-              set: { stage: { operator: "if", args: [{ operator: "=", args: [{ field: "stage" }, { const: "Done" }] }, { const: "Done" }, { const: "Open" }] } },
+              set: {
+                stage: {
+                  operator: "if",
+                  args: [
+                    { operator: "=", args: [{ field: "stage" }, { const: "Done" }] },
+                    { const: "Done" },
+                    { const: "Open" },
+                  ],
+                },
+              },
             },
           },
         },
@@ -282,11 +282,7 @@ console.log("\nflagging the store's own rows, without storing the flag");
 {
   const lowStock = {
     op: "if",
-    args: [
-      { op: "<=", args: [{ field: "available" }, { const: 5 }] },
-      { const: "Low" },
-      { const: "OK" },
-    ],
+    args: [{ op: "<=", args: [{ field: "available" }, { const: 5 }] }, { const: "Low" }, { const: "OK" }],
   };
   const got = run(
     [
@@ -317,8 +313,14 @@ console.log("\nflagging the store's own rows, without storing the flag");
   if (!got.ok) console.log(`     errors were: ${got.errors.join(" | ")}`);
   else {
     const cols = got.reply.plans[0].newSchema.columns;
-    check("the store's own columns are still there", cols.some((c) => c.field === "available"));
-    check("and the computed one is kept beside them", cols.some((c) => c.field === "stock_level"));
+    check(
+      "the store's own columns are still there",
+      cols.some((c) => c.field === "available")
+    );
+    check(
+      "and the computed one is kept beside them",
+      cols.some((c) => c.field === "stock_level")
+    );
   }
 }
 
@@ -336,7 +338,10 @@ console.log("\nand nothing is allowed to write to one");
             field: "size",
             label: "Size",
             type: "badge",
-            compute: { op: "if", args: [{ op: ">", args: [{ field: "hours" }, { const: 8 }] }, { const: "Big" }, { const: "Small" }] },
+            compute: {
+              op: "if",
+              args: [{ op: ">", args: [{ field: "hours" }, { const: 8 }] }, { const: "Big" }, { const: "Small" }],
+            },
           },
         ],
       },
@@ -345,17 +350,14 @@ console.log("\nand nothing is allowed to write to one");
     },
   ];
 
-  check("reading it is fine", run(plans({ filters: [{ field: "size", label: "Size", options: ["Big", "Small"] }] }), schemas).ok === true);
-
-  const written = run(
-    plans({ actions: [{ label: "Force big", set: { size: { const: "Big" } } }] }),
-    schemas
-  );
-  check("a button that sets it is refused", !written.ok);
   check(
-    "and told why the write would vanish",
-    /thrown away/.test((written.errors ?? []).join(" "))
+    "reading it is fine",
+    run(plans({ filters: [{ field: "size", label: "Size", options: ["Big", "Small"] }] }), schemas).ok === true
   );
+
+  const written = run(plans({ actions: [{ label: "Force big", set: { size: { const: "Big" } } }] }), schemas);
+  check("a button that sets it is refused", !written.ok);
+  check("and told why the write would vanish", /thrown away/.test((written.errors ?? []).join(" ")));
 }
 
 console.log("\nand a rule cannot read one either");
@@ -377,7 +379,10 @@ console.log("\nand a rule cannot read one either");
               field: "size",
               label: "Size",
               type: "badge",
-              compute: { op: "if", args: [{ op: ">", args: [{ field: "hours" }, { const: 8 }] }, { const: "Big" }, { const: "Small" }] },
+              compute: {
+                op: "if",
+                args: [{ op: ">", args: [{ field: "hours" }, { const: 8 }] }, { const: "Big" }, { const: "Small" }],
+              },
             },
           ],
         },
@@ -393,9 +398,7 @@ console.log("\nand a rule cannot read one either");
               type: "record_updated",
               when: { op: "=", args: [{ field: "size" }, { const: "Big" }] },
             },
-            actions: [
-              { type: "set_fields", target: { self: true }, set: { note: { const: "Long job" } } },
-            ],
+            actions: [{ type: "set_fields", target: { self: true }, set: { note: { const: "Long job" } } }],
           },
         },
         explanation: "Writes a note on the long jobs.",
@@ -404,10 +407,7 @@ console.log("\nand a rule cannot read one either");
     schemas
   );
   check("it is refused", !got.ok);
-  check(
-    "and told the rule would only ever see it blank",
-    /always see it as blank/.test((got.errors ?? []).join(" "))
-  );
+  check("and told the rule would only ever see it blank", /always see it as blank/.test((got.errors ?? []).join(" ")));
 }
 
 console.log("\nand a compute cannot read a column below it");
@@ -439,7 +439,10 @@ console.log("\nand a compute cannot read a column below it");
 console.log("\na section over the store keeps the store's shape");
 {
   const ORD = "22222222-2222-2222-2222-222222222222";
-  const mods = [...modules, { ...modules[0], id: ORD, name: "orders", nav_label: "Orders", route: "/orders", source_table: "orders" }];
+  const mods = [
+    ...modules,
+    { ...modules[0], id: ORD, name: "orders", nav_label: "Orders", route: "/orders", source_table: "orders" },
+  ];
   const ordersSchema = storeTableSchema("orders");
   const look = (id) => (id === ORD ? ordersSchema : schemas(id));
   const plan = (col) => ({
@@ -450,17 +453,47 @@ console.log("\na section over the store keeps the store's shape");
   });
   const typed = parseReply(
     JSON.stringify({ plans: [plan({ field: "delivery_partner", label: "Delivery Partner", type: "text" })] }),
-    mods, null, null, look
+    mods,
+    null,
+    null,
+    look
   );
-  check("a field to type into is refused, and told what to do instead", !typed.ok && typed.errors.some((e) => /cannot be stored/.test(e) && /COMPUTED/.test(e)));
+  check(
+    "a field to type into is refused, and told what to do instead",
+    !typed.ok && typed.errors.some((e) => /cannot be stored/.test(e) && /COMPUTED/.test(e))
+  );
   const computed = parseReply(
-    JSON.stringify({ plans: [plan({ field: "big", label: "Big order", type: "boolean", compute: { op: ">=", args: [{ field: "total" }, { const: 5000 }] } })] }),
-    mods, null, null, look
+    JSON.stringify({
+      plans: [
+        plan({
+          field: "big",
+          label: "Big order",
+          type: "boolean",
+          compute: { op: ">=", args: [{ field: "total" }, { const: 5000 }] },
+        }),
+      ],
+    }),
+    mods,
+    null,
+    null,
+    look
   );
   check("a computed column is welcome", computed.ok);
   const own = parseReply(
-    JSON.stringify({ plans: [{ changeType: "FIELD_ADD", targetModuleId: MOD, newSchema: { columns: [...jobsSchema.columns, { field: "note", label: "Note", type: "text" }] }, explanation: "A note on each job." }] }),
-    modules, null, null, schemas
+    JSON.stringify({
+      plans: [
+        {
+          changeType: "FIELD_ADD",
+          targetModuleId: MOD,
+          newSchema: { columns: [...jobsSchema.columns, { field: "note", label: "Note", type: "text" }] },
+          explanation: "A note on each job.",
+        },
+      ],
+    }),
+    modules,
+    null,
+    null,
+    schemas
   );
   check("and a section of their own still takes a typed field", own.ok);
 }
@@ -491,22 +524,34 @@ console.log("\na design that claims to have happened already");
           },
         ],
       }),
-      modules, null, null, schemas
+      modules,
+      null,
+      null,
+      schemas
     );
   const refused = (m) => {
     const r = one(m);
     return !r.ok && r.errors.some((e) => /already happened/.test(e));
   };
   // Both of the real ones, from production.
-  check('"I have removed the duplicate Product-2 section" is refused', refused("I have removed the duplicate Product-2 section and updated Products."));
-  check('"I have added the section Off Check" is refused', refused("I have added the section Off Check with a single text field."));
+  check(
+    '"I have removed the duplicate Product-2 section" is refused',
+    refused("I have removed the duplicate Product-2 section and updated Products.")
+  );
+  check(
+    '"I have added the section Off Check" is refused',
+    refused("I have added the section Off Check with a single text field.")
+  );
   check('and "I made the change you asked for"', refused("I made the change you asked for."));
   check('and "I\u2019ve updated Products"', refused("I\u2019ve updated Products with a status filter."));
   // And the sentences that must still get through. A validator that
   // fails these is one the model cannot satisfy.
   check("a future-tense line passes", one("This adds a note field to Jobs.").ok);
   check("so does a participle", one("Adding a Checked By field to Jobs.").ok);
-  check("so does amending the design, which really did happen", one("I have updated the design with your correction.").ok);
+  check(
+    "so does amending the design, which really did happen",
+    one("I have updated the design with your correction.").ok
+  );
   check('so does "I have two options here"', one("I have two options here; this is the simpler one.").ok);
   check("and a sentence about their rows, not our work", one("Shows every order that has been paid.").ok);
 }

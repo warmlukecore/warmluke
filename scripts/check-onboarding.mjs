@@ -48,7 +48,10 @@ for (const [column, options] of [
   const table = listIn(column);
   const form = options.map((o) => o.value).sort();
   check(`${column}: ${form.length} choices, the same in both`, JSON.stringify(table) === JSON.stringify(form));
-  check(`${column}: every choice has words to show`, options.every((o) => o.label.trim().length > 0));
+  check(
+    `${column}: every choice has words to show`,
+    options.every((o) => o.label.trim().length > 0)
+  );
 }
 
 {
@@ -79,14 +82,20 @@ check(
   ["full_name", "business_name", "role", "monthly_orders", "platform"].every((k) => typeof blank[k] === "string")
 );
 check("and the optional ones are not", !blank.website && !blank.team_size && !blank.heard_from);
-check("a name longer than the table holds is refused first", !!problems({ ...good, full_name: "x".repeat(121) }).full_name);
+check(
+  "a name longer than the table holds is refused first",
+  !!problems({ ...good, full_name: "x".repeat(121) }).full_name
+);
 check("a choice that is not on the list is refused", !!problems({ ...good, role: "ceo" }).role);
 check("an optional choice off the list is too", !!problems({ ...good, team_size: "a few" }).team_size);
 
 console.log("\nwhat is saved");
 const row = toRow({ ...good, website: "  rao.in ", heard_from: "twitter", heard_from_detail: "a thread" });
 check("answers are trimmed", row.full_name === "Asha Rao" && row.website === "rao.in");
-check("an optional answer left empty is null, not an empty string", toRow(good).team_size === null && toRow(good).website === null);
+check(
+  "an optional answer left empty is null, not an empty string",
+  toRow(good).team_size === null && toRow(good).website === null
+);
 check("a follow-up only survives beside the answer that asked for it", row.heard_from_detail === null);
 check(
   "and is kept when it belongs",
@@ -124,16 +133,34 @@ check(
   "and not waiting for it when they said so",
   at({ profile: true, storeConnected: true, assistantDone: true, importing: true, preparingSkipped: true }) === "done"
 );
-check("no store means no import to wait on", at({ profile: true, storeSkipped: true, assistantDone: true, importing: true }) === "done");
-check("an answer saved is never asked again", at({ profile: true, storeConnected: true, assistantDone: true }) !== "about");
+check(
+  "no store means no import to wait on",
+  at({ profile: true, storeSkipped: true, assistantDone: true, importing: true }) === "done"
+);
+check(
+  "an answer saved is never asked again",
+  at({ profile: true, storeConnected: true, assistantDone: true }) !== "about"
+);
 
 console.log("\nwho is sent to it");
 check("a new account is", needsOnboarding({ onboarded: false, ownProjects: 0, sharedWithMe: 0 }));
-check("an account from before onboarding existed is too", needsOnboarding({ onboarded: false, ownProjects: 3, sharedWithMe: 0 }));
+check(
+  "an account from before onboarding existed is too",
+  needsOnboarding({ onboarded: false, ownProjects: 3, sharedWithMe: 0 })
+);
 check("somebody who finished is not", !needsOnboarding({ onboarded: true, ownProjects: 0, sharedWithMe: 0 }));
-check("a person only invited into someone else's app is not", !needsOnboarding({ onboarded: false, ownProjects: 0, sharedWithMe: 1 }));
-check("but one with an app of their own as well is", needsOnboarding({ onboarded: false, ownProjects: 1, sharedWithMe: 2 }));
-check("and Warmluke's own team is not, apps or no apps", !needsOnboarding({ onboarded: false, ownProjects: 3, sharedWithMe: 0, staff: true }));
+check(
+  "a person only invited into someone else's app is not",
+  !needsOnboarding({ onboarded: false, ownProjects: 0, sharedWithMe: 1 })
+);
+check(
+  "but one with an app of their own as well is",
+  needsOnboarding({ onboarded: false, ownProjects: 1, sharedWithMe: 2 })
+);
+check(
+  "and Warmluke's own team is not, apps or no apps",
+  !needsOnboarding({ onboarded: false, ownProjects: 3, sharedWithMe: 0, staff: true })
+);
 
 console.log("\ncoming back from Shopify");
 const now = Date.parse("2026-09-23T12:00:00Z");
@@ -164,11 +191,15 @@ check(
 );
 check(
   "nothing a connected AI's token can write",
-  ["insert", "update", "delete"].every((op) => new RegExp(`profiles_oauth_no_${op}[\\s\\S]*?as restrictive for ${op}`).test(sql))
+  ["insert", "update", "delete"].every((op) =>
+    new RegExp(`profiles_oauth_no_${op}[\\s\\S]*?as restrictive for ${op}`).test(sql)
+  )
 );
 check(
   "finishing is stamped by the database, and cannot be undone",
-  /old\.onboarded_at is not null then\s*new\.onboarded_at := old\.onboarded_at;\s*elsif new\.onboarded_at is not null then\s*new\.onboarded_at := now\(\);/.test(sql)
+  /old\.onboarded_at is not null then\s*new\.onboarded_at := old\.onboarded_at;\s*elsif new\.onboarded_at is not null then\s*new\.onboarded_at := now\(\);/.test(
+    sql
+  )
 );
 check(
   "the accounts screen gets the answers from the function that checks who asks",

@@ -33,10 +33,7 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
-const admin = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.ADAPTIVE_OS_SERVICE_ROLE_KEY
-);
+const admin = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
 
 // ── The words, before anything is wired up ──────────────────────
 console.log("a rule, put into words");
@@ -95,10 +92,7 @@ console.log("\nand the designer is handed them");
 // project was first — none, on a blank database — and then sign in as
 // the real owner with a password from the environment, which nobody
 // had, so the half that reads through MCP was silently not checked.
-const client = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
-);
+const client = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY);
 const owner = await signInAsCheckUser(client, env);
 if (!owner.session) throw new Error(`no check user: ${owner.why}`);
 const project = await throwawayProject(admin, owner.user.id, "rules-visible");
@@ -208,10 +202,7 @@ if (!owner?.session) {
       console.log("\nand asked about one section");
       const detail = await tool("read_section", { section: section.nav_label });
       check("it still describes the fields", Array.isArray(detail?.fields));
-      check(
-        "and now the rule running on it",
-        JSON.stringify(detail?.rules ?? "").includes(`on-section-${stamp}`)
-      );
+      check("and now the rule running on it", JSON.stringify(detail?.rules ?? "").includes(`on-section-${stamp}`));
       // Someone else's rule is not this section's business.
       check(
         "not the one belonging to the whole app",
@@ -237,7 +228,5 @@ if (!owner?.session) {
 }
 
 await project.remove();
-console.log(
-  fails.length === 0 ? "\nthe designer can see what already runs" : `\n${fails.length} FAILED`
-);
+console.log(fails.length === 0 ? "\nthe designer can see what already runs" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

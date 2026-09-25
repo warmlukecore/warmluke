@@ -126,9 +126,7 @@ export default function ScanBar({
   async function submitValue(value: string) {
     if (!value || busy) return;
 
-    const matches = records.filter(
-      (r) => String(r.data?.[scanMode.lookupField] ?? "").trim() === value
-    );
+    const matches = records.filter((r) => String(r.data?.[scanMode.lookupField] ?? "").trim() === value);
     if (matches.length === 0) {
       fail(missed(value));
       return;
@@ -181,7 +179,10 @@ export default function ScanBar({
       const mine = String(rec.data?.[k] ?? "");
       return siblings.some((o) => o !== rec && String(o.data?.[k] ?? "") !== mine);
     });
-    const parts = keys.slice(0, 3).map((k) => String(rec.data?.[k] ?? "")).filter(Boolean);
+    const parts = keys
+      .slice(0, 3)
+      .map((k) => String(rec.data?.[k] ?? ""))
+      .filter(Boolean);
     return parts.length > 0 ? parts.join(" · ") : "this row";
   }
 
@@ -189,9 +190,7 @@ export default function ScanBar({
     <div className="rounded-xl border border-line bg-surface p-3.5 shadow-sm">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <div className="text-xs font-semibold text-fg">
-            {scanMode.action.label}
-          </div>
+          <div className="text-xs font-semibold text-fg">{scanMode.action.label}</div>
           <div className="text-[11px] text-fg-faint">
             {scanMode.hint ?? `Scan or type a ${scanMode.lookupField} to apply it.`}
           </div>
@@ -259,7 +258,8 @@ export default function ScanBar({
             {log.map((s, i) =>
               s.ok ? (
                 <li key={i} className="text-[11px] text-tone-success-fg">
-                  <Check aria-hidden size={14} strokeWidth={2.25} className="mr-1 inline align-[-2px]" />{s.message}
+                  <Check aria-hidden size={14} strokeWidth={2.25} className="mr-1 inline align-[-2px]" />
+                  {s.message}
                 </li>
               ) : i === 0 ? (
                 // Only the newest miss is the full note, with its ways
@@ -272,7 +272,8 @@ export default function ScanBar({
                 </li>
               ) : (
                 <li key={i} className="text-[11px] text-tone-critical-fg">
-                  <CircleX aria-hidden size={14} strokeWidth={2} className="mr-1 inline align-[-2px]" />{s.error.what}
+                  <CircleX aria-hidden size={14} strokeWidth={2} className="mr-1 inline align-[-2px]" />
+                  {s.error.what}
                 </li>
               )
             )}

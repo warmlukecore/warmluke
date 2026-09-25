@@ -66,8 +66,7 @@ if (!row) {
   console.log("could not make a project to test against — is the check user there?");
   process.exit(1);
 }
-const dropProject = () =>
-  sql(`delete from public.projects where id = '${row.project_id}'`);
+const dropProject = () => sql(`delete from public.projects where id = '${row.project_id}'`);
 
 const stamp = Date.now().toString(36);
 const made = [];
@@ -133,10 +132,7 @@ try {
 
   console.log("\nand a request already finished stays finished");
   const again = await finish(half, { applied: [], errors: [] });
-  check(
-    "a second attempt changes nothing",
-    /"count"\s*:\s*0/.test(JSON.stringify(again.body ?? ""))
-  );
+  check("a second attempt changes nothing", /"count"\s*:\s*0/.test(JSON.stringify(again.body ?? "")));
   const still = await readBack(half);
   check("and the record of the half build survives", still?.status === "partly_built");
   check("with its errors intact", (still?.outcome?.errors ?? []).length === 1);
@@ -150,7 +146,5 @@ try {
 
 await dropProject();
 
-console.log(
-  fails.length === 0 ? "\nthe record says what really happened" : `\n${fails.length} FAILED`
-);
+console.log(fails.length === 0 ? "\nthe record says what really happened" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

@@ -46,11 +46,7 @@ const BATCH = 250;
 
 /** Counting is one cheap query and decides which importer to use. */
 export async function countOf(shop: string, token: string, resource: Resource): Promise<number> {
-  const data = await graphql<Record<string, { count: number } | null>>(
-    shop,
-    token,
-    SHOPIFY_RESOURCES[resource].count
-  );
+  const data = await graphql<Record<string, { count: number } | null>>(shop, token, SHOPIFY_RESOURCES[resource].count);
   const first = Object.values(data)[0];
   return first?.count ?? 0;
 }
@@ -80,12 +76,20 @@ export async function startBulk(shop: string, token: string, resource: Resource)
     // false in 2026-01, so leaving it out means a file whose lines are
     // in no particular order — and a parent whose children arrive
     // after it has already been written.
-    `mutation($q: String!) {
-       bulkOperationRunQuery(query: $q, groupObjects: true) {
-         bulkOperation { id status }
-         userErrors { field message }
-       }
-     }`,
+    `
+      mutation ($q: String!) {
+        bulkOperationRunQuery(query: $q, groupObjects: true) {
+          bulkOperation {
+            id
+            status
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `,
     { q: bulk.query }
   );
   const { bulkOperation, userErrors } = data.bulkOperationRunQuery;
@@ -109,11 +113,19 @@ export async function pollBulk(shop: string, token: string, id: string): Promise
   const data = await graphql<{ node: BulkOp | null }>(
     shop,
     token,
-    `query($id: ID!) {
-       node(id: $id) {
-         ... on BulkOperation { id status errorCode objectCount url }
-       }
-     }`,
+    `
+      query ($id: ID!) {
+        node(id: $id) {
+          ... on BulkOperation {
+            id
+            status
+            errorCode
+            objectCount
+            url
+          }
+        }
+      }
+    `,
     { id }
   );
   return data.node;
@@ -161,9 +173,7 @@ export async function ingestSlice(
 
     const range = res.headers.get("content-range");
     const total = range ? Number(range.split("/")[1]) : NaN;
-    atEnd = Number.isFinite(total)
-      ? offset + Buffer.byteLength(text) >= total
-      : Buffer.byteLength(chunk) < SLICE;
+    atEnd = Number.isFinite(total) ? offset + Buffer.byteLength(text) >= total : Buffer.byteLength(chunk) < SLICE;
 
     if (atEnd || hasWholeFamily(text)) break;
   }
@@ -192,9 +202,7 @@ export async function ingestSlice(
 
   const lines = raw.slice(0, take).map((l) => JSON.parse(l) as Line);
   const consumed =
-    take === raw.length && atEnd
-      ? Buffer.byteLength(text)
-      : Buffer.byteLength(raw.slice(0, take).join("\n") + "\n");
+    take === raw.length && atEnd ? Buffer.byteLength(text) : Buffer.byteLength(raw.slice(0, take).join("\n") + "\n");
 
   const imported = await writeLines(db, storeId, resource, lines);
   return { nextOffset: offset + consumed, done: atEnd, imported };
@@ -212,7 +220,14 @@ function lastParent(raw: string[]): number {
 function hasWholeFamily(text: string): boolean {
   const lastBreak = text.lastIndexOf("\n");
   if (lastBreak < 0) return false;
-  return lastParent(text.slice(0, lastBreak + 1).split("\n").filter((l) => l.trim())) > 0;
+  return (
+    lastParent(
+      text
+        .slice(0, lastBreak + 1)
+        .split("\n")
+        .filter((l) => l.trim())
+    ) > 0
+  );
 }
 
 /**
@@ -220,12 +235,7 @@ function hasWholeFamily(text: string): boolean {
  * writes it in batches — which is why a million-row file costs the
  * same memory as a thousand-row one.
  */
-async function writeLines(
-  db: SupabaseClient,
-  storeId: string,
-  resource: Resource,
-  lines: Line[]
-): Promise<number> {
+async function writeLines(db: SupabaseClient, storeId: string, resource: Resource, lines: Line[]): Promise<number> {
   const spec = SHOPIFY_RESOURCES[resource];
   if (!spec.bulk) throw new ShopifyError("bulk_refused", `${resource} has no bulk export; it is paged instead.`);
   const rows = spec.bulk.assemble(lines);

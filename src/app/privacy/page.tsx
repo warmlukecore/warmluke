@@ -51,57 +51,53 @@ export default function Privacy() {
 
         <Section title="What we store">
           <p>
-            When a merchant connects a Shopify store, we copy products, variants, stock
-            levels, orders, order lines, refunds and customers into our own database so the
-            app can answer questions about them without asking Shopify each time.
+            When a merchant connects a Shopify store, we copy products, variants, stock levels, orders, order lines,
+            refunds and customers into our own database so the app can answer questions about them without asking
+            Shopify each time.
           </p>
           <p>
-            For customers that includes name, email, phone and address, because the work
-            merchants use this for, like packing an order, finding a shipment or calling a
-            buyer about a COD order, cannot be done without them.
+            For customers that includes name, email, phone and address, because the work merchants use this for, like
+            packing an order, finding a shipment or calling a buyer about a COD order, cannot be done without them.
           </p>
           <p>We also store the store&rsquo;s access token, its timezone and its currency.</p>
         </Section>
 
         <Section title="What we do not do">
           <p>
-            The assistant that builds apps and answers questions runs on Anthropic&rsquo;s
-            models. It is sent what the merchant types, the structure of their app, and the
-            store rows a question needs to be answered from &mdash; the latest orders, what is
-            running low, the top customers and best sellers, and the rows for the question
-            asked. It is never sent the store as a whole, and nothing sent is used to train a
-            model.
+            The assistant that builds apps and answers questions runs on Anthropic&rsquo;s models. It is sent what the
+            merchant types, the structure of their app, and the store rows a question needs to be answered from &mdash;
+            the latest orders, what is running low, the top customers and best sellers, and the rows for the question
+            asked. It is never sent the store as a whole, and nothing sent is used to train a model.
           </p>
           <p>
-            A second, smaller model (Jev, by Typesafe) reads a request before and after the
-            assistant works: what kind of question it is, and whether a design does what was
-            asked. It is sent the request and a description of the design &mdash; never store
-            rows.
+            A second, smaller model (Jev, by Typesafe) reads a request before and after the assistant works: what kind
+            of question it is, and whether a design does what was asked. It is sent the request and a description of the
+            design &mdash; never store rows.
           </p>
           <p>We do not sell data, and we do not use it to advertise to anyone.</p>
         </Section>
 
         <Section title="Who can see it">
           <p>
-            A store&rsquo;s data is readable only by the account that connected it and the
-            staff that account invites. This is enforced in the database itself, by
-            row-level security, not by a check an endpoint could forget to make.
+            A store&rsquo;s data is readable only by the account that connected it and the staff that account invites.
+            This is enforced in the database itself, by row-level security, not by a check an endpoint could forget to
+            make.
           </p>
           <p>
-            Data is held in Supabase (Postgres, hosted on AWS) and the app runs on Vercel.
-            Both encrypt data at rest; everything in transit is over TLS.
+            Data is held in Supabase (Postgres, hosted on AWS) and the app runs on Vercel. Both encrypt data at rest;
+            everything in transit is over TLS.
           </p>
         </Section>
 
         <Section title="Getting it back, or gone">
           <p>
-            Disconnecting a store or uninstalling the app deletes everything we copied from
-            it: products, orders, customers and the access token, not just the link.
+            Disconnecting a store or uninstalling the app deletes everything we copied from it: products, orders,
+            customers and the access token, not just the link.
           </p>
           <p>
-            A shopper&rsquo;s request to see or erase their data reaches us through
-            Shopify&rsquo;s own channels and we act on it. Erasing a person removes them;
-            their past orders stay with the merchant, no longer attached to a name.
+            A shopper&rsquo;s request to see or erase their data reaches us through Shopify&rsquo;s own channels and we
+            act on it. Erasing a person removes them; their past orders stay with the merchant, no longer attached to a
+            name.
           </p>
           <p>
             Anything else:{" "}

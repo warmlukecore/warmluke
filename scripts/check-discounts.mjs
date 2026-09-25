@@ -70,29 +70,42 @@ try {
   // discount, which it does not — so all four value shapes are here.
   const node = (n, typename, extra) => ({
     id: `gid://shopify/Discount${typename.startsWith("DiscountCode") ? "Code" : "Automatic"}Node/${stamp}${n}`,
-    discount: { __typename: typename, title: `T${n}`, status: "ACTIVE", startsAt: "2026-01-01T00:00:00Z", createdAt: "2026-01-01T00:00:00Z", ...extra },
+    discount: {
+      __typename: typename,
+      title: `T${n}`,
+      status: "ACTIVE",
+      startsAt: "2026-01-01T00:00:00Z",
+      createdAt: "2026-01-01T00:00:00Z",
+      ...extra,
+    },
   });
   await saveDiscounts(admin, store.id, [
     node(1, "DiscountCodeBasic", {
       summary: "80% off one-time purchase products • Minimum quantity of 1",
       endsAt: "2026-12-31T23:59:59Z",
-      usageLimit: 100, appliesOncePerCustomer: true, asyncUsageCount: 7,
+      usageLimit: 100,
+      appliesOncePerCustomer: true,
+      asyncUsageCount: 7,
       codes: { nodes: [{ code: "BLACKFRIDAY" }, { code: "BF2026" }] },
       customerGets: { value: { __typename: "DiscountPercentage", percentage: 0.8 } },
     }),
     node(2, "DiscountCodeBasic", {
       summary: "$10 off",
-      usageLimit: null, appliesOncePerCustomer: false, asyncUsageCount: 0,
+      usageLimit: null,
+      appliesOncePerCustomer: false,
+      asyncUsageCount: 0,
       codes: { nodes: [{ code: "TENOFF" }] },
       customerGets: { value: { __typename: "DiscountAmount", amount: { amount: "10.0", currencyCode: "USD" } } },
     }),
     node(3, "DiscountCodeFreeShipping", {
       summary: "Free shipping on one-time purchase products • Minimum quantity of 3",
-      asyncUsageCount: 2, codes: { nodes: [{ code: "FREESHIP" }] },
+      asyncUsageCount: 2,
+      codes: { nodes: [{ code: "FREESHIP" }] },
     }),
     node(4, "DiscountAutomaticBxgy", { summary: "Buy 1 item, get 1 item at 10% off", status: "SCHEDULED" }),
     node(5, "DiscountAutomaticBasic", {
-      summary: "30% off The Complete Snowboard (Ice) • Minimum quantity of 3", status: "EXPIRED",
+      summary: "30% off The Complete Snowboard (Ice) • Minimum quantity of 3",
+      status: "EXPIRED",
       customerGets: { value: { __typename: "DiscountPercentage", percentage: 0.3 } },
     }),
   ]);
@@ -105,7 +118,10 @@ try {
   // 0.8 in, 80 out. The single most likely wrong number here.
   check("a percentage is whole percents, not a fraction", Number(byTitle.T1?.percent_off) === 80);
   check("a small one too", Number(byTitle.T5?.percent_off) === 30);
-  check("an amount is an amount, with its currency", Number(byTitle.T2?.amount_off) === 10 && byTitle.T2?.currency === "USD");
+  check(
+    "an amount is an amount, with its currency",
+    Number(byTitle.T2?.amount_off) === 10 && byTitle.T2?.currency === "USD"
+  );
   check("free shipping has neither", byTitle.T3?.percent_off === null && byTitle.T3?.amount_off === null);
   check("and nor does buy-one-get-one", byTitle.T4?.percent_off === null && byTitle.T4?.amount_off === null);
   // Null is no limit. Zero would be a campaign nobody can use.
@@ -113,7 +129,10 @@ try {
   check("a real limit is kept", byTitle.T1?.usage_limit === 100 && byTitle.T1?.times_used === 7);
   check("both codes of a campaign are kept", String(byTitle.T1?.codes) === "BLACKFRIDAY,BF2026");
   check("an automatic discount has no codes, and that is not a loss", String(byTitle.T4?.codes) === "");
-  check("the method and kind are split off the type", byTitle.T3?.method === "CODE" && byTitle.T3?.kind === "FREE_SHIPPING");
+  check(
+    "the method and kind are split off the type",
+    byTitle.T3?.method === "CODE" && byTitle.T3?.kind === "FREE_SHIPPING"
+  );
   check("and Shopify's own sentence is kept whole", byTitle.T4?.summary === "Buy 1 item, get 1 item at 10% off");
 
   console.log("\nand what a merchant reads");
@@ -156,20 +175,25 @@ try {
   check("nor Shopify's sentence", (fresh?.summary ?? "").startsWith("80% off"));
 
   console.log("\nand a discount Shopify has never heard of is not invented");
-  const before = (await admin.from("discounts").select("id", { count: "exact", head: true }).eq("store_id", store.id)).count;
+  const before = (await admin.from("discounts").select("id", { count: "exact", head: true }).eq("store_id", store.id))
+    .count;
   const { data: madeUp } = await admin.rpc("abo_shopify_upsert_discount", {
     p_shop: shop,
     p_d: { id: "999999999999", title: "Not ours", status: "active" },
   });
   check("an unknown numeric id writes nothing", madeUp === 0);
-  const after = (await admin.from("discounts").select("id", { count: "exact", head: true }).eq("store_id", store.id)).count;
+  const after = (await admin.from("discounts").select("id", { count: "exact", head: true }).eq("store_id", store.id))
+    .count;
   check("and adds no row", after === before);
 
   console.log("\nand deleting one reaches it by either name");
   const numeric = byTitle.T3.external_id.split("/").pop();
   const { data: removed } = await admin.rpc("abo_shopify_delete_discount", { p_shop: shop, p_id: numeric });
   check("a numeric id finds the campaign", removed === 1);
-  check("and it is gone", !(await admin.from("discounts").select("id").eq("external_id", byTitle.T3.external_id)).data?.length);
+  check(
+    "and it is gone",
+    !(await admin.from("discounts").select("id").eq("external_id", byTitle.T3.external_id)).data?.length
+  );
 } finally {
   await admin.from("projects").delete().eq("id", project.id);
   console.log("\nthe project is gone");

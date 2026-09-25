@@ -25,10 +25,7 @@ const env = Object.fromEntries(
     .filter((l) => l.includes("=") && !l.trim().startsWith("#"))
     .map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()])
 );
-const db = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.ADAPTIVE_OS_SERVICE_ROLE_KEY
-);
+const db = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
 
 const fails = [];
 const check = (name, cond) => {
@@ -89,8 +86,7 @@ await db.rpc("abo_shopify_upsert_product", {
   },
 });
 
-const after = async () =>
-  (await db.from("products").select("title, tags").eq("id", product.id).single()).data;
+const after = async () => (await db.from("products").select("title, tags").eq("id", product.id).single()).data;
 const now = await after();
 check("the new title is there", now.title === "Renamed by webhook");
 check("and the tags became two, not one", now.tags?.length === 2 && now.tags[0] === "cod");
@@ -215,10 +211,7 @@ if (!variant) {
       updated_at: new Date().toISOString(),
     },
   });
-  const both = await db
-    .from("inventory_levels")
-    .select("location_id, available")
-    .eq("variant_id", variant.id);
+  const both = await db.from("inventory_levels").select("location_id, available").eq("variant_id", variant.id);
   check(
     "a second location keeps its own row",
     (both.data ?? []).some((r) => r.location_id === twinLocation)
@@ -243,14 +236,8 @@ if (!variant) {
     p_level: { inventory_item_id: "999999999", location_id: "1", available: 5 },
   });
   check("a level for an unknown item is refused, not swallowed", !!orphan.error);
-  check(
-    "and says why, so the log is readable",
-    /arrived before its product/i.test(orphan.error?.message ?? "")
-  );
-  check(
-    "nothing is written against nothing",
-    (await countOf("inventory_levels")) === orphanBefore
-  );
+  check("and says why, so the log is readable", /arrived before its product/i.test(orphan.error?.message ?? ""));
+  check("nothing is written against nothing", (await countOf("inventory_levels")) === orphanBefore);
 
   // A shop nobody has connected is not a timing problem, and retrying
   // it for two days would only get the topic switched off.

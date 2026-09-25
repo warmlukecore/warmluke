@@ -48,7 +48,10 @@ for (const status of ["pending", "building", "partly_built"]) {
 console.log("\nand an ordinary design is one button");
 {
   const steps = stepsToFinish({ status: "pending", plans: build }, LINK);
-  check("it names the build button", steps.some((s) => s.includes(WAITING_BUTTONS.build)));
+  check(
+    "it names the build button",
+    steps.some((s) => s.includes(WAITING_BUTTONS.build))
+  );
   check("and says nothing about typing a name", !steps.some((s) => /Type exactly/.test(s)));
   check("two steps, no more", steps.length === 2);
 }
@@ -56,11 +59,20 @@ console.log("\nand an ordinary design is one button");
 console.log("\nand one that removes a section is the longer way round");
 {
   const steps = stepsToFinish({ status: "pending", plans: removal }, LINK);
-  check("it opens the removal", steps.some((s) => s.includes(WAITING_BUTTONS.openRemoval)));
+  check(
+    "it opens the removal",
+    steps.some((s) => s.includes(WAITING_BUTTONS.openRemoval))
+  );
   // The whole safeguard, quoted exactly: a merchant told to type
   // something else types something else, and nothing happens.
-  check("it gives the exact word to type", steps.some((s) => s === "Type exactly: product-2"));
-  check("and then the confirm", steps.some((s) => s.includes(WAITING_BUTTONS.confirmRemoval)));
+  check(
+    "it gives the exact word to type",
+    steps.some((s) => s === "Type exactly: product-2")
+  );
+  check(
+    "and then the confirm",
+    steps.some((s) => s.includes(WAITING_BUTTONS.confirmRemoval))
+  );
   check("and never offers the plain build", !steps.some((s) => s.includes(`"${WAITING_BUTTONS.build}"`)));
   // Order matters: the input does not exist until the first is tapped.
   const at = (t) => steps.findIndex((s) => s.includes(t));
@@ -74,7 +86,10 @@ console.log("\nand a half-built one is not offered as finishable");
 {
   const steps = stepsToFinish({ status: "partly_built", plans: build }, LINK);
   check("no button is named", !steps.some((s) => /Tap "/.test(s)));
-  check("it says to ask again", steps.some((s) => /again/.test(s)));
+  check(
+    "it says to ask again",
+    steps.some((s) => /again/.test(s))
+  );
 }
 
 console.log("\nand two sections going take two names");
@@ -89,7 +104,10 @@ console.log("\nand two sections going take two names");
     },
     LINK
   );
-  check("both are quoted", two.some((s) => s === "Type exactly: product-2, old-stock"));
+  check(
+    "both are quoted",
+    two.some((s) => s === "Type exactly: product-2, old-stock")
+  );
 }
 
 // ── The words, and the door ─────────────────────────────────────
@@ -132,10 +150,7 @@ console.log("\nand the panel is where those steps land");
   // Fails closed: an entry that wants a word typed has nowhere here
   // to type it, and running it anyway would skip the only reason it
   // asked for one.
-  check(
-    "and a change wanting a typed word gets no button",
-    /spec\.confirm === "list"/.test(panel)
-  );
+  check("and a change wanting a typed word gets no button", /spec\.confirm === "list"/.test(panel));
 }
 
 console.log(fails.length === 0 ? "\nthe instructions match the app" : `\n${fails.length} FAILED`);

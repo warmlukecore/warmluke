@@ -24,8 +24,7 @@ const store = (over = {}) => ({
   ...over,
 });
 
-const prompt = (s, projectCurrency = "USD") =>
-  buildSystemPrompt([], "Acme", "en-US", projectCurrency, s)[1];
+const prompt = (s, projectCurrency = "USD") => buildSystemPrompt([], "Acme", "en-US", projectCurrency, s)[1];
 
 console.log("the contract block must stay identical for every project");
 // The system prompt is two blocks so the big one can be cached. If the
@@ -47,17 +46,11 @@ check("the cached block does not change with the store", contractA === contractB
 // nothing being open had to stop reading as "you are blind".
 console.log("every section's fields reach the model");
 {
-  const lines = [
-    "- Orders [id aaa]: order_number (text), total (currency)",
-    "- On Check [id bbb]: note (longtext)",
-  ];
+  const lines = ["- Orders [id aaa]: order_number (text), total (currency)", "- On Check [id bbb]: note (longtext)"];
   const withCols = buildUserMessage("add a rule", null, null, null, [], lines);
   check("the sections are listed", withCols.includes("On Check [id bbb]: note (longtext)"));
   check("with their ids, so a plan can target one", withCols.includes("[id aaa]"));
-  check(
-    "and named as the only fields there are",
-    /ONLY field names that exist/.test(withCols)
-  );
+  check("and named as the only fields there are", /ONLY field names that exist/.test(withCols));
   // The contradiction that caused it: the list was there, and the next
   // line said no schema was available.
   check("nothing then says no schema is available", !/^null \(no module selected\)$/m.test(withCols));
@@ -115,18 +108,12 @@ const newModule = (label) => ({
   newModule: { name: label.toLowerCase(), nav_label: label },
 });
 
-check(
-  "a new Orders section is flagged",
-  storeOverlap(newModule("Orders"), facts)[0]?.includes("already has 4 orders")
-);
+check("a new Orders section is flagged", storeOverlap(newModule("Orders"), facts)[0]?.includes("already has 4 orders"));
 check(
   "Sales counts as orders, because that is what they call it",
   storeOverlap(newModule("Sales"), facts).length === 1
 );
-check(
-  "Stock is matched to inventory levels",
-  storeOverlap(newModule("Stock"), facts)[0]?.includes("35 stock levels")
-);
+check("Stock is matched to inventory levels", storeOverlap(newModule("Stock"), facts)[0]?.includes("35 stock levels"));
 check("Customers is flagged", storeOverlap(newModule("Customer list"), facts).length === 1);
 check(
   "the warning says the two lists will not match",
@@ -134,10 +121,7 @@ check(
 );
 
 console.log("\nand stays quiet when it should");
-check(
-  "a section about something else is not flagged",
-  storeOverlap(newModule("Packing slips"), facts).length === 0
-);
+check("a section about something else is not flagged", storeOverlap(newModule("Packing slips"), facts).length === 0);
 check("no store, no warning", storeOverlap(newModule("Orders"), null).length === 0);
 // A store with no orders imported has nothing to duplicate, so warning
 // about it would be the app inventing a conflict.

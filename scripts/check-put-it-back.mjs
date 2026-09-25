@@ -30,20 +30,14 @@ const check = (name, cond) => {
 };
 const show = (v) => console.log("     →", JSON.stringify(v).slice(0, 320));
 
-const client = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
-);
+const client = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY);
 const owner = await signInAsCheckUser(client, env);
 if (!owner.session) {
   console.log(`could not sign in as the owner — ${owner.why}`);
   process.exit(1);
 }
 const token = owner.session.access_token;
-const admin = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.ADAPTIVE_OS_SERVICE_ROLE_KEY
-);
+const admin = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
 // A project for this run only — the check user's, not the merchant's.
 // Everything this makes is under it, and remove() takes it all.
 const project = await throwawayProject(admin, owner.user.id, "put-it-back");
@@ -241,10 +235,7 @@ try {
   const before = await latestSchema();
   const stale = await undoCall(movedMsg.id);
   check("undoing the older one is refused", (stale.body?.done ?? []).length === 0);
-  check(
-    "and says the section has changed since",
-    /changed .* since/i.test((stale.body?.couldNot ?? []).join(" "))
-  );
+  check("and says the section has changed since", /changed .* since/i.test((stale.body?.couldNot ?? []).join(" ")));
   if ((stale.body?.done ?? []).length > 0) show(stale.body);
   const untouched = await latestSchema();
   check("the newer work is still there", untouched?.version === before?.version);
@@ -290,13 +281,21 @@ try {
   // A section renamed, and put back — unless it was renamed again.
   console.log("\nand a section's name comes back, unless it was renamed again");
   const renamed = await submit(`Put back ${stamp} — rename`, [
-    { changeType: "MODULE_UPDATE", targetModuleId: moduleId, moduleUpdate: { nav_label: `Back ${stamp} renamed` }, explanation: "A better name." },
+    {
+      changeType: "MODULE_UPDATE",
+      targetModuleId: moduleId,
+      moduleUpdate: { nav_label: `Back ${stamp} renamed` },
+      explanation: "A better name.",
+    },
   ]);
   check("the rename is built", isBuilt(renamed));
   if (!isBuilt(renamed)) show(renamed);
   const renameMsg = await lastBuildMessage();
   const renameStep = (renameMsg?.payload?.undo ?? [])[0];
-  check("and offered back with what it said before", renameStep?.kind === "module" && renameStep.was?.nav_label === `Back ${stamp}`);
+  check(
+    "and offered back with what it said before",
+    renameStep?.kind === "module" && renameStep.was?.nav_label === `Back ${stamp}`
+  );
   const renameBack = await undoCall(renameMsg.id);
   check("the old name is put back", (renameBack.body?.done ?? []).length > 0);
   if ((renameBack.body?.done ?? []).length === 0) show(renameBack.body);
@@ -304,16 +303,29 @@ try {
   check("and the section says it", named?.nav_label === `Back ${stamp}`);
   // Renamed twice: the first build's undo is not the second's to undo.
   const again = await submit(`Put back ${stamp} — rename again`, [
-    { changeType: "MODULE_UPDATE", targetModuleId: moduleId, moduleUpdate: { nav_label: `Back ${stamp} second` }, explanation: "Another name." },
+    {
+      changeType: "MODULE_UPDATE",
+      targetModuleId: moduleId,
+      moduleUpdate: { nav_label: `Back ${stamp} second` },
+      explanation: "Another name.",
+    },
   ]);
   check("a second rename is built", isBuilt(again));
   const secondMsg = await lastBuildMessage();
   await submit(`Put back ${stamp} — rename third`, [
-    { changeType: "MODULE_UPDATE", targetModuleId: moduleId, moduleUpdate: { nav_label: `Back ${stamp} third` }, explanation: "A third." },
+    {
+      changeType: "MODULE_UPDATE",
+      targetModuleId: moduleId,
+      moduleUpdate: { nav_label: `Back ${stamp} third` },
+      explanation: "A third.",
+    },
   ]);
   const staleRename = await undoCall(secondMsg.id);
   check("undoing the second after a third is refused", (staleRename.body?.done ?? []).length === 0);
-  check("and says it was changed again since", /changed again since/.test((staleRename.body?.couldNot ?? []).join(" ")));
+  check(
+    "and says it was changed again since",
+    /changed again since/.test((staleRename.body?.couldNot ?? []).join(" "))
+  );
 
   // The same putting back, asked for from where the build was asked
   // for. A merchant who built it by talking to their own assistant
@@ -349,10 +361,7 @@ try {
     // section already back and has nothing to restore over it.
     const again = await tool("undo_build", { request_id: built.request_id });
     const afterTwice = await latestSchema();
-    check(
-      "asking twice changes nothing more",
-      (afterTwice?.schema_json?.features?.stats ?? []).length === 0
-    );
+    check("asking twice changes nothing more", (afterTwice?.schema_json?.features?.stats ?? []).length === 0);
     if (again?.status === "put back" && (afterTwice?.version ?? 0) > (now?.version ?? 0)) {
       // Allowed, because putting back what is already back is a
       // no-op in content — but it must not resurrect the stat.
@@ -399,9 +408,7 @@ try {
         name: `Back ${stamp} stamp`,
         definition: {
           trigger: { type: "record_created" },
-          actions: [
-            { type: "set_fields", target: { self: true }, set: { note: { const: "seen" } } },
-          ],
+          actions: [{ type: "set_fields", target: { self: true }, set: { note: { const: "seen" } } }],
         },
       },
       explanation: "Marks a new row as seen.",
@@ -433,20 +440,12 @@ try {
 
   const ruleUndone = await undoCall(ruleMsg.id);
   check("putting it back is accepted", ruleUndone.status === 200);
-  const { data: rule } = await admin
-    .from("automations")
-    .select("enabled")
-    .eq("id", ruleId)
-    .maybeSingle();
+  const { data: rule } = await admin.from("automations").select("enabled").eq("id", ruleId).maybeSingle();
   // Switched off rather than deleted, so the run log stays readable —
   // the same choice AUTOMATION_REMOVE already makes.
   check("the rule stops running", rule?.enabled === false);
   check("but is still there to read", rule !== null);
-  const { data: other } = await admin
-    .from("automations")
-    .select("enabled")
-    .eq("id", bystander.id)
-    .maybeSingle();
+  const { data: other } = await admin.from("automations").select("enabled").eq("id", bystander.id).maybeSingle();
   check("and a rule of the same name elsewhere is left alone", other?.enabled === true);
   await admin.from("automations").delete().eq("id", bystander.id);
 
@@ -463,25 +462,16 @@ try {
         name: `Back ${stamp} stamp`,
         definition: {
           trigger: { type: "record_created" },
-          actions: [
-            { type: "set_fields", target: { self: true }, set: { note: { const: "changed" } } },
-          ],
+          actions: [{ type: "set_fields", target: { self: true }, set: { note: { const: "changed" } } }],
         },
       },
       explanation: "Marks a new row as changed instead.",
     },
   ]);
   check("the change is built", isBuilt(rewritten));
-  const { data: nowSays } = await admin
-    .from("automations")
-    .select("id, definition")
-    .eq("id", ruleId)
-    .single();
+  const { data: nowSays } = await admin.from("automations").select("id, definition").eq("id", ruleId).single();
   check("the same rule row was rewritten, not replaced", nowSays?.id === ruleId);
-  check(
-    "and it says the new thing",
-    JSON.stringify(nowSays?.definition).includes("changed")
-  );
+  check("and it says the new thing", JSON.stringify(nowSays?.definition).includes("changed"));
   const rewrittenMsg = await lastBuildMessage();
   check(
     "the offer says it goes back to what it said before",
@@ -490,15 +480,8 @@ try {
   const putRuleBack = await undoCall(rewrittenMsg.id);
   check("putting it back is accepted", (putRuleBack.body?.done ?? []).length > 0);
   if ((putRuleBack.body?.done ?? []).length === 0) show(putRuleBack.body);
-  const { data: backAgain } = await admin
-    .from("automations")
-    .select("enabled, definition")
-    .eq("id", ruleId)
-    .single();
-  check(
-    "the rule says what it said before, not nothing",
-    JSON.stringify(backAgain?.definition).includes("seen")
-  );
+  const { data: backAgain } = await admin.from("automations").select("enabled, definition").eq("id", ruleId).single();
+  check("the rule says what it said before, not nothing", JSON.stringify(backAgain?.definition).includes("seen"));
   check("and it is still running", backAgain?.enabled === true);
 
   // A section deleted after a build on it: the undo says so, not
@@ -530,15 +513,10 @@ try {
     .ilike("name", `${slug}%`);
   for (const m of leftovers ?? []) await admin.from("modules").delete().eq("id", m.id);
   if (aiThreadId) {
-    const { data: msgs } = await admin
-      .from("messages")
-      .select("id, content")
-      .eq("conversation_id", aiThreadId);
+    const { data: msgs } = await admin.from("messages").select("id, content").eq("conversation_id", aiThreadId);
     // Only this run's, matched on its stamp — and the putting-back
     // lines, which name the section rather than the stamp.
-    const mine = (msgs ?? []).filter(
-      (m) => m.content.includes(stamp) || /put back/i.test(m.content)
-    );
+    const mine = (msgs ?? []).filter((m) => m.content.includes(stamp) || /put back/i.test(m.content));
     for (const m of mine) await admin.from("messages").delete().eq("id", m.id);
     if (mine.length === (msgs ?? []).length) {
       await admin.from("conversations").delete().eq("id", aiThreadId);

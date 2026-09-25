@@ -22,7 +22,9 @@ const env = Object.fromEntries(
     .map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()])
 );
 if (env.CHECK_PROJECT !== "1") {
-  throw new Error(`${envFile} does not declare CHECK_PROJECT=1, and these specs write; point ENV_FILE at the check project's file`);
+  throw new Error(
+    `${envFile} does not declare CHECK_PROJECT=1, and these specs write; point ENV_FILE at the check project's file`
+  );
 }
 
 /** How the server is expected to answer for its models: what the specs were recorded against. */
@@ -40,7 +42,10 @@ export const test = base.extend<{ signedIn: Page }, { shop: Shop }>({
   shop: [
     async ({}, use, workerInfo) => {
       const admin = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
-      const anon = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY);
+      const anon = createClient(
+        env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
+        env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
+      );
       const me = await signInAsCheckUser(anon, env);
       if (!me.session) throw new Error(`no check user: ${me.why}`);
       // Named for the width, which Luke is told: desktop and phone then ask
@@ -52,12 +57,25 @@ export const test = base.extend<{ signedIn: Page }, { shop: Shop }>({
         const { data: store, error } = await admin
           .from("stores")
           .insert({
-            project_id: project.id, provider: "shopify", status: "connected",
+            project_id: project.id,
+            provider: "shopify",
+            status: "connected",
             // Unique per run, and the same to the model: a shop address is a placeholder on a tape.
             shop_domain: `e2e-${project.id.slice(0, 8)}.myshopify.com`,
             access_token: "e2e-token-opens-nothing",
-            currency: SEED_CURRENCY, timezone: SEED_TIMEZONE, country: "IN", connected_at: now, last_synced_at: now,
-            granted_scopes: ["read_orders", "write_orders", "read_products", "write_products", "read_customers", "write_customers"],
+            currency: SEED_CURRENCY,
+            timezone: SEED_TIMEZONE,
+            country: "IN",
+            connected_at: now,
+            last_synced_at: now,
+            granted_scopes: [
+              "read_orders",
+              "write_orders",
+              "read_products",
+              "write_products",
+              "read_customers",
+              "write_customers",
+            ],
           })
           .select("id")
           .single();
@@ -65,7 +83,13 @@ export const test = base.extend<{ signedIn: Page }, { shop: Shop }>({
         await seedShop(admin, store.id);
         const nodes = seedNodes();
         await admin.from("import_runs").insert(
-          RESOURCES.map((resource) => ({ store_id: store.id, resource, status: "done", imported: nodes[resource].length, finished_at: now }))
+          RESOURCES.map((resource) => ({
+            store_id: store.id,
+            resource,
+            status: "done",
+            imported: nodes[resource].length,
+            finished_at: now,
+          }))
         );
         await use({ admin, userId: me.user.id, projectId: project.id, storeId: store.id, session: me.session });
       } finally {

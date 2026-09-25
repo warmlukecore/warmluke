@@ -32,7 +32,11 @@ check("an exact match is not a near match", !near("12354").includes("12354"));
 check("an empty scan offers nothing", near("   ").length === 0);
 
 console.log("\nwhat Luke is told");
-const p = fixPrompt({ what: "a packing section", tried: { changeType: "FEATURE_UPDATE" }, errors: ["Filter field \"x\" doesn't exist"] });
+const p = fixPrompt({
+  what: "a packing section",
+  tried: { changeType: "FEATURE_UPDATE" },
+  errors: ['Filter field "x" doesn\'t exist'],
+});
 check("it names what was asked for", /a packing section/.test(p));
 check("and what was tried", /FEATURE_UPDATE/.test(p));
 check("and why it did not fit", /doesn't exist/.test(p));
@@ -44,7 +48,10 @@ console.log("\nthe shape");
 const e = engineError("It did not fit.", ["a", "b", "c", "d", "e", "f", "g"], "prompt", "because");
 check("an engine error offers Luke first", e.fix?.[0]?.action.type === "ask_luke" && e.fix[0].label.includes("Luke"));
 check("and keeps at most six lines of detail", e.details?.length === 6);
-check("a thrown Error becomes a system error", asError(new Error("boom")).kind === "system" && asError(new Error("boom")).what === "boom");
+check(
+  "a thrown Error becomes a system error",
+  asError(new Error("boom")).kind === "system" && asError(new Error("boom")).what === "boom"
+);
 check("a string becomes a system error", asError("nope").what === "nope");
 check("an AppError passes through untouched", asError(e) === e);
 check("nothing at all gets the fallback", asError(undefined, "fallback").what === "fallback");

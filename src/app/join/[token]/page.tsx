@@ -52,7 +52,12 @@ export default function JoinPage() {
       }
       const uid = data.session.user.id;
       const [seat, project, profile] = await Promise.all([
-        supabase.from("project_members").select("full_name").eq("project_id", projectId).eq("user_id", uid).maybeSingle(),
+        supabase
+          .from("project_members")
+          .select("full_name")
+          .eq("project_id", projectId)
+          .eq("user_id", uid)
+          .maybeSingle(),
         supabase.from("projects").select("name").eq("id", projectId).maybeSingle(),
         supabase.from("profiles").select("full_name").eq("user_id", uid).maybeSingle(),
       ]);
@@ -92,9 +97,7 @@ export default function JoinPage() {
             void save();
           }}
         >
-          <h1 className="text-lg font-semibold text-fg">
-            You&rsquo;re joining {about.projectName ?? "the team"}
-          </h1>
+          <h1 className="text-lg font-semibold text-fg">You&rsquo;re joining {about.projectName ?? "the team"}</h1>
           <p className="mt-1 text-[13px] text-fg-muted">So the team knows who is who. It takes a few seconds.</p>
 
           <label className={`${label} mt-5`} htmlFor="join-name">

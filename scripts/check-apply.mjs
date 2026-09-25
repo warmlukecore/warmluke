@@ -26,21 +26,16 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
-const client = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
-);
+const client = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY);
 const owner = await signInAsCheckUser(client, env);
 if (!owner.session) {
   console.log(`could not sign in as the owner — ${owner.why}`);
   process.exit(1);
 }
 const token = owner.session.access_token;
-const db = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY,
-  { global: { headers: { Authorization: `Bearer ${token}` } } }
-);
+const db = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY, {
+  global: { headers: { Authorization: `Bearer ${token}` } },
+});
 
 // A project for this run only. Every section this makes lands under
 // it, and it is removed at the end — the merchant's app is not touched.
@@ -107,11 +102,7 @@ try {
       changeType: "FIELD_ADD",
       targetModuleId: moduleId,
       newSchema: {
-        columns: [
-          col("order_no", "Order", "text"),
-          col("done", "Done", "boolean"),
-          col("packer", "Packed by", "text"),
-        ],
+        columns: [col("order_no", "Order", "text"), col("done", "Done", "boolean"), col("packer", "Packed by", "text")],
       },
     }),
   ]);
@@ -179,19 +170,13 @@ try {
     .eq("name", `mark-${stamp}`);
   check("leaving exactly one rule of that name", (byName ?? []).length === 1);
   check("and it is the one that was already there", byName?.[0]?.id === firstRuleId);
-  check(
-    "with the new definition",
-    byName?.[0]?.definition?.actions?.[0]?.set?.done?.const === false
-  );
+  check("with the new definition", byName?.[0]?.definition?.actions?.[0]?.set?.done?.const === false);
 
   // What the deletion was really costing. A run recorded against the
   // rule must survive the rule being changed.
   // Seeded as the service role: RLS lets only the trigger write a run,
   // which is right, and is why this cannot be set up as the owner.
-  const admin = createClient(
-    env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-    env.ADAPTIVE_OS_SERVICE_ROLE_KEY
-  );
+  const admin = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
   await admin.from("automation_runs").insert({
     automation_id: firstRuleId,
     ok: true,
@@ -251,7 +236,13 @@ try {
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({
       projectId: "00000000-0000-0000-0000-000000000000",
-      plans: [plan({ changeType: "NEW_MODULE", newModule: { name: "x", nav_label: "X", icon: "table" }, newSchema: { columns: [col("a", "A", "text")] } })],
+      plans: [
+        plan({
+          changeType: "NEW_MODULE",
+          newModule: { name: "x", nav_label: "X", icon: "table" },
+          newSchema: { columns: [col("a", "A", "text")] },
+        }),
+      ],
     }),
   });
   check("a project that is not theirs is not found", stranger.status === 404);
@@ -285,13 +276,21 @@ console.log("\nthe receipt names what changed");
   // The commonest edit of all, and the one that used to come back as
   // "Applied as schema v4".
   const moved = titled(
-    plan({ changeType: "UI_CHANGE", targetModuleId: "m1", newSchema: { columns: [col("a", "A", "text"), col("b", "B", "text")] } }),
+    plan({
+      changeType: "UI_CHANGE",
+      targetModuleId: "m1",
+      newSchema: { columns: [col("a", "A", "text"), col("b", "B", "text")] },
+    }),
     [{ field: "a", label: "A" }]
   );
   check("a column added under UI_CHANGE still says so", moved === "Add fields to Products");
 
   const made = titled(
-    plan({ changeType: "NEW_MODULE", newModule: { name: "sup", nav_label: "Suppliers", icon: "table" }, newSchema: { columns: [col("a", "A", "text")] } })
+    plan({
+      changeType: "NEW_MODULE",
+      newModule: { name: "sup", nav_label: "Suppliers", icon: "table" },
+      newSchema: { columns: [col("a", "A", "text")] },
+    })
   );
   check("a new section is named", made === "New section: Suppliers");
 

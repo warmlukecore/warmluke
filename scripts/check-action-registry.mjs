@@ -54,7 +54,10 @@ const SAMPLES = {
 
 console.log("every action has an example to be checked against");
 for (const name of ACTIONS) check(`${name}`, !!SAMPLES[name]);
-check("and no example names an action nobody declared", Object.keys(SAMPLES).every((k) => !!actionSpec(k)));
+check(
+  "and no example names an action nobody declared",
+  Object.keys(SAMPLES).every((k) => !!actionSpec(k))
+);
 
 for (const name of ACTIONS) {
   const spec = STORE_ACTIONS[name];
@@ -85,7 +88,10 @@ for (const name of ACTIONS) {
   const vars = spec.variables(sample.targets[0], sample.params);
   check("one call names the thing it changes", JSON.stringify(vars).includes(sample.targets[0].id));
 
-  check("a refusal is found in the answer", spec.errors({ data: { x: { userErrors: [{ message: "no" }] } } }).length === 1);
+  check(
+    "a refusal is found in the answer",
+    spec.errors({ data: { x: { userErrors: [{ message: "no" }] } } }).length === 1
+  );
   check("and a clean answer has none", spec.errors({ data: { x: { node: { id: "1" } } } }).length === 0);
 
   if (spec.undo) {
@@ -100,7 +106,10 @@ for (const name of ACTIONS) {
 }
 
 console.log("\nand the registry adds up");
-check("every scope is a write scope", ACTION_SCOPES.every((s) => s.startsWith("write_")));
+check(
+  "every scope is a write scope",
+  ACTION_SCOPES.every((s) => s.startsWith("write_"))
+);
 check("and each is listed once", new Set(ACTION_SCOPES).size === ACTION_SCOPES.length);
 check("an unknown action has no spec", actionSpec("delete_everything") === null);
 check("and there is a ceiling on how much one change touches", MOST_TARGETS > 0 && MOST_TARGETS <= 500);
@@ -137,10 +146,7 @@ console.log("\nand every id an action needs, some list gives");
       // that appears in no list at all.
       const from = given.get(kind);
       const fromExternal = ["Order", "Product", "Customer"].includes(kind);
-      check(
-        `${name}: a ${kind} id can be read from somewhere`,
-        (from && from.length > 0) || fromExternal
-      );
+      check(`${name}: a ${kind} id can be read from somewhere`, (from && from.length > 0) || fromExternal);
     }
   }
 
@@ -162,10 +168,7 @@ console.log("\nand every id an action needs, some list gives");
       check(`${view} is defined by a migration`, !!file);
       if (!file) continue;
       const sql = readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), "utf8");
-      check(
-        `${view} really selects ${column} (${table} → ${kind})`,
-        new RegExp(`\\b${column}\\b`).test(sql)
-      );
+      check(`${view} really selects ${column} (${table} → ${kind})`, new RegExp(`\\b${column}\\b`).test(sql));
     }
   }
 }
@@ -208,7 +211,10 @@ console.log("\nand what the pages promise is what the registry holds");
     const src = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
     for (const fn of uses) check(`${file} says it with ${fn}()`, src.includes(`${fn}()`));
     // Comments may quote the old line to say why it went; copy may not.
-    const copy = src.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+    const copy = src
+      .split("\n")
+      .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+      .join("\n");
     check(`${file} no longer says it never writes`, !/never write/i.test(copy));
     check(`${file} no longer calls the store read-only`, !/store data is read-only/i.test(copy));
   }

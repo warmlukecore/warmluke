@@ -30,10 +30,7 @@ const check = (name, cond) => {
   if (!cond) fails.push(name);
 };
 
-const client = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY
-);
+const client = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY);
 const { data: owner } = await client.auth.signInWithPassword({
   email: OWNER_EMAIL,
   password: process.env.OWNER_PASSWORD ?? "",
@@ -42,10 +39,7 @@ if (!owner?.session) {
   console.log("no OWNER_PASSWORD given — nothing to check");
   process.exit(0);
 }
-const admin = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.ADAPTIVE_OS_SERVICE_ROLE_KEY
-);
+const admin = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
 const { data: project } = await admin.from("projects").select("id").limit(1).single();
 
 const stamp = Date.now().toString(36);
@@ -116,9 +110,7 @@ try {
   // The whole point. This used to be 2.
   check("the section exists once, not twice", (await sections()) === 1);
 
-  const row = (
-    await admin.from("build_requests").select("status, outcome").eq("id", reqId).single()
-  ).data;
+  const row = (await admin.from("build_requests").select("status, outcome").eq("id", reqId).single()).data;
   check("and the request is recorded as built", row?.status === "built");
   check("with what it built", (row?.outcome?.applied ?? []).length === 1);
 

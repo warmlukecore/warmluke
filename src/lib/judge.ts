@@ -23,14 +23,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { askJev } from "@/lib/jev";
 import { keyFor } from "@/lib/model-tape";
-import {
-  AUTOMATION_ACTIONS,
-  COLUMNS,
-  NOT_SUPPORTED,
-  STAT_OPS,
-  TRIGGERS,
-  VIEWS,
-} from "@/lib/capabilities";
+import { AUTOMATION_ACTIONS, COLUMNS, NOT_SUPPORTED, STAT_OPS, TRIGGERS, VIEWS } from "@/lib/capabilities";
 import { describePlan, type StoreFacts } from "@/lib/describe";
 import type { AssistantPlan, ModuleRow } from "@/lib/types";
 

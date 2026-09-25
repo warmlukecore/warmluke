@@ -24,8 +24,7 @@ export const runtime = "nodejs";
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const q = Object.fromEntries(url.searchParams.entries());
-  const back = (why: string) =>
-    NextResponse.redirect(`${url.origin}/dashboard?shopify=failed&reason=${why}`);
+  const back = (why: string) => NextResponse.redirect(`${url.origin}/dashboard?shopify=failed&reason=${why}`);
 
   const clientId = process.env.SHOPIFY_CLIENT_ID;
   const clientSecret = process.env.SHOPIFY_CLIENT_SECRET;
@@ -101,11 +100,7 @@ export async function GET(req: Request) {
     // thing, and the log is somewhere they cannot see.
     const trouble = result.failed.length > 0 ? result.failed.join(" | ").slice(0, 2000) : null;
     if (trouble) console.error("shopify webhooks not subscribed:", trouble);
-    await anon
-      .from("stores")
-      .update({ webhook_error: trouble })
-      .eq("project_id", projectId)
-      .eq("shop_domain", shop);
+    await anon.from("stores").update({ webhook_error: trouble }).eq("project_id", projectId).eq("shop_domain", shop);
 
     return NextResponse.redirect(`${url.origin}/app/${projectId}?shopify=connected`);
   } catch (e) {

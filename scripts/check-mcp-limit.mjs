@@ -54,9 +54,7 @@ try {
   check("with the tool that was called", rows?.[1]?.tool === "low_stock");
 
   console.log("\nthe record is a record");
-  const forged = await user
-    .from("mcp_calls")
-    .insert({ user_id: made.user.id, tool: "never happened" });
+  const forged = await user.from("mcp_calls").insert({ user_id: made.user.id, tool: "never happened" });
   check("a caller cannot add to it", !!forged.error);
   const wiped = await user.from("mcp_calls").delete().eq("user_id", made.user.id).select();
   check("nor erase it", !wiped.data?.length);
@@ -72,10 +70,7 @@ try {
   const over = (await user.rpc("abo_mcp_call", { p_tool: "search_store" })).data;
   check("the call is refused", over?.ok === false);
   check("and says what the limit is", over?.limit === 300);
-  const after = await admin
-    .from("mcp_calls")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", made.user.id);
+  const after = await admin.from("mcp_calls").select("*", { count: "exact", head: true }).eq("user_id", made.user.id);
   // A refusal that still writes a row would keep the account locked
   // out for an hour longer every time it retried.
   check("a refusal writes nothing", after.count === 302);

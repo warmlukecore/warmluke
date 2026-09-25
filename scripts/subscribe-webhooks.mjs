@@ -32,10 +32,7 @@ Object.assign(process.env, env);
 
 const APP = process.env.APP_URL ?? "https://warmluke.vercel.app";
 const SECRET = env.SHOPIFY_CLIENT_SECRET;
-const db = createClient(
-  env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-  env.ADAPTIVE_OS_SERVICE_ROLE_KEY
-);
+const db = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
 
 const { data: stores } = await db
   .from("stores")
@@ -66,9 +63,21 @@ for (const store of stores) {
   const live = await graphql(
     store.shop_domain,
     token,
-    `{ webhookSubscriptions(first: 50) {
-         nodes { topic endpoint { __typename ... on WebhookHttpEndpoint { callbackUrl } } }
-       } }`
+    `
+      {
+        webhookSubscriptions(first: 50) {
+          nodes {
+            topic
+            endpoint {
+              __typename
+              ... on WebhookHttpEndpoint {
+                callbackUrl
+              }
+            }
+          }
+        }
+      }
+    `
   );
   const nodes = live.webhookSubscriptions.nodes ?? [];
   console.log(`\n  Shopify will send ${nodes.length}:`);

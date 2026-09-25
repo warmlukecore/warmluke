@@ -117,11 +117,7 @@ export type Near<T> = { value: string; item: T; distance: number };
  * never a different thing altogether. Case and surrounding space are
  * not differences.
  */
-export function nearest<T>(
-  value: string,
-  candidates: Array<{ value: string; item: T }>,
-  max = 3
-): Near<T>[] {
+export function nearest<T>(value: string, candidates: Array<{ value: string; item: T }>, max = 3): Near<T>[] {
   const v = value.trim().toLowerCase();
   if (!v) return [];
   const allowed = Math.max(1, Math.floor(v.length / 4));

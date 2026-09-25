@@ -37,12 +37,7 @@ const check = (name, cond) => {
 
 console.log("a reply that is an answer");
 {
-  const good = parseReply(
-    JSON.stringify({ type: "answer", message: "Three are low." }),
-    [],
-    null,
-    null
-  );
+  const good = parseReply(JSON.stringify({ type: "answer", message: "Three are low." }), [], null, null);
   check("is accepted", good.ok === true && good.reply.type === "answer");
   check("and keeps what it said", good.ok && good.reply.message === "Three are low.");
 
@@ -124,15 +119,8 @@ console.log("\nwhat the prompt says when no store is connected");
 
 console.log("\nand what it says when one is");
 {
-  const db = createClient(
-    env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL,
-    env.ADAPTIVE_OS_SERVICE_ROLE_KEY
-  );
-  const { data: project } = await db
-    .from("projects")
-    .select("id, name, currency")
-    .limit(1)
-    .maybeSingle();
+  const db = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
+  const { data: project } = await db.from("projects").select("id, name, currency").limit(1).maybeSingle();
   const store = project ? await storeContextFor(db, project.id) : null;
 
   if (!store) {
@@ -165,10 +153,7 @@ console.log("\nand what it says when one is");
         prompt.includes(String(one.product)) && prompt.includes(`${one.available} left`)
       );
     } else {
-      check(
-        "it says nothing is low rather than staying silent",
-        /Nothing is running low/.test(prompt)
-      );
+      check("it says nothing is low rather than staying silent", /Nothing is running low/.test(prompt));
     }
   }
 }

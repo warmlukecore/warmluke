@@ -39,10 +39,7 @@ export class ShopifyError extends Error {
 export function normalizeShopDomain(value: string): string {
   const domain = value.trim().toLowerCase();
   if (domain.length > 255 || !SHOP_DOMAIN.test(domain)) {
-    throw new ShopifyError(
-      "invalid_shop_domain",
-      "Enter a valid store address ending in .myshopify.com."
-    );
+    throw new ShopifyError("invalid_shop_domain", "Enter a valid store address ending in .myshopify.com.");
   }
   return domain;
 }
@@ -160,10 +157,7 @@ async function postOAuth(shop: string, body: Record<string, string>): Promise<To
     body: new URLSearchParams(body).toString(),
   });
   if (!res.ok) {
-    throw new ShopifyError(
-      "token_exchange_failed",
-      `Shopify refused the token exchange (${res.status}).`
-    );
+    throw new ShopifyError("token_exchange_failed", `Shopify refused the token exchange (${res.status}).`);
   }
   return (await res.json()) as TokenGrant;
 }
@@ -235,10 +229,9 @@ export async function fetchShopContext(
   shop: string,
   accessToken: string
 ): Promise<{ timezone: string; currency: string; country: string | null; name: string }> {
-  const res = await fetch(
-    `https://${normalizeShopDomain(shop)}/admin/api/${SHOPIFY_API_VERSION}/shop.json`,
-    { headers: { "X-Shopify-Access-Token": accessToken } }
-  );
+  const res = await fetch(`https://${normalizeShopDomain(shop)}/admin/api/${SHOPIFY_API_VERSION}/shop.json`, {
+    headers: { "X-Shopify-Access-Token": accessToken },
+  });
   if (!res.ok) {
     throw new ShopifyError("shop_context_failed", `Could not read the store (${res.status}).`);
   }

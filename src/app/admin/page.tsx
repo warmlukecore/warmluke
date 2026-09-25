@@ -129,11 +129,7 @@ export default function Admin() {
   // One switch at a time. They are independent — an account can have
   // both, either, or neither — so a single call setting the pair would
   // let a stale row overwrite the switch nobody touched.
-  async function setFeature(
-    row: Account,
-    feature: "chat" | "mcp" | "store_actions",
-    on: boolean
-  ) {
+  async function setFeature(row: Account, feature: "chat" | "mcp" | "store_actions", on: boolean) {
     setBusy(row.user_id);
     setError(null);
     const { error: err } = await supabase.rpc("abo_admin_set_feature", {
@@ -282,7 +278,12 @@ export default function Admin() {
 
             <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
               <label className="relative block w-full max-w-xs">
-                <Search aria-hidden size={15} strokeWidth={1.75} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-fg-faint" />
+                <Search
+                  aria-hidden
+                  size={15}
+                  strokeWidth={1.75}
+                  className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-fg-faint"
+                />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
@@ -327,8 +328,7 @@ export default function Admin() {
                   {shown.map((r) => {
                     const draft = drafts[r.user_id] ?? String(r.free_turns);
                     const nextAllowance = allowanceFrom(draft);
-                    const allowanceChanged =
-                      nextAllowance !== null && nextAllowance !== r.free_turns;
+                    const allowanceChanged = nextAllowance !== null && nextAllowance !== r.free_turns;
                     const confirming = pending?.row.user_id === r.user_id ? pending : null;
                     const site = siteLink(r.website);
                     const facts = [
@@ -339,302 +339,136 @@ export default function Admin() {
                     ].filter(Boolean);
 
                     return (
-                    <tr key={r.user_id} className="align-top transition-colors hover:bg-surface-subdued/60">
-                      <td className="px-3 py-3 first:pl-4">
-                        <div className="flex items-start gap-2.5">
-                          <span
-                            aria-hidden
-                            className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${quietClasses(r.email)}`}
-                          >
-                            {(r.full_name || r.email).trim().charAt(0).toUpperCase()}
-                          </span>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                onClick={() => setOpen(r)}
-                                title="See everything about this account"
-                                className="max-w-[14rem] truncate text-left font-medium text-fg hover:text-link hover:underline"
-                              >
-                                {r.full_name || r.memberships?.find((m) => m.name)?.name || r.email}
-                              </button>
-                              {r.suspended && (
-                                <span className="rounded-full bg-tone-critical px-1.5 py-px text-[10px] font-medium text-tone-critical-fg">
-                                  suspended
-                                </span>
-                              )}
-                              {r.is_superadmin && (
-                                <span className="rounded-full bg-tone-neutral px-1.5 py-px text-[10px] font-medium text-tone-neutral-fg">
-                                  admin
-                                </span>
-                              )}
-                            </div>
-                            {r.full_name && <div className="max-w-[14rem] truncate text-xs text-fg-muted">{r.email}</div>}
-                            <div className="text-[11px] text-fg-faint">
-                              Joined {new Date(r.created_at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}
-                              {" · "}
-                              {ago(r.last_sign_in_at, now, "never signed in")}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-3 py-3 first:pl-4">
-                        {r.business_name ? (
-                          <div className="min-w-44 max-w-60">
-                            <div className="truncate font-medium text-fg">{r.business_name}</div>
-                            {facts.length > 0 && <div className="text-xs text-fg-muted">{facts.join(" · ")}</div>}
-                            <div className="mt-0.5 flex flex-wrap gap-x-2 text-[11px] text-fg-faint">
-                              {site && (
-                                <a href={site.href} target="_blank" rel="noopener noreferrer nofollow" className="text-link hover:underline">
-                                  {site.text}
-                                </a>
-                              )}
-                              {r.heard_from && (
-                                <span>
-                                  via {labelOf(HEARD_OPTIONS, r.heard_from)}
-                                  {r.heard_from_detail ? ` (${r.heard_from_detail})` : ""}
-                                </span>
-                              )}
-                            </div>
-                            {!r.onboarded_at && (
-                              <span className="mt-1 inline-block rounded-full bg-tone-attention px-1.5 py-px text-[10px] font-medium text-tone-attention-fg">
-                                Onboarding not finished
-                              </span>
-                            )}
-                          </div>
-                        ) : r.is_superadmin ? (
-                          <span className="rounded-full bg-tone-info px-2 py-0.5 text-[11px] text-tone-info-fg">Warmluke team</span>
-                        ) : r.memberships?.length ? (
-                          // Invited into somebody's app: whose, and what they said they do there.
-                          <div className="min-w-44 max-w-60 space-y-1">
-                            {r.memberships.map((m) => (
-                              <div key={`${m.project}-${m.joined_at}`}>
-                                <div className="truncate font-medium text-fg">
-                                  {m.project}
-                                  {m.role && <span className="font-normal text-fg-muted"> · {labelOf(MEMBER_ROLE_OPTIONS, m.role)}</span>}
-                                </div>
-                                <div className="truncate text-[11px] text-fg-faint">
-                                  Team member{m.owner ? `, invited by ${m.owner}` : ""}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="rounded-full bg-tone-neutral px-2 py-0.5 text-[11px] text-tone-neutral-fg">
-                            Hasn&rsquo;t answered yet
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-3 text-fg-muted tabular-nums">{r.projects}</td>
-                      <td className="px-3 py-3 text-fg-muted tabular-nums">{r.stores}</td>
-                      <td className="px-3 py-3 first:pl-4">
-                        {r.is_superadmin || r.user_id === user.id ? (
-                          // Not taken off from here: yourself, or another
-                          // administrator, who is demoted first on purpose.
-                          <span className="text-xs text-fg-faint">{r.user_id === user.id ? "You" : "Administrator"}</span>
-                        ) : offRow?.user_id === r.user_id ? (
-                          <div className={`${note.attention} min-w-60`}>
-                            <p>
-                              {r.suspended
-                                ? "Let them sign in again? Everything they had is still there."
-                                : "Suspend this account? They are signed out everywhere and cannot sign in. Nothing is deleted."}
-                            </p>
-                            <div className="mt-2 flex gap-1.5">
-                              <button onClick={() => suspend(r, !r.suspended)} disabled={busy === r.user_id} className={button("primary", "sm")}>
-                                {busy === r.user_id ? "Saving…" : r.suspended ? "Restore" : "Suspend"}
-                              </button>
-                              <button onClick={() => setOffRow(null)} disabled={busy === r.user_id} className={button("plain", "sm")}>
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex flex-col items-start gap-1.5">
-                            <button onClick={() => setOffRow(r)} disabled={busy === r.user_id} className={button("secondary", "sm")}>
-                              {r.suspended ? "Restore" : "Suspend"}
-                            </button>
-                            {/* Only once suspended: nobody is erased by one click. */}
-                            {r.suspended && (
-                              <button
-                                onClick={() => {
-                                  setErase(r);
-                                  setTyped("");
-                                  setEraseError(null);
-                                }}
-                                className={button("critical-plain", "sm")}
-                              >
-                                Delete forever
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      {(["chat", "mcp", "store_actions"] as const).map((feature) => {
-                        const on =
-                          feature === "chat"
-                            ? r.chat_enabled
-                            : feature === "mcp"
-                              ? r.mcp_enabled
-                              : r.store_actions_enabled;
-                        return (
-                          <td key={feature} className="px-3 py-3">
-                            <div className="flex items-center gap-2">
-                              <Switch
-                                checked={on}
-                                onChange={(next) => setFeature(r, feature, next)}
-                                disabled={busy === r.user_id}
-                                label={`${feature === "chat" ? "Warmluke AI" : feature === "mcp" ? "Their own AI" : "Changing their shop"} for ${r.email}`}
-                              />
-                              <span className={`text-xs ${on ? (feature === "store_actions" ? "font-medium text-tone-attention-fg" : "text-fg") : "text-fg-faint"}`}>
-                                {on ? "On" : "Off"}
-                              </span>
-                            </div>
-                          </td>
-                        );
-                      })}
-                      <td className="px-3 py-3 first:pl-4">
-                        <div className="min-w-60 space-y-2">
-                          {/* Used against granted. Editing only changes a
-                              draft: spend controls should never save just
-                              because somebody clicked elsewhere. */}
-                          <div className="flex items-center gap-1.5">
-                            {/* What they have spent, and the ceiling it is
-                                spent against. With no cap the ceiling is
-                                kept but does not apply, and saying "22 / 10"
-                                beside "no cap" reads like a contradiction,
-                                so the slash only appears when it means
-                                something. */}
-                            <span className="text-fg tabular-nums">{r.turns_used}</span>
-                            <span className="text-fg-faint">
-                              {r.turns_unlimited ? "used" : "/"}
-                            </span>
-                            <input
-                              type="number"
-                              min={0}
-                              max={MAX_ALLOWANCE}
-                              step={1}
-                              value={draft}
-                              aria-label={`Included designs for ${r.email}`}
-                              onChange={(e) =>
-                                setDrafts((current) => ({
-                                  ...current,
-                                  [r.user_id]: e.target.value,
-                                }))
-                              }
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" && allowanceChanged) {
-                                  setPending({ kind: "turns", row: r, next: nextAllowance });
-                                }
-                                if (e.key === "Escape") {
-                                  setDrafts((current) => ({
-                                    ...current,
-                                    [r.user_id]: String(r.free_turns),
-                                  }));
-                                }
-                              }}
-                              disabled={busy === r.user_id}
-                              title={
-                                r.turns_unlimited
-                                  ? "Kept for when unlimited is switched off"
-                                  : "Designs this account may spend in total"
-                              }
-                              className={`${fieldOf("sm")} w-20 tabular-nums ${r.turns_unlimited ? "opacity-60" : ""}`}
-                            />
-                            <button
-                              type="button"
-                              disabled={!allowanceChanged || busy === r.user_id}
-                              onClick={() =>
-                                nextAllowance !== null &&
-                                setPending({ kind: "turns", row: r, next: nextAllowance })
-                              }
-                              className={button("secondary", "sm")}
-                            >
-                              Save
-                            </button>
-                            {/* The count only ever goes up, so the box is a
-                                ceiling and not a grant. Say what remains
-                                rather than making the admin do arithmetic. */}
+                      <tr key={r.user_id} className="align-top transition-colors hover:bg-surface-subdued/60">
+                        <td className="px-3 py-3 first:pl-4">
+                          <div className="flex items-start gap-2.5">
                             <span
-                              className={`text-xs ${
-                                r.turns_unlimited
-                                  ? "text-tone-success-fg"
-                                  : r.free_turns - r.turns_used > 0
-                                    ? "text-fg-muted"
-                                    : "font-medium text-tone-attention-fg"
-                              }`}
+                              aria-hidden
+                              className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${quietClasses(r.email)}`}
                             >
-                              {r.turns_unlimited
-                                ? "no cap"
-                                : r.free_turns - r.turns_used > 0
-                                  ? `${r.free_turns - r.turns_used} left`
-                                  : "none left"}
+                              {(r.full_name || r.email).trim().charAt(0).toUpperCase()}
                             </span>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  onClick={() => setOpen(r)}
+                                  title="See everything about this account"
+                                  className="max-w-[14rem] truncate text-left font-medium text-fg hover:text-link hover:underline"
+                                >
+                                  {r.full_name || r.memberships?.find((m) => m.name)?.name || r.email}
+                                </button>
+                                {r.suspended && (
+                                  <span className="rounded-full bg-tone-critical px-1.5 py-px text-[10px] font-medium text-tone-critical-fg">
+                                    suspended
+                                  </span>
+                                )}
+                                {r.is_superadmin && (
+                                  <span className="rounded-full bg-tone-neutral px-1.5 py-px text-[10px] font-medium text-tone-neutral-fg">
+                                    admin
+                                  </span>
+                                )}
+                              </div>
+                              {r.full_name && (
+                                <div className="max-w-[14rem] truncate text-xs text-fg-muted">{r.email}</div>
+                              )}
+                              <div className="text-[11px] text-fg-faint">
+                                Joined{" "}
+                                {new Date(r.created_at).toLocaleDateString(undefined, {
+                                  day: "numeric",
+                                  month: "short",
+                                  year: "numeric",
+                                })}
+                                {" · "}
+                                {ago(r.last_sign_in_at, now, "never signed in")}
+                              </div>
+                            </div>
                           </div>
-
-                          {nextAllowance === null && (
-                            <p className="text-[11px] text-tone-critical-fg">
-                              Enter a whole number from 0 to {MAX_ALLOWANCE.toLocaleString()}.
-                            </p>
+                        </td>
+                        <td className="px-3 py-3 first:pl-4">
+                          {r.business_name ? (
+                            <div className="min-w-44 max-w-60">
+                              <div className="truncate font-medium text-fg">{r.business_name}</div>
+                              {facts.length > 0 && <div className="text-xs text-fg-muted">{facts.join(" · ")}</div>}
+                              <div className="mt-0.5 flex flex-wrap gap-x-2 text-[11px] text-fg-faint">
+                                {site && (
+                                  <a
+                                    href={site.href}
+                                    target="_blank"
+                                    rel="noopener noreferrer nofollow"
+                                    className="text-link hover:underline"
+                                  >
+                                    {site.text}
+                                  </a>
+                                )}
+                                {r.heard_from && (
+                                  <span>
+                                    via {labelOf(HEARD_OPTIONS, r.heard_from)}
+                                    {r.heard_from_detail ? ` (${r.heard_from_detail})` : ""}
+                                  </span>
+                                )}
+                              </div>
+                              {!r.onboarded_at && (
+                                <span className="mt-1 inline-block rounded-full bg-tone-attention px-1.5 py-px text-[10px] font-medium text-tone-attention-fg">
+                                  Onboarding not finished
+                                </span>
+                              )}
+                            </div>
+                          ) : r.is_superadmin ? (
+                            <span className="rounded-full bg-tone-info px-2 py-0.5 text-[11px] text-tone-info-fg">
+                              Warmluke team
+                            </span>
+                          ) : r.memberships?.length ? (
+                            // Invited into somebody's app: whose, and what they said they do there.
+                            <div className="min-w-44 max-w-60 space-y-1">
+                              {r.memberships.map((m) => (
+                                <div key={`${m.project}-${m.joined_at}`}>
+                                  <div className="truncate font-medium text-fg">
+                                    {m.project}
+                                    {m.role && (
+                                      <span className="font-normal text-fg-muted">
+                                        {" "}
+                                        · {labelOf(MEMBER_ROLE_OPTIONS, m.role)}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="truncate text-[11px] text-fg-faint">
+                                    Team member{m.owner ? `, invited by ${m.owner}` : ""}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="rounded-full bg-tone-neutral px-2 py-0.5 text-[11px] text-tone-neutral-fg">
+                              Hasn&rsquo;t answered yet
+                            </span>
                           )}
-
-                          <div className="flex items-center gap-3 text-xs">
-                            {/* The state is said, not only coloured. A
-                                knob on a track reads as "on" to most
-                                people, and the one person who uses this
-                                screen read it that way, then asked why an
-                                "unlimited" account still said "none left".
-                                It was off, and every number on the row was
-                                correct. */}
-                            <span className="inline-flex items-center gap-2">
-                              <Switch
-                                checked={r.turns_unlimited}
-                                onChange={(next) => setPending({ kind: "unlimited", row: r, next })}
-                                disabled={busy === r.user_id}
-                                label={`Unlimited included designs for ${r.email}`}
-                              />
-                              <span className={`whitespace-nowrap ${r.turns_unlimited ? "text-tone-success-fg" : "text-fg-muted"}`}>
-                                Unlimited {r.turns_unlimited ? "on" : "off"}
-                              </span>
+                        </td>
+                        <td className="px-3 py-3 text-fg-muted tabular-nums">{r.projects}</td>
+                        <td className="px-3 py-3 text-fg-muted tabular-nums">{r.stores}</td>
+                        <td className="px-3 py-3 first:pl-4">
+                          {r.is_superadmin || r.user_id === user.id ? (
+                            // Not taken off from here: yourself, or another
+                            // administrator, who is demoted first on purpose.
+                            <span className="text-xs text-fg-faint">
+                              {r.user_id === user.id ? "You" : "Administrator"}
                             </span>
-                            {/* This was plain text, and plain text does not
-                                look like something you may click; the
-                                person who owns this screen asked to be
-                                given the ability they already had. */}
-                            {r.turns_used > 0 && (
-                              <button
-                                type="button"
-                                disabled={busy === r.user_id}
-                                onClick={() => setPending({ kind: "reset", row: r })}
-                                title={`Set used back to 0 for ${r.email}`}
-                                className={button("secondary", "sm")}
-                              >
-                                Reset used to 0
-                              </button>
-                            )}
-                          </div>
-
-                          {confirming && (
-                            <div className={note.attention}>
+                          ) : offRow?.user_id === r.user_id ? (
+                            <div className={`${note.attention} min-w-60`}>
                               <p>
-                                {confirming.kind === "turns"
-                                  ? `Set this account’s total allowance to ${confirming.next}?`
-                                  : confirming.kind === "unlimited"
-                                    ? confirming.next
-                                      ? "Remove the included-design limit for this account?"
-                                      : `Restore the finite limit of ${r.free_turns}?`
-                                    : `Reset used designs from ${r.turns_used} to 0? This starts a fresh allowance.`}
+                                {r.suspended
+                                  ? "Let them sign in again? Everything they had is still there."
+                                  : "Suspend this account? They are signed out everywhere and cannot sign in. Nothing is deleted."}
                               </p>
                               <div className="mt-2 flex gap-1.5">
                                 <button
-                                  type="button"
-                                  onClick={applyPending}
+                                  onClick={() => suspend(r, !r.suspended)}
                                   disabled={busy === r.user_id}
                                   className={button("primary", "sm")}
                                 >
-                                  {busy === r.user_id ? "Saving…" : "Confirm"}
+                                  {busy === r.user_id ? "Saving…" : r.suspended ? "Restore" : "Suspend"}
                                 </button>
                                 <button
-                                  type="button"
-                                  onClick={() => setPending(null)}
+                                  onClick={() => setOffRow(null)}
                                   disabled={busy === r.user_id}
                                   className={button("plain", "sm")}
                                 >
@@ -642,10 +476,210 @@ export default function Admin() {
                                 </button>
                               </div>
                             </div>
+                          ) : (
+                            <div className="flex flex-col items-start gap-1.5">
+                              <button
+                                onClick={() => setOffRow(r)}
+                                disabled={busy === r.user_id}
+                                className={button("secondary", "sm")}
+                              >
+                                {r.suspended ? "Restore" : "Suspend"}
+                              </button>
+                              {/* Only once suspended: nobody is erased by one click. */}
+                              {r.suspended && (
+                                <button
+                                  onClick={() => {
+                                    setErase(r);
+                                    setTyped("");
+                                    setEraseError(null);
+                                  }}
+                                  className={button("critical-plain", "sm")}
+                                >
+                                  Delete forever
+                                </button>
+                              )}
+                            </div>
                           )}
-                        </div>
-                      </td>
-                    </tr>
+                        </td>
+                        {(["chat", "mcp", "store_actions"] as const).map((feature) => {
+                          const on =
+                            feature === "chat"
+                              ? r.chat_enabled
+                              : feature === "mcp"
+                                ? r.mcp_enabled
+                                : r.store_actions_enabled;
+                          return (
+                            <td key={feature} className="px-3 py-3">
+                              <div className="flex items-center gap-2">
+                                <Switch
+                                  checked={on}
+                                  onChange={(next) => setFeature(r, feature, next)}
+                                  disabled={busy === r.user_id}
+                                  label={`${feature === "chat" ? "Warmluke AI" : feature === "mcp" ? "Their own AI" : "Changing their shop"} for ${r.email}`}
+                                />
+                                <span
+                                  className={`text-xs ${on ? (feature === "store_actions" ? "font-medium text-tone-attention-fg" : "text-fg") : "text-fg-faint"}`}
+                                >
+                                  {on ? "On" : "Off"}
+                                </span>
+                              </div>
+                            </td>
+                          );
+                        })}
+                        <td className="px-3 py-3 first:pl-4">
+                          <div className="min-w-60 space-y-2">
+                            {/* Used against granted. Editing only changes a
+                              draft: spend controls should never save just
+                              because somebody clicked elsewhere. */}
+                            <div className="flex items-center gap-1.5">
+                              {/* What they have spent, and the ceiling it is
+                                spent against. With no cap the ceiling is
+                                kept but does not apply, and saying "22 / 10"
+                                beside "no cap" reads like a contradiction,
+                                so the slash only appears when it means
+                                something. */}
+                              <span className="text-fg tabular-nums">{r.turns_used}</span>
+                              <span className="text-fg-faint">{r.turns_unlimited ? "used" : "/"}</span>
+                              <input
+                                type="number"
+                                min={0}
+                                max={MAX_ALLOWANCE}
+                                step={1}
+                                value={draft}
+                                aria-label={`Included designs for ${r.email}`}
+                                onChange={(e) =>
+                                  setDrafts((current) => ({
+                                    ...current,
+                                    [r.user_id]: e.target.value,
+                                  }))
+                                }
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && allowanceChanged) {
+                                    setPending({ kind: "turns", row: r, next: nextAllowance });
+                                  }
+                                  if (e.key === "Escape") {
+                                    setDrafts((current) => ({
+                                      ...current,
+                                      [r.user_id]: String(r.free_turns),
+                                    }));
+                                  }
+                                }}
+                                disabled={busy === r.user_id}
+                                title={
+                                  r.turns_unlimited
+                                    ? "Kept for when unlimited is switched off"
+                                    : "Designs this account may spend in total"
+                                }
+                                className={`${fieldOf("sm")} w-20 tabular-nums ${r.turns_unlimited ? "opacity-60" : ""}`}
+                              />
+                              <button
+                                type="button"
+                                disabled={!allowanceChanged || busy === r.user_id}
+                                onClick={() =>
+                                  nextAllowance !== null && setPending({ kind: "turns", row: r, next: nextAllowance })
+                                }
+                                className={button("secondary", "sm")}
+                              >
+                                Save
+                              </button>
+                              {/* The count only ever goes up, so the box is a
+                                ceiling and not a grant. Say what remains
+                                rather than making the admin do arithmetic. */}
+                              <span
+                                className={`text-xs ${
+                                  r.turns_unlimited
+                                    ? "text-tone-success-fg"
+                                    : r.free_turns - r.turns_used > 0
+                                      ? "text-fg-muted"
+                                      : "font-medium text-tone-attention-fg"
+                                }`}
+                              >
+                                {r.turns_unlimited
+                                  ? "no cap"
+                                  : r.free_turns - r.turns_used > 0
+                                    ? `${r.free_turns - r.turns_used} left`
+                                    : "none left"}
+                              </span>
+                            </div>
+
+                            {nextAllowance === null && (
+                              <p className="text-[11px] text-tone-critical-fg">
+                                Enter a whole number from 0 to {MAX_ALLOWANCE.toLocaleString()}.
+                              </p>
+                            )}
+
+                            <div className="flex items-center gap-3 text-xs">
+                              {/* The state is said, not only coloured. A
+                                knob on a track reads as "on" to most
+                                people, and the one person who uses this
+                                screen read it that way, then asked why an
+                                "unlimited" account still said "none left".
+                                It was off, and every number on the row was
+                                correct. */}
+                              <span className="inline-flex items-center gap-2">
+                                <Switch
+                                  checked={r.turns_unlimited}
+                                  onChange={(next) => setPending({ kind: "unlimited", row: r, next })}
+                                  disabled={busy === r.user_id}
+                                  label={`Unlimited included designs for ${r.email}`}
+                                />
+                                <span
+                                  className={`whitespace-nowrap ${r.turns_unlimited ? "text-tone-success-fg" : "text-fg-muted"}`}
+                                >
+                                  Unlimited {r.turns_unlimited ? "on" : "off"}
+                                </span>
+                              </span>
+                              {/* This was plain text, and plain text does not
+                                look like something you may click; the
+                                person who owns this screen asked to be
+                                given the ability they already had. */}
+                              {r.turns_used > 0 && (
+                                <button
+                                  type="button"
+                                  disabled={busy === r.user_id}
+                                  onClick={() => setPending({ kind: "reset", row: r })}
+                                  title={`Set used back to 0 for ${r.email}`}
+                                  className={button("secondary", "sm")}
+                                >
+                                  Reset used to 0
+                                </button>
+                              )}
+                            </div>
+
+                            {confirming && (
+                              <div className={note.attention}>
+                                <p>
+                                  {confirming.kind === "turns"
+                                    ? `Set this account’s total allowance to ${confirming.next}?`
+                                    : confirming.kind === "unlimited"
+                                      ? confirming.next
+                                        ? "Remove the included-design limit for this account?"
+                                        : `Restore the finite limit of ${r.free_turns}?`
+                                      : `Reset used designs from ${r.turns_used} to 0? This starts a fresh allowance.`}
+                                </p>
+                                <div className="mt-2 flex gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={applyPending}
+                                    disabled={busy === r.user_id}
+                                    className={button("primary", "sm")}
+                                  >
+                                    {busy === r.user_id ? "Saving…" : "Confirm"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPending(null)}
+                                    disabled={busy === r.user_id}
+                                    className={button("plain", "sm")}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
                     );
                   })}
                   {shown.length === 0 && (
@@ -662,18 +696,15 @@ export default function Admin() {
         )}
 
         <p className="mt-4 max-w-3xl text-xs leading-relaxed text-fg-muted">
-          <span className="font-medium text-fg">Warmluke AI</span> — the chat inside the app,
-          whose model calls we pay for. <span className="font-medium text-fg">Their own AI</span>{" "}
-          — their Claude or ChatGPT connected over MCP, which they pay for. The two are
-          independent: either can be off, and an account with neither still has its app,
-          its data, and every section already built.{" "}
-          <span className="font-medium text-fg">Included designs</span> — designs Warmluke may
-          produce for this account, whether requested in chat or through their Claude.
-          Reading a store and building a design already made are never counted.{" "}
-          <span className="font-medium text-fg">Suspend</span> signs an account out everywhere and keeps it
-          out, with everything it had kept; Restore lets it back.{" "}
-          <span className="font-medium text-fg">Delete forever</span> is offered only once suspended, asks for
-          the email back, and takes the account and the apps it owns.
+          <span className="font-medium text-fg">Warmluke AI</span> — the chat inside the app, whose model calls we pay
+          for. <span className="font-medium text-fg">Their own AI</span> — their Claude or ChatGPT connected over MCP,
+          which they pay for. The two are independent: either can be off, and an account with neither still has its app,
+          its data, and every section already built. <span className="font-medium text-fg">Included designs</span> —
+          designs Warmluke may produce for this account, whether requested in chat or through their Claude. Reading a
+          store and building a design already made are never counted.{" "}
+          <span className="font-medium text-fg">Suspend</span> signs an account out everywhere and keeps it out, with
+          everything it had kept; Restore lets it back. <span className="font-medium text-fg">Delete forever</span> is
+          offered only once suspended, asks for the email back, and takes the account and the apps it owns.
         </p>
       </div>
       {open && <AccountDetail account={open} now={now} onClose={() => setOpen(null)} />}
@@ -707,8 +738,8 @@ export default function Admin() {
             </p>
             {erase.stores > 0 && (
               <p>
-                Warmluke stays installed on {erase.stores === 1 ? "their Shopify store" : "their Shopify stores"} until they
-                remove it there. Nothing more is read from it.
+                Warmluke stays installed on {erase.stores === 1 ? "their Shopify store" : "their Shopify stores"} until
+                they remove it there. Nothing more is read from it.
               </p>
             )}
             <p>The audit trail keeps who deleted it, and when.</p>
@@ -717,7 +748,9 @@ export default function Admin() {
               <input
                 value={typed}
                 onChange={(e) => setTyped(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && typed.trim().toLowerCase() === erase.email.toLowerCase() && eraseAccount()}
+                onKeyDown={(e) =>
+                  e.key === "Enter" && typed.trim().toLowerCase() === erase.email.toLowerCase() && eraseAccount()
+                }
                 autoComplete="off"
                 spellCheck={false}
                 placeholder={erase.email}

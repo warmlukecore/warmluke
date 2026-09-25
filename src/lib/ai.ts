@@ -113,9 +113,13 @@ HOW TO CHOOSE changeType:
 - UI_CHANGE — reorder/relabel/retype existing columns only. All existing fields kept.
 - FIELD_ADD — keep all existing columns, append new one(s).
 - NEW_MODULE — a new app section. Choose its "view" from how the owner works. Put its "features" (filters, stats, row actions, search, sort) in THIS SAME plan — a separate FEATURE_UPDATE cannot target a module that does not exist yet. 3-8 columns matched to what the user described; ALWAYS include 4-6 realistic demo rows in newRecords, using THEIR vocabulary and plausible values for THEIR trade (field names must match the schema exactly; money as numbers, dates "YYYY-MM-DD").
-- NEW_MODULE with "source_table" — the section SHOWS the store's own rows rather than rows they type. Use it whenever they mean the data already synced from Shopify ("our products", "the orders that came in"). The store's lists, and what each one means: ${Object.entries(STORE_TABLES)
+- NEW_MODULE with "source_table" — the section SHOWS the store's own rows rather than rows they type. Use it whenever they mean the data already synced from Shopify ("our products", "the orders that came in"). The store's lists, and what each one means: ${Object.entries(
+  STORE_TABLES
+)
   .map(([table, spec]) => `"${table}" — ${spec.what}`)
-  .join("; ")}. Then: columns are the store's, so send newSchema as null and it is filled in for you; newRecords MUST be null, because nothing is seeded into the store's data; and the section is READ-ONLY — no row actions, no automations on it, and no extra column they can TYPE INTO (a "featured" tick or a note cannot be stored there, because the next import would overwrite it). Say that in "limitations" when they asked for one. Filters, search, stats and sort all work. A COMPUTED column may be added to one and is usually what they meant: "flag the ones running out" on the store's stock is a computed badge over "available", not a stored field and a rule.
+  .join(
+    "; "
+  )}. Then: columns are the store's, so send newSchema as null and it is filled in for you; newRecords MUST be null, because nothing is seeded into the store's data; and the section is READ-ONLY — no row actions, no automations on it, and no extra column they can TYPE INTO (a "featured" tick or a note cannot be stored there, because the next import would overwrite it). Say that in "limitations" when they asked for one. Filters, search, stats and sort all work. A COMPUTED column may be added to one and is usually what they meant: "flag the ones running out" on the store's stock is a computed badge over "available", not a stored field and a rule.
 - MODULE_UPDATE — nav metadata only: rename label, change icon, move it inside another section (parent_id), reposition (sort_order: below the lowest existing value for top, midpoint like 1.5 for between, above max for bottom).
 - MODULE_DELETE — only when the user clearly asks to delete/remove a whole section. deleteConfirmName = exact name slug.
 - FEATURE_UPDATE — search box, dropdown filters, STAT CARDS (op: count | sum | avg | min | max over "value", an EXPRESSION evaluated per row — so a stock value is { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, not a bare column; optional "where" expression limits which rows count. Never label a stat as something the expression does not actually compute), default sort, ROW ACTION buttons (a one-click change to that row: "set" maps field -> EXPRESSION, and the optional "when" is an EXPRESSION deciding whether the button shows on that row — same operators as automations, so "only while it isn't Done" is { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }), or SCAN MODE (a scan-and-go bar: lookupField = the code column scanned into it, action.set = field -> expression applied to the matched row, sequenceField = a numeric column that must never go backwards between scans, for picking or queue order). It works with any USB or Bluetooth barcode scanner, which types the code like a keyboard — there is no camera scanning. A scan that matches nothing changes NOTHING: the person sees it on screen and that is the whole safeguard. Nothing is recorded, so never add a "scan errors" or "mistakes" count — no rule can fill it, and a stat built on it counts successful scans instead. Scanning only reaches rows currently in view, so the section needs a filter that narrows to the job in hand. Provide the FULL new config.
@@ -216,13 +220,13 @@ export const WORKED_EXAMPLE = {
         defaultSort: { field: "available", dir: "asc" },
       },
       newRecords: null,
-      explanation:
-        "Your Shopify stock, lowest first, with a count of how many lines are down to 5 or fewer.",
+      explanation: "Your Shopify stock, lowest first, with a count of how many lines are down to 5 or fewer.",
     },
   ],
 } as const;
 
-const replyContract = () => `You are Luke, the AI inside "Warmluke" — a platform where a business owner describes a problem in their own words and you turn it into a working internal app: sections, fields, layouts, features, navigation, automations, demo data.
+const replyContract =
+  () => `You are Luke, the AI inside "Warmluke" — a platform where a business owner describes a problem in their own words and you turn it into a working internal app: sections, fields, layouts, features, navigation, automations, demo data.
 
 Your name is Luke. If somebody asks who you are, say so. Warmluke is the product they are logged into; you are the one they talk to. Never call yourself "the assistant", and never call yourself Warmluke.
 
@@ -457,9 +461,7 @@ function storeBlock(store: StoreContext | null, projectCurrency: string): string
       `Nothing has imported yet, so do not design as though this data is available — say so if they ask for it.`
     );
   } else {
-    lines.push(
-      `Already here${store.importing ? ", and still importing, so these are partial" : ""}: ${rows}.`
-    );
+    lines.push(`Already here${store.importing ? ", and still importing, so these are partial" : ""}: ${rows}.`);
     lines.push(
       `Design on top of it. When what they want IS this data, build a section over it: NEW_MODULE with "source_table" set to the table. Never propose a section whose purpose is to re-enter this data by hand — if you build a separate list anyway, say plainly in "limitations" that it will not match their Shopify data, so they can decide.`
     );
@@ -522,7 +524,9 @@ function storeBlock(store: StoreContext | null, projectCurrency: string): string
       }
     }
     if (snap.best_sellers.length > 0) {
-      lines.push(`  Best sellers by units — from every uncancelled order in the shop (paid or awaiting payment), not these rows:`);
+      lines.push(
+        `  Best sellers by units — from every uncancelled order in the shop (paid or awaiting payment), not these rows:`
+      );
       for (const b of snap.best_sellers) {
         lines.push(
           `    ${b.title ?? "untitled"} · ${b.units} sold · ${b.revenue ?? "?"} ${b.currency ?? store.currency}`
@@ -629,9 +633,7 @@ export function buildUserMessage(
   const schemaCtx = currentSchema
     ? JSON.stringify(currentSchema)
     : "none is open — they are not looking at one. The list above is the whole app, and it is enough to design from. Never ask them to open a section.";
-  const featuresCtx = currentFeatures
-    ? JSON.stringify(currentFeatures)
-    : "null (no features configured)";
+  const featuresCtx = currentFeatures ? JSON.stringify(currentFeatures) : "null (no features configured)";
   return `CONTEXT — every section in this app and the fields it has.
 These are the ONLY field names that exist. A rule, filter or stat on a
 section must use one of its fields, or add the field in the same batch.
@@ -763,10 +765,7 @@ export function validateFeatures(
   // place. The columns are listed once, at the end, not seven times.
   let missed = false;
   const hasField = (name: string) => {
-    const ok =
-      RESERVED_FIELDS.has(name) ||
-      columns.some((c) => c.field === name) ||
-      !!pendingFields?.has(name);
+    const ok = RESERVED_FIELDS.has(name) || columns.some((c) => c.field === name) || !!pendingFields?.has(name);
     if (!ok) missed = true;
     return ok;
   };
@@ -776,7 +775,10 @@ export function validateFeatures(
   const computed = new Set(columns.filter((c) => c.compute).map((c) => c.field));
   const notComputed = (name: string, what: string) => {
     if (computed.has(name)) {
-      err(errors, `${what} writes "${name}", which is computed — its value comes from its expression every time the row is read, so a write to it would be thrown away. Change what it is computed from instead.`);
+      err(
+        errors,
+        `${what} writes "${name}", which is computed — its value comes from its expression every time the row is read, so a write to it would be thrown away. Change what it is computed from instead.`
+      );
       return false;
     }
     return true;
@@ -856,10 +858,7 @@ export function validateFeatures(
         if (st.by !== undefined && (typeof st.by !== "string" || !hasField(st.by))) {
           err(errors, `Stat "${st.label}" groups by "${String(st.by)}", which isn't a field of this section.`);
         }
-        if (
-          st.limit !== undefined &&
-          !(Number.isInteger(st.limit) && st.limit >= 1 && st.limit <= 20)
-        ) {
+        if (st.limit !== undefined && !(Number.isInteger(st.limit) && st.limit >= 1 && st.limit <= 20)) {
           err(errors, `Stat "${st.label}" has limit ${String(st.limit)} — a whole number from 1 to 20.`);
         }
       }
@@ -978,18 +977,12 @@ function validateExpr(
   }
   const args = Array.isArray(node.args) ? node.args : [];
   if (where === "client" && isServerOnly(op)) {
-    err(
-      errors,
-      `"${op}" only works inside an automation — a button, stat or scan action sees one row at a time.`
-    );
+    err(errors, `"${op}" only works inside an automation — a button, stat or scan action sees one row at a time.`);
     return;
   }
   const [min, max] = OPERATORS[op].arity;
   if (args.length < min || args.length > max) {
-    err(
-      errors,
-      `Operator "${op}" takes ${min === max ? min : `${min}-${max}`} argument(s), got ${args.length}.`
-    );
+    err(errors, `Operator "${op}" takes ${min === max ? min : `${min}-${max}`} argument(s), got ${args.length}.`);
     return;
   }
   if (op === "changed" && !(isPlainObject(args[0]) && "field" in args[0])) {
@@ -1000,17 +993,11 @@ function validateExpr(
     // each sibling. Without at least one field leaf it would sweep the
     // whole section, which is never what anyone means.
     if (!args.some((a) => isPlainObject(a) && "field" in a)) {
-      err(
-        errors,
-        '"count_matching" needs at least one field to match siblings on, e.g. { "field": "order_id" }.'
-      );
+      err(errors, '"count_matching" needs at least one field to match siblings on, e.g. { "field": "order_id" }.');
     }
     for (const a of args) {
-      if (!isPlainObject(a) || ("field" in a) === ("op" in a)) {
-        err(
-          errors,
-          '"count_matching" args are either a field leaf ({ "field": "x" }) or a condition ({ "op": ... }).'
-        );
+      if (!isPlainObject(a) || "field" in a === "op" in a) {
+        err(errors, '"count_matching" args are either a field leaf ({ "field": "x" }) or a condition ({ "op": ... }).');
       }
     }
   }
@@ -1116,11 +1103,8 @@ function validateAutomation(
     err(errors, "No current schema found for this section, so this rule can't be checked.");
     return;
   }
-  const ownHas = (f: string) =>
-    RESERVED_FIELDS.has(f) || !!ownFields?.has(f) || !!pendingFields?.has(f);
-  const ownComputed = new Set(
-    (currentSchema?.columns ?? []).filter((c) => c.compute).map((c) => c.field)
-  );
+  const ownHas = (f: string) => RESERVED_FIELDS.has(f) || !!ownFields?.has(f) || !!pendingFields?.has(f);
+  const ownComputed = new Set((currentSchema?.columns ?? []).filter((c) => c.compute).map((c) => c.field));
 
   // A rule runs in Postgres, against the row as it is stored. A
   // computed column is not stored — it is worked out in the browser
@@ -1149,8 +1133,7 @@ function validateAutomation(
     return;
   }
 
-  const moduleOk = (id: unknown) =>
-    modules.some((m) => m.id === id) || pending(id);
+  const moduleOk = (id: unknown) => modules.some((m) => m.id === id) || pending(id);
 
   for (const a of actions) {
     if (!isPlainObject(a)) {
@@ -1221,10 +1204,7 @@ function validateAutomation(
       continue;
     }
 
-    err(
-      errors,
-      `Action type "${String((a as { type?: unknown }).type)}" must be set_fields or create_record.`
-    );
+    err(errors, `Action type "${String((a as { type?: unknown }).type)}" must be set_fields or create_record.`);
   }
 }
 
@@ -1254,14 +1234,10 @@ export function validatePlan(
   // current columns plus anything an earlier plan in this batch adds. Every
   // check below uses it, so a later plan can build on an earlier one.
   const knownField = (f: string): boolean =>
-    RESERVED_FIELDS.has(f) ||
-    !!currentSchema?.columns.some((c) => c.field === f) ||
-    !!pendingFields?.has(f);
+    RESERVED_FIELDS.has(f) || !!currentSchema?.columns.some((c) => c.field === f) || !!pendingFields?.has(f);
 
   const pending = (ref: unknown): boolean =>
-    typeof ref === "string" &&
-    ref.startsWith("#") &&
-    !!pendingSlugs?.has(ref.slice(1).trim().toLowerCase());
+    typeof ref === "string" && ref.startsWith("#") && !!pendingSlugs?.has(ref.slice(1).trim().toLowerCase());
 
   if (!CHANGE_TYPES.includes(plan?.changeType)) {
     err(errors, `"changeType" must be one of ${CHANGE_TYPES.join(", ")}.`);
@@ -1292,17 +1268,15 @@ export function validatePlan(
           : null;
       const storedFields = new Set([
         ...(storeSrc ? storeTableSchema(storeSrc).columns.map((c) => c.field) : []),
-        ...columns
-          .filter((c) => c && typeof c.field === "string" && !c.compute)
-          .map((c) => c.field),
+        ...columns.filter((c) => c && typeof c.field === "string" && !c.compute).map((c) => c.field),
       ]);
       for (let ci = 0; ci < columns.length; ci++) {
         const c = columns[ci];
         if (!c || typeof c.field !== "string" || !c.field.trim()) {
           err(
-          errors,
-          'A column is missing its field name. Each one is { "field": "snake_case_name", "label": "Human Label", "type": "text" }.'
-        );
+            errors,
+            'A column is missing its field name. Each one is { "field": "snake_case_name", "label": "Human Label", "type": "text" }.'
+          );
           continue;
         }
         if (seen.has(c.field)) err(errors, `Duplicate column field: "${c.field}".`);
@@ -1354,9 +1328,7 @@ export function validatePlan(
         err(errors, `A module named "${name}" already exists.`);
       }
       if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) {
-        const asKebab = name
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-+|-+$/g, "");
+        const asKebab = name.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
         err(
           errors,
           `newModule.name "${name}" must be kebab-case${asKebab ? ` — write "${asKebab}"` : ""}. nav_label is where the human wording goes.`
@@ -1367,10 +1339,7 @@ export function validatePlan(
       err(errors, "newModule.nav_label is required.");
     }
     if (plan.newModule?.icon && !(ALLOWED_ICONS as readonly string[]).includes(plan.newModule.icon)) {
-      err(
-        errors,
-        `Icon "${plan.newModule.icon}" is not allowed. Pick one of: ${ALLOWED_ICONS.join(", ")}.`
-      );
+      err(errors, `Icon "${plan.newModule.icon}" is not allowed. Pick one of: ${ALLOWED_ICONS.join(", ")}.`);
     }
 
     // A section over the store's own rows. Its columns are the store's,
@@ -1467,7 +1436,10 @@ export function validatePlan(
         const incoming = new Set(columns.map((c) => c.field));
         for (const c of columns) {
           if (!knownField(c.field)) {
-            err(errors, `UI_CHANGE can only reference existing fields — "${c.field}" doesn't exist yet. Use FIELD_ADD to add it.`);
+            err(
+              errors,
+              `UI_CHANGE can only reference existing fields — "${c.field}" doesn't exist yet. Use FIELD_ADD to add it.`
+            );
           }
         }
         // One mistake, one message. Listing eight dropped columns
@@ -1494,7 +1466,7 @@ export function validatePlan(
         if (same) {
           err(
             errors,
-            "This UI_CHANGE leaves every column exactly as it is, so applying it would do nothing. Either make a real change, or tell the owner in \"unmet\" that this isn't something the platform can do."
+            'This UI_CHANGE leaves every column exactly as it is, so applying it would do nothing. Either make a real change, or tell the owner in "unmet" that this isn\'t something the platform can do.'
           );
         }
       } else {
@@ -1582,9 +1554,7 @@ export function validatePlan(
       if (!Array.isArray(plan.newRecords) || plan.newRecords.length === 0) {
         err(errors, "newRecords must be a non-empty array for RECORD_SEED.");
       } else if (currentSchema) {
-        const validFields = new Set(
-          currentSchema.columns.filter((c) => !c.compute).map((c) => c.field)
-        );
+        const validFields = new Set(currentSchema.columns.filter((c) => !c.compute).map((c) => c.field));
         for (const rec of plan.newRecords) {
           if (!isPlainObject(rec)) {
             err(errors, "Each record must be an object of field -> value.");
@@ -1605,9 +1575,7 @@ export function validatePlan(
 
 // ── Reply parsing ────────────────────────────────────────────
 
-export type ParsedReply =
-  | { ok: true; reply: AssistantReply }
-  | { ok: false; errors: string[] };
+export type ParsedReply = { ok: true; reply: AssistantReply } | { ok: false; errors: string[] };
 
 /**
  * Looks up the stored schema of a section by id, so a batch touching
@@ -1704,13 +1672,7 @@ function parseBlueprint(
 
   // The blueprint's plans are the real thing, so they get the real
   // checks. A design that could not be built cannot be shown.
-  const planResult = parsePlans(
-    { plans: bp.plans },
-    modules,
-    currentSchema,
-    currentFeatures,
-    schemas
-  );
+  const planResult = parsePlans({ plans: bp.plans }, modules, currentSchema, currentFeatures, schemas);
   if (!planResult.ok) return planResult;
   const plans = (planResult.reply as { type: "plans"; plans: AssistantPlan[] }).plans;
 
@@ -1739,9 +1701,7 @@ function parseBlueprint(
   // An owner told to expect silence stops looking — at exactly the
   // moment the whole system exists for. So the scan step is stated by
   // the engine that implements it, and the model's version is dropped.
-  const scans = plans
-    .map((p) => p.newSchema?.features?.scanMode)
-    .filter((sm): sm is NonNullable<typeof sm> => !!sm);
+  const scans = plans.map((p) => p.newSchema?.features?.scanMode).filter((sm): sm is NonNullable<typeof sm> => !!sm);
   // Dropped whether or not a scanner exists. With one, the model gets
   // its behaviour wrong; without one it describes a scanner that was
   // never built at all, which is the worse of the two — the owner buys
@@ -1836,7 +1796,7 @@ function parsePlans(
   // reference. Filling them in here rather than inside validatePlan is
   // what lets a rule in plan 2 read a column plan 1 never spelled out.
   for (const p of raw as AssistantPlan[]) {
-    const src = p?.changeType === "NEW_MODULE" ? p?.newModule?.source_table ?? null : null;
+    const src = p?.changeType === "NEW_MODULE" ? (p?.newModule?.source_table ?? null) : null;
     if (src != null && isStoreTable(src) && !p.newSchema?.columns?.length) {
       p.newSchema = { columns: storeTableSchema(src).columns };
     }
@@ -1845,9 +1805,7 @@ function parsePlans(
   // Every module this batch will create, so plans later in the batch may
   // legally reference them by "#slug" before they exist.
   const pendingSlugs = new Set(
-    raw
-      .map((p) => (p as AssistantPlan)?.newModule?.name?.trim().toLowerCase())
-      .filter((n): n is string => !!n)
+    raw.map((p) => (p as AssistantPlan)?.newModule?.name?.trim().toLowerCase()).filter((n): n is string => !!n)
   );
 
   // Columns each plan in this batch will add, keyed by the module it
@@ -1910,7 +1868,7 @@ function parsePlans(
       plan,
       modules,
       own,
-      own === currentSchema ? currentFeatures : own?.features ?? null,
+      own === currentSchema ? currentFeatures : (own?.features ?? null),
       pendingSlugs,
       fieldsFor(plan)
     );
@@ -1990,7 +1948,10 @@ export function parseReply(
       // and was always about the store.
       const kind = parsed.kind === undefined ? "store" : parsed.kind;
       if (kind !== "store" && kind !== "product_help" && kind !== "conversation") {
-        return { ok: false, errors: ['An answer must say which "kind" it is: "store", "product_help" or "conversation".'] };
+        return {
+          ok: false,
+          errors: ['An answer must say which "kind" it is: "store", "product_help" or "conversation".'],
+        };
       }
       // grounding is attached by the caller, which knows what it read.
       return { ok: true, reply: { type: "answer", kind, message } };
@@ -2001,10 +1962,9 @@ export function parseReply(
     case "plans": {
       // Both land on the approval card, and both put a sentence of
       // the model's own above the description the engine writes.
-      const said = [
-        parsed.message,
-        isPlainObject(parsed.blueprint) ? parsed.blueprint.summary : null,
-      ].find((v): v is string => typeof v === "string" && ALREADY_DONE.test(v));
+      const said = [parsed.message, isPlainObject(parsed.blueprint) ? parsed.blueprint.summary : null].find(
+        (v): v is string => typeof v === "string" && ALREADY_DONE.test(v)
+      );
       if (said) {
         const hit = said.trim().slice(0, 90);
         return {
@@ -2233,7 +2193,11 @@ const asMessages = (turns: ChatTurn[]) =>
 async function step(
   base: Parameters<typeof generateText>[0],
   onText?: (text: string) => void
-): Promise<{ text: string; finishReason: string; steps: Array<{ toolResults: Array<{ toolName: string; input: unknown; output: unknown }> }> }> {
+): Promise<{
+  text: string;
+  finishReason: string;
+  steps: Array<{ toolResults: Array<{ toolName: string; input: unknown; output: unknown }> }>;
+}> {
   if (!onText) {
     const r = await generateText(base);
     return { text: r.text, finishReason: r.finishReason, steps: r.steps };
@@ -2393,11 +2357,10 @@ export async function callModel(opts: {
   // twenty-scenario eval cost more than the bugs it finds — which
   // meant the measurements could not be afforded, which meant fixes
   // went back to being guesses. So the first block is cached.
-  const instructions = (Array.isArray(system) ? system : [system]).map(
-    (content, i): SystemModelMessage =>
-      i === 0
-        ? { role: "system", content, providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } } }
-        : { role: "system", content }
+  const instructions = (Array.isArray(system) ? system : [system]).map((content, i): SystemModelMessage =>
+    i === 0
+      ? { role: "system", content, providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } } }
+      : { role: "system", content }
   );
   return generate("anthropic", anthropic(model), instructions, turns, signal, lookups, onText);
 }
@@ -2433,11 +2396,7 @@ Rules:
 - Nothing missing is a normal answer: {"unmet": []}.
 - At most 4 entries, the most important first.`;
 
-export async function findGaps(
-  ownerWords: string,
-  builtDescription: string,
-  signal?: AbortSignal
-): Promise<string[]> {
+export async function findGaps(ownerWords: string, builtDescription: string, signal?: AbortSignal): Promise<string[]> {
   try {
     const raw = await callAnthropicChat(
       GAP_SYSTEM,
@@ -2462,7 +2421,6 @@ export async function findGaps(
     return [];
   }
 }
-
 
 // Moved to lib/retry so the Shopify importer shares the rule rather
 // than growing its own copy.
@@ -2494,7 +2452,15 @@ async function callGemini(
   const google = createGoogle({ apiKey, fetch: reaching("gemini") });
   // Gemini has no cache marker to carry, so the blocks go as one text.
   const systemText = (Array.isArray(system) ? system : [system]).join("\n\n");
-  return generate("gemini", wrapLanguageModel({ model: google(model), middleware: JSON_MODE }), systemText, turns, signal, lookups, onText);
+  return generate(
+    "gemini",
+    wrapLanguageModel({ model: google(model), middleware: JSON_MODE }),
+    systemText,
+    turns,
+    signal,
+    lookups,
+    onText
+  );
 }
 
 /**

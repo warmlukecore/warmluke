@@ -60,7 +60,9 @@ console.log("what a request reads as");
   const [built] = describeRequests([row({})], modules, now);
   check(
     "a built one says when, through what, what was asked and what came of it",
-    /^built 2 hours ago via claude-desktop: "Track custom cake orders with the advance paid" → built: New section: Cake orders$/.test(built)
+    /^built 2 hours ago via claude-desktop: "Track custom cake orders with the advance paid" → built: New section: Cake orders$/.test(
+      built
+    )
   );
 
   const [partly] = describeRequests(
@@ -68,7 +70,10 @@ console.log("what a request reads as");
       row({
         status: "partly_built",
         plans: [section("cake-orders", "Cake orders"), section("suppliers", "Suppliers")],
-        outcome: { applied: [{ changeType: "NEW_MODULE", moduleId: "m1" }], errors: ["Suppliers: a section with that name exists"] },
+        outcome: {
+          applied: [{ changeType: "NEW_MODULE", moduleId: "m1" }],
+          errors: ["Suppliers: a section with that name exists"],
+        },
       }),
     ],
     modules,
@@ -80,7 +85,12 @@ console.log("what a request reads as");
   );
 
   const [gone] = describeRequests(
-    [row({ plans: [section("packing", "Packing")], outcome: { applied: [{ changeType: "NEW_MODULE", moduleId: "m9" }], errors: [] } })],
+    [
+      row({
+        plans: [section("packing", "Packing")],
+        outcome: { applied: [{ changeType: "NEW_MODULE", moduleId: "m9" }], errors: [] },
+      }),
+    ],
     modules,
     now
   );
@@ -89,7 +99,9 @@ console.log("what a request reads as");
   const [pending] = describeRequests([row({ status: "pending", outcome: null, built_at: null })], modules, now);
   check(
     "a pending one is plainly not built",
-    /^pending 2 hours ago via claude-desktop — not built, waiting for the owner's yes: ".*" \(would: New section: Cake orders\)$/.test(pending)
+    /^pending 2 hours ago via claude-desktop — not built, waiting for the owner's yes: ".*" \(would: New section: Cake orders\)$/.test(
+      pending
+    )
   );
   const [dismissed] = describeRequests([row({ status: "dismissed", outcome: null })], modules, now);
   check("and a dismissed one was turned down", /^dismissed .* — turned down, not built/.test(dismissed));
@@ -100,7 +112,10 @@ console.log("what a request reads as");
     "a long request is quoted only as far as it can be recognised",
     clipped.includes("x".repeat(159) + "…") && !clipped.includes("x".repeat(200))
   );
-  check("no plans is no crash", describeRequests([row({ plans: null, outcome: null })], modules, now)[0].startsWith("built "));
+  check(
+    "no plans is no crash",
+    describeRequests([row({ plans: null, outcome: null })], modules, now)[0].startsWith("built ")
+  );
   const [old] = describeRequests([row({ built_at: "2026-09-17T08:00:00Z" })], modules, now);
   check("days read as days", /built 4 days ago/.test(old));
   check("none is none", describeRequests([], modules, now).length === 0);
@@ -111,7 +126,8 @@ console.log("\nand where it lands in the turn");
   const withLines = buildUserMessage("change that", null, null, null, [], [], ['built just now via claude: "a thing"']);
   check(
     "the block is there when there is something to say",
-    /CONTEXT — what the owner's own connected assistant/.test(withLines) && /- built just now via claude/.test(withLines)
+    /CONTEXT — what the owner's own connected assistant/.test(withLines) &&
+      /- built just now via claude/.test(withLines)
   );
   check(
     "it comes before the request, after the rules",
@@ -163,6 +179,8 @@ if (!env.ADAPTIVE_OS_SERVICE_ROLE_KEY) {
 }
 
 console.log(
-  fails.length === 0 ? "\nwhat their assistant asked for reaches Luke, and only the owner's" : `\n${fails.length} FAILED`
+  fails.length === 0
+    ? "\nwhat their assistant asked for reaches Luke, and only the owner's"
+    : `\n${fails.length} FAILED`
 );
 process.exit(fails.length === 0 ? 0 : 1);
