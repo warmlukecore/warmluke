@@ -357,7 +357,7 @@ export default function AppShell({
       }
       setChatMessages(rebuilt);
     },
-    [projectId]
+    [projectId, rememberConversation]
   );
 
   useEffect(() => {
@@ -554,6 +554,10 @@ export default function AppShell({
       }
       setSchemaHistory(historyRes.data as UiSchemaRow[]);
     },
+    // loadLinkOptions is declared below this and never changes (no
+    // dependencies of its own), so it is left out: named here it would be
+    // read before it exists.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
     [storeId]
   );
 
@@ -1126,7 +1130,7 @@ export default function AppShell({
         setChatDraft("");
       }
     },
-    [chatBusy, building, projectId, selectedModuleId, conversationId, loadModules, loadThread]
+    [chatBusy, building, projectId, selectedModuleId, conversationId, loadThread, rememberConversation]
   );
 
   /**
@@ -2158,7 +2162,6 @@ export default function AppShell({
         onClose={() => setChatOpen(false)}
         onWaiting={setWaiting}
         modules={modules}
-        selectedModuleId={selectedModuleId}
         currentSchema={schema?.schema_json ?? null}
         records={records}
         messages={chatMessages}

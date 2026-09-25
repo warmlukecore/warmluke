@@ -601,9 +601,10 @@ try {
 
   await project.remove();
   check("the account is back as it was", !cleanupProblems.some((x) => x.startsWith("account allowance:")));
-  if (cleanupProblems.length > 0) {
-    throw new Error(`cleanup failed after three attempts — ${cleanupProblems.join("; ")}`);
-  }
+  // Loud, but not a throw: thrown here it would replace the error that
+  // sent the run into this block, and that one says what broke.
+  check("and everything this check made is cleaned up", cleanupProblems.length === 0);
+  if (cleanupProblems.length > 0) console.log(`     → cleanup failed after three attempts — ${cleanupProblems.join("; ")}`);
 }
 
 console.log(

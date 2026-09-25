@@ -548,7 +548,6 @@ export default function ChatPanel({
   open,
   onClose,
   modules,
-  selectedModuleId,
   currentSchema,
   records,
   messages,
@@ -591,7 +590,6 @@ export default function ChatPanel({
    */
   onWaiting?: (count: number) => void;
   modules: ModuleRow[];
-  selectedModuleId: string | null;
   currentSchema: UiSchema | null;
   records: RecordRow[];
   messages: ChatMessage[];
@@ -740,6 +738,10 @@ export default function ChatPanel({
     return `it was tried on its own and did not go in — ${errors.slice(0, 2).join("; ")}`;
   };
 
+  /** Requests that turned up just now, floating over the panel. */
+  const [toasts, setToasts] = useState<string[]>([]);
+  /** What was already waiting last time we looked. Null = never looked. */
+  const seen = useRef<Set<string> | null>(null);
   const loadRequests = useCallback(async () => {
     const { data } = await supabase
       .from("build_requests")
@@ -1157,12 +1159,8 @@ export default function ChatPanel({
     if (!new URLSearchParams(window.location.search).get("waiting")) return;
     setBellOpen(true);
   }, []);
-  /** Requests that turned up just now, floating over the panel. */
-  const [toasts, setToasts] = useState<string[]>([]);
   /** The set of waiting requests the line above the composer was cleared for. */
   const [noticeCleared, setNoticeCleared] = useState("");
-  /** What was already waiting last time we looked. Null = never looked. */
-  const seen = useRef<Set<string> | null>(null);
 
   // A toast interrupts; it should not also nag. After a while it
   // steps aside and the bell keeps the count — nothing is lost by

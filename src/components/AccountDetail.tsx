@@ -145,6 +145,8 @@ export function AccountDetail({ account: a, now, onClose }: { account: Account; 
     [
       "Website",
       site ? (
+        // A value in a [label, value] pair, not a list item: the rows are keyed by label where they render.
+        // oxlint-disable-next-line react/jsx-key
         <a href={site.href} target="_blank" rel="noopener noreferrer nofollow" className="text-link hover:underline">
           {site.text}
         </a>

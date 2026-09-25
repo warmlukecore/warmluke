@@ -172,7 +172,7 @@ try {
   ], undefined, "gemini-test");
   const g = sent[0];
   check("a reply that is not JSON comes back raw, for the repairs, not as an error", said === "not json at all");
-  check("to the model's generateContent, on the Gemini key", /\/v1beta\/models\/gemini-test:generateContent$/.test(g?.url ?? "") && g.headers.get("x-goog-api-key") === "gemini-key");
+  check("to the model's generateContent, on the Gemini key", (g?.url ?? "").endsWith("/v1beta/models/gemini-test:generateContent") && g.headers.get("x-goog-api-key") === "gemini-key");
   check("asked for JSON, capped at 6000", g?.body?.generationConfig?.responseMimeType === "application/json" && g.body.generationConfig.maxOutputTokens === 6000);
   check("the blocks as one instruction", g?.body?.systemInstruction?.parts?.map((x) => x.text).join("") === "the contract\n\nthis project");
   check("and the assistant speaking as the model", JSON.stringify(g?.body?.contents?.map((c) => c.role)) === '["user","model","user"]');

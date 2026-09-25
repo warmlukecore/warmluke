@@ -41,6 +41,7 @@ export function FormatProvider({
     () => makeFormatting(locale || DEFAULT_LOCALE, currency || DEFAULT_CURRENCY, approxRate),
     // The object is rebuilt by the caller on every render, so depend on
     // what is in it rather than on its identity.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
     [locale, currency, approxRate?.rate, approxRate?.from, approxRate?.asOf]
   );
   return <FormatContext.Provider value={value}>{children}</FormatContext.Provider>;

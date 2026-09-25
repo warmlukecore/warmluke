@@ -43,7 +43,6 @@ const strangerToken = sess.session.access_token;
 
 let n = 0;
 let projectRow;
-let autoWas;
 // The calls below count against the account's hourly ceiling. Left
 // counted, a few runs of this check lock the next one out of the
 // server it exists to check.

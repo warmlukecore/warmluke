@@ -89,9 +89,16 @@ node scripts/run-checks.mjs --tier model --env .env.check.local
 
 ## CI and pre-push split
 
-CI runs dependency audit, typecheck, build, pure checks, migrations/seeding, and the live
-tier against the check project. The pre-push hook repeats pure checks and adds PAT-only
-security checks that CI must not hold credentials for.
+CI runs dependency audit, typecheck, lint, build, pure checks, zizmor over its own workflow,
+migrations/seeding, the live tier against the check project, and the browser specs. The
+pre-push hook repeats pure checks and adds PAT-only security checks that CI must not hold
+credentials for.
+
+`pnpm lint` is oxlint (`.oxlintrc.json`): correctness rules fail the build, the rest are
+advice. A rule silenced on one line says why on the line above. The workflow's actions are
+pinned to commit hashes, and Dependabot (`.github/dependabot.yml`) proposes updates weekly:
+npm minor and patch as one pull request, majors alone, actions together. Its pull requests
+run the static job only; the live job needs secrets Dependabot is not given.
 
 Install the hook once:
 

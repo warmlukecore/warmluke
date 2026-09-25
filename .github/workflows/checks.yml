@@ -40,6 +40,11 @@ concurrency:
   # is that the next commit's run passed.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Read the code, nothing more. Nothing here writes to the repository:
+# the deploy talks to Vercel with its own token, not this one.
+permissions:
+  contents: read
+
 jobs:
   static:
     # Pinned: ubuntu-latest moves to 26.04 on 2026-10-19 on its own.
@@ -47,16 +52,22 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      # Every action is pinned to a commit, with its version beside it:
+      # a tag can be moved by whoever holds that repository, a hash
+      # cannot. Dependabot (.github/dependabot.yml) proposes the next.
+      # No credentials are left on disk: nothing here pushes.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # pnpm, because that is what node_modules/.pnpm says this repo
       # installs with; the version is pinned so the runner and a laptop
       # resolve the same lockfile the same way.
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 12.3.4
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -71,20 +82,33 @@ jobs:
       - name: type check
         run: pnpm exec tsc --noEmit
 
+      # Correctness rules fail the build; the rest are advice (.oxlintrc.json).
+      - name: lint
+        run: pnpm lint
+
       # Public values only. The build prerenders /admin, which makes a
       # Supabase client at module load and refuses to without these;
       # two of the pure checks read the same file.
+      # Through env, never written into the script: a value expanded into
+      # the shell is run as shell.
       - name: .env.local from public values
+        env:
+          SUPABASE_URL: ${{ vars.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY }}
         run: |
           printf 'NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL=%s\nNEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY=%s\n' \
-            "${{ vars.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL }}" \
-            "${{ vars.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY }}" > .env.local
+            "$SUPABASE_URL" "$SUPABASE_ANON_KEY" > .env.local
 
       - name: build
         run: pnpm build
 
       - name: pure checks
         run: node scripts/run-checks.mjs --tier pure
+
+      # This file's own security: unpinned actions, token scope, values
+      # expanded into shell. Pinned like everything else here.
+      - name: workflow security (zizmor)
+        run: pipx run zizmor==1.30.1 --format plain .github/workflows
 
   # The live tier: a database and a running server, on the check
   # project — a blank copy of production with keys of its own that have
@@ -98,18 +122,24 @@ jobs:
   live:
     needs: static
     # Secrets are not handed to pull requests from forks; on a public
-    # repository this job would only fail there, and say nothing.
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    # repository this job would only fail there, and say nothing. Nor to
+    # Dependabot's, which the static job checks; merging one runs this
+    # on main like any other push.
+    if: >-
+      github.event_name == 'push' ||
+      (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 12.3.4
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -120,12 +150,14 @@ jobs:
       # the two public ones, so the built app points at the check
       # project; the scripts read the third.
       - name: .env.local for the check project
+        env:
+          SUPABASE_URL: ${{ secrets.CHECK_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.CHECK_SUPABASE_ANON_KEY }}
+          SERVICE_ROLE_KEY: ${{ secrets.CHECK_SUPABASE_SERVICE_ROLE_KEY }}
+          DATABASE_URL: ${{ secrets.CHECK_DATABASE_URL }}
         run: |
           printf 'NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL=%s\nNEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY=%s\nADAPTIVE_OS_SERVICE_ROLE_KEY=%s\nDATABASE_URL=%s\nCHECK_PROJECT=1\n' \
-            "${{ secrets.CHECK_SUPABASE_URL }}" \
-            "${{ secrets.CHECK_SUPABASE_ANON_KEY }}" \
-            "${{ secrets.CHECK_SUPABASE_SERVICE_ROLE_KEY }}" \
-            "${{ secrets.CHECK_DATABASE_URL }}" > .env.local
+            "$SUPABASE_URL" "$SUPABASE_ANON_KEY" "$SERVICE_ROLE_KEY" "$DATABASE_URL" > .env.local
 
       # The check project is brought up to the repo before anything
       # reads it: a migration committed with the change it serves is
@@ -168,7 +200,7 @@ jobs:
 
       - name: end-to-end report, when something went red
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-report
           path: |

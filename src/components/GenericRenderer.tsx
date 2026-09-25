@@ -40,7 +40,6 @@ import {
   BoardView,
   CalendarView,
   CardsView,
-  EmptyState,
   ListView,
   TableView,
   compare,

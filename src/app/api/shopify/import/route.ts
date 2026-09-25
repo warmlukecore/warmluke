@@ -72,6 +72,7 @@ export async function POST(req: Request) {
   // that answers the owner and nobody else, least of all a connected
   // AI client holding their session.
   const { data: secret } = await auth.client.rpc("abo_store_token", { p_store: found.id }).maybeSingle();
+  // oxlint-disable-next-line unicorn/no-useless-fallback-in-spread -- the type checker needs an object to spread
   const store = { ...found, ...(secret ?? {}) } as typeof found & {
     access_token?: string | null;
     refresh_token?: string | null;

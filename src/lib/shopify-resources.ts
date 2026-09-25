@@ -336,7 +336,7 @@ export const SHOPIFY_RESOURCES = {
             // the list the children go into has to exist before the
             // first child arrives — an automatic discount has none
             // and must still end up with an empty list, not undefined.
-            return { ...node, discount: { ...(node.discount ?? {}), codes: { nodes: [] } } };
+            return { ...node, discount: { ...node.discount, codes: { nodes: [] } } };
           },
           (d, child) => d.discount!.codes!.nodes.push(child as never)
         ),

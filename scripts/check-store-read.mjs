@@ -185,7 +185,7 @@ if (stores.length === 0) {
     // nobody.
     check(
       "blanks are never offered",
-      [...Object.values(values)].every((list) => list.every((v) => v.trim() !== ""))
+      Object.values(values).every((list) => list.every((v) => v.trim() !== ""))
     );
   }
 }

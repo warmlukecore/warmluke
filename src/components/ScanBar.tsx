@@ -163,7 +163,7 @@ export default function ScanBar({
     try {
       const resolved: Record<string, unknown> = {};
       for (const [f, v] of Object.entries(scanMode.action.set)) {
-        resolved[f] = evalExpr(v, { ...(match.data ?? {}), id: match.id });
+        resolved[f] = evalExpr(v, { ...match.data, id: match.id });
       }
       await onApply(match, resolved);
       ok(`${value} → ${scanMode.action.label}`);

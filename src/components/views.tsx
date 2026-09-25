@@ -227,7 +227,7 @@ export interface ViewProps {
  * or an action can refer to the row itself.
  */
 function withId(rec: RecordRow): Record<string, unknown> {
-  return { ...(rec.data ?? {}), id: rec.id };
+  return { ...rec.data, id: rec.id };
 }
 
 /** A row action is offered only when its guard matches that row. */

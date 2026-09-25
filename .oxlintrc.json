@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "react", "nextjs", "import"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "rules": {
+    "react/react-in-jsx-scope": "off",
+    "unicorn/no-thenable": "off",
+    "react/set-state-in-effect": "warn"
+  },
+  "overrides": [
+    {
+      "files": ["e2e/**"],
+      "rules": { "eslint/no-empty-pattern": "off" }
+    },
+    {
+      "files": ["src/app/page.tsx"],
+      "rules": { "react/purity": "off" }
+    }
+  ],
+  "ignorePatterns": [".next/**", "node_modules/**", "tapes/**", "playwright-report/**", "test-results/**"]
+}

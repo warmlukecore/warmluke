@@ -311,20 +311,23 @@ export function DemoForm({ variant }: { variant: string }) {
   const [heard, setHeard] = useState("");
   const [unpicked, setUnpicked] = useState(false);
   const heardDetail = heardDetailPrompt(heard);
-  // One key per rendered form. A submit whose answer never arrived and
-  // is sent again carries the same one, so the lead lands once.
-  const idem = useId().replace(/[^a-zA-Z0-9]/g, "").slice(0, 32) + Date.now().toString(36);
-  const [ctx, setCtx] = useState<{ session: string; path: string; utm: Utm }>({
+  // idem: one key per form. A submit whose answer never arrived and is
+  // sent again carries the same one, so the lead lands once. Made once,
+  // below: it used to be made in render, so every re-render of the form
+  // (typing a name) wrote a new key, and the server and the browser each
+  // rendered their own.
+  const [ctx, setCtx] = useState<{ session: string; path: string; utm: Utm; idem: string }>({
     session: "",
     path: "",
     utm: {},
+    idem: "",
   });
 
   // Filled after mount, because none of it exists on the server. With
   // JavaScript off these stay empty and the action makes its own — the
   // booking still arrives, it just is not joined to the earlier events.
   useEffect(() => {
-    setCtx({ session: sessionId(), path: landingPath(), utm: utmFromUrl() });
+    setCtx({ session: sessionId(), path: landingPath(), utm: utmFromUrl(), idem: crypto.randomUUID().replace(/-/g, "") });
   }, []);
 
   function began() {
@@ -364,7 +367,7 @@ export function DemoForm({ variant }: { variant: string }) {
       className="grid gap-3 sm:grid-cols-2"
     >
       <input type="hidden" name="variant" value={variant} />
-      <input type="hidden" name="idem" value={idem} />
+      <input type="hidden" name="idem" value={ctx.idem} />
       <input type="hidden" name="session_id" value={ctx.session} />
       <input type="hidden" name="landing_path" value={ctx.path} />
       {UTM_KEYS.map((k) => (

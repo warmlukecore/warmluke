@@ -54,9 +54,9 @@ export default function Terms() {
         <p className="mt-4 text-sm leading-relaxed text-neutral-700">
           Connecting a store to Warmluke means agreeing to what follows, together with
           the{" "}
-          <a className="text-accent underline" href="/privacy">
+          <Link className="text-accent underline" href="/privacy">
             privacy policy
-          </a>
+          </Link>
           .
         </p>
 

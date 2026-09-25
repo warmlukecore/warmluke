@@ -209,21 +209,6 @@ export async function putBack(
 }
 
 /**
- * The thread every change made by the merchant's own AI is written to.
- *
- * Not "whichever thread happens to be open". Until now the record was
- * written by the browser, which meant it existed only when somebody
- * tapped Build there — so approving inside Claude, or leaving
- * auto-build on, changed the app and left the history blank. Written
- * here instead, it does not depend on anyone watching.
- *
- * Kept apart from Luke's own threads because these are not a
- * conversation with Luke: nobody typed them into that box, and
- * dropping them into whatever discussion was open would muddle both.
- */
-const CLIENT_THREAD_TITLE = "Changes from your AI";
-
-/**
  * Records what was asked and what came of it, for a change that came
  * from the merchant's own assistant.
  *

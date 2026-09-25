@@ -95,8 +95,8 @@ try {
   check("the turn comes as lines", (res.headers.get("content-type") ?? "").includes("x-ndjson"));
   const turn = await readTurn(res);
   const order = turn.steps.map((s) => s.step).join(",");
-  check("taken, read the store, read the app, asked the model — in that order", /^accepted,store,context,model/.test(order));
-  if (!/^accepted,store,context,model/.test(order)) show(order);
+  check("taken, read the store, read the app, asked the model — in that order", order.startsWith("accepted,store,context,model"));
+  if (!order.startsWith("accepted,store,context,model")) show(order);
   const first = turn.steps.find((s) => s.step === "model");
   check("the first ask says it is the first of three", first?.attempt === 1 && first?.of === 3);
   check(
