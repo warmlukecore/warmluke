@@ -37,6 +37,14 @@ The sidebar is grouped by where rows come from:
   `StorePicker` for any other list.
 - **Your sections**: what the merchant built, by hand or with Luke.
 
+Every row is a link to its section's own address (`/app/<project>?section=<id>`; no
+`section` is the Overview). A plain click opens it in place with `history.pushState`, so the
+page does not load again; right-click, Cmd/Ctrl-click and middle-click are the browser's, so
+a section opens in a new tab. The address is the one place the open section is kept: a
+refresh stays on it, back and forward move between sections, and an address naming a
+section that is not there (removed since, or another project's) opens the Overview and
+drops the name.
+
 Search covers both groups, and dragging reorders within a group only. The foot of the
 sidebar holds the store switcher and the store's status line (`StoreStrip`): connected
 and when it last synced, the import while it runs, and anything that needs the owner.

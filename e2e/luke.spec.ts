@@ -493,6 +493,34 @@ test("questions are asked the way their answers depend on each other", async ({ 
   }
 });
 
+test("a suggestion with a comma in it is picked once and taken back once", async ({ signedIn: page, shop }) => {
+  // Answers were one line of text split on commas, so a suggestion with a
+  // comma in it was never seen as picked: each click added it again, and
+  // no click took it back.
+  const label = "SKU on your printed labels, as the courier scans it";
+  const thread = await replyThread(shop, {
+    type: "clarify",
+    message: "One thing about your labels:",
+    questions: [{ id: "which", question: "What is on your labels?", suggestions: [label, "Barcode"], multi: true }],
+  });
+  try {
+    await page.goto(`/app/${shop.projectId}`);
+    const { panel } = await luke(page);
+    const pick = panel.getByRole("checkbox", { name: label });
+    await pick.click();
+    await expect(pick).toHaveAttribute("aria-checked", "true");
+    await pick.click();
+    await expect(pick).toHaveAttribute("aria-checked", "false");
+    await pick.click();
+    const sent = catchNextTurn(page);
+    await panel.getByRole("button", { name: "Send answer" }).click();
+    const composed = await sent;
+    expect(composed.split(label).length - 1, "said once").toBe(1);
+  } finally {
+    await shop.admin.from("conversations").delete().eq("id", thread);
+  }
+});
+
 test("answers to Luke's questions read as a summary in their bubble", async ({ signedIn: page, shop }) => {
   const thread = await replyThread(
     shop,

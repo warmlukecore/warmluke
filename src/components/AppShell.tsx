@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { watchRows } from "@/lib/live";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
 import { describePlan } from "@/lib/describe";
 import { apiFetch, apiStream, takePendingPrompt } from "@/lib/auth";
@@ -119,6 +119,16 @@ const BUILD_LOST_MS = 10 * 60_000;
 /** An answer still "answering" after this long never arrived: the function that made it is gone. */
 const ANSWER_LOST_MS = 6 * 60_000;
 
+/**
+ * A sidebar link's click: a plain one opens the section here, at once; a
+ * new tab, a new window or the link's own menu is the browser's to do.
+ */
+function openHere(e: React.MouseEvent, open: () => void) {
+  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  open();
+}
+
 /** Where the model picked in the panel is remembered, on this device. */
 const MODEL_KEY = "luke:model";
 
@@ -203,7 +213,27 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   const storeId = store?.id ?? null;
   const isOwner = !!project && !!userId && project.owner_id === userId;
   const [modules, setModules] = useState<ModuleRow[]>([]);
-  const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
+  // The section on screen is the address's (?section=…), not the shell's
+  // own: a section opens in a new tab, stays open on a refresh, can be
+  // sent to someone, and back and forward move between sections. It was
+  // state alone, so the address never changed, a refresh went back to
+  // the start, and back left the app.
+  const searchParams = useSearchParams();
+  const selectedModuleId = searchParams.get("section");
+  /** A section's own address, for the sidebar's links (null is the start). */
+  const sectionHref = (id: string | null) => `/app/${projectId}${id ? `?section=${id}` : ""}`;
+  const setSelectedModuleId = useCallback((id: string | null, how: "push" | "replace" = "push") => {
+    const at = new URLSearchParams(window.location.search);
+    if (at.get("section") === id) return;
+    if (id) at.set("section", id);
+    else at.delete("section");
+    const qs = at.toString();
+    window.history[how === "push" ? "pushState" : "replaceState"](
+      null,
+      "",
+      `${window.location.pathname}${qs ? `?${qs}` : ""}`
+    );
+  }, []);
   const [schema, setSchema] = useState<UiSchemaRow | null>(null);
   const [records, setRecords] = useState<RecordRow[]>([]);
   const [loadedSource, setLoadedSource] = useState<string | null>(null);
@@ -753,6 +783,12 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         supabase.from("ui_schemas").select("*").eq("module_id", moduleId).order("version", { ascending: false }),
         supabase.from("modules").select("source_table").eq("id", moduleId).maybeSingle(),
       ]);
+      // Named by the address and not there (removed since, or another
+      // project's): the start instead, and the address says so.
+      if (!modRes.error && !modRes.data) {
+        setSelectedModuleId(null, "replace");
+        return;
+      }
       if (schemaRes.error || recordsRes.error || historyRes.error) {
         setLoadError(
           schemaRes.error?.message ??
@@ -1105,17 +1141,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   const storeTop = useMemo(() => topLevel.filter((m) => !!m.source_table), [topLevel]);
   const ownTop = useMemo(() => topLevel.filter((m) => !m.source_table), [topLevel]);
 
-  // A store project opens on its Overview, the way a shop's admin opens
-  // on its home, until a section is picked.
-  const overviewDecided = useRef(false);
-  useEffect(() => {
-    if (overviewDecided.current || !store) return;
-    overviewDecided.current = true;
-    if (!selectedModuleId) setShowOverview(true);
-  }, [store, selectedModuleId]);
+  // A store project shows its Overview whenever no section is open, the
+  // way a shop's admin opens on its home: on arriving, and on going back
+  // to an address that names none.
   useEffect(() => {
     if (selectedModuleId) setShowOverview(false);
-  }, [selectedModuleId]);
+    else if (store) setShowOverview(true);
+  }, [store, selectedModuleId]);
 
   /** The four a store is run from, in one tap, before anything else is added. */
   const addCoreSections = useCallback(async () => {
@@ -1602,6 +1634,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       loadModules,
       loadModuleData,
       selectedModuleId,
+      setSelectedModuleId,
       repairFailedApply,
       recordOutcome,
       planTitle,
@@ -1850,6 +1883,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       loadModules,
       loadModuleData,
       selectedModuleId,
+      setSelectedModuleId,
       recordOutcome,
       planTitle,
     ]
@@ -2040,16 +2074,21 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           ) : (
             <span className="w-[18px]" />
           )}
-          <button
-            onClick={() => {
-              setSelectedModuleId(m.id);
-              setNavOpen(false);
-            }}
+          <a
+            href={sectionHref(m.id)}
+            draggable={false}
+            aria-current={m.id === selectedModuleId ? "page" : undefined}
+            onClick={(e) =>
+              openHere(e, () => {
+                setSelectedModuleId(m.id);
+                setNavOpen(false);
+              })
+            }
             className="flex min-w-0 flex-1 items-center gap-2.5 py-2 text-left text-sm"
           >
             <Icon name={m.icon} />
             <span className="truncate">{m.nav_label}</span>
-          </button>
+          </a>
           {isOwner && (
             <>
               <button
@@ -2109,16 +2148,21 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                   : "text-frame-fg hover:bg-frame-raised/60 hover:text-white"
               }`}
             >
-              <button
-                onClick={() => {
-                  setSelectedModuleId(k.id);
-                  setNavOpen(false);
-                }}
+              <a
+                href={sectionHref(k.id)}
+                draggable={false}
+                aria-current={k.id === selectedModuleId ? "page" : undefined}
+                onClick={(e) =>
+                  openHere(e, () => {
+                    setSelectedModuleId(k.id);
+                    setNavOpen(false);
+                  })
+                }
                 className="flex min-w-0 flex-1 items-center gap-2.5 py-1.5 pl-1.5 text-left text-[13px]"
               >
                 <Icon name={k.icon} />
                 <span className="truncate">{k.nav_label}</span>
-              </button>
+              </a>
               <button
                 onClick={() => setModuleSettingsFor(k)}
                 aria-label={`Settings for ${k.nav_label}`}
@@ -2211,18 +2255,22 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                   }`}
                 >
                   <span className="w-[18px]" />
-                  <button
-                    onClick={() => {
-                      setSelectedModuleId(null);
-                      setShowOverview(true);
-                      setNavOpen(false);
-                    }}
+                  <a
+                    href={sectionHref(null)}
+                    draggable={false}
+                    onClick={(e) =>
+                      openHere(e, () => {
+                        setSelectedModuleId(null);
+                        setShowOverview(true);
+                        setNavOpen(false);
+                      })
+                    }
                     aria-current={showOverview ? "page" : undefined}
                     className="flex min-w-0 flex-1 items-center gap-2.5 py-2 text-left text-sm"
                   >
                     <LayoutDashboard aria-hidden size={16} strokeWidth={1.75} />
                     Overview
-                  </button>
+                  </a>
                 </div>
               )}
 
