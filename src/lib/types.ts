@@ -461,7 +461,42 @@ export type AssistantReply =
      * first. Kept while the subject holds.
      */
     title?: string;
+    /** What the turn's model calls took, written by the server (lib/usage.ts), never the model. */
+    usage?: TurnUsage;
   };
+
+/** What a model call was for: the reply itself, the gap pass, or routing the question. */
+export type UsageJob = "reply" | "gap" | "route";
+
+/** One model's share of a turn: its calls for one job, their tokens, and their dollars. */
+export type ModelUse = {
+  provider: string;
+  /** As the provider named it in its answer, which is the model that did the work. */
+  model: string;
+  job: UsageJob;
+  calls: number;
+  /** Every input token, cached ones included. */
+  input: number;
+  cacheRead: number;
+  cacheWrite: number;
+  output: number;
+  /** Null when this model's price is not known. */
+  usd: number | null;
+};
+
+/** A turn's usage, as the reply keeps it: priced once, when the turn ended. */
+export type TurnUsage = {
+  /** The model whose answer is the reply; null when no reply call finished. */
+  model: string | null;
+  uses: ModelUse[];
+  /** Dollars for the calls with a known price. */
+  usd: number;
+  /** Some call had no known price, so usd is not the whole of it. */
+  partial: boolean;
+};
+
+/** What each reply says under it about the model: set per account by an administrator (0127). */
+export type LukeShows = "nothing" | "model" | "tokens" | "cost";
 
 export type AnswerKind = "store" | "product_help" | "conversation";
 

@@ -74,6 +74,11 @@ target section instead of copying label text into the source row.
 - `answer`: grounded Markdown (the `ui/Markdown` block) for store, product-help, or
   conversation questions, with a copy button under it, ending on the last reply with what
   to ask next, each a row that sends itself;
+- under every reply that carries `usage`: the model that made it, and as much as the account
+  is shown (its tokens; the cost in dollars, and in rupees at the ECB rate `/api/fx` gives,
+  with the day it is from). Opened, each model and job apart (reply, gap check, question
+  router), cache reads included; a call with no known price is said, never priced. Replies
+  written before this carry none and show none;
 - `clarify`: structured questions with suggestions and free-form answers: one shown
   directly, two independent ones together, otherwise one at a time with Back and Skip;
   a `multi` question takes several answers, and number keys pick while the card has focus.
@@ -97,6 +102,12 @@ older"; once there are more than five, a search asks the server over every threa
 A thread can be renamed in the list; that name is kept (`named_by_owner`, 0126), and Luke's
 replies no longer rename it.
 While the last conversation loads, the panel shows its shape, not the empty welcome.
+
+The model is picked under the composer when the account may use more than one
+(`/api/models`): newest first, the default marked, and, where the cost is shown, each one's
+price and about what a reply in this thread would come to on it, priced at the thread's
+own average reply. The pick is kept on the device and sent with each turn; the server
+checks it again.
 
 ## Records and writes
 

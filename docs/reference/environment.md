@@ -51,6 +51,15 @@ $3.63 for the run. Two of the harness's checks had been failing correct designs 
 computed column (they only looked in features and rules), which likely cost the cheaper models
 a point or two above; their scheduled-rule misses were real.
 
+`ANTHROPIC_MODEL` is the default, not the only choice. The panel offers what Anthropic's
+Models API lists for the key and `src/lib/model-prices.ts` can price (asked at most once an
+hour; the price table's current models when it cannot be asked), and an administrator cuts
+that list per account (0127). A model the account may not use is never sent to Anthropic,
+whatever the request names: the turn is made on the account's default. Prices come from
+[Anthropic's pricing page](https://platform.claude.com/docs/en/about-claude/pricing); the
+Models API does not carry them, so a changed or new price is a row in that table, and a
+model without one shows its tokens and no cost.
+
 ## Migration and check tooling
 
 | Variable | Context | Purpose |

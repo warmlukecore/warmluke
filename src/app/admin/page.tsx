@@ -36,6 +36,7 @@ import { ago } from "@/lib/when";
 import { Breakdown, Stat, siteLink, topCounts } from "@/components/AdminParts";
 import { Dialog } from "@/components/ui/Dialog";
 import { AccountDetail, type Account } from "@/components/AccountDetail";
+import { LukeAccess } from "@/components/LukeAccess";
 import { downloadCsv, type Column } from "@/lib/csv";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -98,6 +99,8 @@ export default function Admin() {
   const [now] = useState(() => Date.now());
   // The account whose whole story is open, if any.
   const [open, setOpen] = useState<Account | null>(null);
+  /** The account whose Luke models and costs are being set. */
+  const [lukeFor, setLukeFor] = useState<Account | null>(null);
 
   // Another admin screen links here with ?find=<email>.
   useEffect(() => {
@@ -523,6 +526,16 @@ export default function Admin() {
                                   {on ? "On" : "Off"}
                                 </span>
                               </div>
+                              {/* Which models their Luke may use, and what each reply shows them. */}
+                              {feature === "chat" && (
+                                <button
+                                  onClick={() => setLukeFor(r)}
+                                  aria-label={`Luke's models for ${r.email}`}
+                                  className="mt-1.5 text-xs text-link hover:underline"
+                                >
+                                  Models and costs
+                                </button>
+                              )}
                             </td>
                           );
                         })}
@@ -708,6 +721,7 @@ export default function Admin() {
         </p>
       </div>
       {open && <AccountDetail account={open} now={now} onClose={() => setOpen(null)} />}
+      {lukeFor && <LukeAccess userId={lukeFor.user_id} email={lukeFor.email} onClose={() => setLukeFor(null)} />}
       {erase && (
         <Dialog
           title="Delete this account for good"

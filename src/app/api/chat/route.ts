@@ -1,6 +1,8 @@
 import { NextResponse, after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getUserClient } from "@/lib/supabase-server";
+import { lukeSettings, modelFor } from "@/lib/luke-models";
+import { metered } from "@/lib/usage";
 import { tapeHeaders } from "@/lib/model-tape";
 import { MAX_REPAIR_ATTEMPTS, runTurn } from "@/lib/engine";
 import { noteJudgement } from "@/lib/judge";
@@ -142,11 +144,19 @@ export async function POST(req: Request) {
     }
     const { client } = auth;
 
-    const { message, projectId, moduleId, conversationId } = (await req.json()) as {
+    const {
+      message,
+      projectId,
+      moduleId,
+      conversationId,
+      model: askedModel,
+    } = (await req.json()) as {
       message?: string;
       projectId?: string;
       moduleId?: string | null;
       conversationId?: string | null;
+      /** The model picked in the panel; used only when this account may use it. */
+      model?: unknown;
     };
     if (!message?.trim() || !projectId) {
       return NextResponse.json({ error: "message and projectId are required" }, { status: 400 });
@@ -375,22 +385,30 @@ export async function POST(req: Request) {
     const work = async (tell: (event: TurnEvent) => void): Promise<Record<string, unknown>> => {
       try {
         tell({ step: "accepted" });
-        const turn = await runTurn({
-          client,
-          project: proj,
-          modules: moduleList,
-          message,
-          history,
-          currentSchema,
-          currentFeatures,
-          blueprintShown,
-          moduleId: moduleId ?? null,
-          // Luke may look up what the snapshot does not hold.
-          lookups: true,
-          signal: halt.signal,
-          onEvent: tell,
-          onWords: words,
-        });
+        // The model they picked, if the account may use it; the default
+        // otherwise. The server's own model goes as no choice at all, so
+        // the turn is the one it always was.
+        const luke = await lukeSettings(client, auth.userId);
+        const picked = modelFor(luke, askedModel);
+        const [turn, took] = await metered(() =>
+          runTurn({
+            client,
+            project: proj,
+            modules: moduleList,
+            message,
+            history,
+            currentSchema,
+            currentFeatures,
+            blueprintShown,
+            moduleId: moduleId ?? null,
+            // Luke may look up what the snapshot does not hold.
+            lookups: true,
+            signal: halt.signal,
+            onEvent: tell,
+            onWords: words,
+            model: picked && picked !== luke.server ? picked : undefined,
+          })
+        );
 
         if (!turn.ok) {
           // Our engine could not produce something it trusts. Charging
@@ -419,6 +437,9 @@ export async function POST(req: Request) {
         // is never asked to attest that it looked; an assertion from
         // the thing being checked is not a check. Only an answer about
         // the store gets one: a greeting read no rows.
+        // What the calls took, kept with the reply so a reload says the same.
+        const usage = took();
+        if (usage) turn.reply.usage = usage;
         if (turn.reply.type === "answer" && turn.reply.kind === "store") {
           turn.reply.grounding = {
             kind: "store_snapshot",

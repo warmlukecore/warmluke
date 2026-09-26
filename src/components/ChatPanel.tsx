@@ -26,9 +26,12 @@ import type {
   ClarifyQuestion,
   ModuleRow,
   NextStep,
+  LukeShows,
+  ModelUse,
   RecordRow,
   ThreadSummary,
   TurnEvent,
+  TurnUsage,
   UiSchema,
 } from "@/lib/types";
 import { ago, dayGroup } from "@/lib/when";
@@ -39,6 +42,7 @@ import {
   ArrowUp,
   Bell,
   Check,
+  ChevronDown,
   ChevronRight,
   Circle,
   Columns3,
@@ -71,7 +75,9 @@ import {
   Zap,
   ZapOff,
 } from "lucide-react";
-import { button, fieldOf } from "@/components/ui/controls";
+import { button, fieldOf, menu, menuItem } from "@/components/ui/controls";
+import { costOf, dollars, modelName, tokensShort, type Tokens } from "@/lib/model-prices";
+import type { OfferedModel } from "@/lib/luke-models";
 import { LukeMark } from "@/components/ui/LukeMark";
 import { Markdown } from "@/components/ui/Markdown";
 import { LUKE_COPY } from "@/lib/luke-copy";
@@ -136,6 +142,8 @@ export interface ChatMessage {
   building?: { startedAt: string };
   /** On a design card: what became of its build, as its thread recorded it. */
   built?: BuildRecord;
+  /** What the turn's model calls took, as the server priced it. */
+  usage?: TurnUsage;
 }
 
 /**
@@ -1107,6 +1115,173 @@ function BlueprintCard({
   );
 }
 
+/** What each job is called in a reply's breakdown. */
+const JOB_WORDS: Record<ModelUse["job"], string> = { reply: "Reply", gap: "Gap check", route: "Question router" };
+
+/** A reply's dollars in rupees, at a rate that says the day it is from. */
+export type InrRate = { rate: number; asOf: string | null };
+
+const rupees = (usd: number, inr: InrRate) => {
+  const n = usd * inr.rate;
+  return `≈₹${n < 1 ? n.toFixed(2) : n.toFixed(n < 100 ? 1 : 0)}`;
+};
+
+/**
+ * Under a reply: the model that answered, and as much of what it took as
+ * the account is shown (an administrator decides, per account). Folded
+ * to one line; opened, each model and job apart, cache included.
+ */
+function UsageLine({ usage, shows, inr }: { usage: TurnUsage; shows: LukeShows; inr: InrRate | null }) {
+  if (shows === "nothing" || !usage.model) return null;
+  const name = modelName(usage.model);
+  if (shows === "model") {
+    return <div className="text-[10px] text-fg-faint">{name}</div>;
+  }
+  const total = usage.uses.reduce(
+    (s, u) => ({ input: s.input + u.input, cacheRead: s.cacheRead + u.cacheRead, output: s.output + u.output }),
+    { input: 0, cacheRead: 0, output: 0 }
+  );
+  const priced = usage.uses.some((u) => u.usd !== null);
+  const cost = shows === "cost" && priced ? `${dollars(usage.usd)}${inr ? ` · ${rupees(usage.usd, inr)}` : ""}` : null;
+  return (
+    <details className="group text-[10px] text-fg-faint">
+      <summary
+        className="inline-flex cursor-pointer list-none items-center gap-1 select-none hover:text-fg-muted"
+        aria-label={`Answered by ${name}: ${total.input} tokens in, ${total.output} out${cost ? `, ${cost}` : ""}`}
+      >
+        <span>{name}</span>
+        <span aria-hidden>·</span>
+        <span className="tabular-nums">
+          {tokensShort(total.input)} in · {tokensShort(total.output)} out
+        </span>
+        {cost && (
+          <>
+            <span aria-hidden>·</span>
+            <span className="tabular-nums">{cost}</span>
+          </>
+        )}
+        <ChevronRight
+          aria-hidden
+          size={11}
+          strokeWidth={2}
+          className="transition-transform duration-150 group-open:rotate-90"
+        />
+      </summary>
+      <ul className="mt-1 space-y-0.5 border-l border-line pl-2.5">
+        {usage.uses.map((u, k) => (
+          <li key={k} className="tabular-nums">
+            {JOB_WORDS[u.job]} · {modelName(u.model)}
+            {u.calls > 1 ? ` · ${u.calls} calls` : ""} · {tokensShort(u.input)} in
+            {u.cacheRead > 0 ? ` (${tokensShort(u.cacheRead)} from cache)` : ""} · {tokensShort(u.output)} out
+            {shows === "cost"
+              ? u.usd === null
+                ? " · its price is not known, so not counted"
+                : ` · ${dollars(u.usd)}`
+              : ""}
+          </li>
+        ))}
+        {shows === "cost" && priced && inr && (
+          <li>
+            $1 = ₹{inr.rate.toFixed(2)}
+            {inr.asOf ? `, the ECB rate of ${inr.asOf}` : ""}
+          </li>
+        )}
+      </ul>
+    </details>
+  );
+}
+
+/**
+ * The model Luke answers on, picked in the panel: the ones this account
+ * may use, newest first. With the cost shown, each says its price and,
+ * once this thread has replies to go by, about what a reply here comes to.
+ */
+function ModelPicker({
+  models,
+  byDefault,
+  model,
+  onModel,
+  shows,
+  mix,
+}: {
+  models: OfferedModel[];
+  byDefault: string | null;
+  model: string | null;
+  onModel: (id: string) => void;
+  shows: LukeShows;
+  /** The average reply's tokens in this thread, to price each model by. */
+  mix: Tokens | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const shut = (e: Event) => {
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", shut);
+    document.addEventListener("keydown", shut);
+    return () => {
+      document.removeEventListener("pointerdown", shut);
+      document.removeEventListener("keydown", shut);
+    };
+  }, [open]);
+  const current = models.find((m) => m.id === model) ?? models[0];
+  if (!current) return null;
+  return (
+    <div ref={box} className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Model: ${current.name}. Change it`}
+        className="inline-flex items-center gap-0.5 rounded px-0.5 font-medium text-fg-muted transition-colors hover:text-fg"
+      >
+        {current.name}
+        <ChevronDown aria-hidden size={11} strokeWidth={2} />
+      </button>
+      {open && (
+        <div role="menu" aria-label="Models" className={`${menu} absolute bottom-full left-0 mb-1.5 w-64`}>
+          {models.map((m) => {
+            const each = shows === "cost" && m.price && mix ? costOf(m.id, mix) : null;
+            return (
+              <button
+                key={m.id}
+                role="menuitemradio"
+                aria-checked={m.id === current.id}
+                onClick={() => {
+                  onModel(m.id);
+                  setOpen(false);
+                }}
+                className={`${menuItem} items-start`}
+              >
+                <Check
+                  aria-hidden
+                  size={13}
+                  strokeWidth={2}
+                  className={`mt-0.5 shrink-0 ${m.id === current.id ? "text-fg" : "text-transparent"}`}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5 text-[12px] text-fg">
+                    {m.name}
+                    {m.id === byDefault && <span className="text-[10px] text-fg-faint">Default</span>}
+                  </span>
+                  {shows === "cost" && (
+                    <span className="block text-[10px] text-fg-faint tabular-nums">
+                      {m.price ? `$${m.price.input} in · $${m.price.output} out per million tokens` : "Price not known"}
+                      {each !== null ? ` · ≈${dollars(each)} a reply here` : ""}
+                    </span>
+                  )}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ChatPanel({
   projectId,
   width,
@@ -1133,6 +1308,10 @@ export default function ChatPanel({
   draft = "",
   phase = null,
   threadOpening = false,
+  luke = null,
+  model = null,
+  onModel,
+  inr = null,
   onSend,
   onEditPrompt,
   onApply,
@@ -1172,6 +1351,13 @@ export default function ChatPanel({
   conversationId: string | null;
   /** The last conversation is still loading, so the empty screen is not shown yet. */
   threadOpening?: boolean;
+  /** What this account's Luke may answer on, and what each reply shows them (/api/models). */
+  luke?: { models: OfferedModel[]; default: string | null; shows: LukeShows } | null;
+  /** The model picked for the next turn. */
+  model?: string | null;
+  onModel?: (id: string) => void;
+  /** Dollars to rupees, when the cost is shown and a rate is on hand. */
+  inr?: InrRate | null;
   onNewThread: () => void;
   onPickThread: (id: string) => void;
   onDeleteThread: (id: string) => void;
@@ -1598,6 +1784,16 @@ export default function ChatPanel({
   const [resolvedCards, setResolvedCards] = useState<Record<string, boolean>>({});
   const [threadsOpen, setThreadsOpen] = useState(false);
   const [threadQuery, setThreadQuery] = useState("");
+  // What a reply in this thread took, on average: each model in the
+  // picker is priced at it. None until a reply here says.
+  const replyMix = useMemo((): Tokens | null => {
+    const replies = messages.flatMap((m) => (m.usage ? m.usage.uses.filter((u) => u.job === "reply") : []));
+    const n = messages.filter((m) => m.usage?.uses.some((u) => u.job === "reply")).length;
+    if (n === 0) return null;
+    const sum = (k: keyof Tokens) => replies.reduce((s, u) => s + u[k], 0) / n;
+    return { input: sum("input"), cacheRead: sum("cacheRead"), cacheWrite: sum("cacheWrite"), output: sum("output") };
+  }, [messages]);
+  const shows: LukeShows = luke?.shows ?? "nothing";
   /** When the list of past conversations was opened: what "3 h ago" and "Today" are counted from. */
   const [threadsAt, setThreadsAt] = useState(0);
   /** Pages of past conversations below the first, as "Show older" brings them. */
@@ -2732,6 +2928,7 @@ export default function ChatPanel({
                     reply={messages[i + 1]?.role === "user" ? messages[i + 1].text : undefined}
                     onSubmit={(composed) => resolveCard(m.id, composed)}
                   />
+                  {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} />}
                 </div>
               );
             }
@@ -2763,6 +2960,7 @@ export default function ChatPanel({
                       inputRef.current?.focus();
                     }}
                   />
+                  {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} />}
                 </div>
               );
             }
@@ -2779,7 +2977,12 @@ export default function ChatPanel({
                 <div key={m.id} className="space-y-1">
                   {m.trace && <TraceLine trace={m.trace} />}
                   <Markdown>{m.text ?? ""}</Markdown>
-                  {m.text && <CopyReply text={m.text} />}
+                  {(m.text || m.usage) && (
+                    <div className="flex flex-wrap items-center gap-x-2">
+                      {m.text && <CopyReply text={m.text} />}
+                      {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} />}
+                    </div>
+                  )}
                   {/* Under the build, which is where they find out it
                     happened — a change made with nobody watching is
                     read here first, and this is the moment they want
@@ -3054,6 +3257,7 @@ export default function ChatPanel({
                     </div>
                   )}
                 </div>
+                {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} />}
               </div>
             );
           })}
@@ -3503,6 +3707,17 @@ export default function ChatPanel({
             </button>
           </div>
           <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 text-[10px] text-fg-faint">
+            {/* Only with a choice to make: one model allowed is no picker. */}
+            {luke && luke.models.length > 1 && onModel && (
+              <ModelPicker
+                models={luke.models}
+                byDefault={luke.default}
+                model={model}
+                onModel={onModel}
+                shows={shows}
+                mix={replyMix}
+              />
+            )}
             <span>{LUKE_COPY.promise}</span>
             {/* From the engine's own registry, one tap away rather than
               repeated on every design. The assistant is told to flag

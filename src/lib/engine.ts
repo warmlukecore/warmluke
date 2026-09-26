@@ -205,6 +205,11 @@ export type TurnInput = {
    * replaces it. Absent, the model is not streamed at all.
    */
   onWords?: (text: string, phase?: DraftPhase) => void;
+  /**
+   * The model the reply is made on, already checked against what the
+   * account may use (luke-models.ts). Absent, the server's design model.
+   */
+  model?: string;
 };
 
 export type TurnResult =
@@ -361,6 +366,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     signal,
     onEvent,
     onWords,
+    model,
   } = input;
   // Said after the fact, with what was found. A listener that throws
   // must not take the turn down with it: the work is the point, the
@@ -499,6 +505,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       system,
       turns: [...history, ...attemptTurns],
       signal,
+      model,
       lookups: attempt === 0 && tools ? { tools } : undefined,
       onText: draft,
     });

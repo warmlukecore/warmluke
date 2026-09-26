@@ -22,6 +22,8 @@ database decides who may do what.
 | MCP | `src/app/api/mcp/route.ts` | Lists `STORE_TOOLS` (adding `shop_domain` and the artifact note) and its own approval flows |
 | Luke's tools | `aiStoreTools(ctx, { only, observe })` in `src/lib/store-tools.ts` | The same tools as AI SDK tools, bound to one caller and one store, cut to fit (`fitForModel`) and heard as they run |
 | Luke's loop | `runTurn` in `src/lib/engine.ts` with `lookups: true`, `callModel` in `src/lib/ai.ts` | Up to three lookups before the JSON reply (`LOOKUP_STEPS`), on the first attempt only; each told as a `lookup` step and kept for the receipt |
+| What a turn took | `src/lib/usage.ts` (`metered`, `record`, `asJob`), `src/lib/model-prices.ts` | Every finished call records its tokens into the turn's meter (AsyncLocalStorage), by provider, model and job; the chat route prices it once and keeps it on the reply as `usage` |
+| Which model per account | `src/lib/luke-models.ts`, `/api/models`, `account_settings.luke_models` (0127) | What the Models API lists and the price table can price, cut to the account's list; the route uses a named model only when it is on it |
 | Asking to change the shop | `src/lib/store-action-propose.ts` (`proposeStoreAction`, `aiProposeTool`) | One set of gates for MCP and Luke; only ever a request the merchant approves on a card; offered to Luke only when the account's switch is on |
 
 ## Rules
@@ -69,6 +71,12 @@ database decides who may do what.
    JSON still arriving; the route sends it as `words` lines, throttled, and drops the one
    waiting when the turn ends. A new attempt clears the draft. Stream failures are thrown
    and mapped to the same `ModelError` sentences (`StreamProviderError` too).
+
+12. **Prices are data, read from Anthropic's pricing page** into `model-prices.ts`; the
+   Models API does not carry them. A model with no row shows tokens and no cost, and a
+   name matches a row only as itself or as that row with a snapshot date, so a new version
+   is never priced as an old one. A call made outside `step()` must `record` its own usage,
+   or it is missing from the reply's cost.
 
 ## Adding a store tool
 

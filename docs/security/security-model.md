@@ -153,6 +153,15 @@ reversible) and, once suspended and only with its email typed back, delete it wi
 apps it owns (0118). Neither works on their own account or another administrator's, and
 both are written to the audit trail, which outlives the account.
 
+Which models an account's Luke may answer on, and what each reply shows them (nothing, the
+model, its tokens, or the cost too), are two columns of `account_settings` (0127) written
+only by `abo_admin_set_luke` and read back by `abo_admin_luke`, both administrator-only
+and audited as `set_luke`. The owner reads their own through the existing read policy. The
+chat route checks the model a request names against that list before any call; a model
+not on it is replaced by the account's default, never sent. A list or a setting that
+cannot be read gives the server's own model alone. `check-luke-access` covers the setter,
+the refusals and the trail; `check-model-prices` the rule the route calls.
+
 An administrator can send a customer an invite to start (0119): a link with a 192-bit
 token that lasts 72 hours unless set otherwise, can be shortened, lengthened or withdrawn,
 and is used once unless made for several people. The tables are closed; a visitor can

@@ -92,7 +92,7 @@ computed columns, guards, and local display behavior where allowed.
 | `build_requests` | Designs originating from MCP clients, including status, exact plans, approval, outcome, and source client |
 | `judgements` | Asynchronous design-quality observations; never an authorization decision |
 | `mcp_calls` | Per-user/client usage accounting and throttling |
-| `account_settings` | Feature switches, turn allowances, and superadmin state |
+| `account_settings` | Feature switches, turn allowances, superadmin state, and which models Luke may use and what each reply shows (`luke_models`, `luke_shows`, 0127) |
 | `profiles` | One row per account: onboarding answers (name, business, role, monthly orders, platform, optional website/team size/source) and `onboarded_at`, which only the database stamps and which cannot be unset |
 | `admin_account_audit` | Audit trail for administrator account changes |
 | `account_invites` | Sign-up links an administrator makes: a 192-bit token, what is known of the person (email, name, business), uses allowed, `expires_at` (72 hours unless chosen), `revoked_at`; closed to every key, read and written only through `abo_admin_invite*` and `abo_invite_peek`/`abo_invite_claim` (0119) |

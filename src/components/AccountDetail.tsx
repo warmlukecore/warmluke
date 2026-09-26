@@ -27,6 +27,8 @@ import {
   labelOf,
 } from "@/lib/onboarding";
 import { ago } from "@/lib/when";
+import { modelName } from "@/lib/model-prices";
+import { SHOWS_WORDS } from "@/components/LukeAccess";
 
 /** A row of abo_admin_accounts. */
 export type Account = {
@@ -111,6 +113,11 @@ function said({ action, old_value, new_value }: Story["trail"][number]): string 
       return "Suspended";
     case "restore":
       return "Let back in";
+    case "set_luke": {
+      const models = Array.isArray(now.models) ? (now.models as string[]).map(modelName).join(", ") : "every model";
+      const shows = SHOWS_WORDS.find(([v]) => v === now.shows)?.[1].toLowerCase() ?? String(now.shows);
+      return `Luke: ${models}; under each reply, ${shows}`;
+    }
     default:
       return action;
   }

@@ -8,6 +8,7 @@
 // here it only means "you have nothing from the model".
 
 import { keyFor, tapeFetch } from "@/lib/model-tape";
+import { record } from "@/lib/usage";
 
 export type JevAnswer = {
   choice?: string;
@@ -44,7 +45,20 @@ export async function askJev(
       console.error(`${tag}: HTTP ${r.status}`);
       return null;
     }
-    const j = (await r.json()) as { model?: unknown; answers?: unknown };
+    const j = (await r.json()) as {
+      model?: unknown;
+      answers?: unknown;
+      usage?: { input_tokens?: number; output_tokens?: number };
+    };
+    // The router is part of the reply it routes; the judge comes after it.
+    if (tag === "route") {
+      record(
+        "jev",
+        typeof j.model === "string" ? j.model : model(),
+        { inputTokens: j.usage?.input_tokens, outputTokens: j.usage?.output_tokens },
+        "route"
+      );
+    }
     if (!j.answers || typeof j.answers !== "object") {
       console.error(`${tag}: the answer did not have the shape asked for`);
       return null;

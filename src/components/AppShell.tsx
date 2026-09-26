@@ -13,7 +13,8 @@ import { supabase } from "@/lib/supabase-client";
 import { describePlan } from "@/lib/describe";
 import { apiFetch, apiStream, takePendingPrompt } from "@/lib/auth";
 import GenericRenderer, { type StatRequest, type StatResult } from "@/components/GenericRenderer";
-import ChatPanel, { type BuildRecord, type ChatMessage, nextChatId } from "@/components/ChatPanel";
+import ChatPanel, { type BuildRecord, type ChatMessage, type InrRate, nextChatId } from "@/components/ChatPanel";
+import type { OfferedModel } from "@/lib/luke-models";
 import { undoableFrom } from "@/lib/undo";
 import { asError, engineError, fixPrompt, type FixAction } from "@/lib/errors";
 import VersionHistory from "@/components/VersionHistory";
@@ -44,6 +45,7 @@ import type {
   NextStep,
   ProjectRow,
   ModuleRow,
+  LukeShows,
   RecordRow,
   ThreadSummary,
   TurnEvent,
@@ -113,6 +115,9 @@ type BuildPayload = {
 
 /** How long a build may say "building" before the thread stops believing it: far past any real one. */
 const BUILD_LOST_MS = 10 * 60_000;
+
+/** Where the model picked in the panel is remembered, on this device. */
+const MODEL_KEY = "luke:model";
 
 /** A message the server wrote, as opposed to one this screen put up a moment ago. */
 const STORED_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -485,11 +490,10 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           });
         }
         // Every branch above pushes exactly one, so this marks the
-        // reply that has just been rebuilt.
-        if (retired) {
-          const last = rebuilt[rebuilt.length - 1];
-          if (last) last.superseded = true;
-        }
+        // reply that has just been rebuilt, and gives it what it took.
+        const last = rebuilt[rebuilt.length - 1];
+        if (last && retired) last.superseded = true;
+        if (last && p.usage) last.usage = p.usage;
       }
       for (const m of rebuilt) {
         const built = builds.get(m.id);
@@ -515,6 +519,43 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     },
     [projectId, rememberConversation]
   );
+
+  // What this account's Luke may answer on, and what each reply shows
+  // them (/api/models, set per account by an administrator). The pick is
+  // remembered on this device; one no longer allowed is dropped for the
+  // default, and the server checks it again before any turn.
+  const [luke, setLuke] = useState<{ models: OfferedModel[]; default: string | null; shows: LukeShows } | null>(null);
+  const [modelChoice, setModelChoice] = useState<string | null>(() => {
+    try {
+      return typeof window === "undefined" ? null : window.localStorage.getItem(MODEL_KEY);
+    } catch {
+      return null;
+    }
+  });
+  const pickedModel = luke?.models.some((m) => m.id === modelChoice) ? modelChoice : (luke?.default ?? null);
+  const chooseModel = useCallback((id: string) => {
+    setModelChoice(id);
+    try {
+      window.localStorage.setItem(MODEL_KEY, id);
+    } catch {
+      /* private window: the pick lasts until the page closes */
+    }
+  }, []);
+  const [inr, setInr] = useState<InrRate | null>(null);
+  useEffect(() => {
+    apiFetch("/api/models", null, "GET").then(({ ok, data }) => {
+      if (ok && Array.isArray(data.models)) setLuke(data as unknown as NonNullable<typeof luke>);
+    });
+  }, []);
+  // Rupees only where the cost is shown: a rate nobody reads is not fetched.
+  useEffect(() => {
+    if (luke?.shows !== "cost") return;
+    apiFetch(`/api/fx?from=USD&to=INR&project=${projectId}`, null, "GET").then(({ ok, data }) => {
+      if (ok && typeof data.rate === "number" && Number.isFinite(data.rate) && data.rate > 0) {
+        setInr({ rate: data.rate, asOf: typeof data.as_of === "string" ? data.as_of : null });
+      }
+    });
+  }, [luke?.shows, projectId]);
 
   // Until the last conversation is back, the panel shows its shape
   // rather than the welcome of an empty one.
@@ -1138,7 +1179,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       try {
         const { ok, data } = await apiStream(
           "/api/chat",
-          { message: text, projectId, moduleId: selectedModuleId, conversationId },
+          {
+            message: text,
+            projectId,
+            moduleId: selectedModuleId,
+            conversationId,
+            ...(pickedModel ? { model: pickedModel } : {}),
+          },
           controller.signal,
           (step) => {
             seen.push(step as TurnEvent);
@@ -1196,6 +1243,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         // The saved row's id, when it was saved: the thread reloads as
         // the turn ends, and that is how it knows this reply, trace and all.
         const id = typeof data.replyId === "string" ? data.replyId : nextChatId();
+        const took = reply.usage ? { usage: reply.usage } : {};
 
         if (reply.type === "clarify") {
           setChatMessages((prev) => [
@@ -1207,6 +1255,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               questions: reply.questions,
               ...(reply.together ? { together: true } : {}),
               trace: trace(),
+              ...took,
             },
           ]);
           return;
@@ -1221,6 +1270,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               text: reply.message,
               blueprint: reply.blueprint,
               trace: trace(),
+              ...took,
             },
           ]);
           return;
@@ -1237,6 +1287,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               text: reply.message,
               ...(reply.next?.length ? { next: reply.next } : {}),
               trace: trace(),
+              ...took,
             },
           ]);
           return;
@@ -1260,11 +1311,11 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         // button that approves them, so there is nothing to build here
         // beyond handing these plans to it.
         if (plans.length > 1) {
-          setChatMessages((prev) => [...prev, { id, role: "assistant", ...batchCard(reply), trace: trace() }]);
+          setChatMessages((prev) => [...prev, { id, role: "assistant", ...batchCard(reply), trace: trace(), ...took }]);
           return;
         }
 
-        setChatMessages((prev) => [...prev, { id, role: "assistant", plan: plans[0], trace: trace() }]);
+        setChatMessages((prev) => [...prev, { id, role: "assistant", plan: plans[0], trace: trace(), ...took }]);
       } catch (e) {
         const aborted = (e as Error)?.name === "AbortError";
         setChatMessages((prev) => [
@@ -1291,7 +1342,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         setChatPhase(null);
       }
     },
-    [chatBusy, building, projectId, selectedModuleId, conversationId, loadThread, rememberConversation]
+    [chatBusy, building, projectId, selectedModuleId, conversationId, loadThread, rememberConversation, pickedModel]
   );
 
   /**
@@ -2372,6 +2423,10 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               <ChatPanel
                 projectId={projectId}
                 threadOpening={threadOpening}
+                luke={luke}
+                model={pickedModel}
+                onModel={chooseModel}
+                inr={inr}
                 autoBuild={project?.auto_build === true}
                 onUndo={isOwner ? undoBuild : undefined}
                 onFix={fixError}

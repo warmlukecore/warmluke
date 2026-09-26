@@ -80,6 +80,10 @@ test("a question is answered from the shop's own orders", async ({ signedIn: pag
   await answered(panel);
   await expect(panel.getByText(/#1006/).last()).toBeVisible();
   await expect(panel.getByText(/#1008/).last()).toBeVisible();
+  // Under it: the model that made it, what it took, and what that cost.
+  const took = panel.locator("summary", { hasText: "Opus 5.5" }).last();
+  await expect(took).toBeVisible();
+  await expect(took).toContainText(/k? in · [\d.]+k? out.*\$0\.\d/);
   // The new thread joins the switcher, and the trace survives the reload
   // a finished turn sets off (it touches the thread, which the panel
   // watches): the saved rows carry none, and it vanished a second later.
@@ -92,6 +96,8 @@ test("a question is answered from the shop's own orders", async ({ signedIn: pag
     .eq("project_id", shop.projectId);
   await reloaded;
   await expect(trace).toBeVisible();
+  // Kept with the reply, so a reload says the same.
+  await expect(took).toBeVisible();
   expect(Math.abs((await offset()) - pinned), "the question did not move").toBeLessThanOrEqual(2);
 });
 
@@ -134,6 +140,28 @@ test("a change to the shop waits for a yes", async ({ signedIn: page, shop }) =>
       .eq("user_id", shop.userId);
     await shop.admin.from("store_actions").delete().eq("project_id", shop.projectId);
   }
+});
+
+test("the model picked is the one a turn asks for, and each says what it costs", async ({ signedIn: page, shop }) => {
+  await page.goto(`/app/${shop.projectId}`);
+  const { panel, box } = await luke(page);
+  await panel.getByRole("button", { name: /^Model: Opus 5\.5/ }).click();
+  const models = panel.getByRole("menu", { name: "Models" });
+  await expect(models.getByRole("menuitemradio", { name: /Opus 5\.5/ })).toHaveAttribute("aria-checked", "true");
+  await expect(models.getByText("$2 in · $10 out per million tokens")).toBeVisible();
+  await models.getByRole("menuitemradio", { name: /Sonnet 5/ }).click();
+  await expect(panel.getByRole("menu", { name: "Models" })).toHaveCount(0);
+  // Sent with the next turn, caught before any model is asked.
+  const sent = page.waitForRequest((r) => r.url().endsWith("/api/chat") && r.method() === "POST");
+  void page.route("**/api/chat", (route) => (route.request().method() === "POST" ? route.abort() : route.fallback()));
+  await box.fill("hello");
+  await box.press("Enter");
+  expect(((await sent).postDataJSON() as { model?: string }).model).toBe("claude-sonnet-5");
+  // Remembered on this device.
+  await page.unroute("**/api/chat");
+  await page.reload();
+  const again = await luke(page);
+  await expect(again.panel.getByRole("button", { name: /^Model: Sonnet 5/ })).toBeVisible();
 });
 
 /** A section to build, as Luke would plan it. */

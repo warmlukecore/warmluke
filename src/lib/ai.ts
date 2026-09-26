@@ -27,6 +27,7 @@ import { keyFor, tapeFetch, tapedSetting } from "@/lib/model-tape";
 import { isStoreTable, storeTableSchema, STORE_TABLES } from "@/lib/store-read";
 // One definition, shared with the Shopify importer rather than copied.
 import { isTransient } from "@/lib/retry";
+import { asJob, record } from "@/lib/usage";
 import {
   ALLOWED_ICONS,
   COLUMN_TYPES,
@@ -2131,6 +2132,9 @@ const MODEL_JOBS = {
   fallback: "ANTHROPIC_FALLBACK_MODEL",
 } as const;
 
+/** The model a reply is designed on when nobody picked one: the server's setting. */
+export const designModel = () => modelFor("design");
+
 function modelFor(job: keyof typeof MODEL_JOBS): string {
   const setting = MODEL_JOBS[job];
   // While replaying, the models the tapes were recorded with.
@@ -2263,6 +2267,7 @@ const asMessages = (turns: ChatTurn[]) =>
  * things, and a stream's failures are thrown like the plain call's.
  */
 async function step(
+  provider: Provider,
   base: Parameters<typeof generateText>[0],
   onText?: (text: string) => void
 ): Promise<{
@@ -2272,6 +2277,8 @@ async function step(
 }> {
   if (!onText) {
     const r = await generateText(base);
+    // What it took, counted into the turn it is part of (usage.ts).
+    record(provider, r.response.modelId, r.totalUsage);
     return { text: r.text, finishReason: r.finishReason, steps: r.steps };
   }
   const r = streamText(base as Parameters<typeof streamText>[0]);
@@ -2291,7 +2298,14 @@ async function step(
       throw stopped();
     }
   }
-  const [text, finishReason, steps] = await Promise.all([r.text, r.finishReason, r.steps]);
+  const [text, finishReason, steps, usage, response] = await Promise.all([
+    r.text,
+    r.finishReason,
+    r.steps,
+    r.totalUsage,
+    r.response,
+  ]);
+  record(provider, response.modelId, usage);
   return { text, finishReason, steps };
 }
 
@@ -2321,6 +2335,7 @@ async function generate(
   let text: string;
   try {
     const result = await step(
+      provider,
       {
         ...base,
         messages: asMessages(turns),
@@ -2345,7 +2360,7 @@ async function generate(
         role: "user",
         content: `${last?.role === "user" ? `${last.content}\n\n` : ""}What your lookups returned, all you will get:\n${JSON.stringify(found).slice(0, FOLD_CHARS)}\n\nReply now, from these and the rows above, with the JSON only.`,
       };
-      ({ text } = await step({ ...base, messages: asMessages(folded) }, hear));
+      ({ text } = await step(provider, { ...base, messages: asMessages(folded) }, hear));
     }
   } catch (e) {
     throw asModelError(provider, signal?.aborted && !(e instanceof Error && e.name === "AbortError") ? stopped() : e);
@@ -2470,16 +2485,18 @@ Rules:
 
 export async function findGaps(ownerWords: string, builtDescription: string, signal?: AbortSignal): Promise<string[]> {
   try {
-    const raw = await callAnthropicChat(
-      GAP_SYSTEM,
-      [
-        {
-          role: "user",
-          content: `THE OWNER SAID:\n${ownerWords}\n\nWHAT WILL ACTUALLY BE BUILT:\n${builtDescription}`,
-        },
-      ],
-      signal,
-      modelFor("gap")
+    const raw = await asJob("gap", () =>
+      callAnthropicChat(
+        GAP_SYSTEM,
+        [
+          {
+            role: "user",
+            content: `THE OWNER SAID:\n${ownerWords}\n\nWHAT WILL ACTUALLY BE BUILT:\n${builtDescription}`,
+          },
+        ],
+        signal,
+        modelFor("gap")
+      )
     );
     const obj = JSON.parse(stripFences(raw)) as unknown;
     if (!isPlainObject(obj)) return [];
