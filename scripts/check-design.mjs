@@ -76,15 +76,14 @@ console.log("the design that got through");
     ],
     schemas
   );
-  check("it is refused", !got.ok);
+  // Once refused, because the column was lost on the way in and the
+  // rule after it wrote to nothing. Now a field of theirs sits beside
+  // each stock row (0128) and is kept; the one thing left wrong here is
+  // the filter's missing label. (A flag worked out from "available" is
+  // still the better shape, and the next case builds it that way.)
   const said = (got.errors ?? []).join(" | ");
-  // The message has to be answerable. "That column does not exist" sends
-  // the next attempt guessing again; naming the columns ends it.
-  check("and it names the columns that do exist", /available/.test(said) && /sku/.test(said));
-  check("and says a stored column cannot be added to one", /alert_status is not one of them/.test(said));
-  // The rejection has to leave a way forward, or it is the same
-  // dead end in politer words.
-  check("while pointing at the thing that does work", /"compute" expression/.test(said));
+  check("a field of theirs beside the store's stock is kept", !/not one of them/.test(said));
+  check("and what is left to fix is only the filter's label", !got.ok && got.errors.every((e) => /label/.test(e)));
   if (fails.length) console.log(`     errors were: ${said}`);
 }
 
@@ -436,49 +435,167 @@ console.log("\nand a compute cannot read a column below it");
 // ── A section over the store keeps the store's shape ─────────
 // The prompt said a typed column cannot be stored on one; the validator
 // let it through, and "Delivery Partner" on Orders passed every gate.
-console.log("\na section over the store keeps the store's shape");
+// Now it can (0128): a field of the merchant's sits beside each row,
+// where no import reaches. What still cannot be written is the store's
+// own fields, and a list whose rows have no id of their own keeps none.
+console.log("\na section over the store keeps the store's shape, and the merchant's fields beside it");
 {
   const ORD = "22222222-2222-2222-2222-222222222222";
+  const RSN = "33333333-3333-3333-3333-333333333333";
   const mods = [
     ...modules,
     { ...modules[0], id: ORD, name: "orders", nav_label: "Orders", route: "/orders", source_table: "orders" },
+    {
+      ...modules[0],
+      id: RSN,
+      name: "reasons",
+      nav_label: "Reasons",
+      route: "/reasons",
+      source_table: "return_reasons",
+    },
   ];
   const ordersSchema = storeTableSchema("orders");
-  const look = (id) => (id === ORD ? ordersSchema : schemas(id));
-  const plan = (col) => ({
+  const reasonsSchema = storeTableSchema("return_reasons");
+  const look = (id) => (id === ORD ? ordersSchema : id === RSN ? reasonsSchema : schemas(id));
+  const on = (id, cols, col) => ({
     changeType: "FIELD_ADD",
-    targetModuleId: ORD,
-    newSchema: { columns: [...ordersSchema.columns, col] },
-    explanation: "One more column on the orders list.",
+    targetModuleId: id,
+    newSchema: { columns: [...cols, col] },
+    explanation: "One more column on the list.",
   });
-  const typed = parseReply(
-    JSON.stringify({ plans: [plan({ field: "delivery_partner", label: "Delivery Partner", type: "text" })] }),
-    mods,
-    null,
-    null,
-    look
+  const parse = (plans) => parseReply(JSON.stringify({ plans }), mods, null, null, look);
+  const partner = { field: "delivery_partner", label: "Delivery Partner", type: "text" };
+  check("a field of theirs is kept beside each order", parse([on(ORD, ordersSchema.columns, partner)]).ok);
+  const grouped = parse([on(RSN, reasonsSchema.columns, partner)]);
+  check(
+    "but not beside a row with no id of its own, and told what to do instead",
+    !grouped.ok && grouped.errors.some((e) => /COMPUTED/.test(e))
+  );
+  const computed = parse([
+    on(ORD, ordersSchema.columns, {
+      field: "big",
+      label: "Big order",
+      type: "boolean",
+      compute: { op: ">=", args: [{ field: "total" }, { const: 5000 }] },
+    }),
+  ]);
+  check("a computed column is welcome", computed.ok);
+
+  // A new section over the orders, with what packing needs beside them.
+  const packing = (over = {}) => ({
+    changeType: "NEW_MODULE",
+    targetModuleId: null,
+    newModule: { name: "packing", nav_label: "Packing", icon: "table", source_table: "orders" },
+    newSchema: { columns: [{ field: "packed", label: "Packed", type: "boolean" }] },
+    features: {
+      actions: [{ label: "Mark packed", set: { packed: { const: true } } }],
+      scanMode: { lookupField: "order_number", action: { label: "Pack", set: { packed: { const: true } } } },
+    },
+    newRecords: null,
+    explanation: "The store's orders, with a packed tick beside each.",
+    ...over,
+  });
+  const built = parse([packing()]);
+  check("a section over the orders takes a field of theirs, a button and a scan", built.ok);
+  const cols = built.ok ? built.reply.plans[0].newSchema.columns.map((c) => c.field) : [];
+  check(
+    "and shows the store's columns first, theirs after",
+    cols.slice(0, ordersSchema.columns.length).join() === ordersSchema.columns.map((c) => c.field).join() &&
+      cols.at(-1) === "packed"
+  );
+  const setsTheirs = parse([
+    packing({ features: { actions: [{ label: "Mark paid", set: { status: { const: "paid" } } }] } }),
+  ]);
+  check(
+    "a button may not set a field of the store's",
+    !setsTheirs.ok && setsTheirs.errors.some((e) => /"status"/.test(e) && /Shopify/.test(e))
+  );
+  const seeded = parse([packing({ newRecords: [{ packed: true }] })]);
+  check("nor is it seeded with rows", !seeded.ok);
+  check(
+    "nor seeded later",
+    !parse([
+      { changeType: "RECORD_SEED", targetModuleId: ORD, newRecords: [{ order_number: "#1" }], explanation: "Rows." },
+    ]).ok
+  );
+
+  // A rule on it sees the fields beside each row, not the store's.
+  const withPacked = {
+    columns: [
+      ...ordersSchema.columns,
+      { field: "packed", label: "Packed", type: "boolean" },
+      { field: "packed_on", label: "Packed on", type: "date" },
+    ],
+  };
+  const lookPacked = (id) => (id === ORD ? withPacked : look(id));
+  const rule = (definition) =>
+    parseReply(
+      JSON.stringify({
+        plans: [
+          {
+            changeType: "AUTOMATION_ADD",
+            targetModuleId: ORD,
+            automation: { name: "stamp", definition },
+            explanation: "Stamp the day it was packed.",
+          },
+        ],
+      }),
+      mods,
+      null,
+      null,
+      lookPacked
+    );
+  const stamp = { type: "set_fields", target: { self: true }, set: { packed_on: { op: "today", args: [] } } };
+  const whenPacked = { op: "=", args: [{ field: "packed" }, { const: true }] };
+  check(
+    "a rule on a change of theirs is fine",
+    rule({ trigger: { type: "record_updated", when: whenPacked }, actions: [stamp] }).ok
+  );
+  const readsStore = rule({
+    trigger: { type: "record_updated", when: { op: ">", args: [{ field: "total" }, { const: 5000 }] } },
+    actions: [stamp],
+  });
+  check(
+    "one reading the store's fields is refused, saying why",
+    !readsStore.ok && readsStore.errors.some((e) => /"total"/.test(e) && /Shopify/.test(e))
+  );
+  const writesStore = rule({
+    trigger: { type: "record_updated", when: whenPacked },
+    actions: [{ type: "set_fields", target: { self: true }, set: { status: { const: "packed" } } }],
+  });
+  check("one writing them is refused", !writesStore.ok && writesStore.errors.some((e) => /"status"/.test(e)));
+  check(
+    "a rule on a row being added is refused: nobody adds the store's rows here",
+    !rule({ trigger: { type: "record_created" }, actions: [stamp] }).ok
   );
   check(
-    "a field to type into is refused, and told what to do instead",
-    !typed.ok && typed.errors.some((e) => /cannot be stored/.test(e) && /COMPUTED/.test(e))
+    "and a scheduled one: it would see only the rows somebody has touched",
+    !rule({ trigger: { type: "schedule", every: "daily" }, actions: [stamp] }).ok
   );
-  const computed = parseReply(
+  const intoStore = parseReply(
     JSON.stringify({
       plans: [
-        plan({
-          field: "big",
-          label: "Big order",
-          type: "boolean",
-          compute: { op: ">=", args: [{ field: "total" }, { const: 5000 }] },
-        }),
+        {
+          changeType: "AUTOMATION_ADD",
+          targetModuleId: MOD,
+          automation: {
+            name: "copy",
+            definition: {
+              trigger: { type: "record_created" },
+              actions: [{ type: "create_record", module_id: ORD, data: { order_number: { field: "customer" } } }],
+            },
+          },
+          explanation: "Add an order for each job.",
+        },
       ],
     }),
     mods,
     null,
     null,
-    look
+    lookPacked
   );
-  check("a computed column is welcome", computed.ok);
+  check("a rule elsewhere may not add rows to the store's list", !intoStore.ok);
+
   const own = parseReply(
     JSON.stringify({
       plans: [

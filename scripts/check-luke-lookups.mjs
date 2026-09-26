@@ -249,7 +249,9 @@ try {
     check(
       "and the reply says it is waiting for them, not done",
       /wait|approv|confirm|yes|agree/i.test(said) &&
-        !/\b(done|added|tagged)\b(?!.*(once|when|after))/i.test(said.replace(/will be (added|tagged)/gi, ""))
+        // "It won't be added until you approve it" is waiting, as
+        // "once you approve" is; only a bare "added" says it is done.
+        !/\b(done|added|tagged)\b(?!.*(once|when|after|until))/i.test(said.replace(/will be (added|tagged)/gi, ""))
     );
     show(said);
 

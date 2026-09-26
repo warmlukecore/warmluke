@@ -18,7 +18,10 @@ tables and security-invoker views. Generated sections point to those views throu
 `modules.source_table` instead of copying commerce rows into `records`. What the merchant
 fills in beside a store row is a record of that section with `store_row_id`, the row's own
 id (0128): one per row per section (a unique index), always set on a store section's
-records and never on an own section's (a trigger), and never touched by an import.
+records, to a row of that project's own store, and never on an own section's (a trigger),
+and never touched by an import. Rules on a store section fire on the merchant's changes,
+from the first field kept on a row; stats count the store's rows with those fields beside
+them.
 
 ## Core relationship model
 

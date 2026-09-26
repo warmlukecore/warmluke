@@ -14,6 +14,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { undoableFrom, type UndoStep } from "@/lib/undo";
 import { validatePlan } from "@/lib/ai";
+import { isStoreTable, storeSectionColumns } from "@/lib/store-read";
 import type { AssistantPlan, FeatureSchema, ModuleRow, UiSchema, UiSchemaRow } from "@/lib/types";
 
 type SchemaJsonWithFeatures = UiSchema & { features?: FeatureSchema | null };
@@ -534,7 +535,10 @@ async function validateAndApply(
     const row = rows?.[0] as UiSchemaRow | undefined;
     if (row) {
       const sj = row.schema_json as SchemaJsonWithFeatures;
-      currentSchema = { columns: sj.columns };
+      // A section over the store is checked against the columns it
+      // shows, as the design was: the registry's today, then its own.
+      const source = moduleList.find((m) => m.id === rawPlan.targetModuleId)?.source_table;
+      currentSchema = { columns: isStoreTable(source) ? storeSectionColumns(source, sj.columns) : sj.columns };
       currentFeatures = sj.features ?? null;
     }
   }

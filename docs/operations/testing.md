@@ -181,8 +181,9 @@ The store checks (`check-store-read`, `check-store-sections`, `check-store-token
 projects. Checks that call Shopify or write webhooks into a store (`check-import`,
 `check-recheck`, `check-catalog-webhooks`, `check-order-webhook`) use
 `shopifyStores`, which also skips the seeded shop: its token opens nothing, and the read
-checks count on its rows staying as seeded. `check-drift` and `check-own-fields` ask Shopify
-nothing, so each makes its own throwaway store with the seeded shop in it and runs in CI. To seed by hand, with CI idle:
+checks count on its rows staying as seeded. `check-drift`, `check-own-fields` and `check-builds-on-store` ask
+Shopify nothing, so each makes its own throwaway store with the seeded shop in it and runs
+in CI (the last replays its model answers). To seed by hand, with CI idle:
 
 ```sh
 node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/seed-check-project.mjs --env .env.check.local

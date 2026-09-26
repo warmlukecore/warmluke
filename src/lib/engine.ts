@@ -13,7 +13,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isStoreTable, storeTableSchema } from "@/lib/store-read";
+import { isStoreTable, storeSectionColumns } from "@/lib/store-read";
 import {
   asNextSteps,
   buildSystemPrompt,
@@ -31,6 +31,7 @@ import {
   describePlan,
   describeRequests,
   describeRules,
+  retypedCopies,
   seededCopies,
   type RequestRow,
   type RuleRow,
@@ -274,7 +275,7 @@ export async function schemasFor(client: SupabaseClient, modules: ModuleRow[]): 
     if (m.source_table && isStoreTable(m.source_table)) {
       const saved = byModule.get(m.id);
       byModule.set(m.id, {
-        columns: [...storeTableSchema(m.source_table).columns, ...(saved?.columns ?? []).filter((c) => c.compute)],
+        columns: storeSectionColumns(m.source_table, saved?.columns),
         features: saved?.features ?? null,
       });
     }
@@ -506,6 +507,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   let raw = "";
   let parsed: ReturnType<typeof parseReply> | null = null;
   let repairs = 0;
+  let nudged = false;
   // Which gate fired, not just how often something did. The count
   // alone cannot tell a malformed shape from a design that missed the
   // point, and those want opposite remedies.
@@ -544,11 +546,18 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     // copy of a store list may not carry. Sent back like any other
     // validation error, with the list to build over instead.
     if (parsed.ok && parsed.reply.type !== "clarify" && parsed.reply.type !== "answer") {
-      const copies = seededCopies(
-        parsed.reply.type === "blueprint" ? parsed.reply.blueprint.plans : parsed.reply.plans,
-        store ? { shop_domain: store.shop_domain, currency: store.currency, counts: store.counts } : null
-      );
+      const plans = parsed.reply.type === "blueprint" ? parsed.reply.blueprint.plans : parsed.reply.plans;
+      const facts = store ? { shop_domain: store.shop_domain, currency: store.currency, counts: store.counts } : null;
+      const copies = seededCopies(plans, facts);
       if (copies.length) parsed = { ok: false, errors: copies };
+      // A second list of what the store already has, typed in by hand:
+      // sent back once, with the store's list to build over. The same
+      // design again is a deliberate one, and goes through.
+      const retyped = copies.length || nudged ? [] : retypedCopies(plans, facts);
+      if (retyped.length) {
+        nudged = true;
+        parsed = { ok: false, errors: retyped };
+      }
     }
 
     // What the validator actually said — zero problems, or this many on

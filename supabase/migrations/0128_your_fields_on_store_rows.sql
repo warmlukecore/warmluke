@@ -28,15 +28,39 @@ create unique index if not exists records_one_per_store_row
 create or replace function public.abo_record_store_row_guard()
 returns trigger
 language plpgsql security definer set search_path = public as $$
-declare v_store_backed boolean;
+declare
+  v_source  text;
+  v_project uuid;
+  v_view    text;
+  v_here    boolean;
 begin
-  select m.source_table is not null into v_store_backed from public.modules m where m.id = new.module_id;
-  if v_store_backed and new.store_row_id is null then
+  select m.source_table, m.project_id into v_source, v_project from public.modules m where m.id = new.module_id;
+  if v_source is not null and new.store_row_id is null then
     raise exception 'A row of a section over the store is the store''s: fields go beside one of its rows.'
       using errcode = '23514';
   end if;
-  if not coalesce(v_store_backed, false) and new.store_row_id is not null then
+  if v_source is null and new.store_row_id is not null then
     raise exception 'Only a section over the store has rows of the store''s.' using errcode = '23514';
+  end if;
+  -- One of this project's own store's rows, whoever writes: the route
+  -- checks it too, but a direct write under the owner's rights does not
+  -- pass through the route. A list whose rows have no id of their own
+  -- has none to name.
+  if v_source is not null then
+    v_view := public.abo_store_view(v_source);
+    begin
+      if v_view is null then raise undefined_table; end if;
+      execute format(
+        'select exists (select 1 from public.%I v
+                          join public.stores s on s.id = v.store_id
+                         where v.id = $1 and s.project_id = $2)', v_view)
+        into v_here using new.store_row_id, v_project;
+    exception when undefined_column or undefined_table or syntax_error then
+      v_here := false;
+    end;
+    if not coalesce(v_here, false) then
+      raise exception 'That row is not one of this project''s store''s.' using errcode = '23514';
+    end if;
   end if;
   return new;
 end $$;

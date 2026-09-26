@@ -24,7 +24,7 @@ import {
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogle } from "@ai-sdk/google";
 import { keyFor, tapeFetch, tapedSetting } from "@/lib/model-tape";
-import { isStoreTable, storeTableSchema, STORE_TABLES } from "@/lib/store-read";
+import { canCarryOwnFields, isStoreTable, storeSectionColumns, storeTableSchema, STORE_TABLES } from "@/lib/store-read";
 // One definition, shared with the Shopify importer rather than copied.
 import { isTransient } from "@/lib/retry";
 import { asJob, record } from "@/lib/usage";
@@ -115,13 +115,20 @@ HOW TO CHOOSE changeType:
 - UI_CHANGE — reorder/relabel/retype existing columns only. All existing fields kept.
 - FIELD_ADD — keep all existing columns, append new one(s).
 - NEW_MODULE — a new app section. Choose its "view" from how the owner works. Put its "features" (filters, stats, row actions, search, sort) in THIS SAME plan — a separate FEATURE_UPDATE cannot target a module that does not exist yet. 3-8 columns matched to what the user described; ALWAYS include 4-6 realistic demo rows in newRecords, using THEIR vocabulary and plausible values for THEIR trade (field names must match the schema exactly; money as numbers, dates "YYYY-MM-DD").
-- NEW_MODULE with "source_table" — the section SHOWS the store's own rows rather than rows they type. Use it whenever they mean the data already synced from Shopify ("our products", "the orders that came in"). The store's lists, and what each one means: ${Object.entries(
+- NEW_MODULE with "source_table" — the section SHOWS the store's own rows rather than rows they type. Use it whenever they mean the data already synced from Shopify ("our products", "the orders that came in"), AND whenever the work they describe happens to those rows ("scan and pack the orders", "restock what runs low", "follow up customers who have not come back"): the section is the store's list with what that work needs beside each row, never a second list of the same orders, products or customers typed in by hand, which never matches the real ones. The store's lists, and what each one means: ${Object.entries(
   STORE_TABLES
 )
   .map(([table, spec]) => `"${table}" — ${spec.what}`)
   .join(
     "; "
-  )}. Then: columns are the store's, so send newSchema as null and it is filled in for you; newRecords MUST be null, because nothing is seeded into the store's data; and the section is READ-ONLY — no row actions, no automations on it, and no extra column they can TYPE INTO (a "featured" tick or a note cannot be stored there, because the next import would overwrite it). Say that in "limitations" when they asked for one. Filters, search, stats and sort all work. A COMPUTED column may be added to one and is usually what they meant: "flag the ones running out" on the store's stock is a computed badge over "available", not a stored field and a rule.
+  )}. Then: newRecords MUST be null, because nothing is seeded into the store's data, and the store's columns are filled in for you — in newSchema.columns send only what you ADD to them, or null for nothing. Two things can be added. A COMPUTED column, worked out from the store's fields every time the section is read: "flag the ones running out" on the store's stock is a computed badge over "available", not a stored field and a rule. And a FIELD OF THEIRS, one they fill in beside each row ("packed", "shelf", "follow up on", a note), kept where no import reaches — except on ${Object.keys(
+  STORE_TABLES
+)
+  .filter((t) => !canCarryOwnFields(t as keyof typeof STORE_TABLES))
+  .map((t) => `"${t}"`)
+  .join(
+    ", "
+  )}, whose rows each total many others, so there is no one row for it to sit beside. The store's own fields are read here, never written: a row action or scan mode sets a field of theirs ("Mark packed" sets packed; scanning the order number finds the order and ticks it). A rule on such a section runs when a field of theirs changes (record_updated), from the first one set on a row, and reads and writes their fields only — the store's change in Shopify, where no rule here sees them, so act on those with a computed column, a filter or a stat. No rule adds rows to it or runs on a schedule over it. Filters, search, stats and sort work over both.
 - MODULE_UPDATE — nav metadata only: rename label, change icon, move it inside another section (parent_id), reposition (sort_order: below the lowest existing value for top, midpoint like 1.5 for between, above max for bottom).
 - MODULE_DELETE — only when the user clearly asks to delete/remove a whole section. deleteConfirmName = exact name slug.
 - FEATURE_UPDATE — search box, dropdown filters, STAT CARDS (op: count | sum | avg | min | max over "value", an EXPRESSION evaluated per row — so a stock value is { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, not a bare column; optional "where" expression limits which rows count. Never label a stat as something the expression does not actually compute), default sort, ROW ACTION buttons (a one-click change to that row: "set" maps field -> EXPRESSION, and the optional "when" is an EXPRESSION deciding whether the button shows on that row — same operators as automations, so "only while it isn't Done" is { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }), or SCAN MODE (a scan-and-go bar: lookupField = the code column scanned into it, action.set = field -> expression applied to the matched row, sequenceField = a numeric column that must never go backwards between scans, for picking or queue order). It works with any USB or Bluetooth barcode scanner, which types the code like a keyboard — there is no camera scanning. A scan that matches nothing changes NOTHING: the person sees it on screen and that is the whole safeguard. Nothing is recorded, so never add a "scan errors" or "mistakes" count — no rule can fill it, and a stat built on it counts successful scans instead. Scanning only reaches rows currently in view, so the section needs a filter that narrows to the job in hand. Provide the FULL new config.
@@ -482,7 +489,7 @@ function storeBlock(store: StoreContext | null, projectCurrency: string): string
   } else {
     lines.push(`Already here${store.importing ? ", and still importing, so these are partial" : ""}: ${rows}.`);
     lines.push(
-      `Design on top of it. When what they want IS this data, build a section over it: NEW_MODULE with "source_table" set to the table. Never propose a section whose purpose is to re-enter this data by hand — if you build a separate list anyway, say plainly in "limitations" that it will not match their Shopify data, so they can decide.`
+      `Design on top of it. When what they want IS this data, or work done to it, build a section over it: NEW_MODULE with "source_table" set to the table, with fields of theirs beside each row where the work needs them. Never propose a section whose purpose is to re-enter this data by hand — if you build a separate list anyway, say plainly in "unmet" that it will not match their Shopify data, so they can decide.`
     );
     // What a stat over the store's rows should be. Said by the table
     // itself, so the merchant's own assistant reads the same words
@@ -766,7 +773,9 @@ export function validateFeatures(
   columns: SchemaColumn[] | null,
   errors: string[],
   /** Columns earlier plans in the same batch will have added by now. */
-  pendingFields?: Set<string>
+  pendingFields?: Set<string>,
+  /** On a section over the store, the store's own columns: read, never written. */
+  storeFields?: ReadonlySet<string>
 ): void {
   if (!isPlainObject(features)) {
     err(errors, "features must be an object.");
@@ -801,6 +810,14 @@ export function validateFeatures(
       return false;
     }
     return true;
+  };
+  const notTheStores = (name: string, what: string) => {
+    if (storeFields?.has(name)) {
+      err(
+        errors,
+        `${what} writes "${name}", which is the store's: it changes in Shopify, and the next import would put it back. On a section over the store a button or a scan sets a field of theirs beside the row — add one (a tick "packed", a date "packed_on") and set that.`
+      );
+    }
   };
 
   if (f.search && typeof f.search.enabled !== "boolean") {
@@ -896,6 +913,7 @@ export function validateFeatures(
     for (const [k, v] of Object.entries(a.set)) {
       if (!hasField(k)) err(errors, `Row action "${a.label}" sets unknown field "${k}".`);
       notComputed(k, `Row action "${a.label}"`);
+      notTheStores(k, `Row action "${a.label}"`);
       validateExpr(v, hasField, errors, "client");
       rejectClockDerivedWrites(v, `Row action "${a.label}" writing "${k}"`, errors);
     }
@@ -908,6 +926,7 @@ export function validateFeatures(
       for (const [k, v] of Object.entries(f.scanMode.action.set)) {
         if (!hasField(k)) err(errors, `scanMode sets unknown field "${k}".`);
         notComputed(k, "Scanning");
+        notTheStores(k, "Scanning");
         // One scan is one event, so a number it writes has to be built
         // from that number's own current value. `qty_packed = qty_ordered`
         // records a complete pack after a single beep: a short pack then
@@ -1086,7 +1105,10 @@ function validateAutomation(
   currentSchema: UiSchema | null,
   errors: string[],
   pending: (ref: unknown) => boolean = () => false,
-  pendingFields?: Set<string>
+  pendingFields?: Set<string>,
+  /** On a section over the store, the store's own columns. */
+  storeFields?: ReadonlySet<string>,
+  sourceOf: (ref: unknown) => string | null = () => null
 ): void {
   const auto = plan.automation;
   if (!auto || typeof auto.name !== "string" || !auto.name.trim()) {
@@ -1144,6 +1166,27 @@ function validateAutomation(
     }
   }
 
+  // A rule on a section over the store runs in the database on the
+  // merchant's fields beside a row (0128). It never sees the store's
+  // own: they are not in that record, and change in Shopify, where no
+  // rule here is watching. Nor is a row ever added here, and a schedule
+  // would find only the rows somebody had already set a field on.
+  if (storeFields) {
+    if (trigger.type !== "record_updated") {
+      err(
+        errors,
+        `A rule on a section over the store runs when a field of theirs beside a row changes — trigger { "type": "record_updated" } with a "when". Its rows arrive from Shopify, so ${trigger.type === "schedule" ? "a schedule would see only the rows somebody had already touched" : "no row is ever added here"}; say in "unmet" what waits on the store instead.`
+      );
+    }
+    const theirs = [...fieldsRead(def)].filter((f) => storeFields.has(f));
+    if (theirs.length > 0) {
+      err(
+        errors,
+        `This rule reads ${theirs.map((f) => `"${f}"`).join(", ")}, the store's own. A rule on a section over the store sees only the fields of theirs beside each row; the store's change in Shopify, where no rule here sees them. Show those with a computed column, a filter or a stat instead.`
+      );
+    }
+  }
+
   if (trigger.when !== undefined) validateExpr(trigger.when, ownHas, errors);
 
   const actions = (def as AutomationDefinition).actions;
@@ -1185,6 +1228,13 @@ function validateAutomation(
           err(errors, "A rule writes to a section that isn't in this project.");
           continue;
         }
+        if (sourceOf(target.module_id)) {
+          err(
+            errors,
+            "A rule may not change the rows of a section over the store: they are the store's, and change in Shopify."
+          );
+          continue;
+        }
         if (!isPlainObject(target.match) || typeof target.match.field !== "string") {
           err(errors, "A rule that writes to another section needs a match field.");
         } else {
@@ -1198,6 +1248,12 @@ function validateAutomation(
       for (const [f, v] of Object.entries(a.set)) {
         // Only for a rule writing to its own section; another section's
         // columns are not loaded here, so there is nothing to check.
+        if ("self" in target && storeFields?.has(f)) {
+          err(
+            errors,
+            `The rule writes "${f}", which is the store's: the next import would put it back. Write a field of theirs beside the row instead.`
+          );
+        }
         if ("self" in target && ownComputed.has(f)) {
           err(
             errors,
@@ -1213,6 +1269,13 @@ function validateAutomation(
     if (a.type === "create_record") {
       if (!moduleOk(a.module_id)) {
         err(errors, "A rule creates a row in a section that isn't in this project.");
+        continue;
+      }
+      if (sourceOf(a.module_id)) {
+        err(
+          errors,
+          "A rule may not add rows to a section over the store: its rows are the store's, and arrive from Shopify."
+        );
         continue;
       }
       if (!isPlainObject(a.data) || Object.keys(a.data).length === 0) {
@@ -1245,9 +1308,23 @@ export function validatePlan(
    * targets. A rule may legitimately reference a column a FIELD_ADD plan
    * one step earlier is about to create.
    */
-  pendingFields?: Set<string>
+  pendingFields?: Set<string>,
+  /**
+   * The store list a section shows, by id or by the "#slug" of one this
+   * batch creates; null for a section of the merchant's own rows.
+   */
+  sourceOf: (ref: unknown) => string | null = (ref) => modules.find((m) => m.id === ref)?.source_table ?? null
 ): ValidationResult & { plan?: AssistantPlan } {
   const errors: string[] = [];
+
+  // A section over the store: its own fields are the store's, and no
+  // button, scan or rule here may write them — the next import puts
+  // them back. What may be written is the merchant's, beside each row.
+  const storeSource =
+    plan?.changeType === "NEW_MODULE" ? (plan.newModule?.source_table ?? null) : sourceOf(plan?.targetModuleId);
+  const storeFields = isStoreTable(storeSource)
+    ? new Set(storeTableSchema(storeSource).columns.map((c) => c.field))
+    : undefined;
 
   // One definition of "this field exists" for the whole plan: the module's
   // current columns plus anything an earlier plan in this batch adds. Every
@@ -1379,31 +1456,25 @@ export function validatePlan(
       if (!isStoreTable(src)) {
         err(errors, `"${src}" is not one of the store's tables.`);
       } else {
-        const storeCols = storeTableSchema(src).columns;
-        const allowed = storeCols.map((c) => c.field);
-        const sent = plan.newSchema?.columns;
-        if (!sent?.length) {
-          plan.newSchema = { columns: storeCols };
-        } else {
-          // A computed column is the one thing that may be added: it is
-          // never stored, so the next import has nothing to overwrite.
-          // This is what makes "flag the ones running out" buildable on
-          // the store's own stock without a second copy of the data.
-          const computed = sent.filter((c) => c?.compute && !allowed.includes(c.field));
-          const extra = sent
-            .filter((c) => !c?.compute)
-            .map((c) => c?.field)
-            .filter((f): f is string => typeof f === "string" && !allowed.includes(f));
-          if (extra.length > 0) {
-            err(
-              errors,
-              `A section on the store's "${src}" shows the store's own columns, and ${extra.join(", ")} is not one of them — those rows come from Shopify and an import would overwrite anything written here. Its columns are: ${allowed.join(", ")}. A column worked out from those, rather than stored, is allowed: give it a "compute" expression and it is filled in every time the section is read.`
-            );
-          }
-          // Whatever else was sent, the section renders the store's own
-          // columns, plus any computed ones after them.
-          plan.newSchema = { columns: [...storeCols, ...computed] };
+        const allowed = storeTableSchema(src).columns.map((c) => c.field);
+        // Two things may be added to the store's columns. A computed
+        // one, worked out on every read: "flag the ones running out" on
+        // the store's own stock. And a field of the merchant's, kept
+        // beside each row where no import reaches (0128): "packed" on
+        // the orders. The second needs rows with an id of their own; a
+        // list that totals many rows into one has none to sit beside.
+        const typed = (plan.newSchema?.columns ?? [])
+          .filter((c) => c && !c.compute && typeof c.field === "string" && !allowed.includes(c.field))
+          .map((c) => c.field);
+        if (typed.length > 0 && !canCarryOwnFields(src)) {
+          err(
+            errors,
+            `A section on the store's "${src}" shows rows that each total many others, so there is no one row for ${typed.join(", ")} to sit beside. Its columns are: ${allowed.join(", ")}. A COMPUTED column worked out from those is allowed: give it a "compute" expression and it is filled in every time the section is read.`
+          );
         }
+        // Whatever was sent, the store's columns come first, as the
+        // registry has them, and what the section adds after them.
+        plan.newSchema = { columns: storeSectionColumns(src, plan.newSchema?.columns) };
         if (plan.newRecords?.length) {
           err(
             errors,
@@ -1427,7 +1498,7 @@ export function validatePlan(
     // FEATURE_UPDATE in the same batch could not target it, because the
     // module does not exist until this plan is applied.
     if (plan.features) {
-      validateFeatures(plan.features, plan.newSchema?.columns ?? columns, errors);
+      validateFeatures(plan.features, plan.newSchema?.columns ?? columns, errors, undefined, storeFields);
     }
     plan.targetModuleId = null;
   } else {
@@ -1507,18 +1578,17 @@ export function validatePlan(
         }
         const added = incomingFields.filter((f) => !existingFields.includes(f));
         if (added.length === 0) err(errors, "FIELD_ADD didn't add any new column.");
-        // A section over the store owns none of its columns: the next
-        // import writes the store's shape back over it. The prompt said
-        // so; the validator let it through, and a design that adds a
-        // "Delivery Partner" column to Orders passed every gate and
-        // built a field nothing could ever fill. Only a computed column
-        // — worked out from the store's own fields — can be added.
-        if (target?.source_table) {
+        // A section over the store owns none of the store's columns, but
+        // a field of the merchant's sits beside each row (0128), where no
+        // import reaches: "Delivery Partner" on Orders is theirs to fill
+        // in. Not on a list whose rows each total many others: there is
+        // no one row for it to sit beside, so only a computed column.
+        if (isStoreTable(storeSource) && !canCarryOwnFields(storeSource)) {
           const typed = columns.filter((c) => added.includes(c.field) && !c.compute).map((c) => c.field);
           if (typed.length > 0) {
             err(
               errors,
-              `"${target.nav_label}" shows the store's rows, so a field to type into cannot be stored on it — the next import would overwrite it. Make ${typed.map((f) => `"${f}"`).join(", ")} a COMPUTED column (with "compute", from the store's own fields), or keep it in a section of your own and say so in "unmet".`
+              `"${target?.nav_label ?? "This section"}" shows rows that each total many others, so there is no one row for a field to type into to sit beside. Make ${typed.map((f) => `"${f}"`).join(", ")} a COMPUTED column (with "compute", from the store's own fields), or keep it in a section of your own and say so in "unmet".`
             );
           }
         }
@@ -1558,18 +1628,23 @@ export function validatePlan(
     }
 
     if (plan.changeType === "FEATURE_UPDATE") {
-      validateFeatures(plan.features, currentSchema?.columns ?? null, errors, pendingFields);
+      validateFeatures(plan.features, currentSchema?.columns ?? null, errors, pendingFields, storeFields);
     }
 
     if (plan.changeType === "AUTOMATION_ADD") {
-      validateAutomation(plan, modules, currentSchema, errors, pending, pendingFields);
+      validateAutomation(plan, modules, currentSchema, errors, pending, pendingFields, storeFields, sourceOf);
     }
 
     if (plan.changeType === "AUTOMATION_REMOVE" && !plan.automationRemoveName?.trim()) {
       err(errors, "AUTOMATION_REMOVE needs automationRemoveName.");
     }
 
-    if (plan.changeType === "RECORD_SEED") {
+    if (plan.changeType === "RECORD_SEED" && storeSource) {
+      err(
+        errors,
+        "A section over the store cannot be seeded with rows — its rows are the store's, and arrive from Shopify. Leave it out."
+      );
+    } else if (plan.changeType === "RECORD_SEED") {
       if (!Array.isArray(plan.newRecords) || plan.newRecords.length === 0) {
         err(errors, "newRecords must be a non-empty array for RECORD_SEED.");
       } else if (currentSchema) {
@@ -1871,7 +1946,7 @@ function parsePlans(
       // open, and every one of its fields, right or wrong, was refused
       // as not existing.
       const src = maker?.newModule?.source_table;
-      if (maker && isStoreTable(src)) return storeTableSchema(src);
+      if (maker && isStoreTable(src)) return { columns: storeSectionColumns(src, maker.newSchema?.columns) };
       return maker?.newSchema ?? currentSchema;
     }
     if (typeof target === "string") {
@@ -1879,6 +1954,18 @@ function parsePlans(
       if (found !== undefined) return found;
     }
     return currentSchema;
+  };
+
+  // The store list a section shows, for one that exists and for one
+  // this batch creates, so a button or a rule on either is held to it.
+  const sourceOf = (ref: unknown): string | null => {
+    if (typeof ref !== "string") return null;
+    if (!ref.startsWith("#")) return modules.find((m) => m.id === ref)?.source_table ?? null;
+    const slug = ref.slice(1).trim().toLowerCase();
+    const maker = (raw as AssistantPlan[]).find(
+      (o) => o?.changeType === "NEW_MODULE" && o?.newModule?.name?.trim().toLowerCase() === slug
+    );
+    return maker?.newModule?.source_table ?? null;
   };
 
   const plans: AssistantPlan[] = [];
@@ -1892,7 +1979,8 @@ function parsePlans(
       own,
       own === currentSchema ? currentFeatures : (own?.features ?? null),
       pendingSlugs,
-      fieldsFor(plan)
+      fieldsFor(plan),
+      sourceOf
     );
     if (res.ok && res.plan) plans.push(res.plan);
     else errors.push(...res.errors);

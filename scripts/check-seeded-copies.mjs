@@ -11,7 +11,7 @@
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-seeded-copies.mjs
 
-import { seededCopies, storeOverlap } from "../src/lib/describe.ts";
+import { retypedCopies, seededCopies, storeOverlap } from "../src/lib/describe.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -80,6 +80,56 @@ console.log("\nwhat still passes");
     seededCopies([{ ...section("Refund log"), newRecords: rows }], { ...store, counts: { orders: 40 } }).length === 0
   );
   check("no store at all", seededCopies([{ ...section("Order SKU Log"), newRecords: rows }], null).length === 0);
+}
+
+// A list of its own that types in what a store list already holds: its
+// key and more. Sent back once, with the list to build over and fields
+// of theirs beside it; a design that comes back unchanged is theirs.
+console.log("\na second list of what the store already has");
+{
+  const own = (nav_label, columns) => ({ ...section(nav_label), newSchema: { columns } });
+  const text = (field) => ({ field, label: field, type: "text" });
+  const [why] = retypedCopies([own("Packing", [text("order_number"), text("customer_name"), text("packed")])], store);
+  check("is sent back naming the list to build over", !!why && /orders/.test(why) && /source_table/.test(why));
+  check("and says how to keep it when it is something else", !!why && /unchanged/.test(why));
+  check(
+    "three of a list's columns without its key are a copy too",
+    retypedCopies([own("Deliveries", [text("customer_name"), text("customer_phone"), text("ship_city")])], store)
+      .length === 1
+  );
+  check(
+    "one shared column is not",
+    retypedCopies([own("Stickers", [text("sku"), text("colour")])], store).length === 0
+  );
+  check(
+    "nor a worked-out one",
+    retypedCopies(
+      [
+        own("Packing", [
+          text("note"),
+          { field: "order_number", label: "Order", type: "text", compute: { const: "x" } },
+          { field: "customer_name", label: "Customer", type: "text", compute: { const: "x" } },
+        ]),
+      ],
+      store
+    ).length === 0
+  );
+  check(
+    "nor a section over the store itself",
+    retypedCopies(
+      [
+        {
+          ...section("Packing", { source_table: "orders" }),
+          newSchema: { columns: [text("order_number"), text("customer_name")] },
+        },
+      ],
+      store
+    ).length === 0
+  );
+  check(
+    "nor with no store at all",
+    retypedCopies([own("Packing", [text("order_number"), text("customer_name")])], null).length === 0
+  );
 }
 
 console.log(fails.length === 0 ? "\nthe section may stand; the made-up rows may not" : `\n${fails.length} FAILED`);

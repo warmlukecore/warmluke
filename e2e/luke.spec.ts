@@ -225,9 +225,42 @@ test("a change to the shop waits for a yes", async ({ signedIn: page, shop }) =>
     .eq("user_id", shop.userId)
     .single();
   await shop.admin.from("account_settings").update({ store_actions_enabled: true }).eq("user_id", shop.userId);
+  // A thread of its own with a long answer in it, the same every run.
+  // It used to continue whichever thread the tests before it left
+  // newest, and that one ended one of two ways, so the request it sent
+  // was not the one recorded half the time.
+  const thread = await replyThread(
+    shop,
+    {
+      type: "answer",
+      kind: "store",
+      title: "Orders waiting for payment",
+      message: [
+        "**2 orders** are still waiting for payment, **₹2,952** between them, both cash on delivery.",
+        "",
+        ...Array.from({ length: 12 }, (_, i) => `- **#10${10 - (i % 10)}**: line ${i + 1} of what came in, and when`),
+        "",
+        "Both are marked COD, so the money arrives with the courier.",
+      ].join("\n"),
+    },
+    "Which orders are still waiting for payment?"
+  );
+  // What a turn keeps as its reply is the reply itself: the next turn
+  // is told it, and an empty one is refused by the model outright.
+  const { data: kept } = await shop.admin
+    .from("messages")
+    .select("id, payload")
+    .eq("conversation_id", thread)
+    .eq("role", "assistant")
+    .single();
+  await shop.admin
+    .from("messages")
+    .update({ content: JSON.stringify(kept!.payload) })
+    .eq("id", kept!.id);
   try {
     await page.goto(`/app/${shop.projectId}`);
     const { panel, box } = await luke(page);
+    await expect(panel.getByText("Both are marked COD")).toBeVisible();
     await ask(page, box, "Tag order #1003 as VIP");
     // Asked under a long answer, the question still goes to the top and
     // stays there: this is where the list used to jump, pulled to the
@@ -255,6 +288,7 @@ test("a change to the shop waits for a yes", async ({ signedIn: page, shop }) =>
       .update({ store_actions_enabled: before?.store_actions_enabled ?? false })
       .eq("user_id", shop.userId);
     await shop.admin.from("store_actions").delete().eq("project_id", shop.projectId);
+    await shop.admin.from("conversations").delete().eq("id", thread);
   }
 });
 

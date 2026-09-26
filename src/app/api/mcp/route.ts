@@ -1,7 +1,15 @@
 import { NextResponse, after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getUserClient } from "@/lib/supabase-server";
-import { listStores, STORE_TABLES } from "@/lib/store-read";
+import {
+  STORE_TABLES,
+  isStoreTable,
+  listStores,
+  ownColumns,
+  readStoreRows,
+  storeSectionColumns,
+  withOwnFields,
+} from "@/lib/store-read";
 import { blueprintAsText, runTurn, schemasFor, storeFactsFor } from "@/lib/engine";
 import { PLAN_FORMAT, WORKED_EXAMPLE, parseReply } from "@/lib/ai";
 import { vocabularyPrompt } from "@/lib/capabilities";
@@ -21,7 +29,7 @@ import { STORE_TOOLS, storeTool, type StoreTool } from "@/lib/store-tools";
 import { tapeHeaders } from "@/lib/model-tape";
 import { ACTION_CATALOGUE, PROPOSE_INPUT, proposeStoreAction } from "@/lib/store-action-propose";
 import { ALLOWED_ICONS } from "@/lib/types";
-import type { AssistantPlan, ModuleRow, NextStep, ProjectRow, UiSchema } from "@/lib/types";
+import type { AssistantPlan, ModuleRow, NextStep, ProjectRow, SchemaColumn, UiSchema } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -1136,17 +1144,39 @@ export async function POST(req: Request) {
         rules: sectionRules.length ? sectionRules : "none on this section",
       };
 
+      const limit = Math.min(Math.max(Number(args.limit ?? 50) || 50, 1), 200);
       if (section.source_table) {
+        const src = section.source_table;
+        const searching = `Its rows are the store's ${src} — search them with search_store, table "${src}".`;
+        const { data: st } = await db
+          .from("stores")
+          .select("id")
+          .eq("project_id", project.id)
+          .in("status", ["connected", "uninstalled"])
+          .maybeSingle();
+        if (!isStoreTable(src) || !st) return ok(id, text({ ...setup, note: searching }));
+        // The section as the merchant sees it: the store's rows, in the
+        // section's order, with what they keep beside each (0128).
+        const columns = storeSectionColumns(src, sj.columns as SchemaColumn[] | undefined);
+        const sort = (sj.features as { defaultSort?: { field: string; dir: "asc" | "desc" } } | null)?.defaultSort;
+        const { rows, total } = await readStoreRows(db, st.id as string, src, limit, undefined, sort ?? null);
+        const laid = await withOwnFields(db, section.id, rows);
+        const theirs = ownColumns(src, columns).filter((c) => !c.compute);
         return ok(
           id,
           text({
             ...setup,
-            note: `Its rows are the store's ${section.source_table} — read them with search_store, table "${section.source_table}".`,
+            fields: columns.map((c) => ({ field: c.field, label: c.label, type: c.type })),
+            total,
+            showing: laid.length,
+            rows: laid.map((r) => r.data),
+            note: `${searching} The merchant's own fields, kept here beside each row where no import reaches: ${
+              theirs.map((c) => c.field).join(", ") || "none yet"
+            }.`,
           })
         );
       }
 
-      const limit = Math.min(Math.max(Number(args.limit ?? 50) || 50, 1), 200);
       const { data: rows, count } = await db
         .from("records")
         .select("data", { count: "exact" })
@@ -1440,7 +1470,7 @@ export async function POST(req: Request) {
             '"view" belongs inside "features", not inside "newSchema".',
           ],
           store_backed_sections:
-            "A section with source_table shows Shopify's own rows. Its columns are the store's — send newSchema as null and it is filled in. You cannot add a column of your own to one (an import would overwrite it), so express a flag as a stat or a filter over the columns that are there.",
+            "A section with source_table shows Shopify's own rows, and is how work on those rows is built (packing orders, restocking products), never a second list of them typed in by hand. The store's columns are filled in: in newSchema send only what you add — a computed column, or a field of the merchant's that sits beside each row (\"packed\", \"shelf\"), which no import touches. The store's own fields are never written: buttons, scans and rules on such a section set the merchant's fields, and a rule there runs on record_updated and reads those fields only.",
           // Named, because "the columns are the store's" told a client
           // nothing it could type. It guessed Shopify's API names —
           // total_price, created_at, fulfillment_status — and was

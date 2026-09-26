@@ -20,6 +20,7 @@ import { signInAsCheckUser, throwawayProject } from "./owner-session.mjs";
 import { seedNodes, seedShop } from "./fixtures/seed-shop.ts";
 import { SHOPIFY_RESOURCES } from "../src/lib/shopify-resources.ts";
 import { STORE_TABLES, canCarryOwnFields, ownColumns, withOwnFields } from "../src/lib/store-read.ts";
+import { storeTool } from "../src/lib/store-tools.ts";
 
 const envFile = process.env.ENV_FILE ?? ".env.local";
 const env = Object.fromEntries(
@@ -218,6 +219,16 @@ try {
     .from("records")
     .insert({ project_id: project.id, module_id: orders, store_row_id: row.id, data: { packed: false } });
   check("a second record for the same row is refused", twin.error?.code === "23505");
+  // Written straight to the table, past the route: the database itself
+  // holds a store section's fields to rows of the project's own store.
+  const past = await owner
+    .from("records")
+    .insert({ project_id: project.id, module_id: orders, store_row_id: foreignRows[0].id, data: { packed: true } });
+  check("a row of another store is refused by the database too", past.error?.code === "23514");
+  const nowhere = await admin
+    .from("records")
+    .insert({ project_id: project.id, module_id: orders, store_row_id: crypto.randomUUID(), data: { packed: true } });
+  check("and a row that does not exist", nowhere.error?.code === "23514");
   const moved = await admin.from("records").update({ module_id: ownList }).eq("id", recordId);
   check("nor can a record be moved into an own section", moved.error?.code === "23514");
 
@@ -322,6 +333,31 @@ try {
   const { data: ticked } = await admin.from("records").select("data").eq("id", firstTick.json?.record?.id).single();
   check("a rule on a change fires on a row's first field", ticked?.data?.packed_at === "stamped");
   check("and one on a row being added does not", ticked?.data?.packed === true);
+
+  console.log("\nan assistant searching the list sees them, under the section's name");
+  const found = await storeTool("search_store").run(
+    { table: "orders", limit: 200 },
+    {
+      db: owner,
+      store: {
+        id: store.id,
+        project_id: project.id,
+        shop_domain: "",
+        timezone: "Asia/Kolkata",
+        currency: "INR",
+        last_synced_at: null,
+      },
+    }
+  );
+  const byNumber = new Map(found.rows.map((r) => [r.order_number, r]));
+  const { data: nums } = await admin.from("orders").select("id, order_number").in("id", [row.id, row2.id]);
+  const numberOf = (id) => nums.find((n) => n.id === id)?.order_number;
+  check(
+    "a row with fields of theirs carries them",
+    byNumber.get(numberOf(row2.id))?.yours?.[`packing`]?.packed === true
+  );
+  const bare2 = found.rows.find((r) => ![numberOf(row.id), numberOf(row2.id)].includes(r.order_number));
+  check("and one without any reads as the store has it", !!bare2 && !("yours" in bare2));
 
   console.log("\na stranger sees nothing");
   const anon = createClient(url, anonKey, { auth: { persistSession: false } });

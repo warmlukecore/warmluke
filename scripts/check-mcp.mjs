@@ -312,10 +312,11 @@ try {
     );
     const storeBacked = (listed.sections ?? []).find((x) => /Shopify/.test(x.rows_from));
     if (storeBacked) {
-      // Reading it here as well would report the same rows twice under
-      // two different names.
+      // Its rows come back as the section shows them, with the fields
+      // the merchant keeps beside each (0128); searching them is still
+      // search_store's, and the note says so.
       check(
-        "a Shopify-backed section points at search_store instead",
+        "a Shopify-backed section points at search_store to search it",
         /search_store/.test(
           toolText(await rpc("tools/call", { name: "read_section", arguments: { section: storeBacked.section } }, t))
             ?.note ?? ""

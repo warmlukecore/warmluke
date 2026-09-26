@@ -1,0 +1,16 @@
+{
+  "label": "anthropic",
+  "asked": "t “Called in last 30 days” — count of rows, where last_called_on is filled in and days since last_called_on is at most 30 Sorted by total_spent desc Button “Called today” — sets last_called_on = today",
+  "parts": {
+    "system": "49c78ec60427790c",
+    "tools": "74234e98afe7498f",
+    "conversation": "2b42bebff5cbd273"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"claude-haiku-4-5-20251001\",\"id\":\"msg_011CfSdZHM4di8pCgNE1xK7Y\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"```json\\n{\\n  \\\"unmet\\\": [\\n    \\\"see who I have not called yet\\\",\\n    \\\"note when I called each one\\\"\\n  ]\\n}\\n```\"}],\"container\":null,\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":574,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":42,\"service_tier\":\"standard\",\"inference_geo\":\"not_available\"},\"diagnostics\":null}"
+    }
+  ]
+}

@@ -29,6 +29,7 @@ import {
   isStoreTable,
   lowStock,
   orderDetail,
+  ownFieldsOf,
   readStoreRows,
   searchOrders,
   storeLeaders,
@@ -286,6 +287,14 @@ export const STORE_TOOLS: readonly StoreTool[] = [
       }
       const limit = Math.min(Math.max(Number(args.limit ?? 25) || 25, 1), 200);
       const { rows, total } = await readStoreRows(db, store.id, table, limit, args.q as string | undefined);
+      // What the merchant keeps beside these rows (0128), under the name
+      // of the section it is kept in, and only on the rows that have any.
+      const yours = await ownFieldsOf(
+        db,
+        store.project_id,
+        table,
+        rows.map((r) => r.id)
+      );
       return {
         table,
         // Both numbers, always: "12 rows" out of 4,000 read as an
@@ -293,7 +302,7 @@ export const STORE_TOOLS: readonly StoreTool[] = [
         matched: total,
         showing: rows.length,
         currency: store.currency,
-        rows: rows.map((r) => r.data),
+        rows: rows.map((r) => (yours.has(r.id) ? { ...r.data, yours: yours.get(r.id) } : r.data)),
       };
     },
   },

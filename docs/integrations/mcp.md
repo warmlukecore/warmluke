@@ -36,7 +36,7 @@ through owner-scoped RPCs and the built-in chat settings UI.
 | `get_order` | Read one order with its items | No |
 | `search_store` | Read a supported canonical store list | No |
 | `low_stock` | Read inventory at or below a threshold | No |
-| `read_section` | List/inspect generated sections and owner-managed rows; with `history`, the section's version history instead | No |
+| `read_section` | List/inspect generated sections and owner-managed rows (a section over the store: the store's rows with the merchant's own fields beside them); with `history`, the section's version history instead | No |
 | `undo_build` | Reverse a build this client made, from what that build recorded | Yes |
 | `propose_change` | Run Warmluke's design engine and create an approval request | Creates a request only |
 | `pending_changes` | Read requests currently awaiting a decision | No |

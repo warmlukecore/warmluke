@@ -1,0 +1,16 @@
+{
+  "label": "jev",
+  "asked": "",
+  "parts": {
+    "system": "74234e98afe7498f",
+    "tools": "74234e98afe7498f",
+    "conversation": "3ffe7421e8a7fbd5"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"jev-1.13.0\",\"answers\":{\"addresses\":{\"type\":\"noul\",\"noul\":0.57},\"unmet_0\":{\"type\":\"noul\",\"noul\":0.86},\"unmet_1\":{\"type\":\"noul\",\"noul\":0.96}},\"usage\":{\"input_tokens\":1473,\"output_tokens\":58}}"
+    }
+  ]
+}

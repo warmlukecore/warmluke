@@ -40,7 +40,7 @@ import {
   isStoreTable,
   ownColumns,
   readStoreRows,
-  storeTableSchema,
+  storeSectionColumns,
   withOwnFields,
   type StoreTable,
 } from "@/lib/store-read";
@@ -103,11 +103,9 @@ function withStoreColumns(row: UiSchemaRow, sourceTable: string | null | undefin
   //
   // The merchant's own columns are kept for the same reason (0128): they
   // live in records beside each row, where no import reaches.
-  const theirs = storeTableSchema(sourceTable).columns;
-  const mine = (sj.columns ?? []).filter((c) => !theirs.some((t) => t.field === c.field));
   return {
     ...row,
-    schema_json: { ...sj, columns: [...theirs, ...mine] },
+    schema_json: { ...sj, columns: storeSectionColumns(sourceTable, sj.columns) },
   } as UiSchemaRow;
 }
 

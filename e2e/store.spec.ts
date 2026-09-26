@@ -55,41 +55,46 @@ test("a field of the merchant's sits on the store's own orders: set by a button,
 }) => {
   // A section over the orders with a field of the merchant's beside
   // Shopify's, as a packing design builds it: no second list of orders.
-  const { data: mod, error } = await shop.admin
+  // Through the build route, so the design's gates are the real ones.
+  const made = await page.request.post("/api/apply", {
+    headers: { Authorization: `Bearer ${(shop.session as { access_token: string }).access_token}` },
+    data: {
+      projectId: shop.projectId,
+      plans: [
+        {
+          changeType: "NEW_MODULE",
+          targetModuleId: null,
+          newModule: { name: "e2e-packing", nav_label: "Packing", icon: "table", source_table: "orders" },
+          newSchema: {
+            columns: [
+              { field: "packed", label: "Packed", type: "boolean" },
+              { field: "shelf", label: "Shelf", type: "text" },
+            ],
+          },
+          features: {
+            actions: [
+              {
+                label: "Mark packed",
+                set: { packed: { const: true } },
+                when: { op: "not", args: [{ field: "packed" }] },
+              },
+            ],
+          },
+          newRecords: null,
+          explanation: "The store's orders, with a packed tick and a shelf beside each.",
+        },
+      ],
+    },
+  });
+  expect(made.ok(), `the section was built: ${await made.text()}`).toBe(true);
+  const { data: mod } = await shop.admin
     .from("modules")
-    .insert({
-      project_id: shop.projectId,
-      name: "e2e-packing",
-      nav_label: "Packing",
-      route: "/e2e-packing",
-      source_table: "orders",
-    })
     .select("id")
+    .eq("project_id", shop.projectId)
+    .eq("name", "e2e-packing")
     .single();
-  expect(error, "the section was made").toBeNull();
   const id = mod!.id as string;
   try {
-    await shop.admin.from("ui_schemas").insert({
-      module_id: id,
-      version: 1,
-      schema_json: {
-        columns: [
-          { field: "order_number", label: "Order", type: "text" },
-          { field: "packed", label: "Packed", type: "boolean" },
-          { field: "shelf", label: "Shelf", type: "text" },
-        ],
-        view: { type: "table" },
-        features: {
-          actions: [
-            {
-              label: "Mark packed",
-              set: { packed: { const: true } },
-              when: { op: "not", args: [{ field: "packed" }] },
-            },
-          ],
-        },
-      },
-    });
     await page.goto(`/app/${shop.projectId}?section=${id}`);
     await expect(page.getByRole("heading", { level: 1, name: "Packing" })).toBeVisible();
     const order = page.getByRole("row").filter({ hasText: "#1010" });

@@ -791,6 +791,22 @@ export function ownColumns(table: StoreTable, columns: SchemaColumn[]): SchemaCo
   return columns.filter((c) => !c.compute && !theirs.has(c.field));
 }
 
+/**
+ * A section over `table` as it is shown: the store's columns as the
+ * registry has them today, then what the section adds to them, in its
+ * order — worked-out columns, and the merchant's own where the list's
+ * rows can carry them. The one answer to "what are this section's
+ * columns", for the screen, for Luke and for the validator alike.
+ */
+export function storeSectionColumns(table: StoreTable, saved: SchemaColumn[] | null | undefined): SchemaColumn[] {
+  const theirs = STORE_TABLES[table].columns;
+  const own = canCarryOwnFields(table);
+  const added = (saved ?? []).filter(
+    (c) => c && typeof c.field === "string" && !theirs.some((t) => t.field === c.field) && (c.compute || own)
+  );
+  return [...theirs, ...added];
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Ids per request: a page of five hundred in one query string is past what a URL carries. */
@@ -822,6 +838,46 @@ export async function withOwnFields(
     const mine = own.get(r.id);
     return mine ? { ...r, data: { ...mine, ...r.data } } : r;
   });
+}
+
+/**
+ * What the merchant keeps beside some of the store's rows, from every
+ * section over `table` in the project: row id → section → fields, as
+ * { "Packing": { packed: true } }. A row nobody has set a field on is
+ * absent, so it reads exactly as the store has it. For a reader that
+ * is not looking at one section — an assistant searching a list.
+ */
+export async function ownFieldsOf(
+  db: SupabaseClient,
+  projectId: string,
+  table: StoreTable,
+  rowIds: string[]
+): Promise<Map<string, Record<string, Record<string, unknown>>>> {
+  const out = new Map<string, Record<string, Record<string, unknown>>>();
+  const ids = rowIds.filter((id) => UUID.test(id));
+  if (ids.length === 0 || !canCarryOwnFields(table)) return out;
+  const { data: sections, error: sErr } = await db
+    .from("modules")
+    .select("id, nav_label")
+    .eq("project_id", projectId)
+    .eq("source_table", table);
+  if (sErr) throw new Error(sErr.message);
+  const named = new Map((sections ?? []).map((m) => [m.id as string, m.nav_label as string]));
+  if (named.size === 0) return out;
+  for (let i = 0; i < ids.length; i += IDS_PER_READ) {
+    const { data, error } = await db
+      .from("records")
+      .select("module_id, store_row_id, data")
+      .in("module_id", [...named.keys()])
+      .in("store_row_id", ids.slice(i, i + IDS_PER_READ));
+    if (error) throw new Error(error.message);
+    for (const r of data ?? []) {
+      const row = out.get(r.store_row_id as string) ?? {};
+      row[named.get(r.module_id as string) ?? "a section"] = (r.data ?? {}) as Record<string, unknown>;
+      out.set(r.store_row_id as string, row);
+    }
+  }
+  return out;
 }
 
 /**
@@ -874,7 +930,15 @@ export async function readStoreRows(
   // customer never synced since total_spent arrived is not the top
   // buyer, and not the bottom one either.
   if (ordered) query = query.order(ordered.field, { ascending: ordered.dir === "asc", nullsFirst: false });
-  query = query.order(spec.order.field, { ascending: spec.order.ascending }).limit(Math.min(Math.max(limit, 1), 500));
+  query = query.order(spec.order.field, { ascending: spec.order.ascending });
+  // Ties broken by what the rows say, never by where the database
+  // happens to keep them: two stock rows at 0 available came back in a
+  // different order from one run to the next, so the first three were
+  // not the same three, and a page cut between them was a different page.
+  for (const c of spec.select.split(",").map((x) => x.trim())) {
+    if (c && c !== "id" && c !== spec.order.field && /^[a-z_]+$/.test(c)) query = query.order(c, { ascending: true });
+  }
+  query = query.limit(Math.min(Math.max(limit, 1), 500));
 
   // Commas and parentheses end an or() clause early, so a search for
   // "Shirt, blue" would silently become a search for "Shirt".

@@ -96,7 +96,10 @@ for that specific question.
 Most questions are answered from that read in one model call. In the chat (`lookups: true`)
 the model may also look up what the snapshot does not hold with five read-only store tools
 (`LUKE_TOOLS`): at most three lookups before its reply, on the first attempt only, each read
-with the caller's own client. Every lookup is recorded by the tool that ran it, as a
+with the caller's own client. `search_store` rows carry what the merchant keeps beside
+them (`yours`, by section name) when a section holds any, and a list's ties are broken by
+what its rows say, so the same store reads the same way every time. Every lookup is
+recorded by the tool that ran it, as a
 `lookup` step and in the answer's `grounding.looked_up`, never by the model's word. A cap
 reached mid-lookup is still answered, in one more call with the results folded into words.
 The MCP design engine does not look things up; the client asking has the same tools.
@@ -118,11 +121,25 @@ the reply and each plan. Validation covers, among other rules:
 - view/feature references to real compatible fields;
 - immutable/removal rules for fields;
 - valid links and cross-module automation targets;
-- read-only store-backed sections;
+- store-backed sections: the store's own fields are read, never written;
 - computed-field write refusal;
 - scan and scheduled-rule safety gates;
 - duplicate modules and unresolved references;
 - seeded copies of data already supplied by Shopify.
+
+Work done to the store's rows is built on them. A section over a store list may add
+computed columns and the merchant's own fields, kept beside each row (0128);
+`storeSectionColumns` in `store-read.ts` is the one answer to what such a section's
+columns are, for the screen, the engine, apply and the validator. Its row actions and
+scan mode may set only the merchant's fields. A rule on it must be `record_updated`: it
+fires from the first field set on a row, reads only the merchant's fields (the store's
+change in Shopify, where no rule sees them), and no rule elsewhere may add rows to it or
+write its rows. Lists whose rows each total many others (return reasons) take computed
+columns only. A new list of its own that retypes a store list, its key and one more
+column or any three (`retypedCopies` in `describe.ts`), is sent back once a turn with the
+list to build over; the same design again is taken as deliberate. `check-builds-on-store`
+holds three everyday requests (packing orders, restocking, following up customers) to
+this, recorded on the production model.
 
 When validation fails, the rejected model output and exact errors are sent back to the
 model. The engine permits the initial attempt plus two repair attempts. Rejected output

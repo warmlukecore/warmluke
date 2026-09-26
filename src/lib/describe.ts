@@ -5,6 +5,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import type { AssistantPlan, AutomationDefinition, Expr, FeatureSchema, ModuleRow } from "./types";
+import { STORE_TABLES, isStoreTable, storeTableSchema } from "./store-read";
 
 /** Renders an expression tree as something a non-technical owner reads. */
 export function exprText(e: Expr | undefined): string {
@@ -268,7 +269,7 @@ export function storeOverlap(plan: AssistantPlan, store: StoreFacts | null): str
 
   return [
     `${store.shop_domain} already has ${store.counts[hit.table]} ${hit.noun} in this project. ` +
-      `This builds a separate section you would fill in yourself — the two lists will not match each other.`,
+      `This builds a separate section you would fill in yourself — the two lists will not match each other. A section over your ${hit.noun} can hold fields of yours beside each one instead.`,
   ];
 }
 
@@ -305,21 +306,29 @@ function describePlanBody(
       const lines: string[] = [];
       const cols = plan.newSchema?.columns ?? [];
       // Where the rows come from is the first thing worth knowing: a
-      // section over the store is read-only and always matches
-      // Shopify, and one they fill in themselves never will.
+      // section over the store always matches Shopify, and one they
+      // fill in themselves never will.
       const src = plan.newModule?.source_table;
+      const theirs = isStoreTable(src) ? new Set(storeTableSchema(src).columns.map((c) => c.field)) : null;
       if (src) {
         lines.push(
-          `Rows come from your ${src.replace("_", " ")} synced from Shopify — read-only, always the same list`
+          `Rows come from your ${src.replace("_", " ")} synced from Shopify — always the same list, and its own fields stay as Shopify has them`
         );
       }
       // A computed column is not a field anybody fills in, and the
       // merchant approving this is the one person who would otherwise
-      // find that out by trying to type in it.
+      // find that out by trying to type in it. On a section over the
+      // store, what they fill in is kept beside each of its rows.
       if (cols.length) {
-        const typed = cols.filter((c) => !c.compute);
+        const typed = cols.filter((c) => !c.compute && !theirs?.has(c.field));
         const worked = cols.filter((c) => c.compute);
-        if (typed.length) lines.push(`Fields: ${typed.map((c) => c.label).join(", ")}`);
+        if (typed.length) {
+          lines.push(
+            theirs
+              ? `Yours to fill in beside each row: ${typed.map((c) => c.label).join(", ")}`
+              : `Fields: ${typed.map((c) => c.label).join(", ")}`
+          );
+        }
         if (worked.length) {
           lines.push(
             `Worked out for you, not typed: ${worked.map((c) => c.label).join(", ")} — kept right on its own, every time you open it`
@@ -564,6 +573,44 @@ export function describeRequests(rows: RequestRow[], modules: ModuleRow[], now =
         return `${r.status} ${ago(r.created_at, now)}${via}: "${quote}"`;
     }
   });
+}
+
+/**
+ * A list of its own that types in what a store list already holds.
+ *
+ * A section over the store carries the merchant's fields beside each
+ * row (0128), so a second list of the same orders, filled in by hand,
+ * has nothing left to offer, and never matches the real ones. Read
+ * from the registry: a list's first column names a row of it, so its
+ * key and one more, or any three of its columns, typed into a list of
+ * its own, is a copy. Sent back once a turn, not refused: a design
+ * that comes back unchanged tracks something else, and storeOverlap
+ * says why that is the merchant's call.
+ */
+export function retypedCopies(plans: AssistantPlan[], store: StoreFacts | null): string[] {
+  if (!store) return [];
+  const out: string[] = [];
+  for (const p of plans) {
+    if (p.changeType !== "NEW_MODULE" || !p.newModule || p.newModule.source_table) continue;
+    const typed = new Set(
+      (p.newSchema?.columns ?? []).filter((c) => c && !c.compute && typeof c.field === "string").map((c) => c.field)
+    );
+    let best: { table: string; shared: string[] } | null = null;
+    for (const [table, spec] of Object.entries(STORE_TABLES)) {
+      const shared = spec.columns.map((c) => c.field).filter((f) => typed.has(f));
+      const keyed = shared.includes(spec.columns[0]?.field);
+      if (shared.length < 3 && !(keyed && shared.length >= 2)) continue;
+      // The first of the most: the registry lists a list before the
+      // ones that repeat its key (orders before their refunds).
+      if (!best || shared.length > best.shared.length) best = { table, shared };
+    }
+    if (!best) continue;
+    const noun = STORE_TABLES[best.table as keyof typeof STORE_TABLES].section.label.toLowerCase();
+    out.push(
+      `"${p.newModule.nav_label}" types in what the store's ${noun} already hold (${best.shared.join(", ")}): a second list of them, filled in by hand, that never matches the real ones. Build it over the store's list instead — NEW_MODULE with "source_table": "${best.table}" — and put what the work needs beside each row as fields of theirs. If it tracks something the store does not have, reply again with it unchanged.`
+    );
+  }
+  return out;
 }
 
 /**
