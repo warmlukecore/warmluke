@@ -1,0 +1,16 @@
+{
+  "label": "anthropic",
+  "asked": "figured) CONTEXT — rules already running on this app. Do not propose one that is already here; to change a rule, remove it and add the new one. none USER REQUEST: Is order #1001 paid? How much was it?",
+  "parts": {
+    "system": "938f31d22a9e3f14",
+    "tools": "2bc56cb6a649bab0",
+    "conversation": "6cb81da39294bd53"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"claude-opus-5-5\",\"id\":\"msg_011CfRizbXy8e81FhPPALmt7\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"CAQS0gQKEAgSGAI4AUIIdGhpbmtpbmcSDJdrBvIbAIvhtFwS1xoMiglYN1CagUOIQyGxIjBlf/EgXnW+NG2lEKpQkJhlnHWqqP1d/QpFLfDNAOLENiWQeuYN44axpaZ8c7YnVg8q7wP49Aui1ql70Ny0oJWBv7xhtiIrZL5rCrFu3e04VKCHdLMWZ62slTK2U7tFazlYkK8ea9B3mIq2gIcAqZSP4vcY8RCDjO1JwwUIEf60Z+BLADgGFZvxib29avfRV3I5USl8GFGoicPg7POCoWDUEfk8fAMtTCoLAHgWI+9sflrv4563gmQgLix9ygtrzGFkETIPz3DCYI6W8vtYu6Cf078tl1buy9Hyzace2lu7Zp+UdxsPjSLus2IQoYR+SLpK+XLqKL9UN89kzLgD+fdUIqE+5duQUC1E00jb3VJWDcf425nKZ9KZ2dh+/pryGqYz/SR+mV/pmRAViwtSiRwMSWvHJ9IenouMVb1slofWtHFP/6R63TW5K6uVENb0YSzFTqNka+0B6dtCQrpyxqHZxBgS3whc6YHJhAdVyn5FDBA72LFTZAC/ojkUy1QrJG+A/RBwqOnOIiJsQCFPPeO8jl8J2RkRU9bXMzIdSYEZ+ikRfVuQYi3MZYbufJCebfK0OTuTCJRXqH+b9gujBRrGGSfsTm41AHPhgfsAHYBpwVxSkZV8PXZfWEuecMUOKYYtw6kSPuRXjkWp5df1ld14lc6Y+6a3hOgspNGegQ98nKSq/HI2LLzIXCJPql0B/XgxK8MTdQG39QifkheSYRwQdBYYAQ==\"},{\"type\":\"tool_use\",\"id\":\"toolu_01XFPEcwFy1sUKNWz4xFKTeE\",\"name\":\"get_order\",\"input\":{\"order_number\":\"1001\"},\"caller\":{\"type\":\"direct\"}}],\"container\":null,\"stop_reason\":\"tool_use\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":4991,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":15896,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":69,\"output_tokens_details\":{\"thinking_tokens\":18},\"service_tier\":\"standard\",\"inference_geo\":\"global\"},\"diagnostics\":null}"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "label": "anthropic",
+  "asked": "",
+  "parts": {
+    "system": "938f31d22a9e3f14",
+    "tools": "2bc56cb6a649bab0",
+    "conversation": "2c774a707ae0f040"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"claude-opus-5-5\",\"id\":\"msg_011CfRizrmWg2tceBSp8CNBM\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"CAQSzAYKEAgSGAI4AUIIdGhpbmtpbmcSDNNag24wvx50uAIZphoMFiArDfwTzBA5zqhSIjBijvZCAmf7p5qlxQuE5bzUX/91I4M+B1zufFQYLgqzOdJ4EaYZpU172jKqzjuYO4Qq6QWtxJVL8gVk2TzNPswHBqqXczeQRyAC0eXE3yJokdlZQEOan3vB2dzSK8iDGfQVBA1MAaTLEDigLx4JxIIMWVaqp/U0fQSGBYxwMPYBgSx/qILJSJMmG3V0XN0j1Bw2l1ON8XelESCcaW7nRauB6uhvxkXD5XCdjyW+clSwVuIYjNqH5ZbVuhnMDnEaG9lk9CaaWh8pxj6tfGbPZDS1hm2LBHZC1NR7XnndPUlmZz7Tq0gshshNQ4HdQJT8tUm+QkXrqJ74u3Lj6i+uzFU9qeaFaoYRudqd6MP9oFPEBbLyGJmBjhjMXvq9EFVo6iFZsAu8NDH81/VVKc4wScNpS8k8wCaPjQyjTYD/47h8TdH6tmXl/YSppzgbZIx/kUSoCD8FRYdLknvBz9BCKHzzms2qH64L/TmWAZHx++7SApwzFDfPQzH5zgjeocEeNxP7tVeQoSTBVBr6vo1ZCQBhAWSaEw4YosG2FN5exkaSayNspCAk9u/0BFLvSZgG4xiT5gUGMfyqIFs70MwQbvHOEXGVA4UENOe7JczwPN8TMchgQ3xATXx4kD9TNQxA5f4xqXkSh+bjmvejbIsjtMhEWY2Ih7/Gt9Mp6EHAF45mRUqe9MXpUKj36fDdie/yAbwv15qOcSp8D14QGzey/FK3cITKPOBT//x+p0EPsOAg0zXw4O5n98XzXudAzo3fC0eH1tc/jXNE0KS/C91WB0BkqfCy3UyNBMcJT1S9vfwc2sufOdUy5s/FJhPYWuPj0LkNc8ZYyhFjd+ArGcYXCqY8z1aAz27NqWhZOL5cxuFMv9frTUniYuy0TwvewK++ClxkIlGqaNm48Mn9uAtq0tihS85u4afJlkZoVA/EZQCnd7qBDGZEzbyACVRsmAsAGhYDilTyD/Q9aQWfubuMWtc/Cz5wUFDVfardUmPEa/YnsoN+v2RaY/rhjt6GEY+nJ6Ful/iQttsCiiyks1xILI56nFm0NlL8NxrIPheSGAE=\"},{\"type\":\"text\",\"text\":\"{\\\"type\\\":\\\"answer\\\",\\\"kind\\\":\\\"store\\\",\\\"title\\\":\\\"Order #1001 payment\\\",\\\"message\\\":\\\"No, order **#1001 has not been paid yet**. Its payment status is PENDING and the total is **₹777**.\\\\n\\\\n- Placed on 27 Aug 2026, 1:49 pm (store time, IST)\\\\n- Payment status: PENDING (awaiting payment)\\\\n- Total: ₹777. This is what the order comes to today, after any refunds.\\\\n- Fulfilment: not fulfilled yet\\\\n- Customer and items: none have come across in this copy, so I can't tell who ordered it or what's in it\\\\n\\\\nThis data shows it was **never** brought from Shopify, so the order may have been paid since. Check it in Shopify to be sure.\\\",\\\"next\\\":[{\\\"label\\\":\\\"All pending orders\\\",\\\"prompt\\\":\\\"Which orders are still PENDING, and how much money is waiting on them in total?\\\"},{\\\"label\\\":\\\"Was #1001 COD?\\\",\\\"prompt\\\":\\\"Was order #1001 cash on delivery or prepaid? Check its payments.\\\"},{\\\"label\\\":\\\"Payments on #1001\\\",\\\"prompt\\\":\\\"Show me every payment or transaction recorded against order #1001.\\\"},{\\\"label\\\":\\\"Track unpaid orders\\\",\\\"prompt\\\":\\\"Build me a section over my Shopify orders that shows only the PENDING ones, oldest first, with the total amount waiting.\\\"}]}\"}],\"container\":null,\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":5149,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":15896,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":530,\"output_tokens_details\":{\"thinking_tokens\":94},\"service_tier\":\"standard\",\"inference_geo\":\"global\"},\"diagnostics\":null}"
+    }
+  ]
+}

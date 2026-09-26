@@ -121,6 +121,53 @@ console.log("\na plain-plans reply");
   );
 }
 
+console.log("\nan answer offers what they might ask next");
+{
+  const offers = (n) =>
+    Array.from({ length: n }, (_, i) => ({ label: `Next ${i + 1}`, prompt: `Show me the orders from week ${i + 1}` }));
+  const answer = (kind, n) =>
+    parseReply(JSON.stringify({ type: "answer", kind, message: "Two are unpaid.", next: offers(n) }), [], null, null);
+  const store = answer("store", 6);
+  check("an answer about the store keeps up to four", store.ok && store.reply.next?.length === 4);
+  const chat = answer("conversation", 4);
+  check("small talk keeps up to two", chat.ok && chat.reply.next?.length === 2);
+  const help = answer("product_help", 3);
+  check("and so does a question about the app", help.ok && help.reply.next?.length === 2);
+  const bare = parseReply(JSON.stringify({ type: "answer", kind: "store", message: "Two." }), [], null, null);
+  check("an answer offered nothing carries nothing", bare.ok && bare.reply.next === undefined);
+}
+
+console.log("\nand every reply names its conversation");
+{
+  const named = (title) =>
+    parseReply(JSON.stringify({ type: "answer", kind: "store", message: "Two.", title }), [], null, null);
+  const good = named('  "Pending COD payments."  ');
+  check("the name is kept, without quotes or a full stop", good.ok && good.reply.title === "Pending COD payments");
+  check("a name too short to say anything is dropped", named("ab").ok && named("ab").reply.title === undefined);
+  check("and none given is none", named(undefined).reply?.title === undefined);
+  const plans = parseReply(
+    JSON.stringify({ type: "plans", title: "Stock labels", plans: WORKED_EXAMPLE.plans }),
+    [],
+    null,
+    null
+  );
+  check("a design carries its name as well", plans.ok && plans.reply.title === "Stock labels");
+}
+
+console.log("\nand a question says how it is answered");
+{
+  const q = (id, extra = {}) => ({ id, question: `Question ${id}?`, suggestions: ["One", "Two"], ...extra });
+  const asked = (questions, extra = {}) =>
+    parseReply(JSON.stringify({ type: "clarify", message: "A few things.", questions, ...extra }), [], null, null);
+  const many = asked([q("a", { multi: true }), q("b")]);
+  check("a question with more than one true answer says so", many.ok && many.reply.questions[0].multi === true);
+  check("and one without says nothing", many.ok && many.reply.questions[1].multi === undefined);
+  const pair = asked([q("name"), q("email")], { together: true });
+  check("two that do not lean on each other are asked together", pair.ok && pair.reply.together === true);
+  const three = asked([q("a"), q("b"), q("c")], { together: true });
+  check("three are never asked at once, whatever it says", three.ok && three.reply.together === undefined);
+}
+
 console.log(
   fails.length === 0 ? "\nwhat comes next is the model's, and only where it is whole" : `\n${fails.length} FAILED`
 );

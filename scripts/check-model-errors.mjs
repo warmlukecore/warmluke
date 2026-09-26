@@ -14,7 +14,7 @@
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-model-errors.mjs
 
-import { callAnthropicChat, callModel, draftMessage, ModelError } from "../src/lib/ai.ts";
+import { callAnthropicChat, callModel, draftMessage, draftPhase, ModelError } from "../src/lib/ai.ts";
 import { jsonSchema, tool } from "ai";
 import { isTransient } from "../src/lib/retry.ts";
 
@@ -416,6 +416,22 @@ try {
     "prose before the JSON is looked past",
     draftMessage('Here you go:\n```json\n{"type":"answer","message":"Hi') === "Hi"
   );
+
+  // What is still being written once the words are done, so the panel
+  // does not go quiet between the message and the questions.
+  check("no phase while the message is still arriving", draftPhase('{"type":"clarify","message":"A few') === null);
+  check(
+    "questions, once the message of a clarify is done",
+    draftPhase('{"type":"clarify","message":"A few things.","questions":[{"id"') === "questions"
+  );
+  check("a design", draftPhase('{"type":"blueprint","message":"Here it is.","blueprint":{') === "design");
+  check("a change", draftPhase('{"type":"plans","message":"This adds it.","plans":[') === "change");
+  check(
+    "what they might ask next, after an answer",
+    draftPhase('{"type":"answer","kind":"store","message":"Two.","next":[') === "next"
+  );
+  check("and nothing after an answer with nothing more", draftPhase('{"type":"answer","message":"Two."}') === null);
+  check("an escaped quote does not end the message", draftPhase('{"type":"clarify","message":"a \\"b') === null);
 
   console.log("\nthe reply, streamed");
   const sse = (events) => ({

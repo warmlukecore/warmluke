@@ -114,7 +114,11 @@ console.log("\nwhat the prompt says when no store is connected");
       /"conversation" — a greeting/.test(prompt) &&
       /Never quote store rows here/.test(prompt)
   );
-  check("and a follow-up is offered only where one genuinely follows", /None is the normal answer/.test(prompt));
+  check(
+    "and after a simple question one or two follow-ups, fewer when fewer follow",
+    /After product_help or conversation: one or two/.test(prompt) &&
+      /If fewer genuinely follow, give fewer/.test(prompt)
+  );
 }
 
 console.log("\nand what it says when one is");

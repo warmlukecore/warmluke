@@ -66,6 +66,7 @@ Rules:
 | `LukeMark` | [`ui/LukeMark.tsx`](../../src/components/ui/LukeMark.tsx) | Luke's face: an orb in the Luke colours with eyes that blink; sizes `xs` 20px, `sm` 28px, `lg` 48px; `state="thinking"` while it works (the eyes look about, the glow breathes). CSS only, still under reduced motion |
 | `.beam`, `.beam-ink`, `.shimmer` | [`globals.css`](../../src/app/globals.css) | The composer's border: while Luke works, a beam of Luke's colour; while the merchant types, a beam in the page's ink that flares with each key and goes a moment after they stop. `.shimmer` is the light along the step Luke is on. Nowhere else |
 | `Icon` | [`ui/`](../../src/components/ui/) | Section icons by name (`ALLOWED_ICONS`) |
+| `Markdown` | [`ui/Markdown.tsx`](../../src/components/ui/Markdown.tsx) | What Luke writes: one small heading size, bullets, steps, bold and links in the panel's type. Raw HTML is dropped; tables, images and code blocks are unwrapped to their text. `streaming` reads a reply still arriving, so a half-written `**` or list never flashes as symbols |
 
 Why size and width are separate: two Tailwind classes for the same property on one
 element are resolved by stylesheet order, not by the order written. `field w-32` or
@@ -123,6 +124,9 @@ Adopted so far, each with the user's yes:
 - **The orders globe** in the landing's Ask Luke section: WebGL by `cobe` (about 6 KB,
   loaded after the page runs), the one dependency the landing added. It pauses off screen,
   is still under reduced motion, and the section reads the same without WebGL.
+- **Streamed Markdown** in the chat: `streamdown`, which closes a reply's half-written
+  Markdown as it arrives, with `remark-breaks` so one line break stays a line break.
+  Its own controls (copy, download, link warnings) are off; `Markdown` styles every element.
 
 The landing's other motion is plain CSS in `globals.css` and stops under reduced motion:
 the `.orbit` / `.orbit-back` hub of logos, the `.caret` and the `wl-tool` roll that

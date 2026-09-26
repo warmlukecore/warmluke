@@ -285,6 +285,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // What Luke is saying while it says it. Cleared when the turn ends,
   // however it ends: the reply, or the error, takes its place.
   const [chatDraft, setChatDraft] = useState("");
+  // What is being written once the draft's words are done ("questions").
+  const [chatPhase, setChatPhase] = useState<string | null>(null);
   const chatAbort = useRef<AbortController | null>(null);
   // One thread per builder session: the server replays it so the
   // assistant remembers what it already asked.
@@ -436,7 +438,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           continue;
         }
         if (p.type === "clarify" && Array.isArray(p.questions)) {
-          rebuilt.push({ id: m.id, role: "assistant", text: p.message, questions: p.questions });
+          rebuilt.push({
+            id: m.id,
+            role: "assistant",
+            text: p.message,
+            questions: p.questions,
+            ...(p.together ? { together: true } : {}),
+          });
         } else if (p.type === "blueprint" && Array.isArray(p.blueprint?.plans)) {
           rebuilt.push({ id: m.id, role: "assistant", text: p.message, blueprint: p.blueprint });
         } else if (p.type === "plans" && Array.isArray(p.plans)) {
@@ -1092,6 +1100,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       setChatBusy(true);
       setChatSteps([]);
       setChatDraft("");
+      setChatPhase(null);
       const controller = new AbortController();
       chatAbort.current = controller;
       // What the turn did, kept with the reply it produced so the
@@ -1110,9 +1119,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             seen.push(step as TurnEvent);
             setChatSteps((prev) => [...prev, step as TurnEvent]);
           },
-          setChatDraft
+          (words, phase) => {
+            setChatDraft(words);
+            setChatPhase(phase ?? null);
+          }
         );
         setChatDraft("");
+        setChatPhase(null);
 
         if (data.conversationId && data.conversationId !== conversationId) {
           rememberConversation(data.conversationId as string);
@@ -1167,6 +1180,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               role: "assistant",
               text: reply.message,
               questions: reply.questions,
+              ...(reply.together ? { together: true } : {}),
               trace: trace(),
             },
           ]);
@@ -1190,7 +1204,16 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         // A question answered. Nothing to approve, nothing to build —
         // it goes into the thread as what Luke said and stops there.
         if (reply.type === "answer") {
-          setChatMessages((prev) => [...prev, { id, role: "assistant", text: reply.message, trace: trace() }]);
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              id,
+              role: "assistant",
+              text: reply.message,
+              ...(reply.next?.length ? { next: reply.next } : {}),
+              trace: trace(),
+            },
+          ]);
           return;
         }
 
@@ -1240,6 +1263,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         setChatBusy(false);
         setChatSteps([]);
         setChatDraft("");
+        setChatPhase(null);
       }
     },
     [chatBusy, building, projectId, selectedModuleId, conversationId, loadThread, rememberConversation]
@@ -2339,6 +2363,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 busy={chatBusy || building}
                 steps={chatSteps}
                 draft={chatDraft}
+                phase={chatPhase}
                 canStop={chatBusy}
                 threads={threads}
                 conversationId={conversationId}

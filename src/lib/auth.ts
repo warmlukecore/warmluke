@@ -107,7 +107,8 @@ export async function apiStream(
   signal: AbortSignal | undefined,
   onStep: (step: Record<string, unknown>) => void,
   /** The draft of what is being said, whole each time. Never the result. */
-  onWords?: (text: string) => void
+  /** The reply's words so far, and what is being written once they are done. */
+  onWords?: (text: string, phase?: string) => void
 ): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
@@ -139,7 +140,8 @@ export async function apiStream(
     if ("step" in obj) onStep(obj);
     // A draft is never the last line's stand-in: a stream that ends on
     // one did not finish, and is said to have been cut short below.
-    else if ("words" in obj) onWords?.(typeof obj.words === "string" ? obj.words : "");
+    else if ("words" in obj)
+      onWords?.(typeof obj.words === "string" ? obj.words : "", typeof obj.phase === "string" ? obj.phase : undefined);
     else last = obj;
   };
   for (;;) {

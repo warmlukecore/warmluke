@@ -153,9 +153,14 @@ type Shop = Parameters<Parameters<typeof test>[2]>[0]["shop"];
  * is a direct apply.
  */
 async function designThread(shop: Shop, plans: unknown[]) {
+  return replyThread(shop, { type: "plans", message: "This adds the sections.", plans }, "okey do that then");
+}
+
+/** A thread whose last reply is this one, saved as a turn saves it: no model involved. */
+async function replyThread(shop: Shop, reply: Record<string, unknown>, asked = "Which orders are still unpaid?") {
   const { data: thread } = await shop.admin
     .from("conversations")
-    .insert({ project_id: shop.projectId, title: "A design" })
+    .insert({ project_id: shop.projectId, title: "A reply" })
     .select("id")
     .single();
   const t = Date.now();
@@ -163,19 +168,26 @@ async function designThread(shop: Shop, plans: unknown[]) {
     {
       conversation_id: thread!.id,
       role: "user",
-      content: "okey do that then",
-      payload: { kind: "user", text: "okey do that then" },
+      content: asked,
+      payload: { kind: "user", text: asked },
       created_at: new Date(t).toISOString(),
     },
     {
       conversation_id: thread!.id,
       role: "assistant",
       content: "",
-      payload: { type: "plans", message: "This adds the sections.", plans },
+      payload: reply,
       created_at: new Date(t + 1).toISOString(),
     },
   ]);
   return thread!.id as string;
+}
+
+/** What the panel sends next, caught before any model is asked. */
+function catchNextTurn(page: Page) {
+  const sent = page.waitForRequest((r) => r.url().endsWith("/api/chat") && r.method() === "POST");
+  void page.route("**/api/chat", (route) => (route.request().method() === "POST" ? route.abort() : route.fallback()));
+  return sent.then((r) => (r.postDataJSON() as { message?: string }).message ?? "");
 }
 
 const sectionsNamed = async (shop: Shop, names: string[]) =>
@@ -262,6 +274,98 @@ test("a build carries on when the app is closed mid-way, and the thread says how
     await expect.poll(() => sectionsNamed(shop, names)).toEqual([...names].sort());
   } finally {
     await clearUp(shop, thread, names);
+  }
+});
+
+test("an answer reads as Markdown, and what to ask next is sent as written", async ({ signedIn: page, shop }) => {
+  const thread = await replyThread(shop, {
+    type: "answer",
+    kind: "store",
+    message:
+      'Two orders are still unpaid, together **₹2,952**.\n\n### Waiting for payment\n- **#1008** · Rohan Gupta\n- **#1006** · Kabir Singh\n\n<img src=x onerror="window.__hit=1"><script>window.__hit=2</script>',
+    next: [
+      { label: "Remind me daily", prompt: "Remind me every morning about COD orders that are still unpaid" },
+      { label: "Only shipped ones", prompt: "Show me only the unpaid orders that have already shipped" },
+    ],
+  });
+  try {
+    await page.goto(`/app/${shop.projectId}`);
+    const { panel } = await luke(page);
+    // Headings, bullets and bold, as the panel's own type.
+    await expect(panel.getByRole("heading", { name: "Waiting for payment" })).toBeVisible();
+    await expect(panel.getByRole("listitem").filter({ hasText: "#1008" })).toBeVisible();
+    await expect(panel.locator("strong", { hasText: "₹2,952" })).toBeVisible();
+    // Raw HTML in a reply is dropped, never run.
+    expect(await panel.locator('img[src="x"]').count(), "no image from a reply").toBe(0);
+    expect(
+      await page.evaluate(() => (window as { __hit?: number }).__hit),
+      "nothing a reply wrote ran"
+    ).toBeUndefined();
+    // Tapped, a follow-up is sent as it was written.
+    const sent = catchNextTurn(page);
+    await panel.getByRole("button", { name: /^Ask: Remind me every morning/ }).click();
+    expect(await sent).toBe("Remind me every morning about COD orders that are still unpaid");
+  } finally {
+    await shop.admin.from("conversations").delete().eq("id", thread);
+  }
+});
+
+test("questions are asked the way their answers depend on each other", async ({ signedIn: page, shop }) => {
+  // Three that build on each other are asked one at a time; each says
+  // whether one answer or several fit, and the answers go back as one.
+  const thread = await replyThread(shop, {
+    type: "clarify",
+    message: "A few things so the alerts fit how you restock:",
+    questions: [
+      { id: "when", question: "When do you want to hear?", suggestions: ["As it happens", "Every morning"] },
+      { id: "what", question: "What counts as low?", suggestions: ["Under 5 left", "Under 10 left"] },
+      { id: "which", question: "Which products?", suggestions: ["Best sellers", "New arrivals"], multi: true },
+    ],
+  });
+  try {
+    await page.goto(`/app/${shop.projectId}`);
+    const { panel } = await luke(page);
+    await expect(panel.getByText("1 of 3")).toBeVisible();
+    await expect(panel.getByText("What counts as low?")).toHaveCount(0);
+    await panel.getByRole("radio", { name: "Every morning" }).click();
+    await panel.getByRole("button", { name: "Next" }).click();
+    // One answer to this one: a second pick replaces the first.
+    await panel.getByRole("radio", { name: "Under 5 left" }).click();
+    await panel.getByRole("radio", { name: "Under 10 left" }).click();
+    await expect(panel.getByRole("radio", { name: "Under 5 left" })).toHaveAttribute("aria-checked", "false");
+    await panel.getByRole("button", { name: "Next" }).click();
+    // Several to this one.
+    await panel.getByRole("checkbox", { name: "Best sellers" }).click();
+    await panel.getByRole("checkbox", { name: "New arrivals" }).click();
+    const sent = catchNextTurn(page);
+    await panel.getByRole("button", { name: "Send answers" }).click();
+    const composed = await sent;
+    expect(composed).toContain("When do you want to hear?\n→ Every morning");
+    expect(composed).toContain("What counts as low?\n→ Under 10 left");
+    expect(composed).toContain("Which products?\n→ Best sellers, New arrivals");
+  } finally {
+    await shop.admin.from("conversations").delete().eq("id", thread);
+  }
+});
+
+test("two questions that do not lean on each other are asked together", async ({ signedIn: page, shop }) => {
+  const thread = await replyThread(shop, {
+    type: "clarify",
+    message: "Two quick details:",
+    together: true,
+    questions: [
+      { id: "name", question: "What should the section be called?", suggestions: ["Suppliers", "Vendors"] },
+      { id: "keep", question: "What do you keep for each?", suggestions: ["Phone", "Email"], multi: true },
+    ],
+  });
+  try {
+    await page.goto(`/app/${shop.projectId}`);
+    const { panel } = await luke(page);
+    await expect(panel.getByText("What should the section be called?")).toBeVisible();
+    await expect(panel.getByText("What do you keep for each?")).toBeVisible();
+    await expect(panel.getByText("1 of 2")).toHaveCount(0);
+  } finally {
+    await shop.admin.from("conversations").delete().eq("id", thread);
   }
 });
 

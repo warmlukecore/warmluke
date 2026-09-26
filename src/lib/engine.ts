@@ -20,6 +20,8 @@ import {
   buildUserMessage,
   callModel,
   draftMessage,
+  draftPhase,
+  type DraftPhase,
   findGaps,
   parseReply,
   type ChatTurn,
@@ -202,7 +204,7 @@ export type TurnInput = {
    * for the screen, never the reply: the one the validator passes
    * replaces it. Absent, the model is not streamed at all.
    */
-  onWords?: (text: string) => void;
+  onWords?: (text: string, phase?: DraftPhase) => void;
 };
 
 export type TurnResult =
@@ -441,14 +443,19 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     : null;
   // The draft, told only when it changes: a stream of the same words
   // over and over would be a stream of nothing.
+  // What is being written once the words are done ("questions"), told
+  // the same way: the words stop, and the rest is still coming.
   let drafted = "";
+  let phased: DraftPhase | null = null;
   const draft = onWords
     ? (text: string) => {
         const said = text === "" ? "" : draftMessage(text);
-        if (said === null || said === drafted) return;
+        const phase = text === "" ? null : draftPhase(text);
+        if (said === null || (said === drafted && phase === phased)) return;
         drafted = said;
+        phased = phase;
         try {
-          onWords(said);
+          onWords(said, phase ?? undefined);
         } catch {
           /* the caller's problem, not the turn's */
         }

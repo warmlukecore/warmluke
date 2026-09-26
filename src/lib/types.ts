@@ -355,6 +355,8 @@ export interface ClarifyQuestion {
   why?: string;
   /** Tappable example answers; the owner can always type their own. */
   suggestions?: string[];
+  /** More than one suggestion can be true at once; otherwise exactly one is picked. */
+  multi?: boolean;
 }
 
 export interface BlueprintStep {
@@ -412,27 +414,44 @@ export type AssistantReply =
    * last came from Shopify. A model asserting "I checked" proves
    * nothing; this is the receipt.
    */
-  | {
-      type: "answer";
-      /**
-       * What was answered: a question about the store's rows (and
-       * only from the rows it was given), a question about Luke or
-       * this app, or plain conversation. Absent in replies stored
-       * before this existed, which were all about the store.
-       */
-      kind?: AnswerKind;
-      message: string;
-      grounding?: {
-        kind: "store_snapshot";
-        last_synced_at: string | null;
-        shop: string;
-        /** What the turn looked up beyond the snapshot, as the tools recorded it, not as the model said. */
-        looked_up?: string[];
-      };
-    }
-  | { type: "clarify"; message: string; questions: ClarifyQuestion[] }
-  | { type: "blueprint"; message: string; blueprint: Blueprint }
-  | { type: "plans"; message?: string; plans: AssistantPlan[]; next?: NextStep[] };
+  (
+    | {
+        type: "answer";
+        /**
+         * What was answered: a question about the store's rows (and
+         * only from the rows it was given), a question about Luke or
+         * this app, or plain conversation. Absent in replies stored
+         * before this existed, which were all about the store.
+         */
+        kind?: AnswerKind;
+        message: string;
+        /** What they might ask next, as the model offers it: tapped, each is sent as written. */
+        next?: NextStep[];
+        grounding?: {
+          kind: "store_snapshot";
+          last_synced_at: string | null;
+          shop: string;
+          /** What the turn looked up beyond the snapshot, as the tools recorded it, not as the model said. */
+          looked_up?: string[];
+        };
+      }
+    | {
+        type: "clarify";
+        message: string;
+        questions: ClarifyQuestion[];
+        /** Two questions whose answers do not depend on each other, asked at once; otherwise one at a time. */
+        together?: boolean;
+      }
+    | { type: "blueprint"; message: string; blueprint: Blueprint }
+    | { type: "plans"; message?: string; plans: AssistantPlan[]; next?: NextStep[] }
+  ) & {
+    /**
+     * What the conversation is about so far, in a few of the owner's own
+     * words: the thread's name in the list, in place of whatever was typed
+     * first. Kept while the subject holds.
+     */
+    title?: string;
+  };
 
 export type AnswerKind = "store" | "product_help" | "conversation";
 

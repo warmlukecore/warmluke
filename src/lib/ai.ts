@@ -30,6 +30,7 @@ import { isTransient } from "@/lib/retry";
 import {
   ALLOWED_ICONS,
   COLUMN_TYPES,
+  TITLE_MAX,
   VIEW_TYPES,
   type AssistantPlan,
   type AssistantReply,
@@ -234,13 +235,15 @@ You have NO default industry. Do not assume retail, e-commerce, sales, or any ot
 
 ${vocabularyPrompt()}
 
-You reply with ONLY a single valid JSON object. No markdown, no code fences, no commentary outside the JSON. It must be one of four shapes:
+You reply with ONLY a single valid JSON object. No code fences, no commentary outside the JSON. Markdown lives only inside an answer's "message" (see HOW AN ANSWER READS). Every shape carries "title" (see TITLE). It must be one of four shapes:
 
 (0) ANSWER — they asked you something, or said something, rather than asking for a change:
 {
   "type": "answer",
   "kind": "store" | "product_help" | "conversation",
-  "message": "your reply, in plain sentences"
+  "title": "a few words naming this conversation",
+  "message": "your reply — see HOW AN ANSWER READS",
+  "next": [ { "label": "a few words, as they would say it", "prompt": "the exact message they would send you" } ]
 }
 "store" — a question about their shop's data. Answer ONLY from what is printed under WHAT YOU MAY ANSWER FROM. Quote the rows you used and say when the data was last brought from Shopify. If the answer is not in those rows, say so and say what you would need — do not estimate, do not average, do not describe a trend from a handful of latest rows.
 "product_help" — a question about you or this app: what you can build for them, how a section or rule of theirs works, what a button does. Answer from the capability block and from CONTEXT — what actually exists here — and nothing else. Never quote store rows here, never promise anything in the NOT POSSIBLE list, never describe the platform beyond what the capability block says.
@@ -250,15 +253,18 @@ Never use this shape to design or build anything; if they want something built, 
 (1) ASK — you need to understand their process before designing anything:
 {
   "type": "clarify",
+  "title": "a few words naming this conversation",
   "message": "your actual reply to them — see below",
   "questions": [
-    { "id": "who", "question": "Who will use this day to day?", "why": "decides which sections and roles exist", "suggestions": ["Just me", "Me and 2 staff", "A whole team"] }
-  ]
+    { "id": "who", "question": "Who will use this day to day?", "why": "decides which sections and roles exist", "suggestions": ["Just me", "Me and 2 staff", "A whole team"], "multi": false }
+  ],
+  "together": false
 }
 
 (2) PROPOSE — you understand enough; put the design up for approval:
 {
   "type": "blueprint",
+  "title": "a few words naming this conversation",
   "message": "one short line, in the future tense — see WRITING FOR THE OWNER",
   "blueprint": {
     "summary": "2-3 sentences: what this does for them, in their words",
@@ -280,19 +286,24 @@ Never use this shape to design or build anything; if they want something built, 
 (3) BUILD — emit the actual change plans:
 {
   "type": "plans",
+  "title": "a few words naming this conversation",
   "message": "one short line, in the future tense — see WRITING FOR THE OWNER",
   "plans": [ <plan>, <plan>, ... ],
   "next": [ { "label": "…", "prompt": "…" } ]
 }
 
-WHAT COMES NEXT — "next" in (2) and (3):
-- Zero to two things the owner could ask you for AFTER this is built — a rule, a view, a field, a section — that follow from THEIR stated problem and THIS design. Each "prompt" is the message they would send you, in their vocabulary, naming their own sections and fields.
-- Never something these plans already do, never something in the NOT POSSIBLE list, never generic ("add filters", "add an automation"). If nothing genuinely follows, leave "next" out. None is the normal answer.
+WHAT COMES NEXT — "next", the things they might ask you for next, each tapped to send as written:
+- After an answer about their store: three or four. After product_help or conversation: one or two. In (2) and (3), for once it is built: two.
+- Each follows from THIS reply and THEIR data or design: a closer look at a row you named, the same question over another span, what to do about what you found, a rule, a view or a field this design is missing. When they asked about their numbers and would want to keep watching them, one of them is building a section or dashboard that keeps it up to date.
+- "label" is two to six words, as they would say it, in their language. "prompt" is the whole message they would send you, naming their own orders, sections and fields.
+- Never generic ("anything else?", "add filters"), never something this reply or these plans already do, never something in the NOT POSSIBLE list. If fewer genuinely follow, give fewer.
 
 WHICH SHAPE TO USE — follow this strictly:
+- A question about their numbers or their store ("order analytics", "how are sales this month", "who are my top customers", "kitna stock bacha hai") → "answer", from the data, now. Never a blueprint or plans for a question: they asked to know, not to build. If a lasting view would help, offer it in "next" and let them choose.
 - The request is a small, unambiguous edit to something that already exists ("add a search bar", "rename this section", "put status first", "add 5 demo rows") → go straight to "plans". Never interrogate someone over a one-line tweak.
 - The request describes a NEW app, a new workflow, or a business problem, AND the conversation so far does not tell you how their process actually works → "clarify" with 2-5 questions. Ask about: who uses it, the real-world steps in order, the states a thing moves through, what must never be allowed to happen, and what they check or count. Ask about THEIR words — never offer a menu of industries.
 - "message" is where you TALK. If the owner asked you something ("should customers be their own section?", "is this the right way to run my shop?"), answer it there first — give your actual view in a sentence or two, with the reason — and only then ask what you still need to know. Coming back with nothing but questions to someone who asked YOU a question is a non-answer.
+- Ask the fewest questions that change the design; one is often enough. Order them so an earlier answer decides the later ones. "multi": true when more than one suggestion can be true at once (what they track, who uses it), false when exactly one applies. "together": true only for exactly two questions whose answers do not depend on each other (a name and an email); otherwise they are asked one at a time. Two to five "suggestions", a few words each, in their vocabulary.
 - Never ask a question you cannot act on. Asking "will anyone else be updating this?" when extra staff logins do not exist just collects an answer you must then ignore, and invites a promise you cannot keep. Every question must change something you are able to build.
 NESTING:
 - A section may sit inside one other section, one level deep — a parent cannot itself be nested, and a section that already holds others cannot be moved inside a third. A parent is an ordinary section with its own fields and rows; it is not an empty folder.
@@ -329,6 +340,13 @@ CHOOSING THE VIEW — this is a real design decision, make it deliberately:
 - Pick from how the owner described their day, not from what the section is called. If they said "I want to see what's at each stage", that is a board even if the section is called Orders.
 - If none of these five genuinely fit what they need to see, say so in blueprint.limitations and pick the closest one — do not pretend.
 - Every field a view references (groupBy, dateField, titleField, …) must exist in that same plan's columns, with the right type.
+
+HOW AN ANSWER READS — "message" in (0) is Markdown, shown in a narrow chat panel:
+- Open with the answer itself in a sentence or two: the number, the name, the yes or no.
+- Only when there is more to say, short parts: a "### " heading for each part when there are two or more, "- " bullets for rows or reasons, "1. " for steps to take in order, **bold** for the figure or name that matters most. A one-line answer stays one line.
+- No tables, no code blocks, no images, no emoji, and no link that is not the owner's own Shopify address. Keep the owner's language (Hinglish stays Hinglish).
+
+TITLE — "title" on every reply: three to six words naming what this conversation is about so far, as the owner would name it, in their language ("Pending COD payments", "Stock labels for low items"). The same title while the subject holds; a new one only when the conversation has moved to something else. No quotes, nothing at the end.
 
 WRITING FOR THE OWNER:
 - "summary" describes what THEY told you, in their words. Never claim an outcome ("this will stop double-bookings", "saves you hours") — you cannot know that, and the design may not deliver it.
@@ -1608,7 +1626,7 @@ function asStringArray(v: unknown, max: number): string[] {
  * owner straight into a refusal. Nothing is invented in their place:
  * none is a normal answer, and undefined is how it is said.
  */
-export function asNextSteps(v: unknown, unmet: string[]): NextStep[] | undefined {
+export function asNextSteps(v: unknown, unmet: string[], limit = 2): NextStep[] | undefined {
   if (!Array.isArray(v)) return undefined;
   const cannot = unmet.map((u) => u.toLowerCase().trim()).filter((u) => u.length >= 8);
   const out: NextStep[] = [];
@@ -1622,7 +1640,7 @@ export function asNextSteps(v: unknown, unmet: string[]): NextStep[] | undefined
     if (seen.has(key) || cannot.some((u) => key.includes(u))) continue;
     seen.add(key);
     out.push({ label, prompt });
-    if (out.length === 2) break;
+    if (out.length === limit) break;
   }
   return out.length ? out : undefined;
 }
@@ -1637,6 +1655,7 @@ function parseClarify(obj: Record<string, unknown>): ParsedReply {
       question: q.question.trim(),
       why: typeof q.why === "string" ? q.why : undefined,
       suggestions: asStringArray(q.suggestions, 5),
+      ...(q.multi === true ? { multi: true } : {}),
     });
   }
   if (questions.length === 0) {
@@ -1651,6 +1670,8 @@ function parseClarify(obj: Record<string, unknown>): ParsedReply {
           ? obj.message.trim()
           : "A few quick questions so I build this around how you actually work:",
       questions,
+      // Asked together only as a pair that does not lean on itself.
+      ...(obj.together === true && questions.length === 2 ? { together: true } : {}),
     },
   };
 }
@@ -1935,7 +1956,29 @@ export function parseReply(
   if (!isPlainObject(parsed)) {
     return { ok: false, errors: ["Luke's reply wasn't a JSON object."] };
   }
+  const read = parseShape(parsed, modules, currentSchema, currentFeatures, schemas);
+  // The thread's name, on whichever shape carried it.
+  const title = asTitle(parsed.title);
+  return read.ok && title ? { ...read, reply: { ...read.reply, title } } : read;
+}
 
+/** What the conversation is about, as a thread's name: a few words, no quotes, nothing at the end. */
+function asTitle(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const t = v
+    .replace(/^["'“”‘’\s]+|["'“”‘’.!?,;:\s]+$/g, "")
+    .replace(/\s+/g, " ")
+    .slice(0, TITLE_MAX);
+  return t.length >= 3 ? t : undefined;
+}
+
+function parseShape(
+  parsed: Record<string, unknown>,
+  modules: ModuleRow[],
+  currentSchema: UiSchema | null,
+  currentFeatures: FeatureSchema | null,
+  schemas?: SchemaLookup
+): ParsedReply {
   // Tolerate a bare { plans: [...] } reply with no envelope type.
   const type = typeof parsed.type === "string" ? parsed.type : Array.isArray(parsed.plans) ? "plans" : null;
 
@@ -1953,8 +1996,10 @@ export function parseReply(
           errors: ['An answer must say which "kind" it is: "store", "product_help" or "conversation".'],
         };
       }
+      // More to offer after a question about the store than after a hello.
+      const next = asNextSteps(parsed.next, [], kind === "store" ? 4 : 2);
       // grounding is attached by the caller, which knows what it read.
-      return { ok: true, reply: { type: "answer", kind, message } };
+      return { ok: true, reply: { type: "answer", kind, message, ...(next ? { next } : {}) } };
     }
     case "clarify":
       return parseClarify(parsed);
@@ -2160,6 +2205,33 @@ export function draftMessage(text: string): string | null {
     i++;
   }
   return out;
+}
+
+/**
+ * What a reply still arriving is writing once its "message" is done, so
+ * the panel can say so instead of going quiet: the words stop, and the
+ * questions, the design or the change are still being written behind
+ * them. Null while the message is still coming, and for an answer with
+ * nothing after it.
+ */
+export type DraftPhase = "questions" | "design" | "change" | "next";
+export function draftPhase(text: string): DraftPhase | null {
+  const key = /"message"\s*:\s*"/.exec(text);
+  if (!key) return null;
+  let closed = -1;
+  for (let i = key.index + key[0].length; i < text.length; i++) {
+    if (text[i] === "\\") i++;
+    else if (text[i] === '"') {
+      closed = i;
+      break;
+    }
+  }
+  if (closed < 0) return null;
+  const type = /"type"\s*:\s*"(\w+)"/.exec(text)?.[1];
+  if (type === "clarify") return "questions";
+  if (type === "blueprint") return "design";
+  if (type === "plans") return "change";
+  return /"next"\s*:/.test(text.slice(closed)) ? "next" : null;
 }
 
 /**

@@ -37,6 +37,8 @@ import {
   Bell,
   Check,
   ChevronRight,
+  Circle,
+  CircleDot,
   Copy,
   History,
   LoaderCircle,
@@ -46,14 +48,16 @@ import {
   Plug,
   Sparkles,
   Square,
+  SquareCheck,
   SquarePen,
   TriangleAlert,
   Undo2,
   X,
   Zap,
 } from "lucide-react";
-import { button } from "@/components/ui/controls";
+import { button, fieldOf } from "@/components/ui/controls";
 import { LukeMark } from "@/components/ui/LukeMark";
+import { Markdown } from "@/components/ui/Markdown";
 import { LUKE_COPY } from "@/lib/luke-copy";
 
 /** A message arrives with a short rise; turned off when motion is asked to be reduced (globals.css). */
@@ -66,6 +70,8 @@ export interface ChatMessage {
   plan?: AssistantPlan;
   /** Discovery questions — answered inline, sent back as one message. */
   questions?: ClarifyQuestion[];
+  /** Two questions that do not lean on each other, asked at once. */
+  together?: boolean;
   /** Plain-language design awaiting the owner's approval. */
   blueprint?: Blueprint;
   errors?: string[];
@@ -273,116 +279,241 @@ function answersFromReply(text: string, questions: ClarifyQuestion[]): Record<st
   return out;
 }
 
+/** What is being written once the words are done, in the panel's words. */
+const PHASE_WORDS: Record<string, string> = {
+  questions: "Writing the questions…",
+  design: "Laying out the design…",
+  change: "Writing the change…",
+  next: "Picking what you might ask next…",
+};
+
+/**
+ * What they might ask next, as Luke offered it: a line of words each,
+ * with the way to send it, sent as written when tapped. Lines rather
+ * than a row of chips, which read as the only things allowed; the box
+ * below still takes anything.
+ */
+function FollowUps({ next, onPick }: { next: NextStep[]; onPick: (prompt: string) => void }) {
+  return (
+    <div role="group" aria-label="Ask next" className="space-y-1 pt-1">
+      {next.map((n) => (
+        <button
+          key={n.prompt}
+          onClick={() => onPick(n.prompt)}
+          title={n.prompt}
+          aria-label={`Ask: ${n.prompt}`}
+          className="group flex w-full items-center gap-2 rounded-control border border-line bg-surface px-2.5 py-1.5 text-left text-[12px] text-fg-muted transition-colors hover:border-line-strong hover:text-fg"
+        >
+          <span className="min-w-0 flex-1 truncate">{n.label}</span>
+          <ArrowUp
+            aria-hidden
+            size={13}
+            strokeWidth={2}
+            className="shrink-0 text-fg-faint transition-colors group-hover:text-fg"
+          />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Luke's questions, asked the way they depend on each other: one
+ * question on its own; two that do not lean on each other together; any
+ * other two, and three or more, one at a time, because an answer to an
+ * earlier one changes what the later ones mean. Each question is its
+ * suggestions as rows to pick, one or several as the question says, and
+ * a line of their own for anything else. Still a message, not a form:
+ * Luke's words, then the question, then small actions.
+ */
 function ClarifyCard({
   message,
   questions,
+  together,
   done,
   reply,
   onSubmit,
 }: {
   message: string;
   questions: ClarifyQuestion[];
+  together?: boolean;
   done: boolean;
   reply?: string;
   onSubmit: (composed: string) => void;
 }) {
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [picked, setPicked] = useState<Record<string, string[]>>({});
+  const [typed, setTyped] = useState<Record<string, string>>({});
+  const [at, setAt] = useState(0);
   const prior = useMemo(() => (reply ? answersFromReply(reply, questions) : {}), [reply, questions]);
-  const shown = (id: string) => (answers[id] ?? "").trim() || (prior[id] ?? "");
-  const answered = questions.filter((q) => (answers[q.id] ?? "").trim().length > 0);
+  const stepped = questions.length > 2 || (questions.length === 2 && !together);
+  const answerOf = (id: string) => [...(picked[id] ?? []), (typed[id] ?? "").trim()].filter(Boolean).join(", ");
+  const shown = (id: string) => answerOf(id) || (prior[id] ?? "");
+  const answered = questions.filter((q) => answerOf(q.id));
 
-  /**
-   * Suggestions toggle instead of replacing. "What do you track on each
-   * booking?" has more than one true answer, and picking a second chip
-   * used to silently throw the first away. Selections live in the same
-   * answer string, so anything typed by hand is still just text.
-   */
-  const parts = (id: string) =>
-    (answers[id] ?? "")
-      .split(",")
-      .map((x) => x.trim())
-      .filter(Boolean);
-
-  const toggle = (id: string, sug: string) =>
-    setAnswers((prev) => {
-      const cur = parts(id);
-      const next = cur.includes(sug) ? cur.filter((x) => x !== sug) : [...cur, sug];
-      return { ...prev, [id]: next.join(", ") };
+  const choose = (q: ClarifyQuestion, option: string) =>
+    setPicked((prev) => {
+      const cur = prev[q.id] ?? [];
+      const on = cur.includes(option);
+      const next = q.multi ? (on ? cur.filter((x) => x !== option) : [...cur, option]) : on ? [] : [option];
+      return { ...prev, [q.id]: next };
     });
 
   function submit() {
     if (answered.length === 0) return;
     const composed = questions
       .map((q) => {
-        const a = (answers[q.id] ?? "").trim();
+        const a = answerOf(q.id);
         return a ? `${q.question}\n→ ${a}` : `${q.question}\n→ (skipped)`;
       })
       .join("\n\n");
     onSubmit(composed);
   }
 
-  // Questions read as a message, not a form: Luke's line, then the
-  // questions numbered underneath, each with its example answers and a
-  // place to type. No header, no badge, no box around it.
+  if (done) {
+    return (
+      <div className="space-y-2">
+        <Markdown>{message}</Markdown>
+        <ul className="space-y-1">
+          {questions.map((q) => (
+            <li key={q.id} className="text-[12px] leading-relaxed">
+              <span className="text-fg-muted">{q.question}</span>{" "}
+              <span className="text-fg">→ {shown(q.id) || "(skipped)"}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
+  const ask = (q: ClarifyQuestion, onEnter: () => void) => (
+    <QuestionRows
+      key={q.id}
+      question={q}
+      picked={picked[q.id] ?? []}
+      typed={typed[q.id] ?? ""}
+      onChoose={(o) => choose(q, o)}
+      onType={(t) => setTyped((prev) => ({ ...prev, [q.id]: t }))}
+      onEnter={onEnter}
+    />
+  );
+
+  if (!stepped) {
+    return (
+      <div className="space-y-3">
+        <Markdown>{message}</Markdown>
+        {questions.map((q) => ask(q, submit))}
+        <button onClick={submit} disabled={answered.length === 0} className={button("primary", "sm")}>
+          {questions.length === 1 ? "Send answer" : "Send answers"}
+        </button>
+      </div>
+    );
+  }
+
+  const q = questions[at];
+  const last = at === questions.length - 1;
+  const forward = () => (last ? submit() : setAt(at + 1));
   return (
     <div className="space-y-3">
-      <p className="text-[13px] leading-relaxed text-fg">{message}</p>
-
-      <ol className="space-y-3">
-        {questions.map((q, n) => (
-          <li key={q.id} className="space-y-1.5">
-            <div className="text-[13px] leading-relaxed text-fg">
-              <span className="mr-1.5 text-fg-faint">{n + 1}.</span>
-              {q.question}
-            </div>
-            {q.why && <div className="pl-5 text-[11px] text-fg-faint">{q.why}</div>}
-            {!done && (q.suggestions?.length ?? 0) > 0 && (
-              <div className="flex flex-wrap gap-1.5 pl-5">
-                {q.suggestions!.map((sug) => {
-                  const on = parts(q.id).includes(sug);
-                  return (
-                    <button
-                      key={sug}
-                      onClick={() => toggle(q.id, sug)}
-                      aria-pressed={on}
-                      className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
-                        on
-                          ? "border-primary bg-primary font-medium text-on-primary"
-                          : "border-line text-fg-muted hover:border-line-strong hover:text-fg"
-                      }`}
-                    >
-                      {sug}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            {done ? (
-              <div className="pl-5 text-xs text-fg-muted">→ {shown(q.id) || "(skipped)"}</div>
-            ) : (
-              <div className="pl-5">
-                <textarea
-                  value={answers[q.id] ?? ""}
-                  onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
-                  rows={1}
-                  placeholder="Pick any above, or type your own"
-                  className="w-full resize-none rounded-lg border border-line px-2.5 py-1.5 text-xs outline-none focus:border-focus focus:ring-2 focus:ring-focus/15"
-                />
-              </div>
-            )}
-          </li>
-        ))}
-      </ol>
-
-      {!done && (
+      <Markdown>{message}</Markdown>
+      <div className="flex items-center gap-2 text-[11px] text-fg-faint" aria-live="polite">
+        <span className="tabular-nums">
+          {at + 1} of {questions.length}
+        </span>
+        <span aria-hidden className="flex gap-1">
+          {questions.map((x, k) => (
+            <span
+              key={x.id}
+              className={`h-1 w-3 rounded-full ${k === at ? "bg-fg-muted" : answerOf(x.id) ? "bg-fg-faint" : "bg-line"}`}
+            />
+          ))}
+        </span>
+      </div>
+      {ask(q, forward)}
+      <div className="flex items-center gap-2">
+        {at > 0 && (
+          <button onClick={() => setAt(at - 1)} className={button("plain", "sm")}>
+            Back
+          </button>
+        )}
+        <span className="flex-1" />
+        {!answerOf(q.id) && !last && (
+          <button onClick={() => setAt(at + 1)} className={button("plain", "sm")}>
+            Skip
+          </button>
+        )}
         <button
-          onClick={submit}
-          disabled={answered.length === 0}
-          className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-on-primary transition-colors hover:bg-primary-hover disabled:opacity-40"
+          onClick={forward}
+          disabled={last ? answered.length === 0 : false}
+          className={button(answerOf(q.id) || last ? "primary" : "secondary", "sm")}
         >
-          Send answers ({answered.length}/{questions.length})
+          {last ? "Send answers" : "Next"}
         </button>
-      )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One question: its suggestions as rows to pick, a round mark for one
+ * answer and a square for several, and a line for anything else. Enter
+ * in that line moves on.
+ */
+function QuestionRows({
+  question,
+  picked,
+  typed,
+  onChoose,
+  onType,
+  onEnter,
+}: {
+  question: ClarifyQuestion;
+  picked: string[];
+  typed: string;
+  onChoose: (option: string) => void;
+  onType: (text: string) => void;
+  onEnter: () => void;
+}) {
+  const many = question.multi === true;
+  return (
+    <div className="space-y-1.5">
+      <div className="text-[13px] leading-relaxed font-medium text-fg">{question.question}</div>
+      {question.why && <div className="text-[11px] leading-relaxed text-fg-faint">{question.why}</div>}
+      <div role={many ? "group" : "radiogroup"} aria-label={question.question} className="space-y-1">
+        {(question.suggestions ?? []).map((option) => {
+          const on = picked.includes(option);
+          const Mark = many ? (on ? SquareCheck : Square) : on ? CircleDot : Circle;
+          return (
+            <button
+              key={option}
+              role={many ? "checkbox" : "radio"}
+              aria-checked={on}
+              onClick={() => onChoose(option)}
+              className={`flex w-full items-center gap-2 rounded-control border px-2.5 py-1.5 text-left text-[12px] transition-colors ${
+                on
+                  ? "border-fg-muted bg-surface-subdued font-medium text-fg"
+                  : "border-line text-fg-muted hover:border-line-strong hover:text-fg"
+              }`}
+            >
+              <Mark aria-hidden size={14} strokeWidth={2} className={`shrink-0 ${on ? "text-fg" : "text-fg-faint"}`} />
+              <span className="min-w-0 flex-1">{option}</span>
+            </button>
+          );
+        })}
+      </div>
+      <input
+        value={typed}
+        onChange={(e) => onType(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            onEnter();
+          }
+        }}
+        placeholder={(question.suggestions?.length ?? 0) > 0 ? "Something else…" : "Type your answer"}
+        aria-label={`Your own answer: ${question.question}`}
+        className={`${fieldOf("sm")} w-full`}
+      />
+      {many && <div className="text-[10px] text-fg-faint">Pick any that apply</div>}
     </div>
   );
 }
@@ -787,6 +918,7 @@ export default function ChatPanel({
   canStop,
   steps = [],
   draft = "",
+  phase = null,
   onSend,
   onEditPrompt,
   onApply,
@@ -835,6 +967,8 @@ export default function ChatPanel({
   steps?: TurnEvent[];
   /** What Luke is saying while it says it; the reply replaces it. */
   draft?: string;
+  /** What is being written once the draft's words are done ("questions"). */
+  phase?: string | null;
   onSend: (text: string) => Promise<void> | void;
   /**
    * Corrects a prompt already sent and runs it again. The shell owns
@@ -2187,6 +2321,7 @@ export default function ChatPanel({
                   <ClarifyCard
                     message={m.text ?? ""}
                     questions={m.questions}
+                    together={m.together}
                     done={!!resolvedCards[m.id] || answered || busy}
                     reply={messages[i + 1]?.role === "user" ? messages[i + 1].text : undefined}
                     onSubmit={(composed) => resolveCard(m.id, composed)}
@@ -2237,7 +2372,7 @@ export default function ChatPanel({
               return (
                 <div key={m.id} className="space-y-1">
                   {m.trace && <TraceLine trace={m.trace} />}
-                  <div className="text-[13px] leading-relaxed break-words whitespace-pre-line text-fg">{m.text}</div>
+                  <Markdown>{m.text ?? ""}</Markdown>
                   {/* Under the build, which is where they find out it
                     happened — a change made with nobody watching is
                     read here first, and this is the moment they want
@@ -2255,16 +2390,12 @@ export default function ChatPanel({
                       <span>{m.undo.what.join(", ")}</span>
                     </div>
                   )}
-                  {/* What the design said could come next — said, not
-                    offered as buttons: a row of options reads as the
-                    only things allowed, and the owner can ask for
-                    anything. Only on the last thing in the thread;
-                    after a question or a put-back, a suggestion about
-                    the app as it was is stale. */}
+                  {/* What they might ask next, each sent as written when
+                    tapped. Only on the last thing in the thread: after a
+                    question or a put-back, a suggestion about the app as
+                    it was is stale. */}
                   {m.next && m.next.length > 0 && i === messages.length - 1 && !busy && (
-                    <div className="text-[11px] leading-relaxed text-fg-faint">
-                      Next, if you like: {m.next.map((n) => n.label).join(" · ")}
-                    </div>
+                    <FollowUps next={m.next} onPick={(prompt) => send(prompt)} />
                   )}
                 </div>
               );
@@ -2565,10 +2696,17 @@ export default function ChatPanel({
             the reply's own type. A draft, so a screen reader is not read
             every word; the reply that replaces it is. */}
           {busy && draft && (
-            <p aria-hidden className="whitespace-pre-line text-[13px] leading-relaxed text-fg">
-              {draft}
-              <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-fg-faint" />
-            </p>
+            <div aria-hidden>
+              <Markdown streaming>{draft}</Markdown>
+            </div>
+          )}
+          {/* The words are done and the rest is still being written: said,
+              so the panel does not go quiet before the questions arrive. */}
+          {busy && draft && phase && PHASE_WORDS[phase] && (
+            <div className="flex items-center gap-1.5 text-[11px] text-fg-faint">
+              <Sparkles aria-hidden size={12} strokeWidth={2} className="shrink-0" />
+              <span className="shimmer">{PHASE_WORDS[phase]}</span>
+            </div>
           )}
         </div>
         {/* The room kept below a sent message for its reply (see pin). */}

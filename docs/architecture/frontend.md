@@ -71,8 +71,12 @@ target section instead of copying label text into the source row.
 
 `ChatPanel` renders four assistant reply shapes:
 
-- `answer`: grounded prose for store, product-help, or conversation questions;
-- `clarify`: structured questions with suggestions and free-form answers;
+- `answer`: grounded Markdown (the `ui/Markdown` block) for store, product-help, or
+  conversation questions, ending on the last reply with what to ask next, each a row that
+  sends itself;
+- `clarify`: structured questions with suggestions and free-form answers: one shown
+  directly, two independent ones together, otherwise one at a time with Back and Skip;
+  a `multi` question takes several answers;
 - `blueprint`: a workflow and selectable plans before a new build;
 - `plans`: edits to an already-discussed application.
 

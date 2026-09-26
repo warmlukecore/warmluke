@@ -316,14 +316,16 @@ export async function POST(req: Request) {
     let say: ((o: unknown) => void) | null = null;
     let waiting: ReturnType<typeof setTimeout> | null = null;
     let latest = "";
+    let phase: string | undefined;
     let sentAt = 0;
     const send = () => {
       waiting = null;
       sentAt = Date.now();
-      say?.({ words: latest });
+      say?.({ words: latest, ...(phase ? { phase } : {}) });
     };
-    const words = (text: string) => {
+    const words = (text: string, next?: string) => {
       latest = text;
+      phase = next;
       if (text === "") {
         // Starting over is said at once, so rejected words do not linger.
         if (waiting) clearTimeout(waiting);
@@ -441,11 +443,15 @@ export async function POST(req: Request) {
         // there is something better to call it — and only then, because
         // renaming on every turn would move a thread the owner was
         // looking for.
+        //
+        // The model names the conversation on every reply now, and keeps
+        // the name while the subject holds, so the list reads as what each
+        // thread was about ("Pending COD payments") rather than "hello".
+        // Without one, the old rule: named once, from the design.
         const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
-        if (isNewConversation || looksLikeAGreeting(message)) {
-          const named = titleFor(turn.reply);
-          if (named) patch.title = named;
-        }
+        const named =
+          turn.reply.title ?? (isNewConversation || looksLikeAGreeting(message) ? titleFor(turn.reply) : null);
+        if (named) patch.title = named;
         await client.from("conversations").update(patch).eq("id", convId);
 
         // The reply's row, so the panel can show it under that id and a

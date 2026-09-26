@@ -23,6 +23,15 @@ The model must return one of four reply types:
 An `answer` about store data receives server-written grounding metadata. The model's own
 claim that it “checked” something is not treated as evidence.
 
+Every reply carries a `title` of three to six words, which names the conversation while
+its subject holds. An `answer`'s message is Markdown (short headings, bullets, steps and
+bold; no tables, code or images) and its `next` holds what the owner might ask next:
+three or four after a store answer, one or two otherwise, two after a build. A question
+about the store's numbers is answered from the data at once, with a section to build
+offered among the `next`, never a blueprint in its place. A `clarify` asks the fewest
+questions, in the order their answers depend on each other; a question is `multi` when
+more than one answer fits, and exactly two independent questions may be asked `together`.
+
 ## Plan contract
 
 Each `AssistantPlan` has one change type:

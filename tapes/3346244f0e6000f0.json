@@ -10,7 +10,7 @@
     {
       "status": 200,
       "type": "application/json",
-      "body": "{\"model\":\"jev-1.13.0\",\"answers\":{\"addresses\":{\"type\":\"noul\",\"noul\":0.89}},\"usage\":{\"input_tokens\":997,\"output_tokens\":20}}"
+      "body": "{\"model\":\"jev-1.13.0\",\"answers\":{\"addresses\":{\"type\":\"noul\",\"noul\":0.87}},\"usage\":{\"input_tokens\":997,\"output_tokens\":20}}"
     }
   ]
 }

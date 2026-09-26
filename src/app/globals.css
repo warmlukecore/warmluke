@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* Luke's replies are drawn by streamdown (ui/Markdown), whose own wrappers carry classes. */
+@source "../../node_modules/streamdown/dist/*.js";
 
 @theme {
   --font-sans: var(--font-manrope), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
