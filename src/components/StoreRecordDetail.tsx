@@ -10,6 +10,10 @@
 // A related row opens in place, with a way back, so a merchant can go
 // from a customer to one of their orders and return without losing
 // where they were.
+//
+// The one exception is what the merchant keeps beside the row they
+// opened (0128): the section's own fields, which no import touches,
+// under "Your fields", editable and saved on Save.
 // ─────────────────────────────────────────────────────────────
 
 import { useEffect, useMemo, useState } from "react";
@@ -20,6 +24,7 @@ import type { SchemaColumn } from "@/lib/types";
 import { Dialog } from "@/components/ui/Dialog";
 import { Group } from "@/components/ui/Group";
 import { button, note } from "@/components/ui/controls";
+import { Field, optionsFor } from "@/components/RecordModal";
 import { Badge, Cell } from "@/components/views";
 
 export type DetailRow = { id: string; data: Record<string, unknown> };
@@ -66,6 +71,8 @@ export default function StoreRecordDetail({
   columns,
   storeId,
   onClose,
+  mine = [],
+  onSaveMine,
 }: {
   table: StoreTable;
   row: DetailRow;
@@ -73,6 +80,9 @@ export default function StoreRecordDetail({
   columns?: SchemaColumn[];
   storeId: string;
   onClose: () => void;
+  /** The merchant's own fields on this row, and how they are kept. Absent, the row is read-only. */
+  mine?: SchemaColumn[];
+  onSaveMine?: (data: Record<string, unknown>) => Promise<void>;
 }) {
   const [stack, setStack] = useState<Frame[]>([{ table, row, columns: columns ?? STORE_TABLES[table].columns }]);
   const top = stack[stack.length - 1];
@@ -134,7 +144,10 @@ export default function StoreRecordDetail({
     };
   }, [top.table, top.row.id, parentOrder, storeId]);
 
-  const [head, ...rest] = top.columns;
+  // Their own fields on the row they opened are shown to fill in, not
+  // among the store's facts; a row opened from it has none of them.
+  const ownHere = stack.length === 1 && onSaveMine ? mine : [];
+  const [head, ...rest] = top.columns.filter((c) => !ownHere.some((o) => o.field === c.field));
   const value = (c: SchemaColumn) => top.row.data[c.field];
   const badges = rest.filter((c) => c.type === "badge" && present(value(c)));
   // The first amount always; the rest only when they say something the
@@ -182,6 +195,8 @@ export default function StoreRecordDetail({
             ))}
           </div>
         )}
+
+        {ownHere.length > 0 && onSaveMine && <YourFields columns={ownHere} row={top.row} onSave={onSaveMine} />}
 
         {details.length > 0 && (
           <Group title="Details">
@@ -295,5 +310,74 @@ function RelatedList({
         </table>
       </div>
     </section>
+  );
+}
+
+/** The merchant's own fields on one row: a draft, kept on Save, and said when it is. */
+function YourFields({
+  columns,
+  row,
+  onSave,
+}: {
+  columns: SchemaColumn[];
+  row: DetailRow;
+  onSave: (data: Record<string, unknown>) => Promise<void>;
+}) {
+  const start = () => Object.fromEntries(columns.map((c) => [c.field, row.data[c.field] ?? ""]));
+  const [draft, setDraft] = useState<Record<string, unknown>>(start);
+  // What was last kept: the row they opened is a snapshot, and after a
+  // save it no longer says what is stored.
+  const [kept, setKept] = useState<Record<string, unknown>>(start);
+  const [saving, setSaving] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
+  const changed = columns.some((c) => String(draft[c.field] ?? "") !== String(kept[c.field] ?? ""));
+  return (
+    <Group title="Your fields">
+      <div className="space-y-3">
+        {columns.map((c) => (
+          <label key={c.field} className="block space-y-1">
+            <span className="text-[11px] text-fg-muted">{c.label}</span>
+            <Field
+              col={c}
+              value={draft[c.field]}
+              options={optionsFor(c.field, null, [row])}
+              onChange={(v) => {
+                setDraft((d) => ({ ...d, [c.field]: v }));
+                setSaid(null);
+              }}
+            />
+          </label>
+        ))}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={async () => {
+              setSaving(true);
+              setSaid(null);
+              try {
+                await onSave(draft);
+                setKept(draft);
+                setSaid("Saved");
+              } catch (e) {
+                setSaid(e instanceof Error ? e.message : "That didn't save.");
+              } finally {
+                setSaving(false);
+              }
+            }}
+            disabled={!changed || saving}
+            className={button("primary", "sm")}
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+          {said && (
+            <span role="status" className="text-xs text-fg-muted">
+              {said}
+            </span>
+          )}
+        </div>
+        <p className="text-[11px] text-fg-faint">
+          Kept beside this row here; the store's own fields stay as Shopify has them.
+        </p>
+      </div>
+    </Group>
   );
 }

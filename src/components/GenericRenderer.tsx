@@ -90,6 +90,11 @@ export default function GenericRenderer({
   const total = totalRecords ?? records.length;
   const [loadingMore, setLoadingMore] = useState(false);
   const editable = !preview && !!onCreate && !!onUpdate && !!onDelete;
+  // Fields may be set without rows being added or removed: a section
+  // over the store's orders, where the merchant's own fields sit beside
+  // each order (0128). Row actions and scans set fields, so they need
+  // only this; adding and removing rows needs the rest.
+  const canSet = !preview && !!onUpdate;
   const [editing, setEditing] = useState<RecordRow | null>(null);
   const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -303,7 +308,7 @@ export default function GenericRenderer({
     allRecordCount: records.length,
     onOpen: editable ? (rec: RecordRow) => setEditing(rec) : preview ? undefined : onInspect,
     actions: features?.actions,
-    onAction: editable
+    onAction: canSet
       ? (rec: RecordRow, set: Record<string, unknown>) => runWrite(() => onUpdate!(rec.id, set), rec.id)
       : undefined,
     busyRecordId,
@@ -337,7 +342,7 @@ export default function GenericRenderer({
 
   return (
     <div className="space-y-4">
-      {editable && features?.scanMode && (
+      {canSet && features?.scanMode && (
         <ScanBar
           scanMode={features.scanMode}
           // Scans match what is in view, not the whole section. A packer

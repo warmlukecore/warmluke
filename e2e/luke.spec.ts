@@ -629,7 +629,10 @@ test("past conversations are grouped by day, found by name, and say what each ho
       { type: "answer", kind: "store", message: "Two." },
       { type: "build", status: "built", message: "Built 2 changes", sent: [0, 1] },
     ]);
-    await thread("Top buyer this month", 26 * H);
+    // Yesterday at noon, whatever the hour now: "26 hours ago" is the day
+    // before yesterday until two in the morning, and failed a run then.
+    const midnight = new Date(now).setHours(0, 0, 0, 0);
+    await thread("Top buyer this month", now - (midnight - 12 * H));
     await thread("Returns desk", 3 * 24 * H);
     await thread("Stock alerts", 4 * 24 * H);
     await thread("Supplier list", 10 * 24 * H);

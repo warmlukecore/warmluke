@@ -20,7 +20,11 @@ export type RecordDraft = Record<string, unknown>;
  * as a filter, plus every value already in use. Derived, so a field
  * nobody configured still offers the values the owner actually types.
  */
-function optionsFor(field: string, features: FeatureSchema | null, records: RecordRow[]): string[] {
+export function optionsFor(
+  field: string,
+  features: FeatureSchema | null,
+  records: Array<Pick<RecordRow, "data">>
+): string[] {
   const configured = features?.filters?.find((f) => f.field === field)?.options ?? [];
   const seen = new Set<string>(configured);
   for (const r of records) {
@@ -30,7 +34,7 @@ function optionsFor(field: string, features: FeatureSchema | null, records: Reco
   return [...seen];
 }
 
-function Field({
+export function Field({
   col,
   value,
   options,

@@ -48,3 +48,72 @@ test("rows a check did not bring back are named, with the check that settles it"
   // What was taken is said once, quietly, under the sync time.
   await expect(page.getByText("Removed 1 customer", { exact: true })).toBeVisible();
 });
+
+test("a field of the merchant's sits on the store's own orders: set by a button, kept, and edited on the order", async ({
+  signedIn: page,
+  shop,
+}) => {
+  // A section over the orders with a field of the merchant's beside
+  // Shopify's, as a packing design builds it: no second list of orders.
+  const { data: mod, error } = await shop.admin
+    .from("modules")
+    .insert({
+      project_id: shop.projectId,
+      name: "e2e-packing",
+      nav_label: "Packing",
+      route: "/e2e-packing",
+      source_table: "orders",
+    })
+    .select("id")
+    .single();
+  expect(error, "the section was made").toBeNull();
+  const id = mod!.id as string;
+  try {
+    await shop.admin.from("ui_schemas").insert({
+      module_id: id,
+      version: 1,
+      schema_json: {
+        columns: [
+          { field: "order_number", label: "Order", type: "text" },
+          { field: "packed", label: "Packed", type: "boolean" },
+          { field: "shelf", label: "Shelf", type: "text" },
+        ],
+        view: { type: "table" },
+        features: {
+          actions: [
+            {
+              label: "Mark packed",
+              set: { packed: { const: true } },
+              when: { op: "not", args: [{ field: "packed" }] },
+            },
+          ],
+        },
+      },
+    });
+    await page.goto(`/app/${shop.projectId}?section=${id}`);
+    await expect(page.getByRole("heading", { level: 1, name: "Packing" })).toBeVisible();
+    const order = page.getByRole("row").filter({ hasText: "#1010" });
+    await order.getByRole("button", { name: "Mark packed" }).click();
+    // Packed, the button has done its work, and it stays so on a reload.
+    await expect(order.getByRole("button", { name: "Mark packed" })).toHaveCount(0);
+    await page.reload();
+    await expect(
+      page.getByRole("row").filter({ hasText: "#1009" }).getByRole("button", { name: "Mark packed" })
+    ).toBeVisible();
+    await expect(order.getByRole("button", { name: "Mark packed" })).toHaveCount(0);
+
+    // The order opens with the store's facts, and the merchant's fields to fill in.
+    await order.click();
+    const mine = page.locator("section").filter({ has: page.getByRole("heading", { name: "Your fields" }) });
+    await expect(mine.locator("button[aria-pressed]")).toHaveAttribute("aria-pressed", "true");
+    await mine.getByRole("textbox").fill("B2");
+    await mine.getByRole("button", { name: "Save" }).click();
+    await expect(mine.getByRole("status")).toHaveText("Saved");
+    await expect(mine.getByRole("button", { name: "Save" })).toBeDisabled();
+    const { data: kept } = await shop.admin.from("records").select("data").eq("module_id", id);
+    expect(kept).toHaveLength(1);
+    expect(kept![0].data).toMatchObject({ packed: true, shelf: "B2" });
+  } finally {
+    await shop.admin.from("modules").delete().eq("id", id);
+  }
+});

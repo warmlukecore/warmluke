@@ -36,9 +36,12 @@ import StorePicker, { addStoreSections } from "@/components/StorePicker";
 import {
   CORE_STORE_TABLES,
   CORE_STORE_WORDS,
+  canCarryOwnFields,
   isStoreTable,
+  ownColumns,
   readStoreRows,
   storeTableSchema,
+  withOwnFields,
   type StoreTable,
 } from "@/lib/store-read";
 import { useResizable } from "@/lib/useResizable";
@@ -97,10 +100,14 @@ function withStoreColumns(row: UiSchemaRow, sourceTable: string | null | undefin
   // refreshes from has nothing to overwrite. Taking the store's list
   // wholesale would drop the "Low / OK" column off a stock section
   // the moment it was reloaded, and the filter beside it with it.
-  const computed = (sj.columns ?? []).filter((c) => c.compute);
+  //
+  // The merchant's own columns are kept for the same reason (0128): they
+  // live in records beside each row, where no import reaches.
+  const theirs = storeTableSchema(sourceTable).columns;
+  const mine = (sj.columns ?? []).filter((c) => !theirs.some((t) => t.field === c.field));
   return {
     ...row,
-    schema_json: { ...sj, columns: [...storeTableSchema(sourceTable).columns, ...computed] },
+    schema_json: { ...sj, columns: [...theirs, ...mine] },
   } as UiSchemaRow;
 }
 
@@ -784,10 +791,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           .eq("module_id", moduleId)
           .order("version", { ascending: false })
           .limit(1),
+        // Fields kept beside a store row (0128) are never a row of their
+        // own, even in a section since pointed back at its own rows.
         supabase
           .from("records")
           .select("*", { count: "exact" })
           .eq("module_id", moduleId)
+          .is("store_row_id", null)
           .order("created_at", { ascending: true })
           .limit(limit),
         supabase.from("ui_schemas").select("*").eq("module_id", moduleId).order("version", { ascending: false }),
@@ -837,7 +847,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             // total spent" is the top of the first two hundred names.
             loadedSchema?.schema_json?.features?.defaultSort ?? null
           );
-          setRecords(rows as unknown as RecordRow[]);
+          setRecords((await withOwnFields(supabase, moduleId, rows)) as unknown as RecordRow[]);
           setRecordTotal(total);
         } catch (e) {
           setLoadError(e instanceof Error ? e.message : "Couldn't read the store.");
@@ -878,7 +888,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     await Promise.all(
       targets.map(async (moduleId) => {
         const [{ data: rows }, { data: schemaRows }] = await Promise.all([
-          supabase.from("records").select("*").eq("module_id", moduleId).limit(500),
+          supabase.from("records").select("*").eq("module_id", moduleId).is("store_row_id", null).limit(500),
           supabase
             .from("ui_schemas")
             .select("*")
@@ -1684,6 +1694,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
 
   const deleteRecord = useCallback((recordId: string) => writeRecord({ action: "delete", recordId }), [writeRecord]);
 
+  /** The merchant's own fields beside one of the store's rows (0128). */
+  const updateStoreRow = useCallback(
+    (storeRowId: string, data: Record<string, unknown>) =>
+      writeRecord({ action: "update_store_row", storeRowId, data }),
+    [writeRecord]
+  );
+
   /**
    * Applies an approved blueprint. The plans came from the card the
    * owner just read, so what runs is exactly what they saw — there is
@@ -1986,6 +2003,11 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
 
   const isEmpty = !loading && modules.length === 0;
   const storeBacked = isStoreTable(loadedSource);
+  /** A store section's columns that are the merchant's to fill in; none, and it stays read-only. */
+  const myColumns =
+    storeBacked && schema && canCarryOwnFields(loadedSource)
+      ? ownColumns(loadedSource, schema.schema_json.columns)
+      : [];
 
   /**
    * How money in the selected section should read.
@@ -2563,6 +2585,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                               row: { id: rec.id, data: (rec.data ?? {}) as Record<string, unknown> },
                               columns: schema.schema_json.columns,
                             }),
+                          // Their own fields beside each row: row actions and
+                          // scans set them; the store's columns stay the import's.
+                          ...(myColumns.length > 0 ? { onUpdate: updateStoreRow } : {}),
                         }
                       : { onCreate: createRecord, onUpdate: updateRecord, onDelete: deleteRecord })}
                   />
@@ -2702,6 +2727,12 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 columns={inspecting.columns}
                 storeId={store.id}
                 onClose={() => setInspecting(null)}
+                {...(myColumns.length > 0 && inspecting.table === loadedSource
+                  ? {
+                      mine: myColumns,
+                      onSaveMine: (data: Record<string, unknown>) => updateStoreRow(inspecting.row.id, data),
+                    }
+                  : {})}
               />
             </FormatProvider>
           )}

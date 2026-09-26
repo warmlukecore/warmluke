@@ -119,10 +119,19 @@ checks it again.
 
 ## Records and writes
 
-Store rows cannot be edited; tapping one opens `StoreRecordDetail`, a read-only view of
-the row and what belongs to it. `RecordModal` derives its inputs from schema columns. Before `/api/records` writes a
-row, the server reloads the latest schema and removes undeclared keys. Computed columns
-are not writable. Store-backed rows are read-only in the application.
+The store's fields on a store row cannot be edited; tapping one opens `StoreRecordDetail`,
+a read-only view of the row and what belongs to it. A section over a store list may also
+carry the merchant's own fields ("packed", "shelf"): columns of its schema that are not the
+list's (`ownColumns` in `store-read.ts`). They sit in a record of the section pointing at the
+row (`records.store_row_id`, 0128), laid over the store's rows as they load
+(`withOwnFields`; the store's value wins a shared name, and `abo_section_stats` counts the
+same rows), set by row actions and the scan
+bar, and edited under "Your fields" in `StoreRecordDetail`. `/api/records` writes them with
+`update_store_row` and refuses every other action on a store section: no row is added to or
+taken from the store's list here. A list whose rows have no id of their own (return
+reasons) carries none. `RecordModal` derives its inputs from schema columns. Before
+`/api/records` writes a row, the server reloads the latest schema and removes undeclared
+keys. Computed columns are not writable.
 
 Staff members may read, insert, and update owner-managed records. Only owners may delete
 records or change the application's design.

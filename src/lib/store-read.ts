@@ -767,6 +767,63 @@ export function storeTableSchema(table: StoreTable): { columns: SchemaColumn[] }
   return { columns: STORE_TABLES[table].columns };
 }
 
+// ── The merchant's own fields on the store's rows (0128) ─────────
+//
+// A section over a store list may carry fields the merchant fills in
+// beside each row: "packed", "scanned at", "follow up on". They are a
+// record of the section pointing at the row by the row's own id, which
+// the import never touches. Which lists can, and which columns are the
+// merchant's, is read from this registry, never from a list of names:
+// a list added to it tomorrow carries them the same way.
+
+/**
+ * Whether a list's rows can carry the merchant's own fields: rows with
+ * an id of their own, kept through every import. A list that groups
+ * rows (return reasons, one row per product and reason) has none.
+ */
+export function canCarryOwnFields(table: StoreTable): boolean {
+  return STORE_TABLES[table].select.split(",").some((c) => c.trim() === "id");
+}
+
+/** The columns of a section over `table` that are the merchant's to fill in: not the store's, and not worked out. */
+export function ownColumns(table: StoreTable, columns: SchemaColumn[]): SchemaColumn[] {
+  const theirs = new Set(STORE_TABLES[table].columns.map((c) => c.field));
+  return columns.filter((c) => !c.compute && !theirs.has(c.field));
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Ids per request: a page of five hundred in one query string is past what a URL carries. */
+const IDS_PER_READ = 150;
+
+/**
+ * The store's rows with the merchant's own fields laid over them, each
+ * row's record in the section. The store's value wins a name the two
+ * share, so a field of the merchant's can never pass for the store's.
+ */
+export async function withOwnFields(
+  db: SupabaseClient,
+  moduleId: string,
+  rows: Array<{ id: string; data: Record<string, unknown> }>
+): Promise<Array<{ id: string; data: Record<string, unknown> }>> {
+  const ids = rows.map((r) => r.id).filter((id) => UUID.test(id));
+  if (ids.length === 0) return rows;
+  const own = new Map<string, Record<string, unknown>>();
+  for (let i = 0; i < ids.length; i += IDS_PER_READ) {
+    const { data, error } = await db
+      .from("records")
+      .select("store_row_id, data")
+      .eq("module_id", moduleId)
+      .in("store_row_id", ids.slice(i, i + IDS_PER_READ));
+    if (error) throw new Error(error.message);
+    for (const r of data ?? []) own.set(r.store_row_id as string, (r.data ?? {}) as Record<string, unknown>);
+  }
+  return rows.map((r) => {
+    const mine = own.get(r.id);
+    return mine ? { ...r, data: { ...mine, ...r.data } } : r;
+  });
+}
+
 /**
  * Store rows in the shape the renderer already understands.
  *

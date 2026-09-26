@@ -1151,6 +1151,8 @@ export async function POST(req: Request) {
         .from("records")
         .select("data", { count: "exact" })
         .eq("module_id", section.id)
+        // Fields kept beside a store row are not rows of the section's own.
+        .is("store_row_id", null)
         .order("created_at", { ascending: false })
         .limit(limit);
 

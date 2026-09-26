@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getUserClient } from "@/lib/supabase-server";
+import { STORE_TABLES, canCarryOwnFields, isStoreTable, ownColumns } from "@/lib/store-read";
 import type { FeatureSchema, SchemaColumn, UiSchema, UiSchemaRow } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -35,8 +36,14 @@ function cleanData(columns: SchemaColumn[], input: unknown): Record<string, unkn
   return out;
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
- * POST /api/records — body: { action, projectId, moduleId, recordId?, data? }
+ * POST /api/records — body: { action, projectId, moduleId, recordId?, storeRowId?, data? }
+ *
+ * "update_store_row" keeps the merchant's own fields beside one of the
+ * store's rows (0128): only the section's own columns, only on a row of
+ * this project's store, one record per row, merged like any update.
  * The owner's own writes. Runs under their RLS, and every field is
  * checked against the module's current schema before it lands.
  */
@@ -46,11 +53,12 @@ export async function POST(req: Request) {
     if (!auth) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
     const { client } = auth;
 
-    const { action, projectId, moduleId, recordId, data } = (await req.json()) as {
-      action?: "create" | "update" | "delete";
+    const { action, projectId, moduleId, recordId, storeRowId, data } = (await req.json()) as {
+      action?: "create" | "update" | "delete" | "update_store_row";
       projectId?: string;
       moduleId?: string;
       recordId?: string;
+      storeRowId?: string;
       data?: Record<string, unknown>;
     };
 
@@ -61,12 +69,24 @@ export async function POST(req: Request) {
     // RLS returns nothing for a module the caller doesn't own.
     const { data: mods } = await client
       .from("modules")
-      .select("id")
+      .select("id, source_table")
       .eq("id", moduleId)
       .eq("project_id", projectId)
       .limit(1);
     if (!mods?.[0]) {
       return NextResponse.json({ error: "Section not found." }, { status: 404 });
+    }
+    const source = (mods[0].source_table as string | null) ?? null;
+    // A section over the store has the store's rows: none are added or
+    // taken away here, and its own fields go beside a row (below).
+    if (source && action !== "update_store_row") {
+      return NextResponse.json(
+        { error: "The rows of this section are your store's: they are added and removed in Shopify." },
+        { status: 400 }
+      );
+    }
+    if (!source && action === "update_store_row") {
+      return NextResponse.json({ error: "This section's rows are your own, not the store's." }, { status: 400 });
     }
 
     if (action === "delete") {
@@ -90,12 +110,22 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "This section has no fields yet." }, { status: 400 });
     }
 
-    const clean = cleanData(columns, data);
+    // On a store section only the merchant's own columns are written:
+    // the store's are the import's, and a computed one is never stored.
+    const table = source && isStoreTable(source) ? source : null;
+    if (source && (!table || !canCarryOwnFields(table))) {
+      return NextResponse.json({ error: "This list's rows cannot hold fields of your own." }, { status: 400 });
+    }
+    const writable = table ? ownColumns(table, columns) : columns;
+    if (table && writable.length === 0) {
+      return NextResponse.json({ error: "This section has no fields of your own yet." }, { status: 400 });
+    }
+    const clean = cleanData(writable, data);
 
     // A link is only meaningful if it points at a row that exists in
     // the section the column names; anything else silently renders as
     // "(deleted)" forever.
-    for (const col of columns) {
+    for (const col of writable) {
       if (col.type !== "link") continue;
       const id = clean[col.field];
       if (!id || typeof id !== "string") continue;
@@ -140,6 +170,66 @@ export async function POST(req: Request) {
         .single();
       if (error) throw new Error(error.message);
       return NextResponse.json({ ok: true, record: updated });
+    }
+
+    if (action === "update_store_row" && table) {
+      if (!storeRowId || !UUID.test(storeRowId)) {
+        return NextResponse.json({ error: "storeRowId is required" }, { status: 400 });
+      }
+      if (Object.keys(clean).length === 0) {
+        return NextResponse.json({ error: "Nothing to keep: those fields are the store's." }, { status: 400 });
+      }
+      // One of this project's store's rows, read through its list under
+      // the caller's RLS: an id from anywhere else finds nothing.
+      const { data: store } = await client
+        .from("stores")
+        .select("id")
+        .eq("project_id", projectId)
+        .in("status", ["connected", "uninstalled"])
+        .maybeSingle();
+      const { data: row } = store
+        ? await client
+            .from(STORE_TABLES[table].view)
+            .select("id")
+            .eq("id", storeRowId)
+            .eq("store_id", store.id)
+            .maybeSingle()
+        : { data: null };
+      if (!row) {
+        return NextResponse.json({ error: "That row is not in your store's list." }, { status: 404 });
+      }
+      const merge = async () => {
+        const { data: have } = await client
+          .from("records")
+          .select("id, data")
+          .eq("module_id", moduleId)
+          .eq("store_row_id", storeRowId)
+          .maybeSingle();
+        if (!have) return null;
+        const { data: updated, error } = await client
+          .from("records")
+          .update({
+            data: { ...((have.data ?? {}) as Record<string, unknown>), ...clean },
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", have.id)
+          .select()
+          .single();
+        if (error) throw new Error(error.message);
+        return updated;
+      };
+      const merged = await merge();
+      if (merged) return NextResponse.json({ ok: true, record: merged });
+      const { data: created, error } = await client
+        .from("records")
+        .insert({ project_id: projectId, module_id: moduleId, store_row_id: storeRowId, data: clean })
+        .select()
+        .single();
+      // Two tabs keeping the first field of the same row at once: the
+      // one that lost the insert merges into the one that won.
+      if (error?.code === "23505") return NextResponse.json({ ok: true, record: await merge() });
+      if (error) throw new Error(error.message);
+      return NextResponse.json({ ok: true, record: created });
     }
 
     return NextResponse.json({ error: `Unknown action "${action}".` }, { status: 400 });

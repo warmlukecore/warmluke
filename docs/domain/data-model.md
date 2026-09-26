@@ -15,7 +15,10 @@ agency to use the same runtime without database migrations for every new field.
 Shopify data has one shared meaning and must be queryable consistently. Products,
 customers, orders, inventory, refunds, and shipments therefore use fixed relational
 tables and security-invoker views. Generated sections point to those views through
-`modules.source_table` instead of copying commerce rows into `records`.
+`modules.source_table` instead of copying commerce rows into `records`. What the merchant
+fills in beside a store row is a record of that section with `store_row_id`, the row's own
+id (0128): one per row per section (a unique index), always set on a store section's
+records and never on an own section's (a trigger), and never touched by an import.
 
 ## Core relationship model
 
@@ -52,7 +55,7 @@ erDiagram
 | `projects` | Tenant and generated application | Owner, name, locale, currency, auto-build setting |
 | `project_members` | Staff seats | Claimed with a secret token; one seat per user/project |
 | `modules` | Navigable application sections | Per-project slug, ordering, one-level nesting, optional store source |
-| `records` | Owner-managed rows | JSONB data; project/module scoped; update timestamp supports safe undo |
+| `records` | Owner-managed rows, and the merchant's own fields beside a store row | JSONB data; project/module scoped; update timestamp supports safe undo; `store_row_id` names the store row on a store section (0128) |
 | `ui_schemas` | Append-only module designs | Versioned schema JSON, author, and change description |
 | `automations` | Declarative business rules | Optional module scope, enabled state, expression/action definition |
 | `automation_runs` | Automation execution history | Success flag, triggering record, and details |

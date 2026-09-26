@@ -49,6 +49,12 @@ the next import cannot undo an erasure. `check-cart-redaction` holds that,
 including the case a join through `customers` would miss: a basket left by
 somebody who never became a customer row.
 
+A store section's own fields (0128) are ordinary records, under the same policies. The
+route writes one only beside a row of the project's own store, read through the list's
+view under the caller's RLS, so an id from another store finds nothing; and the database,
+not the route, refuses a store section's record without a row, an own section's record
+with one, and a second record for the same row. `check-own-fields` holds each door.
+
 ## OAuth-client write wall
 
 Supabase OAuth access tokens otherwise behave like ordinary user sessions. Migration
