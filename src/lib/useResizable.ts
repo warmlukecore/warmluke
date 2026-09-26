@@ -116,15 +116,20 @@ export function useResizable({
     }
   }, [initial, storageKey, applyWidth]);
 
-  return { width, dragging, onPointerDown, reset };
-}
+  /** A keyboard step: the same bounds as a drag, and remembered the same way. */
+  const nudge = useCallback(
+    (delta: number) => {
+      const ceiling = Math.max(min, Math.min(max, liveMax ? liveMax() : max));
+      const w = Math.min(ceiling, Math.max(min, widthRef.current + delta));
+      applyWidth(w);
+      try {
+        localStorage.setItem(storageKey, String(w));
+      } catch {
+        /* ignore */
+      }
+    },
+    [min, max, liveMax, storageKey, applyWidth]
+  );
 
-/** The grab strip itself — invisible until hovered. */
-export function resizeHandleClass(edge: "left" | "right", dragging: boolean): string {
-  return [
-    "absolute inset-y-0 z-50 hidden w-1.5 cursor-col-resize lg:block",
-    edge === "left" ? "-right-0.5" : "-left-0.5",
-    "after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:transition-colors",
-    dragging ? "after:bg-blue-500" : "after:bg-transparent hover:after:bg-blue-400/60",
-  ].join(" ");
+  return { width, dragging, onPointerDown, reset, nudge, min, max };
 }

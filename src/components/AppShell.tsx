@@ -8,7 +8,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { watchRows } from "@/lib/live";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { ResizeHandle } from "@/components/ui/ResizeHandle";
+import { NavSkeleton, SectionSkeleton } from "@/components/ui/Skeleton";
 import { supabase } from "@/lib/supabase-client";
 import { describePlan } from "@/lib/describe";
 import { apiFetch, apiStream, takePendingPrompt } from "@/lib/auth";
@@ -38,7 +41,7 @@ import {
   storeTableSchema,
   type StoreTable,
 } from "@/lib/store-read";
-import { resizeHandleClass, useResizable } from "@/lib/useResizable";
+import { useResizable } from "@/lib/useResizable";
 import type {
   AssistantPlan,
   AssistantReply,
@@ -60,6 +63,7 @@ import {
   Ellipsis,
   History,
   LayoutDashboard,
+  LoaderCircle,
   Menu,
   Plus,
   Search,
@@ -235,6 +239,12 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     );
   }, []);
   const [schema, setSchema] = useState<UiSchemaRow | null>(null);
+  /** The section whose data last arrived: until it is the open one, the open one is loading. */
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
+  /** Sections a build from this tab is making, shown in the sidebar until they exist. */
+  const [pendingSections, setPendingSections] = useState<
+    Array<{ name: string; label: string; icon: string; store: boolean }>
+  >([]);
   const [records, setRecords] = useState<RecordRow[]>([]);
   const [loadedSource, setLoadedSource] = useState<string | null>(null);
   const [recordTotal, setRecordTotal] = useState(0);
@@ -796,6 +806,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             historyRes.error?.message ??
             "Couldn't load this section."
         );
+        setLoadedFor(moduleId);
         return;
       }
       setLoadError(null);
@@ -836,6 +847,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         setRecordTotal(recordsRes.count ?? (recordsRes.data as RecordRow[]).length);
       }
       setSchemaHistory(historyRes.data as UiSchemaRow[]);
+      setLoadedFor(moduleId);
     },
     // loadLinkOptions is declared below this and never changes (no
     // dependencies of its own), so it is left out: named here it would be
@@ -1698,6 +1710,20 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     ): Promise<BuildOutcome> => {
       if (plans.length === 0 || building) return { applied: [], errors: [], skipped: true };
       setBuilding(true);
+      setPendingSections(
+        plans.flatMap((p) =>
+          p.changeType === "NEW_MODULE" && p.newModule
+            ? [
+                {
+                  name: p.newModule.name,
+                  label: p.newModule.nav_label,
+                  icon: p.newModule.icon,
+                  store: !!p.newModule.source_table,
+                },
+              ]
+            : []
+        )
+      );
       // A build from the chat is written into its thread by the server,
       // as it starts and as it ends (/api/apply). The thread, read again,
       // is then what the panel shows, so closing the app mid-build loses
@@ -1873,6 +1899,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         return { applied: [], errors: [why], unknown: true };
       } finally {
         setBuilding(false);
+        setPendingSections([]);
       }
     },
     [
@@ -2020,6 +2047,27 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // parent it matched; it opens whatever it has to, to show them.
   const navVisible = (m: ModuleRow) =>
     !navHits || navHits.has(m.id) || (childrenOf.get(m.id) ?? []).some((k) => navHits.has(k.id));
+
+  // A section a build is making, in its place in the list until it is
+  // there: the build was a line in the chat and nothing here said so.
+  const buildingRows = (inStore: boolean) =>
+    pendingSections
+      .filter((p) => p.store === inStore && !modules.some((m) => m.name === p.name))
+      .map((p) => (
+        <div
+          key={`building-${p.name}`}
+          role="status"
+          aria-label={`Building ${p.label}`}
+          className="mb-1 flex items-center gap-1 rounded-lg pr-2 text-frame-fg-muted"
+        >
+          <span className="w-[18px]" />
+          <div className="flex min-w-0 flex-1 items-center gap-2.5 py-2 text-sm">
+            <Icon name={p.icon} />
+            <span className="truncate">{p.label}</span>
+            <LoaderCircle aria-hidden size={13} strokeWidth={2} className="ml-auto shrink-0 motion-safe:animate-spin" />
+          </div>
+        </div>
+      ));
 
   const renderTop = (m: ModuleRow) => {
     // A search shows the children it matched, and every child of a
@@ -2205,17 +2253,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             } ${navOpen ? "translate-x-0" : "-translate-x-full"}`}
           >
             <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
-              <button
-                onClick={() => router.push("/dashboard")}
-                className="flex min-w-0 items-center gap-2.5 text-left"
-                title="Back to dashboard"
-              >
+              <Link href="/dashboard" className="flex min-w-0 items-center gap-2.5 text-left" title="Back to dashboard">
                 <Logo className="h-5" onDark />
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold text-white">{project?.name ?? "Warmluke"}</div>
                   <div className="max-w-[9rem] truncate text-[11px] text-frame-fg-muted">{ownerEmail}</div>
                 </div>
-              </button>
+              </Link>
               <ThemeToggle className="ml-auto rounded-control p-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white" />
               {project && isOwner && (
                 <button
@@ -2245,8 +2289,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               </div>
             )}
             <nav className="flex-1 overflow-y-auto px-3 py-1 thin-scroll-dark">
-              {loading && <div className="px-2 py-1 text-sm text-frame-fg-muted">Loading…</div>}
-              {store && !navHits && (
+              {loading && <NavSkeleton />}
+              {store && !navHits && !loading && (
                 <div
                   className={`mb-1 flex items-center gap-1 rounded-lg pr-1 transition-colors ${
                     showOverview
@@ -2276,7 +2320,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
 
               {/* What comes from the store, apart from what they built: the
               first is filled by Shopify, the second by them. */}
-              {(store || storeTop.length > 0) && (!navHits || storeTop.some(navVisible)) && (
+              {!loading && (store || storeTop.length > 0) && (!navHits || storeTop.some(navVisible)) && (
                 <>
                   <NavHeading
                     text="Store"
@@ -2294,6 +2338,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     }
                   />
                   {storeTop.filter(navVisible).map(renderTop)}
+                  {!navHits && buildingRows(true)}
                   {isOwner && store && storeTop.length === 0 && !navHits && (
                     <button
                       onClick={addCoreSections}
@@ -2307,7 +2352,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 </>
               )}
 
-              {(!navHits || ownTop.some(navVisible)) && (
+              {!loading && (!navHits || ownTop.some(navVisible)) && (
                 <NavHeading
                   text={store || storeTop.length > 0 ? "Your sections" : "Sections"}
                   action={
@@ -2325,7 +2370,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 />
               )}
               {ownTop.filter(navVisible).map(renderTop)}
-              {!loading && ownTop.length === 0 && !navHits && (
+              {!navHits && buildingRows(false)}
+              {!loading && ownTop.length === 0 && !navHits && !pendingSections.some((p) => !p.store) && (
                 <div className="px-2 py-1 text-[13px] leading-relaxed text-frame-fg-muted">
                   {store || storeTop.length > 0
                     ? "Nothing of your own yet. Ask Luke for the tool you wish you had."
@@ -2349,11 +2395,16 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               )}
             </div>
 
-            <div
+            <ResizeHandle
+              edge="left"
+              label="Resize the sidebar"
+              width={nav.width}
+              min={nav.min}
+              max={nav.max}
+              dragging={nav.dragging}
               onPointerDown={nav.onPointerDown}
-              onDoubleClick={nav.reset}
-              title="Drag to resize · double-click to reset"
-              className={resizeHandleClass("left", nav.dragging)}
+              onReset={nav.reset}
+              onNudge={nav.nudge}
             />
           </aside>
 
@@ -2516,8 +2567,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                       : { onCreate: createRecord, onUpdate: updateRecord, onDelete: deleteRecord })}
                   />
                 </FormatProvider>
-              ) : loading ? (
-                <div className="text-sm text-fg-faint">Loading module…</div>
+              ) : loading || (selectedModuleId && loadedFor !== selectedModuleId) ? (
+                <SectionSkeleton label={selectedModule?.nav_label} />
               ) : (
                 <div className="flex h-full flex-col items-center justify-center text-center">
                   <div className="text-lg font-semibold text-fg">
@@ -2550,6 +2601,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 dragging={chat.dragging}
                 onResizeStart={chat.onPointerDown}
                 onResizeReset={chat.reset}
+                onResizeNudge={chat.nudge}
+                resizeBounds={{ min: chat.min, max: chat.max }}
                 open={chatOpen}
                 onClose={() => setChatOpen(false)}
                 onWaiting={setWaiting}

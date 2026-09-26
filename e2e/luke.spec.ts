@@ -8,6 +8,13 @@ import type { Locator, Page } from "@playwright/test";
 import { LUKE_COPY } from "@/lib/luke-copy";
 import { TAPE, expect, test } from "./shop";
 
+/**
+ * How long a build may take to say it is built: every part is several
+ * trips to the database, and on a slow link a two-part build has taken
+ * over twenty seconds without anything being wrong.
+ */
+const BUILD_MS = 30_000;
+
 /** How long a turn may take: a second played back, minutes recorded against busy models. */
 const TURN_MS = TAPE === "record" ? 600_000 : 30_000;
 
@@ -358,7 +365,7 @@ test("two changes in one reply stay up for a yes when the thread reloads", async
     await build.click();
     await expect(build).toHaveCount(0);
     // Each plan says it was built, on the card that asked for it.
-    await expect(panel.locator('[data-status="built"]')).toHaveCount(2);
+    await expect(panel.locator('[data-status="built"]')).toHaveCount(2, { timeout: BUILD_MS });
     await expect(panel.locator('[data-status="built"]').first()).toContainText("Built");
     await expect.poll(() => sectionsNamed(shop, names)).toEqual([...names].sort());
   } finally {
@@ -407,7 +414,7 @@ test("a build carries on when the app is closed mid-way, and the thread says how
     await page.reload();
     const { panel: back } = await luke(page);
     // Read from the thread: each part built, and nothing offered twice.
-    await expect(back.locator('[data-status="built"]')).toHaveCount(2, { timeout: 30_000 });
+    await expect(back.locator('[data-status="built"]')).toHaveCount(2, { timeout: BUILD_MS });
     await expect(back.getByRole("button", { name: "Build 2 sections" })).toHaveCount(0);
     await expect.poll(() => sectionsNamed(shop, names)).toEqual([...names].sort());
   } finally {
@@ -712,7 +719,7 @@ test("a design part that is already built is left out, not built twice", async (
     await expect(panel.locator('[data-status="already-there"]')).toContainText("Already in your app");
     // Only what is left is offered.
     await panel.getByRole("button", { name: "Build a section" }).click();
-    await expect(panel.locator('[data-status="built"]')).toHaveCount(1);
+    await expect(panel.locator('[data-status="built"]')).toHaveCount(1, { timeout: BUILD_MS });
     await expect.poll(() => sectionsNamed(shop, names)).toEqual([...names].sort());
   } finally {
     await clearUp(shop, thread, names);

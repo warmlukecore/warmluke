@@ -19,7 +19,7 @@ import { storeOverview } from "@/lib/store-read";
 import { supabase } from "@/lib/supabase-client";
 import { showWaiting } from "@/lib/favicon";
 import { NOT_SUPPORTED } from "@/lib/capabilities";
-import { resizeHandleClass } from "@/lib/useResizable";
+import { ResizeHandle } from "@/components/ui/ResizeHandle";
 import type {
   AssistantPlan,
   Blueprint,
@@ -1288,6 +1288,8 @@ export default function ChatPanel({
   dragging,
   onResizeStart,
   onResizeReset,
+  onResizeNudge,
+  resizeBounds,
   open,
   onClose,
   modules,
@@ -1328,6 +1330,9 @@ export default function ChatPanel({
   dragging: boolean;
   onResizeStart: (e: React.PointerEvent) => void;
   onResizeReset: () => void;
+  /** A keyboard step on the edge; with the bounds a drag keeps to. */
+  onResizeNudge: (delta: number) => void;
+  resizeBounds: { min: number; max: number };
   /** Drawer state below lg; the panel is always visible above it. */
   open: boolean;
   onClose: () => void;
@@ -2169,11 +2174,16 @@ export default function ChatPanel({
         dragging ? "" : "transition-transform duration-200"
       } ${open ? "translate-x-0" : "translate-x-full"}`}
     >
-      <div
+      <ResizeHandle
+        edge="right"
+        label="Resize Luke's panel"
+        width={width}
+        min={resizeBounds.min}
+        max={resizeBounds.max}
+        dragging={dragging}
         onPointerDown={onResizeStart}
-        onDoubleClick={onResizeReset}
-        title="Drag to resize · double-click to reset"
-        className={resizeHandleClass("right", dragging)}
+        onReset={onResizeReset}
+        onNudge={onResizeNudge}
       />
       <div className="border-b border-line px-4 py-3">
         <div className="flex items-center gap-2">

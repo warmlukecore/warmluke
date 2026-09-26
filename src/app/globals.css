@@ -431,12 +431,52 @@
   }
 }
 
+/* A place still loading, in the shape of what is coming (ui/Skeleton):
+   the same slow light, crossing a bar instead of words. Dark for the
+   sidebar's frame. */
+.skeleton,
+.skeleton-dark {
+  border-radius: 4px;
+  animation: shimmer 1.6s linear infinite;
+}
+.skeleton {
+  background: linear-gradient(
+      90deg,
+      var(--color-surface-hover) 0%,
+      var(--color-surface-hover) 38%,
+      var(--color-line) 50%,
+      var(--color-surface-hover) 62%,
+      var(--color-surface-hover) 100%
+    )
+    0 0 / 250% 100%;
+}
+.skeleton-dark {
+  background: linear-gradient(
+      90deg,
+      var(--color-frame-raised) 0%,
+      var(--color-frame-raised) 38%,
+      var(--color-frame-line) 50%,
+      var(--color-frame-raised) 62%,
+      var(--color-frame-raised) 100%
+    )
+    0 0 / 250% 100%;
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* Still words, in a colour that can be read, rather than a light
      frozen half way along them. */
   .shimmer {
     background: none;
     color: var(--color-fg-muted);
+  }
+  /* A bar that stands still, in its resting colour. */
+  .skeleton {
+    animation: none;
+    background: var(--color-surface-hover);
+  }
+  .skeleton-dark {
+    animation: none;
+    background: var(--color-frame-raised);
   }
 }
 
