@@ -20,6 +20,10 @@ async function luke(page: Page) {
   const box = panel.getByPlaceholder(LUKE_COPY.placeholder);
   if ((page.viewportSize()?.width ?? 0) < 1024) await page.getByRole("button", { name: /^Luke/ }).first().click();
   await expect(box).toBeInViewport();
+  // And the newest thread open: asked before that, a question went into a
+  // new thread or the old one depending on which answered first, and the
+  // recording it is played back from was made in one of them.
+  await expect(panel.getByRole("status", { name: "Opening your conversation" })).toHaveCount(0);
   return { panel, box };
 }
 
@@ -99,6 +103,111 @@ test("a question is answered from the shop's own orders", async ({ signedIn: pag
   // Kept with the reply, so a reload says the same.
   await expect(took).toBeVisible();
   expect(Math.abs((await offset()) - pinned), "the question did not move").toBeLessThanOrEqual(2);
+});
+
+/** The project's threads now, to tell which one a test made. */
+const threadIds = async (shop: Shop) =>
+  new Set(
+    ((await shop.admin.from("conversations").select("id").eq("project_id", shop.projectId)).data ?? []).map(
+      (c) => c.id as string
+    )
+  );
+
+/**
+ * The thread made since `before`. The specs share one shop, and the ones
+ * after read "the newest thread" with the history they were recorded
+ * against, so a thread made here is taken away again.
+ */
+const madeSince = async (shop: Shop, before: Set<string>) =>
+  [...(await threadIds(shop))].filter((id) => !before.has(id));
+
+test("a question left mid-answer is there on coming back, and its answer lands in place", async ({
+  signedIn: page,
+  shop,
+}) => {
+  const before = await threadIds(shop);
+  try {
+    await page.goto(`/app/${shop.projectId}`);
+    const { panel, box } = await luke(page);
+    // A thread of its own, so the question is the one recorded on its own.
+    const fresh = panel.getByRole("button", { name: "New conversation" });
+    if (await fresh.count()) await fresh.click();
+    const sent = page.waitForRequest((r) => r.url().endsWith("/api/chat") && r.method() === "POST");
+    await box.fill("Which orders are still waiting for payment?");
+    await box.press("Enter");
+    await sent;
+    // Gone mid-answer, as the back button or a closed tab leaves: the
+    // question had vanished, and came back with its answer seconds later.
+    await page.waitForTimeout(300);
+    await page.reload();
+    const back = await luke(page);
+    const question = back.panel.getByText("Which orders are still waiting for payment?");
+    await expect(question).toHaveCount(1, { timeout: 5_000 });
+    await expect(back.panel.getByText(/#1006/).last()).toBeVisible({ timeout: TURN_MS });
+    await expect(question).toHaveCount(1);
+  } finally {
+    for (const id of await madeSince(shop, before)) await shop.admin.from("conversations").delete().eq("id", id);
+  }
+});
+
+test("an answer stays in the thread it was asked in, when the owner goes to another", async ({
+  signedIn: page,
+  shop,
+}) => {
+  const before = await threadIds(shop);
+  const other = await replyThread(
+    shop,
+    { type: "answer", kind: "conversation", message: "Hello! What shall we look at?" },
+    "hello there"
+  );
+  const asked = "Which orders are still waiting for payment?";
+  try {
+    await page.goto(`/app/${shop.projectId}`);
+    const { panel, box } = await luke(page);
+    // Opened by name: "newest" depends on whose clock stamped each thread.
+    await panel.getByRole("button", { name: "Past conversations" }).click();
+    await panel.getByText("A reply", { exact: true }).click();
+    await expect(panel.getByText("Hello! What shall we look at?")).toBeVisible();
+    await panel.getByRole("button", { name: "New conversation" }).click();
+    const sent = page.waitForRequest((r) => r.url().endsWith("/api/chat") && r.method() === "POST");
+    await box.fill(asked);
+    await box.press("Enter");
+    await sent;
+    // Straight to the other thread while it is answered.
+    await panel.getByRole("button", { name: "Past conversations" }).click();
+    await panel.getByText("A reply", { exact: true }).click();
+    await expect(panel.getByText("Hello! What shall we look at?")).toBeVisible();
+    // Until the answer is written where it was asked.
+    await expect
+      .poll(
+        async () => {
+          const made = (await madeSince(shop, before)).filter((id) => id !== other);
+          if (!made.length) return "none";
+          const { data } = await shop.admin
+            .from("messages")
+            .select("payload")
+            .in("conversation_id", made)
+            .eq("role", "assistant");
+          return (data?.[0]?.payload as { type?: string } | undefined)?.type ?? "none";
+        },
+        { timeout: TURN_MS }
+      )
+      .not.toMatch(/^(none|answering)$/);
+    // It does not land here, and nothing takes them back to it.
+    await page.waitForTimeout(2_000);
+    await expect(panel.getByText("Hello! What shall we look at?")).toBeVisible();
+    await expect(panel.getByText(/#1006/)).toHaveCount(0);
+    // It is where it was asked, under the name Luke gave that thread.
+    await panel.getByRole("button", { name: "Past conversations" }).click();
+    await panel
+      .getByRole("button", { name: /· 1 answer$/ })
+      .filter({ hasNotText: "A reply" })
+      .first()
+      .click();
+    await expect(panel.getByText(/#1006/).last()).toBeVisible();
+  } finally {
+    for (const id of await madeSince(shop, before)) await shop.admin.from("conversations").delete().eq("id", id);
+  }
 });
 
 test("a change to the shop waits for a yes", async ({ signedIn: page, shop }) => {

@@ -56,7 +56,9 @@ console.log("a turn that designed nothing is not an included design");
   // costing something, and a new way to fail cannot forget the refund.
   check(
     "the chat charges only once a design is written down",
-    /persistTurn\([\s\S]{0,1200}reply\.type === "plans" \|\| turn\.reply\.type === "blueprint"\) \{\s*refundable = null/.test(
+    // Written down is the answer's line filled (settle); a line stopped
+    // meanwhile is not filled, and that turn goes back like any other.
+    /const kept = await settle\([\s\S]{0,1400}reply\.type === "plans" \|\| turn\.reply\.type === "blueprint"\) \{\s*refundable = null/.test(
       chat
     )
   );
@@ -66,7 +68,7 @@ console.log("a turn that designed nothing is not an included design");
   );
   check(
     "and every other way out gives it back in one place",
-    /finally \{\s*if \(refundable\) await client\.rpc\("abo_refund_turn"/.test(chat)
+    /finally \{\s*(clearInterval\(stopWatch\);\s*)?if \(refundable\) await client\.rpc\("abo_refund_turn"/.test(chat)
   );
   // The distance is a stand-in for "in the same block, just after the
   // insert" — it measures nothing real. It was 600, and a comment

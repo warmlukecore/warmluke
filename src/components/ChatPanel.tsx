@@ -1308,6 +1308,7 @@ export default function ChatPanel({
   draft = "",
   phase = null,
   threadOpening = false,
+  turnElsewhere = null,
   luke = null,
   model = null,
   onModel,
@@ -1351,6 +1352,8 @@ export default function ChatPanel({
   conversationId: string | null;
   /** The last conversation is still loading, so the empty screen is not shown yet. */
   threadOpening?: boolean;
+  /** Luke is answering in another thread than the one on screen; this goes back to it. */
+  turnElsewhere?: (() => void) | null;
   /** What this account's Luke may answer on, and what each reply shows them (/api/models). */
   luke?: { models: OfferedModel[]; default: string | null; shows: LukeShows } | null;
   /** The model picked for the next turn. */
@@ -3267,7 +3270,20 @@ export default function ChatPanel({
             whole panel down and a long design covered the chat
             entirely — the one place it must not be is on top of the
             thing it is asking about. */}
-          {busy && (
+          {/* Answering in a thread they left: said here, with the way back. */}
+          {busy && turnElsewhere && (
+            <div role="status" className="flex items-center gap-1.5 text-[11px] text-fg-faint">
+              <LukeMark size="xs" state="thinking" />
+              <span>Luke is still answering in another conversation.</span>
+              <button
+                onClick={turnElsewhere}
+                className="text-fg-muted underline-offset-2 hover:text-fg hover:underline"
+              >
+                Go to it
+              </button>
+            </div>
+          )}
+          {busy && !turnElsewhere && (
             <div className="text-[11px] text-fg-faint">
               {/* One line: the step the server is on right now, with the
                 seconds climbing beside it, and the steps already taken
@@ -3303,14 +3319,14 @@ export default function ChatPanel({
           {/* What Luke is saying, as it says it: the reply's own words, in
             the reply's own type. A draft, so a screen reader is not read
             every word; the reply that replaces it is. */}
-          {busy && draft && (
+          {busy && draft && !turnElsewhere && (
             <div aria-hidden>
               <Markdown streaming>{draft}</Markdown>
             </div>
           )}
           {/* The words are done and the rest is still being written: said,
               so the panel does not go quiet before the questions arrive. */}
-          {busy && draft && phase && PHASE_WORDS[phase] && (
+          {busy && draft && phase && PHASE_WORDS[phase] && !turnElsewhere && (
             <div className="flex items-center gap-1.5 text-[11px] text-fg-faint">
               <Sparkles aria-hidden size={12} strokeWidth={2} className="shrink-0" />
               <span className="shimmer">{PHASE_WORDS[phase]}</span>

@@ -27,7 +27,8 @@ sequenceDiagram
     end
     Engine->>Model: Gap check for designs
     Engine-->>Chat: Validated reply + evidence metadata
-    Chat->>DB: Persist user and assistant messages
+    Chat->>DB: Keep the question and an "answering" line at once
+    Chat->>DB: Fill that line with the reply when the turn ends
     Chat-->>UI: NDJSON progress events, then final reply
     UI-->>O: Show blueprint and exact plan effects
     O->>UI: Approve Build
@@ -44,6 +45,18 @@ so far, at most one every 80 ms), and one final response object. A draft is neve
 reply: the validated reply replaces it, a new attempt clears it, and none is sent after the
 final object. The model can be retried up to two times after the initial
 attempt when structural or semantic validation fails.
+
+A turn is kept in its thread from the moment it is paid for: the question, and a line
+(`payload.type = "answering"`) where its answer goes. The first stream line names both
+(`accepted` with `conversationId` and `turn`). Leaving is not stopping: going back, opening
+another thread or closing the tab lets the reader go, and the turn runs on (held open with
+`after`) and fills its line; a panel opened meanwhile shows the question with "Luke is
+answering…", and the answer replaces it when the thread's `updated_at` moves. Stop is its own
+request (`DELETE /api/chat { turn }`), which marks the line `stopped`; the turn, on whichever
+server runs it, looks for the mark every 1.5 s, and a line already answered is never
+touched. A turn that fails or is stopped leaves its line saying so, is given back, and is
+left out of the history the model is told (`answeredTurns`). A line still answering after
+six minutes says it never arrived.
 
 ## Plan application and compensation
 

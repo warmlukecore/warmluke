@@ -116,6 +116,9 @@ type BuildPayload = {
 /** How long a build may say "building" before the thread stops believing it: far past any real one. */
 const BUILD_LOST_MS = 10 * 60_000;
 
+/** An answer still "answering" after this long never arrived: the function that made it is gone. */
+const ANSWER_LOST_MS = 6 * 60_000;
+
 /** Where the model picked in the panel is remembered, on this device. */
 const MODEL_KEY = "luke:model";
 
@@ -311,6 +314,15 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   }, []);
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [threadsMore, setThreadsMore] = useState(false);
+  // The thread a running turn belongs to, and the line its answer fills
+  // (told by the turn's first line). The owner may go to another thread
+  // meanwhile: the working line stays with its own, and the answer lands
+  // there, never in the one on screen.
+  const turnRef = useRef<{ thread: string | null; turn: string | null }>({ thread: null, turn: null });
+  const [turnThread, setTurnThread] = useState<string | null>(null);
+  // Threads this tab asked something in: their answers arriving never
+  // pull the owner back to them from wherever they went.
+  const ownThreads = useRef(new Set<string>());
   // Read by the realtime handler, which is not rebuilt when the list changes.
   const threadsRef = useRef<ThreadSummary[]>([]);
   useEffect(() => {
@@ -447,6 +459,32 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               text: b.message,
               ...(b.undo?.length ? { undo: { messageId: m.id, what: b.undo.map((u) => u.what) } } : {}),
               ...(next?.length ? { next } : {}),
+            });
+          }
+          continue;
+        }
+        const kind = (p as { type?: string }).type;
+        if (kind === "answering" || kind === "unanswered" || kind === "stopped") {
+          const q = p as { started_at?: string; message?: string };
+          if (kind === "answering") {
+            // This tab's own turn: its live line is on screen already.
+            if (busyRef.current && turnRef.current.turn === m.id) continue;
+            const lost = Date.now() - Date.parse(q.started_at ?? "") > ANSWER_LOST_MS;
+            rebuilt.push(
+              lost
+                ? { id: m.id, role: "system", text: "This answer never arrived. Nothing was changed; ask again." }
+                : {
+                    id: m.id,
+                    role: "assistant",
+                    text: "Luke is answering…",
+                    building: { startedAt: q.started_at ?? new Date().toISOString() },
+                  }
+            );
+          } else {
+            rebuilt.push({
+              id: m.id,
+              role: "system",
+              text: kind === "stopped" ? "Stopped." : (q.message ?? "Luke could not answer this. Ask again."),
             });
           }
           continue;
@@ -917,6 +955,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           // anyway; the only question is whether they are in the
           // middle of something here. A card still waiting on an
           // answer is; finished history is not.
+          // One they asked in and went away from: they left it on purpose,
+          // and its answer waits there, in the list.
+          if (ownThreads.current.has(id)) return;
           if (!awaitingAnswer(chatMessagesRef.current)) {
             loadThread(id).catch(() => {});
           }
@@ -1167,6 +1208,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       setChatSteps([]);
       setChatDraft("");
       setChatPhase(null);
+      turnRef.current = { thread: conversationId, turn: null };
+      setTurnThread(conversationId);
       const controller = new AbortController();
       chatAbort.current = controller;
       // What the turn did, kept with the reply it produced so the
@@ -1188,8 +1231,17 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           },
           controller.signal,
           (step) => {
-            seen.push(step as TurnEvent);
-            setChatSteps((prev) => [...prev, step as TurnEvent]);
+            const told = step as TurnEvent;
+            // Kept by the server already: the thread (made now, if new)
+            // and the line its answer fills.
+            if (told.step === "accepted" && told.conversationId) {
+              turnRef.current = { thread: told.conversationId, turn: told.turn ?? null };
+              ownThreads.current.add(told.conversationId);
+              setTurnThread(told.conversationId);
+              if (!conversationIdRef.current) rememberConversation(told.conversationId);
+            }
+            seen.push(told);
+            setChatSteps((prev) => [...prev, told]);
           },
           (words, phase) => {
             setChatDraft(words);
@@ -1198,6 +1250,18 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         );
         setChatDraft("");
         setChatPhase(null);
+
+        // They went to another thread while it was answered: the answer is
+        // in its own, for when they go back, and nothing lands here.
+        const askedIn = (data.conversationId as string | undefined) ?? turnRef.current.thread;
+        if (askedIn && conversationIdRef.current && conversationIdRef.current !== askedIn) {
+          loadThread().catch(() => {});
+          return;
+        }
+        if (data.stopped) {
+          setChatMessages((prev) => [...prev, { id: nextChatId(), role: "system", text: "Stopped." }]);
+          return;
+        }
 
         if (data.conversationId && data.conversationId !== conversationId) {
           rememberConversation(data.conversationId as string);
@@ -1325,9 +1389,11 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             role: "system",
             // A dropped connection used to fail silently: the spinner
             // stopped and nothing appeared.
+            // The server goes on answering when the connection drops; the
+            // answer lands in its thread, which the reload below shows.
             text: aborted
               ? "Stopped."
-              : `Couldn't reach Luke — ${(e as Error)?.message ?? "check your connection"}. Nothing was changed.`,
+              : "The connection dropped. Luke is still answering, and the answer will be in this conversation.",
           },
         ]);
         // The turn may have been saved in the moment between the server
@@ -1336,6 +1402,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         loadThread().catch(() => {});
       } finally {
         chatAbort.current = null;
+        turnRef.current = { thread: null, turn: null };
+        setTurnThread(null);
         setChatBusy(false);
         setChatSteps([]);
         setChatDraft("");
@@ -2450,7 +2518,16 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 threadsMore={threadsMore}
                 conversationId={conversationId}
                 onNewThread={startNewThread}
-                onStop={() => chatAbort.current?.abort()}
+                onStop={() => {
+                  const turn = turnRef.current.turn;
+                  chatAbort.current?.abort();
+                  if (turn) apiFetch("/api/chat", { turn }, "DELETE").catch(() => {});
+                }}
+                turnElsewhere={
+                  chatBusy && turnThread !== null && conversationId !== turnThread
+                    ? () => loadThread(turnThread).catch(() => {})
+                    : null
+                }
                 onPickThread={loadThread}
                 onDeleteThread={deleteThread}
                 onRenameThread={renameThread}

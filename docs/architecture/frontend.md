@@ -147,7 +147,10 @@ When the signalled thread is the open one, the shell reloads it in place. When i
 different thread — in practice the one external builds are filed in — the shell opens it,
 which is what a manual refresh would have done, unless a turn is in flight, the thread
 on screen ends in a card still awaiting the merchant's answer, or the signalled thread's
-`updated_at` did not move (a rename, which is nothing new to read).
+`updated_at` did not move (a rename, which is nothing new to read), or it is a thread this
+tab asked something in and left: its answer waits there, and the owner is never taken back
+to it. While Luke answers in a thread they left, the one on screen says so with a way back,
+and the answer is never put into the thread on screen.
 
 Commerce tables are deliberately not published; a store-backed section refreshes when the
 tab regains focus instead, because publishing every webhook row is not free on a large

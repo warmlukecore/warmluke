@@ -350,6 +350,20 @@ function columnLines(modules: ModuleRow[], schemas: Map<string, UiSchema>): stri
   });
 }
 
+/** What stands in a thread where an answer never came: still coming, stopped, or failed. */
+const UNANSWERED = new Set(["answering", "unanswered", "stopped"]);
+
+/**
+ * A thread's rows as the model is told them: a question whose answer
+ * never came is left out, with the line that stood in for its answer, so
+ * the model is given only what was said and answered.
+ */
+export function answeredTurns<T extends { role: string; ptype: string | null }>(rows: T[]): T[] {
+  return rows.filter(
+    (m, i) => !UNANSWERED.has(m.ptype ?? "") && !(m.role === "user" && UNANSWERED.has(rows[i + 1]?.ptype ?? ""))
+  );
+}
+
 export async function runTurn(input: TurnInput): Promise<TurnResult> {
   const {
     client,

@@ -1,10 +1,9 @@
 import { NextResponse, after } from "next/server";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { getUserClient } from "@/lib/supabase-server";
 import { lukeSettings, modelFor } from "@/lib/luke-models";
 import { metered } from "@/lib/usage";
 import { tapeHeaders } from "@/lib/model-tape";
-import { MAX_REPAIR_ATTEMPTS, runTurn } from "@/lib/engine";
+import { MAX_REPAIR_ATTEMPTS, answeredTurns, runTurn } from "@/lib/engine";
 import { noteJudgement } from "@/lib/judge";
 import type { ChatTurn } from "@/lib/ai";
 import { TITLE_MAX } from "@/lib/types";
@@ -112,6 +111,33 @@ export async function GET(req: Request) {
 
 type SchemaJsonWithFeatures = UiSchema & { features?: FeatureSchema | null };
 
+/** How often a running turn looks for its stop. */
+const STOP_POLL_MS = 1500;
+
+/**
+ * DELETE /api/chat { turn } — stops a turn: its answer's line says so,
+ * and the turn, wherever it runs, sees that and stops. A turn already
+ * answered is not touched. RLS keeps it to the caller's own messages.
+ */
+export async function DELETE(req: Request) {
+  const auth = await getUserClient(req);
+  if (!auth) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  const { turn } = ((await req.json().catch(() => ({}))) ?? {}) as { turn?: unknown };
+  if (typeof turn !== "string" || !/^[0-9a-f-]{36}$/i.test(turn)) {
+    return NextResponse.json({ error: "turn is required" }, { status: 400 });
+  }
+  const { data, error } = await auth.client
+    .from("messages")
+    .update({ payload: { type: "stopped", stopped_at: new Date().toISOString() } })
+    .eq("id", turn)
+    .eq("payload->>type", "answering")
+    .select("conversation_id");
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const at = data?.[0]?.conversation_id as string | undefined;
+  if (at) await auth.client.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", at);
+  return NextResponse.json({ stopped: !!at });
+}
+
 /** How many past turns to replay. Enough for a full discovery loop. */
 const HISTORY_LIMIT = 30;
 
@@ -138,19 +164,17 @@ const WORDS_EVERY_MS = 80;
  */
 export async function POST(req: Request) {
   try {
-    const auth = await getUserClient(req);
-    if (!auth) {
-      return NextResponse.json({ error: "Not signed in." }, { status: 401 });
-    }
-    const { client } = auth;
-
+    // The body before anything that waits, as /api/apply does: a browser
+    // that goes away in the first moments takes its unread body with it,
+    // and the question it asked was never kept. Read at once, the turn
+    // carries on without it.
     const {
       message,
       projectId,
       moduleId,
       conversationId,
       model: askedModel,
-    } = (await req.json()) as {
+    } = ((await req.json().catch(() => ({}))) ?? {}) as {
       message?: string;
       projectId?: string;
       moduleId?: string | null;
@@ -158,6 +182,11 @@ export async function POST(req: Request) {
       /** The model picked in the panel; used only when this account may use it. */
       model?: unknown;
     };
+    const auth = await getUserClient(req);
+    if (!auth) {
+      return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+    }
+    const { client } = auth;
     if (!message?.trim() || !projectId) {
       return NextResponse.json({ error: "message and projectId are required" }, { status: 400 });
     }
@@ -261,9 +290,9 @@ export async function POST(req: Request) {
         .limit(1);
       if (!existing?.[0]) convId = null;
     }
-    // The row is created only once a turn succeeds — creating it up
-    // front left an empty conversation behind every time a reply failed
-    // validation.
+    // Made once the turn is paid for, with the question already in it
+    // (below): a thread is never left empty, and one left mid-answer has
+    // the question to come back to.
     const isNewConversation = !convId;
 
     const { data: historyRows, error: histErr } = convId
@@ -294,7 +323,10 @@ export async function POST(req: Request) {
     // sent at the time: that block is a snapshot of the schema as it was,
     // and a thread of stale snapshots both costs tokens and contradicts
     // the fresh one on the newest turn.
-    const history = rows.map((m): ChatTurn => ({
+    // A question whose answer never came (still being answered, stopped,
+    // or failed) is not replayed, and neither is the line that stood in
+    // for it: the model is told only what was said and answered.
+    const history = answeredTurns(rows).map((m): ChatTurn => ({
       role: m.role,
       content: m.role === "user" ? (m.said ?? m.content) : m.content,
     }));
@@ -347,8 +379,68 @@ export async function POST(req: Request) {
     // Stops the model call when the browser goes: the request's own
     // signal when the connection drops, the stream's cancel when the
     // reader lets go. Either is enough; both are wired.
+    //
+    // Not when the browser goes. Going back, opening another thread or
+    // closing the tab is not "stop": the answer is theirs whether or not
+    // they are watching, and it lands where the question is. Stop is its
+    // own request (DELETE below), which marks the answer's line, and the
+    // turn looks for that mark while it runs.
     const halt = new AbortController();
-    req.signal.addEventListener("abort", () => halt.abort());
+
+    // The question, kept the moment it is asked, and a line where its
+    // answer will go. A new thread is made now, with the question in it.
+    const said = message.trim();
+    if (!convId) {
+      const { data: created, error: convErr } = await client
+        .from("conversations")
+        .insert({ project_id: projectId, title: said.slice(0, TITLE_MAX) })
+        .select("id")
+        .single();
+      if (convErr || !created) {
+        if (refundable) await client.rpc("abo_refund_turn", { p_spend: refundable });
+        throw new Error(convErr?.message ?? "could not start the conversation");
+      }
+      convId = created.id as string;
+    }
+    const askedAt = Date.now();
+    const { data: opened, error: openErr } = await client
+      .from("messages")
+      .insert([
+        {
+          conversation_id: convId,
+          role: "user",
+          content: said,
+          payload: { kind: "user", text: said },
+          created_at: new Date(askedAt).toISOString(),
+        },
+        {
+          conversation_id: convId,
+          role: "assistant",
+          content: "",
+          payload: { type: "answering", started_at: new Date(askedAt).toISOString() },
+          created_at: new Date(askedAt + 1).toISOString(),
+        },
+      ])
+      .select("id, role");
+    const askedId = opened?.find((r) => r.role === "user")?.id as string | undefined;
+    const answerId = opened?.find((r) => r.role === "assistant")?.id as string | undefined;
+    if (openErr || !askedId || !answerId) {
+      if (refundable) await client.rpc("abo_refund_turn", { p_spend: refundable });
+      throw new Error(openErr?.message ?? "could not keep the question");
+    }
+    await client.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
+    const thread = convId;
+    /** The answer's line, filled once; a line already stopped is left as it is. */
+    const settle = async (payload: Record<string, unknown>, content = "") => {
+      const { data } = await client
+        .from("messages")
+        .update({ payload, content })
+        .eq("id", answerId)
+        .eq("payload->>type", "answering")
+        .select("id");
+      await client.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", thread);
+      return (data?.length ?? 0) > 0;
+    };
 
     // Luke's words as they are written, one line at most every
     // WORDS_EVERY_MS: a fast model would otherwise send a line a token.
@@ -384,7 +476,7 @@ export async function POST(req: Request) {
 
     const work = async (tell: (event: TurnEvent) => void): Promise<Record<string, unknown>> => {
       try {
-        tell({ step: "accepted" });
+        tell({ step: "accepted", conversationId: thread, turn: answerId });
         // The model they picked, if the account may use it; the default
         // otherwise. The server's own model goes as no choice at all, so
         // the turn is the one it always was.
@@ -413,22 +505,16 @@ export async function POST(req: Request) {
         if (!turn.ok) {
           // Our engine could not produce something it trusts. Charging
           // for that is charging for our own failure.
+          await settle({
+            type: "unanswered",
+            message: "Luke could not get this right, so nothing was changed. Ask again, in other words.",
+          });
           return {
             conversationId: convId,
             repairs: turn.repairs,
             errors: turn.errors,
             hint: `The assistant tried ${MAX_REPAIR_ATTEMPTS + 1} times and its plan still failed validation, so nothing was changed. Try rephrasing your request.`,
           };
-        }
-
-        if (isNewConversation) {
-          const { data: created, error: convErr } = await client
-            .from("conversations")
-            .insert({ project_id: projectId, title: message.trim().slice(0, TITLE_MAX) })
-            .select("id")
-            .single();
-          if (convErr) throw new Error(convErr.message);
-          convId = created.id as string;
         }
 
         // Written here, by the server, from what the server actually
@@ -449,15 +535,15 @@ export async function POST(req: Request) {
           };
         }
 
-        const replyId = await persistTurn(
-          client,
-          convId!,
-          turn.userTurn,
-          message.trim(),
-          turn.raw,
-          turn.reply,
-          turn.repairErrors
+        // Into the line that waited for it. Stopped meanwhile, the answer
+        // is not kept and the turn is given back.
+        await client.from("messages").update({ content: turn.userTurn }).eq("id", askedId);
+        const kept = await settle(
+          turn.repairErrors.length > 0 ? { ...turn.reply, repairErrors: turn.repairErrors } : turn.reply,
+          turn.raw
         );
+        if (!kept) return { conversationId: thread, stopped: true };
+        const replyId = answerId;
 
         // Only a turn that produced a design, and got it written down,
         // counts.
@@ -515,11 +601,22 @@ export async function POST(req: Request) {
         // reload of the thread knows which reply it already has on screen.
         return { conversationId: convId, reply: turn.reply, repairs: turn.repairs, replyId };
       } catch (e) {
-        return { error: e instanceof Error ? e.message : "Unknown error" };
+        const why = e instanceof Error ? e.message : "Unknown error";
+        if (!halt.signal.aborted) await settle({ type: "unanswered", message: why });
+        return { error: why, conversationId: thread };
       } finally {
+        clearInterval(stopWatch);
         if (refundable) await client.rpc("abo_refund_turn", { p_spend: refundable });
       }
     };
+
+    // Stop is a mark on the answer's line, made by any server that took
+    // the request; this one looks for it while the turn runs.
+    // ponytail: one read every STOP_POLL_MS per running turn; a pub/sub channel if turns get many.
+    const stopWatch = setInterval(async () => {
+      const { data } = await client.from("messages").select("payload->>type").eq("id", answerId).maybeSingle();
+      if ((data as { type?: string } | null)?.type === "stopped") halt.abort();
+    }, STOP_POLL_MS);
 
     // One JSON object per line. Lines with a `step` are the turn
     // talking; the last line, without one, is what the route used to
@@ -537,7 +634,10 @@ export async function POST(req: Request) {
           }
         };
         say = line;
-        const last = await work(line);
+        const done = work(line);
+        // Held open past the reader: a turn left mid-answer still lands.
+        after(() => done.then(() => undefined));
+        const last = await done;
         quiet();
         line(last);
         try {
@@ -547,8 +647,9 @@ export async function POST(req: Request) {
         }
       },
       cancel() {
+        // The reader has gone (back, another thread, the tab closed): the
+        // turn goes on, and its answer is kept where the question is.
         quiet();
-        halt.abort();
       },
     });
     return new Response(stream, {
@@ -565,45 +666,6 @@ export async function POST(req: Request) {
     const msg = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json({ error: msg }, { status: 500 });
   }
-}
-
-async function persistTurn(
-  client: SupabaseClient,
-  conversationId: string,
-  userContent: string,
-  /** What the owner actually typed, kept for replay and for the UI. */
-  said: string,
-  assistantRaw: string,
-  reply: AssistantReply,
-  /** Every validator message the model had to fix on the way here. */
-  repairErrors: string[]
-): Promise<string | null> {
-  // Both rows go in one insert, so the default now() gives them the
-  // SAME created_at and "order by created_at" is a coin flip — the
-  // reply came back above the question it answered. Stamp them apart.
-  const t = Date.now();
-  const { data, error } = await client
-    .from("messages")
-    .insert([
-      {
-        conversation_id: conversationId,
-        role: "user",
-        content: userContent,
-        payload: { kind: "user", text: said },
-        created_at: new Date(t).toISOString(),
-      },
-      {
-        conversation_id: conversationId,
-        role: "assistant",
-        content: assistantRaw,
-        payload: repairErrors.length > 0 ? { ...reply, repairErrors } : reply,
-        created_at: new Date(t + 1).toISOString(),
-      },
-    ])
-    .select("id, role");
-  if (error) throw new Error(error.message);
-  // The reply's own row, so a judgement written later can point at it.
-  return (data?.find((r) => r.role === "assistant")?.id as string | undefined) ?? null;
 }
 
 /** Words that say nothing about what the thread is for. */

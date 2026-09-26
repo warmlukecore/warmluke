@@ -513,7 +513,12 @@ export type ReplyType = AssistantReply["type"];
  */
 export type TurnEvent =
   /** The turn has been charged and is running. */
-  | { step: "accepted" }
+  | {
+      step: "accepted";
+      /** The thread the question was kept in, and the line its answer will fill. */
+      conversationId?: string;
+      turn?: string;
+    }
   /** The store was read. `read` names the rows a routed question pulled, when it did. */
   | { step: "store"; shop: string | null; read: string | null }
   /** Every section's columns and the rules were read. */
