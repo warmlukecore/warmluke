@@ -305,6 +305,12 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     setConversationId(id);
   }, []);
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  const [threadsMore, setThreadsMore] = useState(false);
+  // Read by the realtime handler, which is not rebuilt when the list changes.
+  const threadsRef = useRef<ThreadSummary[]>([]);
+  useEffect(() => {
+    threadsRef.current = threads;
+  }, [threads]);
   const [building, setBuilding] = useState(false);
 
   /**
@@ -335,10 +341,12 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       if (!res.ok) return;
       const json = (await res.json()) as {
         threads: ThreadSummary[];
+        more?: boolean;
         conversationId: string | null;
         messages: Array<{ id: string; role: string; payload: Record<string, unknown> | null }>;
       };
       setThreads(json.threads ?? []);
+      setThreadsMore(json.more === true);
       // Re-listing only. Replacing the panel here wiped the message the
       // caller had just put on screen — the "couldn't reach the
       // assistant" line vanished the moment it was written.
@@ -610,6 +618,12 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     [conversationId, rememberConversation]
   );
 
+  /** A name the owner gave: kept, and never replaced by Luke's (0126). */
+  const renameThread = useCallback(async (id: string, title: string) => {
+    setThreads((prev) => prev.map((t) => (t.id === id ? { ...t, title } : t)));
+    await supabase.from("conversations").update({ title, named_by_owner: true }).eq("id", id);
+  }, []);
+
   const startNewThread = useCallback(() => {
     rememberConversation(null);
     setChatMessages([]);
@@ -851,6 +865,12 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             loadThread(id).catch(() => {});
             return;
           }
+          // Renamed, not written in: its time did not move, so there is
+          // nothing new in it to show. Opening it took the owner out of
+          // the thread they were in for renaming another.
+          const known = threadsRef.current.find((t) => t.id === id);
+          const at = typeof row?.updated_at === "string" ? Date.parse(row.updated_at) : NaN;
+          if (known && !(at > Date.parse(known.updated_at))) return;
           // Another thread — in practice the one their assistant's
           // builds are filed in. Opening it is what a refresh does
           // anyway; the only question is whether they are in the
@@ -2372,11 +2392,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 phase={chatPhase}
                 canStop={chatBusy}
                 threads={threads}
+                threadsMore={threadsMore}
                 conversationId={conversationId}
                 onNewThread={startNewThread}
                 onStop={() => chatAbort.current?.abort()}
                 onPickThread={loadThread}
                 onDeleteThread={deleteThread}
+                onRenameThread={renameThread}
                 onSend={runPrompt}
                 onEditPrompt={editPrompt}
                 onApply={applyPlan}

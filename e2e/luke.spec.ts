@@ -210,7 +210,7 @@ test("two changes in one reply stay up for a yes when the thread reloads", async
   try {
     await page.goto(`/app/${shop.projectId}`);
     const { panel } = await luke(page);
-    const build = panel.getByRole("button", { name: "Build these 2" });
+    const build = panel.getByRole("button", { name: "Build 2 sections" });
     await expect(build).toBeVisible();
     await expect(panel.locator('[data-status="ready"]')).toHaveCount(2);
     // What the end of a turn does to the thread, and the reload it sets off.
@@ -238,7 +238,7 @@ test("a design that does not fit says which part, and leaves nothing half built"
   try {
     await page.goto(`/app/${shop.projectId}`);
     const { panel } = await luke(page);
-    await panel.getByRole("button", { name: "Build these 2" }).click();
+    await panel.getByRole("button", { name: "Build 2 sections" }).click();
     await expect(panel.locator('[data-status="refused"]')).toContainText("Did not fit");
     await expect(panel.locator('[data-status="put-back"]')).toContainText("Put back");
     expect(await sectionsNamed(shop, ["e2e-twice"])).toEqual([]);
@@ -263,7 +263,7 @@ test("a build carries on when the app is closed mid-way, and the thread says how
     await page.goto(`/app/${shop.projectId}`);
     const { panel } = await luke(page);
     const sent = page.waitForRequest((r) => r.url().endsWith("/api/apply") && r.method() === "POST");
-    await panel.getByRole("button", { name: "Build these 2" }).click();
+    await panel.getByRole("button", { name: "Build 2 sections" }).click();
     await sent;
     // Gone before the answer came back: the tab closed the moment the
     // request left, and the build carries on without it.
@@ -271,7 +271,7 @@ test("a build carries on when the app is closed mid-way, and the thread says how
     const { panel: back } = await luke(page);
     // Read from the thread: each part built, and nothing offered twice.
     await expect(back.locator('[data-status="built"]')).toHaveCount(2, { timeout: 30_000 });
-    await expect(back.getByRole("button", { name: "Build these 2" })).toHaveCount(0);
+    await expect(back.getByRole("button", { name: "Build 2 sections" })).toHaveCount(0);
     await expect.poll(() => sectionsNamed(shop, names)).toEqual([...names].sort());
   } finally {
     await clearUp(shop, thread, names);
@@ -302,6 +302,10 @@ test("an answer reads as Markdown, and what to ask next is sent as written", asy
       await page.evaluate(() => (window as { __hit?: number }).__hit),
       "nothing a reply wrote ran"
     ).toBeUndefined();
+    // Copied as written, the way chat apps copy.
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await panel.getByRole("button", { name: "Copy this reply" }).click();
+    await expect(panel.getByRole("button", { name: "Copied" })).toBeVisible();
     // Tapped, a follow-up is sent as it was written.
     const sent = catchNextTurn(page);
     await panel.getByRole("button", { name: /^Ask: Remind me every morning/ }).click();
@@ -330,11 +334,14 @@ test("questions are asked the way their answers depend on each other", async ({ 
     await expect(panel.getByText("What counts as low?")).toHaveCount(0);
     await panel.getByRole("radio", { name: "Every morning" }).click();
     await panel.getByRole("button", { name: "Next" }).click();
-    // One answer to this one: a second pick replaces the first.
+    // One answer to this one: a second pick replaces the first, made
+    // here with its number key; Enter on a pick moves on.
     await panel.getByRole("radio", { name: "Under 5 left" }).click();
-    await panel.getByRole("radio", { name: "Under 10 left" }).click();
+    await page.keyboard.press("2");
+    await expect(panel.getByRole("radio", { name: "Under 10 left" })).toHaveAttribute("aria-checked", "true");
     await expect(panel.getByRole("radio", { name: "Under 5 left" })).toHaveAttribute("aria-checked", "false");
-    await panel.getByRole("button", { name: "Next" }).click();
+    await page.keyboard.press("Enter");
+    await expect(panel.getByText("3 of 3")).toBeVisible();
     // Several to this one.
     await panel.getByRole("checkbox", { name: "Best sellers" }).click();
     await panel.getByRole("checkbox", { name: "New arrivals" }).click();
@@ -344,6 +351,25 @@ test("questions are asked the way their answers depend on each other", async ({ 
     expect(composed).toContain("When do you want to hear?\n→ Every morning");
     expect(composed).toContain("What counts as low?\n→ Under 10 left");
     expect(composed).toContain("Which products?\n→ Best sellers, New arrivals");
+  } finally {
+    await shop.admin.from("conversations").delete().eq("id", thread);
+  }
+});
+
+test("answers to Luke's questions read as a summary in their bubble", async ({ signedIn: page, shop }) => {
+  const thread = await replyThread(
+    shop,
+    { type: "answer", kind: "conversation", message: "Got it, every morning." },
+    "When do you want to hear?\n→ Every morning\n\nWhich products?\n→ (skipped)"
+  );
+  try {
+    await page.goto(`/app/${shop.projectId}`);
+    const { panel } = await luke(page);
+    const bubble = panel.locator("dl");
+    await expect(bubble.locator("dt", { hasText: "When do you want to hear?" })).toBeVisible();
+    await expect(bubble.locator("dd", { hasText: "Every morning" })).toBeVisible();
+    await expect(bubble.locator("dd", { hasText: "Skipped" })).toBeVisible();
+    await expect(panel.getByText(/→/)).toHaveCount(0);
   } finally {
     await shop.admin.from("conversations").delete().eq("id", thread);
   }
@@ -378,14 +404,18 @@ test("a part of a design that is optional can be left out before building", asyn
   try {
     await page.goto(`/app/${shop.projectId}`);
     const { panel } = await luke(page);
-    // Each part by its own name, and what kind of thing it is.
-    await expect(panel.getByText("Optional · New section · 1 field")).toBeVisible();
+    // Each part by its own name and what kind of thing it is; the ones it
+    // could do without, apart.
+    const extra = panel.getByRole("group", { name: "Also suggested" });
+    await expect(extra.getByText("Maybe")).toBeVisible();
+    await expect(extra.getByText("New section · 1 field")).toBeVisible();
+    await expect(extra.getByText("Kept")).toHaveCount(0);
     const include = panel.getByRole("checkbox", { name: "Include Maybe" });
     await expect(include).toHaveAttribute("aria-checked", "true");
-    await expect(panel.getByRole("button", { name: "Build these 2" })).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Build 2 sections" })).toBeVisible();
     await include.click();
     await expect(include).toHaveAttribute("aria-checked", "false");
-    await expect(panel.getByRole("button", { name: "Build this" })).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Build a section" })).toBeVisible();
   } finally {
     await shop.admin.from("conversations").delete().eq("id", thread);
   }
@@ -432,6 +462,26 @@ test("past conversations are grouped by day, found by name, and say what each ho
     await thread("Stock alerts", 4 * 24 * H);
     await thread("Supplier list", 10 * 24 * H);
     await thread("Greeting", 12 * 24 * H);
+    // Thirty more, older still: past the first page of thirty.
+    const { data: old } = await shop.admin
+      .from("conversations")
+      .insert(
+        Array.from({ length: 30 }, (_, k) => ({
+          project_id: shop.projectId,
+          title: `Old chat ${k + 1}`,
+          updated_at: new Date(now - (20 + k) * 24 * H).toISOString(),
+        }))
+      )
+      .select("id, title");
+    made.push(...(old ?? []).map((r) => r.id as string));
+    const oldest = (old ?? []).find((r) => r.title === "Old chat 30")!.id as string;
+    await shop.admin.from("messages").insert({
+      conversation_id: oldest,
+      role: "assistant",
+      content: "",
+      payload: { type: "answer", kind: "conversation", message: "From long ago." },
+      created_at: new Date(now - 50 * 24 * H).toISOString(),
+    });
     await page.goto(`/app/${shop.projectId}`);
     const { panel } = await luke(page);
     await panel.getByRole("button", { name: "Past conversations" }).click();
@@ -441,9 +491,42 @@ test("past conversations are grouped by day, found by name, and say what each ho
     await expect(panel.getByRole("group", { name: "Yesterday" }).getByText("Top buyer this month")).toBeVisible();
     await expect(panel.getByRole("group", { name: "Older" }).getByText("Greeting")).toBeVisible();
     // More than a screenful, so they can be found by name.
-    await panel.getByRole("searchbox", { name: "Search conversations" }).fill("stock");
+    const search = panel.getByRole("searchbox", { name: "Search conversations" });
+    await search.fill("stock");
     await expect(panel.getByText("Stock alerts")).toBeVisible();
     await expect(panel.getByText("Returns desk")).toHaveCount(0);
+    // Every thread is searched, not only the first page.
+    await search.fill("Old chat 30");
+    await expect(panel.getByText("Old chat 30")).toBeVisible();
+    await search.fill("");
+    // Older ones when asked for.
+    await expect(panel.getByText("Old chat 30")).toHaveCount(0);
+    await panel.getByRole("button", { name: "Show older" }).click();
+    await expect(panel.getByText("Old chat 30")).toBeVisible();
+    // Renamed, and kept: Luke's replies no longer name it. Escape leaves
+    // a rename and nothing more; the list stays open.
+    await panel.getByRole("button", { name: "Rename Greeting" }).click();
+    const name = panel.getByRole("textbox", { name: "Name this conversation" });
+    await name.press("Escape");
+    await expect(name).toHaveCount(0);
+    await expect(panel.getByRole("searchbox", { name: "Search conversations" })).toBeVisible();
+    await panel.getByRole("button", { name: "Rename Greeting" }).click();
+    await name.fill("Hello from Kabir");
+    await name.press("Enter");
+    await expect(panel.getByText("Hello from Kabir")).toBeVisible();
+    await expect
+      .poll(async () => {
+        const { data } = await shop.admin
+          .from("conversations")
+          .select("title, named_by_owner")
+          .eq("id", made[5])
+          .single();
+        return data;
+      })
+      .toEqual({ title: "Hello from Kabir", named_by_owner: true });
+    // One from further down opens, though it is not on the first page.
+    await panel.getByText("Old chat 30").click();
+    await expect(panel.getByText("From long ago.")).toBeVisible();
   } finally {
     for (const id of made) await shop.admin.from("conversations").delete().eq("id", id);
   }
@@ -463,7 +546,7 @@ test("a design part that is already built is left out, not built twice", async (
     const { panel } = await luke(page);
     await expect(panel.locator('[data-status="already-there"]')).toContainText("Already in your app");
     // Only what is left is offered.
-    await panel.getByRole("button", { name: "Build this" }).click();
+    await panel.getByRole("button", { name: "Build a section" }).click();
     await expect(panel.locator('[data-status="built"]')).toHaveCount(1);
     await expect.poll(() => sectionsNamed(shop, names)).toEqual([...names].sort());
   } finally {

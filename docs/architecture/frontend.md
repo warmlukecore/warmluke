@@ -72,14 +72,17 @@ target section instead of copying label text into the source row.
 `ChatPanel` renders four assistant reply shapes:
 
 - `answer`: grounded Markdown (the `ui/Markdown` block) for store, product-help, or
-  conversation questions, ending on the last reply with what to ask next, each a row that
-  sends itself;
+  conversation questions, with a copy button under it, ending on the last reply with what
+  to ask next, each a row that sends itself;
 - `clarify`: structured questions with suggestions and free-form answers: one shown
   directly, two independent ones together, otherwise one at a time with Back and Skip;
-  a `multi` question takes several answers;
+  a `multi` question takes several answers, and number keys pick while the card has focus.
+  The answers go back as "Question" and "→ answer" pairs, which the owner's bubble shows
+  as a short summary;
 - `blueprint`: a workflow and selectable plans before a new build, one row per plan
   (its section's icon or its kind's, its name, what kind of change it is) with the detail
-  behind the row, and a checkbox only on optional parts;
+  behind the row; optional parts apart under "Also suggested", each with a checkbox; and a
+  button that says what it builds ("Build 2 sections and a rule");
 - `plans`: edits to an already-discussed application.
 
 It also renders pending MCP-originated requests, build history, turn progress, undo
@@ -89,7 +92,10 @@ validates them again.
 
 Past conversations are listed by day (Today, Yesterday, Last 7 days, Older), each with
 when it last moved and what it holds ("1 built · 2 answers", counted by `GET /api/chat`
-from each message's type), and can be searched by name once there are more than five.
+from each message's type). The first thirty come with the panel and older ones on "Show
+older"; once there are more than five, a search asks the server over every thread by name.
+A thread can be renamed in the list; that name is kept (`named_by_owner`, 0126), and Luke's
+replies no longer rename it.
 While the last conversation loads, the panel shows its shape, not the empty welcome.
 
 ## Records and writes
@@ -128,8 +134,9 @@ Every writer of a message advances its conversation's `updated_at`, so one subsc
 on `conversations` covers the built-in assistant, external-assistant builds, and undo.
 When the signalled thread is the open one, the shell reloads it in place. When it is a
 different thread — in practice the one external builds are filed in — the shell opens it,
-which is what a manual refresh would have done, unless a turn is in flight or the thread
-on screen ends in a card still awaiting the merchant's answer.
+which is what a manual refresh would have done, unless a turn is in flight, the thread
+on screen ends in a card still awaiting the merchant's answer, or the signalled thread's
+`updated_at` did not move (a rename, which is nothing new to read).
 
 Commerce tables are deliberately not published; a store-backed section refreshes when the
 tab regains focus instead, because publishing every webhook row is not free on a large

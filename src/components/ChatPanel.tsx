@@ -32,6 +32,7 @@ import type {
   UiSchema,
 } from "@/lib/types";
 import { ago, dayGroup } from "@/lib/when";
+import { TITLE_MAX } from "@/lib/types";
 import { Icon } from "@/components/ui/Icon";
 import {
   ArrowDown,
@@ -319,15 +320,71 @@ function describeFeatures(f: NonNullable<AssistantPlan["features"]>): string[] {
  */
 function answersFromReply(text: string, questions: ClarifyQuestion[]): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const block of text.split("\n\n")) {
-    const at = block.indexOf("\n\u2192 ");
-    if (at < 0) continue;
-    const q = block.slice(0, at).trim();
-    const a = block.slice(at + 3).trim();
+  for (const { q, a } of answerPairs(text) ?? []) {
     const match = questions.find((x) => x.question.trim() === q);
-    if (match && a && a !== "(skipped)") out[match.id] = a;
+    if (match && a && a !== SKIPPED) out[match.id] = a;
   }
   return out;
+}
+
+/** What a skipped question is sent as. */
+const SKIPPED = "(skipped)";
+
+/**
+ * A reply to Luke's questions, as the pairs it was sent in ("Question"
+ * and "→ answer" under it, a blank line between), or null for any
+ * other message.
+ */
+function answerPairs(text: string): Array<{ q: string; a: string }> | null {
+  const pairs = text.split("\n\n").map((block) => {
+    const at = block.indexOf("\n\u2192 ");
+    return at < 0 ? null : { q: block.slice(0, at).trim(), a: block.slice(at + 3).trim() };
+  });
+  return pairs.length > 0 && pairs.every((x) => x !== null) ? (pairs as Array<{ q: string; a: string }>) : null;
+}
+
+/**
+ * Their answers in their bubble: each question small, its answer under
+ * it. Sent as "Question\n→ answer" so Luke reads which answer is whose;
+ * shown that way it was one run-on line of arrows.
+ */
+function AnswerSummary({ pairs }: { pairs: Array<{ q: string; a: string }> }) {
+  return (
+    <dl className="space-y-1.5">
+      {pairs.map(({ q, a }, k) => (
+        <div key={k}>
+          <dt className="text-[11px] leading-snug text-fg-muted">{q}</dt>
+          <dd className={a === SKIPPED ? "text-fg-faint" : ""}>{a === SKIPPED ? "Skipped" : a}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** Luke's words, to paste elsewhere: as written, Markdown and all, the way chat apps copy. */
+function CopyReply({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
+  return (
+    <button
+      onClick={() =>
+        navigator.clipboard
+          ?.writeText(text)
+          .then(() => setCopied(true))
+          .catch(() => {})
+      }
+      aria-label={copied ? "Copied" : "Copy this reply"}
+      title={copied ? "Copied" : "Copy"}
+      className="-ml-1 inline-flex h-6 items-center gap-1 rounded-control px-1 text-[11px] text-fg-faint transition-colors hover:bg-surface-hover hover:text-fg-muted"
+    >
+      {copied ? <Check aria-hidden size={13} strokeWidth={2} /> : <Copy aria-hidden size={13} strokeWidth={2} />}
+      {copied && <span>Copied</span>}
+    </button>
+  );
 }
 
 /** What is being written once the words are done, in the panel's words. */
@@ -414,7 +471,7 @@ function ClarifyCard({
     const composed = questions
       .map((q) => {
         const a = answerOf(q.id);
-        return a ? `${q.question}\n→ ${a}` : `${q.question}\n→ (skipped)`;
+        return `${q.question}\n→ ${a || SKIPPED}`;
       })
       .join("\n\n");
     onSubmit(composed);
@@ -428,7 +485,7 @@ function ClarifyCard({
           {questions.map((q) => (
             <li key={q.id} className="text-[12px] leading-relaxed">
               <span className="text-fg-muted">{q.question}</span>{" "}
-              <span className="text-fg">→ {shown(q.id) || "(skipped)"}</span>
+              <span className="text-fg">→ {shown(q.id) || "Skipped"}</span>
             </li>
           ))}
         </ul>
@@ -436,9 +493,27 @@ function ClarifyCard({
     );
   }
 
-  const ask = (q: ClarifyQuestion, onEnter: () => void) => (
+  // Number keys pick a suggestion of the question in view, and Enter on
+  // one moves on. Only while the card has focus, so typing in the
+  // composer is never read as a pick; their own line keeps its keys.
+  const keysFor = (q: ClarifyQuestion, onEnter: () => void) => (e: React.KeyboardEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.tagName === "INPUT" || e.metaKey || e.ctrlKey || e.altKey) return;
+    const options = q.suggestions ?? [];
+    const n = Number(e.key);
+    if (Number.isInteger(n) && n >= 1 && n <= Math.min(options.length, 9)) {
+      e.preventDefault();
+      choose(q, options[n - 1]);
+    } else if (e.key === "Enter" && /^(radio|checkbox)$/.test(target.getAttribute("role") ?? "")) {
+      e.preventDefault();
+      onEnter();
+    }
+  };
+
+  const ask = (q: ClarifyQuestion, onEnter: () => void, numbered = false) => (
     <QuestionRows
       key={q.id}
+      numbered={numbered}
       question={q}
       picked={picked[q.id] ?? []}
       typed={typed[q.id] ?? ""}
@@ -449,10 +524,16 @@ function ClarifyCard({
   );
 
   if (!stepped) {
+    const one = questions.length === 1;
     return (
-      <div className="space-y-3">
+      <div
+        role="group"
+        aria-label="Luke's questions"
+        onKeyDown={one ? keysFor(questions[0], submit) : undefined}
+        className="space-y-3"
+      >
         <Markdown>{message}</Markdown>
-        {questions.map((q) => ask(q, submit))}
+        {questions.map((q) => ask(q, submit, one))}
         <button onClick={submit} disabled={answered.length === 0} className={button("primary", "sm")}>
           {questions.length === 1 ? "Send answer" : "Send answers"}
         </button>
@@ -464,7 +545,7 @@ function ClarifyCard({
   const last = at === questions.length - 1;
   const forward = () => (last ? submit() : setAt(at + 1));
   return (
-    <div className="space-y-3">
+    <div role="group" aria-label="Luke's questions" onKeyDown={keysFor(q, forward)} className="space-y-3">
       <Markdown>{message}</Markdown>
       <div className="flex items-center gap-2 text-[11px] text-fg-faint" aria-live="polite">
         <span className="tabular-nums">
@@ -479,7 +560,7 @@ function ClarifyCard({
           ))}
         </span>
       </div>
-      {ask(q, forward)}
+      {ask(q, forward, true)}
       <div className="flex items-center gap-2">
         {at > 0 && (
           <button onClick={() => setAt(at - 1)} className={button("plain", "sm")}>
@@ -511,6 +592,7 @@ function ClarifyCard({
  */
 function QuestionRows({
   question,
+  numbered = false,
   picked,
   typed,
   onChoose,
@@ -518,6 +600,8 @@ function QuestionRows({
   onEnter,
 }: {
   question: ClarifyQuestion;
+  /** Each suggestion shows the number key that picks it. */
+  numbered?: boolean;
   picked: string[];
   typed: string;
   onChoose: (option: string) => void;
@@ -530,7 +614,7 @@ function QuestionRows({
       <div className="text-[13px] leading-relaxed font-medium text-fg">{question.question}</div>
       {question.why && <div className="text-[11px] leading-relaxed text-fg-faint">{question.why}</div>}
       <div role={many ? "group" : "radiogroup"} aria-label={question.question} className="space-y-1">
-        {(question.suggestions ?? []).map((option) => {
+        {(question.suggestions ?? []).map((option, k) => {
           const on = picked.includes(option);
           const Mark = many ? (on ? SquareCheck : Square) : on ? CircleDot : Circle;
           return (
@@ -547,6 +631,14 @@ function QuestionRows({
             >
               <Mark aria-hidden size={14} strokeWidth={2} className={`shrink-0 ${on ? "text-fg" : "text-fg-faint"}`} />
               <span className="min-w-0 flex-1">{option}</span>
+              {numbered && k < 9 && (
+                <kbd
+                  aria-hidden
+                  className="shrink-0 font-sans text-[10px] text-fg-faint tabular-nums pointer-coarse:hidden"
+                >
+                  {k + 1}
+                </kbd>
+              )}
             </button>
           );
         })}
@@ -705,6 +797,23 @@ const PLAN_KIND: Record<AssistantPlan["changeType"], { mark: LucideIcon; word: s
   AUTOMATION_REMOVE: { mark: ZapOff, word: "Rule turned off" },
 };
 
+/** "a rule", "3 rules". */
+const say = (n: number, one: string) => (n === 1 ? `a ${one}` : `${n} ${one}s`);
+
+/** The build button, saying what it builds: "Build 2 sections and a rule". */
+function buildLabel(chosen: AssistantPlan[]): string {
+  const sections = chosen.filter((p) => p.changeType === "NEW_MODULE").length;
+  const rules = chosen.filter((p) => p.changeType === "AUTOMATION_ADD").length;
+  const other = chosen.length - sections - rules;
+  const parts = [
+    sections > 0 ? say(sections, "section") : null,
+    rules > 0 ? say(rules, "rule") : null,
+    other > 0 ? say(other, "change") : null,
+  ].filter((x): x is string => x !== null);
+  const last = parts.pop() ?? "it";
+  return `Build ${parts.length ? `${parts.join(", ")} and ${last}` : last}`;
+}
+
 /** A plan's row: its own name where it has one, and what kind of thing it is. */
 function planHeading(plan: AssistantPlan, title: string): { name: string; sub: string } {
   const word = PLAN_KIND[plan.changeType]?.word ?? "Change";
@@ -830,6 +939,106 @@ function BlueprintCard({
     setRun(outcome.skipped ? null : { sent: chosenAt, stale, outcome });
   };
 
+  const row = (plan: AssistantPlan, i: number) => {
+    const summary = describePlan(plan, modules, currentColumns, storeFacts);
+    const status = statusOf(i);
+    const off = status.kind === "left-out" || status.kind === "already-there" || status.kind === "section-gone";
+    const cascaded = !dropped[i] && referencesDropped(plan);
+    const canUntick = !!plan.optional && !done && !run && !cascaded && !staleOf(plan);
+    const hasDetail = summary.lines.length > 0;
+    const open = !!expanded[i];
+    const toggleDetail = () => hasDetail && setExpanded((p) => ({ ...p, [i]: !p[i] }));
+    const { name, sub } = planHeading(plan, summary.title);
+    const Mark = PLAN_KIND[plan.changeType]?.mark ?? Table;
+    return (
+      <li
+        key={i}
+        data-status={status.kind}
+        className={`flex items-start gap-2.5 px-3 py-2.5 ${off ? "opacity-50" : ""}`}
+      >
+        <span
+          className={`mt-px flex h-7 w-7 shrink-0 items-center justify-center rounded-control bg-surface-subdued ${
+            plan.changeType === "MODULE_DELETE" ? "text-tone-critical-fg" : "text-fg-muted"
+          }`}
+        >
+          {plan.changeType === "NEW_MODULE" ? (
+            <Icon name={plan.newModule?.icon} size={15} />
+          ) : (
+            <Mark aria-hidden size={15} strokeWidth={1.75} />
+          )}
+        </span>
+        <div className="min-w-0 flex-1">
+          <button
+            onClick={toggleDetail}
+            aria-expanded={hasDetail ? open : undefined}
+            className={`group/row flex w-full items-start gap-1 text-left ${hasDetail ? "" : "cursor-default"}`}
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13px] leading-snug font-medium text-fg">{name}</span>
+              <span className="block text-[11px] leading-snug text-fg-faint">{sub}</span>
+            </span>
+            {hasDetail && (
+              <ChevronRight
+                aria-hidden
+                size={14}
+                strokeWidth={2}
+                className={`mt-0.5 shrink-0 text-fg-faint transition-transform duration-150 group-hover/row:text-fg-muted ${open ? "rotate-90" : ""}`}
+              />
+            )}
+          </button>
+          {cascaded && <div className="mt-0.5 text-[11px] text-fg-faint">Needs a section you left out</div>}
+          <PlanStatusLine status={status} />
+          {canUntick && plan.optionalWhy && (
+            <div className="mt-0.5 text-[11px] leading-relaxed text-fg-muted">{plan.optionalWhy}</div>
+          )}
+          {/* Above the detail, not inside it: this changes whether
+                the owner wants the section at all. Two lines until the
+                row is opened, and the whole of it then. */}
+          {summary.warnings?.map((w, k) => (
+            <div
+              key={k}
+              title={w}
+              className="mt-0.5 flex items-start gap-1 text-[11px] leading-relaxed text-tone-attention-fg"
+            >
+              <TriangleAlert aria-hidden size={12} strokeWidth={2} className="mt-[3px] shrink-0" />
+              <span className={open ? "" : "line-clamp-2"}>{w}</span>
+            </div>
+          ))}
+          {open && hasDetail && (
+            <ul className="mt-1.5 space-y-0.5 border-l border-line pl-2.5">
+              {summary.lines.map((line, j) => (
+                <li key={j} className="text-[11px] leading-relaxed text-fg-muted">
+                  {line}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        {canUntick && (
+          <button
+            role="checkbox"
+            aria-checked={!dropped[i]}
+            aria-label={`Include ${name}`}
+            onClick={() => setDropped((prev) => ({ ...prev, [i]: !prev[i] }))}
+            className="mt-1 shrink-0 rounded text-fg-muted transition-colors hover:text-fg"
+          >
+            {dropped[i] ? (
+              <Square aria-hidden size={16} strokeWidth={1.75} />
+            ) : (
+              <SquareCheck aria-hidden size={16} strokeWidth={1.75} />
+            )}
+          </button>
+        )}
+      </li>
+    );
+  };
+
+  // The parts it needs, then what it could do without; each keeps its
+  // place in the design, which is how a build says which part did what.
+  const placed = blueprint.plans.map((p, i) => [p, i] as const);
+  const core = placed.filter(([p]) => !p.optional);
+  const extra = placed.filter(([p]) => p.optional);
+
   // A design reads as a message: what Luke said, then one row per thing
   // it would build (its mark, its name, what kind of thing it is), the
   // detail behind the row, what it does not cover, and two actions. The
@@ -839,103 +1048,16 @@ function BlueprintCard({
     <div className="space-y-3">
       <p className="text-[13px] leading-relaxed text-fg">{message.trim() || blueprint.summary}</p>
 
-      <ul className="divide-y divide-line rounded-card border border-line">
-        {blueprint.plans.map((plan, i) => {
-          const summary = describePlan(plan, modules, currentColumns, storeFacts);
-          const status = statusOf(i);
-          const off = status.kind === "left-out" || status.kind === "already-there" || status.kind === "section-gone";
-          const cascaded = !dropped[i] && referencesDropped(plan);
-          const canUntick = !!plan.optional && !done && !run && !cascaded && !staleOf(plan);
-          const hasDetail = summary.lines.length > 0;
-          const open = !!expanded[i];
-          const toggleDetail = () => hasDetail && setExpanded((p) => ({ ...p, [i]: !p[i] }));
-          const { name, sub } = planHeading(plan, summary.title);
-          const Mark = PLAN_KIND[plan.changeType]?.mark ?? Table;
-          return (
-            <li
-              key={i}
-              data-status={status.kind}
-              className={`flex items-start gap-2.5 px-3 py-2.5 ${off ? "opacity-50" : ""}`}
-            >
-              <span
-                className={`mt-px flex h-7 w-7 shrink-0 items-center justify-center rounded-control bg-surface-subdued ${
-                  plan.changeType === "MODULE_DELETE" ? "text-tone-critical-fg" : "text-fg-muted"
-                }`}
-              >
-                {plan.changeType === "NEW_MODULE" ? (
-                  <Icon name={plan.newModule?.icon} size={15} />
-                ) : (
-                  <Mark aria-hidden size={15} strokeWidth={1.75} />
-                )}
-              </span>
-              <div className="min-w-0 flex-1">
-                <button
-                  onClick={toggleDetail}
-                  aria-expanded={hasDetail ? open : undefined}
-                  className={`group/row flex w-full items-start gap-1 text-left ${hasDetail ? "" : "cursor-default"}`}
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] leading-snug font-medium text-fg">{name}</span>
-                    <span className="block text-[11px] leading-snug text-fg-faint">
-                      {plan.optional ? `Optional · ${sub}` : sub}
-                    </span>
-                  </span>
-                  {hasDetail && (
-                    <ChevronRight
-                      aria-hidden
-                      size={14}
-                      strokeWidth={2}
-                      className={`mt-0.5 shrink-0 text-fg-faint transition-transform duration-150 group-hover/row:text-fg-muted ${open ? "rotate-90" : ""}`}
-                    />
-                  )}
-                </button>
-                {cascaded && <div className="mt-0.5 text-[11px] text-fg-faint">Needs a section you left out</div>}
-                <PlanStatusLine status={status} />
-                {canUntick && plan.optionalWhy && (
-                  <div className="mt-0.5 text-[11px] leading-relaxed text-fg-muted">{plan.optionalWhy}</div>
-                )}
-                {/* Above the detail, not inside it: this changes whether
-                    the owner wants the section at all. Two lines until the
-                    row is opened, and the whole of it then. */}
-                {summary.warnings?.map((w, k) => (
-                  <div
-                    key={k}
-                    title={w}
-                    className="mt-0.5 flex items-start gap-1 text-[11px] leading-relaxed text-tone-attention-fg"
-                  >
-                    <TriangleAlert aria-hidden size={12} strokeWidth={2} className="mt-[3px] shrink-0" />
-                    <span className={open ? "" : "line-clamp-2"}>{w}</span>
-                  </div>
-                ))}
-                {open && hasDetail && (
-                  <ul className="mt-1.5 space-y-0.5 border-l border-line pl-2.5">
-                    {summary.lines.map((line, j) => (
-                      <li key={j} className="text-[11px] leading-relaxed text-fg-muted">
-                        {line}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              {canUntick && (
-                <button
-                  role="checkbox"
-                  aria-checked={!dropped[i]}
-                  aria-label={`Include ${name}`}
-                  onClick={() => setDropped((prev) => ({ ...prev, [i]: !prev[i] }))}
-                  className="mt-1 shrink-0 rounded text-fg-muted transition-colors hover:text-fg"
-                >
-                  {dropped[i] ? (
-                    <Square aria-hidden size={16} strokeWidth={1.75} />
-                  ) : (
-                    <SquareCheck aria-hidden size={16} strokeWidth={1.75} />
-                  )}
-                </button>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+      {core.length > 0 && (
+        <ul className="divide-y divide-line rounded-card border border-line">{core.map(([p, i]) => row(p, i))}</ul>
+      )}
+      {/* What the design could do without, apart, each with its own tick. */}
+      {extra.length > 0 && (
+        <div role="group" aria-label="Also suggested" className="space-y-1.5">
+          <div className="text-[11px] font-medium text-fg-faint">Also suggested</div>
+          <ul className="divide-y divide-line rounded-card border border-line">{extra.map(([p, i]) => row(p, i))}</ul>
+        </div>
+      )}
 
       {blueprint.workflow.length > 0 && (
         <details className="group text-[11px]">
@@ -974,7 +1096,7 @@ function BlueprintCard({
       {!done && !nothingLeft && (
         <div className="flex items-center gap-1.5">
           <button onClick={approve} disabled={chosen.length === 0 || building} className={button("primary", "sm")}>
-            {building ? "Building…" : `Build ${chosen.length === 1 ? "this" : `these ${chosen.length}`}`}
+            {building ? "Building…" : buildLabel(chosen)}
           </button>
           <button onClick={onAmend} className={button("plain", "sm")}>
             Change something
@@ -999,10 +1121,12 @@ export default function ChatPanel({
   messages,
   busy,
   threads,
+  threadsMore = false,
   conversationId,
   onNewThread,
   onPickThread,
   onDeleteThread,
+  onRenameThread,
   onStop,
   canStop,
   steps = [],
@@ -1043,12 +1167,16 @@ export default function ChatPanel({
   messages: ChatMessage[];
   /** Past threads for this project, newest first. */
   threads: ThreadSummary[];
+  /** Older threads exist beyond this first page. */
+  threadsMore?: boolean;
   conversationId: string | null;
   /** The last conversation is still loading, so the empty screen is not shown yet. */
   threadOpening?: boolean;
   onNewThread: () => void;
   onPickThread: (id: string) => void;
   onDeleteThread: (id: string) => void;
+  /** Names a thread for good: Luke's replies no longer rename it. */
+  onRenameThread: (id: string, title: string) => void;
   onStop: () => void;
   /** Only a model call can be stopped. Applying a build must not be
    *  interrupted halfway, and there is nothing to abort during it. */
@@ -1472,6 +1600,64 @@ export default function ChatPanel({
   const [threadQuery, setThreadQuery] = useState("");
   /** When the list of past conversations was opened: what "3 h ago" and "Today" are counted from. */
   const [threadsAt, setThreadsAt] = useState(0);
+  /** Pages of past conversations below the first, as "Show older" brings them. */
+  const [olderThreads, setOlderThreads] = useState<ThreadSummary[]>([]);
+  const [olderMore, setOlderMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  /** Every conversation whose name has the words searched for, as the server found them. */
+  const [foundThreads, setFoundThreads] = useState<{ q: string; list: ThreadSummary[] } | null>(null);
+  const [renamingThread, setRenamingThread] = useState<string | null>(null);
+  const [renameText, setRenameText] = useState("");
+  const listedThreads = useMemo(() => {
+    const first = new Set(threads.map((t) => t.id));
+    return [...threads, ...olderThreads.filter((t) => !first.has(t.id))];
+  }, [threads, olderThreads]);
+  const moreThreads = olderThreads.length > 0 ? olderMore : threadsMore;
+  const showOlderThreads = async () => {
+    const last = listedThreads[listedThreads.length - 1];
+    if (!last || loadingOlder) return;
+    setLoadingOlder(true);
+    const { ok, data } = await apiFetch(
+      `/api/chat?${new URLSearchParams({ projectId, before: last.updated_at })}`,
+      null,
+      "GET"
+    ).catch(() => ({ ok: false, data: {} as Record<string, unknown> }));
+    setLoadingOlder(false);
+    if (!ok) return;
+    setOlderThreads((prev) => [...prev, ...((data.threads as ThreadSummary[] | undefined) ?? [])]);
+    setOlderMore(data.more === true);
+  };
+  // Searched over every thread, a moment after they stop typing.
+  useEffect(() => {
+    const q = threadQuery.trim();
+    if (!q) return;
+    const stop = new AbortController();
+    const t = setTimeout(() => {
+      apiFetch(`/api/chat?${new URLSearchParams({ projectId, q })}`, null, "GET", stop.signal)
+        .then(({ ok, data }) => {
+          if (ok) setFoundThreads({ q, list: (data.threads as ThreadSummary[] | undefined) ?? [] });
+        })
+        .catch(() => {});
+    }, 250);
+    return () => {
+      clearTimeout(t);
+      stop.abort();
+    };
+  }, [threadQuery, projectId]);
+  const saveRename = (id: string) => {
+    const title = renameText.trim().slice(0, TITLE_MAX);
+    setRenamingThread(null);
+    if (!title) return;
+    onRenameThread(id, title);
+    const named = (t: ThreadSummary) => (t.id === id ? { ...t, title } : t);
+    setOlderThreads((prev) => prev.map(named));
+    setFoundThreads((prev) => prev && { ...prev, list: prev.list.map(named) });
+  };
+  const forgetThread = (id: string) => {
+    onDeleteThread(id);
+    setOlderThreads((prev) => prev.filter((t) => t.id !== id));
+    setFoundThreads((prev) => prev && { ...prev, list: prev.list.filter((t) => t.id !== id) });
+  };
   /** The request whose redesign is running, so it cannot be started twice. */
   const [opening, setOpening] = useState<string | null>(null);
   const [bellOpen, setBellOpen] = useState(false);
@@ -1487,7 +1673,10 @@ export default function ChatPanel({
   useEffect(() => {
     if (!bellOpen && !threadsOpen) return;
     const shut = (e: Event) => {
-      if (e instanceof KeyboardEvent && e.key !== "Escape") return;
+      // An Escape something inside already took (leaving a rename) is not
+      // for the menu. Next hydrates the whole document, so React's handlers
+      // sit on the same node as this one and cannot stop it reaching here.
+      if (e instanceof KeyboardEvent && (e.key !== "Escape" || e.defaultPrevented)) return;
       if (e instanceof PointerEvent && menus.current?.contains(e.target as Node)) return;
       setBellOpen(false);
       setThreadsOpen(false);
@@ -1845,7 +2034,10 @@ export default function ChatPanel({
                 className="relative inline-flex h-8 min-w-8 items-center justify-center gap-1 rounded-control px-1.5 text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
               >
                 <History aria-hidden size={16} strokeWidth={1.75} />
-                <span className="text-[11px] tabular-nums">{threads.length}</span>
+                <span className="text-[11px] tabular-nums">
+                  {threads.length}
+                  {threadsMore ? "+" : ""}
+                </span>
               </button>
             )}
             {bellOpen && (
@@ -2217,9 +2409,12 @@ export default function ChatPanel({
             {threadsOpen && (
               <div className="pop thin-scroll absolute top-full right-0 z-50 mt-1.5 max-h-96 w-72 overflow-y-auto rounded-card bg-surface p-1 shadow-popover">
                 {/* Found by name once there are more than a screenful; the
-                    names are the model's own summaries of each thread. */}
-                {threads.length > THREADS_BEFORE_SEARCH && (
-                  <div className="sticky top-0 z-10 bg-surface p-1">
+                    names are the model's own summaries of each thread, or
+                    what the owner renamed it. Every thread is searched, not
+                    only the pages already here. It covers the popover's own
+                    padding too, or rows scroll into view above it. */}
+                {(listedThreads.length > THREADS_BEFORE_SEARCH || threadsMore) && (
+                  <div className="sticky -top-1 z-10 -mx-1 -mt-1 bg-surface px-2 pt-2 pb-1">
                     <input
                       type="search"
                       value={threadQuery}
@@ -2233,8 +2428,12 @@ export default function ChatPanel({
                 )}
                 {(() => {
                   const now = threadsAt;
-                  const q = threadQuery.trim().toLowerCase();
-                  const shown = q ? threads.filter((t) => (t.title ?? "").toLowerCase().includes(q)) : threads;
+                  const q = threadQuery.trim();
+                  // Those already here at once, then the server's answer over all of them.
+                  const found = foundThreads?.q === q ? foundThreads.list : null;
+                  const shown = q
+                    ? (found ?? listedThreads.filter((t) => (t.title ?? "").toLowerCase().includes(q.toLowerCase())))
+                    : listedThreads;
                   if (shown.length === 0) {
                     return (
                       <div className="px-3 py-2 text-[11px] text-fg-faint">
@@ -2248,60 +2447,120 @@ export default function ChatPanel({
                     const g = dayGroup(t.updated_at, now);
                     groups.set(g, [...(groups.get(g) ?? []), t]);
                   }
-                  return [...groups].map(([label, list]) => (
-                    <div key={label} role="group" aria-label={label}>
-                      <div className="px-2.5 pt-2 pb-1 text-[10px] font-medium text-fg-faint">{label}</div>
-                      {list.map((t) => (
-                        <div
-                          key={t.id}
-                          className={`flex items-center gap-1 rounded-[6px] px-1 transition-colors hover:bg-surface-hover ${
-                            t.id === conversationId ? "bg-surface-hover" : ""
-                          }`}
-                        >
-                          <button
-                            onClick={() => {
-                              onPickThread(t.id);
-                              setThreadsOpen(false);
-                            }}
-                            className="min-w-0 flex-1 px-1.5 py-1.5 text-left"
-                          >
+                  return (
+                    <>
+                      {[...groups].map(([label, list]) => (
+                        <div key={label} role="group" aria-label={label}>
+                          <div className="px-2.5 pt-2 pb-1 text-[10px] font-medium text-fg-faint">{label}</div>
+                          {list.map((t) => (
                             <div
-                              className={`truncate text-[12px] ${t.id === conversationId ? "font-medium text-fg" : "text-fg"}`}
+                              key={t.id}
+                              className={`flex items-center gap-0.5 rounded-[6px] px-1 transition-colors hover:bg-surface-hover ${
+                                t.id === conversationId ? "bg-surface-hover" : ""
+                              }`}
                             >
-                              {t.title ?? "Untitled"}
+                              {renamingThread === t.id ? (
+                                <div className="min-w-0 flex-1 py-1 pr-1">
+                                  <input
+                                    value={renameText}
+                                    onChange={(e) => setRenameText(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        saveRename(t.id);
+                                      } else if (e.key === "Escape") {
+                                        e.preventDefault();
+                                        setRenamingThread(null);
+                                      }
+                                    }}
+                                    maxLength={TITLE_MAX}
+                                    aria-label="Name this conversation"
+                                    autoFocus
+                                    className={`${fieldOf("sm")} w-full`}
+                                  />
+                                  <div className="mt-0.5 px-0.5 text-[10px] text-fg-faint">
+                                    Enter to keep it · Esc to leave it
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    onPickThread(t.id);
+                                    setThreadsOpen(false);
+                                  }}
+                                  className="min-w-0 flex-1 px-1.5 py-1.5 text-left"
+                                >
+                                  <div
+                                    className={`truncate text-[12px] text-fg ${t.id === conversationId ? "font-medium" : ""}`}
+                                  >
+                                    {t.title ?? "Untitled"}
+                                  </div>
+                                  <div className="truncate text-[10px] text-fg-faint">{threadLine(t, now)}</div>
+                                </button>
+                              )}
+                              {/* Threads accumulate — six of them called "hello"
+                                  before there was any way to be rid of one. */}
+                              {renamingThread === t.id ? null : confirmThread === t.id ? (
+                                <span className="flex shrink-0 items-center gap-1 pr-1 text-[10px]">
+                                  <button
+                                    onClick={() => {
+                                      setConfirmThread(null);
+                                      forgetThread(t.id);
+                                    }}
+                                    className="font-medium text-tone-critical-fg hover:underline"
+                                  >
+                                    Delete
+                                  </button>
+                                  <button
+                                    onClick={() => setConfirmThread(null)}
+                                    className="text-fg-faint hover:underline"
+                                  >
+                                    Keep
+                                  </button>
+                                </span>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      setRenamingThread(t.id);
+                                      setRenameText(t.title ?? "");
+                                    }}
+                                    aria-label={`Rename ${t.title ?? "this conversation"}`}
+                                    title="Rename"
+                                    className="shrink-0 rounded px-1 py-1 text-fg-faint transition-colors hover:bg-surface-subdued hover:text-fg-muted"
+                                  >
+                                    <Pencil aria-hidden size={12} strokeWidth={2} />
+                                  </button>
+                                  <button
+                                    onClick={() => setConfirmThread(t.id)}
+                                    aria-label={`Delete ${t.title ?? "this conversation"}`}
+                                    title="Delete"
+                                    className="shrink-0 rounded px-1 py-1 text-fg-faint hover:bg-tone-critical/40 hover:text-tone-critical-fg"
+                                  >
+                                    <X aria-hidden size={14} strokeWidth={2} />
+                                  </button>
+                                </>
+                              )}
                             </div>
-                            <div className="truncate text-[10px] text-fg-faint">{threadLine(t, now)}</div>
-                          </button>
-                          {/* Threads accumulate — six of them called "hello"
-                              before there was any way to be rid of one. */}
-                          {confirmThread === t.id ? (
-                            <span className="flex shrink-0 items-center gap-1 pr-1 text-[10px]">
-                              <button
-                                onClick={() => {
-                                  setConfirmThread(null);
-                                  onDeleteThread(t.id);
-                                }}
-                                className="font-medium text-tone-critical-fg hover:underline"
-                              >
-                                Delete
-                              </button>
-                              <button onClick={() => setConfirmThread(null)} className="text-fg-faint hover:underline">
-                                Keep
-                              </button>
-                            </span>
-                          ) : (
-                            <button
-                              onClick={() => setConfirmThread(t.id)}
-                              aria-label={`Delete ${t.title ?? "this conversation"}`}
-                              className="shrink-0 rounded px-1.5 py-1 text-[11px] text-fg-faint hover:bg-tone-critical/40 hover:text-tone-critical-fg"
-                            >
-                              <X aria-hidden size={14} strokeWidth={2} />
-                            </button>
-                          )}
+                          ))}
                         </div>
                       ))}
-                    </div>
-                  ));
+                      {/* The first page is the newest thirty; older ones come
+                          when asked for, not all at once. */}
+                      {!q && moreThreads && (
+                        <button
+                          onClick={showOlderThreads}
+                          disabled={loadingOlder}
+                          className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-[6px] px-2 py-1.5 text-[11px] text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-60"
+                        >
+                          {loadingOlder && (
+                            <LoaderCircle aria-hidden size={12} strokeWidth={2} className="motion-safe:animate-spin" />
+                          )}
+                          {loadingOlder ? "Loading…" : "Show older"}
+                        </button>
+                      )}
+                    </>
+                  );
                 })()}
               </div>
             )}
@@ -2420,7 +2679,10 @@ export default function ChatPanel({
                         off the right edge of the panel and was cut in half.
                         Same for a pasted URL or a list of SKUs. */}
                       <div className="rounded-2xl rounded-br-md bg-canvas px-3 py-2 text-[13px] leading-relaxed break-words text-fg">
-                        {m.text}
+                        {(() => {
+                          const pairs = answerPairs(m.text ?? "");
+                          return pairs ? <AnswerSummary pairs={pairs} /> : m.text;
+                        })()}
                       </div>
                     </div>
                   )}
@@ -2517,6 +2779,7 @@ export default function ChatPanel({
                 <div key={m.id} className="space-y-1">
                   {m.trace && <TraceLine trace={m.trace} />}
                   <Markdown>{m.text ?? ""}</Markdown>
+                  {m.text && <CopyReply text={m.text} />}
                   {/* Under the build, which is where they find out it
                     happened — a change made with nobody watching is
                     read here first, and this is the moment they want

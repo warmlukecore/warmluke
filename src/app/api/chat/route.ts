@@ -21,12 +21,17 @@ export const runtime = "nodejs";
 
 /**
  * GET /api/chat?projectId=…            — the project's threads, newest first
+ *   &before=<updated_at>               — the page of threads older than that
+ *   &q=…                               — threads whose name has these words
  * GET /api/chat?projectId=…&id=…       — one thread's messages
  * GET /api/chat?projectId=…&latest=1   — the newest thread and its messages
  *
  * Conversations were being written and never read back, so every reload
  * silently started a new one and the owner lost the thread they were in.
  */
+/** Past threads listed at a time; the list asks for the next page when it is wanted. */
+const THREAD_PAGE = 30;
+
 export async function GET(req: Request) {
   const auth = await getUserClient(req);
   if (!auth) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
@@ -36,6 +41,8 @@ export async function GET(req: Request) {
   const projectId = url.searchParams.get("projectId");
   const id = url.searchParams.get("id");
   const latest = url.searchParams.get("latest");
+  const before = url.searchParams.get("before");
+  const q = url.searchParams.get("q")?.trim().slice(0, 100);
   if (!projectId) {
     return NextResponse.json({ error: "projectId is required" }, { status: 400 });
   }
@@ -43,14 +50,19 @@ export async function GET(req: Request) {
   // With the kind of each message only, so the list can say what a
   // thread holds ("2 built · 3 answers") without a second query.
   // ponytail: reads every message's type; a count kept on conversations if threads get long.
-  const { data: threadRows, error: tErr } = await client
+  let list = client
     .from("conversations")
     .select("id, title, created_at, updated_at, messages(ptype:payload->>type, pstatus:payload->>status)")
-    .eq("project_id", projectId)
-    .order("updated_at", { ascending: false })
-    .limit(30);
+    .eq("project_id", projectId);
+  // ponytail: paged by updated_at alone; two threads moved in the same microsecond could straddle a page.
+  if (before) list = list.lt("updated_at", before);
+  // Their words, not a pattern: % and _ are searched for as themselves.
+  if (q) list = list.ilike("title", `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
+  // One more than a page, to know whether there is another.
+  const { data: threadRows, error: tErr } = await list.order("updated_at", { ascending: false }).limit(THREAD_PAGE + 1);
   if (tErr) return NextResponse.json({ error: tErr.message }, { status: 500 });
-  const threads = (threadRows ?? []).map(({ messages, ...t }) => {
+  const more = (threadRows?.length ?? 0) > THREAD_PAGE;
+  const threads = (threadRows ?? []).slice(0, THREAD_PAGE).map(({ messages, ...t }) => {
     const kinds = (messages ?? []) as Array<{ ptype: string | null; pstatus: string | null }>;
     return {
       ...t,
@@ -61,12 +73,20 @@ export async function GET(req: Request) {
   });
 
   const wanted = id ?? (latest ? (threads[0]?.id as string | undefined) : undefined);
-  if (!wanted) return NextResponse.json({ threads, conversationId: null, messages: [] });
+  if (!wanted) return NextResponse.json({ threads, more, conversationId: null, messages: [] });
 
   // RLS keeps this to the caller's own project; the extra filter guards
-  // against an id from a different project of theirs.
+  // against an id from a different project of theirs. A thread opened
+  // from further down the list is not on the first page, so it is asked
+  // for by itself rather than refused.
   if (!threads.some((t) => t.id === wanted)) {
-    return NextResponse.json({ error: "Thread not found." }, { status: 404 });
+    const { data: own } = await client
+      .from("conversations")
+      .select("id")
+      .eq("id", wanted)
+      .eq("project_id", projectId)
+      .maybeSingle();
+    if (!own) return NextResponse.json({ error: "Thread not found." }, { status: 404 });
   }
 
   // The same trap as the replay below: ascending with a limit keeps the
@@ -82,6 +102,7 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     threads,
+    more,
     conversationId: wanted,
     messages: [...(msgs ?? [])].reverse(),
   });
@@ -459,11 +480,15 @@ export async function POST(req: Request) {
         // the name while the subject holds, so the list reads as what each
         // thread was about ("Pending COD payments") rather than "hello".
         // Without one, the old rule: named once, from the design.
-        const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+        //
+        // A name the owner gave in the list is theirs (0126): the reply
+        // moves the thread up, and leaves its name alone.
         const named =
           turn.reply.title ?? (isNewConversation || looksLikeAGreeting(message) ? titleFor(turn.reply) : null);
-        if (named) patch.title = named;
-        await client.from("conversations").update(patch).eq("id", convId);
+        await client.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
+        if (named) {
+          await client.from("conversations").update({ title: named }).eq("id", convId).eq("named_by_owner", false);
+        }
 
         // The reply's row, so the panel can show it under that id and a
         // reload of the thread knows which reply it already has on screen.

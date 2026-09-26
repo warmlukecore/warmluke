@@ -87,7 +87,7 @@ computed columns, guards, and local display behavior where allowed.
 
 | Table | Purpose |
 | --- | --- |
-| `conversations` | Owner-only assistant threads, including the per-project thread external builds are filed in; published to realtime, and every message writer advances `updated_at` |
+| `conversations` | Owner-only assistant threads, including the per-project thread external builds are filed in; published to realtime, and every message writer advances `updated_at`. Named by Luke's replies until the owner renames one (`named_by_owner`, 0126) |
 | `messages` | Original model content plus structured reply/build/undo payloads; `payload.superseded` marks a prompt the merchant later corrected, and everything answered after it |
 | `build_requests` | Designs originating from MCP clients, including status, exact plans, approval, outcome, and source client |
 | `judgements` | Asynchronous design-quality observations; never an authorization decision |
