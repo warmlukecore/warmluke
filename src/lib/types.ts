@@ -397,6 +397,16 @@ export interface Blueprint {
   next?: NextStep[];
 }
 
+/** A past conversation as the list shows it: its name, when it last moved, and what it holds. */
+export interface ThreadSummary {
+  id: string;
+  title: string | null;
+  updated_at: string;
+  /** Builds that landed in it. */
+  built?: number;
+  answers?: number;
+}
+
 /** A follow-up the owner could send next, offered once a build lands. */
 export interface NextStep {
   /** A few words, as a button. */

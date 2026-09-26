@@ -19,3 +19,18 @@ export function ago(iso: string | null | undefined, now: number, never = "never"
   const months = Math.round(days / 30);
   return months < 12 ? `${months} mo ago` : `${Math.round(months / 12)} y ago`;
 }
+
+/** The start of the local day a moment falls in. */
+const day = (t: number) => new Date(t).setHours(0, 0, 0, 0);
+
+/**
+ * Which part of a list of past things this falls in: by the calendar,
+ * not by hours, so last night at eleven is "Yesterday" at nine today.
+ */
+export function dayGroup(iso: string, now: number): "Today" | "Yesterday" | "Last 7 days" | "Older" {
+  // Rounded, so a day of 23 or 25 hours (a clock change) still counts as one.
+  const days = Math.round((day(now) - day(Date.parse(iso))) / 86_400_000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  return days < 7 ? "Last 7 days" : "Older";
+}

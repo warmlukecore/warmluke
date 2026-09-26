@@ -77,13 +77,20 @@ target section instead of copying label text into the source row.
 - `clarify`: structured questions with suggestions and free-form answers: one shown
   directly, two independent ones together, otherwise one at a time with Back and Skip;
   a `multi` question takes several answers;
-- `blueprint`: a workflow and selectable plans before a new build;
+- `blueprint`: a workflow and selectable plans before a new build, one row per plan
+  (its section's icon or its kind's, its name, what kind of change it is) with the detail
+  behind the row, and a checkbox only on optional parts;
 - `plans`: edits to an already-discussed application.
 
 It also renders pending MCP-originated requests, build history, turn progress, undo
 controls, OAuth client connections, quotas, and feature-switch state. Plans are not
 trusted merely because they arrived in the browser; `/api/apply` reloads live state and
 validates them again.
+
+Past conversations are listed by day (Today, Yesterday, Last 7 days, Older), each with
+when it last moved and what it holds ("1 built · 2 answers", counted by `GET /api/chat`
+from each message's type), and can be searched by name once there are more than five.
+While the last conversation loads, the panel shows its shape, not the empty welcome.
 
 ## Records and writes
 

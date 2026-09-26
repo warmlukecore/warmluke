@@ -27,9 +27,11 @@ import type {
   ModuleRow,
   NextStep,
   RecordRow,
+  ThreadSummary,
   TurnEvent,
   UiSchema,
 } from "@/lib/types";
+import { ago, dayGroup } from "@/lib/when";
 import { Icon } from "@/components/ui/Icon";
 import {
   ArrowDown,
@@ -38,22 +40,35 @@ import {
   Check,
   ChevronRight,
   Circle,
+  Columns3,
   CircleDot,
   Copy,
+  CornerDownRight,
+  Hand,
   History,
+  LayoutGrid,
+  ListChecks,
   LoaderCircle,
   type LucideIcon,
   Minus,
   Pencil,
   Plug,
+  Rows3,
+  Search,
+  ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Square,
   SquareCheck,
   SquarePen,
+  Store,
+  Table,
+  Trash2,
   TriangleAlert,
   Undo2,
   X,
   Zap,
+  ZapOff,
 } from "lucide-react";
 import { button, fieldOf } from "@/components/ui/controls";
 import { LukeMark } from "@/components/ui/LukeMark";
@@ -165,10 +180,7 @@ function TraceLine({ trace }: { trace: { steps: TurnEvent[]; ms: number } }) {
       </summary>
       <ul className="mt-0.5 space-y-0.5 pl-3.5 text-fg-faint">
         {trace.steps.map((s, i) => (
-          <li key={i} className="flex items-center gap-1.5 truncate">
-            <Check aria-hidden size={12} strokeWidth={2.25} className="shrink-0 text-tone-success-fg" />
-            {stepWords(s)}
-          </li>
+          <StepRow key={i} step={s} />
         ))}
       </ul>
     </details>
@@ -189,6 +201,22 @@ const removalsIn = (plans: AssistantPlan[] | null): string[] =>
     .filter((p) => p.changeType === "MODULE_DELETE")
     .map((p) => p.deleteConfirmName ?? "")
     .filter(Boolean);
+
+/** Past conversations found by name once there are more than this many. */
+const THREADS_BEFORE_SEARCH = 5;
+
+/** Under a past conversation's name: when it last moved, and what it holds. */
+function threadLine(t: ThreadSummary, now: number): string {
+  const built = t.built ?? 0;
+  const answers = t.answers ?? 0;
+  return [
+    ago(t.updated_at, now),
+    built > 0 ? `${built} built` : null,
+    answers > 0 ? `${answers} answer${answers === 1 ? "" : "s"}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
 
 /**
  * How long ago, in the fewest words that are still true.
@@ -221,6 +249,29 @@ export const nextChatId = () => `m${++msgSeq}`;
  * was read, which attempt, how many problems — are the server's; only
  * the phrasing is this panel's.
  */
+/** What each step of a turn was, as a mark beside its words. */
+const STEP_MARK: Record<TurnEvent["step"], LucideIcon> = {
+  accepted: CornerDownRight,
+  store: Store,
+  context: LayoutGrid,
+  model: Sparkles,
+  lookup: Search,
+  proposed: Hand,
+  checked: ShieldCheck,
+  gaps: ListChecks,
+};
+
+/** A step already taken: its mark and its words, in the margin's voice. */
+function StepRow({ step }: { step: TurnEvent }) {
+  const Mark = step.step === "checked" && step.problems > 0 ? TriangleAlert : STEP_MARK[step.step];
+  return (
+    <li className="flex items-center gap-1.5 truncate">
+      <Mark aria-hidden size={12} strokeWidth={2} className="shrink-0 text-fg-faint" />
+      {stepWords(step)}
+    </li>
+  );
+}
+
 function stepWords(step: TurnEvent): string {
   const n = (count: number, one: string) => `${count} ${one}${count === 1 ? "" : "s"}`;
   switch (step.step) {
@@ -641,6 +692,37 @@ function outcomeOf(r: BuildRecord): BuildOutcome | undefined {
   }
 }
 
+/** What kind of change a plan is: the mark its row leads with, and the word under its name. */
+const PLAN_KIND: Record<AssistantPlan["changeType"], { mark: LucideIcon; word: string }> = {
+  NEW_MODULE: { mark: Table, word: "New section" },
+  FIELD_ADD: { mark: Columns3, word: "New fields" },
+  UI_CHANGE: { mark: Columns3, word: "Layout" },
+  MODULE_UPDATE: { mark: Pencil, word: "Section settings" },
+  MODULE_DELETE: { mark: Trash2, word: "Removed with its rows" },
+  FEATURE_UPDATE: { mark: SlidersHorizontal, word: "How it works" },
+  RECORD_SEED: { mark: Rows3, word: "Rows" },
+  AUTOMATION_ADD: { mark: Zap, word: "Rule" },
+  AUTOMATION_REMOVE: { mark: ZapOff, word: "Rule turned off" },
+};
+
+/** A plan's row: its own name where it has one, and what kind of thing it is. */
+function planHeading(plan: AssistantPlan, title: string): { name: string; sub: string } {
+  const word = PLAN_KIND[plan.changeType]?.word ?? "Change";
+  switch (plan.changeType) {
+    case "NEW_MODULE": {
+      const n = plan.newSchema?.columns?.length ?? 0;
+      return {
+        name: plan.newModule?.nav_label ?? title,
+        sub: n > 0 ? `${word} · ${n} field${n === 1 ? "" : "s"}` : word,
+      };
+    }
+    case "AUTOMATION_ADD":
+      return { name: plan.automation?.name ?? title, sub: word };
+    default:
+      return { name: title, sub: word };
+  }
+}
+
 function BlueprintCard({
   message,
   blueprint,
@@ -709,7 +791,6 @@ function BlueprintCard({
     .map((p, i) => (!dropped[i] && !referencesDropped(p) && !staleOf(p) ? i : -1))
     .filter((i) => i >= 0);
   const chosen = chosenAt.map((i) => blueprint.plans[i]);
-  const hasOptional = blueprint.plans.some((p) => p.optional);
   const nothingLeft = chosen.length === 0 && blueprint.plans.some((p) => staleOf(p));
 
   // A card read back from the thread has no session of its own: what
@@ -749,91 +830,85 @@ function BlueprintCard({
     setRun(outcome.skipped ? null : { sent: chosenAt, stale, outcome });
   };
 
-  // A design reads as a message: what Luke said, what it would build
-  // as one line per thing with the detail behind a caret, what it does
-  // not cover, and two small actions. No header, no badge, no boxes.
-  // The platform's limits are not repeated on every design any more;
-  // they sit under the composer, one tap away, and a design that fails
-  // to meet something says so in its own "Not covered" line.
+  // A design reads as a message: what Luke said, then one row per thing
+  // it would build (its mark, its name, what kind of thing it is), the
+  // detail behind the row, what it does not cover, and two actions. The
+  // summary under the message said the same again, and a badge and a
+  // coloured line on each optional part made three rows read as ten.
   return (
     <div className="space-y-3">
-      <p className="text-[13px] leading-relaxed text-fg">{message}</p>
-      {blueprint.summary && blueprint.summary.trim() !== message.trim() && (
-        <p className="text-[13px] leading-relaxed text-fg-muted">{blueprint.summary}</p>
-      )}
+      <p className="text-[13px] leading-relaxed text-fg">{message.trim() || blueprint.summary}</p>
 
-      <div className="space-y-1">
-        {hasOptional && !done && <div className="text-[11px] text-fg-faint">Untick anything you don&rsquo;t need.</div>}
+      <ul className="divide-y divide-line rounded-card border border-line">
         {blueprint.plans.map((plan, i) => {
           const summary = describePlan(plan, modules, currentColumns, storeFacts);
           const status = statusOf(i);
           const off = status.kind === "left-out" || status.kind === "already-there" || status.kind === "section-gone";
           const cascaded = !dropped[i] && referencesDropped(plan);
+          const canUntick = !!plan.optional && !done && !run && !cascaded && !staleOf(plan);
           const hasDetail = summary.lines.length > 0;
           const open = !!expanded[i];
           const toggleDetail = () => hasDetail && setExpanded((p) => ({ ...p, [i]: !p[i] }));
+          const { name, sub } = planHeading(plan, summary.title);
+          const Mark = PLAN_KIND[plan.changeType]?.mark ?? Table;
           return (
-            <div key={i} data-status={status.kind} className={`flex items-start gap-1.5 ${off ? "opacity-50" : ""}`}>
-              {plan.optional && !done && !run && !cascaded && !staleOf(plan) ? (
-                <input
-                  type="checkbox"
-                  checked={!dropped[i]}
-                  onChange={() => setDropped((prev) => ({ ...prev, [i]: !prev[i] }))}
-                  className="mt-1 h-3.5 w-3.5 shrink-0 accent-primary"
-                />
-              ) : (
-                <button
-                  onClick={toggleDetail}
-                  aria-expanded={open}
-                  aria-label={hasDetail ? (open ? "Hide detail" : "Show detail") : undefined}
-                  className={`mt-0.5 w-3.5 shrink-0 text-center text-[11px] ${
-                    hasDetail ? "text-fg-faint hover:text-fg" : "cursor-default text-fg-faint"
-                  }`}
-                >
-                  {hasDetail ? (
-                    <ChevronRight
-                      aria-hidden
-                      size={13}
-                      strokeWidth={2}
-                      className={`transition-transform duration-150 ${open ? "rotate-90" : ""}`}
-                    />
-                  ) : (
-                    "·"
-                  )}
-                </button>
-              )}
+            <li
+              key={i}
+              data-status={status.kind}
+              className={`flex items-start gap-2.5 px-3 py-2.5 ${off ? "opacity-50" : ""}`}
+            >
+              <span
+                className={`mt-px flex h-7 w-7 shrink-0 items-center justify-center rounded-control bg-surface-subdued ${
+                  plan.changeType === "MODULE_DELETE" ? "text-tone-critical-fg" : "text-fg-muted"
+                }`}
+              >
+                {plan.changeType === "NEW_MODULE" ? (
+                  <Icon name={plan.newModule?.icon} size={15} />
+                ) : (
+                  <Mark aria-hidden size={15} strokeWidth={1.75} />
+                )}
+              </span>
               <div className="min-w-0 flex-1">
                 <button
                   onClick={toggleDetail}
-                  className={`text-left text-[13px] leading-relaxed text-fg ${hasDetail ? "hover:text-fg" : "cursor-default"}`}
+                  aria-expanded={hasDetail ? open : undefined}
+                  className={`group/row flex w-full items-start gap-1 text-left ${hasDetail ? "" : "cursor-default"}`}
                 >
-                  {summary.title}
-                  {hasDetail && !open && (
-                    <span className="text-fg-faint">
-                      {" "}
-                      · {summary.lines.length} detail{summary.lines.length === 1 ? "" : "s"}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] leading-snug font-medium text-fg">{name}</span>
+                    <span className="block text-[11px] leading-snug text-fg-faint">
+                      {plan.optional ? `Optional · ${sub}` : sub}
                     </span>
+                  </span>
+                  {hasDetail && (
+                    <ChevronRight
+                      aria-hidden
+                      size={14}
+                      strokeWidth={2}
+                      className={`mt-0.5 shrink-0 text-fg-faint transition-transform duration-150 group-hover/row:text-fg-muted ${open ? "rotate-90" : ""}`}
+                    />
                   )}
                 </button>
-                {plan.optional && (
-                  <span className="ml-1.5 rounded bg-tone-attention/25 px-1 py-px text-[9px] font-semibold tracking-wide text-tone-attention-fg uppercase">
-                    Optional
-                  </span>
-                )}
-                {cascaded && <span className="ml-1.5 text-[11px] text-fg-faint">needs a section you removed</span>}
+                {cascaded && <div className="mt-0.5 text-[11px] text-fg-faint">Needs a section you left out</div>}
                 <PlanStatusLine status={status} />
-                {plan.optional && plan.optionalWhy && (
-                  <div className="text-[11px] leading-relaxed text-tone-attention-fg">{plan.optionalWhy}</div>
+                {canUntick && plan.optionalWhy && (
+                  <div className="mt-0.5 text-[11px] leading-relaxed text-fg-muted">{plan.optionalWhy}</div>
                 )}
                 {/* Above the detail, not inside it: this changes whether
-                    the owner wants the section at all. */}
+                    the owner wants the section at all. Two lines until the
+                    row is opened, and the whole of it then. */}
                 {summary.warnings?.map((w, k) => (
-                  <div key={k} className="mt-0.5 text-[11px] leading-relaxed text-tone-attention-fg">
-                    {w}
+                  <div
+                    key={k}
+                    title={w}
+                    className="mt-0.5 flex items-start gap-1 text-[11px] leading-relaxed text-tone-attention-fg"
+                  >
+                    <TriangleAlert aria-hidden size={12} strokeWidth={2} className="mt-[3px] shrink-0" />
+                    <span className={open ? "" : "line-clamp-2"}>{w}</span>
                   </div>
                 ))}
                 {open && hasDetail && (
-                  <ul className="mt-1 space-y-0.5 border-l border-line pl-2.5">
+                  <ul className="mt-1.5 space-y-0.5 border-l border-line pl-2.5">
                     {summary.lines.map((line, j) => (
                       <li key={j} className="text-[11px] leading-relaxed text-fg-muted">
                         {line}
@@ -842,10 +917,25 @@ function BlueprintCard({
                   </ul>
                 )}
               </div>
-            </div>
+              {canUntick && (
+                <button
+                  role="checkbox"
+                  aria-checked={!dropped[i]}
+                  aria-label={`Include ${name}`}
+                  onClick={() => setDropped((prev) => ({ ...prev, [i]: !prev[i] }))}
+                  className="mt-1 shrink-0 rounded text-fg-muted transition-colors hover:text-fg"
+                >
+                  {dropped[i] ? (
+                    <Square aria-hidden size={16} strokeWidth={1.75} />
+                  ) : (
+                    <SquareCheck aria-hidden size={16} strokeWidth={1.75} />
+                  )}
+                </button>
+              )}
+            </li>
           );
         })}
-      </div>
+      </ul>
 
       {blueprint.workflow.length > 0 && (
         <details className="group text-[11px]">
@@ -870,8 +960,11 @@ function BlueprintCard({
       )}
 
       {(blueprint.unmet?.length ?? 0) > 0 && (
-        <div className="text-[11px] leading-relaxed text-tone-attention-fg">
-          <span className="font-medium">Not covered:</span> {blueprint.unmet!.join(" · ")}
+        <div className="flex items-start gap-1.5 text-[11px] leading-relaxed text-tone-attention-fg">
+          <TriangleAlert aria-hidden size={12} strokeWidth={2} className="mt-[3px] shrink-0" />
+          <span>
+            <span className="font-medium">Not covered:</span> {blueprint.unmet!.join(" · ")}
+          </span>
         </div>
       )}
 
@@ -879,15 +972,11 @@ function BlueprintCard({
         <div className="text-[11px] text-fg-faint">Nothing left to build: all of this is already in your app.</div>
       )}
       {!done && !nothingLeft && (
-        <div className="flex items-center gap-3 pt-0.5">
-          <button
-            onClick={approve}
-            disabled={chosen.length === 0 || building}
-            className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-on-primary transition-colors hover:bg-primary-hover disabled:opacity-40"
-          >
+        <div className="flex items-center gap-1.5">
+          <button onClick={approve} disabled={chosen.length === 0 || building} className={button("primary", "sm")}>
             {building ? "Building…" : `Build ${chosen.length === 1 ? "this" : `these ${chosen.length}`}`}
           </button>
-          <button onClick={onAmend} className="text-xs text-fg-muted transition-colors hover:text-fg hover:underline">
+          <button onClick={onAmend} className={button("plain", "sm")}>
             Change something
           </button>
         </div>
@@ -919,6 +1008,7 @@ export default function ChatPanel({
   steps = [],
   draft = "",
   phase = null,
+  threadOpening = false,
   onSend,
   onEditPrompt,
   onApply,
@@ -952,8 +1042,10 @@ export default function ChatPanel({
   records: RecordRow[];
   messages: ChatMessage[];
   /** Past threads for this project, newest first. */
-  threads: Array<{ id: string; title: string | null; updated_at: string }>;
+  threads: ThreadSummary[];
   conversationId: string | null;
+  /** The last conversation is still loading, so the empty screen is not shown yet. */
+  threadOpening?: boolean;
   onNewThread: () => void;
   onPickThread: (id: string) => void;
   onDeleteThread: (id: string) => void;
@@ -1377,6 +1469,9 @@ export default function ChatPanel({
   // as history rather than a pile of still-actionable prompts.
   const [resolvedCards, setResolvedCards] = useState<Record<string, boolean>>({});
   const [threadsOpen, setThreadsOpen] = useState(false);
+  const [threadQuery, setThreadQuery] = useState("");
+  /** When the list of past conversations was opened: what "3 h ago" and "Today" are counted from. */
+  const [threadsAt, setThreadsAt] = useState(0);
   /** The request whose redesign is running, so it cannot be started twice. */
   const [opening, setOpening] = useState<string | null>(null);
   const [bellOpen, setBellOpen] = useState(false);
@@ -1741,6 +1836,8 @@ export default function ChatPanel({
               <button
                 onClick={() => {
                   setThreadsOpen((o) => !o);
+                  setThreadQuery("");
+                  setThreadsAt(Date.now());
                   setBellOpen(false);
                 }}
                 title="Past conversations"
@@ -2118,57 +2215,94 @@ export default function ChatPanel({
               </div>
             )}
             {threadsOpen && (
-              <div className="pop thin-scroll absolute top-full right-0 z-50 mt-1.5 max-h-72 w-64 overflow-y-auto rounded-card bg-surface p-1 shadow-popover">
-                {threads.length === 0 && (
-                  <div className="px-3 py-2 text-[11px] text-fg-faint">No past conversations.</div>
-                )}
-                {threads.map((t) => (
-                  <div
-                    key={t.id}
-                    className={`flex items-center gap-1 px-1.5 transition-colors hover:bg-surface-hover ${
-                      t.id === conversationId ? "bg-surface-hover" : ""
-                    }`}
-                  >
-                    <button
-                      onClick={() => {
-                        onPickThread(t.id);
-                        setThreadsOpen(false);
-                      }}
-                      className={`min-w-0 flex-1 px-1.5 py-2 text-left text-[11px] ${
-                        t.id === conversationId ? "font-medium text-fg" : "text-fg-muted"
-                      }`}
-                    >
-                      <div className="truncate font-medium">{t.title ?? "Untitled"}</div>
-                      <div className="text-[10px] text-fg-faint">{new Date(t.updated_at).toLocaleString()}</div>
-                    </button>
-                    {/* Threads accumulate — six of them called "hello"
-                        before there was any way to be rid of one. */}
-                    {confirmThread === t.id ? (
-                      <span className="flex shrink-0 items-center gap-1 pr-1 text-[10px]">
-                        <button
-                          onClick={() => {
-                            setConfirmThread(null);
-                            onDeleteThread(t.id);
-                          }}
-                          className="font-medium text-tone-critical-fg hover:underline"
-                        >
-                          Delete
-                        </button>
-                        <button onClick={() => setConfirmThread(null)} className="text-fg-faint hover:underline">
-                          Keep
-                        </button>
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => setConfirmThread(t.id)}
-                        aria-label={`Delete ${t.title ?? "this conversation"}`}
-                        className="shrink-0 rounded px-1.5 py-1 text-[11px] text-fg-faint hover:bg-tone-critical/40 hover:text-tone-critical-fg"
-                      >
-                        <X aria-hidden size={14} strokeWidth={2} />
-                      </button>
-                    )}
+              <div className="pop thin-scroll absolute top-full right-0 z-50 mt-1.5 max-h-96 w-72 overflow-y-auto rounded-card bg-surface p-1 shadow-popover">
+                {/* Found by name once there are more than a screenful; the
+                    names are the model's own summaries of each thread. */}
+                {threads.length > THREADS_BEFORE_SEARCH && (
+                  <div className="sticky top-0 z-10 bg-surface p-1">
+                    <input
+                      type="search"
+                      value={threadQuery}
+                      onChange={(e) => setThreadQuery(e.target.value)}
+                      placeholder="Search conversations"
+                      aria-label="Search conversations"
+                      autoFocus
+                      className={`${fieldOf("sm")} w-full`}
+                    />
                   </div>
-                ))}
+                )}
+                {(() => {
+                  const now = threadsAt;
+                  const q = threadQuery.trim().toLowerCase();
+                  const shown = q ? threads.filter((t) => (t.title ?? "").toLowerCase().includes(q)) : threads;
+                  if (shown.length === 0) {
+                    return (
+                      <div className="px-3 py-2 text-[11px] text-fg-faint">
+                        {q ? "No conversation by that name." : "No past conversations."}
+                      </div>
+                    );
+                  }
+                  // Newest first already, so each day's group comes out in order.
+                  const groups = new Map<string, ThreadSummary[]>();
+                  for (const t of shown) {
+                    const g = dayGroup(t.updated_at, now);
+                    groups.set(g, [...(groups.get(g) ?? []), t]);
+                  }
+                  return [...groups].map(([label, list]) => (
+                    <div key={label} role="group" aria-label={label}>
+                      <div className="px-2.5 pt-2 pb-1 text-[10px] font-medium text-fg-faint">{label}</div>
+                      {list.map((t) => (
+                        <div
+                          key={t.id}
+                          className={`flex items-center gap-1 rounded-[6px] px-1 transition-colors hover:bg-surface-hover ${
+                            t.id === conversationId ? "bg-surface-hover" : ""
+                          }`}
+                        >
+                          <button
+                            onClick={() => {
+                              onPickThread(t.id);
+                              setThreadsOpen(false);
+                            }}
+                            className="min-w-0 flex-1 px-1.5 py-1.5 text-left"
+                          >
+                            <div
+                              className={`truncate text-[12px] ${t.id === conversationId ? "font-medium text-fg" : "text-fg"}`}
+                            >
+                              {t.title ?? "Untitled"}
+                            </div>
+                            <div className="truncate text-[10px] text-fg-faint">{threadLine(t, now)}</div>
+                          </button>
+                          {/* Threads accumulate — six of them called "hello"
+                              before there was any way to be rid of one. */}
+                          {confirmThread === t.id ? (
+                            <span className="flex shrink-0 items-center gap-1 pr-1 text-[10px]">
+                              <button
+                                onClick={() => {
+                                  setConfirmThread(null);
+                                  onDeleteThread(t.id);
+                                }}
+                                className="font-medium text-tone-critical-fg hover:underline"
+                              >
+                                Delete
+                              </button>
+                              <button onClick={() => setConfirmThread(null)} className="text-fg-faint hover:underline">
+                                Keep
+                              </button>
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmThread(t.id)}
+                              aria-label={`Delete ${t.title ?? "this conversation"}`}
+                              className="shrink-0 rounded px-1.5 py-1 text-[11px] text-fg-faint hover:bg-tone-critical/40 hover:text-tone-critical-fg"
+                            >
+                              <X aria-hidden size={14} strokeWidth={2} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ));
+                })()}
               </div>
             )}
           </div>
@@ -2194,7 +2328,17 @@ export default function ChatPanel({
             the engine can do, and to a shop selling phone cases they
             read as a product for somebody else. A prompt for their own
             words is the honest opening. */}
-        {messages.length === 0 && (
+        {/* The last conversation is on its way: its shape, not the empty
+            screen's welcome, which read as the thread being gone. */}
+        {messages.length === 0 && threadOpening && (
+          <div role="status" aria-label="Opening your conversation" className="space-y-3 pt-1">
+            <div className="ml-auto h-9 w-3/5 rounded-2xl bg-surface-subdued motion-safe:animate-pulse" />
+            <div className="h-3 w-5/6 rounded bg-surface-subdued motion-safe:animate-pulse" />
+            <div className="h-3 w-2/3 rounded bg-surface-subdued motion-safe:animate-pulse" />
+            <div className="h-3 w-1/2 rounded bg-surface-subdued motion-safe:animate-pulse" />
+          </div>
+        )}
+        {messages.length === 0 && !threadOpening && (
           <div className="rise flex min-h-[55%] flex-col items-center justify-center px-4 text-center">
             <LukeMark size="lg" />
             <h2 className="mt-4 text-lg font-semibold text-fg">{LUKE_COPY.emptyTitle}</h2>
@@ -2683,10 +2827,7 @@ export default function ChatPanel({
               {stepsOpen && steps.length > 1 && (
                 <ul className="mt-1 space-y-0.5 pl-3 text-fg-faint">
                   {steps.slice(0, -1).map((s, i) => (
-                    <li key={i} className="flex items-center gap-1.5 truncate">
-                      <Check aria-hidden size={12} strokeWidth={2.25} className="shrink-0 text-tone-success-fg" />
-                      {stepWords(s)}
-                    </li>
+                    <StepRow key={i} step={s} />
                   ))}
                 </ul>
               )}

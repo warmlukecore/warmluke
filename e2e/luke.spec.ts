@@ -243,7 +243,8 @@ test("a design that does not fit says which part, and leaves nothing half built"
     await expect(panel.locator('[data-status="put-back"]')).toContainText("Put back");
     expect(await sectionsNamed(shop, ["e2e-twice"])).toEqual([]);
     // Nor in the sidebar, which heard the section made and not put back.
-    await expect(page.getByText("Twice", { exact: true })).toHaveCount(0);
+    // In the sidebar only: the card names the part "Twice" too.
+    await expect(page.locator("nav").getByText("Twice", { exact: true })).toHaveCount(0);
   } finally {
     await clearUp(shop, thread, ["e2e-twice"]);
   }
@@ -366,6 +367,85 @@ test("two questions that do not lean on each other are asked together", async ({
     await expect(panel.getByText("1 of 2")).toHaveCount(0);
   } finally {
     await shop.admin.from("conversations").delete().eq("id", thread);
+  }
+});
+
+test("a part of a design that is optional can be left out before building", async ({ signedIn: page, shop }) => {
+  const thread = await designThread(shop, [
+    newSection("e2e-kept", "Kept"),
+    { ...newSection("e2e-maybe", "Maybe"), optional: true, optionalWhy: "Handy once there are many." },
+  ]);
+  try {
+    await page.goto(`/app/${shop.projectId}`);
+    const { panel } = await luke(page);
+    // Each part by its own name, and what kind of thing it is.
+    await expect(panel.getByText("Optional · New section · 1 field")).toBeVisible();
+    const include = panel.getByRole("checkbox", { name: "Include Maybe" });
+    await expect(include).toHaveAttribute("aria-checked", "true");
+    await expect(panel.getByRole("button", { name: "Build these 2" })).toBeVisible();
+    await include.click();
+    await expect(include).toHaveAttribute("aria-checked", "false");
+    await expect(panel.getByRole("button", { name: "Build this" })).toBeVisible();
+  } finally {
+    await shop.admin.from("conversations").delete().eq("id", thread);
+  }
+});
+
+test("past conversations are grouped by day, found by name, and say what each holds", async ({
+  signedIn: page,
+  shop,
+}) => {
+  const H = 3_600_000;
+  const now = Date.now();
+  const made: string[] = [];
+  const thread = async (title: string, ago: number, payloads: Record<string, unknown>[] = []) => {
+    const { data } = await shop.admin
+      .from("conversations")
+      .insert({ project_id: shop.projectId, title })
+      .select("id")
+      .single();
+    if (payloads.length) {
+      await shop.admin.from("messages").insert(
+        payloads.map((payload, i) => ({
+          conversation_id: data!.id,
+          role: "assistant",
+          content: "",
+          payload,
+          created_at: new Date(now - ago - 60_000 + i).toISOString(),
+        }))
+      );
+    }
+    // After the messages, which move a conversation to the top when they arrive.
+    await shop.admin
+      .from("conversations")
+      .update({ updated_at: new Date(now - ago).toISOString() })
+      .eq("id", data!.id);
+    made.push(data!.id as string);
+  };
+  try {
+    await thread("Unpaid COD orders", 60_000, [
+      { type: "answer", kind: "store", message: "Two." },
+      { type: "build", status: "built", message: "Built 2 changes", sent: [0, 1] },
+    ]);
+    await thread("Top buyer this month", 26 * H);
+    await thread("Returns desk", 3 * 24 * H);
+    await thread("Stock alerts", 4 * 24 * H);
+    await thread("Supplier list", 10 * 24 * H);
+    await thread("Greeting", 12 * 24 * H);
+    await page.goto(`/app/${shop.projectId}`);
+    const { panel } = await luke(page);
+    await panel.getByRole("button", { name: "Past conversations" }).click();
+    const today = panel.getByRole("group", { name: "Today" });
+    await expect(today.getByText("Unpaid COD orders")).toBeVisible();
+    await expect(today.getByText("1 built · 1 answer")).toBeVisible();
+    await expect(panel.getByRole("group", { name: "Yesterday" }).getByText("Top buyer this month")).toBeVisible();
+    await expect(panel.getByRole("group", { name: "Older" }).getByText("Greeting")).toBeVisible();
+    // More than a screenful, so they can be found by name.
+    await panel.getByRole("searchbox", { name: "Search conversations" }).fill("stock");
+    await expect(panel.getByText("Stock alerts")).toBeVisible();
+    await expect(panel.getByText("Returns desk")).toHaveCount(0);
+  } finally {
+    for (const id of made) await shop.admin.from("conversations").delete().eq("id", id);
   }
 });
 

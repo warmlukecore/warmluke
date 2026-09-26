@@ -40,14 +40,25 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "projectId is required" }, { status: 400 });
   }
 
+  // With the kind of each message only, so the list can say what a
+  // thread holds ("2 built · 3 answers") without a second query.
+  // ponytail: reads every message's type; a count kept on conversations if threads get long.
   const { data: threadRows, error: tErr } = await client
     .from("conversations")
-    .select("id, title, created_at, updated_at")
+    .select("id, title, created_at, updated_at, messages(ptype:payload->>type, pstatus:payload->>status)")
     .eq("project_id", projectId)
     .order("updated_at", { ascending: false })
     .limit(30);
   if (tErr) return NextResponse.json({ error: tErr.message }, { status: 500 });
-  const threads = threadRows ?? [];
+  const threads = (threadRows ?? []).map(({ messages, ...t }) => {
+    const kinds = (messages ?? []) as Array<{ ptype: string | null; pstatus: string | null }>;
+    return {
+      ...t,
+      // A build the server recorded, or a receipt the panel wrote before it did.
+      built: kinds.filter((k) => k.ptype === "applied" || (k.ptype === "build" && k.pstatus === "built")).length,
+      answers: kinds.filter((k) => k.ptype === "answer").length,
+    };
+  });
 
   const wanted = id ?? (latest ? (threads[0]?.id as string | undefined) : undefined);
   if (!wanted) return NextResponse.json({ threads, conversationId: null, messages: [] });

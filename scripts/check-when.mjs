@@ -2,7 +2,7 @@
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-when.mjs
 
-import { ago } from "../src/lib/when.ts";
+import { ago, dayGroup } from "../src/lib/when.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -24,5 +24,16 @@ check("nothing yet says what the screen asks it to", ago(null, now, "not yet") =
 check("a date that is not a date is not a time", ago("soon", now) === "never");
 check("a clock a little ahead is not the future", ago(new Date(now + 30e3).toISOString(), now) === "just now");
 
-console.log(fails.length === 0 ? "\ntime is said one way" : `\n${fails.length} FAILED`);
+// Past conversations by the day, in the viewer's own calendar: made from
+// local times so the check holds in every time zone it runs in.
+const local = (d, h) => new Date(2026, 8, d, h).getTime();
+const at = (d, h) => new Date(local(d, h)).toISOString();
+const nine = local(23, 9);
+check("earlier today is today", dayGroup(at(23, 1), nine) === "Today");
+check("last night is yesterday, however few hours ago", dayGroup(at(22, 23), nine) === "Yesterday");
+check("the day before that is the last week", dayGroup(at(21, 12), nine) === "Last 7 days");
+check("a week back is older", dayGroup(at(16, 12), nine) === "Older");
+check("a clock a little ahead is still today", dayGroup(new Date(nine + 30e3).toISOString(), nine) === "Today");
+
+console.log(fails.length === 0 ? "\ntime is said one way, and days are the calendar's" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

@@ -45,6 +45,7 @@ import type {
   ProjectRow,
   ModuleRow,
   RecordRow,
+  ThreadSummary,
   TurnEvent,
   UiSchema,
   UiSchemaRow,
@@ -303,7 +304,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     conversationIdRef.current = id;
     setConversationId(id);
   }, []);
-  const [threads, setThreads] = useState<Array<{ id: string; title: string | null; updated_at: string }>>([]);
+  const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [building, setBuilding] = useState(false);
 
   /**
@@ -333,7 +334,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       });
       if (!res.ok) return;
       const json = (await res.json()) as {
-        threads: Array<{ id: string; title: string | null; updated_at: string }>;
+        threads: ThreadSummary[];
         conversationId: string | null;
         messages: Array<{ id: string; role: string; payload: Record<string, unknown> | null }>;
       };
@@ -507,8 +508,12 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     [projectId, rememberConversation]
   );
 
+  // Until the last conversation is back, the panel shows its shape
+  // rather than the welcome of an empty one.
+  const [threadOpening, setThreadOpening] = useState(true);
   useEffect(() => {
-    loadThread(undefined, true);
+    setThreadOpening(true);
+    loadThread(undefined, true).finally(() => setThreadOpening(false));
   }, [loadThread]);
 
   /**
@@ -2346,6 +2351,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             <FormatProvider locale={project?.locale} currency={sectionMoneyCurrency} approxRate={sectionApprox}>
               <ChatPanel
                 projectId={projectId}
+                threadOpening={threadOpening}
                 autoBuild={project?.auto_build === true}
                 onUndo={isOwner ? undoBuild : undefined}
                 onFix={fixError}
