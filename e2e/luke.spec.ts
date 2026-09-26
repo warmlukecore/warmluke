@@ -33,6 +33,14 @@ async function luke(page: Page) {
 const finished = (panel: Locator, words: string | RegExp) =>
   panel.locator("details > summary", { hasText: words }).first();
 
+/** How far a message sits below the top of the list that scrolls it, in pixels. */
+const belowListTop = (bubble: Locator) =>
+  bubble.evaluate((el) => {
+    let list = el.parentElement;
+    while (list && getComputedStyle(list).overflowY !== "auto") list = list.parentElement;
+    return list ? Math.round(el.getBoundingClientRect().top - list.getBoundingClientRect().top) : -1;
+  });
+
 /** The turn ended in a reply, not in "Luke could not reach its model". */
 async function answered(panel: Locator) {
   await expect(panel.getByText(/could not reach|could not be reached/i)).toHaveCount(0);
@@ -59,9 +67,16 @@ test("a question is answered from the shop's own orders", async ({ signedIn: pag
   await page.goto(`/app/${shop.projectId}`);
   const { panel, box } = await luke(page);
   await ask(page, box, "Which orders are still waiting for payment?");
+  // The question is pinned near the top of the list, and stays put while
+  // the reply arrives below it and when the thread is read again: it
+  // used to jump as the list was pulled to the bottom on every word.
+  const bubble = panel.locator(".group").filter({ hasText: "Which orders are still waiting for payment?" }).last();
+  const offset = () => belowListTop(bubble);
+  await expect.poll(offset).toBeLessThan(40);
   // The trace of where the answer came from, and the two cash-on-delivery orders the seed holds.
   const trace = finished(panel, "Read your store");
   await expect(trace).toBeVisible({ timeout: TURN_MS });
+  const pinned = await offset();
   await answered(panel);
   await expect(panel.getByText(/#1006/).last()).toBeVisible();
   await expect(panel.getByText(/#1008/).last()).toBeVisible();
@@ -77,6 +92,7 @@ test("a question is answered from the shop's own orders", async ({ signedIn: pag
     .eq("project_id", shop.projectId);
   await reloaded;
   await expect(trace).toBeVisible();
+  expect(Math.abs((await offset()) - pinned), "the question did not move").toBeLessThanOrEqual(2);
 });
 
 test("a change to the shop waits for a yes", async ({ signedIn: page, shop }) => {
@@ -91,7 +107,14 @@ test("a change to the shop waits for a yes", async ({ signedIn: page, shop }) =>
     await page.goto(`/app/${shop.projectId}`);
     const { panel, box } = await luke(page);
     await ask(page, box, "Tag order #1003 as VIP");
+    // Asked under a long answer, the question still goes to the top and
+    // stays there: this is where the list used to jump, pulled to the
+    // bottom and back as the reply came in.
+    const bubble = panel.locator(".group").filter({ hasText: "Tag order #1003 as VIP" }).last();
+    const offset = () => belowListTop(bubble);
+    await expect.poll(offset).toBeLessThan(40);
     await expect(finished(panel, "asked for your yes")).toBeVisible({ timeout: TURN_MS });
+    expect(await offset(), "the question stayed where it was pinned").toBeLessThan(40);
     await answered(panel);
     // Asked for, not done: one request waiting, and nothing applied.
     const { data: asked } = await shop.admin
@@ -211,6 +234,34 @@ test("a design that does not fit says which part, and leaves nothing half built"
     await expect(page.getByText("Twice", { exact: true })).toHaveCount(0);
   } finally {
     await clearUp(shop, thread, ["e2e-twice"]);
+  }
+});
+
+test("a build carries on when the app is closed mid-way, and the thread says how it ended", async ({
+  signedIn: page,
+  shop,
+}) => {
+  // The receipt was written by the browser once it heard back, so a tab
+  // closed mid-build left none, and the card came back offering to build
+  // again what was already built. The server writes it into the thread now.
+  const names = ["e2e-away-one", "e2e-away-two"];
+  const thread = await designThread(shop, [newSection(names[0], "Away one"), newSection(names[1], "Away two")]);
+  try {
+    await page.goto(`/app/${shop.projectId}`);
+    const { panel } = await luke(page);
+    const sent = page.waitForRequest((r) => r.url().endsWith("/api/apply") && r.method() === "POST");
+    await panel.getByRole("button", { name: "Build these 2" }).click();
+    await sent;
+    // Gone before the answer came back: the tab closed the moment the
+    // request left, and the build carries on without it.
+    await page.reload();
+    const { panel: back } = await luke(page);
+    // Read from the thread: each part built, and nothing offered twice.
+    await expect(back.locator('[data-status="built"]')).toHaveCount(2, { timeout: 30_000 });
+    await expect(back.getByRole("button", { name: "Build these 2" })).toHaveCount(0);
+    await expect.poll(() => sectionsNamed(shop, names)).toEqual([...names].sort());
+  } finally {
+    await clearUp(shop, thread, names);
   }
 });
 

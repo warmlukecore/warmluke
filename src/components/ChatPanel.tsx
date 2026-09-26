@@ -6,7 +6,7 @@
 // Deletion always requires typing the module's name.
 // ─────────────────────────────────────────────────────────────
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { watchRows } from "@/lib/live";
 import GenericRenderer from "@/components/GenericRenderer";
 import { describeAutomation, describePlan, WAITING_BUTTONS, type StoreFacts } from "@/lib/describe";
@@ -32,6 +32,7 @@ import type {
 } from "@/lib/types";
 import { Icon } from "@/components/ui/Icon";
 import {
+  ArrowDown,
   ArrowUp,
   Bell,
   Check,
@@ -109,7 +110,23 @@ export interface ChatMessage {
    * carry it, and does not need to.
    */
   trace?: { steps: TurnEvent[]; ms: number };
+  /** A build from the chat still running, as its thread says, and since when. */
+  building?: { startedAt: string };
+  /** On a design card: what became of its build, as its thread recorded it. */
+  built?: BuildRecord;
 }
+
+/**
+ * A build of a design card, as the server wrote it into the thread
+ * (/api/apply): which of the card's plans were sent, and how it ended.
+ * "unknown" is one that never said how it ended.
+ */
+export type BuildRecord = {
+  status: "building" | "built" | "refused" | "unknown";
+  sent: number[];
+  failedAt?: number;
+  errors?: string[];
+};
 
 /**
  * The steps a turn took, folded into one quiet line above the reply:
@@ -450,6 +467,49 @@ function PlanStatusLine({ status }: { status: PlanStatus }) {
   }
 }
 
+/**
+ * A build the thread says is running, with the seconds it has run. Read
+ * from the thread, so a panel opened mid-build shows it too; the line
+ * is replaced by the receipt when the thread says how it ended.
+ */
+/** The list's padding (py-4), and how far below its top a sent message is pinned. */
+const LIST_PAD = 16;
+const PIN_GAP = 12;
+
+function BuildingLine({ text, startedAt }: { text: string; startedAt: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const seconds = Math.max(0, Math.round((now - Date.parse(startedAt)) / 1000));
+  return (
+    <div role="status" className="flex items-center gap-1.5 text-[12px] text-fg-muted">
+      <LoaderCircle aria-hidden size={13} strokeWidth={2} className="shrink-0 motion-safe:animate-spin" />
+      <span>{text}</span>
+      {Number.isFinite(seconds) && <span className="text-fg-faint tabular-nums">{seconds}s</span>}
+    </div>
+  );
+}
+
+/** A recorded build, as the outcome the card reads for one it built itself. */
+function outcomeOf(r: BuildRecord): BuildOutcome | undefined {
+  switch (r.status) {
+    case "building":
+      return undefined;
+    case "built":
+      return { applied: r.sent.map(() => ({})), errors: [] };
+    case "refused":
+      return { applied: [], errors: r.errors ?? [], ...(r.failedAt !== undefined ? { failedAt: r.failedAt } : {}) };
+    case "unknown":
+      return { applied: [], errors: [], unknown: true };
+    default: {
+      const unreachable: never = r.status;
+      return unreachable;
+    }
+  }
+}
+
 function BlueprintCard({
   message,
   blueprint,
@@ -457,6 +517,7 @@ function BlueprintCard({
   currentColumns,
   storeFacts,
   done,
+  recorded,
   onApprove,
   onAmend,
 }: {
@@ -468,8 +529,10 @@ function BlueprintCard({
   /** The connected store, so a duplicating section is flagged here. */
   storeFacts: StoreFacts | null;
   done: boolean;
-  /** Receives the exact plans the owner ticked — nothing is regenerated. */
-  onApprove: (plans: AssistantPlan[]) => Promise<BuildOutcome>;
+  /** What became of this card's build, as its thread recorded it. */
+  recorded?: BuildRecord;
+  /** Receives the exact plans the owner ticked, and where each sits in the design. */
+  onApprove: (plans: AssistantPlan[], sent: number[]) => Promise<BuildOutcome>;
   onAmend: () => void;
 }) {
   const [dropped, setDropped] = useState<Record<number, boolean>>({});
@@ -518,12 +581,15 @@ function BlueprintCard({
   const hasOptional = blueprint.plans.some((p) => p.optional);
   const nothingLeft = chosen.length === 0 && blueprint.plans.some((p) => staleOf(p));
 
+  // A card read back from the thread has no session of its own: what
+  // its build did comes from the record the server wrote.
+  const kept: typeof run = run ?? (recorded ? { sent: recorded.sent, stale: {}, outcome: outcomeOf(recorded) } : null);
   const statusOf = (i: number): PlanStatus => {
     const plan = blueprint.plans[i];
-    if (run) {
-      const k = run.sent.indexOf(i);
-      if (k === -1) return run.stale[i] ? { kind: run.stale[i] } : { kind: "left-out" };
-      const o = run.outcome;
+    if (kept) {
+      const k = kept.sent.indexOf(i);
+      if (k === -1) return kept.stale[i] ? { kind: kept.stale[i] } : { kind: "left-out" };
+      const o = kept.outcome;
       if (!o) return { kind: "building" };
       if (o.unknown) return { kind: "unknown" };
       if (o.applied.length > 0) return k < o.applied.length ? { kind: "built" } : { kind: "not-tried" };
@@ -547,7 +613,7 @@ function BlueprintCard({
       if (s) stale[i] = s;
     });
     setRun({ sent: chosenAt, stale });
-    const outcome = await onApprove(chosen);
+    const outcome = await onApprove(chosen, chosenAt);
     // Nothing started (another build was running): back as it was.
     setRun(outcome.skipped ? null : { sent: chosenAt, stale, outcome });
   };
@@ -782,7 +848,8 @@ export default function ChatPanel({
     plans: AssistantPlan[],
     requestId?: string,
     requestText?: string,
-    next?: NextStep[]
+    next?: NextStep[],
+    design?: { id: string; sent: number[] }
   ) => Promise<BuildOutcome>;
   onDiscard: (planId: string) => void;
   /** Puts one build's changes back, by the id of the message offering
@@ -1207,12 +1274,102 @@ export default function ChatPanel({
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Keep the latest message in view. Request cards sit at the end of
-  // the same list, so they count as newest too — without them here, a
-  // build that just landed opens below the fold.
+  // ── Where the list sits ─────────────────────────────────────────
+  // A sent message is pinned near the top, and the reply grows below it
+  // into room kept for it, so nothing above it moves while Luke writes.
+  // The list used to be pulled to the bottom on every change, each
+  // streamed word included: the prompt jumped when the reply arrived,
+  // and nobody could scroll up to read while it streamed. Only a list
+  // already at its newest follows what arrives, and only downwards;
+  // otherwise it stays put and offers the way down.
+  const contentRef = useRef<HTMLDivElement>(null);
+  const spacerRef = useRef<HTMLDivElement>(null);
+  const keptRoom = useRef<ResizeObserver | null>(null);
+  const listWas = useRef({ typed: 0, total: 0, thread: conversationId });
+  const [awayFromNewest, setAwayFromNewest] = useState(false);
+  const motion = (): ScrollBehavior =>
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+  /** Scrolled so the end of what is written, not of the room kept below it, is in view. */
+  const newestTop = useCallback(() => {
+    const el = listRef.current;
+    const content = contentRef.current;
+    if (!el || !content) return 0;
+    return Math.max(0, content.offsetTop + content.offsetHeight + LIST_PAD - el.clientHeight);
+  }, []);
+  const release = useCallback(() => {
+    keptRoom.current?.disconnect();
+    keptRoom.current = null;
+    if (spacerRef.current) spacerRef.current.style.height = "0px";
+  }, []);
+  const pin = useCallback(
+    (id: string) => {
+      const el = listRef.current;
+      const content = contentRef.current;
+      const spacer = spacerRef.current;
+      const bubble = content?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(id)}"]`);
+      if (!el || !content || !spacer || !bubble) return;
+      release();
+      // The bubble and everything after it, against a screen's height:
+      // the rest is kept as room, and given back as the reply fills it.
+      const fit = () => {
+        const used = content.offsetTop + content.offsetHeight - bubble.offsetTop;
+        spacer.style.height = `${Math.max(0, el.clientHeight - PIN_GAP - used - LIST_PAD)}px`;
+      };
+      fit();
+      keptRoom.current = new ResizeObserver(fit);
+      keptRoom.current.observe(content);
+      requestAnimationFrame(() => el.scrollTo({ top: Math.max(0, bubble.offsetTop - PIN_GAP), behavior: motion() }));
+    },
+    [release]
+  );
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const typed = messages.filter((m) => m.role === "user").length;
+    const was = listWas.current;
+    listWas.current = { typed, total: messages.length, thread: conversationId };
+    const last = messages[messages.length - 1];
+    // Another thread opened, or this one read in for the first time: its
+    // newest in view, nothing pinned. A thread this turn just started is
+    // the same conversation, not another one.
+    const switched = was.thread !== null && conversationId !== null && was.thread !== conversationId;
+    if (switched || (was.total === 0 && messages.length > 0 && last?.role !== "user")) {
+      release();
+      el.scrollTop = el.scrollHeight;
+      return;
+    }
+    if (typed > was.typed && last?.role === "user") pin(last.id);
+    else if (messages.length === 0) release();
+  }, [messages, conversationId, pin, release]);
+  // A card their AI raised, arriving at the end: followed only by a list
+  // already at its newest, and only down. Not a reply: that grows below
+  // the pinned question, and following it would push the question away.
+  const away = useRef(false);
   useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
-  }, [messages.length, requests.length, busy, steps.length, draft.length]);
+    const el = listRef.current;
+    if (!el || away.current) return;
+    const top = newestTop();
+    if (top > el.scrollTop) el.scrollTo({ top, behavior: motion() });
+  }, [requests.length, newestTop]);
+  // Whether the newest is out of view, as the list scrolls or grows.
+  useEffect(() => {
+    const el = listRef.current;
+    const content = contentRef.current;
+    if (!el || !content) return;
+    const check = () => {
+      // More than a line or two below: a line's worth is not worth a button.
+      away.current = newestTop() - el.scrollTop > 40;
+      setAwayFromNewest(away.current);
+    };
+    el.addEventListener("scroll", check, { passive: true });
+    const grows = new ResizeObserver(check);
+    grows.observe(content);
+    return () => {
+      el.removeEventListener("scroll", check);
+      grows.disconnect();
+    };
+  }, [newestTop]);
+  useEffect(() => release, [release]);
 
   // How long the current step has been running. A model call is
   // twenty quiet seconds; a number that moves says the turn has not
@@ -1892,7 +2049,12 @@ export default function ChatPanel({
       </div>
 
       {/* Messages */}
-      <div ref={listRef} className="flex-1 space-y-4 overflow-y-auto px-4 py-4 thin-scroll">
+      <div
+        ref={listRef}
+        role="log"
+        aria-label="Conversation"
+        className="relative flex-1 overflow-y-auto px-4 py-4 thin-scroll"
+      >
         {/* Four invented problems used to sit here — a double-booked
             slot, parts coming off a job. They were written to show what
             the engine can do, and to a shop selling phone cases they
@@ -1906,498 +2068,524 @@ export default function ChatPanel({
           </div>
         )}
 
-        {messages.map((m, i) => {
-          // A card with anything after it was already answered. Derived
-          // from position, not remembered: resolvedCards is session
-          // state, so a reloaded thread came back with every old
-          // clarify and blueprint looking live again.
-          const answered = i < messages.length - 1;
-          if (m.role === "user") {
-            const editing = editingId === m.id;
-            const send = () => {
-              const said = editText.trim();
-              if (!said || busy) return;
-              setEditingId(null);
-              void onEditPrompt?.(m.id, said);
-            };
-            return (
-              <div key={m.id} className="rise group flex flex-col items-end" style={RISE}>
-                {m.viaClient && (
-                  <div className="mb-0.5 pr-1 text-[10px] tracking-wide text-fg-faint uppercase">
-                    Asked through your AI
-                  </div>
-                )}
-                {editing ? (
-                  <div className="w-full max-w-[85%] rounded-2xl rounded-br-sm border border-line-strong bg-surface p-2">
-                    <textarea
-                      autoFocus
-                      rows={2}
-                      value={editText}
-                      onChange={(e) => setEditText(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          send();
-                        }
-                        if (e.key === "Escape") setEditingId(null);
-                      }}
-                      className="w-full resize-none bg-transparent text-sm break-words text-fg outline-none"
-                    />
-                    <div className="mt-1 flex items-center justify-end gap-3 text-[11px]">
-                      <button onClick={() => setEditingId(null)} className="text-fg-muted hover:text-fg">
-                        Cancel
-                      </button>
-                      <button
-                        onClick={send}
-                        disabled={!editText.trim() || busy}
-                        className="font-medium text-link hover:text-link disabled:text-fg-faint"
-                      >
-                        Send again
-                      </button>
+        <div ref={contentRef} className="space-y-4">
+          {messages.map((m, i) => {
+            // A card with anything after it was already answered. Derived
+            // from position, not remembered: resolvedCards is session
+            // state, so a reloaded thread came back with every old
+            // clarify and blueprint looking live again.
+            const answered = i < messages.length - 1;
+            if (m.role === "user") {
+              const editing = editingId === m.id;
+              const send = () => {
+                const said = editText.trim();
+                if (!said || busy) return;
+                setEditingId(null);
+                void onEditPrompt?.(m.id, said);
+              };
+              return (
+                <div key={m.id} data-message-id={m.id} className="rise group flex flex-col items-end" style={RISE}>
+                  {m.viaClient && (
+                    <div className="mb-0.5 pr-1 text-[10px] tracking-wide text-fg-faint uppercase">
+                      Asked through your AI
                     </div>
-                  </div>
-                ) : (
-                  <div className={`flex max-w-[85%] items-start gap-2 ${m.superseded ? "opacity-45" : ""}`}>
-                    {/* Their own words only. A request their assistant
+                  )}
+                  {editing ? (
+                    <div className="w-full max-w-[85%] rounded-2xl rounded-br-sm border border-line-strong bg-surface p-2">
+                      <textarea
+                        autoFocus
+                        rows={2}
+                        value={editText}
+                        onChange={(e) => setEditText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            send();
+                          }
+                          if (e.key === "Escape") setEditingId(null);
+                        }}
+                        className="w-full resize-none bg-transparent text-sm break-words text-fg outline-none"
+                      />
+                      <div className="mt-1 flex items-center justify-end gap-3 text-[11px]">
+                        <button onClick={() => setEditingId(null)} className="text-fg-muted hover:text-fg">
+                          Cancel
+                        </button>
+                        <button
+                          onClick={send}
+                          disabled={!editText.trim() || busy}
+                          className="font-medium text-link hover:text-link disabled:text-fg-faint"
+                        >
+                          Send again
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className={`flex max-w-[85%] items-start gap-2 ${m.superseded ? "opacity-45" : ""}`}>
+                      {/* Their own words only. A request their assistant
                         made was never typed here, and editing it would
                         put words in Claude's mouth. */}
-                    {onEditPrompt && !m.viaClient && !m.superseded && !busy && (
-                      <button
-                        onClick={() => {
-                          setEditingId(m.id);
-                          setEditText(m.text ?? "");
-                        }}
-                        aria-label="Edit this message and send it again"
-                        className="mt-2 shrink-0 text-[11px] text-fg-faint opacity-0 transition group-hover:opacity-100 focus:opacity-100 hover:text-fg-muted"
-                      >
-                        Edit
-                      </button>
-                    )}
-                    {/* break-words, because a request is not always made of
+                      {onEditPrompt && !m.viaClient && !m.superseded && !busy && (
+                        <button
+                          onClick={() => {
+                            setEditingId(m.id);
+                            setEditText(m.text ?? "");
+                          }}
+                          aria-label="Edit this message and send it again"
+                          className="mt-2 shrink-0 text-[11px] text-fg-faint opacity-0 transition group-hover:opacity-100 focus:opacity-100 hover:text-fg-muted"
+                        >
+                          Edit
+                        </button>
+                      )}
+                      {/* break-words, because a request is not always made of
                         words: "(Pending/Packed/Verified/Discrepancy)" is one
                         unbreakable token, and without this it ran straight
                         off the right edge of the panel and was cut in half.
                         Same for a pasted URL or a list of SKUs. */}
-                    <div className="rounded-2xl rounded-br-md bg-canvas px-3 py-2 text-[13px] leading-relaxed break-words text-fg">
-                      {m.text}
+                      <div className="rounded-2xl rounded-br-md bg-canvas px-3 py-2 text-[13px] leading-relaxed break-words text-fg">
+                        {m.text}
+                      </div>
                     </div>
-                  </div>
-                )}
-                {m.superseded && !editing && (
-                  <div className="mt-0.5 pr-1 text-[10px] text-fg-faint">replaced by an edit</div>
-                )}
-              </div>
-            );
-          }
-
-          if (m.role === "system") {
-            if (m.error) {
-              return (
-                <div key={m.id}>
-                  <ErrorNote error={m.error} onFix={onFix} />
+                  )}
+                  {m.superseded && !editing && (
+                    <div className="mt-0.5 pr-1 text-[10px] text-fg-faint">replaced by an edit</div>
+                  )}
                 </div>
               );
             }
-            // A line of what happened — building, stopped, discarded —
-            // in the margin's voice, not a box in the conversation.
-            return (
-              <div key={m.id} className="flex items-start gap-1.5 text-[11px] leading-relaxed text-fg-faint">
-                <span className="w-3.5 shrink-0 text-center">·</span>
-                <div className="min-w-0">
-                  <div className="break-words">{m.text}</div>
-                  {m.errors && m.errors.length > 0 && (
-                    <ul className="mt-0.5 list-disc space-y-0.5 pl-4">
-                      {m.errors.map((e, i) => (
-                        <li key={i}>{e}</li>
-                      ))}
-                    </ul>
-                  )}
+
+            if (m.role === "system") {
+              if (m.error) {
+                return (
+                  <div key={m.id}>
+                    <ErrorNote error={m.error} onFix={onFix} />
+                  </div>
+                );
+              }
+              // A line of what happened — building, stopped, discarded —
+              // in the margin's voice, not a box in the conversation.
+              return (
+                <div key={m.id} className="flex items-start gap-1.5 text-[11px] leading-relaxed text-fg-faint">
+                  <span className="w-3.5 shrink-0 text-center">·</span>
+                  <div className="min-w-0">
+                    <div className="break-words">{m.text}</div>
+                    {m.errors && m.errors.length > 0 && (
+                      <ul className="mt-0.5 list-disc space-y-0.5 pl-4">
+                        {m.errors.map((e, i) => (
+                          <li key={i}>{e}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          }
+              );
+            }
 
-          if (m.questions) {
-            return (
-              <div key={m.id} className="space-y-1">
-                {m.trace && <TraceLine trace={m.trace} />}
-                <ClarifyCard
-                  message={m.text ?? ""}
-                  questions={m.questions}
-                  done={!!resolvedCards[m.id] || answered || busy}
-                  reply={messages[i + 1]?.role === "user" ? messages[i + 1].text : undefined}
-                  onSubmit={(composed) => resolveCard(m.id, composed)}
-                />
-              </div>
-            );
-          }
+            if (m.questions) {
+              return (
+                <div key={m.id} className="space-y-1">
+                  {m.trace && <TraceLine trace={m.trace} />}
+                  <ClarifyCard
+                    message={m.text ?? ""}
+                    questions={m.questions}
+                    done={!!resolvedCards[m.id] || answered || busy}
+                    reply={messages[i + 1]?.role === "user" ? messages[i + 1].text : undefined}
+                    onSubmit={(composed) => resolveCard(m.id, composed)}
+                  />
+                </div>
+              );
+            }
 
-          if (m.blueprint) {
-            return (
-              <div key={m.id} className="space-y-1">
-                {m.trace && <TraceLine trace={m.trace} />}
-                <BlueprintCard
-                  message={m.text ?? ""}
-                  blueprint={m.blueprint}
-                  modules={modules}
-                  currentColumns={currentSchema?.columns}
-                  storeFacts={storeFacts}
-                  done={!!resolvedCards[m.id] || answered}
-                  onApprove={async (chosen) => {
-                    setResolvedCards((prev) => ({ ...prev, [m.id]: true }));
-                    const outcome = await onBuild(chosen, undefined, undefined, m.blueprint?.next);
-                    // Nothing started, so nothing was answered: the card is live again.
-                    if (outcome.skipped) setResolvedCards((prev) => ({ ...prev, [m.id]: false }));
-                    return outcome;
-                  }}
-                  onAmend={() => {
-                    setInput("Change this in the design: ");
-                    inputRef.current?.focus();
-                  }}
-                />
-              </div>
-            );
-          }
+            if (m.blueprint) {
+              return (
+                <div key={m.id} className="space-y-1">
+                  {m.trace && <TraceLine trace={m.trace} />}
+                  <BlueprintCard
+                    message={m.text ?? ""}
+                    blueprint={m.blueprint}
+                    modules={modules}
+                    currentColumns={currentSchema?.columns}
+                    storeFacts={storeFacts}
+                    done={!!resolvedCards[m.id] || answered}
+                    recorded={m.built}
+                    onApprove={async (chosen, sent) => {
+                      setResolvedCards((prev) => ({ ...prev, [m.id]: true }));
+                      const outcome = await onBuild(chosen, undefined, undefined, m.blueprint?.next, {
+                        id: m.id,
+                        sent,
+                      });
+                      // Nothing started, so nothing was answered: the card is live again.
+                      if (outcome.skipped) setResolvedCards((prev) => ({ ...prev, [m.id]: false }));
+                      return outcome;
+                    }}
+                    onAmend={() => {
+                      setInput("Change this in the design: ");
+                      inputRef.current?.focus();
+                    }}
+                  />
+                </div>
+              );
+            }
 
-          // Luke talking: an answer, a receipt of a build, a line of
-          // history. Plain text, no bubble — the owner's words are the
-          // ones in a bubble; Luke's read like the page.
-          if (!m.plan) {
-            return (
-              <div key={m.id} className="space-y-1">
-                {m.trace && <TraceLine trace={m.trace} />}
-                <div className="text-[13px] leading-relaxed break-words whitespace-pre-line text-fg">{m.text}</div>
-                {/* Under the build, which is where they find out it
+            // Luke talking: an answer, a receipt of a build, a line of
+            // history. Plain text, no bubble — the owner's words are the
+            // ones in a bubble; Luke's read like the page.
+            if (m.building) {
+              return <BuildingLine key={m.id} text={m.text ?? "Building…"} startedAt={m.building.startedAt} />;
+            }
+
+            if (!m.plan) {
+              return (
+                <div key={m.id} className="space-y-1">
+                  {m.trace && <TraceLine trace={m.trace} />}
+                  <div className="text-[13px] leading-relaxed break-words whitespace-pre-line text-fg">{m.text}</div>
+                  {/* Under the build, which is where they find out it
                     happened — a change made with nobody watching is
                     read here first, and this is the moment they want
                     to say no. It names what goes back, because "undo"
                     on its own does not say how much. */}
-                {m.undo && onUndo && (
-                  <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-fg-faint">
-                    <button
-                      onClick={() => putItBack(m.undo!.messageId)}
-                      disabled={undoing !== null}
-                      className="text-fg-muted transition-colors hover:text-fg hover:underline disabled:opacity-50"
-                    >
-                      {undoing === m.undo.messageId ? "Putting it back…" : "Put it back"}
-                    </button>
-                    <span>{m.undo.what.join(", ")}</span>
-                  </div>
-                )}
-                {/* What the design said could come next — said, not
+                  {m.undo && onUndo && (
+                    <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-fg-faint">
+                      <button
+                        onClick={() => putItBack(m.undo!.messageId)}
+                        disabled={undoing !== null}
+                        className="text-fg-muted transition-colors hover:text-fg hover:underline disabled:opacity-50"
+                      >
+                        {undoing === m.undo.messageId ? "Putting it back…" : "Put it back"}
+                      </button>
+                      <span>{m.undo.what.join(", ")}</span>
+                    </div>
+                  )}
+                  {/* What the design said could come next — said, not
                     offered as buttons: a row of options reads as the
                     only things allowed, and the owner can ask for
                     anything. Only on the last thing in the thread;
                     after a question or a put-back, a suggestion about
                     the app as it was is stale. */}
-                {m.next && m.next.length > 0 && i === messages.length - 1 && !busy && (
-                  <div className="text-[11px] leading-relaxed text-fg-faint">
-                    Next, if you like: {m.next.map((n) => n.label).join(" · ")}
-                  </div>
-                )}
-              </div>
-            );
-          }
+                  {m.next && m.next.length > 0 && i === messages.length - 1 && !busy && (
+                    <div className="text-[11px] leading-relaxed text-fg-faint">
+                      Next, if you like: {m.next.map((n) => n.label).join(" · ")}
+                    </div>
+                  )}
+                </div>
+              );
+            }
 
-          const plan = m.plan;
-          // A card with anything after it was dealt with — the same
-          // rule the clarify and blueprint cards already follow, and
-          // the one this card was left out of. Session state alone
-          // meant a reloaded thread offered Apply Change on a plan
-          // that had already been applied, and applying a RECORD_SEED
-          // twice writes its rows twice.
-          const isPending = applyingPlanId === m.id || answered;
-          const targetModule = modules.find((mod) => mod.id === plan.targetModuleId);
+            const plan = m.plan;
+            // A card with anything after it was dealt with — the same
+            // rule the clarify and blueprint cards already follow, and
+            // the one this card was left out of. Session state alone
+            // meant a reloaded thread offered Apply Change on a plan
+            // that had already been applied, and applying a RECORD_SEED
+            // twice writes its rows twice.
+            const isPending = applyingPlanId === m.id || answered;
+            const targetModule = modules.find((mod) => mod.id === plan.targetModuleId);
 
-          // The world can move on while a proposal sits in the thread: the
-          // section may already have been built by a later message. Applying
-          // it now would just fail validation, so retire the card instead.
-          const stale =
-            (plan.changeType === "NEW_MODULE" &&
-              !!plan.newModule &&
-              modules.some((mod) => mod.name === plan.newModule!.name)) ||
-            (plan.changeType !== "NEW_MODULE" && !!plan.targetModuleId && !targetModule);
+            // The world can move on while a proposal sits in the thread: the
+            // section may already have been built by a later message. Applying
+            // it now would just fail validation, so retire the card instead.
+            const stale =
+              (plan.changeType === "NEW_MODULE" &&
+                !!plan.newModule &&
+                modules.some((mod) => mod.name === plan.newModule!.name)) ||
+              (plan.changeType !== "NEW_MODULE" && !!plan.targetModuleId && !targetModule);
 
-          if (stale) {
+            if (stale) {
+              return (
+                <div
+                  key={m.id}
+                  className="rounded-xl border border-line bg-surface-subdued px-3 py-2 text-xs text-fg-muted"
+                >
+                  <span className="font-medium text-fg-muted">Out of date</span> — “
+                  {plan.newModule?.nav_label ?? plan.explanation}” already changed since this was proposed, so there is
+                  nothing left to apply.
+                </div>
+              );
+            }
+
             return (
-              <div
-                key={m.id}
-                className="rounded-xl border border-line bg-surface-subdued px-3 py-2 text-xs text-fg-muted"
-              >
-                <span className="font-medium text-fg-muted">Out of date</span> — “
-                {plan.newModule?.nav_label ?? plan.explanation}” already changed since this was proposed, so there is
-                nothing left to apply.
-              </div>
-            );
-          }
+              <div key={m.id} className="space-y-2.5">
+                {m.trace && <TraceLine trace={m.trace} />}
+                <div className="text-[11px] tracking-wide text-fg-faint uppercase">
+                  Proposed change · {plan.changeType.replace("_", " ").toLowerCase()}
+                </div>
 
-          return (
-            <div key={m.id} className="space-y-2.5">
-              {m.trace && <TraceLine trace={m.trace} />}
-              <div className="text-[11px] tracking-wide text-fg-faint uppercase">
-                Proposed change · {plan.changeType.replace("_", " ").toLowerCase()}
-              </div>
-
-              <div className="space-y-2.5">
-                {m.text ? (
-                  <p className="text-[13px] leading-relaxed text-fg">{m.text}</p>
-                ) : (
-                  <>
-                    {/* Generated from the plan, not the sentence the
+                <div className="space-y-2.5">
+                  {m.text ? (
+                    <p className="text-[13px] leading-relaxed text-fg">{m.text}</p>
+                  ) : (
+                    <>
+                      {/* Generated from the plan, not the sentence the
                         assistant wrote beside it. A plan that inserts a
                         row was described as "Changed the customer name
                         from Meena to Raman"; applying it would have left
                         the original row alone and added a duplicate. */}
-                    {(() => {
-                      const summary = describePlan(plan, modules, currentSchema?.columns);
-                      return (
-                        <>
-                          <p className="text-xs font-medium text-fg">{summary.title}</p>
-                          {summary.lines.length > 0 && (
-                            <ul className="mt-1 space-y-0.5">
-                              {summary.lines.map((line, j) => (
-                                <li key={j} className="text-[11px] leading-relaxed text-fg-muted">
-                                  {line}
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </>
-                      );
-                    })()}
-                    <p className="mt-1 text-[11px] text-fg-faint">{plan.explanation}</p>
-                  </>
-                )}
+                      {(() => {
+                        const summary = describePlan(plan, modules, currentSchema?.columns);
+                        return (
+                          <>
+                            <p className="text-xs font-medium text-fg">{summary.title}</p>
+                            {summary.lines.length > 0 && (
+                              <ul className="mt-1 space-y-0.5">
+                                {summary.lines.map((line, j) => (
+                                  <li key={j} className="text-[11px] leading-relaxed text-fg-muted">
+                                    {line}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </>
+                        );
+                      })()}
+                      <p className="mt-1 text-[11px] text-fg-faint">{plan.explanation}</p>
+                    </>
+                  )}
 
-                {(plan.changeType === "UI_CHANGE" || plan.changeType === "FIELD_ADD") && (
-                  <GenericRenderer schema={plan.newSchema} records={records} preview />
-                )}
+                  {(plan.changeType === "UI_CHANGE" || plan.changeType === "FIELD_ADD") && (
+                    <GenericRenderer schema={plan.newSchema} records={records} preview />
+                  )}
 
-                {plan.changeType === "NEW_MODULE" && plan.newModule && (
-                  <>
-                    <div className="flex items-center gap-2 rounded-lg bg-surface-subdued px-3 py-2 text-xs text-fg-muted">
-                      <Icon name={plan.newModule.icon} size={16} />
-                      New module: <b>{plan.newModule.nav_label}</b>
-                      <span className="text-fg-faint">({plan.newModule.name})</span>
-                    </div>
-                    <GenericRenderer
-                      schema={plan.newSchema}
-                      records={(plan.newRecords ?? []).map((data, i) => ({
-                        id: `preview-${i}`,
-                        project_id: "preview",
-                        module_id: "preview",
-                        data,
-                        created_at: "",
-                        updated_at: "",
-                      }))}
-                      preview
-                    />
-                  </>
-                )}
-
-                {plan.changeType === "MODULE_UPDATE" && plan.moduleUpdate && (
-                  <div className="space-y-1.5 rounded-lg bg-surface-subdued px-3 py-2 text-xs text-fg-muted">
-                    {plan.moduleUpdate.nav_label && (
-                      <div>
-                        <Pencil aria-hidden size={12} className="mr-1 inline align-[-1px]" />
-                        Rename: <b>{targetModule?.nav_label}</b> → <b>{plan.moduleUpdate.nav_label}</b>
+                  {plan.changeType === "NEW_MODULE" && plan.newModule && (
+                    <>
+                      <div className="flex items-center gap-2 rounded-lg bg-surface-subdued px-3 py-2 text-xs text-fg-muted">
+                        <Icon name={plan.newModule.icon} size={16} />
+                        New module: <b>{plan.newModule.nav_label}</b>
+                        <span className="text-fg-faint">({plan.newModule.name})</span>
                       </div>
-                    )}
-                    {plan.moduleUpdate.icon && (
-                      <div>
-                        Icon: <Icon name={targetModule?.icon} size={14} className="inline" /> →{" "}
-                        <Icon name={plan.moduleUpdate.icon} size={14} className="inline" />
+                      <GenericRenderer
+                        schema={plan.newSchema}
+                        records={(plan.newRecords ?? []).map((data, i) => ({
+                          id: `preview-${i}`,
+                          project_id: "preview",
+                          module_id: "preview",
+                          data,
+                          created_at: "",
+                          updated_at: "",
+                        }))}
+                        preview
+                      />
+                    </>
+                  )}
+
+                  {plan.changeType === "MODULE_UPDATE" && plan.moduleUpdate && (
+                    <div className="space-y-1.5 rounded-lg bg-surface-subdued px-3 py-2 text-xs text-fg-muted">
+                      {plan.moduleUpdate.nav_label && (
+                        <div>
+                          <Pencil aria-hidden size={12} className="mr-1 inline align-[-1px]" />
+                          Rename: <b>{targetModule?.nav_label}</b> → <b>{plan.moduleUpdate.nav_label}</b>
+                        </div>
+                      )}
+                      {plan.moduleUpdate.icon && (
+                        <div>
+                          Icon: <Icon name={targetModule?.icon} size={14} className="inline" /> →{" "}
+                          <Icon name={plan.moduleUpdate.icon} size={14} className="inline" />
+                        </div>
+                      )}
+                      {plan.moduleUpdate.sort_order !== undefined && (
+                        <div>↕ Sidebar position: sort_order {plan.moduleUpdate.sort_order}</div>
+                      )}
+                    </div>
+                  )}
+
+                  {plan.changeType === "MODULE_DELETE" && targetModule && (
+                    <div className="rounded-lg border border-tone-critical/70 bg-tone-critical/40 px-3 py-2 text-xs text-tone-critical-fg">
+                      <div className="font-semibold">
+                        <TriangleAlert aria-hidden size={13} className="mr-1 inline align-[-2px]" />
+                        Delete “{targetModule.nav_label}” and all its records?
                       </div>
-                    )}
-                    {plan.moduleUpdate.sort_order !== undefined && (
-                      <div>↕ Sidebar position: sort_order {plan.moduleUpdate.sort_order}</div>
-                    )}
-                  </div>
-                )}
-
-                {plan.changeType === "MODULE_DELETE" && targetModule && (
-                  <div className="rounded-lg border border-tone-critical/70 bg-tone-critical/40 px-3 py-2 text-xs text-tone-critical-fg">
-                    <div className="font-semibold">
-                      <TriangleAlert aria-hidden size={13} className="mr-1 inline align-[-2px]" />
-                      Delete “{targetModule.nav_label}” and all its records?
+                      <div className="mt-1">
+                        Type <b>“{targetModule.nav_label}”</b> below to confirm.
+                      </div>
                     </div>
-                    <div className="mt-1">
-                      Type <b>“{targetModule.nav_label}”</b> below to confirm.
+                  )}
+
+                  {plan.changeType === "FEATURE_UPDATE" && (
+                    <>
+                      <ul className="space-y-1 rounded-lg bg-surface-subdued px-3 py-2 text-xs text-fg-muted">
+                        {describeFeatures(plan.features!).map((line, i) => (
+                          <li key={i}>{line}</li>
+                        ))}
+                      </ul>
+                      <GenericRenderer
+                        schema={{
+                          columns: currentSchema?.columns ?? [],
+                          features: plan.features ?? undefined,
+                        }}
+                        records={records}
+                        preview
+                      />
+                    </>
+                  )}
+
+                  {plan.changeType === "AUTOMATION_ADD" && plan.automation && (
+                    <div className="rounded-lg border border-tone-success bg-tone-success/30 px-3 py-2.5">
+                      <div className="text-[11px] font-semibold text-tone-success-fg">
+                        <Zap aria-hidden size={12} className="mr-1 inline align-[-1px]" />
+                        {plan.automation.name}
+                      </div>
+                      <ul className="mt-1 space-y-0.5">
+                        {describeAutomation(plan.automation, modules).map((line, i) => (
+                          <li key={i} className="text-[11px] leading-relaxed text-tone-success-fg">
+                            {line}
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="mt-1.5 text-[10px] text-tone-success-fg/70">
+                        Runs on every change to this section, from anywhere.
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {plan.changeType === "FEATURE_UPDATE" && (
-                  <>
-                    <ul className="space-y-1 rounded-lg bg-surface-subdued px-3 py-2 text-xs text-fg-muted">
-                      {describeFeatures(plan.features!).map((line, i) => (
-                        <li key={i}>{line}</li>
-                      ))}
-                    </ul>
-                    <GenericRenderer
-                      schema={{
-                        columns: currentSchema?.columns ?? [],
-                        features: plan.features ?? undefined,
-                      }}
-                      records={records}
-                      preview
-                    />
-                  </>
-                )}
-
-                {plan.changeType === "AUTOMATION_ADD" && plan.automation && (
-                  <div className="rounded-lg border border-tone-success bg-tone-success/30 px-3 py-2.5">
-                    <div className="text-[11px] font-semibold text-tone-success-fg">
-                      <Zap aria-hidden size={12} className="mr-1 inline align-[-1px]" />
-                      {plan.automation.name}
+                  {plan.changeType === "AUTOMATION_REMOVE" && (
+                    <div className="rounded-lg border border-line bg-surface-subdued px-3 py-2 text-[11px] text-fg-muted">
+                      Turns off the rule “{plan.automationRemoveName}”. Its history stays visible.
                     </div>
-                    <ul className="mt-1 space-y-0.5">
-                      {describeAutomation(plan.automation, modules).map((line, i) => (
-                        <li key={i} className="text-[11px] leading-relaxed text-tone-success-fg">
-                          {line}
-                        </li>
-                      ))}
-                    </ul>
-                    <div className="mt-1.5 text-[10px] text-tone-success-fg/70">
-                      Runs on every change to this section, from anywhere.
-                    </div>
-                  </div>
-                )}
+                  )}
 
-                {plan.changeType === "AUTOMATION_REMOVE" && (
-                  <div className="rounded-lg border border-line bg-surface-subdued px-3 py-2 text-[11px] text-fg-muted">
-                    Turns off the rule “{plan.automationRemoveName}”. Its history stays visible.
-                  </div>
-                )}
-
-                {plan.changeType === "RECORD_SEED" && (
-                  <div className="overflow-x-auto rounded-lg border border-line thin-scroll">
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="border-b border-line bg-surface-subdued text-fg-muted">
-                          {Object.keys(plan.newRecords?.[0] ?? {}).map((k) => (
-                            <th key={k} className="px-2.5 py-1.5 font-semibold">
-                              {k}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(plan.newRecords ?? []).map((row, i) => (
-                          <tr key={i} className="border-b border-line last:border-0">
+                  {plan.changeType === "RECORD_SEED" && (
+                    <div className="overflow-x-auto rounded-lg border border-line thin-scroll">
+                      <table className="w-full text-left text-xs">
+                        <thead>
+                          <tr className="border-b border-line bg-surface-subdued text-fg-muted">
                             {Object.keys(plan.newRecords?.[0] ?? {}).map((k) => (
-                              <td key={k} className="px-2.5 py-1.5">
-                                {String(row[k] ?? "—")}
-                              </td>
+                              <th key={k} className="px-2.5 py-1.5 font-semibold">
+                                {k}
+                              </th>
                             ))}
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                        </thead>
+                        <tbody>
+                          {(plan.newRecords ?? []).map((row, i) => (
+                            <tr key={i} className="border-b border-line last:border-0">
+                              {Object.keys(plan.newRecords?.[0] ?? {}).map((k) => (
+                                <td key={k} className="px-2.5 py-1.5">
+                                  {String(row[k] ?? "—")}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
 
-                {/* Actions */}
-                {plan.changeType === "MODULE_DELETE" && targetModule ? (
-                  <div className="space-y-2">
-                    <input
-                      value={deleteConfirm[m.id] ?? ""}
-                      onChange={(e) => setDeleteConfirm((prev) => ({ ...prev, [m.id]: e.target.value }))}
-                      placeholder={`Type "${targetModule.nav_label}" to enable deletion`}
-                      className="w-full rounded-lg border border-tone-critical/70 px-3 py-1.5 text-xs outline-none focus:border-tone-critical focus:ring-2 focus:ring-tone-critical/60"
-                    />
-                    <div className="flex gap-2">
+                  {/* Actions */}
+                  {plan.changeType === "MODULE_DELETE" && targetModule ? (
+                    <div className="space-y-2">
+                      <input
+                        value={deleteConfirm[m.id] ?? ""}
+                        onChange={(e) => setDeleteConfirm((prev) => ({ ...prev, [m.id]: e.target.value }))}
+                        placeholder={`Type "${targetModule.nav_label}" to enable deletion`}
+                        className="w-full rounded-lg border border-tone-critical/70 px-3 py-1.5 text-xs outline-none focus:border-tone-critical focus:ring-2 focus:ring-tone-critical/60"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => apply(plan, m.id)}
+                          disabled={
+                            isPending ||
+                            (deleteConfirm[m.id] ?? "").trim().toLowerCase() !== targetModule.nav_label.toLowerCase()
+                          }
+                          className="flex-1 rounded-lg bg-critical px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-critical-hover disabled:opacity-40"
+                        >
+                          {answered ? "Dealt with" : isPending ? "Deleting…" : "Delete module"}
+                        </button>
+                        <button
+                          onClick={() => onDiscard(m.id)}
+                          disabled={isPending}
+                          className="flex-1 rounded-lg border border-line px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-surface-hover disabled:opacity-50"
+                        >
+                          Discard
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3">
                       <button
                         onClick={() => apply(plan, m.id)}
-                        disabled={
-                          isPending ||
-                          (deleteConfirm[m.id] ?? "").trim().toLowerCase() !== targetModule.nav_label.toLowerCase()
-                        }
-                        className="flex-1 rounded-lg bg-critical px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-critical-hover disabled:opacity-40"
+                        disabled={isPending}
+                        className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-on-primary transition-colors hover:bg-primary-hover disabled:opacity-50"
                       >
-                        {answered ? "Dealt with" : isPending ? "Deleting…" : "Delete module"}
+                        {answered ? "Dealt with" : isPending ? "Applying…" : "Apply this"}
                       </button>
                       <button
                         onClick={() => onDiscard(m.id)}
                         disabled={isPending}
-                        className="flex-1 rounded-lg border border-line px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-surface-hover disabled:opacity-50"
+                        className="text-xs text-fg-muted transition-colors hover:text-fg hover:underline disabled:opacity-50"
                       >
                         Discard
                       </button>
                     </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => apply(plan, m.id)}
-                      disabled={isPending}
-                      className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-on-primary transition-colors hover:bg-primary-hover disabled:opacity-50"
-                    >
-                      {answered ? "Dealt with" : isPending ? "Applying…" : "Apply this"}
-                    </button>
-                    <button
-                      onClick={() => onDiscard(m.id)}
-                      disabled={isPending}
-                      className="text-xs text-fg-muted transition-colors hover:text-fg hover:underline disabled:opacity-50"
-                    >
-                      Discard
-                    </button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
 
-        {/* What their own AI asked for, read in the conversation it
+          {/* What their own AI asked for, read in the conversation it
             belongs to. As a banner above the header it pushed the
             whole panel down and a long design covered the chat
             entirely — the one place it must not be is on top of the
             thing it is asking about. */}
-        {busy && (
-          <div className="text-[11px] text-fg-faint">
-            {/* One line: the step the server is on right now, with the
+          {busy && (
+            <div className="text-[11px] text-fg-faint">
+              {/* One line: the step the server is on right now, with the
                 seconds climbing beside it, and the steps already taken
                 behind a caret. Nothing here is on a timer — a turn
                 that stalls shows a line that stays put. */}
-            <button
-              onClick={() => setStepsOpen((o) => !o)}
-              className="flex max-w-full items-center gap-1.5 text-left hover:text-fg-muted"
-            >
-              <LukeMark size="xs" state="thinking" />
-              <span className="shimmer min-w-0 truncate">
-                {draft ? "Writing…" : steps.length ? stepWords(steps[steps.length - 1]) : "Working on it…"}
-              </span>
-              {stepSeconds >= 2 && <span className="shrink-0 tabular-nums text-fg-faint">{stepSeconds}s</span>}
-              {steps.length > 1 && (
-                <ChevronRight
-                  aria-hidden
-                  size={13}
-                  strokeWidth={2}
-                  className={`shrink-0 text-fg-faint transition-transform duration-150 ${stepsOpen ? "rotate-90" : ""}`}
-                />
+              <button
+                onClick={() => setStepsOpen((o) => !o)}
+                className="flex max-w-full items-center gap-1.5 text-left hover:text-fg-muted"
+              >
+                <LukeMark size="xs" state="thinking" />
+                <span className="shimmer min-w-0 truncate">
+                  {draft ? "Writing…" : steps.length ? stepWords(steps[steps.length - 1]) : "Working on it…"}
+                </span>
+                {stepSeconds >= 2 && <span className="shrink-0 tabular-nums text-fg-faint">{stepSeconds}s</span>}
+                {steps.length > 1 && (
+                  <ChevronRight
+                    aria-hidden
+                    size={13}
+                    strokeWidth={2}
+                    className={`shrink-0 text-fg-faint transition-transform duration-150 ${stepsOpen ? "rotate-90" : ""}`}
+                  />
+                )}
+              </button>
+              {stepsOpen && steps.length > 1 && (
+                <ul className="mt-1 space-y-0.5 pl-3 text-fg-faint">
+                  {steps.slice(0, -1).map((s, i) => (
+                    <li key={i} className="flex items-center gap-1.5 truncate">
+                      <Check aria-hidden size={12} strokeWidth={2.25} className="shrink-0 text-tone-success-fg" />
+                      {stepWords(s)}
+                    </li>
+                  ))}
+                </ul>
               )}
-            </button>
-            {stepsOpen && steps.length > 1 && (
-              <ul className="mt-1 space-y-0.5 pl-3 text-fg-faint">
-                {steps.slice(0, -1).map((s, i) => (
-                  <li key={i} className="flex items-center gap-1.5 truncate">
-                    <Check aria-hidden size={12} strokeWidth={2.25} className="shrink-0 text-tone-success-fg" />
-                    {stepWords(s)}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-        {/* What Luke is saying, as it says it: the reply's own words, in
+            </div>
+          )}
+          {/* What Luke is saying, as it says it: the reply's own words, in
             the reply's own type. A draft, so a screen reader is not read
             every word; the reply that replaces it is. */}
-        {busy && draft && (
-          <p aria-hidden className="whitespace-pre-line text-[13px] leading-relaxed text-fg">
-            {draft}
-            <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-fg-faint" />
-          </p>
+          {busy && draft && (
+            <p aria-hidden className="whitespace-pre-line text-[13px] leading-relaxed text-fg">
+              {draft}
+              <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-fg-faint" />
+            </p>
+          )}
+        </div>
+        {/* The room kept below a sent message for its reply (see pin). */}
+        <div ref={spacerRef} aria-hidden />
+        {/* Held at the foot of the list while the newest is out of view;
+            takes no room, so it moves nothing when it comes and goes. */}
+        {awayFromNewest && (
+          <div className="pointer-events-none sticky bottom-0 flex h-0 justify-center">
+            <button
+              onClick={() => listRef.current?.scrollTo({ top: newestTop(), behavior: motion() })}
+              aria-label="Go to the newest message"
+              className="pointer-events-auto inline-flex -translate-y-[calc(100%+8px)] items-center gap-1 rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-medium text-fg-muted shadow-popover transition-colors hover:text-fg"
+            >
+              <ArrowDown aria-hidden size={13} strokeWidth={2} />
+              Latest
+            </button>
+          </div>
         )}
       </div>
 

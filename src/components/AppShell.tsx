@@ -13,7 +13,7 @@ import { supabase } from "@/lib/supabase-client";
 import { describePlan } from "@/lib/describe";
 import { apiFetch, apiStream, takePendingPrompt } from "@/lib/auth";
 import GenericRenderer, { type StatRequest, type StatResult } from "@/components/GenericRenderer";
-import ChatPanel, { type ChatMessage, nextChatId } from "@/components/ChatPanel";
+import ChatPanel, { type BuildRecord, type ChatMessage, nextChatId } from "@/components/ChatPanel";
 import { undoableFrom } from "@/lib/undo";
 import { asError, engineError, fixPrompt, type FixAction } from "@/lib/errors";
 import VersionHistory from "@/components/VersionHistory";
@@ -96,6 +96,22 @@ function withStoreColumns(row: UiSchemaRow, sourceTable: string | null | undefin
     schema_json: { ...sj, columns: [...storeTableSchema(sourceTable).columns, ...computed] },
   } as UiSchemaRow;
 }
+
+/** A build from the chat, as /api/apply writes it into the thread. */
+type BuildPayload = {
+  status: "building" | "built" | "refused";
+  design?: string | null;
+  sent?: number[];
+  message: string;
+  started_at?: string;
+  failedAt?: number;
+  errors?: string[];
+  undo?: Array<{ what: string }>;
+  next?: NextStep[];
+};
+
+/** How long a build may say "building" before the thread stops believing it: far past any real one. */
+const BUILD_LOST_MS = 10 * 60_000;
 
 /** A message the server wrote, as opposed to one this screen put up a moment ago. */
 const STORED_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -324,9 +340,17 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       // caller had just put on screen — the "couldn't reach the
       // assistant" line vanished the moment it was written.
       if (!id && !openLatest) return;
+      // Opened on arrival, but they have already said something: what they
+      // sent stays on screen, in a thread of its own. This answer used to
+      // land after it on a slow load and wipe it from view mid-turn.
+      if (!id && chatMessagesRef.current.length > 0) return;
       rememberConversation(json.conversationId);
 
       const rebuilt: ChatMessage[] = [];
+      // The plans of each design, and what became of each design's build,
+      // so a card read back from the thread says what its build did.
+      const designs = new Map<string, AssistantPlan[]>();
+      const builds = new Map<string, BuildRecord>();
       for (const m of json.messages ?? []) {
         const p = m.payload as (AssistantReply & { kind?: string; text?: string }) | null;
         // Retired by an edit: the merchant corrected this prompt, so
@@ -351,6 +375,66 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         // blueprint saved before plans replaced sections has no plans,
         // and rendering it blanked the whole panel. Anything that no
         // longer matches becomes a plain line of history.
+        const planned =
+          p.type === "blueprint"
+            ? p.blueprint?.plans
+            : p.type === "plans"
+              ? (p as { plans?: AssistantPlan[] }).plans
+              : null;
+        if (Array.isArray(planned)) designs.set(m.id, planned);
+        if ((p as { type?: string }).type === "build") {
+          const b = p as unknown as BuildPayload;
+          // One that has said "building" for this long did not survive
+          // to say anything else: not known, rather than for ever.
+          const lost = b.status === "building" && Date.now() - Date.parse(b.started_at ?? "") > BUILD_LOST_MS;
+          const sent = Array.isArray(b.sent) ? b.sent : [];
+          if (b.design) {
+            builds.set(b.design, {
+              status: lost ? "unknown" : b.status,
+              sent,
+              ...(typeof b.failedAt === "number" ? { failedAt: b.failedAt } : {}),
+              ...(b.errors?.length ? { errors: b.errors } : {}),
+            });
+          }
+          if (lost) {
+            rebuilt.push({
+              id: m.id,
+              role: "system",
+              text: "This build never said how it ended. Look at your sections before building it again.",
+            });
+          } else if (b.status === "building") {
+            rebuilt.push({
+              id: m.id,
+              role: "assistant",
+              text: b.message,
+              building: { startedAt: b.started_at ?? new Date().toISOString() },
+            });
+          } else if (b.status === "refused") {
+            const errors = b.errors ?? [];
+            const tried = (b.design ? designs.get(b.design) : undefined)?.filter((_, i) => sent.includes(i)) ?? [];
+            rebuilt.push({
+              id: m.id,
+              role: "system",
+              text: b.message,
+              error: engineError(
+                "Nothing was built — the design did not fit.",
+                errors,
+                fixPrompt({ what: "this design", tried, errors }),
+                "Your app is as it was."
+              ),
+            });
+          } else {
+            const next = b.next?.filter((n) => typeof n?.label === "string" && typeof n?.prompt === "string");
+            rebuilt.push({
+              id: m.id,
+              role: "assistant",
+              text: b.message,
+              ...(b.undo?.length ? { undo: { messageId: m.id, what: b.undo.map((u) => u.what) } } : {}),
+              ...(next?.length ? { next } : {}),
+            });
+          }
+          continue;
+        }
         if (p.type === "clarify" && Array.isArray(p.questions)) {
           rebuilt.push({ id: m.id, role: "assistant", text: p.message, questions: p.questions });
         } else if (p.type === "blueprint" && Array.isArray(p.blueprint?.plans)) {
@@ -390,14 +474,27 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           if (last) last.superseded = true;
         }
       }
-      // The saved rows carry no trace ("Read your store · 14s"), so a
-      // reply already on screen keeps the one it was shown with.
-      setChatMessages((prev) =>
-        rebuilt.map((m) => {
+      for (const m of rebuilt) {
+        const built = builds.get(m.id);
+        if (built) m.built = built;
+      }
+      setChatMessages((prev) => {
+        const typed = prev.filter((p) => p.role === "user");
+        let n = 0;
+        return rebuilt.map((m) => {
+          // A bubble this screen put up keeps its own key. Given the
+          // saved row's id instead, it mounted again, rose again, and the
+          // prompt jumped every time the thread was read back.
+          if (m.role === "user") {
+            const mine = typed[n++];
+            return mine && mine.text === m.text ? { ...m, id: mine.id } : m;
+          }
+          // The saved rows carry no trace ("Read your store · 14s"), so a
+          // reply already on screen keeps the one it was shown with.
           const trace = prev.find((p) => p.id === m.id)?.trace;
           return trace ? { ...m, trace } : m;
-        })
-      );
+        });
+      });
     },
     [projectId, rememberConversation]
   );
@@ -1256,7 +1353,25 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
 
   const applyPlan = useCallback(
     async (plan: AssistantPlan, planId: string) => {
-      const { ok, data } = await apiFetch("/api/apply", { projectId, plans: [plan] });
+      // Written into the thread by the server, as buildApproved does, so
+      // closing the app mid-apply still leaves the receipt behind.
+      const thread = conversationIdRef.current ?? conversationId;
+      const { ok, data } = await apiFetch("/api/apply", {
+        projectId,
+        plans: [plan],
+        ...(thread
+          ? { thread: { conversationId: thread, designId: STORED_ID.test(planId) ? planId : null, sent: [0] } }
+          : {}),
+      });
+      if (ok && data.applied && typeof data.recorded === "string") {
+        const result = (data.results as Array<Record<string, unknown>>)?.[0] ?? {};
+        await loadThread(thread!);
+        if (plan.changeType === "NEW_MODULE") setSelectedModuleId(result.moduleId as string);
+        if (plan.changeType === "MODULE_DELETE") setSelectedModuleId(null);
+        loadModules();
+        if (selectedModuleId && plan.targetModuleId === selectedModuleId) loadModuleData(selectedModuleId);
+        return;
+      }
       if (!ok || !data.applied) {
         setChatMessages((prev) =>
           prev.map((m) => (m.id === planId ? { ...m, plan: undefined, text: "Couldn't apply — retrying." } : m))
@@ -1312,7 +1427,17 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         loadModuleData(selectedModuleId);
       }
     },
-    [projectId, loadModules, loadModuleData, selectedModuleId, repairFailedApply, recordOutcome, planTitle]
+    [
+      projectId,
+      conversationId,
+      loadThread,
+      loadModules,
+      loadModuleData,
+      selectedModuleId,
+      repairFailedApply,
+      recordOutcome,
+      planTitle,
+    ]
   );
 
   // ── The owner's own record writes ────────────────────────
@@ -1366,10 +1491,17 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       requestId?: string,
       requestText?: string,
       /** What the design offered to do next; shown once the build lands. */
-      next?: NextStep[]
+      next?: NextStep[],
+      /** The card in the chat it came from: its message, and which of its plans were sent. */
+      design?: { id: string; sent: number[] }
     ): Promise<BuildOutcome> => {
       if (plans.length === 0 || building) return { applied: [], errors: [], skipped: true };
       setBuilding(true);
+      // A build from the chat is written into its thread by the server,
+      // as it starts and as it ends (/api/apply). The thread, read again,
+      // is then what the panel shows, so closing the app mid-build loses
+      // nothing and a reload finds the same thing on screen.
+      const thread = requestId ? null : (conversationIdRef.current ?? conversationId);
       // What was asked for, said in the thread before what came of it.
       //
       // A design raised by their own Claude has no user turn here —
@@ -1389,19 +1521,56 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         const short = asked.length > 160 ? `${asked.slice(0, 157)}…` : asked;
         setChatMessages((prev) => [...prev, { id: nextChatId(), role: "user", text: short, viaClient: true }]);
       }
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          id: nextChatId(),
-          role: "system",
-          text: `Building ${plans.length} change${plans.length === 1 ? "" : "s"}…`,
-        },
-      ]);
+      // Said by the server in the thread when it keeps one; said here only
+      // when it does not.
+      if (!thread) {
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            id: nextChatId(),
+            role: "system",
+            text: `Building ${plans.length} change${plans.length === 1 ? "" : "s"}…`,
+          },
+        ]);
+      }
       try {
         // requestId, when this came from a card the assistant raised:
         // the endpoint then claims it, applies it and records the
         // outcome as one sequence, the way the MCP path always has.
-        const { ok, data } = await apiFetch("/api/apply", { projectId, plans, requestId });
+        const { ok, data } = await apiFetch("/api/apply", {
+          projectId,
+          plans,
+          requestId,
+          ...(thread
+            ? {
+                thread: {
+                  conversationId: thread,
+                  designId: design && STORED_ID.test(design.id) ? design.id : null,
+                  sent: design?.sent,
+                  next,
+                },
+              }
+            : {}),
+        });
+        const recorded = typeof data.recorded === "string";
+        if (ok && data.applied && recorded) {
+          const results = data.results as Array<Record<string, unknown>>;
+          await loadThread(thread!);
+          await loadModules();
+          const first = results.find((r) => r.changeType === "NEW_MODULE");
+          if (first?.moduleId) setSelectedModuleId(first.moduleId as string);
+          else if (selectedModuleId) await loadModuleData(selectedModuleId);
+          return { applied: results, errors: (data.errors as string[]) ?? [] };
+        }
+        if (!ok && recorded) {
+          void loadModules();
+          await loadThread(thread!);
+          return {
+            applied: [],
+            errors: (data.errors as string[]) ?? ["The build did not run."],
+            ...(typeof data.failedAt === "number" ? { failedAt: data.failedAt } : {}),
+          };
+        }
         if (ok && data.applied) {
           const results = data.results as Array<Record<string, unknown>>;
           if (data.partial) {
@@ -1505,7 +1674,17 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         setBuilding(false);
       }
     },
-    [building, projectId, loadModules, loadModuleData, selectedModuleId, recordOutcome, planTitle]
+    [
+      building,
+      projectId,
+      conversationId,
+      loadThread,
+      loadModules,
+      loadModuleData,
+      selectedModuleId,
+      recordOutcome,
+      planTitle,
+    ]
   );
 
   /**
