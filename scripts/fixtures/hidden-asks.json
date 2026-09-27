@@ -1,0 +1,17 @@
+[
+  {"merchant": "Meera, sarees, 300-1000 orders/month, team of 3", "ask": "RTO bahut ho raha hai — jo parcel wapas aa rahe hain unka track rakhna hai, kis courier se, kyun, aur kaun se customer baar baar RTO karte hain"},
+  {"merchant": "Arjun, phone accessories, 1000+ orders/month, team of 6", "ask": "Warranty claims: customer bolta hai charger kharab hai, humein order dekh ke replacement bhejna hai aur count rakhna hai kitne claims kis product pe"},
+  {"merchant": "Priya, home bakery, under 100 orders/month, solo", "ask": "I take custom cake orders on WhatsApp with a delivery date and message on the cake; I need to see what's due each day and mark them baked and delivered"},
+  {"merchant": "Rohan, grocery, 300-1000 orders/month, team of 4", "ask": "products with expiry — batch aur expiry date rakhni hai, aur jo 30 din mein expire ho rahe hain wo alag dikhein"},
+  {"merchant": "Sana, skincare, 100-300 orders/month, team of 2", "ask": "I send free samples to influencers; I want to log who got what, when, and whether they posted, and see who hasn't posted after 2 weeks"},
+  {"merchant": "Vikram, furniture, under 100 orders/month, team of 5", "ask": "har order ke liye measurement aur installation ka din rakhna hai, installer ka naam, aur jab install ho jaye to customer ko call karne ka reminder"},
+  {"merchant": "Neha, kids wear, 300-1000 orders/month, team of 3", "ask": "exchange requests: size change chahiye customers ko, kaun sa order, purana size, naya size, status — aur kitne pending hain"},
+  {"merchant": "Karan, wholesale fabrics, B2B, team of 8", "ask": "my dealers place orders and pay later; I need to track credit given per dealer, what's outstanding and overdue beyond 45 days"},
+  {"merchant": "Aisha, fresh flowers, 100-300 orders/month, team of 2", "ask": "delivery slots — morning / afternoon / evening — har order pe slot aur rider ka naam, aur aaj ke slots ka board"},
+  {"merchant": "Dev, electronics, 1000+ orders/month, team of 10", "ask": "COD orders ko confirm karne ke liye call karte hain dispatch se pehle; kaun se call ho gaye, kaun se nahi utha rahe, kaun cancel — aur jo 2 baar nahi uthe unhe hold pe"},
+  {"merchant": "Lata, handloom, under 100 orders/month, solo", "ask": "I want to know which products sell together and which haven't sold at all in 3 months"},
+  {"merchant": "Manish, pet food, 300-1000 orders/month, team of 3", "ask": "repeat customers ko har 4th order pe discount dena hai — kaun kaun 3 orders complete kar chuka hai aur abhi tak discount nahi mila"},
+  {"merchant": "Ritu, jewellery, 100-300 orders/month, team of 2", "ask": "gift orders: gift note, gift wrap haan/na, aur receiver ka naam — packing wale ko ye saaf dikhna chahiye"},
+  {"merchant": "Sameer, gym supplements, 1000+ orders/month, team of 5", "ask": "courier SLA: Delhivery vs Bluedart — kaun kitne din mein deliver karta hai city-wise, aur jo 7 din se in-transit hain"},
+  {"merchant": "Pooja, stationery, 300-1000 orders/month, team of 4", "ask": "reseller commission: kuch orders resellers laate hain, har order pe reseller ka naam aur 10% commission, month end pe kis reseller ko kitna dena hai"}
+]
