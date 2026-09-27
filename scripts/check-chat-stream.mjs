@@ -111,6 +111,26 @@ try {
     turn.steps.find((s) => s.step === "store")?.shop === null
   );
   check("the app was read: no sections yet", turn.steps.find((s) => s.step === "context")?.sections === 0);
+  // And the turn left its trace (0132): the steps it told, the road it
+  // took, how long it took — written after the reply, so asked for a
+  // moment.
+  const turnId = turn.steps.find((s) => s.step === "accepted")?.turn ?? null;
+  let trace = null;
+  for (let i = 0; i < 20 && !trace; i++) {
+    const { data } = await admin
+      .from("turn_traces")
+      .select("road, steps, took_ms, repairs")
+      .eq("turn_id", turnId)
+      .maybeSingle();
+    trace = data;
+    if (!trace) await new Promise((r) => setTimeout(r, 500));
+  }
+  check(
+    "the turn left a trace, with its steps and road",
+    !!trace && Array.isArray(trace.steps) && trace.steps.length >= 4 && trace.road === "talk"
+  );
+  check("and how long it took", !!trace && typeof trace.took_ms === "number" && trace.took_ms >= 0);
+  if (!trace) show({ turnId });
   // The model is somebody else's, and in CI there is no key for it at
   // all. When it is not there, the stream must still end — in an error
   // line, not silence — and the turn must still come back; that is a

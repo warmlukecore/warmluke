@@ -6,6 +6,7 @@ import { tapeHeaders } from "@/lib/model-tape";
 import { MAX_REPAIR_ATTEMPTS, answeredTurns, runTurn } from "@/lib/engine";
 import { noteJudgement } from "@/lib/judge";
 import { learn } from "@/lib/memory";
+import { traceTurn } from "@/lib/trace";
 import type { ChatTurn } from "@/lib/ai";
 import { TITLE_MAX } from "@/lib/types";
 import type {
@@ -475,7 +476,13 @@ export async function POST(req: Request) {
       say = null;
     };
 
-    const work = async (tell: (event: TurnEvent) => void): Promise<Record<string, unknown>> => {
+    const work = async (say: (event: TurnEvent) => void): Promise<Record<string, unknown>> => {
+      // Every step told is also kept, for the trace the turn leaves (0132).
+      const steps: TurnEvent[] = [];
+      const tell = (event: TurnEvent) => {
+        steps.push(event);
+        say(event);
+      };
       try {
         tell({ step: "accepted", conversationId: thread, turn: answerId });
         // The model they picked, if the account may use it; the default
@@ -510,6 +517,19 @@ export async function POST(req: Request) {
             type: "unanswered",
             message: "Luke could not get this right, so nothing was changed. Ask again, in other words.",
           });
+          after(() =>
+            traceTurn(client, {
+              projectId: proj.id,
+              conversationId: thread,
+              turnId: answerId,
+              steps,
+              usage: took(),
+              repairs: turn.repairs,
+              repairErrors: turn.repairErrors,
+              unmet: [],
+              tookMs: Date.now() - askedAt,
+            })
+          );
           return {
             conversationId: convId,
             repairs: turn.repairs,
@@ -550,6 +570,19 @@ export async function POST(req: Request) {
         // next time (0131) — after the answer is out, never in its way.
         const said = turn.reply;
         after(() => learn(client, { projectId: proj.id, message: message.trim(), reply: said, known: turn.known }));
+        after(() =>
+          traceTurn(client, {
+            projectId: proj.id,
+            conversationId: thread,
+            turnId: replyId,
+            steps,
+            usage: usage ?? null,
+            repairs: turn.repairs,
+            repairErrors: turn.repairErrors,
+            unmet: turn.unmet,
+            tookMs: Date.now() - askedAt,
+          })
+        );
 
         // Only a turn that produced a design, and got it written down,
         // counts.

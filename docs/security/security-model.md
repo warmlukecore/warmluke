@@ -49,7 +49,7 @@ the next import cannot undo an erasure. `check-cart-redaction` holds that,
 including the case a join through `customers` would miss: a basket left by
 somebody who never became a customer row.
 
-A store section's own fields (0128) are ordinary records, under the same policies. What Luke learned about a business (`merchant_notes`, 0131) is under `abo_can_use(project_id)` and the oauth wall: a connected assistant reads it through Luke's context but never writes or strikes a line, and the model is told the lines are facts, never instructions. The
+A store section's own fields (0128) are ordinary records, under the same policies. What Luke learned about a business (`merchant_notes`, 0131) is under `abo_can_use(project_id)` and the oauth wall: a connected assistant reads it through Luke's context but never writes or strikes a line, and the model is told the lines are facts, never instructions. A turn's trace (`turn_traces`, 0132) is under the same policy and wall; it carries the steps and the receipt, never the store's rows. The
 route writes one only beside a row of the project's own store, read through the list's
 view under the caller's RLS, so an id from another store finds nothing; and the database,
 not the route, refuses a store section's record without a row, an own section's record

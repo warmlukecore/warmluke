@@ -282,6 +282,14 @@ Progress is streamed as NDJSON events representing actual completed/started work
 accepted, store context, project context, model attempt, validation result, and gap pass.
 The final line contains the reply or error.
 
+### Every turn leaves a trace
+
+After a turn settles — answered or not — the chat route writes one `turn_traces` row (0132,
+`traceTurn` in `src/lib/trace.ts`, via `after()`): every step the panel was told, the road,
+the model, what the calls took, how many repairs and their errors, what stayed unmet, what the
+plan understood, the critic's verdict, and how long the turn took. Read by whoever may use
+the project, never by the model. `check-chat-stream` holds that a turn leaves one.
+
 ## Durability spike (Workflow)
 
 A turn is one request today: the process dies, the turn is lost. The team of agents to
