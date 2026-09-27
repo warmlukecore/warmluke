@@ -28,6 +28,8 @@ export type SpikeEvent =
 export type SpikeInput = {
   projectId: string;
   message: string;
+  /** The owner's access token: the steps read as them. */
+  token: string;
   /** Sleep this long inside the model step before calling: time to kill the process. */
   slowMs?: number;
 };
@@ -39,12 +41,20 @@ const say = async (e: SpikeEvent) => {
 };
 
 /** What the project and its store are called: a read, as a step. */
-async function prepare(projectId: string) {
+async function prepare(projectId: string, token: string) {
   "use step";
   await say({ step: "prepare", at: Date.now() });
-  // Service role, spike only: a step has no session. The real design
-  // mints a short-lived token for the owner inside each step.
-  const db = createClient(process.env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL!, process.env.ADAPTIVE_OS_SERVICE_ROLE_KEY!);
+  // The owner's own token, handed in by the route: the read runs under
+  // their row policies, as every read does. It rides in the run's log
+  // for its hour; the real design mints a shorter one per step.
+  const db = createClient(
+    process.env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY!,
+    {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+      auth: { persistSession: false, autoRefreshToken: false },
+    }
+  );
   const { data: project } = await db.from("projects").select("id, name, locale, currency").eq("id", projectId).single();
   const { data: modules } = await db.from("modules").select("*").eq("project_id", projectId).order("sort_order");
   return { project, modules: (modules ?? []) as ModuleRow[] };
@@ -79,7 +89,7 @@ async function answer(ctx: Awaited<ReturnType<typeof prepare>>, message: string,
 
 export async function lukeSpike(input: SpikeInput) {
   "use workflow";
-  const ctx = await prepare(input.projectId);
+  const ctx = await prepare(input.projectId, input.token);
   const raw = await answer(ctx, input.message, input.slowMs ?? 0);
   await done();
   return { project: ctx.project?.name ?? null, raw };

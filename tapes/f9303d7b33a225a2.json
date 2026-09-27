@@ -1,0 +1,16 @@
+{
+  "label": "jev",
+  "asked": "Should the handover scan go in Packing, or in a section of its own? → In Packing: one list, a Handed over tick and time next to Packed",
+  "parts": {
+    "system": "74234e98afe7498f",
+    "tools": "74234e98afe7498f",
+    "conversation": "99cd6a7f45bc2f50"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"jev-1.13.0\",\"answers\":{\"list\":{\"type\":\"choice\",\"choice\":\"none\",\"confidence\":0.99,\"probabilities\":{\"products\":0.0,\"stock\":0.0,\"sales\":0.0,\"customers\":0.0,\"orders\":0.01,\"none\":0.99}},\"window\":{\"type\":\"choice\",\"choice\":\"all\",\"confidence\":1.0,\"probabilities\":{\"last_month\":0.0,\"this_month\":0.0,\"yesterday\":0.0,\"all\":1.0,\"this_week\":0.0,\"named_month\":0.0,\"today\":0.0}},\"month\":{\"type\":\"choice\",\"choice\":\"none\",\"confidence\":1.0,\"probabilities\":{\"feb\":0.0,\"aug\":0.0,\"may\":0.0,\"none\":1.0,\"dec\":0.0,\"jul\":0.0,\"nov\":0.0,\"jan\":0.0,\"oct\":0.0,\"mar\":0.0,\"jun\":0.0,\"apr\":0.0,\"sep\":0.0}},\"kind\":{\"type\":\"choice\",\"choice\":\"build\",\"confidence\":0.46,\"probabilities\":{\"lookup\":0.11,\"unclear\":0.3,\"total\":0.0,\"build\":0.57,\"ranking\":0.02}}},\"usage\":{\"input_tokens\":1789,\"output_tokens\":283}}"
+    }
+  ]
+}

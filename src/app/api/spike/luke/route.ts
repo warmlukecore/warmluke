@@ -52,8 +52,9 @@ export async function POST(req: Request) {
   const { data: mine } = await auth.client.from("projects").select("id").eq("id", body.projectId).maybeSingle();
   if (!mine) return NextResponse.json({ error: "Project not found." }, { status: 404 });
 
+  const token = req.headers.get("authorization")!.slice(7).trim();
   const run = await start(lukeSpike, [
-    { projectId: body.projectId, message: body.message, slowMs: Math.max(0, Number(body.slowMs ?? 0) || 0) },
+    { projectId: body.projectId, message: body.message, token, slowMs: Math.max(0, Number(body.slowMs ?? 0) || 0) },
   ]);
   return new Response(run.readable.pipeThrough(ndjson()), {
     headers: { "content-type": "application/x-ndjson", "x-workflow-run-id": run.runId },

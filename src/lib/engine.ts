@@ -28,6 +28,7 @@ import {
   type StoreContext,
   buildTalkPrompt,
   stripFences,
+  talkModel,
 } from "@/lib/ai";
 import { lastReplyTypeOf, roadFor, type Road } from "@/lib/intent";
 import { describeMerchant, type ProfileRow } from "@/lib/onboarding";
@@ -569,7 +570,8 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       system,
       turns: [...history, ...attemptTurns],
       signal,
-      model,
+      // The one they picked wins on both roads; otherwise each road's own.
+      model: model ?? (road === "talk" ? talkModel() : undefined),
       lookups: attempt === 0 && tools ? { tools } : undefined,
       onText: draft,
     });

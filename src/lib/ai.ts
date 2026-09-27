@@ -2303,8 +2303,10 @@ const MAX_OUTPUT_TOKENS = 6000;
  * ANTHROPIC_API_URL, whose model names it must be).
  */
 const MODEL_JOBS = {
-  /** Designing the app: every reply Luke gives. */
+  /** Designing the app: every reply on the design road. */
   design: "ANTHROPIC_MODEL",
+  /** The talk road: answers, when a smaller model does as well (unset: the design model). */
+  talk: "ANTHROPIC_TALK_MODEL",
   /** Reading two short texts and naming what is missing. */
   gap: "ANTHROPIC_GAP_MODEL",
   /** Where a design goes when Gemini stays busy. */
@@ -2313,6 +2315,19 @@ const MODEL_JOBS = {
 
 /** The model a reply is designed on when nobody picked one: the server's setting. */
 export const designModel = () => modelFor("design");
+
+/**
+ * The model the talk road answers on when nobody picked one: its own
+ * setting, or the design model. A greeting or a store question does as
+ * well on a smaller model; a design does not, so the two are set apart.
+ */
+export function talkModel(): string {
+  try {
+    return modelFor("talk");
+  } catch {
+    return modelFor("design");
+  }
+}
 
 function modelFor(job: keyof typeof MODEL_JOBS): string {
   const setting = MODEL_JOBS[job];

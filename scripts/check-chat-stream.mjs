@@ -100,10 +100,10 @@ try {
   const turn = await readTurn(res);
   const order = turn.steps.map((s) => s.step).join(",");
   check(
-    "taken, read the store, read the app, asked the model — in that order",
-    order.startsWith("accepted,store,context,model")
+    "taken, read the store, read the app, chose the road, asked the model — in that order",
+    order.startsWith("accepted,store,context,road,model")
   );
-  if (!order.startsWith("accepted,store,context,model")) show(order);
+  if (!order.startsWith("accepted,store,context,road,model")) show(order);
   const first = turn.steps.find((s) => s.step === "model");
   check("the first ask says it is the first of three", first?.attempt === 1 && first?.of === 3);
   check(

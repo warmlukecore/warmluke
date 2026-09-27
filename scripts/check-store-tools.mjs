@@ -48,9 +48,17 @@ const run = async (name, args) => {
 };
 
 console.log("one list");
-const NAMES = ["ask_store", "store_overview", "search_orders", "get_order", "search_store", "low_stock"];
+const NAMES = [
+  "ask_store",
+  "store_overview",
+  "search_orders",
+  "get_order",
+  "search_store",
+  "low_stock",
+  "store_metrics",
+];
 check(
-  "the six reading tools, in the order clients are shown them",
+  "the seven reading tools, in the order clients are shown them",
   JSON.stringify(STORE_TOOLS.map((t) => t.name)) === JSON.stringify(NAMES)
 );
 check(

@@ -155,6 +155,14 @@ try {
   );
   check("a measure that is not one is refused", /not a measure/.test((await ask({ measure: "profit" })).error ?? ""));
 
+  console.log("\nspelling is not held against the asker");
+  const pendingRows = await storeTool("search_orders").run({ status: "pending" }, ctx);
+  check(
+    'search_orders asked for "pending" finds the PENDING orders',
+    pendingRows.count > 0 && pendingRows.count === pending.total.orders
+  );
+  if (fails.length) show({ search: pendingRows.count, metrics: pending.total.orders });
+
   console.log("\nthe two lists agree");
   for (const m of Object.keys(STORE_METRICS.measures)) {
     const got = await ask({ measure: m });

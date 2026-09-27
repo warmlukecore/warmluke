@@ -1,0 +1,16 @@
+{
+  "label": "anthropic",
+  "asked": "",
+  "parts": {
+    "system": "9058cac0671011c8",
+    "tools": "edaf5ab188823e1b",
+    "conversation": "5908d5daa9bea7bc"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"content\":[{\"type\":\"thinking\",\"thinking\":\"Order #1001: placed 2026-08-28, total 777 INR, status PENDING (so not paid yet — awaiting payment, likely COD). Fulfilment status null, no customer info, no items.\\n\\nThe answer: No, it's not paid — financial status is PENDING, meaning payment is still awaited (typical of COD). The order comes to 777 INR.\\n\\nData was last brought from Shopify: never — I should mention freshness. Actually the instructions say \\\"Last brought from Shopify: never. Say this when you quote numbers, so they know how fresh it is.\\\" But the data was clearly read from the database a moment ago... The instruction says to say \\\"never\\\" — that's what's printed. I'll mention it lightly.\\n\\nThis is a \\\"store\\\" kind answer. Give next steps: a few follow-ups.\\n\\nLet me write the reply.\",\"signature\":\"056f8403e80047f288e7c5fc1d6b9b6b\"},{\"type\":\"text\",\"text\":\"{\\n  \\\"type\\\": \\\"answer\\\",\\n  \\\"kind\\\": \\\"store\\\",\\n  \\\"title\\\": \\\"Order #1001 payment status\\\",\\n  \\\"message\\\": \\\"No — order **#1001** is not paid. Its financial status is **PENDING**, so payment is still awaited (which is usually how a cash-on-delivery order looks before the courier pays in).\\\\n\\\\nThe order comes to **777 INR**, placed on 28 August 2026. It has not been fulfilled yet either.\\\\n\\\\nThis is from the copy of your store in this app — the app has not yet completed a sync from Shopify, so treat it as a snapshot rather than live data.\\\",\\n  \\\"next\\\": [\\n    {\\n      \\\"label\\\": \\\"Show all pending orders\\\",\\n      \\\"prompt\\\": \\\"Show me all orders that are still pending payment\\\"\\n    },\\n    {\\n      \\\"label\\\": \\\"What is #1001 waiting on\\\",\\n      \\\"prompt\\\": \\\"What's the hold up with order #1001?\\\"\\n    },\\n    {\\n      \\\"label\\\": \\\"Total awaiting payment\\\",\\n      \\\"prompt\\\": \\\"How much money in total is still awaiting payment across all orders?\\\"\\n    }\\n  ]\\n}\"}],\"id\":\"chatcmpl-___prefill_addr_10.119.11.118:7100___decode_addr_10.119.11.120:7101_ed797a44c0ef42a7aab34757d7e89ff4\",\"model\":\"Atria-Dawn-Preview\",\"request_id\":\"req_9a38e104-24e2-4620-9089-d00169453d3e\",\"role\":\"assistant\",\"stop_reason\":\"end_turn\",\"type\":\"message\",\"usage\":{\"input_tokens\":6687,\"output_tokens\":428}}"
+    }
+  ]
+}

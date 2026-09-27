@@ -1,0 +1,16 @@
+{
+  "label": "gemini",
+  "asked": "",
+  "parts": {
+    "system": "3147f14fce7acb76",
+    "tools": "72a83e74c16a1289",
+    "conversation": "8c52e7bd4f11b13b"
+  },
+  "responses": [
+    {
+      "status": 503,
+      "type": "application/json; charset=UTF-8",
+      "body": "{\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\",\n    \"status\": \"UNAVAILABLE\"\n  }\n}\n"
+    }
+  ]
+}

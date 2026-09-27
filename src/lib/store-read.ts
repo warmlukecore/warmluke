@@ -1172,13 +1172,17 @@ export async function searchOrders(
     if (search.to) q = q.lt("placed_at", search.to);
   }
 
-  if (search.status === "cancelled") {
+  if (search.status?.toLowerCase() === "cancelled") {
     q = q.not("cancelled_at", "is", null);
   } else if (search.status && SAFE_TERM.test(search.status)) {
     // A cancelled order keeps its last financial status, so asking for
     // "paid" and being handed cancelled ones would be a wrong answer
-    // rather than a generous one.
-    q = q.is("cancelled_at", null).or(`financial_status.eq.${search.status},fulfilment_status.eq.${search.status}`);
+    // rather than a generous one. Spelling is not held against the
+    // asker: the store says PENDING, a model asked for "pending" and
+    // was told there were none.
+    q = q
+      .is("cancelled_at", null)
+      .or(`financial_status.ilike.${search.status},fulfilment_status.ilike.${search.status}`);
   }
 
   // Both of these end up inside a PostgREST or() expression, where a

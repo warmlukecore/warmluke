@@ -92,7 +92,7 @@ test("a question is answered from the shop's own orders", async ({ signedIn: pag
   await expect(panel.getByText(/#1006/).last()).toBeVisible();
   await expect(panel.getByText(/#1008/).last()).toBeVisible();
   // Under it: the model that made it, what it took, and what that cost.
-  const took = panel.locator("summary", { hasText: "Opus 5.5" }).last();
+  const took = panel.locator("summary", { hasText: / in · / }).last();
   await expect(took).toBeVisible();
   await expect(took).toContainText(/k? in · [\d.]+k? out.*\$0\.\d/);
   // The new thread joins the switcher, and the trace survives the reload

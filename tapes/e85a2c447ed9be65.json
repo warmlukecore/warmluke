@@ -1,0 +1,21 @@
+{
+  "label": "gemini",
+  "asked": "figured) CONTEXT — rules already running on this app. Do not propose one that is already here; to change a rule, remove it and add the new one. none USER REQUEST: Is order #1001 paid? How much was it?",
+  "parts": {
+    "system": "3147f14fce7acb76",
+    "tools": "72a83e74c16a1289",
+    "conversation": "88d58caa0ed05635"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json; charset=UTF-8",
+      "body": "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\": [\n          {\n            \"functionCall\": {\n              \"name\": \"get_order\",\n              \"args\": {\n                \"order_number\": \"1001\"\n              },\n              \"id\": \"call_3670\"\n            },\n            \"thoughtSignature\": \"EvEDCu4DAWkUfRP5081AsdcQ8p3WaQYL1261ZOqQMcBjMIK8LW06V9OkeBHFDpWXZfH0XMW5vbodre92HDk/qzKoyKX12M35bxRyH9mBH2ElPuRkwraaU1r2/GVSULyB41bhpiDO/8xuomBvQs0XAUUx2L3IgBebW5pD+IBUy1zWbZxFzQTkfidJRXxZDUZgs3eaFIaEbBu/GL3AMLkVldTPMbFXF4qZhBJSBXs5jKi8VcP8vCvBEuO1o96+dJf/qqYifmr7j0QkRiQC/EagY7VzLJtv/6tWYGyNfO0jmwHletFg+mKW3yDB6iao9XXqKzKcSULcZ47hg0gI/TeoHhI/J64JoVg1FS3OHXbdm37r5wpZEGSld7ggy/A7KtVXRaOY7VFdnTY1QYISVNvuK3eVW17FilQIXWxWJndtZmvGqvVZmoJnYXbVvfUQh960rW9vqOlvyPW6Efu0kUbRdAdOCRiPvbZTmWU8g7bMMrYXdqavvAm6sS8StPhujCvtzqrgGcHJYbScVoyOlAGOA1s/ZqjGYhZeop3Dr/sV2kxYWRkC2bvqM1k6l9L+qEKjmkzUEnhr7IK8a0/IOz61N2DFVt4eUzm6nu1vwIkoBASuA+n+TcEL/JRe3jl+Y+ON8T5JvK3y94RXnU/j5BvCduRm2Go=\"\n          }\n        ],\n        \"role\": \"model\"\n      },\n      \"finishReason\": \"STOP\",\n      \"index\": 0,\n      \"finishMessage\": \"Model generated function call(s).\"\n    }\n  ],\n  \"usageMetadata\": {\n    \"promptTokenCount\": 6909,\n    \"candidatesTokenCount\": 21,\n    \"totalTokenCount\": 7070,\n    \"promptTokensDetails\": [\n      {\n        \"modality\": \"TEXT\",\n        \"tokenCount\": 6909\n      }\n    ],\n    \"thoughtsTokenCount\": 140,\n    \"serviceTier\": \"standard\"\n  },\n  \"modelVersion\": \"gemini-3.6-flash\",\n  \"responseId\": \"nx-5avy6G-6tjuMPjufW2Qo\"\n}\n"
+    },
+    {
+      "status": 200,
+      "type": "application/json; charset=UTF-8",
+      "body": "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\": [\n          {\n            \"functionCall\": {\n              \"name\": \"get_order\",\n              \"args\": {\n                \"order_number\": \"1001\"\n              },\n              \"id\": \"call_2324910\"\n            },\n            \"thoughtSignature\": \"EqkDCqYDAWkUfROb+SjQKkInqgc8lNffMYVTD7ShjnJ6/2r4K3Ol0yRLBuMoVMP1b6HS8mHYwmk4DgBjyyT+Rub9vK7VYzKOFLhdYgvWpXGdRX5XYOr1FUV7LT4mcAJWic6uKCR7Au7Y+ef2nAc2ZNt+OJerlTe/tLAYIcQh4pUom/asWHfv33NfViroTO9LB+kMn0LiZZ+M3Bqe6BdFtcvEzpTz71YQTur18+ZVPoTYI+5uw9mDQM0Bax/C/FYP1aGcqAoP19GijdOH/VydMh2dCsFKvg5fdBX9xmJBiHdk341h4IUz5rmbU1M5hoouwdmclfsQKsD7Yn5NERIWf2t7fK5gxMlU27NzA+mcGrCfwnl8/e5u51pZLhM9hqjNrc7YmjM7XVy4PQyNlCkXqytc6whUfkrsc2L3DHkE/lDzCSH7YDg7WJpd/msYghdjoCeFRQX4nNGcSCsSb/QfTBtOjNxIOnlKHnKdsrydLpjefdpxQhUqcVhftMlr6gHOwv0hG/ga4kKgkNze9QGO1SyNcNxU9+E8ukS0Qx7LwfDUmWwLxiSwzVRsUSQ=\"\n          }\n        ],\n        \"role\": \"model\"\n      },\n      \"finishReason\": \"STOP\",\n      \"index\": 0,\n      \"finishMessage\": \"Model generated function call(s).\"\n    }\n  ],\n  \"usageMetadata\": {\n    \"promptTokenCount\": 6909,\n    \"candidatesTokenCount\": 21,\n    \"totalTokenCount\": 7049,\n    \"promptTokensDetails\": [\n      {\n        \"modality\": \"TEXT\",\n        \"tokenCount\": 6909\n      }\n    ],\n    \"thoughtsTokenCount\": 119,\n    \"serviceTier\": \"standard\"\n  },\n  \"modelVersion\": \"gemini-3.6-flash\",\n  \"responseId\": \"qR-5auX5Ed7bjuMPouON2Ao\"\n}\n"
+    }
+  ]
+}
