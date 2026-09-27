@@ -21,6 +21,7 @@ database decides who may do what.
 | Store tools | `src/lib/store-tools.ts` | The six reading tools, declared once: name, description, JSON Schema, `run(args, { db, store })` |
 | MCP | `src/app/api/mcp/route.ts` | Lists `STORE_TOOLS` (adding `shop_domain` and the artifact note) and its own approval flows |
 | Luke's tools | `aiStoreTools(ctx, { only, observe })` in `src/lib/store-tools.ts` | The same tools as AI SDK tools, bound to one caller and one store, cut to fit (`fitForModel`) and heard as they run |
+| Which road a turn takes | `roadFor` in `src/lib/intent.ts`; `buildTalkPrompt` and `buildSystemPrompt` in `src/lib/ai.ts` | Talk (answer only, ~1.7k tokens) or design (the whole contract); decided in code, handed back by the model when wrong; `check-intent`, `check-answer` |
 | Luke's loop | `runTurn` in `src/lib/engine.ts` with `lookups: true`, `callModel` in `src/lib/ai.ts` | Up to three lookups before the JSON reply (`LOOKUP_STEPS`), on the first attempt only; each told as a `lookup` step and kept for the receipt |
 | What a turn took | `src/lib/usage.ts` (`metered`, `record`, `asJob`), `src/lib/model-prices.ts` | Every finished call records its tokens into the turn's meter (AsyncLocalStorage), by provider, model and job; the chat route prices it once and keeps it on the reply as `usage` |
 | Which model per account | `src/lib/luke-models.ts`, `/api/models`, `account_settings.luke_models` (0127) | What the Models API lists and the price table can price, cut to the account's list; the route uses a named model only when it is on it |

@@ -213,3 +213,41 @@ export function needsOnboarding(a: {
   if (a.onboarded || a.staff) return false;
   return !(a.ownProjects === 0 && a.sharedWithMe > 0);
 }
+
+/** What the onboarding profile holds, as a row reads it back. */
+export type ProfileRow = {
+  full_name: string | null;
+  business_name: string | null;
+  role: string | null;
+  monthly_orders: string | null;
+  platform: string | null;
+  team_size: string | null;
+};
+
+/**
+ * Who the merchant is, in one line for Luke: the answers they gave at
+ * onboarding, which sat in a table nobody read to the model, so every
+ * thread began by guessing who it was talking to. Null when there is
+ * nothing to say.
+ */
+export function describeMerchant(row: ProfileRow | null | undefined): string | null {
+  if (!row) return null;
+  const name = row.full_name?.trim();
+  const business = row.business_name?.trim();
+  if (!name && !business) return null;
+  // Only a label: an answer nobody offered (an old value, a typo) is
+  // left out rather than read to the model raw.
+  const named = (options: Option[], value: string | null) => options.find((o) => o.value === value)?.label ?? null;
+  const role = named(ROLE_OPTIONS, row.role);
+  const orders = named(ORDER_OPTIONS, row.monthly_orders);
+  const platform = named(PLATFORM_OPTIONS, row.platform);
+  const team = named(TEAM_OPTIONS, row.team_size);
+  const who = [name, role ? `(${role.toLowerCase()})` : null].filter(Boolean).join(" ");
+  const parts = [
+    business ? `${who || "They"} run${who ? "s" : ""} ${business}` : `${who} runs the business`,
+    platform ? `on ${platform}` : null,
+    orders ? `${orders} orders a month` : null,
+    team ? `a team of ${team.toLowerCase()}` : null,
+  ].filter(Boolean);
+  return `${parts.join(", ")}. Speak to them as this person, in their words, and size what you design to a business like theirs.`;
+}

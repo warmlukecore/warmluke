@@ -70,11 +70,26 @@ registry should be neither advertised nor accepted.
 Supported column types currently include text, long text, numbers, currency, percent,
 date, time, boolean, badge, dropdown, phone, email, URL, record link, and barcode.
 
+## Two roads
+
+A turn takes one of two roads, decided in code before any model is called (`roadFor` in
+`src/lib/intent.ts`): the **talk road**, for a greeting, a question about the app or a
+question about the store, and the **design road**, for anything to build or change, an
+answer to Luke's own question, or a yes to a design. The talk road's contract
+(`buildTalkPrompt`) says who Luke is, how an answer is shaped and reads, what Luke can
+build in one breath, and offers a `build` reply that hands the turn to the design road;
+it is about a seventh of the design contract. A wrong turn onto the design road costs
+tokens and nothing else; a wrong turn onto the talk road is handed back by the model (a
+`build` reply, or any shape but `answer`), and the design road starts over with its tools.
+Both roads say the same paragraphs about Luke and about answers, held once. The road is
+told as a `road` step. `check-intent` holds the routing; `check-answer` the talk contract.
+
 ## Context construction
 
 For each turn, the engine reads:
 
 - project name, locale, and currency;
+- who the merchant is, from their onboarding profile (`describeMerchant`), one line;
 - every module and its current effective schema;
 - current module context, when present;
 - up to 40 existing automation rules;

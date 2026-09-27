@@ -19,7 +19,7 @@
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { buildSystemPrompt, parseReply } from "../src/lib/ai.ts";
+import { buildSystemPrompt, buildTalkPrompt, parseReply } from "../src/lib/ai.ts";
 import { storeContextFor } from "../src/lib/engine.ts";
 
 const env = Object.fromEntries(
@@ -160,6 +160,59 @@ console.log("\nand what it says when one is");
       check("it says nothing is low rather than staying silent", /Nothing is running low/.test(prompt));
     }
   }
+}
+
+// The talk road: a greeting or a question is told how to answer and
+// nothing of how to design, at a seventh of the tokens, with a way to
+// hand a build back.
+console.log("\nthe talk road");
+{
+  const mods = [
+    {
+      id: "m1",
+      project_id: "p",
+      parent_id: null,
+      name: "packing",
+      nav_label: "Packing",
+      icon: "table",
+      route: "/p",
+      sort_order: 1,
+      source_table: "orders",
+      created_at: "x",
+    },
+  ];
+  const [talk, talkVar] = buildTalkPrompt(mods, "Shop", "en-IN", "INR", null);
+  const [design] = buildSystemPrompt(mods, "Shop", "en-IN", "INR", null);
+  check("is a fraction of the design road", talk.length * 5 < design.length);
+  check("offers the answer shape", /"type": "answer"/.test(talk));
+  check("and a way to hand a build back", /"type": "build"/.test(talk));
+  check(
+    "but no plans, no blueprint, no grammar",
+    !/"plans": \[|BLUEPRINT|AUTOMATION TRIGGERS|EXPRESSION OPERATORS/.test(talk)
+  );
+  check("says what Luke can build, briefly", /WHAT LUKE CAN BUILD/.test(talk) && /NOT POSSIBLE/.test(talk));
+  check("names the sections, not their ids", /"Packing"/.test(talkVar) && !/m1/.test(talkVar));
+  check("says plainly when no store is connected", /NO CONNECTED STORE/.test(talkVar));
+  const [, withStore] = buildTalkPrompt(mods, "Shop", "en-IN", "INR", {
+    shop_domain: "s.myshopify.com",
+    timezone: "Asia/Kolkata",
+    currency: "INR",
+    importing: false,
+    counts: { orders: 3 },
+    values: {},
+    canLookUp: true,
+    snapshot: { last_synced_at: "2026-09-27T00:00:00Z", recent: [], low: [], top_customers: [], best_sellers: [] },
+  });
+  check("with a store, says what may be answered from", /WHAT YOU MAY ANSWER FROM/.test(withStore));
+  check("and keeps the design advice for the design road", !/Design on top of it/.test(withStore));
+  const who = "Tanish (owner) runs Kurta House, on Shopify, 200-1,000 orders a month.";
+  const [, talkWho] = buildTalkPrompt(mods, "Shop", "en-IN", "INR", null, who);
+  const [, designWho] = buildSystemPrompt(mods, "Shop", "en-IN", "INR", null, who);
+  check(
+    "both roads are told who the merchant is",
+    talkWho.includes(`ABOUT THE MERCHANT: ${who}`) && designWho.includes(`ABOUT THE MERCHANT: ${who}`)
+  );
+  check("and nothing when it is not known", !talkVar.includes("ABOUT THE MERCHANT"));
 }
 
 console.log(fails.length === 0 ? "\nit answers from what it was given" : `\n${fails.length} FAILED`);

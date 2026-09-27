@@ -74,6 +74,7 @@ import {
   X,
   Zap,
   ZapOff,
+  Signpost,
 } from "lucide-react";
 import { button, fieldOf, menu, menuItem } from "@/components/ui/controls";
 import { costOf, dollars, modelName, tokensShort, type Tokens } from "@/lib/model-prices";
@@ -262,6 +263,7 @@ export const nextChatId = () => `m${++msgSeq}`;
 /** What each step of a turn was, as a mark beside its words. */
 const STEP_MARK: Record<TurnEvent["step"], LucideIcon> = {
   accepted: CornerDownRight,
+  road: Signpost,
   store: Store,
   context: LayoutGrid,
   model: Sparkles,
@@ -302,6 +304,8 @@ function stepWords(step: TurnEvent): string {
       return step.problems === 0 ? "Checked the reply" : `Found ${n(step.problems, "problem")} — sending it back`;
     case "gaps":
       return "Checking what the design misses…";
+    case "road":
+      return step.road === "talk" ? "Answering" : "Designing";
   }
 }
 

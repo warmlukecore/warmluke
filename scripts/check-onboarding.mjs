@@ -23,6 +23,7 @@ import {
   problems,
   returnsToOnboarding,
   toRow,
+  describeMerchant,
 } from "../src/lib/onboarding.ts";
 
 const fails = [];
@@ -212,6 +213,44 @@ check(
   "finished people are sent on, not asked again",
   /if \(row\?\.onboarded_at\) \{\s*router\.replace\("\/dashboard"\);/.test(page)
 );
+
+console.log("\nthe merchant in one line, for Luke");
+{
+  const said = describeMerchant({
+    full_name: "Tanish",
+    business_name: "Kurta House",
+    role: "founder",
+    monthly_orders: "500_2000",
+    platform: "shopify",
+    team_size: "2_5",
+  });
+  check(
+    "names them, their business and its size",
+    !!said && /Tanish \(founder \/ owner\) runs Kurta House/.test(said) && /500–2,000 orders a month/.test(said)
+  );
+  check("and how to speak to them", !!said && /Speak to them/.test(said));
+  check(
+    "nothing when nothing was answered",
+    describeMerchant(null) === null &&
+      describeMerchant({
+        full_name: "",
+        business_name: "",
+        role: null,
+        monthly_orders: null,
+        platform: null,
+        team_size: null,
+      }) === null
+  );
+  const plain = describeMerchant({
+    full_name: "Asha",
+    business_name: "Asha Foods",
+    role: "not-a-role",
+    monthly_orders: null,
+    platform: null,
+    team_size: null,
+  });
+  check("an answer with no label is left out, not printed raw", !!plain && !/not-a-role/.test(plain));
+}
 
 console.log(fails.length === 0 ? "\nonboarding asks once, and keeps what it is told" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

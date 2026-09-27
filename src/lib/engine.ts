@@ -26,7 +26,11 @@ import {
   parseReply,
   type ChatTurn,
   type StoreContext,
+  buildTalkPrompt,
+  stripFences,
 } from "@/lib/ai";
+import { lastReplyTypeOf, roadFor, type Road } from "@/lib/intent";
+import { describeMerchant, type ProfileRow } from "@/lib/onboarding";
 import {
   describeFeaturesFull,
   describePlan,
@@ -229,6 +233,8 @@ export type TurnResult =
       unmet: string[];
       /** What the model looked up with the store tools, in words, as the tools recorded it. */
       lookedUp: string[];
+      /** Which road the turn took: only how to answer, or the whole design contract. */
+      road: Road;
     }
   | { ok: false; errors: string[]; repairs: number; repairErrors: string[] };
 
@@ -420,7 +426,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // system prompt because that prompt is cached across projects.
   // Beside it, what the owner's own connected assistant asked for
   // lately: the one piece of intent that lives outside this thread.
-  const [{ data: ruleRows }, requests, { data: changeOn }] = await Promise.all([
+  const [{ data: ruleRows }, requests, { data: changeOn }, { data: profile }] = await Promise.all([
     client
       .from("automations")
       .select("id, name, enabled, module_id, definition")
@@ -432,7 +438,11 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     // switch, off unless somebody at Warmluke turned it on. Read only
     // when the tools are on offer at all.
     lookups && store ? client.rpc("abo_feature", { p_name: "store_actions" }) : Promise.resolve({ data: false }),
+    // Who they are, from onboarding: read under their own RLS, so a
+    // connected assistant acting for them reads theirs and nobody else's.
+    client.from("profiles").select("full_name, business_name, role, monthly_orders, platform, team_size").maybeSingle(),
   ]);
+  const merchant = describeMerchant(profile as ProfileRow | null);
   const rules = describeRules((ruleRows ?? []) as RuleRow[], modules);
 
   // Every section's columns, so a design that touches one the caller
@@ -507,7 +517,17 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     store.canChange = canChange;
   }
 
-  const system = buildSystemPrompt(modules, project.name, project.locale, project.currency, store);
+  // Which road: only how to answer, or the whole design contract. The
+  // talk road hands a build back (below), so a wrong turn onto it costs
+  // one small call; a wrong turn onto the design road costs tokens.
+  let road: Road = roadFor({ message, lastReplyType: lastReplyTypeOf(history), routed: !!store?.snapshot?.slice });
+  tell({ step: "road", road });
+  const designSystem = () =>
+    buildSystemPrompt(modules, project.name, project.locale, project.currency, store, merchant);
+  let system =
+    road === "talk"
+      ? buildTalkPrompt(modules, project.name, project.locale, project.currency, store, merchant)
+      : designSystem();
   const userTurn = buildUserMessage(
     message,
     moduleId,
@@ -546,6 +566,26 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       lookups: attempt === 0 && tools ? { tools } : undefined,
       onText: draft,
     });
+    // The talk road hands a build back: a "build" reply, or a design it
+    // drew anyway. The design road then starts over, tools and all.
+    if (road === "talk") {
+      let said: unknown = null;
+      try {
+        said = JSON.parse(stripFences(raw));
+      } catch {
+        /* the parser below says so */
+      }
+      const type = said && typeof said === "object" ? (said as { type?: unknown }).type : undefined;
+      if (typeof type === "string" && type !== "answer") {
+        road = "design";
+        tell({ step: "road", road });
+        system = designSystem();
+        attemptTurns.splice(0, attemptTurns.length, { role: "user", content: userTurn });
+        draft?.("");
+        attempt = -1;
+        continue;
+      }
+    }
     parsed = parseReply(raw, modules, currentSchema, currentFeatures, (mid) => schemas.get(mid) ?? null);
 
     // Structural gate, enforced here rather than trusted to the prompt.
@@ -671,7 +711,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     }
   }
 
-  return { ok: true, reply: parsed.reply, raw, userTurn, repairs, repairErrors, store, unmet, lookedUp };
+  return { ok: true, reply: parsed.reply, raw, userTurn, repairs, repairErrors, store, unmet, lookedUp, road };
 }
 
 /**

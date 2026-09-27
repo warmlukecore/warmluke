@@ -290,3 +290,19 @@ ${bullets(STAT_OP_LIST.map((s) => [s, STAT_OPS[s]]))}
 NOT POSSIBLE ON THIS PLATFORM — never design around these, never describe a workaround for them:
 ${NOT_SUPPORTED.map((n) => `  - ${n.label}`).join("\n")}`;
 }
+
+/**
+ * What Luke can build, in one breath: for the talk road, whose answers
+ * about the product may say no more than this. The design road is
+ * given the whole vocabulary above.
+ */
+export function capabilitySummary(): string {
+  const on = TRIGGER_TYPES.filter((t) => t !== "schedule").map((t) => t.replace("record_", ""));
+  const does = AUTOMATION_ACTION_TYPES.map((a) => a.replace(/_/g, " "));
+  return `WHAT LUKE CAN BUILD — say no more than this about the platform, in these words:
+- Sections of rows with typed fields (${COLUMN_TYPES.join(", ")}), shown as a ${VIEW_TYPES.join(", ")}.
+- Search, filters, stat cards, sorting, one-tap row buttons, and a barcode scan bar.
+- Rules that run when a row is ${on.join(" or ")}, or on a schedule, and then ${does.join(" or ")}.
+- Sections over the connected store's own lists (orders, products, customers, stock and the rest), with the owner's fields kept beside each row.
+NOT POSSIBLE — never promise these, never describe a workaround: ${NOT_SUPPORTED.map((n) => n.label).join("; ")}.`;
+}

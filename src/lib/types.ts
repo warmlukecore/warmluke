@@ -530,6 +530,8 @@ export type TurnEvent =
   | { step: "context"; sections: number; rules: number }
   /** The model is being asked, for the n-th time of at most `of`. */
   | { step: "model"; attempt: number; of: number }
+  /** Which road the turn took: only how to answer, or the whole design contract. */
+  | { step: "road"; road: "talk" | "design" }
   /** The model looked something up with a store tool, and it came back. `about` is what, in words. */
   | { step: "lookup"; about: string }
   /** A change to the shop was asked for; it waits for the merchant's yes. `summary` is the card's own sentence. */
