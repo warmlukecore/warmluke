@@ -26,6 +26,7 @@ export type Price = {
 const same = (name: string, p: Omit<Price, "name">): Price => ({ name, ...p });
 const OPUS_4 = { input: 5, cacheWrite: 6.25, cacheRead: 0.5, output: 25 };
 const SONNET_4 = { input: 3, cacheWrite: 3.75, cacheRead: 0.3, output: 15 };
+const GEMINI_FLASH_3 = { input: 0.75, cacheWrite: 0.75, cacheRead: 0.075, output: 3.75 };
 
 export const PRICES: Readonly<Record<string, Price>> = {
   "claude-fable-5-1": same("Fable 5.1", { input: 10, cacheWrite: 12.5, cacheRead: 0.25, output: 50 }),
@@ -42,6 +43,19 @@ export const PRICES: Readonly<Record<string, Price>> = {
   "claude-sonnet-4-6": same("Sonnet 4.6", SONNET_4),
   "claude-sonnet-4-5": same("Sonnet 4.5", SONNET_4),
   "claude-haiku-4-5": same("Haiku 4.5", { input: 1, cacheWrite: 1.25, cacheRead: 0.1, output: 5 }),
+  // Google's, from ai.google.dev/gemini-api/docs/pricing (paid tier, text,
+  // prompts under 200k, the rates through 2026-12-31). Google charges a
+  // cache by the hour it is kept, not by the write, so a write is priced
+  // as plain input here.
+  "gemini-3.8-flash": same("Gemini 3.8 Flash", GEMINI_FLASH_3),
+  "gemini-3.7-flash": same("Gemini 3.7 Flash", GEMINI_FLASH_3),
+  "gemini-3.6-flash": same("Gemini 3.6 Flash", GEMINI_FLASH_3),
+  "gemini-3.5-flash": same("Gemini 3.5 Flash", { input: 1.5, cacheWrite: 1.5, cacheRead: 0.15, output: 9 }),
+  "gemini-3.5-flash-lite": same("Gemini 3.5 Flash-Lite", { input: 0.3, cacheWrite: 0.3, cacheRead: 0.03, output: 2.5 }),
+  "gemini-3.1-pro-preview": same("Gemini 3.1 Pro Preview", { input: 2, cacheWrite: 2, cacheRead: 0.2, output: 12 }),
+  "gemini-2.5-pro": same("Gemini 2.5 Pro", { input: 1.25, cacheWrite: 1.25, cacheRead: 0.125, output: 10 }),
+  "gemini-2.5-flash": same("Gemini 2.5 Flash", { input: 0.3, cacheWrite: 0.3, cacheRead: 0.03, output: 2.5 }),
+  "gemini-2.5-flash-lite": same("Gemini 2.5 Flash-Lite", { input: 0.1, cacheWrite: 0.1, cacheRead: 0.01, output: 0.4 }),
 };
 
 /**
@@ -49,6 +63,8 @@ export const PRICES: Readonly<Record<string, Price>> = {
  * the newest of each line, newest first, as that API would list them.
  */
 export const CURRENT_MODELS = ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5", "claude-haiku-4-5"];
+/** Google's newest, offered beside them when a Gemini key is set and Google's list cannot be asked. */
+export const CURRENT_GEMINI = ["gemini-3.8-flash"];
 
 /** The row a model is priced by: itself, or a row it is a dated snapshot of. */
 export function priceOf(model: string | null | undefined): Price | null {

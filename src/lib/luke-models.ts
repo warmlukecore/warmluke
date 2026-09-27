@@ -17,7 +17,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { designModel } from "@/lib/ai";
-import { CURRENT_MODELS, modelName, priceOf, type Price } from "@/lib/model-prices";
+import { CURRENT_GEMINI, CURRENT_MODELS, modelName, priceOf, type Price } from "@/lib/model-prices";
 import { tapeMode } from "@/lib/model-tape";
 import type { LukeShows } from "@/lib/types";
 
@@ -57,6 +57,35 @@ async function listed(): Promise<string[] | null> {
   }
 }
 
+/** "gemini-3.8-flash" → 3.8: Google's list is not in version order. */
+const geminiVersion = (id: string) => Number(/^gemini-(\d+(?:\.\d+)?)/.exec(id)?.[1] ?? 0);
+
+/**
+ * The ids Google lists for this server's Gemini key, newest first by
+ * version; empty without a key or when it cannot be asked. Offered
+ * beside Anthropic's: a Gemini name goes to Google in the model layer
+ * already, so the picker only has to know it is there.
+ */
+async function listedByGoogle(): Promise<string[]> {
+  if (tapeMode()) return [];
+  const key = process.env.GEMINI_API_KEY?.trim();
+  if (!key) return [];
+  try {
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=100", {
+      headers: { "x-goog-api-key": key },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!r.ok) return [];
+    const j = (await r.json()) as { models?: Array<{ name?: unknown }> };
+    return (j.models ?? [])
+      .map((m) => (typeof m.name === "string" ? m.name.replace(/^models\//, "") : ""))
+      .filter((id) => id.startsWith("gemini-"))
+      .toSorted((a, b) => geminiVersion(b) - geminiVersion(a));
+  } catch {
+    return [];
+  }
+}
+
 /** What this server can answer on, newest first, with its own model always among them. */
 export async function modelsOnOffer(): Promise<{ ids: string[]; fallback: string | null }> {
   let fallback: string | null = null;
@@ -66,11 +95,13 @@ export async function modelsOnOffer(): Promise<{ ids: string[]; fallback: string
     /* no model set: nothing to offer beyond the list */
   }
   if (!asked || Date.now() - asked.at > HOUR) {
-    const got = await listed();
-    // Kept only when it answered, so an outage is asked again next time.
-    if (got) asked = { at: Date.now(), ids: got };
+    const [got, google] = await Promise.all([listed(), listedByGoogle()]);
+    // Kept only when Anthropic answered, so an outage is asked again next time.
+    if (got) asked = { at: Date.now(), ids: [...got, ...google] };
   }
-  const priced = (asked?.ids ?? CURRENT_MODELS).filter((id) => priceOf(id));
+  // Without a list: the current models, and Google's newest when its key is here.
+  const standIn = process.env.GEMINI_API_KEY?.trim() ? [...CURRENT_MODELS, ...CURRENT_GEMINI] : CURRENT_MODELS;
+  const priced = (asked?.ids ?? standIn).filter((id) => priceOf(id));
   const ids = fallback && !priced.includes(fallback) ? [fallback, ...priced] : priced;
   return { ids, fallback };
 }

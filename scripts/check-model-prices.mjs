@@ -32,13 +32,23 @@ check("a newer version is not an older one's", priceOf("claude-opus-5-7") === nu
 check("nor is a name that only starts the same", priceOf("claude-opus-5-5-fast") === null);
 check(
   "a model it does not list has none",
-  priceOf("Atria-Dawn-Preview") === null && priceOf("gemini-3.6-flash") === null
+  priceOf("Atria-Dawn-Preview") === null && priceOf("gemini-3-flash-preview") === null
 );
-check("and is called what its provider called it", modelName("gemini-3.6-flash") === "gemini-3.6-flash");
+check("and is called what its provider called it", modelName("gemini-3-flash-preview") === "gemini-3-flash-preview");
+check(
+  "Google's are priced too, and named",
+  priceOf("gemini-3.8-flash")?.input === 0.75 && modelName("gemini-3.8-flash") === "Gemini 3.8 Flash"
+);
+check(
+  "a Gemini cache write costs what input does",
+  priceOf("gemini-3.8-flash")?.cacheWrite === priceOf("gemini-3.8-flash")?.input
+);
 check("the listed ones by name", modelName("claude-sonnet-5") === "Sonnet 5");
 check(
-  "every row reads cache cheaper than input, and output dearest",
-  Object.values(PRICES).every((p) => p.cacheRead < p.input && p.input < p.cacheWrite && p.output > p.input)
+  // A cache write is dearer than input at Anthropic and the same at Google,
+  // which bills a cache by the hour instead; never cheaper.
+  "every row reads cache cheaper than input, writes it no cheaper, and output dearest",
+  Object.values(PRICES).every((p) => p.cacheRead < p.input && p.input <= p.cacheWrite && p.output > p.input)
 );
 
 console.log("\nwhat tokens cost");
