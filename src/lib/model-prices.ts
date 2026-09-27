@@ -66,11 +66,18 @@ export const CURRENT_MODELS = ["claude-fable-5-1", "claude-opus-5-5", "claude-so
 /** Google's newest, offered beside them when a Gemini key is set and Google's list cannot be asked. */
 export const CURRENT_GEMINI = ["gemini-3.8-flash"];
 
-/** The row a model is priced by: itself, or a row it is a dated snapshot of. */
+/**
+ * The row a model is priced by: itself, a row it is a dated snapshot of,
+ * or the same model as a router spells it ("anthropic/claude-opus-5.5"
+ * for claude-opus-5-5). Never a different version: the spelling is
+ * normalised, the name is not guessed.
+ */
 export function priceOf(model: string | null | undefined): Price | null {
   if (!model) return null;
-  if (PRICES[model]) return PRICES[model];
-  const dated = /^(.*)-\d{8}$/.exec(model);
+  const bare = model.replace(/^anthropic\//, "");
+  const name = bare.startsWith("claude-") ? bare.replace(/(\d)\.(\d)/g, "$1-$2") : bare;
+  if (PRICES[name]) return PRICES[name];
+  const dated = /^(.*)-\d{8}$/.exec(name);
   return dated && PRICES[dated[1]] ? PRICES[dated[1]] : null;
 }
 

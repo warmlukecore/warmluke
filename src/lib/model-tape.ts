@@ -137,8 +137,11 @@ export function fingerprint(label: string, url: string, body: string) {
   const tools = o.tools ?? null;
   const rest: Record<string, unknown> = renumberCalls({ ...o });
   for (const k of ["system", "systemInstruction", "tools", "model"]) delete rest[k];
-  // The road, without the model: Gemini names it in the path.
-  const road = new URL(url).pathname.replace(/\/models\/[^/:]+/, "/models/‹model›");
+  // The road, without the model: Gemini names it in the path. And
+  // without a proxy's prefix: a router serving Anthropic's API at
+  // /api/v1/messages answers the same request as /v1/messages, and a
+  // recording made through one must play back through the other.
+  const road = new URL(url).pathname.replace(/^.*?(\/v1\/)/, "$1").replace(/\/models\/[^/:]+/, "/models/‹model›");
   const parts = { system: hash(system), tools: hash(tools), conversation: hash({ road, rest }) };
   return { key: hash([label, parts]), parts, asked: lastSaid(rest) };
 }

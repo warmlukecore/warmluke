@@ -45,6 +45,12 @@ check(
 );
 check("the listed ones by name", modelName("claude-sonnet-5") === "Sonnet 5");
 check(
+  "a router's spelling of the same model is that model",
+  priceOf("anthropic/claude-opus-5.5")?.name === "Opus 5.5" &&
+    priceOf("anthropic/claude-haiku-4.5")?.name === "Haiku 4.5"
+);
+check("but a version it does not list is still none", priceOf("anthropic/claude-opus-5.7") === null);
+check(
   // A cache write is dearer than input at Anthropic and the same at Google,
   // which bills a cache by the hour instead; never cheaper.
   "every row reads cache cheaper than input, writes it no cheaper, and output dearest",
