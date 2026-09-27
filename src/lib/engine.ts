@@ -760,7 +760,12 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
 
     repairs = attempt + 1;
     // A question to ask is not a problem the design had.
-    if (!onlyAsking) repairErrors.push(...parsed.errors);
+    if (!onlyAsking) {
+      repairErrors.push(...parsed.errors);
+      // To the log as well as the receipt: what the grammar refuses
+      // most is what the prompt, or the grammar, should say better.
+      console.warn(`[validator] attempt ${attempt + 1} rejected: ${parsed.errors.join(" | ")}`);
+    }
     onlyAsking = false;
     if (attempt === MAX_REPAIR_ATTEMPTS) break;
     attemptTurns.push(
