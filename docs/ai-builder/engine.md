@@ -210,6 +210,22 @@ is not persisted as conversation history.
 
 ## Gap pass and judgement
 
+### The critic (with the plan switch on)
+
+When `ANTHROPIC_PLAN_MODEL` is set, a design that passed every gate is read once more by the
+critic (`critique` in `src/lib/ai.ts`, beside `findGaps`), inside the same loop the repairs
+use: it is given the owner's words, what Luke understood (the plan block) and what will
+actually be built (`describeBuild`), and answers `{unmet, redo}` — what is missing in the
+owner's own words, and one line to the designer when what is missing is the point of the
+request and can be built. A `redo` sends the design back once a turn (it spends one of the
+repair attempts); a second verdict stands. Told as a `critic` step ("Sent the design back…" /
+"Checked it does what you asked"). With a verdict in hand the gap pass below is skipped; with
+the switch off, or the critic failing to answer, everything below runs as it always did.
+
+The plan step itself may look the store up (`PLAN_TOOLS`: search_store, store_metrics,
+store_overview; two lookups, then the plan), heard as `lookup` steps like the design's own.
+
+
 After structural validation, `findGaps` compares the owner's original request with a
 deterministic description of what the plans actually build. Missing requested outcomes
 are returned as unmet items. Suggested next steps that merely repeat unmet work are

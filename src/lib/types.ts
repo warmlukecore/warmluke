@@ -471,7 +471,7 @@ export type AssistantReply =
   };
 
 /** What a model call was for: the reply itself, the gap pass, or routing the question. */
-export type UsageJob = "reply" | "gap" | "route";
+export type UsageJob = "reply" | "gap" | "route" | "plan" | "critic";
 
 /** One model's share of a turn: its calls for one job, their tokens, and their dollars. */
 export type ModelUse = {
@@ -541,7 +541,9 @@ export type TurnEvent =
   /** The validator has spoken: no problems, or this many going back to the model. */
   | { step: "checked"; problems: number }
   /** A design came out; the pass that finds what it misses is running. */
-  | { step: "gaps" };
+  | { step: "gaps" }
+  /** The critic read the design against what was asked: it fits, or it went back once. `missing` counts what it still lacks. */
+  | { step: "critic"; verdict: "fits" | "redo"; missing: number };
 
 // ── Conversation persistence ─────────────────────────────────
 

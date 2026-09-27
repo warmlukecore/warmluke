@@ -23,6 +23,7 @@ database decides who may do what.
 | Luke's tools | `aiStoreTools(ctx, { only, observe })` in `src/lib/store-tools.ts` | The same tools as AI SDK tools, bound to one caller and one store, cut to fit (`fitForModel`) and heard as they run |
 | Which model per road | `MODEL_JOBS` and `talkModel()` in `src/lib/ai.ts` | `ANTHROPIC_MODEL` for the design road, `ANTHROPIC_TALK_MODEL` for the talk road (unset: the design model); the owner's pick in the panel wins on both; tapes record the setting used |
 | The plan step | `plan()` in `runTurn` (`src/lib/engine.ts`), `buildPlanPrompt` in `src/lib/ai.ts`, `parseIntent`/`intentBlock` in `src/lib/plan.ts` | Before a design: what was understood, as words in one shape, on the talk road's context; rides in the design call's user turn; `ANTHROPIC_PLAN_MODEL` is the switch and the model (unset: no plan); skipped when answering a drawn design; `check-plan` |
+| The critic | `critique`/`parseCritique` in `src/lib/ai.ts`, called in `runTurn`'s loop | Under the plan switch: reads ask + plan + `describeBuild`, answers `{unmet, redo}`; one redo a turn, inside the repair loop; replaces the gap pass when it answers; `check-critic` |
 | Which road a turn takes | `roadFor` in `src/lib/intent.ts`; `buildTalkPrompt` and `buildSystemPrompt` in `src/lib/ai.ts` | Talk (answer only, ~1.7k tokens) or design (the whole contract); decided in code, handed back by the model when wrong; `check-intent`, `check-answer` |
 | Luke's loop | `runTurn` in `src/lib/engine.ts` with `lookups: true`, `callModel` in `src/lib/ai.ts` | Up to three lookups before the JSON reply (`LOOKUP_STEPS`), on the first attempt only; each told as a `lookup` step and kept for the receipt |
 | What a turn took | `src/lib/usage.ts` (`metered`, `record`, `asJob`), `src/lib/model-prices.ts` | Every finished call records its tokens into the turn's meter (AsyncLocalStorage), by provider, model and job; the chat route prices it once and keeps it on the reply as `usage` |
@@ -107,6 +108,11 @@ database decides who may do what.
   sent from the browser and these tapes need recording too.
 - Anything that holds a model key reads it through `keyFor` (model-tape.ts), never
   `process.env` directly: a direct read turns a replayed call off in CI, where no key is.
+- A type-only import says `type` (`import { type ChatTurn }`): the checks load `src/` through
+  Node's type stripping, which keeps a bare import of a type and dies on it at load
+  ("does not provide an export named …"); `tsc` elides it and says nothing. Before committing
+  an engine change, `node --experimental-strip-types --import ./scripts/ts-hook.mjs -e
+  'await import("./src/lib/engine.ts")'` is the two-second proof.
 - **Changed a prompt, a tool or a model call?** Its tapes no longer match, on purpose.
   Record again (`tapes/README.md`), replay with no keys, review the new answers, commit
   them with the change.

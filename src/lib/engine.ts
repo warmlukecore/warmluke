@@ -24,16 +24,18 @@ import {
   type DraftPhase,
   findGaps,
   parseReply,
-  ChatTurn,
-  StoreContext,
+  type ChatTurn,
+  type StoreContext,
   buildTalkPrompt,
   stripFences,
   talkModel,
   buildPlanPrompt,
   planModel,
+  critique,
 } from "@/lib/ai";
 import { lastReplyTypeOf, roadFor, type Road } from "@/lib/intent";
 import { intentBlock, parseIntent } from "@/lib/plan";
+import { asJob } from "@/lib/usage";
 import { describeMerchant, type ProfileRow } from "@/lib/onboarding";
 import {
   describeFeaturesFull,
@@ -63,6 +65,14 @@ const LUKE_TOOLS = [
   "low_stock",
   "store_metrics",
 ] as const;
+
+/**
+ * What the plan step may read: enough to settle which rows the work
+ * belongs to and what a column really holds. Never a change to the shop.
+ */
+const PLAN_TOOLS = ["search_store", "store_metrics", "store_overview"] as const;
+/** Two lookups, then the plan. */
+const PLAN_STEPS = 3;
 
 /**
  * How many rules the designer is shown.
@@ -467,6 +477,13 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // one thing looked up.
   const lookedUp: string[] = [];
   const heard = new Set<string>();
+  const hear = ({ about, tool, args }: { tool: string; about: string; args: unknown }) => {
+    const key = `${tool}:${JSON.stringify(args)}`;
+    if (heard.has(key)) return;
+    heard.add(key);
+    lookedUp.push(about);
+    tell({ step: "lookup", about });
+  };
   const toolStore =
     lookups && store?.store_id
       ? {
@@ -484,16 +501,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   const canChange = !!toolStore && changeOn === true;
   const tools = toolStore
     ? {
-        ...aiStoreTools(toolStore, {
-          only: LUKE_TOOLS,
-          observe: ({ tool, about, args }) => {
-            const key = `${tool}:${JSON.stringify(args)}`;
-            if (heard.has(key)) return;
-            heard.add(key);
-            lookedUp.push(about);
-            tell({ step: "lookup", about });
-          },
-        }),
+        ...aiStoreTools(toolStore, { only: LUKE_TOOLS, observe: hear }),
         // Asking for a change in the shop, when the account allows it.
         // It only ever makes a request the merchant agrees to or not.
         ...(canChange
@@ -556,20 +564,27 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // to parse is no plan, and the design goes on as it always did.
   let planBlock = "";
   let planned = false;
+  // The setting is the switch: no plan model, no plan step — and no critic.
+  const planOn = planModel();
   const plan = async () => {
     if (planned) return;
     planned = true;
-    // The setting is the switch: no plan model, no plan step.
-    const planOn = planModel();
     if (!planOn || lastReplyTypeOf(history) === "blueprint") return;
     let goal: string | null = null;
     try {
-      const raw = await callModel({
-        system: buildPlanPrompt(modules, project.name, project.locale, project.currency, store, merchant),
-        turns: [...history, { role: "user", content: userTurn }],
-        signal,
-        model: model ?? planOn,
-      });
+      // The store's reading tools, bounded, and heard the same way: a
+      // lookup made while planning is a lookup the owner sees and the
+      // receipt keeps.
+      const planTools = toolStore ? aiStoreTools(toolStore, { only: PLAN_TOOLS, observe: hear }) : null;
+      const raw = await asJob("plan", () =>
+        callModel({
+          system: buildPlanPrompt(modules, project.name, project.locale, project.currency, store, merchant),
+          turns: [...history, { role: "user", content: userTurn }],
+          signal,
+          model: model ?? planOn,
+          lookups: planTools ? { tools: planTools, steps: PLAN_STEPS } : undefined,
+        })
+      );
       const intent = parseIntent(raw);
       if (intent) {
         planBlock = intentBlock(intent);
@@ -600,6 +615,10 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // alone cannot tell a malformed shape from a design that missed the
   // point, and those want opposite remedies.
   const repairErrors: string[] = [];
+  // The critic's word on a design that passed every gate: what it still
+  // misses, in the owner's words, and — once a turn — that it goes back.
+  let critiqued: { unmet: string[] } | null = null;
+  let sentBack = false;
 
   for (let attempt = 0; attempt <= MAX_REPAIR_ATTEMPTS; attempt++) {
     tell({ step: "model", attempt: attempt + 1, of: MAX_REPAIR_ATTEMPTS + 1 });
@@ -698,6 +717,41 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     // What the validator actually said — zero problems, or this many on
     // their way back to the model. Not "checked" because time passed.
     tell({ step: "checked", problems: parsed.ok || onlyAsking ? 0 : parsed.errors.length });
+
+    // The gates cover the grammar; the critic covers the point. With the
+    // plan switch on it reads the ask, what was understood and what will
+    // be built, and may send the design back once, in the same loop the
+    // repairs use. A critic that fails to answer is no critic.
+    if (parsed.ok && planOn && parsed.reply.type !== "clarify" && parsed.reply.type !== "answer") {
+      const plans = parsed.reply.type === "blueprint" ? parsed.reply.blueprint.plans : parsed.reply.plans;
+      const verdict = await critique({
+        ownerWords: message.trim(),
+        understood: planBlock,
+        builtDescription: describeBuild(plans, modules, currentSchema?.columns, store),
+        model: model ?? planOn,
+        signal,
+      });
+      if (verdict) {
+        critiqued = { unmet: verdict.unmet };
+        if (verdict.redo && !sentBack && attempt < MAX_REPAIR_ATTEMPTS) {
+          sentBack = true;
+          tell({ step: "critic", verdict: "redo", missing: verdict.unmet.length });
+          attemptTurns.push(
+            { role: "assistant", content: raw },
+            {
+              role: "user",
+              content: `The design was checked against what the owner asked for and sent back: ${verdict.redo}\n\nStill missing, in their words:\n${verdict.unmet
+                .map((u) => `- ${u}`)
+                .join(
+                  "\n"
+                )}\n\nRedesign so it does this too, and reply with the corrected JSON only. Do not apologise or explain.`,
+            }
+          );
+          continue;
+        }
+        tell({ step: "critic", verdict: "fits", missing: verdict.unmet.length });
+      }
+    }
     if (parsed.ok) break;
 
     repairs = attempt + 1;
@@ -743,9 +797,15 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // spend a second model call to compare prose with nothing.
   if (parsed.reply.type !== "clarify" && parsed.reply.type !== "answer") {
     const plans = parsed.reply.type === "blueprint" ? parsed.reply.blueprint.plans : parsed.reply.plans;
-    const built = describeBuild(plans, modules, currentSchema?.columns, store);
-    tell({ step: "gaps" });
-    const gaps = await findGaps(message.trim(), built, signal);
+    let gaps: string[];
+    if (critiqued) {
+      // The critic already read this design against the ask.
+      gaps = critiqued.unmet;
+    } else {
+      const built = describeBuild(plans, modules, currentSchema?.columns, store);
+      tell({ step: "gaps" });
+      gaps = await findGaps(message.trim(), built, signal);
+    }
     const existing = parsed.reply.type === "blueprint" ? (parsed.reply.blueprint.unmet ?? []) : [];
     const seen = new Set(existing.map((u) => u.toLowerCase().trim()));
     unmet = [...existing, ...gaps.filter((g) => !seen.has(g.toLowerCase().trim()))].slice(0, 6);

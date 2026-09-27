@@ -703,6 +703,8 @@ You reply with ONLY a single valid JSON object, no code fences, no commentary ou
   "unsure": ["what their words do not settle and matters to the design — a question each, at most four; empty when nothing does"]
 }
 
+When the store's tools are offered, you may look twice at most — to settle which list holds this, or what a column really says (a status, a gateway, a tag) — then write the plan. Never look for a greeting, and never to browse.
+
 RULES:
 - Their words first: build on what they said, add only what the work plainly needs, never a feature for its own sake.
 - When rows of theirs already hold this (a store list, a section in SECTIONS or CONTEXT), say so in "rows": a second list that will not match their real data is never the answer.
@@ -2768,6 +2770,69 @@ export async function findGaps(ownerWords: string, builtDescription: string, sig
     // silence.
     console.error(`gap: ${e instanceof Error ? e.message : "failed"}`);
     return [];
+  }
+}
+
+/**
+ * The critic: does the design do what was asked? It reads three things
+ * the gap pass never had together — the owner's words, what Luke
+ * understood of them (the plan), and what will actually be built — and
+ * says what is missing in the owner's words, and once, whether the
+ * design should go back. Runs on the plan model, under the plan
+ * switch; with it off the gap pass stands, as every recording was made.
+ */
+const CRITIC_SYSTEM = `You check a design against what a business owner asked for. You are given the owner's own words, what the assistant understood of them (a plan), and what will actually be built. Judge only whether the build does what they asked.
+
+Reply with JSON only, no prose:
+{"unmet": ["..."], "redo": "..." | null}
+
+- "unmet": what they asked for that the build does not do, each in the OWNER'S OWN WORDS (a quote, not your explanation). Something the plan listed as a rule or as recorded and the build lacks IS missing. Equipment they own (a scanner, a printer) that nothing uses IS missing. A problem they stated that nothing detects IS missing. At most 4, most important first; [] when nothing is.
+- "redo": one line to the designer naming what to change, ONLY when something in "unmet" is the point of the request (the goal itself, or a step of the work without which the rest is useless) AND it can plainly be built here. Otherwise null. Never for extras, never for wording.
+- Do not list what they never asked for. Do not suggest improvements. Do not repeat what the build already covers — read the build closely before saying a thing is missing; a field, a filter, a stat or a rule in the build that answers it counts.
+- Keep the owner's language in the quotes.`;
+
+export type Critique = { unmet: string[]; redo: string | null };
+
+/** The critic's reply as a verdict, or null when it is not one. */
+export function parseCritique(raw: string): Critique | null {
+  let obj: unknown;
+  try {
+    obj = JSON.parse(stripFences(raw));
+  } catch {
+    return null;
+  }
+  if (!isPlainObject(obj)) return null;
+  const redo = typeof obj.redo === "string" && obj.redo.trim() ? obj.redo.trim().slice(0, 400) : null;
+  return { unmet: asStringArray(obj.unmet, 4), redo };
+}
+
+export async function critique(opts: {
+  ownerWords: string;
+  /** What Luke understood, as the block the design was given; "" when there was no plan. */
+  understood: string;
+  builtDescription: string;
+  model: string;
+  signal?: AbortSignal;
+}): Promise<Critique | null> {
+  try {
+    const raw = await asJob("critic", () =>
+      callAnthropicChat(
+        CRITIC_SYSTEM,
+        [
+          {
+            role: "user",
+            content: `THE OWNER SAID:\n${opts.ownerWords}${opts.understood ? `\n\nWHAT THE ASSISTANT UNDERSTOOD:${opts.understood}` : ""}\n\nWHAT WILL ACTUALLY BE BUILT:\n${opts.builtDescription}`,
+          },
+        ],
+        opts.signal,
+        opts.model
+      )
+    );
+    return parseCritique(raw);
+  } catch (e) {
+    // As with the gap pass: a design the owner can read beats none.
+    console.error(`critic: ${e instanceof Error ? e.message : "failed"}`);
+    return null;
   }
 }
 

@@ -74,6 +74,7 @@ import {
   X,
   Zap,
   ZapOff,
+  ClipboardCheck,
   Compass,
   Signpost,
 } from "lucide-react";
@@ -177,6 +178,7 @@ function TraceLine({ trace }: { trace: { steps: TurnEvent[]; ms: number } }) {
   if (tries === 1) parts.push("thought it through");
   else if (tries > 1) parts.push(`took ${tries} tries`);
   if (trace.steps.some((s) => s.step === "gaps")) parts.push("checked for gaps");
+  if (trace.steps.some((s) => s.step === "critic")) parts.push("checked against what you asked");
   if (parts.length === 0) return null;
   const secs = Math.max(1, Math.round(trace.ms / 1000));
   return (
@@ -273,6 +275,7 @@ const STEP_MARK: Record<TurnEvent["step"], LucideIcon> = {
   proposed: Hand,
   checked: ShieldCheck,
   gaps: ListChecks,
+  critic: ClipboardCheck,
 };
 
 /** A step already taken: its mark and its words, in the margin's voice. */
@@ -310,6 +313,12 @@ function stepWords(step: TurnEvent): string {
       return step.road === "talk" ? "Answering" : "Designing";
     case "plan":
       return step.goal ? withoutIds(`Understood: ${step.goal}`) : "Worked out what you need";
+    case "critic":
+      return step.verdict === "redo"
+        ? `Sent the design back: ${n(step.missing, "thing")} you asked for missing`
+        : step.missing === 0
+          ? "Checked it does what you asked"
+          : `Checked it: ${n(step.missing, "thing")} it cannot do, listed below`;
   }
 }
 
@@ -1130,7 +1139,13 @@ function BlueprintCard({
 }
 
 /** What each job is called in a reply's breakdown. */
-const JOB_WORDS: Record<ModelUse["job"], string> = { reply: "Reply", gap: "Gap check", route: "Question router" };
+const JOB_WORDS: Record<ModelUse["job"], string> = {
+  reply: "Reply",
+  gap: "Gap check",
+  route: "Question router",
+  plan: "Plan",
+  critic: "Critic",
+};
 
 /** A reply's dollars in rupees, at a rate that says the day it is from. */
 export type InrRate = { rate: number; asOf: string | null };
