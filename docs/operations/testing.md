@@ -109,26 +109,26 @@ pnpm hooks
 
 ## Choosing coverage for a change
 
-| Change | Minimum targeted verification |
-| --- | --- |
-| Capability/type/validator | Pure design and gate checks; operator parity if expressions change |
-| Renderer or record behavior | Typecheck/build plus targeted live record/section checks |
-| RLS/table/RPC | Migration check, RLS/OAuth guards, second-merchant test, targeted live scenario |
-| MCP tool | MCP limit/client test, tool-specific live check, approval tests if mutating |
-| Shopify resource | Registry/bulk pure checks plus import, webhook, drift, and store-view live checks |
-| Undo/build result | Rollback pure check plus apply/outcome/put-back live checks |
-| Conversation streaming | Stream, reload, and window checks |
-| Environment/build config | Production build and CI workflow review |
-| Screen styling | Typecheck, pure checks, build, and screenshots at desktop and phone width ([design system](../design/design-system.md)); `check-tone` for badge meaning |
-| Onboarding or profiles | `check-onboarding` (pure) and `check-profiles` (live) |
-| Admin screens | `check-admin` (live); `check-follow-up` (pure) for the CSV formula guard and the demo stages against 0120 |
-| Model calls | `check-model-errors` (pure): each provider's request as sent, the one-sentence failures, one attempt, the Gemini fallback |
-| Store tools | `check-store-tools` (pure) for one declaration and refusals before reads; `check-ask-store` (live, its router half played back from `tapes/`), `check-leaders`, `check-free-turns`, `check-mcp-limit` (live) through MCP |
-| Luke's lookups | `check-model-errors` (pure) for the loop, the cap and Gemini's JSON mode; `check-luke-lookups` (live, played back from `tapes/`) for a real turn that must look an order up, and one that must not |
-| Model calls in tests | `check-model-tape` (pure) for the recorder itself; `check-route-eval` (pure, played back) for the router on forty real questions against its baseline |
-| Asking to change the shop | `check-store-action-propose` (pure) for every gate, the server's wording, one request per change and that each target kind is handed out; `check-luke-lookups` (live, played back) for Luke's real proposal, and none with the switch off; `e2e/luke.spec.ts` for the request waiting in the bell |
-| Overview figures | `check-overview` (live); `e2e/store.spec.ts` for the seeded shop's overview in a browser |
-| A flow in the browser | `pnpm exec playwright test` (`e2e/`, desktop and phone width, played back) |
+| Change                      | Minimum targeted verification                                                                                                                                                                                                                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Capability/type/validator   | Pure design and gate checks; operator parity if expressions change                                                                                                                                                                                                                                |
+| Renderer or record behavior | Typecheck/build plus targeted live record/section checks                                                                                                                                                                                                                                          |
+| RLS/table/RPC               | Migration check, RLS/OAuth guards, second-merchant test, targeted live scenario                                                                                                                                                                                                                   |
+| MCP tool                    | MCP limit/client test, tool-specific live check, approval tests if mutating                                                                                                                                                                                                                       |
+| Shopify resource            | Registry/bulk pure checks plus import, webhook, drift, and store-view live checks                                                                                                                                                                                                                 |
+| Undo/build result           | Rollback pure check plus apply/outcome/put-back live checks                                                                                                                                                                                                                                       |
+| Conversation streaming      | Stream, reload, and window checks                                                                                                                                                                                                                                                                 |
+| Environment/build config    | Production build and CI workflow review                                                                                                                                                                                                                                                           |
+| Screen styling              | Typecheck, pure checks, build, and screenshots at desktop and phone width ([design system](../design/design-system.md)); `check-tone` for badge meaning                                                                                                                                           |
+| Onboarding or profiles      | `check-onboarding` (pure) and `check-profiles` (live)                                                                                                                                                                                                                                             |
+| Admin screens               | `check-admin` (live); `check-follow-up` (pure) for the CSV formula guard and the demo stages against 0120                                                                                                                                                                                         |
+| Model calls                 | `check-model-errors` (pure): each provider's request as sent, the one-sentence failures, one attempt, the Gemini fallback                                                                                                                                                                         |
+| Store tools                 | `check-store-tools` (pure) for one declaration and refusals before reads; `check-ask-store` (live, its router half played back from `tapes/`), `check-leaders`, `check-free-turns`, `check-mcp-limit` (live) through MCP                                                                          |
+| Luke's lookups              | `check-model-errors` (pure) for the loop, the cap and Gemini's JSON mode; `check-luke-lookups` (live, played back from `tapes/`) for a real turn that must look an order up, and one that must not                                                                                                |
+| Model calls in tests        | `check-model-tape` (pure) for the recorder itself; `check-route-eval` (pure, played back) for the router on forty real questions against its baseline                                                                                                                                             |
+| Asking to change the shop   | `check-store-action-propose` (pure) for every gate, the server's wording, one request per change and that each target kind is handed out; `check-luke-lookups` (live, played back) for Luke's real proposal, and none with the switch off; `e2e/luke.spec.ts` for the request waiting in the bell |
+| Overview figures            | `check-overview` (live); `e2e/store.spec.ts` for the seeded shop's overview in a browser                                                                                                                                                                                                          |
+| A flow in the browser       | `pnpm exec playwright test` (`e2e/`, desktop and phone width, played back)                                                                                                                                                                                                                        |
 
 New regression tests should prove behavior rather than source wording. Source-text checks
 are appropriate only when the invariant itself is a declaration that must remain in one
@@ -188,4 +188,3 @@ in CI (the last replays its model answers). To seed by hand, with CI idle:
 ```sh
 node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/seed-check-project.mjs --env .env.check.local
 ```
-

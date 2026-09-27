@@ -25,17 +25,17 @@ child truncation limits, save function, webhook topics, written tables, and drif
 
 Current resources:
 
-| Resource | Primary data | Import mode | Incremental topics |
-| --- | --- | --- | --- |
-| `products` | Products and variants | Page or bulk | Product create/update/delete |
-| `collections` | Catalogue groupings and their members | Page or bulk | Collection create/update/delete |
-| `carts` | Abandoned checkouts and the recovery link | Page or bulk | Checkout create/update/delete |
-| `customers` | Customer profile and spend | Page or bulk | Customer create/update/delete |
-| `orders` | Orders, lines, totals, refunds, transactions | Page or bulk | Order create/update/cancel/pay/fulfil, transaction create |
-| `locations` | Places the shop stocks or ships from | Page or bulk | Location create/update/activate/deactivate/delete |
-| `inventory` | Variant/location stock | Page or bulk | Inventory level update/connect |
-| `refunds` | Refund amount and units | Paged | Carried by order updates |
-| `fulfillments` | Shipments and tracking | Page or bulk | Fulfillment create/update plus order payloads |
+| Resource       | Primary data                                 | Import mode  | Incremental topics                                        |
+| -------------- | -------------------------------------------- | ------------ | --------------------------------------------------------- |
+| `products`     | Products and variants                        | Page or bulk | Product create/update/delete                              |
+| `collections`  | Catalogue groupings and their members        | Page or bulk | Collection create/update/delete                           |
+| `carts`        | Abandoned checkouts and the recovery link    | Page or bulk | Checkout create/update/delete                             |
+| `customers`    | Customer profile and spend                   | Page or bulk | Customer create/update/delete                             |
+| `orders`       | Orders, lines, totals, refunds, transactions | Page or bulk | Order create/update/cancel/pay/fulfil, transaction create |
+| `locations`    | Places the shop stocks or ships from         | Page or bulk | Location create/update/activate/deactivate/delete         |
+| `inventory`    | Variant/location stock                       | Page or bulk | Inventory level update/connect                            |
+| `refunds`      | Refund amount and units                      | Paged        | Carried by order updates                                  |
+| `fulfillments` | Shipments and tracking                       | Page or bulk | Fulfillment create/update plus order payloads             |
 
 Adding a resource means extending this registry and implementing its query/result saver;
 callers should not grow a second hard-coded resource list.

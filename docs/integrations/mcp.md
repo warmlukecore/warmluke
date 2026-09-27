@@ -28,29 +28,30 @@ through owner-scoped RPCs and the built-in chat settings UI.
 
 ## Tool catalogue
 
-| Tool | Purpose | Mutates state? |
-| --- | --- | ---: |
-| `ask_store` | Route a natural-language store question to the relevant list/window | No |
-| `store_overview` | Store identity, timezone, currency, sync time, counts, and whether any resource is still importing | No |
-| `search_orders` | Filter orders by date, status, or customer/order search | No |
-| `get_order` | Read one order with its items | No |
-| `search_store` | Read a supported canonical store list | No |
-| `low_stock` | Read inventory at or below a threshold | No |
-| `read_section` | List/inspect generated sections and owner-managed rows (a section over the store: the store's rows with the merchant's own fields beside them); with `history`, the section's version history instead | No |
-| `undo_build` | Reverse a build this client made, from what that build recorded | Yes |
-| `propose_change` | Run Warmluke's design engine and create an approval request | Creates a request only |
-| `pending_changes` | Read requests currently awaiting a decision | No |
-| `build_history` | Read completed, partial, or dismissed build history | No |
-| `reject_change` | Record the merchant's rejection of the client's request | Request state only |
-| `design_format` | Read the supported plan/capability contract | No |
-| `validate_design` | Validate client-authored plans without submitting them | No |
-| `submit_design` | Submit already-authored valid plans for merchant approval | Creates a request only |
-| `approve_change` | Apply a previously stored and approved request | Yes, through build gateway |
+| Tool              | Purpose                                                                                                                                                                                               |             Mutates state? |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------: |
+| `ask_store`       | Route a natural-language store question to the relevant list/window                                                                                                                                   |                         No |
+| `store_overview`  | Store identity, timezone, currency, sync time, counts, and whether any resource is still importing                                                                                                    |                         No |
+| `search_orders`   | Filter orders by date, status, or customer/order search                                                                                                                                               |                         No |
+| `get_order`       | Read one order with its items                                                                                                                                                                         |                         No |
+| `search_store`    | Read a supported canonical store list                                                                                                                                                                 |                         No |
+| `low_stock`       | Read inventory at or below a threshold                                                                                                                                                                |                         No |
+| `store_metrics`   | A figure over the whole store: a measure by a dimension in a window (revenue by week, orders by city, new customers this month), counted in the database                                              |                         No |
+| `read_section`    | List/inspect generated sections and owner-managed rows (a section over the store: the store's rows with the merchant's own fields beside them); with `history`, the section's version history instead |                         No |
+| `undo_build`      | Reverse a build this client made, from what that build recorded                                                                                                                                       |                        Yes |
+| `propose_change`  | Run Warmluke's design engine and create an approval request                                                                                                                                           |     Creates a request only |
+| `pending_changes` | Read requests currently awaiting a decision                                                                                                                                                           |                         No |
+| `build_history`   | Read completed, partial, or dismissed build history                                                                                                                                                   |                         No |
+| `reject_change`   | Record the merchant's rejection of the client's request                                                                                                                                               |         Request state only |
+| `design_format`   | Read the supported plan/capability contract                                                                                                                                                           |                         No |
+| `validate_design` | Validate client-authored plans without submitting them                                                                                                                                                |                         No |
+| `submit_design`   | Submit already-authored valid plans for merchant approval                                                                                                                                             |     Creates a request only |
+| `approve_change`  | Apply a previously stored and approved request                                                                                                                                                        | Yes, through build gateway |
 
 Tool descriptions tell clients to use inline SVG for charts in artifacts and to propose
 a persistent Warmluke section when the merchant wants the result retained.
 
-The six store-reading tools (`ask_store` through `low_stock`) are declared once, in
+The seven store-reading tools (`ask_store` through `store_metrics`) are declared once, in
 [`src/lib/store-tools.ts`](../../src/lib/store-tools.ts): name, description, JSON Schema
 and a `run()` that reads with the caller's own client. The MCP route lists that same array,
 adding only `shop_domain` and the artifact note, and calls its `run()` once the store is
@@ -113,7 +114,7 @@ route does not attempt an unauthorized direct table update after building.
   `check-store-action-propose` holds them. The store lists hand out the id a change is
   aimed with: `shopify_id` on orders, products and customers (0121), `inventory_item_id`
   and `location_id` on stock.
-- A connected client cannot *build* a module deletion, though it may propose one. The
+- A connected client cannot _build_ a module deletion, though it may propose one. The
   request waits in the application, where the owner types the section's name to confirm.
   Auto-build never applies such a design, `approve_change` refuses it, and `abo_build`
   refuses `module_delete` to any client token regardless. `check-removals` holds all

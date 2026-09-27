@@ -6,32 +6,32 @@ Database RLS remains authoritative.
 
 ## Projects and application structure
 
-| Method and path | Purpose | Important rules |
-| --- | --- | --- |
-| `GET /api/projects` | List projects visible to the caller | RLS includes owned and joined projects as applicable |
-| `POST /api/projects` | Create an empty project | Owner is the authenticated user |
-| `PATCH /api/projects` | Rename/update locale, currency, or auto-build | Owner-only writes; chosen currency is tracked separately from its default |
-| `DELETE /api/projects` | Delete a project | Owner-only and explicitly confirmed by the UI; cascades project data |
-| `GET /api/modules?projectId=&id=` | Preview module deletion impact | Returns row and child-section impact |
-| `POST /api/modules` | Create a section manually | Validates source table and creates initial schema |
-| `PATCH /api/modules` | Rename/reorder/reparent/change source | Prevents invalid nesting/source transitions; versions schema changes |
-| `DELETE /api/modules` | Delete a section | Owner-only with confirmation name and dependency checks |
-| `POST /api/records` | Create, update, delete, or apply a row action | Reloads current schema, strips undeclared data, enforces computed/store restrictions |
-| `POST /api/rollback` | Restore an earlier UI schema | Appends a new schema version rather than rewriting history |
+| Method and path                   | Purpose                                       | Important rules                                                                      |
+| --------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `GET /api/projects`               | List projects visible to the caller           | RLS includes owned and joined projects as applicable                                 |
+| `POST /api/projects`              | Create an empty project                       | Owner is the authenticated user                                                      |
+| `PATCH /api/projects`             | Rename/update locale, currency, or auto-build | Owner-only writes; chosen currency is tracked separately from its default            |
+| `DELETE /api/projects`            | Delete a project                              | Owner-only and explicitly confirmed by the UI; cascades project data                 |
+| `GET /api/modules?projectId=&id=` | Preview module deletion impact                | Returns row and child-section impact                                                 |
+| `POST /api/modules`               | Create a section manually                     | Validates source table and creates initial schema                                    |
+| `PATCH /api/modules`              | Rename/reorder/reparent/change source         | Prevents invalid nesting/source transitions; versions schema changes                 |
+| `DELETE /api/modules`             | Delete a section                              | Owner-only with confirmation name and dependency checks                              |
+| `POST /api/records`               | Create, update, delete, or apply a row action | Reloads current schema, strips undeclared data, enforces computed/store restrictions |
+| `POST /api/rollback`              | Restore an earlier UI schema                  | Appends a new schema version rather than rewriting history                           |
 
 The browser performs many ordinary reads directly through Supabase under RLS. These API
 routes exist where server-side validation, orchestration, or secrets are required.
 
 ## Assistant and builds
 
-| Method and path | Purpose | Response |
-| --- | --- | --- |
-| `GET /api/chat?projectId=` | List up to 30 recent conversation threads | JSON |
-| `GET /api/chat?projectId=&id=` | Load one thread and up to 200 recent messages | JSON, chronological messages |
-| `GET /api/chat?projectId=&latest=1` | Load the newest thread | JSON |
-| `POST /api/chat` | Run one built-in-assistant turn | NDJSON progress events plus one final object; pre-run refusals are ordinary JSON |
-| `POST /api/apply` | Validate and apply approved plans | Full, partial, already-claimed, or validation result |
-| `POST /api/undo` | Conservatively reverse a recorded build | Reads undo steps from the authorized message; reports completed/refused steps |
+| Method and path                     | Purpose                                       | Response                                                                         |
+| ----------------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------- |
+| `GET /api/chat?projectId=`          | List up to 30 recent conversation threads     | JSON                                                                             |
+| `GET /api/chat?projectId=&id=`      | Load one thread and up to 200 recent messages | JSON, chronological messages                                                     |
+| `GET /api/chat?projectId=&latest=1` | Load the newest thread                        | JSON                                                                             |
+| `POST /api/chat`                    | Run one built-in-assistant turn               | NDJSON progress events plus one final object; pre-run refusals are ordinary JSON |
+| `POST /api/apply`                   | Validate and apply approved plans             | Full, partial, already-claimed, or validation result                             |
+| `POST /api/undo`                    | Conservatively reverse a recorded build       | Reads undo steps from the authorized message; reports completed/refused steps    |
 
 `POST /api/chat` accepts `message`, `projectId`, optional `moduleId`, and optional
 `conversationId`. It enforces the account feature switch, project ownership, hourly
@@ -45,13 +45,13 @@ live state, and executed through `abo_build`.
 
 ## Shopify
 
-| Method and path | Authentication | Purpose |
-| --- | --- | --- |
-| `POST /api/shopify/install` | Owner bearer session | Create pending store state and return Shopify authorization URL |
-| `GET /api/shopify/callback` | Signed Shopify query + one-time state | Exchange token, connect store, subscribe webhooks, redirect |
-| `POST /api/shopify/import` | Project user bearer session; secret token RPC is owner-restricted | Advance one bounded import step, report status, or begin recheck |
-| `POST /api/shopify/webhooks/[token]` | Shopify raw-body HMAC and per-store URL token | Apply ordinary resource events |
-| `POST /api/shopify/webhooks/compliance` | Shopify raw-body HMAC | Apply mandatory data request/redaction events |
+| Method and path                         | Authentication                                                    | Purpose                                                          |
+| --------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `POST /api/shopify/install`             | Owner bearer session                                              | Create pending store state and return Shopify authorization URL  |
+| `GET /api/shopify/callback`             | Signed Shopify query + one-time state                             | Exchange token, connect store, subscribe webhooks, redirect      |
+| `POST /api/shopify/import`              | Project user bearer session; secret token RPC is owner-restricted | Advance one bounded import step, report status, or begin recheck |
+| `POST /api/shopify/webhooks/[token]`    | Shopify raw-body HMAC and per-store URL token                     | Apply ordinary resource events                                   |
+| `POST /api/shopify/webhooks/compliance` | Shopify raw-body HMAC                                             | Apply mandatory data request/redaction events                    |
 
 Import request body:
 
@@ -68,8 +68,8 @@ cursors for a new full pass. Ordinary calls advance the first unfinished resourc
 
 ## Store support
 
-| Method and path | Purpose |
-| --- | --- |
+| Method and path                  | Purpose                                                         |
+| -------------------------------- | --------------------------------------------------------------- |
 | `GET /api/fx?project=&from=&to=` | Return a project-scoped cached or freshly fetched exchange rate |
 
 FX codes must be three uppercase letters. Fresh rates come from Frankfurter/ECB data,
@@ -78,12 +78,12 @@ otherwise omitted so the UI can retain the truthful source currency.
 
 ## MCP and OAuth metadata
 
-| Method and path | Purpose |
-| --- | --- |
+| Method and path                                   | Purpose                                                          |
+| ------------------------------------------------- | ---------------------------------------------------------------- |
 | `GET /.well-known/oauth-protected-resource[/...]` | Publish the protected resource and Supabase authorization server |
-| `POST /api/mcp` | Handle authenticated MCP JSON-RPC requests |
-| `GET /api/mcp` | Report that server-initiated streaming is unavailable |
-| `DELETE /api/mcp` | Confirm there is no persistent server session to terminate |
+| `POST /api/mcp`                                   | Handle authenticated MCP JSON-RPC requests                       |
+| `GET /api/mcp`                                    | Report that server-initiated streaming is unavailable            |
+| `DELETE /api/mcp`                                 | Confirm there is no persistent server session to terminate       |
 
 See [MCP integration](../integrations/mcp.md) for the tool catalogue and approval model.
 

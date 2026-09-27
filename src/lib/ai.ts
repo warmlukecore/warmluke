@@ -528,7 +528,7 @@ function storeBlock(store: StoreContext | null, projectCurrency: string, road: "
     lines.push(``);
     lines.push(
       store.canLookUp
-        ? `WHAT YOU MAY ANSWER FROM. These rows were read from the database a moment ago, before you were called. When they do not answer the question — one particular order, a day or span not shown, one product's stock, a list not printed here — look it up with the store tools first, then answer from what came back. Look up only what the question needs, three lookups at most, and never for a greeting or a design. Your final message is still the JSON reply and nothing else.`
+        ? `WHAT YOU MAY ANSWER FROM. These rows were read from the database a moment ago, before you were called. When they do not answer the question — one particular order, a day or span not shown, one product's stock, a list not printed here — look it up with the store tools first, then answer from what came back. Look up only what the question needs, three lookups at most, and never for a greeting or a design. Your final message is still the JSON reply and nothing else. A total, an average, a count or a breakdown over any span (revenue by week, orders by city, units per product, new customers this month) is store_metrics, which counts the whole store in the database: never add up rows yourself and call it the shop's.`
         : `WHAT YOU MAY ANSWER FROM. These rows were read from the database a moment ago, before you were called. They are all you have. You cannot look anything else up.`
     );
     lines.push(

@@ -13,13 +13,13 @@ mints and checks (see [Shopify integration](../integrations/shopify.md#import-st
 
 ## Identities
 
-| Identity | Token characteristic | Intended access |
-| --- | --- | --- |
-| Anonymous visitor | Supabase anon role | Public pages, bounded landing-event insert, verified OAuth/webhook RPCs |
-| Import worker | Anon role plus an `x-import-ticket` header | One store's importer tables, while the ticket is live |
-| Application user | Authenticated JWT without `client_id` | Owner or member access determined by project RLS |
-| OAuth AI client | Authenticated JWT with `client_id` | Reads under the owner identity; direct table writes refused |
-| Superadmin | Authenticated user with protected account setting | Narrow admin RPCs only; not a general service-role session |
+| Identity          | Token characteristic                              | Intended access                                                         |
+| ----------------- | ------------------------------------------------- | ----------------------------------------------------------------------- |
+| Anonymous visitor | Supabase anon role                                | Public pages, bounded landing-event insert, verified OAuth/webhook RPCs |
+| Import worker     | Anon role plus an `x-import-ticket` header        | One store's importer tables, while the ticket is live                   |
+| Application user  | Authenticated JWT without `client_id`             | Owner or member access determined by project RLS                        |
+| OAuth AI client   | Authenticated JWT with `client_id`                | Reads under the owner identity; direct table writes refused             |
+| Superadmin        | Authenticated user with protected account setting | Narrow admin RPCs only; not a general service-role session              |
 
 `getUserClient` verifies a bearer token with Supabase Auth, then creates a Supabase client
 whose access-token callback supplies that same JWT. PostgREST therefore evaluates RLS as
@@ -27,16 +27,16 @@ the caller, not as the server.
 
 ## Project roles
 
-| Capability | Owner | Member | OAuth client acting for owner |
-| --- | ---: | ---: | ---: |
-| Read project/modules/schemas | Yes | Yes | Yes |
-| Read generated and store data | Yes | Yes | Yes |
-| Insert/update ordinary records | Yes | Yes | No direct table writes |
-| Delete ordinary records | Yes | No | No |
-| Read assistant conversations | Yes | No | No direct table access |
-| Change modules/schemas/rules | Yes | No | Only through approved `abo_build` operations |
-| Manage members/store/settings | Yes | No | No |
-| Use built-in paid assistant | Yes | No | Not applicable |
+| Capability                     | Owner | Member |                OAuth client acting for owner |
+| ------------------------------ | ----: | -----: | -------------------------------------------: |
+| Read project/modules/schemas   |   Yes |    Yes |                                          Yes |
+| Read generated and store data  |   Yes |    Yes |                                          Yes |
+| Insert/update ordinary records |   Yes |    Yes |                       No direct table writes |
+| Delete ordinary records        |   Yes |     No |                                           No |
+| Read assistant conversations   |   Yes |     No |                       No direct table access |
+| Change modules/schemas/rules   |   Yes |     No | Only through approved `abo_build` operations |
+| Manage members/store/settings  |   Yes |     No |                                           No |
+| Use built-in paid assistant    |   Yes |     No |                               Not applicable |
 
 Members join through an unguessable invitation token. The token, not an email address,
 proves possession; this matters because an auto-confirmed email alone is not a trusted

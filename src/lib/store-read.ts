@@ -48,6 +48,63 @@ export async function listStores(db: SupabaseClient): Promise<StoreBrief[]> {
  * a resource that gains a table nobody counts fails there, which is
  * the same guarantee one import later.
  */
+/**
+ * A figure over the whole store (0129): what may be measured, and by
+ * what. The database's abo_store_metrics names the same two lists;
+ * check-store-metrics holds them together. A measure or dimension added
+ * here without the SQL fails there, not in a merchant's answer.
+ */
+export const STORE_METRICS = {
+  measures: {
+    orders: "how many orders",
+    revenue: "the value of the orders (by product: the value of that product's lines)",
+    units: "how many items, from the order lines",
+    aov: "the average order value",
+    customers: "how many different customers ordered",
+    new_customers: "how many customers placed their first ever order in the window",
+  },
+  dimensions: {
+    none: "one figure for the whole window",
+    day: "per day, in the store's own time",
+    week: "per week; the key is the Monday the week starts on",
+    month: "per month",
+    product: "per product",
+    city: "per shipping city",
+    state: "per shipping state",
+    gateway: "per payment gateway (COD, Razorpay…)",
+    status: "per payment status (paid, pending, refunded, cancelled)",
+    fulfilment: "per fulfilment status",
+    customer: "per customer, biggest first",
+  },
+  filters: ["status", "gateway", "fulfilment", "city", "state", "product", "include_cancelled"],
+} as const;
+export type StoreMeasure = keyof typeof STORE_METRICS.measures;
+export type StoreDimension = keyof typeof STORE_METRICS.dimensions;
+
+/** One figure over the whole store, counted in the database. */
+export async function storeMetrics(
+  db: SupabaseClient,
+  storeId: string,
+  ask: {
+    measure: StoreMeasure;
+    by?: StoreDimension;
+    from?: string | null;
+    to?: string | null;
+    filters?: Record<string, unknown>;
+  }
+): Promise<Record<string, unknown>> {
+  const { data, error } = await db.rpc("abo_store_metrics", {
+    p_store: storeId,
+    p_measure: ask.measure,
+    p_by: ask.by ?? "none",
+    p_from: ask.from ?? null,
+    p_to: ask.to ?? null,
+    p_filters: ask.filters ?? {},
+  });
+  if (error) throw new Error(error.message);
+  return data as Record<string, unknown>;
+}
+
 export const COUNTED = [
   "products",
   "variants",

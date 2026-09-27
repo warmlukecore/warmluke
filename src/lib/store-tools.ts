@@ -34,7 +34,11 @@ import {
   searchOrders,
   storeLeaders,
   storeOverview,
+  storeMetrics,
+  STORE_METRICS,
   STORE_TABLES,
+  type StoreDimension,
+  type StoreMeasure,
   type StoreBrief,
 } from "@/lib/store-read";
 import { RESOURCES, SHOPIFY_RESOURCES } from "@/lib/shopify-resources";
@@ -331,6 +335,72 @@ export const STORE_TOOLS: readonly StoreTool[] = [
           rows.length === 0 ? `Nothing is at or below ${threshold}.` : "Counts are as of the last sync from Shopify.",
         rows,
       };
+    },
+  },
+  {
+    name: "store_metrics",
+    about: (a) =>
+      `${word(a.measure) ?? "a figure"}${word(a.by) && a.by !== "none" ? ` by ${word(a.by)}` : ""}${
+        word(a.from) || word(a.to) ? ` ${word(a.from) ?? "…"} to ${word(a.to) ?? "…"}` : ""
+      }`,
+    description: `A figure over the WHOLE store, counted in the database — never over a page of rows. Use it for any total, average, count or breakdown: revenue by week, orders by city, units per product, how many customers were new this month. Measures: ${Object.entries(
+      STORE_METRICS.measures
+    )
+      .map(([k, v]) => `${k} (${v})`)
+      .join("; ")}. By: ${Object.entries(STORE_METRICS.dimensions)
+      .map(([k, v]) => `${k} (${v})`)
+      .join("; ")}. Cancelled orders are left out unless include_cancelled is true. Dates are the store's own days.`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        measure: { type: "string", enum: Object.keys(STORE_METRICS.measures), description: "What to count." },
+        by: {
+          type: "string",
+          enum: Object.keys(STORE_METRICS.dimensions),
+          description: "What to break it down by. Leave out for one figure.",
+        },
+        from: { type: "string", description: "First day, YYYY-MM-DD, in the store's time. Leave out for all time." },
+        to: { type: "string", description: "Last day, YYYY-MM-DD, inclusive. Leave out for up to today." },
+        filters: {
+          type: "object",
+          description: `Only orders matching these. Keys: ${STORE_METRICS.filters.join(", ")}. status, gateway, fulfilment, city and state must be spelled as the store spells them; product matches part of a title.`,
+          properties: Object.fromEntries(
+            STORE_METRICS.filters.map((f) => [f, f === "include_cancelled" ? { type: "boolean" } : { type: "string" }])
+          ),
+        },
+      },
+      required: ["measure"],
+    },
+    run: async (args, { db, store }) => {
+      const measure = String(args.measure ?? "");
+      if (!(measure in STORE_METRICS.measures)) {
+        return { error: `"${measure}" is not a measure.`, measures: Object.keys(STORE_METRICS.measures) };
+      }
+      const by = args.by === undefined || args.by === null ? "none" : String(args.by);
+      if (!(by in STORE_METRICS.dimensions)) {
+        return { error: `"${by}" is not a dimension.`, dimensions: Object.keys(STORE_METRICS.dimensions) };
+      }
+      for (const k of ["from", "to"] as const) {
+        const v = args[k];
+        if (v === undefined || v === null || v === "") continue;
+        try {
+          dayRangeInZone(String(v), store.timezone);
+        } catch {
+          return { error: `"${String(v)}" is not a date. Use YYYY-MM-DD.` };
+        }
+      }
+      const filters = Object.fromEntries(
+        Object.entries((args.filters as Record<string, unknown> | undefined) ?? {}).filter(([k]) =>
+          (STORE_METRICS.filters as readonly string[]).includes(k)
+        )
+      );
+      return storeMetrics(db, store.id, {
+        measure: measure as StoreMeasure,
+        by: by as StoreDimension,
+        from: (args.from as string | undefined) || null,
+        to: (args.to as string | undefined) || null,
+        filters,
+      });
     },
   },
 ];

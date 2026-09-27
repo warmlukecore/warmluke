@@ -43,14 +43,14 @@ flowchart LR
 
 ## Runtime responsibilities
 
-| Boundary | Responsibilities |
-| --- | --- |
-| Browser | Authentication UI, dashboard, builder shell, record interaction, chat UI, import progress, Realtime subscriptions |
-| Next.js route handlers | Verify bearer sessions, orchestrate AI turns and imports, expose MCP, enforce request shape, call caller-scoped database APIs |
-| PostgreSQL | Tenant isolation, authorization, canonical writes, automation execution, build approval state, audit data, aggregate/stat queries |
-| Model providers | Produce constrained replies, plans, gap analysis, question routing, and optional design judgement |
-| Shopify | Source of canonical commerce data and change events |
-| MCP client | Read store/app information and request or submit designs under the merchant's OAuth identity |
+| Boundary               | Responsibilities                                                                                                                  |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Browser                | Authentication UI, dashboard, builder shell, record interaction, chat UI, import progress, Realtime subscriptions                 |
+| Next.js route handlers | Verify bearer sessions, orchestrate AI turns and imports, expose MCP, enforce request shape, call caller-scoped database APIs     |
+| PostgreSQL             | Tenant isolation, authorization, canonical writes, automation execution, build approval state, audit data, aggregate/stat queries |
+| Model providers        | Produce constrained replies, plans, gap analysis, question routing, and optional design judgement                                 |
+| Shopify                | Source of canonical commerce data and change events                                                                               |
+| MCP client             | Read store/app information and request or submit designs under the merchant's OAuth identity                                      |
 
 ## Primary code boundaries
 

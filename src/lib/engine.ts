@@ -51,7 +51,14 @@ import { aiProposeTool } from "@/lib/store-action-propose";
  * a question to rows, and this turn's question was routed before the
  * model was called, into the snapshot's slice.
  */
-const LUKE_TOOLS = ["store_overview", "search_orders", "get_order", "search_store", "low_stock"] as const;
+const LUKE_TOOLS = [
+  "store_overview",
+  "search_orders",
+  "get_order",
+  "search_store",
+  "low_stock",
+  "store_metrics",
+] as const;
 
 /**
  * How many rules the designer is shown.

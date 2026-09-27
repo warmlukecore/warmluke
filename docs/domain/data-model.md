@@ -53,15 +53,15 @@ erDiagram
 
 ## Adaptive application tables
 
-| Table | Purpose | Important behavior |
-| --- | --- | --- |
-| `projects` | Tenant and generated application | Owner, name, locale, currency, auto-build setting |
-| `project_members` | Staff seats | Claimed with a secret token; one seat per user/project |
-| `modules` | Navigable application sections | Per-project slug, ordering, one-level nesting, optional store source |
-| `records` | Owner-managed rows, and the merchant's own fields beside a store row | JSONB data; project/module scoped; update timestamp supports safe undo; `store_row_id` names the store row on a store section (0128) |
-| `ui_schemas` | Append-only module designs | Versioned schema JSON, author, and change description |
-| `automations` | Declarative business rules | Optional module scope, enabled state, expression/action definition |
-| `automation_runs` | Automation execution history | Success flag, triggering record, and details |
+| Table             | Purpose                                                              | Important behavior                                                                                                                   |
+| ----------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `projects`        | Tenant and generated application                                     | Owner, name, locale, currency, auto-build setting                                                                                    |
+| `project_members` | Staff seats                                                          | Claimed with a secret token; one seat per user/project                                                                               |
+| `modules`         | Navigable application sections                                       | Per-project slug, ordering, one-level nesting, optional store source                                                                 |
+| `records`         | Owner-managed rows, and the merchant's own fields beside a store row | JSONB data; project/module scoped; update timestamp supports safe undo; `store_row_id` names the store row on a store section (0128) |
+| `ui_schemas`      | Append-only module designs                                           | Versioned schema JSON, author, and change description                                                                                |
+| `automations`     | Declarative business rules                                           | Optional module scope, enabled state, expression/action definition                                                                   |
+| `automation_runs` | Automation execution history                                         | Success flag, triggering record, and details                                                                                         |
 
 ### UI schema
 
@@ -91,19 +91,19 @@ computed columns, guards, and local display behavior where allowed.
 
 ## Conversation and build tables
 
-| Table | Purpose |
-| --- | --- |
-| `conversations` | Owner-only assistant threads, including the per-project thread external builds are filed in; published to realtime, and every message writer advances `updated_at`. Named by Luke's replies until the owner renames one (`named_by_owner`, 0126) |
-| `messages` | Original model content plus structured reply/build/undo payloads; `payload.superseded` marks a prompt the merchant later corrected, and everything answered after it |
-| `build_requests` | Designs originating from MCP clients, including status, exact plans, approval, outcome, and source client |
-| `judgements` | Asynchronous design-quality observations; never an authorization decision |
-| `mcp_calls` | Per-user/client usage accounting and throttling |
-| `account_settings` | Feature switches, turn allowances, superadmin state, and which models Luke may use and what each reply shows (`luke_models`, `luke_shows`, 0127) |
-| `profiles` | One row per account: onboarding answers (name, business, role, monthly orders, platform, optional website/team size/source) and `onboarded_at`, which only the database stamps and which cannot be unset |
-| `admin_account_audit` | Audit trail for administrator account changes |
-| `account_invites` | Sign-up links an administrator makes: a 192-bit token, what is known of the person (email, name, business), uses allowed, `expires_at` (72 hours unless chosen), `revoked_at`; closed to every key, read and written only through `abo_admin_invite*` and `abo_invite_peek`/`abo_invite_claim` (0119) |
-| `account_invite_claims` | Who took each invite, one row per account and invite |
-| `demo_followups` | One row per demo request an administrator has touched: its stage (new, contacted, scheduled, customer, not_a_fit) and a private note; written only through `abo_admin_demo_follow_up`, against the version last seen (0120) |
+| Table                   | Purpose                                                                                                                                                                                                                                                                                               |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `conversations`         | Owner-only assistant threads, including the per-project thread external builds are filed in; published to realtime, and every message writer advances `updated_at`. Named by Luke's replies until the owner renames one (`named_by_owner`, 0126)                                                      |
+| `messages`              | Original model content plus structured reply/build/undo payloads; `payload.superseded` marks a prompt the merchant later corrected, and everything answered after it                                                                                                                                  |
+| `build_requests`        | Designs originating from MCP clients, including status, exact plans, approval, outcome, and source client                                                                                                                                                                                             |
+| `judgements`            | Asynchronous design-quality observations; never an authorization decision                                                                                                                                                                                                                             |
+| `mcp_calls`             | Per-user/client usage accounting and throttling                                                                                                                                                                                                                                                       |
+| `account_settings`      | Feature switches, turn allowances, superadmin state, and which models Luke may use and what each reply shows (`luke_models`, `luke_shows`, 0127)                                                                                                                                                      |
+| `profiles`              | One row per account: onboarding answers (name, business, role, monthly orders, platform, optional website/team size/source) and `onboarded_at`, which only the database stamps and which cannot be unset                                                                                              |
+| `admin_account_audit`   | Audit trail for administrator account changes                                                                                                                                                                                                                                                         |
+| `account_invites`       | Sign-up links an administrator makes: a 192-bit token, what is known of the person (email, name, business), uses allowed, `expires_at` (72 hours unless chosen), `revoked_at`; closed to every key, read and written only through `abo_admin_invite*` and `abo_invite_peek`/`abo_invite_claim` (0119) |
+| `account_invite_claims` | Who took each invite, one row per account and invite                                                                                                                                                                                                                                                  |
+| `demo_followups`        | One row per demo request an administrator has touched: its stage (new, contacted, scheduled, customer, not_a_fit) and a private note; written only through `abo_admin_demo_follow_up`, against the version last seen (0120)                                                                           |
 
 Build request state evolved across migrations. Current code recognizes `pending`,
 `opened`, `building`, `dismissed`, `built`, and `partly_built`. Do not
@@ -112,25 +112,25 @@ both columns and allowed states.
 
 ## Commerce tables and views
 
-| Table | Meaning |
-| --- | --- |
-| `stores` | One provider account per project, OAuth token lifecycle, shop context, sync state |
-| `import_runs` | Cursor/bulk-operation progress for each resource |
-| `products` | Shopify products |
-| `collections` | Merchant-made groupings, with Shopify's own count of what is in each |
-| `collection_products` | Which products belong to which collection |
-| `variants` | Product variants, SKU/barcode/price, unit cost and whether Shopify tracks their stock |
-| `inventory_levels` | Per variant/location: available to sell, on hand, committed to orders, and incoming |
-| `locations` | Each place the shop stocks or ships from, whether it is open, and where it is; kept when Shopify removes one |
-| `customers` | Customer identity, contact, location, spend, and order count |
-| `abandoned_checkouts` | Baskets left at the checkout, with the recovery link. Holds personal data, so redaction erases it and a trigger refuses it back |
-| `orders` | Order identity, timestamps, gross/current totals and their parts (goods, tax, shipping, discount), statuses, payment/discount/shipping facts |
-| `order_line_items` | Quantity, product/variant links, SKU, and unit price |
-| `refunds` | Refunded amount, units, and timestamp |
-| `order_transactions` | What money actually did: kind, status, gateway, amount, and whether it was a test |
-| `fulfillments` | Shipment status, carrier, tracking, and delivery timestamps |
-| `shopify_data_requests` | Compliance request audit |
-| `shopify_redactions` | Tombstones that prevent deleted customer data from reappearing |
+| Table                   | Meaning                                                                                                                                      |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stores`                | One provider account per project, OAuth token lifecycle, shop context, sync state                                                            |
+| `import_runs`           | Cursor/bulk-operation progress for each resource                                                                                             |
+| `products`              | Shopify products                                                                                                                             |
+| `collections`           | Merchant-made groupings, with Shopify's own count of what is in each                                                                         |
+| `collection_products`   | Which products belong to which collection                                                                                                    |
+| `variants`              | Product variants, SKU/barcode/price, unit cost and whether Shopify tracks their stock                                                        |
+| `inventory_levels`      | Per variant/location: available to sell, on hand, committed to orders, and incoming                                                          |
+| `locations`             | Each place the shop stocks or ships from, whether it is open, and where it is; kept when Shopify removes one                                 |
+| `customers`             | Customer identity, contact, location, spend, and order count                                                                                 |
+| `abandoned_checkouts`   | Baskets left at the checkout, with the recovery link. Holds personal data, so redaction erases it and a trigger refuses it back              |
+| `orders`                | Order identity, timestamps, gross/current totals and their parts (goods, tax, shipping, discount), statuses, payment/discount/shipping facts |
+| `order_line_items`      | Quantity, product/variant links, SKU, and unit price                                                                                         |
+| `refunds`               | Refunded amount, units, and timestamp                                                                                                        |
+| `order_transactions`    | What money actually did: kind, status, gateway, amount, and whether it was a test                                                            |
+| `fulfillments`          | Shipment status, carrier, tracking, and delivery timestamps                                                                                  |
+| `shopify_data_requests` | Compliance request audit                                                                                                                     |
+| `shopify_redactions`    | Tombstones that prevent deleted customer data from reappearing                                                                               |
 
 Security-invoker views expose stable section shapes such as orders, customers, products,
 inventory, product sales, order items, refunds, variants, fulfillments, and transactions. The current

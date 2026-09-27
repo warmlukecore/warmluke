@@ -64,13 +64,13 @@ and when it last synced, the import while it runs, and anything that needs the o
 Supported views are declared in `src/lib/capabilities.ts` and implemented in
 `src/components/views.tsx`:
 
-| View | Intended use |
-| --- | --- |
-| `table` | Compare many fields across rows |
-| `board` | Move work through grouped stages |
-| `calendar` | Place records on calendar dates |
-| `cards` | Browse a catalogue-like collection |
-| `list` | Process a compact queue or checklist |
+| View       | Intended use                         |
+| ---------- | ------------------------------------ |
+| `table`    | Compare many fields across rows      |
+| `board`    | Move work through grouped stages     |
+| `calendar` | Place records on calendar dates      |
+| `cards`    | Browse a catalogue-like collection   |
+| `list`     | Process a compact queue or checklist |
 
 Links store a target record UUID. `LinkContext` resolves user-facing labels from the
 target section instead of copying label text into the source row.
@@ -142,7 +142,7 @@ records or change the application's design.
 tables so externally initiated changes are reflected in the open application. Realtime
 is an invalidation mechanism: after a signal, the browser reloads authoritative rows;
 it does not reconstruct complex state from event payloads alone. The changed row is
-handed to the callback only so it can decide *what* to reload.
+handed to the callback only so it can decide _what_ to reload.
 
 Published tables are `modules`, `ui_schemas`, `records`, `build_requests`,
 `conversations`, and `store_actions` (0122; it was listened for but never published, so a
@@ -150,13 +150,13 @@ change an assistant asked for only appeared on reload). The chat panel also relo
 waiting changes when a turn reports a `proposed` step, so Luke's own request appears even
 if the channel has dropped. Subscriptions:
 
-| Subscriber | Table | Reload |
-| --- | --- | --- |
-| Shell | `modules` | Section list |
-| Shell | `records` | Open section's rows |
-| Shell | `ui_schemas` | Open section's design |
-| Shell | `conversations` | Thread list, and the affected thread |
-| Chat panel | `build_requests` | Pending request queue |
+| Subscriber | Table            | Reload                               |
+| ---------- | ---------------- | ------------------------------------ |
+| Shell      | `modules`        | Section list                         |
+| Shell      | `records`        | Open section's rows                  |
+| Shell      | `ui_schemas`     | Open section's design                |
+| Shell      | `conversations`  | Thread list, and the affected thread |
+| Chat panel | `build_requests` | Pending request queue                |
 
 Every writer of a message advances its conversation's `updated_at`, so one subscription
 on `conversations` covers the built-in assistant, external-assistant builds, and undo.

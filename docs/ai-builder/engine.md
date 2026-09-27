@@ -13,12 +13,12 @@ route and MCP `propose_change` tool both call it; persistence remains with each 
 
 The model must return one of four reply types:
 
-| Type | Meaning |
-| --- | --- |
-| `answer` | Answer a store question, explain the product, or continue ordinary conversation |
-| `clarify` | Ask structured questions whose answers materially change the design |
-| `blueprint` | Present workflow and executable plans before creating new sections |
-| `plans` | Propose changes in a context where plans may already be shown directly |
+| Type        | Meaning                                                                         |
+| ----------- | ------------------------------------------------------------------------------- |
+| `answer`    | Answer a store question, explain the product, or continue ordinary conversation |
+| `clarify`   | Ask structured questions whose answers materially change the design             |
+| `blueprint` | Present workflow and executable plans before creating new sections              |
+| `plans`     | Propose changes in a context where plans may already be shown directly          |
 
 An `answer` about store data receives server-written grounding metadata. The model's own
 claim that it “checked” something is not treated as evidence.
@@ -109,8 +109,12 @@ select a list, time window, and question kind; `fetchSlice` then retrieves up to
 for that specific question.
 
 Most questions are answered from that read in one model call. In the chat (`lookups: true`)
-the model may also look up what the snapshot does not hold with five read-only store tools
-(`LUKE_TOOLS`): at most three lookups before its reply, on the first attempt only, each read
+the model may also look up what the snapshot does not hold with six read-only store tools
+(`LUKE_TOOLS`), one of them `store_metrics`: a total, an average, a count or a breakdown
+over the whole store, counted in the database (`abo_store_metrics`, 0129) by one measure
+and one dimension in a window, so an answer about the shop's numbers is never the model's
+arithmetic over a page of rows. The measures and dimensions are declared once
+(`STORE_METRICS`) and `check-store-metrics` holds the SQL to them. The tools run at most three lookups before its reply, on the first attempt only, each read
 with the caller's own client. `search_store` rows carry what the merchant keeps beside
 them (`yours`, by section name) when a section holds any, and a list's ties are broken by
 what its rows say, so the same store reads the same way every time. Every lookup is
