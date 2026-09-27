@@ -74,6 +74,7 @@ import {
   X,
   Zap,
   ZapOff,
+  Compass,
   Signpost,
 } from "lucide-react";
 import { button, fieldOf, menu, menuItem } from "@/components/ui/controls";
@@ -264,6 +265,7 @@ export const nextChatId = () => `m${++msgSeq}`;
 const STEP_MARK: Record<TurnEvent["step"], LucideIcon> = {
   accepted: CornerDownRight,
   road: Signpost,
+  plan: Compass,
   store: Store,
   context: LayoutGrid,
   model: Sparkles,
@@ -306,6 +308,8 @@ function stepWords(step: TurnEvent): string {
       return "Checking what the design misses…";
     case "road":
       return step.road === "talk" ? "Answering" : "Designing";
+    case "plan":
+      return step.goal ? withoutIds(`Understood: ${step.goal}`) : "Worked out what you need";
   }
 }
 

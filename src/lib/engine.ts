@@ -24,13 +24,16 @@ import {
   type DraftPhase,
   findGaps,
   parseReply,
-  type ChatTurn,
-  type StoreContext,
+  ChatTurn,
+  StoreContext,
   buildTalkPrompt,
   stripFences,
   talkModel,
+  buildPlanPrompt,
+  planModel,
 } from "@/lib/ai";
 import { lastReplyTypeOf, roadFor, type Road } from "@/lib/intent";
+import { intentBlock, parseIntent } from "@/lib/plan";
 import { describeMerchant, type ProfileRow } from "@/lib/onboarding";
 import {
   describeFeaturesFull,
@@ -546,10 +549,46 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     requests
   );
 
+  // What Luke understood, before it designs: a short call with none of
+  // the design grammar in front of it, whose words are read by the
+  // design call. Once a turn; not when the owner is answering a design
+  // already drawn (a yes, a no, a tweak). A plan that fails to come or
+  // to parse is no plan, and the design goes on as it always did.
+  let planBlock = "";
+  let planned = false;
+  const plan = async () => {
+    if (planned) return;
+    planned = true;
+    // The setting is the switch: no plan model, no plan step.
+    const planOn = planModel();
+    if (!planOn || lastReplyTypeOf(history) === "blueprint") return;
+    let goal: string | null = null;
+    try {
+      const raw = await callModel({
+        system: buildPlanPrompt(modules, project.name, project.locale, project.currency, store, merchant),
+        turns: [...history, { role: "user", content: userTurn }],
+        signal,
+        model: model ?? planOn,
+      });
+      const intent = parseIntent(raw);
+      if (intent) {
+        planBlock = intentBlock(intent);
+        goal = intent.goal;
+      }
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      console.error(`[plan] ${e instanceof Error ? e.message : "failed"}`);
+    }
+    tell({ step: "plan", goal });
+  };
+  if (road === "design") await plan();
+
   // The rejected attempt and its errors stay in the turns sent to the
   // model but are never persisted — replaying a malformed reply from
-  // history would only teach it to repeat the mistake.
-  const attemptTurns: ChatTurn[] = [{ role: "user", content: userTurn }];
+  // history would only teach it to repeat the mistake. The plan's words
+  // ride with the request here and are not persisted either: the
+  // thread keeps what the owner said, not what Luke made of it.
+  const attemptTurns: ChatTurn[] = [{ role: "user", content: userTurn + planBlock }];
   let raw = "";
   let parsed: ReturnType<typeof parseReply> | null = null;
   let repairs = 0;
@@ -589,7 +628,8 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         road = "design";
         tell({ step: "road", road });
         system = designSystem();
-        attemptTurns.splice(0, attemptTurns.length, { role: "user", content: userTurn });
+        await plan();
+        attemptTurns.splice(0, attemptTurns.length, { role: "user", content: userTurn + planBlock });
         draft?.("");
         attempt = -1;
         continue;

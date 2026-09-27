@@ -682,6 +682,50 @@ RULES:
 - Never show an internal id (a long code of letters, digits and dashes): name the section, the order or the row instead.`;
 
 /**
+ * The plan step's contract: who Luke is, what can be built, and the one
+ * shape it writes — what it understood, in words. No grammar of fields,
+ * views or rules: that is the design call's, which reads this first.
+ */
+const planContract = () => `${WHO_LUKE_IS}
+
+${capabilitySummary()}
+
+You are not designing yet. Before anything is drawn, say what you understood of what the owner wants, so the design that follows solves their problem rather than their sentence. Think about their business: what goes wrong for them today, what would fix it, which rows of theirs it happens to.
+
+You reply with ONLY a single valid JSON object, no code fences, no commentary outside it:
+{
+  "goal": "one line, the outcome they want, in their words",
+  "rows": "which rows this works on: a store list (orders, products, customers, stock), a section of theirs by name, or new rows of its own — and why that one",
+  "work": ["what happens to a row, in order — each a short line"],
+  "facts": ["what has to be recorded on a row, in words (a tick, a time, who, a count) — never field types"],
+  "rules": ["when this, then that — only what they asked for or plainly need"],
+  "screens": ["what they see or do, and where (a list, a scan bar, a board, a button on a row)"],
+  "unsure": ["what their words do not settle and matters to the design — a question each, at most four; empty when nothing does"]
+}
+
+RULES:
+- Their words first: build on what they said, add only what the work plainly needs, never a feature for its own sake.
+- When rows of theirs already hold this (a store list, a section in SECTIONS or CONTEXT), say so in "rows": a second list that will not match their real data is never the answer.
+- Never promise anything under NOT POSSIBLE; if the ask needs it, say so in "unsure".
+- Keep the owner's language (Hinglish stays Hinglish).
+- Never show an internal id: name the section, the order or the row instead.`;
+
+/** This project and its store, as the talk road and the plan step read them. */
+function talkContext(
+  modules: ModuleRow[],
+  projectName: string,
+  locale: string,
+  currency: string,
+  store: StoreContext | null,
+  merchant: string | null
+): string {
+  const names = modules.map((m) => `"${m.nav_label}"`).join(", ");
+  return `PROJECT: "${projectName}"
+LOCALE: ${locale} · CURRENCY: ${currency}${merchant ? `\nABOUT THE MERCHANT: ${merchant}` : ""}
+SECTIONS IN THIS APP: ${names || "none yet — a brand-new, empty project"}${storeBlock(store, currency, "talk")}`;
+}
+
+/**
  * The talk road's prompt: the contract, then this project and its store,
  * in two blocks for the same reason as buildSystemPrompt. Sections by
  * name only; their fields come in the user turn, where a question about
@@ -695,13 +739,19 @@ export function buildTalkPrompt(
   store: StoreContext | null = null,
   merchant: string | null = null
 ): [string, string] {
-  const names = modules.map((m) => `"${m.nav_label}"`).join(", ");
-  return [
-    talkContract(),
-    `PROJECT: "${projectName}"
-LOCALE: ${locale} · CURRENCY: ${currency}${merchant ? `\nABOUT THE MERCHANT: ${merchant}` : ""}
-SECTIONS IN THIS APP: ${names || "none yet — a brand-new, empty project"}${storeBlock(store, currency, "talk")}`,
-  ];
+  return [talkContract(), talkContext(modules, projectName, locale, currency, store, merchant)];
+}
+
+/** The plan step's prompt: its contract, then the same project and store the talk road sees. */
+export function buildPlanPrompt(
+  modules: ModuleRow[],
+  projectName: string,
+  locale = "en-IN",
+  currency = "INR",
+  store: StoreContext | null = null,
+  merchant: string | null = null
+): [string, string] {
+  return [planContract(), talkContext(modules, projectName, locale, currency, store, merchant)];
 }
 
 export function buildUserMessage(
@@ -2307,6 +2357,8 @@ const MODEL_JOBS = {
   design: "ANTHROPIC_MODEL",
   /** The talk road: answers, when a smaller model does as well (unset: the design model). */
   talk: "ANTHROPIC_TALK_MODEL",
+  /** The plan step before a design: what was understood, in words (unset: no plan step). */
+  plan: "ANTHROPIC_PLAN_MODEL",
   /** Reading two short texts and naming what is missing. */
   gap: "ANTHROPIC_GAP_MODEL",
   /** Where a design goes when Gemini stays busy. */
@@ -2326,6 +2378,20 @@ export function talkModel(): string {
     return modelFor("talk");
   } catch {
     return modelFor("design");
+  }
+}
+
+/**
+ * The model the plan step thinks on, or null: the setting is the switch.
+ * Unset, no plan is made and a design goes straight to the design call,
+ * as every recording of one was made; set, every design is planned
+ * first (the owner's pick in the panel still wins the call).
+ */
+export function planModel(): string | null {
+  try {
+    return modelFor("plan");
+  } catch {
+    return null;
   }
 }
 

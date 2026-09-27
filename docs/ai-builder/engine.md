@@ -84,6 +84,24 @@ tokens and nothing else; a wrong turn onto the talk road is handed back by the m
 Both roads say the same paragraphs about Luke and about answers, held once. The road is
 told as a `road` step. `check-intent` holds the routing; `check-answer` the talk contract.
 
+### The plan step
+
+On the design road, before the design call, one short call with none of the design grammar
+(`buildPlanPrompt` in `src/lib/ai.ts`: who Luke is, what can be built, the project and its
+store — the talk road's context) writes what Luke understood as words in one JSON shape
+(`DesignIntent` in `src/lib/plan.ts`): the goal, which rows the work belongs to, what happens
+to a row, what has to be recorded, rules, screens, and what the owner's words do not settle.
+`intentBlock` turns it into a block that rides in the design call's user turn after the
+request, so the design solves the problem rather than the sentence; the block is not
+persisted (the thread keeps what the owner said). It is told as a `plan` step ("Understood:
+…"). Skipped when the owner is answering a design already drawn (last reply a blueprint). A
+plan that fails or does not parse is no plan: the design goes on as before. The setting is
+the switch: `ANTHROPIC_PLAN_MODEL` names the model, and unset there is no plan step (so the
+recordings of the design road stand); the owner's pick in the panel wins the call. Measured
+2026-09-27 on four asks (packing scan, COD remittance, returns, reorders): Opus 5.5 planned 4
+of 4 with the rows, rules and real questions right; Haiku 4.5 answered in prose 3 of 4 times.
+`check-plan` (pure) holds the reader and the block.
+
 ## Context construction
 
 For each turn, the engine reads:
