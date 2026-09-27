@@ -225,6 +225,25 @@ Progress is streamed as NDJSON events representing actual completed/started work
 accepted, store context, project context, model attempt, validation result, and gap pass.
 The final line contains the reply or error.
 
+## Durability spike (Workflow)
+
+A turn is one request today: the process dies, the turn is lost. The team of agents to
+come (planner, specialists, critic, a sandbox run, a wait for the owner's answer) needs
+durable steps. Vercel Workflow (`workflow@5` beta, `@ai-sdk/workflow`) was tried behind
+`LUKE_WORKFLOW=1` on its own route (`src/workflows/luke-spike.ts`,
+`src/app/api/spike/luke/route.ts`; the chat's path is untouched). Found: it compiles and
+runs under `next dev` on Next 16 with `withWorkflow`; each step is recorded with its
+input and output and every event is listed (`pnpm exec workflow inspect runs|steps|events`);
+a run streams what it says as it goes (`getWritable` from steps; the stream must be
+closed from a final step or a reader waits for ever); a run pauses on a hook and resumes
+from a route (`createHook` / `resumeHook`). Not shown locally: a step whose process is
+killed being retried. The local world re-enqueues runs on start but its in-flight step
+message dies with the process (`WORKFLOW_LOCAL_QUEUE_MAX_VISIBILITY` did not change that
+in beta.48); on Vercel, Queues re-deliver after a visibility timeout, which a preview
+deployment has to prove. Two things the real design must settle: a step has no session,
+so it must mint a short-lived token for the owner rather than run as the service role
+(the spike does); and `PORT` / `WORKFLOW_LOCAL_BASE_URL` must name the dev port.
+
 ## Extending the engine safely
 
 Adding a capability normally requires coordinated changes to:

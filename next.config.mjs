@@ -1,4 +1,5 @@
 import path from "node:path";
+import { withWorkflow } from "workflow/next";
 import { fileURLToPath } from "node:url";
 import { findLogo, measureLogo } from "./src/lib/brand-file.mjs";
 
@@ -112,4 +113,7 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+// Workflow: "use workflow" and "use step" compile into durable routes
+// under app/.well-known/workflow. A turn that survives a crash, a wait
+// for the owner's answer, and a step-by-step trace all come from this.
+export default withWorkflow(nextConfig);

@@ -1,0 +1,5 @@
+# Native builds pnpm may run: Workflow's compiler needs these three.
+allowBuilds:
+  "@swc/core": true
+  cbor-extract: true
+  esbuild: true
