@@ -33,8 +33,10 @@ import {
   planModel,
   critique,
   criticModel,
+  memoryModel,
 } from "@/lib/ai";
 import { lastReplyTypeOf, roadFor, type Road } from "@/lib/intent";
+import { describeKnown, notesFor } from "@/lib/memory";
 import { intentBlock, parseIntent } from "@/lib/plan";
 import { asJob } from "@/lib/usage";
 import { describeMerchant, type ProfileRow } from "@/lib/onboarding";
@@ -257,6 +259,8 @@ export type TurnResult =
       lookedUp: string[];
       /** Which road the turn took: only how to answer, or the whole design contract. */
       road: Road;
+      /** What was known about the business when this turn was made, newest first. */
+      known: string[];
     }
   | { ok: false; errors: string[]; repairs: number; repairErrors: string[] };
 
@@ -448,7 +452,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // system prompt because that prompt is cached across projects.
   // Beside it, what the owner's own connected assistant asked for
   // lately: the one piece of intent that lives outside this thread.
-  const [{ data: ruleRows }, requests, { data: changeOn }, { data: profile }] = await Promise.all([
+  const [{ data: ruleRows }, requests, { data: changeOn }, { data: profile }, notesRows] = await Promise.all([
     client
       .from("automations")
       .select("id, name, enabled, module_id, definition")
@@ -463,8 +467,13 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     // Who they are, from onboarding: read under their own RLS, so a
     // connected assistant acting for them reads theirs and nobody else's.
     client.from("profiles").select("full_name, business_name, role, monthly_orders, platform, team_size").maybeSingle(),
+    // What earlier conversations taught about the business (0131), read
+    // only when something writes it: the setting is the switch.
+    memoryModel() ? notesFor(client, project.id) : Promise.resolve([] as string[]),
   ]);
-  const merchant = describeMerchant(profile as ProfileRow | null);
+  const known = notesRows;
+  const merchant =
+    [describeMerchant(profile as ProfileRow | null), describeKnown(known)].filter(Boolean).join("\n") || null;
   const rules = describeRules((ruleRows ?? []) as RuleRow[], modules);
 
   // Every section's columns, so a design that touches one the caller
@@ -829,7 +838,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     }
   }
 
-  return { ok: true, reply: parsed.reply, raw, userTurn, repairs, repairErrors, store, unmet, lookedUp, road };
+  return { ok: true, reply: parsed.reply, raw, userTurn, repairs, repairErrors, store, unmet, lookedUp, road, known };
 }
 
 /**

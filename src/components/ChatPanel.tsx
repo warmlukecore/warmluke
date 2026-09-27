@@ -1145,6 +1145,7 @@ const JOB_WORDS: Record<ModelUse["job"], string> = {
   route: "Question router",
   plan: "Plan",
   critic: "Critic",
+  memory: "Memory",
 };
 
 /** A reply's dollars in rupees, at a rate that says the day it is from. */
@@ -1344,6 +1345,61 @@ function ModelPicker({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * What Luke knows about this business (0131): the lines it learned
+ * from earlier conversations, each theirs to strike. Nothing to show
+ * while there is nothing learned.
+ */
+function KnownNotes({ projectId }: { projectId: string }) {
+  const [notes, setNotes] = useState<Array<{ id: string; note: string }>>([]);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let live = true;
+    apiFetch(`/api/luke-notes?projectId=${encodeURIComponent(projectId)}`, null, "GET").then(({ ok, data }) => {
+      if (!live || !ok) return;
+      const list = Array.isArray(data.notes) ? (data.notes as Array<{ id: string; note: string }>) : [];
+      setNotes(list);
+    });
+    return () => {
+      live = false;
+    };
+  }, [projectId, open]);
+  if (notes.length === 0) return null;
+  const strike = async (id: string) => {
+    setNotes((all) => all.filter((n) => n.id !== id));
+    await apiFetch("/api/luke-notes", { id }, "DELETE");
+  };
+  return (
+    <details className="group" onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+      <summary className="cursor-pointer list-none select-none hover:text-fg-muted">
+        What Luke knows about you
+        <ChevronRight
+          aria-hidden
+          size={11}
+          strokeWidth={2}
+          className="ml-0.5 inline align-[-1px] transition-transform duration-150 group-open:rotate-90"
+        />
+      </summary>
+      <ul className="mt-1 space-y-0.5 pl-3">
+        {notes.map((n) => (
+          <li key={n.id} className="flex items-start gap-1.5">
+            <span className="min-w-0 flex-1">{n.note}</span>
+            <button
+              type="button"
+              onClick={() => strike(n.id)}
+              aria-label={`Forget: ${n.note}`}
+              title="Forget this"
+              className="shrink-0 text-fg-faint hover:text-fg"
+            >
+              <X aria-hidden size={11} strokeWidth={2} />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
@@ -3845,6 +3901,7 @@ export default function ChatPanel({
                   ))}
                 </ul>
               </details>
+              <KnownNotes projectId={projectId} />
             </div>
           </div>
         )}

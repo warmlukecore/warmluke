@@ -2368,6 +2368,8 @@ const MODEL_JOBS = {
   plan: "ANTHROPIC_PLAN_MODEL",
   /** The critic that reads a design against what was asked (unset: the plan model). */
   critic: "ANTHROPIC_CRITIC_MODEL",
+  /** What a turn taught about the business, written down after it (unset: nothing is learned). */
+  memory: "ANTHROPIC_MEMORY_MODEL",
   /** Reading two short texts and naming what is missing. */
   gap: "ANTHROPIC_GAP_MODEL",
   /** Where a design goes when Gemini stays busy. */
@@ -2408,6 +2410,11 @@ export function planModel(): string | null {
  */
 export function criticModel(): string | null {
   return optionalModel("critic") ?? planModel();
+}
+
+/** The model that writes down what a turn taught, or null: the setting is the switch. */
+export function memoryModel(): string | null {
+  return optionalModel("memory");
 }
 
 /** A job's model when its setting is there, else null — without the log line an unset required one earns. */

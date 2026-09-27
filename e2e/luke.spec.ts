@@ -795,3 +795,26 @@ test("a design part that is already built is left out, not built twice", async (
     await clearUp(shop, thread, names);
   }
 });
+
+test("what Luke knows about you is shown, and a line is yours to strike", async ({ signedIn: page, shop }) => {
+  // Two lines Luke learned earlier (0131), as the chat route would have kept them.
+  const { error } = await shop.admin.from("merchant_notes").insert([
+    { project_id: shop.projectId, note: "Courier is Delhivery" },
+    { project_id: shop.projectId, note: "Three people pack at 5pm" },
+  ]);
+  expect(error, "the lines were kept").toBeNull();
+  await page.goto(`/app/${shop.projectId}`);
+  const { panel } = await luke(page);
+  // Folded by default, beside what Luke cannot do; opened, it lists them.
+  await panel.getByText("What Luke knows about you").click();
+  await expect(panel.getByText("Courier is Delhivery")).toBeVisible();
+  await expect(panel.getByText("Three people pack at 5pm")).toBeVisible();
+  // Struck by the owner: gone from the list, and from the table.
+  await panel.getByRole("button", { name: "Forget: Courier is Delhivery" }).click();
+  await expect(panel.getByText("Courier is Delhivery")).toHaveCount(0);
+  await expect
+    .poll(
+      async () => (await shop.admin.from("merchant_notes").select("note").eq("project_id", shop.projectId)).data?.length
+    )
+    .toBe(1);
+});

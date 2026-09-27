@@ -5,6 +5,7 @@ import { metered } from "@/lib/usage";
 import { tapeHeaders } from "@/lib/model-tape";
 import { MAX_REPAIR_ATTEMPTS, answeredTurns, runTurn } from "@/lib/engine";
 import { noteJudgement } from "@/lib/judge";
+import { learn } from "@/lib/memory";
 import type { ChatTurn } from "@/lib/ai";
 import { TITLE_MAX } from "@/lib/types";
 import type {
@@ -544,6 +545,11 @@ export async function POST(req: Request) {
         );
         if (!kept) return { conversationId: thread, stopped: true };
         const replyId = answerId;
+
+        // What this exchange said about the business, written down for
+        // next time (0131) — after the answer is out, never in its way.
+        const said = turn.reply;
+        after(() => learn(client, { projectId: proj.id, message: message.trim(), reply: said, known: turn.known }));
 
         // Only a turn that produced a design, and got it written down,
         // counts.
