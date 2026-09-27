@@ -135,11 +135,25 @@ scan mode may set only the merchant's fields. A rule on it must be `record_updat
 fires from the first field set on a row, reads only the merchant's fields (the store's
 change in Shopify, where no rule sees them), and no rule elsewhere may add rows to it or
 write its rows. Lists whose rows each total many others (return reasons) take computed
-columns only. A new list of its own that retypes a store list, its key and one more
-column or any three (`retypedCopies` in `describe.ts`), is sent back once a turn with the
-list to build over; the same design again is taken as deliberate. `check-builds-on-store`
-holds three everyday requests (packing orders, restocking, following up customers) to
-this, recorded on the production model.
+columns only.
+
+The model is told every section as it is: the rows it shows (a store list or its own),
+its fields, the merchant's marked as theirs, and what it already does (buttons, scan bar,
+stats, filters), written from what is saved (`columnLines` in `engine.ts`). A design that
+works on rows a section already works on, over the same store list or with three of its
+fields (`sectionTwin`), or that retypes a store list, its key and one more column or any
+three (`retypedList`), is not drawn: the owner is asked where it goes, one question with
+two taps ("Add it to Packing" / "Keep it as a separate section"; "Build it on my orders" /
+"Keep a separate list"). The code finds what overlaps (`reuseQuestion` in `describe.ts`),
+because a model that knows the answer is uncertain rarely asks; the model is then told to
+ask it, in the owner's own language, and the code's words are asked instead if it designs
+anyway or runs out of attempts.
+It is asked once a thread and never right after the owner answered a question, and the
+thread keeps the question, not the design nobody saw. A connected assistant gets the same
+overlaps as `heads_up` on a dry run, to ask its user; its design still waits on the card.
+`check-builds-on-store` holds four everyday requests to this (packing orders, restocking,
+following up customers, and more work on the orders a Packing section already scans),
+recorded on the production model.
 
 When validation fails, the rejected model output and exact errors are sent back to the
 model. The engine permits the initial attempt plus two repair attempts. Rejected output

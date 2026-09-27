@@ -264,7 +264,7 @@ Never use this shape to design or build anything; if they want something built, 
   "title": "a few words naming this conversation",
   "message": "your actual reply to them — see below",
   "questions": [
-    { "id": "who", "question": "Who will use this day to day?", "why": "decides which sections and roles exist", "suggestions": ["Just me", "Me and 2 staff", "A whole team"], "multi": false }
+    { "id": "who", "question": "Who will use this day to day?", "why": "decides which sections and roles exist", "suggestions": ["Just me", "Me and 2 staff", "A whole team"], "multi": false, "recommended": null }
   ],
   "together": false
 }
@@ -311,6 +311,8 @@ WHICH SHAPE TO USE — follow this strictly:
 - The request is a small, unambiguous edit to something that already exists ("add a search bar", "rename this section", "put status first", "add 5 demo rows") → go straight to "plans". Never interrogate someone over a one-line tweak.
 - The request describes a NEW app, a new workflow, or a business problem, AND the conversation so far does not tell you how their process actually works → "clarify" with 2-5 questions. Ask about: who uses it, the real-world steps in order, the states a thing moves through, what must never be allowed to happen, and what they check or count. Ask about THEIR words — never offer a menu of industries.
 - "message" is where you TALK. If the owner asked you something ("should customers be their own section?", "is this the right way to run my shop?"), answer it there first — give your actual view in a sentence or two, with the reason — and only then ask what you still need to know. Coming back with nothing but questions to someone who asked YOU a question is a non-answer.
+- The work belongs to rows a section they have ALREADY works on — a section over the same store list, or one holding the same fields (CONTEXT lists what each section shows and does) — and their words do not say which they mean → "clarify" with ONE question before designing anything: add it to that section, by name, or keep it as a section of its own. Two suggestions, exactly those, in their language, each saying in a few words what they get. When they have said which, do it: add to it with FIELD_ADD or FEATURE_UPDATE on its id, or build the separate one over the same rows, never a copy of them.
+- A question that is a CHOICE between ways to build it (add it here or apart, one list or two): each suggestion says in a few words what they get if they pick it ("Yes: in Packing, one scan, a Handed over tick" / "No: its own section, Packing stays as it is"), "recommended" is the suggestion you would pick yourself, word for word, and "why" is your reason, in one short line. Not for questions about their facts (who uses it, what they sell): those have no pick, so "recommended" is null.
 - Ask the fewest questions that change the design; one is often enough. Order them so an earlier answer decides the later ones. "multi": true when more than one suggestion can be true at once (what they track, who uses it), false when exactly one applies. "together": true only for exactly two questions whose answers do not depend on each other (a name and an email); otherwise they are asked one at a time. Two to five "suggestions", a few words each, in their vocabulary.
 - Never ask a question you cannot act on. Asking "will anyone else be updating this?" when extra staff logins do not exist just collects an answer you must then ignore, and invites a promise you cannot keep. Every question must change something you are able to build.
 NESTING:
@@ -1726,11 +1728,26 @@ function parseClarify(obj: Record<string, unknown>): ParsedReply {
   const questions: ClarifyQuestion[] = [];
   for (const [i, q] of rawQuestions.slice(0, 6).entries()) {
     if (!isPlainObject(q) || typeof q.question !== "string" || !q.question.trim()) continue;
+    const suggestions = asStringArray(q.suggestions, 5);
+    // Only one of its own suggestions: a pick that is not on the list
+    // would mark nothing, or mark something they cannot tap.
+    const recommended =
+      typeof q.recommended === "string" && suggestions?.includes(q.recommended.trim()) ? q.recommended.trim() : null;
+    // The reason for its pick is what the owner reads under the
+    // question. Asked for as "why", it came back once as a key of its
+    // own ("why_recommended") beside a "why" about the question, and the
+    // reason was dropped on the floor.
+    const pickWhy = recommended
+      ? [q.why_recommended, q.recommended_why, q.recommendation_why, q.reason].find(
+          (v): v is string => typeof v === "string" && !!v.trim()
+        )
+      : undefined;
     questions.push({
       id: typeof q.id === "string" && q.id.trim() ? q.id : `q${i + 1}`,
       question: q.question.trim(),
-      why: typeof q.why === "string" ? q.why : undefined,
-      suggestions: asStringArray(q.suggestions, 5),
+      why: pickWhy?.trim() ?? (typeof q.why === "string" ? q.why : undefined),
+      suggestions,
+      ...(recommended && q.multi !== true ? { recommended } : {}),
       ...(q.multi === true ? { multi: true } : {}),
     });
   }

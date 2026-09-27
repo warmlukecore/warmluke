@@ -19,7 +19,7 @@ import { createClient } from "@supabase/supabase-js";
 import { signInAsCheckUser, throwawayProject } from "./owner-session.mjs";
 import { seedShop } from "./fixtures/seed-shop.ts";
 import { retypedCopies } from "../src/lib/describe.ts";
-import { ownColumns } from "../src/lib/store-read.ts";
+import { ownColumns, storeSectionColumns } from "../src/lib/store-read.ts";
 
 const envFile = process.env.ENV_FILE ?? ".env.local";
 const env = Object.fromEntries(
@@ -48,12 +48,12 @@ const me = await signInAsCheckUser(createClient(url, env.NEXT_PUBLIC_ADAPTIVE_OS
 if (!me.session) throw new Error(`no check user: ${me.why}`);
 const project = await throwawayProject(admin, me.user.id, "builds on store");
 
-/** One chat turn, in a thread of its own, and what it ended with. */
-async function ask(message) {
+/** One chat turn, in a thread of its own unless one is named, and what it ended with. */
+async function ask(message, conversationId = null) {
   const res = await fetch(`${APP}/api/chat`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${me.session.access_token}` },
-    body: JSON.stringify({ message, projectId: project.id, conversationId: null }),
+    body: JSON.stringify({ message, projectId: project.id, conversationId }),
   });
   const serverTape = res.headers.get("x-model-tape");
   if (res.ok && serverTape !== process.env.MODEL_TAPE) {
@@ -126,6 +126,73 @@ try {
     const copies = retypedCopies(plans, { shop_domain: "", currency: "INR", counts: {} });
     check("and no second list of it typed in by hand", copies.length === 0);
     if (copies.length) show(copies);
+  }
+
+  // Work that belongs to rows a section of theirs already works on: the
+  // owner is asked where it goes, in one tap, and their answer is done.
+  console.log("\nmore work on rows a section of theirs already works on");
+  // Made with an id of its own, the same every run. A design that adds
+  // to it names it by that id, and a replayed design carries the id it
+  // was recorded with: one made fresh each run would name a section the
+  // replay does not have.
+  const PACKING = "7ac0b1e5-0000-4000-8000-00000000c0de";
+  await admin.from("modules").delete().eq("id", PACKING);
+  const { error: packErr } = await admin.from("modules").insert({
+    id: PACKING,
+    project_id: project.id,
+    name: "packing",
+    nav_label: "Packing",
+    icon: "package",
+    route: "/modules/packing",
+    source_table: "orders",
+  });
+  if (packErr) throw new Error(`could not make Packing: ${packErr.message}`);
+  await admin.from("ui_schemas").insert({
+    module_id: PACKING,
+    version: 1,
+    created_by: "ai",
+    schema_json: {
+      columns: storeSectionColumns("orders", [{ field: "packed", label: "Packed", type: "boolean" }]),
+      features: {
+        scanMode: { lookupField: "order_number", action: { label: "Pack", set: { packed: { const: true } } } },
+      },
+    },
+  });
+  const packing = { id: PACKING };
+  const first = await ask(
+    "When the courier picks up, I want to scan each order's number again and mark it handed over, with the time it went."
+  );
+  const q = first.reply?.type === "clarify" ? first.reply.questions?.[0] : null;
+  check("is asked where it goes", !!q);
+  if (!q) show(first);
+  const into = (q?.suggestions ?? []).find((o) => /Packing/.test(o));
+  check("with adding it to Packing one tap away", !!into);
+  check(
+    "and Luke's own pick among the two, with why",
+    !!q?.recommended && (q?.suggestions ?? []).includes(q.recommended) && !!q?.why
+  );
+  if (q) show({ question: q.question, suggestions: q.suggestions, recommended: q.recommended, why: q.why });
+  if (q && into) {
+    const then = await ask(`${q.question}\n→ ${into}`, first.conversationId);
+    const plans =
+      then.reply?.type === "blueprint"
+        ? then.reply.blueprint.plans
+        : then.reply?.type === "plans"
+          ? then.reply.plans
+          : [];
+    check("and the answer is done", plans.length > 0);
+    if (!plans.length) show(then);
+    check(
+      "on Packing itself",
+      plans.some((p) => p.targetModuleId === packing.id) &&
+        !plans.some((p) => p.changeType === "NEW_MODULE" && p.newModule?.source_table === "orders")
+    );
+    show(
+      plans.map(
+        (p) =>
+          `${p.changeType} ${p.targetModuleId === packing.id ? "Packing" : (p.newModule?.nav_label ?? p.targetModuleId)}`
+      )
+    );
   }
 } finally {
   await project.remove();

@@ -13,7 +13,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isStoreTable, storeSectionColumns } from "@/lib/store-read";
+import { isStoreTable, storeSectionColumns, storeTableSchema } from "@/lib/store-read";
 import {
   asNextSteps,
   buildSystemPrompt,
@@ -28,10 +28,11 @@ import {
   type StoreContext,
 } from "@/lib/ai";
 import {
+  describeFeaturesFull,
   describePlan,
   describeRequests,
   describeRules,
-  retypedCopies,
+  reuseQuestion,
   seededCopies,
   type RequestRow,
   type RuleRow,
@@ -341,13 +342,30 @@ export async function recentRequests(
 }
 
 /** Each section's columns in one line, for the model to read. */
+/**
+ * Every section as the model is told it: what rows it shows, its fields,
+ * and what it already does. Without the last two a later request that
+ * belonged in "Packing" (a scan bar on the orders) read as new work, and
+ * was built as a second section beside it. Written from what is saved,
+ * so it is always what is there.
+ */
 function columnLines(modules: ModuleRow[], schemas: Map<string, UiSchema>): string[] {
   return modules.map((m) => {
-    const cols = schemas.get(m.id)?.columns ?? [];
+    const schema = schemas.get(m.id);
+    const cols = schema?.columns ?? [];
+    const store = isStoreTable(m.source_table)
+      ? new Set(storeTableSchema(m.source_table).columns.map((c) => c.field))
+      : null;
     const spelled = cols.length
-      ? cols.map((c) => `${c.field} (${c.type}${c.compute ? ", computed" : ""})`).join(", ")
+      ? cols
+          .map(
+            (c) => `${c.field} (${c.type}${c.compute ? ", computed" : store && !store.has(c.field) ? ", theirs" : ""})`
+          )
+          .join(", ")
       : "no fields yet";
-    return `- ${m.nav_label} [id ${m.id}]: ${spelled}`;
+    const over = store ? ` — over the store's ${m.source_table}` : "";
+    const does = schema?.features ? describeFeaturesFull(schema.features, modules) : [];
+    return `- ${m.nav_label} [id ${m.id}]${over}: ${spelled}${does.length ? `. Does: ${does.join("; ")}` : ""}`;
   });
 }
 
@@ -507,7 +525,10 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   let raw = "";
   let parsed: ReturnType<typeof parseReply> | null = null;
   let repairs = 0;
-  let nudged = false;
+  // The question the code would ask about where this work goes, once the
+  // model has been told to ask it: its words are the fallback.
+  let reuse: ReturnType<typeof reuseQuestion> = null;
+  let onlyAsking = false;
   // Which gate fired, not just how often something did. The count
   // alone cannot tell a malformed shape from a design that missed the
   // point, and those want opposite remedies.
@@ -550,23 +571,50 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       const facts = store ? { shop_domain: store.shop_domain, currency: store.currency, counts: store.counts } : null;
       const copies = seededCopies(plans, facts);
       if (copies.length) parsed = { ok: false, errors: copies };
-      // A second list of what the store already has, typed in by hand:
-      // sent back once, with the store's list to build over. The same
-      // design again is a deliberate one, and goes through.
-      const retyped = copies.length || nudged ? [] : retypedCopies(plans, facts);
-      if (retyped.length) {
-        nudged = true;
-        parsed = { ok: false, errors: retyped };
+      // A design that works on rows a section of theirs, or a store list,
+      // already holds: where it goes is the owner's to say, in one tap,
+      // before anything is drawn. Asked once a thread, and never right
+      // after they answered a question, so an answer stands.
+      if (!copies.length && parsed.ok && parsed.reply.type === "blueprint") {
+        if (reuse) {
+          // Told to ask, and it designed anyway: asked in the code's own
+          // words, and kept as what was said — the thread's history is
+          // what the owner saw, not a design nobody was shown.
+          parsed = { ok: true, reply: reuse };
+          raw = JSON.stringify(reuse);
+        } else {
+          const saidSoFar = history.filter((t) => t.role === "assistant").map((t) => t.content);
+          const justAnswered = saidSoFar.at(-1)?.includes('"clarify"') ?? false;
+          const asked = (key: string) =>
+            justAnswered || saidSoFar.some((c) => c.includes('"clarify"') && c.includes(key));
+          const question = reuseQuestion(plans, modules, (id) => schemas.get(id)?.columns, facts, asked);
+          if (question) {
+            // Sent back to be asked by the model, in the owner's own
+            // language: the code knows what overlaps, the model how they
+            // speak.
+            reuse = question;
+            onlyAsking = true;
+            const q = question.questions[0];
+            parsed = {
+              ok: false,
+              errors: [
+                `Do not design this yet. ${q.question} Ask the owner exactly that, in their own language: reply with "clarify" holding ONE question, id "${q.id}", whose two suggestions mean "${q.suggestions?.[0]}" and "${q.suggestions?.[1]}", each saying what they get for THIS work; "recommended" the one you would pick for them, and "why" your reason in a line.`,
+              ],
+            };
+          }
+        }
       }
     }
 
     // What the validator actually said — zero problems, or this many on
     // their way back to the model. Not "checked" because time passed.
-    tell({ step: "checked", problems: parsed.ok ? 0 : parsed.errors.length });
+    tell({ step: "checked", problems: parsed.ok || onlyAsking ? 0 : parsed.errors.length });
     if (parsed.ok) break;
 
     repairs = attempt + 1;
-    repairErrors.push(...parsed.errors);
+    // A question to ask is not a problem the design had.
+    if (!onlyAsking) repairErrors.push(...parsed.errors);
+    onlyAsking = false;
     if (attempt === MAX_REPAIR_ATTEMPTS) break;
     attemptTurns.push(
       { role: "assistant", content: raw },
@@ -581,6 +629,11 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     );
   }
 
+  // Told to ask and out of attempts: the question is still asked.
+  if ((!parsed || !parsed.ok) && reuse) {
+    parsed = { ok: true, reply: reuse };
+    raw = JSON.stringify(reuse);
+  }
   if (!parsed || !parsed.ok) {
     return {
       ok: false,

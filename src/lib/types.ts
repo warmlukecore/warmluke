@@ -355,6 +355,11 @@ export interface ClarifyQuestion {
   why?: string;
   /** Tappable example answers; the owner can always type their own. */
   suggestions?: string[];
+  /**
+   * The suggestion Luke would pick itself, when the question is a choice
+   * between ways to build it; `why` then says why, in a line.
+   */
+  recommended?: string;
   /** More than one suggestion can be true at once; otherwise exactly one is picked. */
   multi?: boolean;
 }

@@ -245,18 +245,6 @@ test("a change to the shop waits for a yes", async ({ signedIn: page, shop }) =>
     },
     "Which orders are still waiting for payment?"
   );
-  // What a turn keeps as its reply is the reply itself: the next turn
-  // is told it, and an empty one is refused by the model outright.
-  const { data: kept } = await shop.admin
-    .from("messages")
-    .select("id, payload")
-    .eq("conversation_id", thread)
-    .eq("role", "assistant")
-    .single();
-  await shop.admin
-    .from("messages")
-    .update({ content: JSON.stringify(kept!.payload) })
-    .eq("id", kept!.id);
   try {
     await page.goto(`/app/${shop.projectId}`);
     const { panel, box } = await luke(page);
@@ -353,7 +341,10 @@ async function replyThread(shop: Shop, reply: Record<string, unknown>, asked = "
     {
       conversation_id: thread!.id,
       role: "assistant",
-      content: "",
+      // What a turn keeps as its reply is the reply itself: a turn asked
+      // in this thread is told it, and an empty one is refused by the
+      // model outright.
+      content: JSON.stringify(reply),
       payload: reply,
       created_at: new Date(t + 1).toISOString(),
     },
@@ -529,6 +520,41 @@ test("questions are asked the way their answers depend on each other", async ({ 
     expect(composed).toContain("When do you want to hear?\n→ Every morning");
     expect(composed).toContain("What counts as low?\n→ Under 10 left");
     expect(composed).toContain("Which products?\n→ Best sellers, New arrivals");
+  } finally {
+    await shop.admin.from("conversations").delete().eq("id", thread);
+  }
+});
+
+test("a choice says what each answer gives, and which Luke would pick", async ({ signedIn: page, shop }) => {
+  // Where new work goes is the owner's call, in one tap, and not a
+  // paragraph to read: each answer says what it gives, and Luke's own
+  // pick is marked, with its reason in a line.
+  const yes = "Yes: add it to Packing, one screen for both";
+  const no = "No: a separate section over the same orders; Packing stays as it is";
+  const thread = await replyThread(shop, {
+    type: "clarify",
+    message: "One thing before I design it.",
+    questions: [
+      {
+        id: "reuse-packing",
+        question: "“Packing” already works on your orders. Add this to it?",
+        suggestions: [yes, no],
+        recommended: yes,
+        why: "My pick: add it to Packing. It works on your orders already, so the work stays in one place.",
+      },
+    ],
+  });
+  try {
+    await page.goto(`/app/${shop.projectId}`);
+    const { panel } = await luke(page);
+    await expect(panel.getByText("My pick: add it to Packing.", { exact: false })).toBeVisible();
+    await expect(panel.getByRole("radio", { name: yes })).toContainText("Suggested");
+    await expect(panel.getByRole("radio", { name: no })).not.toContainText("Suggested");
+    await panel.getByRole("radio", { name: yes }).click();
+    const sent = catchNextTurn(page);
+    await panel.getByRole("button", { name: "Send answer" }).click();
+    // What goes back is the answer itself, not the mark beside it.
+    expect(await sent).toBe(`“Packing” already works on your orders. Add this to it?\n→ ${yes}`);
   } finally {
     await shop.admin.from("conversations").delete().eq("id", thread);
   }

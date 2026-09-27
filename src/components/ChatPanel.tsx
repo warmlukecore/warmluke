@@ -639,6 +639,10 @@ function QuestionRows({
             >
               <Mark aria-hidden size={14} strokeWidth={2} className={`shrink-0 ${on ? "text-fg" : "text-fg-faint"}`} />
               <span className="min-w-0 flex-1">{option}</span>
+              {/* Luke's own pick, when the question is a choice; why is above. */}
+              {question.recommended === option && (
+                <span className="shrink-0 text-[10px] font-medium text-fg-muted">Suggested</span>
+              )}
               {numbered && k < 9 && (
                 <kbd
                   aria-hidden

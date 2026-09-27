@@ -11,7 +11,7 @@
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-seeded-copies.mjs
 
-import { retypedCopies, seededCopies, storeOverlap } from "../src/lib/describe.ts";
+import { retypedCopies, reuseQuestion, sectionTwin, seededCopies, storeOverlap } from "../src/lib/describe.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -91,7 +91,7 @@ console.log("\na second list of what the store already has");
   const text = (field) => ({ field, label: field, type: "text" });
   const [why] = retypedCopies([own("Packing", [text("order_number"), text("customer_name"), text("packed")])], store);
   check("is sent back naming the list to build over", !!why && /orders/.test(why) && /source_table/.test(why));
-  check("and says how to keep it when it is something else", !!why && /unchanged/.test(why));
+  check("and says when a list of its own is still right", !!why && /does not have/.test(why));
   check(
     "three of a list's columns without its key are a copy too",
     retypedCopies([own("Deliveries", [text("customer_name"), text("customer_phone"), text("ship_city")])], store)
@@ -129,6 +129,84 @@ console.log("\na second list of what the store already has");
   check(
     "nor with no store at all",
     retypedCopies([own("Packing", [text("order_number"), text("customer_name")])], null).length === 0
+  );
+}
+
+// Where new work goes when a section of theirs already works on its
+// rows: a question for the owner, in one tap, asked once a thread.
+console.log("\nwork on rows a section of theirs already works on");
+{
+  const text = (field) => ({ field, label: field, type: "text" });
+  const mod = (id, nav_label, source_table = null) => ({ id, name: nav_label.toLowerCase(), nav_label, source_table });
+  const packing = mod("m-pack", "Packing", "orders");
+  const shelf = mod("m-shelf", "Shelf log");
+  const cols = { "m-shelf": [text("sku"), text("bin"), text("qty"), { ...text("worth"), compute: { const: 1 } }] };
+  const columnsOf = (id) => cols[id];
+  const never = () => false;
+  const over = (nav_label, source_table) => ({ ...section(nav_label, { source_table }), newSchema: { columns: [] } });
+  const returns = over("Returns check", "orders");
+  check("a second section over the same store list has a twin", sectionTwin(returns, [packing], columnsOf) === packing);
+  check(
+    "one over another list has none",
+    sectionTwin(over("Stock", "inventory_levels"), [packing], columnsOf) === null
+  );
+  const own = (nav_label, columns) => ({ ...section(nav_label), newSchema: { columns } });
+  check(
+    "a list of its own with three of another's fields has a twin",
+    sectionTwin(own("Bin moves", [text("sku"), text("bin"), text("qty"), text("moved_on")]), [shelf], columnsOf) ===
+      shelf
+  );
+  check(
+    "two of a small list's three do",
+    sectionTwin(own("Bin moves", [text("sku"), text("bin"), text("moved_on")]), [shelf], columnsOf) === shelf
+  );
+  check(
+    "two of many, or a worked-out one, do not",
+    sectionTwin(
+      own("Bin moves", [text("sku"), text("worth"), text("a"), text("b"), text("c"), text("d")]),
+      [shelf],
+      columnsOf
+    ) === null
+  );
+  const q = reuseQuestion([returns], [packing], columnsOf, store, never);
+  check("it is asked as one question", q?.type === "clarify" && q.questions.length === 1);
+  check(
+    "naming the section and the rows",
+    /Packing/.test(q?.questions[0].question ?? "") && /orders/.test(q?.questions[0].question ?? "")
+  );
+  const [yes, no] = q?.questions[0].suggestions ?? [];
+  check(
+    "with yes and no, each saying what it gives",
+    (yes ?? "").startsWith("Yes: add it to Packing") &&
+      (no ?? "").startsWith("No: ") &&
+      (no ?? "").includes("Packing stays")
+  );
+  check(
+    "and its own pick, with why",
+    q?.questions[0].recommended === yes && (q?.questions[0].why ?? "").startsWith("My pick")
+  );
+  check(
+    "and not again once it was",
+    reuseQuestion([returns], [packing], columnsOf, store, (k) => k === "reuse-m-pack") === null
+  );
+  const copy = reuseQuestion(
+    [own("Packing list", [text("order_number"), text("customer_name")])],
+    [],
+    columnsOf,
+    store,
+    never
+  );
+  check(
+    "a hand-typed copy of a store list is asked about too",
+    /second list of your orders/.test(copy?.questions[0].question ?? "")
+  );
+  check(
+    "with building it on the store's list as the pick",
+    (copy?.questions[0].recommended ?? "").startsWith("Yes: build it on my orders")
+  );
+  check(
+    "nothing overlapping, nothing asked",
+    reuseQuestion([own("Staff", [text("name"), text("role")])], [packing], columnsOf, store, never) === null
   );
 }
 

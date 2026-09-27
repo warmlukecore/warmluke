@@ -1,0 +1,16 @@
+{
+  "label": "anthropic",
+  "asked": "packed_on = today, shown when pack_state is To pack Button “Undo packed” — sets packed = false, shown when packed is true Scan bar on order_number — “Mark packed” sets packed = true, packed_on = today",
+  "parts": {
+    "system": "49c78ec60427790c",
+    "tools": "74234e98afe7498f",
+    "conversation": "77fd9ced8f79466c"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"claude-haiku-4-5-20251001\",\"id\":\"msg_011CfTSbqbogo14cvp6zYGQ4\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"```json\\n{\\n  \\\"unmet\\\": [\\n    \\\"scan each order's number with my barcode scanner\\\"\\n  ]\\n}\\n```\"}],\"container\":null,\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":601,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":35,\"service_tier\":\"standard\",\"inference_geo\":\"not_available\"},\"diagnostics\":null}"
+    }
+  ]
+}

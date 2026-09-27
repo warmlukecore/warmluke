@@ -16,6 +16,8 @@ import { vocabularyPrompt } from "@/lib/capabilities";
 import {
   describePlan,
   describeRules,
+  retypedCopies,
+  sectionTwin,
   seededCopies,
   stepsToFinish,
   stepsToFinishAction,
@@ -1569,7 +1571,8 @@ export async function POST(req: Request) {
       // are in Luke's own loop: a client once seeded four invented
       // order lines into a copy of the order items, and they sat next
       // to the real orders looking like data.
-      const copies = seededCopies(plans, await storeFactsFor(db, project.id));
+      const facts = await storeFactsFor(db, project.id);
+      const copies = seededCopies(plans, facts);
       if (copies.length) {
         return ok(
           id,
@@ -1587,12 +1590,28 @@ export async function POST(req: Request) {
       // design used to mean finding out whether it held by sending it,
       // which put every failed attempt on somebody's screen.
       if (dryRun) {
+        // What the merchant should be asked before this is sent: work on
+        // rows a section of theirs already works on, or a second list of
+        // the store's typed in by hand. Not refused: the card is theirs to
+        // decide on, and a connected assistant can ask them first.
+        const heads_up = [
+          ...plans.flatMap((pl) => {
+            const twin = sectionTwin(pl, moduleList, (mid) => schemas.get(mid)?.columns);
+            return twin
+              ? [
+                  `"${twin.nav_label}" [id ${twin.id}] already works on these rows. Ask the merchant whether this belongs in it — then FIELD_ADD or FEATURE_UPDATE on that id — or is a section of its own over the same rows.`,
+                ]
+              : [];
+          }),
+          ...retypedCopies(plans, facts),
+        ];
         return ok(
           id,
           text({
             status: "holds",
             note: "Nothing was requested and the merchant has seen nothing. Call submit_design with these same plans to put it in front of them.",
             would_build: plans.map((pl) => describePlan(pl, moduleList)),
+            ...(heads_up.length ? { heads_up } : {}),
           })
         );
       }

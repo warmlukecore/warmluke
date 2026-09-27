@@ -357,6 +357,12 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     conversationIdRef.current = id;
     setConversationId(id);
   }, []);
+  // Bumped each time the owner says where they are: a thread opened, a
+  // new one started, something sent. A load that set out before the
+  // latest of those comes back to find it was overtaken, and leaves the
+  // panel alone: the newest thread opened on arrival came back after
+  // "New conversation" on a slow link and put the question in it.
+  const threadChosen = useRef(0);
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [threadsMore, setThreadsMore] = useState(false);
   // The thread a running turn belongs to, and the line its answer fills
@@ -383,6 +389,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
    */
   const loadThread = useCallback(
     async (id?: string, openLatest = false) => {
+      // Opening one by name is itself a choice; the rest only follow one.
+      const chosen = id ? ++threadChosen.current : threadChosen.current;
       const { data } = await supabase.auth.getSession();
       const token = data.session?.access_token;
       // Opening the app used to list the threads and leave the panel
@@ -417,6 +425,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       // sent stays on screen, in a thread of its own. This answer used to
       // land after it on a slow load and wipe it from view mid-turn.
       if (!id && chatMessagesRef.current.length > 0) return;
+      if (threadChosen.current !== chosen) return;
       rememberConversation(json.conversationId);
 
       const rebuilt: ChatMessage[] = [];
@@ -677,7 +686,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       /** What the design offered to do next, kept with the receipt. */
       next?: NextStep[]
     ): Promise<string | null> => {
-      let id = conversationIdRef.current ?? conversationId;
+      let id = conversationIdRef.current;
       if (!id) {
         const { data: made } = await supabase
           .from("conversations")
@@ -716,7 +725,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         .single();
       return (written?.id as string) ?? null;
     },
-    [conversationId, projectId, rememberConversation]
+    [projectId, rememberConversation]
   );
 
   /**
@@ -749,6 +758,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   }, []);
 
   const startNewThread = useCallback(() => {
+    threadChosen.current++;
     rememberConversation(null);
     setChatMessages([]);
   }, [rememberConversation]);
@@ -1260,8 +1270,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       setChatSteps([]);
       setChatDraft("");
       setChatPhase(null);
-      turnRef.current = { thread: conversationId, turn: null };
-      setTurnThread(conversationId);
+      // The thread open now, read from the ref: a send made straight after
+      // "New conversation" carried the old thread's id from a closure the
+      // click had not replaced yet, and the question landed in that one.
+      const openThread = conversationIdRef.current;
+      threadChosen.current++;
+      turnRef.current = { thread: openThread, turn: null };
+      setTurnThread(openThread);
       const controller = new AbortController();
       chatAbort.current = controller;
       // What the turn did, kept with the reply it produced so the
@@ -1278,7 +1293,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             message: text,
             projectId,
             moduleId: selectedModuleId,
-            conversationId,
+            conversationId: openThread,
             ...(pickedModel ? { model: pickedModel } : {}),
           },
           controller.signal,
@@ -1315,7 +1330,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           return;
         }
 
-        if (data.conversationId && data.conversationId !== conversationId) {
+        if (data.conversationId && data.conversationId !== openThread) {
           rememberConversation(data.conversationId as string);
           // A brand-new thread needs to appear in the switcher: re-listed
           // only. Reloading it rebuilt the panel from the saved rows, which
@@ -1462,7 +1477,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         setChatPhase(null);
       }
     },
-    [chatBusy, building, projectId, selectedModuleId, conversationId, loadThread, rememberConversation, pickedModel]
+    [chatBusy, building, projectId, selectedModuleId, loadThread, rememberConversation, pickedModel]
   );
 
   /**
@@ -1575,7 +1590,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     async (plan: AssistantPlan, planId: string) => {
       // Written into the thread by the server, as buildApproved does, so
       // closing the app mid-apply still leaves the receipt behind.
-      const thread = conversationIdRef.current ?? conversationId;
+      const thread = conversationIdRef.current;
       const { ok, data } = await apiFetch("/api/apply", {
         projectId,
         plans: [plan],
@@ -1649,7 +1664,6 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     },
     [
       projectId,
-      conversationId,
       loadThread,
       loadModules,
       loadModuleData,
@@ -1743,7 +1757,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       // as it starts and as it ends (/api/apply). The thread, read again,
       // is then what the panel shows, so closing the app mid-build loses
       // nothing and a reload finds the same thing on screen.
-      const thread = requestId ? null : (conversationIdRef.current ?? conversationId);
+      const thread = requestId ? null : conversationIdRef.current;
       // What was asked for, said in the thread before what came of it.
       //
       // A design raised by their own Claude has no user turn here —
@@ -1920,7 +1934,6 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     [
       building,
       projectId,
-      conversationId,
       loadThread,
       loadModules,
       loadModuleData,

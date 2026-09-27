@@ -1,0 +1,16 @@
+{
+  "label": "anthropic",
+  "asked": "handed_over_on = today if packed is true and handed_over_on is blank, otherwise handed_over_on, handed_over_time = right now if packed is true and handed_over_time is blank, otherwise handed_over_time",
+  "parts": {
+    "system": "49c78ec60427790c",
+    "tools": "74234e98afe7498f",
+    "conversation": "fba20ed763252a78"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"claude-haiku-4-5-20251001\",\"id\":\"msg_011CfTSuVFhwdf74pB5uHkZC\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"```json\\n{\\n  \\\"unmet\\\": [\\n    \\\"the same scan bar packs on the first scan and marks handed over on the second\\\"\\n  ]\\n}\\n```\"}],\"container\":null,\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":635,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":42,\"service_tier\":\"standard\",\"inference_geo\":\"not_available\"},\"diagnostics\":null}"
+    }
+  ]
+}

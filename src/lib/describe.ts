@@ -4,7 +4,7 @@
 // form of them they ever see.
 // ─────────────────────────────────────────────────────────────
 
-import type { AssistantPlan, AutomationDefinition, Expr, FeatureSchema, ModuleRow } from "./types";
+import type { AssistantPlan, AutomationDefinition, ClarifyQuestion, Expr, FeatureSchema, ModuleRow } from "./types";
 import { STORE_TABLES, isStoreTable, storeTableSchema } from "./store-read";
 
 /** Renders an expression tree as something a non-technical owner reads. */
@@ -575,42 +575,129 @@ export function describeRequests(rows: RequestRow[], modules: ModuleRow[], now =
   });
 }
 
+/** The store list a list of its own retypes: its key and one more of its columns, or any three. */
+function retypedList(p: AssistantPlan): { table: string; shared: string[] } | null {
+  if (p.changeType !== "NEW_MODULE" || !p.newModule || p.newModule.source_table) return null;
+  const typed = new Set(
+    (p.newSchema?.columns ?? []).filter((c) => c && !c.compute && typeof c.field === "string").map((c) => c.field)
+  );
+  let best: { table: string; shared: string[] } | null = null;
+  for (const [table, spec] of Object.entries(STORE_TABLES)) {
+    const shared = spec.columns.map((c) => c.field).filter((f) => typed.has(f));
+    const keyed = shared.includes(spec.columns[0]?.field);
+    if (shared.length < 3 && !(keyed && shared.length >= 2)) continue;
+    // The first of the most: the registry lists a list before the
+    // ones that repeat its key (orders before their refunds).
+    if (!best || shared.length > best.shared.length) best = { table, shared };
+  }
+  return best;
+}
+
+const nounOf = (table: string) =>
+  STORE_TABLES[table as keyof typeof STORE_TABLES]?.section.label.toLowerCase() ?? table.replace(/_/g, " ");
+
 /**
  * A list of its own that types in what a store list already holds.
  *
  * A section over the store carries the merchant's fields beside each
  * row (0128), so a second list of the same orders, filled in by hand,
  * has nothing left to offer, and never matches the real ones. Read
- * from the registry: a list's first column names a row of it, so its
- * key and one more, or any three of its columns, typed into a list of
- * its own, is a copy. Sent back once a turn, not refused: a design
- * that comes back unchanged tracks something else, and storeOverlap
- * says why that is the merchant's call.
+ * from the registry (retypedList). Said to a connected assistant as a
+ * heads-up; in the chat it is a question for the owner (reuseQuestion).
  */
 export function retypedCopies(plans: AssistantPlan[], store: StoreFacts | null): string[] {
   if (!store) return [];
-  const out: string[] = [];
+  return plans.flatMap((p) => {
+    const hit = retypedList(p);
+    if (!hit || !p.newModule) return [];
+    return [
+      `"${p.newModule.nav_label}" types in what the store's ${nounOf(hit.table)} already hold (${hit.shared.join(", ")}): a second list of them, filled in by hand, that never matches the real ones. Build it over the store's list instead — NEW_MODULE with "source_table": "${hit.table}" — and put what the work needs beside each row as fields of theirs, unless it tracks something the store does not have.`,
+    ];
+  });
+}
+
+/**
+ * A new section that works on rows a section of theirs already works on.
+ *
+ * The same store list under a second section, or a list of their own
+ * with three of another's fields (half, for a small one): the work may
+ * belong in the
+ * one they have. Whether it does is theirs to say, and a model that
+ * knows the answer is uncertain rarely asks, so it is asked here, by
+ * the code, in one tap. The rows are never copied either way.
+ */
+export function sectionTwin(
+  p: AssistantPlan,
+  modules: ModuleRow[],
+  columnsOf: (id: string) => Array<{ field: string; compute?: unknown }> | undefined
+): ModuleRow | null {
+  if (p.changeType !== "NEW_MODULE" || !p.newModule) return null;
+  const src = p.newModule.source_table ?? null;
+  if (src) return modules.find((m) => m.source_table === src) ?? null;
+  const typed = new Set((p.newSchema?.columns ?? []).filter((c) => c && !c.compute).map((c) => c.field));
+  // Three shared fields, or half of a small list's own: two of three is
+  // the same list as surely as three of eight.
+  const enough = Math.max(2, Math.min(3, Math.ceil(typed.size / 2)));
+  return (
+    modules.find(
+      (m) => !m.source_table && (columnsOf(m.id) ?? []).filter((c) => !c.compute && typed.has(c.field)).length >= enough
+    ) ?? null
+  );
+}
+
+/**
+ * The one question a design waits on before it is drawn: where the work
+ * goes, when a section of theirs, or a store list, already holds the
+ * rows it works on. Null when nothing overlaps, or when this thread has
+ * asked it already (`asked`), so an answer is never asked again.
+ */
+export function reuseQuestion(
+  plans: AssistantPlan[],
+  modules: ModuleRow[],
+  columnsOf: (id: string) => Array<{ field: string; compute?: unknown }> | undefined,
+  store: StoreFacts | null,
+  asked: (key: string) => boolean
+): { type: "clarify"; message: string; questions: ClarifyQuestion[] } | null {
+  const one = (q: ClarifyQuestion) => ({
+    type: "clarify" as const,
+    message: "One thing before I design it.",
+    questions: [q],
+  });
   for (const p of plans) {
-    if (p.changeType !== "NEW_MODULE" || !p.newModule || p.newModule.source_table) continue;
-    const typed = new Set(
-      (p.newSchema?.columns ?? []).filter((c) => c && !c.compute && typeof c.field === "string").map((c) => c.field)
-    );
-    let best: { table: string; shared: string[] } | null = null;
-    for (const [table, spec] of Object.entries(STORE_TABLES)) {
-      const shared = spec.columns.map((c) => c.field).filter((f) => typed.has(f));
-      const keyed = shared.includes(spec.columns[0]?.field);
-      if (shared.length < 3 && !(keyed && shared.length >= 2)) continue;
-      // The first of the most: the registry lists a list before the
-      // ones that repeat its key (orders before their refunds).
-      if (!best || shared.length > best.shared.length) best = { table, shared };
+    const twin = sectionTwin(p, modules, columnsOf);
+    if (twin && !asked(`reuse-${twin.id}`) && !asked(twin.nav_label)) {
+      const src = p.newModule?.source_table;
+      const rows = src ? `your ${nounOf(src)}` : "the same rows";
+      // One section is the default the design rules keep to, so adding
+      // is the pick; the model, when it asks, weighs the actual work.
+      const add = `Yes: add it to ${twin.nav_label}, one screen for both`;
+      return one({
+        id: `reuse-${twin.id}`,
+        question: `“${twin.nav_label}” already works on ${rows}. Add this to it?`,
+        suggestions: [
+          add,
+          src
+            ? `No: a separate section over the same ${nounOf(src)}; ${twin.nav_label} stays as it is`
+            : `No: a separate list, filled in on its own`,
+        ],
+        recommended: add,
+        why: `My pick: add it to ${twin.nav_label}. It works on ${rows} already, so the work stays in one place.`,
+      });
     }
-    if (!best) continue;
-    const noun = STORE_TABLES[best.table as keyof typeof STORE_TABLES].section.label.toLowerCase();
-    out.push(
-      `"${p.newModule.nav_label}" types in what the store's ${noun} already hold (${best.shared.join(", ")}): a second list of them, filled in by hand, that never matches the real ones. Build it over the store's list instead — NEW_MODULE with "source_table": "${best.table}" — and put what the work needs beside each row as fields of theirs. If it tracks something the store does not have, reply again with it unchanged.`
-    );
+    const copy = store ? retypedList(p) : null;
+    if (copy && !asked(`reuse-store-${copy.table}`)) {
+      const noun = nounOf(copy.table);
+      const build = `Yes: build it on my ${noun}, always matching Shopify`;
+      return one({
+        id: `reuse-store-${copy.table}`,
+        question: `This would be a second list of your ${noun}, typed in by hand. Build it on your store's ${noun} instead?`,
+        suggestions: [build, `No: keep a separate list, typed in by hand`],
+        recommended: build,
+        why: `My pick: build it on your ${noun}. What you fill in sits beside each one, and a list typed in by hand drifts from the real ones.`,
+      });
+    }
   }
-  return out;
+  return null;
 }
 
 /**

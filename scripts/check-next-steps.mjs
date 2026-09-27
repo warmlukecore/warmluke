@@ -166,6 +166,24 @@ console.log("\nand a question says how it is answered");
   check("two that do not lean on each other are asked together", pair.ok && pair.reply.together === true);
   const three = asked([q("a"), q("b"), q("c")], { together: true });
   check("three are never asked at once, whatever it says", three.ok && three.reply.together === undefined);
+  // A choice carries Luke's own pick, one of its own suggestions, and
+  // the reason for it is what reads under the question.
+  const pick = asked([q("where", { recommended: "Two", why: "about the question", why_recommended: "because two" })]);
+  check("a choice keeps its pick", pick.ok && pick.reply.questions[0].recommended === "Two");
+  check(
+    "with the pick's reason under it, whatever key it came in",
+    pick.ok && pick.reply.questions[0].why === "because two"
+  );
+  const stray = asked([q("where", { recommended: "Three" })]);
+  check(
+    "a pick that is not one of its answers is dropped",
+    stray.ok && stray.reply.questions[0].recommended === undefined
+  );
+  const several = asked([q("what", { multi: true, recommended: "One" })]);
+  check(
+    "and a question with several answers has no pick",
+    several.ok && several.reply.questions[0].recommended === undefined
+  );
 }
 
 console.log(
