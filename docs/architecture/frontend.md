@@ -228,3 +228,14 @@ Screens are drawn from the [design system](../design/design-system.md).
   validator, renderer/evaluator, database evaluator when applicable, and parity checks.
 - Large coordinator components should be refactored by behavior boundary, not by moving
   arbitrary JSX fragments that still depend on shared state.
+- An internal id (a row's, a section's, a thread's) is never shown. Text the app does not
+  write itself (Luke's replies, step lines, validator errors, request summaries) passes
+  through `withoutIds` in `lib/no-ids.ts`, which names a section's id and takes out any
+  other; `Markdown` does it for every reply. A cell or field whose value is only an id reads
+  "—", and the scan bar tells rows apart by what their columns show. `check-no-ids`.
+- Luke's model picker lists the newest model of each kind, plus the one in use and the
+  default, with the rest behind "Older models"; each row is one short price line, the full
+  rate in its title.
+- A thread the owner chose (opened, started, sent in) is never replaced by a load that set
+  out before it (`threadChosen` in `AppShell`): the newest thread opened on arrival used to
+  come back after "New conversation" on a slow link and take the question.

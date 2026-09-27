@@ -13,6 +13,7 @@
 // written before Markdown used them, and "•" for their bullets.
 
 import remarkBreaks from "remark-breaks";
+import { useIdNames, withoutIds } from "@/lib/no-ids";
 import { defaultRemarkPlugins, Streamdown, type Components, type ExtraProps } from "streamdown";
 
 /** Every level the same small heading: a part of a reply, not a page title. */
@@ -58,6 +59,8 @@ const remarkPlugins = [...Object.values(defaultRemarkPlugins), remarkBreaks];
 const asMarkdown = (text: string) => text.replace(/^([ \t]*)•[ \t]+/gm, "$1- ");
 
 export function Markdown({ children, streaming = false }: { children: string; streaming?: boolean }) {
+  // An id the model echoed back reads as the section it names, or not at all.
+  const names = useIdNames();
   return (
     <Streamdown
       mode={streaming ? "streaming" : "static"}
@@ -73,7 +76,7 @@ export function Markdown({ children, streaming = false }: { children: string; st
       components={components}
       className="space-y-2 break-words"
     >
-      {asMarkdown(children)}
+      {withoutIds(asMarkdown(children), names)}
     </Streamdown>
   );
 }

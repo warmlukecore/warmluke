@@ -286,7 +286,14 @@ test("the model picked is the one a turn asks for, and each says what it costs",
   await panel.getByRole("button", { name: /^Model: Opus 5\.5/ }).click();
   const models = panel.getByRole("menu", { name: "Models" });
   await expect(models.getByRole("menuitemradio", { name: /Opus 5\.5/ })).toHaveAttribute("aria-checked", "true");
-  await expect(models.getByText("$2 in · $10 out per million tokens")).toBeVisible();
+  // One short line each, the full rate on hover, and the newest of each
+  // kind only: a dozen versions of three models filled the panel.
+  const sonnet = models.getByRole("menuitemradio", { name: /Sonnet 5/ });
+  // What a reply here comes to once the thread has one, the rate until then.
+  await expect(sonnet).toContainText(/≈\$[\d.]+ a reply|\$2 \/ \$10 per M tokens/);
+  await expect(sonnet).toHaveAttribute("title", "$2 in · $10 out per million tokens");
+  const kinds = (await models.getByRole("menuitemradio").allInnerTexts()).map((t) => t.split(/\s+/)[0]);
+  expect(new Set(kinds).size, "one of each kind").toBe(kinds.length);
   await models.getByRole("menuitemradio", { name: /Sonnet 5/ }).click();
   await expect(panel.getByRole("menu", { name: "Models" })).toHaveCount(0);
   // Sent with the next turn, caught before any model is asked.

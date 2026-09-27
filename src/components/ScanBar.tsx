@@ -16,18 +16,25 @@ import { useEffect, useRef, useState } from "react";
 import { evalExpr } from "@/lib/expr";
 import { asError, nearest, type AppError, type FixAction } from "@/lib/errors";
 import ErrorNote from "@/components/ErrorNote";
-import type { FeatureSchema, RecordRow } from "@/lib/types";
+import type { FeatureSchema, RecordRow, SchemaColumn } from "@/lib/types";
+import { fieldText } from "@/components/views";
+import { useLinkLabel } from "@/components/LinkContext";
+import { useFormat } from "@/lib/format";
+import { isId } from "@/lib/no-ids";
 import { Check, CircleX } from "lucide-react";
 
 type Scan = { ok: true; message: string } | { ok: false; error: AppError };
 
 export default function ScanBar({
   scanMode,
+  columns,
   records,
   onApply,
   onCreate,
 }: {
   scanMode: NonNullable<FeatureSchema["scanMode"]>;
+  /** The section's columns, so a row is told apart by what it shows, not by its ids. */
+  columns: SchemaColumn[];
   records: RecordRow[];
   onApply: (rec: RecordRow, set: Record<string, unknown>) => Promise<void>;
   /** Makes a row, so a code that is not here yet can be, in one tap. */
@@ -54,13 +61,24 @@ export default function ScanBar({
   const ok = (message: string) => note({ ok: true, message });
   const fail = (error: AppError) => note({ ok: false, error });
 
+  const fmt = useFormat();
+  const linkLabel = useLinkLabel();
+  // What a row shows, column by column: a link as the row it points at,
+  // a number as a number. A value that is only an id is nothing to a
+  // person — "which one?" once offered two rows as four uuids each.
+  const fields = columns.filter((c) => c.field !== scanMode.lookupField).map((c) => c.field);
+  const shown = (rec: RecordRow, field: string) => {
+    const text = fieldText(fmt, columns, rec, field, linkLabel);
+    return text && text !== "(deleted)" && !isId(text) ? text : "";
+  };
+
   /** The two or three things that tell a row apart, for a suggestion. */
   function label(rec: RecordRow): string {
-    const parts = Object.entries(rec.data ?? {})
-      .filter(([k, v]) => k !== scanMode.lookupField && typeof v === "string" && v.trim())
+    return fields
+      .map((f) => shown(rec, f))
+      .filter(Boolean)
       .slice(0, 2)
-      .map(([, v]) => String(v));
-    return parts.join(" · ");
+      .join(" · ");
   }
 
   /**
@@ -172,18 +190,17 @@ export default function ScanBar({
     }
   }
 
-  /** Whatever tells the candidates apart — the fields where they differ. */
+  /**
+   * Whatever tells the candidates apart — the fields where they differ,
+   * as they read on screen. Rows alike in all of those are numbered.
+   */
   function describeRow(rec: RecordRow, siblings: RecordRow[]): string {
-    const keys = Object.keys(rec.data ?? {}).filter((k) => {
-      if (k === scanMode.lookupField) return false;
-      const mine = String(rec.data?.[k] ?? "");
-      return siblings.some((o) => o !== rec && String(o.data?.[k] ?? "") !== mine);
-    });
-    const parts = keys
-      .slice(0, 3)
-      .map((k) => String(rec.data?.[k] ?? ""))
-      .filter(Boolean);
-    return parts.length > 0 ? parts.join(" · ") : "this row";
+    const parts = fields
+      .filter((f) => siblings.some((o) => o !== rec && shown(o, f) !== shown(rec, f)))
+      .map((f) => shown(rec, f))
+      .filter(Boolean)
+      .slice(0, 3);
+    return parts.length > 0 ? parts.join(" · ") : `Row ${siblings.indexOf(rec) + 1} of ${siblings.length}`;
   }
 
   return (

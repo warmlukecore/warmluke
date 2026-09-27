@@ -345,6 +345,7 @@ export default function GenericRenderer({
       {canSet && features?.scanMode && (
         <ScanBar
           scanMode={features.scanMode}
+          columns={columns}
           // Scans match what is in view, not the whole section. A packer
           // filters to the order in front of them; matching every row
           // meant a barcode belonging to a DIFFERENT order silently

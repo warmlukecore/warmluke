@@ -12,6 +12,7 @@ import type { FeatureSchema, RecordRow, SchemaColumn, ViewSpec } from "@/lib/typ
 import { badgeClasses, badgeLabel, knownStatus } from "@/lib/tone";
 import { evalExpr, truthy } from "@/lib/expr";
 import { useFormat, type Formatting } from "@/lib/format";
+import { isId } from "@/lib/no-ids";
 import { useLinkLabel } from "@/components/LinkContext";
 import { ArrowDown, ArrowUp, Check } from "lucide-react";
 
@@ -31,7 +32,9 @@ export function compare(a: unknown, b: unknown, type: SchemaColumn["type"]): num
 export function Cell({ col, value, currency }: { col: SchemaColumn; value: unknown; currency?: string | null }) {
   const fmt = useFormat();
   const linkLabel = useLinkLabel();
-  if (value === undefined || value === null || value === "") {
+  // A value that is only an id (a rule that copied one into a text
+  // field, say) is nothing to a person: an internal id is never shown.
+  if (value === undefined || value === null || value === "" || (col.type !== "link" && isId(value))) {
     return <span className="text-fg-faint">—</span>;
   }
   switch (col.type) {
@@ -167,7 +170,7 @@ export function Badge({ value, dot }: { value: string; dot?: boolean }) {
 }
 
 /** Plain text for a field, formatted by its column type. */
-function fieldText(
+export function fieldText(
   fmt: Formatting,
   columns: SchemaColumn[],
   rec: RecordRow,
@@ -178,6 +181,7 @@ function fieldText(
   const col = columns.find((c) => c.field === field);
   const v = rec.data?.[field];
   if (v === undefined || v === null || v === "") return "";
+  if (col?.type !== "link" && isId(v)) return "";
   if (!col) return String(v);
   if (col.type === "link") return linkLabel ? linkLabel(col.linkTo, v) : String(v);
   if (col.type === "currency") {
