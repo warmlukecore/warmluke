@@ -3,3 +3,8 @@ allowBuilds:
   "@swc/core": true
   cbor-extract: true
   esbuild: true
+
+# Workflow's core pins a nanoid with two advisories (GHSA-28wg-ghj8-5hjv,
+# integer overflow); the patched line is API-compatible. Drop when it moves.
+overrides:
+  "nanoid@>=4.0.0 <5.1.16": "^5.1.16"
