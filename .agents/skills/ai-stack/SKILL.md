@@ -103,6 +103,10 @@ database decides who may do what.
 - `check-luke-lookups` (live, played back from `tapes/`): a real turn that must look an
   order up, with the router off so only a lookup can find it, one that must not, and a
   change asked for. The server it talks to must be in the same tape mode (it checks).
+- Model tier, by hand, on real keys (never CI): `check-plan-eval` (fifteen unseen asks through
+  the plan step), `check-critic-eval` (four fixture designs, two weakened — fits / sent back),
+  `check-memory-eval` (three exchanges — facts kept, a store answer not). Run them when a
+  role's prompt or model changes; the log is the record.
 - `check-model-tape` (pure): the recorder. `check-route-eval` (pure, played back): the
   router on forty real questions, held to its baseline.
 - `e2e/luke.spec.ts` (Playwright, played back): Luke in the panel at desktop and phone
