@@ -56,14 +56,26 @@ test("a section in the sidebar is a link: its own address, a new tab, a refresh,
     await page.reload();
     await expect(page.getByRole("heading", { level: 1, name: "Linked" })).toBeVisible();
 
-    // Cmd or Ctrl opens it in a tab of its own.
+    // Cmd or Ctrl is left to the browser, which opens a tab of its own.
+    // Whether it does is the browser's: the headless one CI runs on
+    // Linux opens none, so what is checked is that the app let it be,
+    // and that the address opens the section in a tab of its own.
     const nav2 = await sidebar(page);
-    const [tab] = await Promise.all([
-      page.context().waitForEvent("page"),
-      nav2.getByRole("link", { name: "Linked" }).click({ modifiers: ["ControlOrMeta"] }),
-    ]);
-    await tab.waitForLoadState();
-    await expect(tab).toHaveURL(new RegExp(`\\?section=${id}$`));
+    const linked = nav2.getByRole("link", { name: "Linked" });
+    await page.evaluate(() => {
+      document.addEventListener(
+        "click",
+        (e) => {
+          (window as unknown as { heldBack?: boolean }).heldBack = e.defaultPrevented;
+          e.preventDefault();
+        },
+        { once: true }
+      );
+    });
+    await linked.click({ modifiers: ["ControlOrMeta"] });
+    expect(await page.evaluate(() => (window as unknown as { heldBack?: boolean }).heldBack)).toBe(false);
+    const tab = await page.context().newPage();
+    await tab.goto((await linked.getAttribute("href"))!);
     await expect(tab.getByRole("heading", { level: 1, name: "Linked" })).toBeVisible();
     await tab.close();
 
