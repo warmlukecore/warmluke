@@ -81,8 +81,10 @@ const classify = (name) => {
   const needsServer = /APP_URL|localhost:3100/.test(src);
   const tier = MODEL.has(name) ? "model" : needsDb || needsServer ? "live" : "pure";
   // Checks that import from src/ run TypeScript through the hook the
-  // rest of the scripts already use.
-  const hook = /from "\.\.\/src\//.test(src);
+  // rest of the scripts already use — an import() partway through too:
+  // check-apply read describe.ts that way, and ran without the hook
+  // until describe.ts first imported a value of its own.
+  const hook = /(from |import\()"\.\.\/src\//.test(src);
   // The management PAT is account-wide — it reaches production from
   // anywhere it is held — so it never goes to CI. A check that needs
   // it is skipped there, by name, rather than failing on a missing
