@@ -34,7 +34,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 export type TapeMode = "record" | "replay";
@@ -212,6 +212,9 @@ export function tapeFetch(label: string, real: typeof fetch): typeof fetch {
       }
       const i = Math.min(cursor.get(fp.key) ?? 0, kept.responses.length - 1);
       cursor.set(fp.key, i + 1);
+      // Which recordings a run actually plays, one key a line, when asked
+      // (MODEL_TAPE_HITS=<file>): the list a prune of stale tapes is cut by.
+      if (process.env.MODEL_TAPE_HITS) appendFileSync(process.env.MODEL_TAPE_HITS, `${fp.key}\n`);
       const r = kept.responses[i];
       return new Response(r.body, { status: r.status, headers: { "content-type": r.type } });
     }

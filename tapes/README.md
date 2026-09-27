@@ -46,3 +46,12 @@ read. Review a re-recorded answer the way you would a code change: it is what th
 now hold Luke to. To find the unused ones, log the key the recorder itself used on a full
 replay; never recompute keys from request bodies: the URL is part of the key, and a call
 that does not stream goes to a different one, which is how a needed tape was once deleted.
+
+## Pruning what nothing plays
+
+A recording whose request no longer matches (a prompt or a tool changed since) is never
+played and never fails anything; it only sits here. To find those: run the replay with
+`MODEL_TAPE_HITS=<file>` on the server, so every recording played is written to that file
+(one key a line), then every `tapes/<key>.json` not in it is stale — after the whole live tier
+and the whole e2e have run, not a subset, or a recording some check still needs is cut with
+them. Reading files does not tell (a miss's diagnosis reads them all); the hit list does.
