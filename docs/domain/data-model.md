@@ -20,8 +20,10 @@ fills in beside a store row is a record of that section with `store_row_id`, the
 id (0128): one per row per section (a unique index), always set on a store section's
 records, to a row of that project's own store, and never on an own section's (a trigger),
 and never touched by an import. Rules on a store section fire on the merchant's changes,
-from the first field kept on a row; stats count the store's rows with those fields beside
-them.
+from the first field kept on a row, or on a schedule that walks the store's list (0130: a row
+the rule acts on gets its record then); when a rule is judged the store's row is laid under
+the record (`abo_store_row`), so it reads the store's fields and writes only the merchant's.
+Stats count the store's rows with those fields beside them.
 
 ## Core relationship model
 

@@ -819,6 +819,18 @@ const SEARCHABLE: Record<StoreTable, string[]> = {
 
 export const isStoreTable = (v: unknown): v is StoreTable => typeof v === "string" && v in STORE_TABLES;
 
+/**
+ * Every field a row of a store list carries: what it selects, and the
+ * columns it shows. A rule reads the row as it is stored (0130 lays it
+ * under the record), so financial_status or cancelled_at — selected,
+ * never shown as a column — are a rule's to read, and never to write.
+ */
+export function storeRowFields(table: StoreTable): string[] {
+  const shown = STORE_TABLES[table].columns.map((c) => c.field);
+  const selected = STORE_TABLES[table].select.split(",").map((c) => c.trim());
+  return [...new Set([...selected, ...shown])].filter(Boolean);
+}
+
 /** The schema a section gets when it is pointed at a store table. */
 export function storeTableSchema(table: StoreTable): { columns: SchemaColumn[] } {
   return { columns: STORE_TABLES[table].columns };

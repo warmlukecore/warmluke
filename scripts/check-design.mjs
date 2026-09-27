@@ -555,10 +555,9 @@ console.log("\na section over the store keeps the store's shape, and the merchan
     trigger: { type: "record_updated", when: { op: ">", args: [{ field: "total" }, { const: 5000 }] } },
     actions: [stamp],
   });
-  check(
-    "one reading the store's fields is refused, saying why",
-    !readsStore.ok && readsStore.errors.some((e) => /"total"/.test(e) && /Shopify/.test(e))
-  );
+  // The store's row is laid under theirs when a rule is judged (0130):
+  // a rule reads the store's fields, and still writes only theirs.
+  check("one reading the store's fields is taken", readsStore.ok);
   const writesStore = rule({
     trigger: { type: "record_updated", when: whenPacked },
     actions: [{ type: "set_fields", target: { self: true }, set: { status: { const: "packed" } } }],
@@ -569,8 +568,8 @@ console.log("\na section over the store keeps the store's shape, and the merchan
     !rule({ trigger: { type: "record_created" }, actions: [stamp] }).ok
   );
   check(
-    "and a scheduled one: it would see only the rows somebody has touched",
-    !rule({ trigger: { type: "schedule", every: "daily" }, actions: [stamp] }).ok
+    "and a scheduled one is taken: it walks the store's list",
+    rule({ trigger: { type: "schedule", every: "daily" }, actions: [stamp] }).ok
   );
   const intoStore = parseReply(
     JSON.stringify({

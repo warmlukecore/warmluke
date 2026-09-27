@@ -170,10 +170,14 @@ Work done to the store's rows is built on them. A section over a store list may 
 computed columns and the merchant's own fields, kept beside each row (0128);
 `storeSectionColumns` in `store-read.ts` is the one answer to what such a section's
 columns are, for the screen, the engine, apply and the validator. Its row actions and
-scan mode may set only the merchant's fields. A rule on it must be `record_updated`: it
-fires from the first field set on a row, reads only the merchant's fields (the store's
-change in Shopify, where no rule sees them), and no rule elsewhere may add rows to it or
-write its rows. Lists whose rows each total many others (return reasons) take computed
+scan mode may set only the merchant's fields. A rule on it reads the store's fields and the
+merchant's — 0130 lays the store's row under the record when a rule is judged, the store's
+value winning a shared name — and writes only the merchant's. It runs on `record_updated`
+(from the first field set on a row) or on a `schedule` over every row of the store's list
+(`run_scheduled_automations` walks the list, and a row the rule acts on gets its record
+then); `record_created` is refused, since no row is added here. A change in Shopify is not
+seen the moment it happens; a schedule rule sees it on its next run. No rule elsewhere may
+add rows to it or write its rows. Lists whose rows each total many others (return reasons) take computed
 columns only.
 
 The model is told every section as it is: the rows it shows (a store list or its own),

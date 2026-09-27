@@ -334,6 +334,96 @@ try {
   check("a rule on a change fires on a row's first field", ticked?.data?.packed_at === "stamped");
   check("and one on a row being added does not", ticked?.data?.packed === true);
 
+  console.log("\na rule reads the store's row under theirs (0130)");
+  // The row's own status, read back so the rule is written against what
+  // the seed put there rather than a guess.
+  const { data: rowNow } = await admin.from("orders").select("financial_status, gateway").eq("id", row.id).single();
+  const { error: e4 } = await admin.from("automations").insert({
+    project_id: project.id,
+    module_id: orders,
+    name: "status and packed",
+    definition: {
+      trigger: {
+        type: "record_updated",
+        when: {
+          op: "and",
+          args: [
+            { op: "=", args: [{ field: "financial_status" }, { const: rowNow.financial_status }] },
+            { op: "=", args: [{ field: "packed" }, { const: true }] },
+          ],
+        },
+      },
+      actions: [
+        {
+          type: "set_fields",
+          target: { self: true },
+          set: { packed_at: { const: `packed ${rowNow.financial_status}` } },
+        },
+      ],
+    },
+  });
+  if (e4) throw new Error(`could not make the rule: ${e4.message}`);
+  await post({ action: "update_store_row", moduleId: orders, storeRowId: row.id, data: { packed: true } });
+  const { data: readBoth } = await admin.from("records").select("data").eq("id", recordId).single();
+  check(
+    "a change to theirs, judged with the store's status beside it",
+    readBoth?.data?.packed_at === `packed ${rowNow.financial_status}`
+  );
+
+  // A schedule over the list: every row of the store, records made
+  // only for the rows the rule acts on. The rules above come off first:
+  // a write by this one is a change to theirs, and "status and packed"
+  // would fire on it and write over the flag on the packed row.
+  await admin.from("automations").delete().eq("module_id", orders);
+  const { count: recordsBefore } = await admin
+    .from("records")
+    .select("id", { count: "exact", head: true })
+    .eq("module_id", orders);
+  const { data: byGateway } = await admin.from("orders").select("gateway").eq("store_id", store.id);
+  const gw = rowNow.gateway;
+  const matching = (byGateway ?? []).filter((o) => o.gateway === gw).length;
+  const { error: e5 } = await admin.from("automations").insert({
+    project_id: project.id,
+    module_id: orders,
+    name: "flag by gateway",
+    definition: {
+      trigger: { type: "schedule", every: "daily", when: { op: "=", args: [{ field: "gateway" }, { const: gw }] } },
+      actions: [{ type: "set_fields", target: { self: true }, set: { packed_at: { const: "flagged" } } }],
+    },
+  });
+  if (e5) throw new Error(`could not make the schedule rule: ${e5.message}`);
+  const { error: schedErr } = await admin.rpc("run_scheduled_automations");
+  check("the schedule runs over the store's list", !schedErr);
+  if (schedErr) show(schedErr);
+  const { data: flagged } = await admin
+    .from("records")
+    .select("store_row_id, data")
+    .eq("module_id", orders)
+    .eq("data->>packed_at", "flagged");
+  check(
+    `every row paying by ${gw} is flagged (${matching}), and only those`,
+    (flagged ?? []).length === matching && matching > 0
+  );
+  const { count: recordsAfter } = await admin
+    .from("records")
+    .select("id", { count: "exact", head: true })
+    .eq("module_id", orders);
+  check(
+    "rows the rule acts on got their record; the others none",
+    (recordsAfter ?? 0) - (recordsBefore ?? 0) ===
+      (flagged ?? []).filter((f) => f.store_row_id !== row.id && f.store_row_id !== row2.id).length
+  );
+  if (fails.length)
+    console.log("     →", JSON.stringify({ recordsBefore, recordsAfter, matching, flagged: (flagged ?? []).length }));
+  // Put back what the schedule made, so the rows below are as the seed left them.
+  await admin.from("automations").delete().eq("module_id", orders);
+  await admin
+    .from("records")
+    .delete()
+    .eq("module_id", orders)
+    .eq("data->>packed_at", "flagged")
+    .not("store_row_id", "in", `(${row.id},${row2.id})`);
+
   console.log("\nan assistant searching the list sees them, under the section's name");
   const found = await storeTool("search_store").run(
     { table: "orders", limit: 200 },

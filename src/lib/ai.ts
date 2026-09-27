@@ -24,7 +24,14 @@ import {
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogle } from "@ai-sdk/google";
 import { keyFor, tapeFetch, tapedSetting } from "@/lib/model-tape";
-import { canCarryOwnFields, isStoreTable, storeSectionColumns, storeTableSchema, STORE_TABLES } from "@/lib/store-read";
+import {
+  canCarryOwnFields,
+  isStoreTable,
+  storeSectionColumns,
+  storeTableSchema,
+  STORE_TABLES,
+  storeRowFields,
+} from "@/lib/store-read";
 // One definition, shared with the Shopify importer rather than copied.
 import { isTransient } from "@/lib/retry";
 import { asJob, record } from "@/lib/usage";
@@ -129,7 +136,7 @@ HOW TO CHOOSE changeType:
   .map((t) => `"${t}"`)
   .join(
     ", "
-  )}, whose rows each total many others, so there is no one row for it to sit beside. The store's own fields are read here, never written: a row action or scan mode sets a field of theirs ("Mark packed" sets packed; scanning the order number finds the order and ticks it). A rule on such a section runs when a field of theirs changes (record_updated), from the first one set on a row, and reads and writes their fields only — the store's change in Shopify, where no rule here sees them, so act on those with a computed column, a filter or a stat. No rule adds rows to it or runs on a schedule over it. Filters, search, stats and sort work over both.
+  )}, whose rows each total many others, so there is no one row for it to sit beside. The store's own fields are read here, never written: a row action or scan mode sets a field of theirs ("Mark packed" sets packed; scanning the order number finds the order and ticks it). A rule on such a section reads the store's fields and theirs, and sets only theirs. It runs when a field of theirs changes (record_updated, from the first one set on a row), or on a schedule over every row of the list ("when" picks the rows; a row it acts on gets its fields then) — so "flag the COD orders delivered a week ago and still unpaid" is a daily rule reading gateway, fulfilment_status and financial_status. A change in Shopify is not seen the moment it happens; a schedule rule sees it on its next run. No rule adds rows to it (record_created is refused). Filters, search, stats and sort work over both.
 - MODULE_UPDATE — nav metadata only: rename label, change icon, move it inside another section (parent_id), reposition (sort_order: below the lowest existing value for top, midpoint like 1.5 for between, above max for bottom).
 - MODULE_DELETE — only when the user clearly asks to delete/remove a whole section. deleteConfirmName = exact name slug.
 - FEATURE_UPDATE — search box, dropdown filters, STAT CARDS (op: count | sum | avg | min | max over "value", an EXPRESSION evaluated per row — so a stock value is { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, not a bare column; optional "where" expression limits which rows count. Never label a stat as something the expression does not actually compute), default sort, ROW ACTION buttons (a one-click change to that row: "set" maps field -> EXPRESSION, and the optional "when" is an EXPRESSION deciding whether the button shows on that row — same operators as automations, so "only while it isn't Done" is { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }), or SCAN MODE (a scan-and-go bar: lookupField = the code column scanned into it, action.set = field -> expression applied to the matched row, sequenceField = a numeric column that must never go backwards between scans, for picking or queue order). It works with any USB or Bluetooth barcode scanner, which types the code like a keyboard — there is no camera scanning. A scan that matches nothing changes NOTHING: the person sees it on screen and that is the whole safeguard. Nothing is recorded, so never add a "scan errors" or "mistakes" count — no rule can fill it, and a stat built on it counts successful scans instead. Scanning only reaches rows currently in view, so the section needs a filter that narrows to the job in hand. Provide the FULL new config.
@@ -1273,7 +1280,13 @@ function validateAutomation(
     err(errors, "No current schema found for this section, so this rule can't be checked.");
     return;
   }
-  const ownHas = (f: string) => RESERVED_FIELDS.has(f) || !!ownFields?.has(f) || !!pendingFields?.has(f);
+  // Read: its own fields, the ones a NEW_MODULE in the batch gives it,
+  // and — on a section over the store — the store's (0130 lays the
+  // store's row under the record when a rule is judged). Written: only
+  // its own; the store's are refused below, as the next import would
+  // put them back.
+  const ownHas = (f: string) =>
+    RESERVED_FIELDS.has(f) || !!ownFields?.has(f) || !!pendingFields?.has(f) || !!storeFields?.has(f);
   const ownComputed = new Set((currentSchema?.columns ?? []).filter((c) => c.compute).map((c) => c.field));
 
   // A rule runs in Postgres, against the row as it is stored. A
@@ -1295,25 +1308,16 @@ function validateAutomation(
     }
   }
 
-  // A rule on a section over the store runs in the database on the
-  // merchant's fields beside a row (0128). It never sees the store's
-  // own: they are not in that record, and change in Shopify, where no
-  // rule here is watching. Nor is a row ever added here, and a schedule
-  // would find only the rows somebody had already set a field on.
-  if (storeFields) {
-    if (trigger.type !== "record_updated") {
-      err(
-        errors,
-        `A rule on a section over the store runs when a field of theirs beside a row changes — trigger { "type": "record_updated" } with a "when". Its rows arrive from Shopify, so ${trigger.type === "schedule" ? "a schedule would see only the rows somebody had already touched" : "no row is ever added here"}; say in "unmet" what waits on the store instead.`
-      );
-    }
-    const theirs = [...fieldsRead(def)].filter((f) => storeFields.has(f));
-    if (theirs.length > 0) {
-      err(
-        errors,
-        `This rule reads ${theirs.map((f) => `"${f}"`).join(", ")}, the store's own. A rule on a section over the store sees only the fields of theirs beside each row; the store's change in Shopify, where no rule here sees them. Show those with a computed column, a filter or a stat instead.`
-      );
-    }
+  // A rule on a section over the store runs in the database with the
+  // store's row laid under the merchant's fields (0130): it reads both,
+  // on a change to a field of theirs or on a schedule over every row of
+  // the list. Nobody adds a row here, so a rule on one being added
+  // would never fire.
+  if (storeFields && trigger.type === "record_created") {
+    err(
+      errors,
+      `A rule on a section over the store never sees a row added: its rows arrive from Shopify. Run it when a field of theirs changes — trigger { "type": "record_updated" } with a "when" — or on a schedule over every row.`
+    );
   }
 
   if (trigger.when !== undefined) validateExpr(trigger.when, ownHas, errors);
@@ -1451,9 +1455,7 @@ export function validatePlan(
   // them back. What may be written is the merchant's, beside each row.
   const storeSource =
     plan?.changeType === "NEW_MODULE" ? (plan.newModule?.source_table ?? null) : sourceOf(plan?.targetModuleId);
-  const storeFields = isStoreTable(storeSource)
-    ? new Set(storeTableSchema(storeSource).columns.map((c) => c.field))
-    : undefined;
+  const storeFields = isStoreTable(storeSource) ? new Set(storeRowFields(storeSource)) : undefined;
 
   // One definition of "this field exists" for the whole plan: the module's
   // current columns plus anything an earlier plan in this batch adds. Every
@@ -2393,11 +2395,7 @@ export function talkModel(): string {
  * first (the owner's pick in the panel still wins the call).
  */
 export function planModel(): string | null {
-  try {
-    return modelFor("plan");
-  } catch {
-    return null;
-  }
+  return optionalModel("plan");
 }
 
 /**
@@ -2407,11 +2405,13 @@ export function planModel(): string | null {
  * middle one agreed with the design model at half the time.
  */
 export function criticModel(): string | null {
-  try {
-    return modelFor("critic");
-  } catch {
-    return planModel();
-  }
+  return optionalModel("critic") ?? planModel();
+}
+
+/** A job's model when its setting is there, else null — without the log line an unset required one earns. */
+function optionalModel(job: keyof typeof MODEL_JOBS): string | null {
+  const setting = MODEL_JOBS[job];
+  return tapedSetting(setting, process.env[setting]?.trim() || undefined) ?? null;
 }
 
 function modelFor(job: keyof typeof MODEL_JOBS): string {

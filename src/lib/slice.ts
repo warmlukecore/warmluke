@@ -185,7 +185,19 @@ export async function fetchSlice(
             : null
       : null;
   const between = span && route.list === "orders" ? { field: "placed_at", from: span.fromDay, to: span.toDay } : null;
-  const { rows, total } = await readStoreRows(db, store.id, table, ROWS, needles, sort, between);
+  let { rows, total } = await readStoreRows(db, store.id, table, ROWS, needles, sort, between);
+  // Words that matched no row ("waiting", "payment") used to hand the
+  // model an empty slice, which it read as "none": the newest rows
+  // instead, and the miss said out loud, so a status question is
+  // answered from rows rather than from silence.
+  // Only for plain words: a number or a name that matched nothing is a
+  // real "not found", and an empty slice says so.
+  const plain = needles.length > 0 && !needles.some((n) => /^#\d+$/.test(n) || /^[A-Z]/.test(n));
+  let missed = "";
+  if (rows.length === 0 && plain) {
+    ({ rows, total } = await readStoreRows(db, store.id, table, ROWS, [], sort, between));
+    missed = ` — nothing matched "${needles.slice(0, 5).join('" or "')}", so these are the newest instead`;
+  }
   const what =
     route.list === "orders"
       ? `orders placed${when || " (all time)"}${sort ? ", biggest first" : ", newest first"}`
@@ -199,7 +211,11 @@ export async function fetchSlice(
             ? "stock levels"
             : "products sold, all time, most units first";
   return {
-    what: needles.length ? `${what}, matching "${needles.slice(0, 5).join('" or "')}"` : what,
+    what: missed
+      ? `${what}${missed}`
+      : needles.length
+        ? `${what}, matching "${needles.slice(0, 5).join('" or "')}"`
+        : what,
     rows: strip(rows),
     total,
   };
