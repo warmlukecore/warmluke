@@ -1494,7 +1494,7 @@ export function validatePlan(
           ? plan.newModule!.source_table!
           : null;
       const storedFields = new Set([
-        ...(storeSrc ? storeTableSchema(storeSrc).columns.map((c) => c.field) : []),
+        ...(storeSrc ? storeRowFields(storeSrc) : []),
         ...columns.filter((c) => c && typeof c.field === "string" && !c.compute).map((c) => c.field),
       ]);
       for (let ci = 0; ci < columns.length; ci++) {
@@ -1565,8 +1565,10 @@ export function validatePlan(
     if (!plan.newModule?.nav_label?.trim()) {
       err(errors, "newModule.nav_label is required.");
     }
+    // An icon is cosmetic: one not on the list is the neutral one, not a
+    // rejected design. A whole attempt was spent on "phone".
     if (plan.newModule?.icon && !(ALLOWED_ICONS as readonly string[]).includes(plan.newModule.icon)) {
-      err(errors, `Icon "${plan.newModule.icon}" is not allowed. Pick one of: ${ALLOWED_ICONS.join(", ")}.`);
+      plan.newModule.icon = "table";
     }
 
     // A section over the store's own rows. Its columns are the store's,

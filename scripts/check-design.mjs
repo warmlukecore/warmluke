@@ -189,6 +189,25 @@ console.log("\nwhat a client is told the shape is");
   if (!example.ok) console.log(`     errors were: ${example.errors.join(" | ")}`);
 }
 
+// ── An icon off the list is the neutral one, not a rejection ──
+console.log("\nan icon off the list");
+{
+  const got = run(
+    [
+      {
+        changeType: "NEW_MODULE",
+        targetModuleId: null,
+        newModule: { name: "calls", nav_label: "Calls", icon: "phone", source_table: null },
+        newSchema: { columns: [{ field: "note", label: "Note", type: "text" }] },
+        features: {},
+        explanation: "Calls to make.",
+      },
+    ],
+    schemas
+  );
+  check("is taken as the neutral one, and the design stands", got.ok && got.reply.plans[0].newModule.icon === "table");
+}
+
 // ── The eight rejections, replayed ───────────────────────────
 //
 // The loop was not the client being slow. Each attempt changed one key

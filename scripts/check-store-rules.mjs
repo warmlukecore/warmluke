@@ -103,14 +103,23 @@ const batch = run([
     automation: {
       name: "short",
       definition: {
-        trigger: { type: "record_updated", when: { op: "<", args: [{ field: "received" }, { field: "total" }] } },
+        trigger: {
+          type: "record_updated",
+          when: {
+            op: "and",
+            args: [
+              { op: "<", args: [{ field: "received" }, { field: "total" }] },
+              { op: "=", args: [{ field: "cancelled_at" }, { const: null }] },
+            ],
+          },
+        },
         actions: [{ type: "set_fields", target: { self: true }, set: { received: { field: "received" } } }],
       },
     },
     explanation: "Reads the store's total beside what was received.",
   },
 ]);
-check("a new section over the store, its rule reading the store's total in the same batch", batch.ok);
+check("a new section over the store, its rule reading the store's total and cancelled_at in the same batch", batch.ok);
 if (!batch.ok) console.log("     →", said(batch));
 
 console.log("\nwhat it may not");
