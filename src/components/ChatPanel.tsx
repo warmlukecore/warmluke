@@ -312,7 +312,7 @@ function stepWords(step: TurnEvent): string {
     case "road":
       return step.road === "talk" ? "Answering" : "Designing";
     case "plan":
-      return step.goal ? withoutIds(`Understood: ${step.goal}`) : "Worked out what you need";
+      return step.goal ? withoutIds(`Understood: ${step.goal}`) : "Working out what you need…";
     case "critic":
       return step.verdict === "redo"
         ? `Sent the design back: ${n(step.missing, "thing")} you asked for missing`

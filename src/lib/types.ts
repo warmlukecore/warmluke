@@ -532,7 +532,7 @@ export type TurnEvent =
   | { step: "model"; attempt: number; of: number }
   /** Which road the turn took: only how to answer, or the whole design contract. */
   | { step: "road"; road: "talk" | "design" }
-  /** Before a design: what Luke understood, in a line. `goal` is null when the plan did not parse. */
+  /** Before a design: told with no goal when the plan starts, and with the goal once it is understood. */
   | { step: "plan"; goal: string | null }
   /** The model looked something up with a store tool, and it came back. `about` is what, in words. */
   | { step: "lookup"; about: string }

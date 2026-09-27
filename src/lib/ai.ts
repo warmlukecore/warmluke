@@ -695,13 +695,14 @@ You are not designing yet. Before anything is drawn, say what you understood of 
 You reply with ONLY a single valid JSON object, no code fences, no commentary outside it:
 {
   "goal": "one line, the outcome they want, in their words",
-  "rows": "which rows this works on: a store list (orders, products, customers, stock), a section of theirs by name, or new rows of its own — and why that one",
-  "work": ["what happens to a row, in order — each a short line"],
-  "facts": ["what has to be recorded on a row, in words (a tick, a time, who, a count) — never field types"],
-  "rules": ["when this, then that — only what they asked for or plainly need"],
-  "screens": ["what they see or do, and where (a list, a scan bar, a board, a button on a row)"],
-  "unsure": ["what their words do not settle and matters to the design — a question each, at most four; empty when nothing does"]
+  "rows": "one line: which rows this works on — a store list (orders, products, customers, stock), a section of theirs by name, or new rows of its own — and why",
+  "work": ["what happens to a row, in order — at most five short lines"],
+  "facts": ["what has to be recorded on a row, in words (a tick, a time, who, a count), never field types — at most six"],
+  "rules": ["when this, then that — only what they asked for or plainly need — at most four"],
+  "screens": ["what they see or do, and where (a list, a scan bar, a board, a button on a row) — at most four"],
+  "unsure": ["what their words do not settle and matters to the design — a short question each, at most three; empty when nothing does"]
 }
+Short lines: this is read by the designer, not by the owner.
 
 When the store's tools are offered, you may look twice at most — to settle which list holds this, or what a column really says (a status, a gateway, a tag) — then write the plan. Never look for a greeting, and never to browse.
 
@@ -2361,6 +2362,8 @@ const MODEL_JOBS = {
   talk: "ANTHROPIC_TALK_MODEL",
   /** The plan step before a design: what was understood, in words (unset: no plan step). */
   plan: "ANTHROPIC_PLAN_MODEL",
+  /** The critic that reads a design against what was asked (unset: the plan model). */
+  critic: "ANTHROPIC_CRITIC_MODEL",
   /** Reading two short texts and naming what is missing. */
   gap: "ANTHROPIC_GAP_MODEL",
   /** Where a design goes when Gemini stays busy. */
@@ -2394,6 +2397,20 @@ export function planModel(): string | null {
     return modelFor("plan");
   } catch {
     return null;
+  }
+}
+
+/**
+ * The model the critic reads on: its own setting, or the plan model.
+ * Measured 2026-09-27 on two designs and their weakened copies: the
+ * small model sent good designs back for what they already did; the
+ * middle one agreed with the design model at half the time.
+ */
+export function criticModel(): string | null {
+  try {
+    return modelFor("critic");
+  } catch {
+    return planModel();
   }
 }
 

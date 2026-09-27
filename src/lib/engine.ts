@@ -32,6 +32,7 @@ import {
   buildPlanPrompt,
   planModel,
   critique,
+  criticModel,
 } from "@/lib/ai";
 import { lastReplyTypeOf, roadFor, type Road } from "@/lib/intent";
 import { intentBlock, parseIntent } from "@/lib/plan";
@@ -570,6 +571,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     if (planned) return;
     planned = true;
     if (!planOn || lastReplyTypeOf(history) === "blueprint") return;
+    // Said at once, before the model is asked: the plan is the longest
+    // silence of a turn, and a step told only at its end reads as none.
+    tell({ step: "plan", goal: null });
     let goal: string | null = null;
     try {
       // The store's reading tools, bounded, and heard the same way: a
@@ -594,7 +598,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       if (signal?.aborted) throw e;
       console.error(`[plan] ${e instanceof Error ? e.message : "failed"}`);
     }
-    tell({ step: "plan", goal });
+    if (goal) tell({ step: "plan", goal });
   };
   if (road === "design") await plan();
 
@@ -728,7 +732,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         ownerWords: message.trim(),
         understood: planBlock,
         builtDescription: describeBuild(plans, modules, currentSchema?.columns, store),
-        model: model ?? planOn,
+        model: model ?? criticModel() ?? planOn,
         signal,
       });
       if (verdict) {

@@ -91,8 +91,10 @@ On the design road, before the design call, one short call with none of the desi
 store — the talk road's context) writes what Luke understood as words in one JSON shape
 (`DesignIntent` in `src/lib/plan.ts`): the goal, which rows the work belongs to, what happens
 to a row, what has to be recorded, rules, screens, and what the owner's words do not settle.
-`intentBlock` turns it into a block that rides in the design call's user turn after the
-request, so the design solves the problem rather than the sentence; the block is not
+The plan is told at once ("Working out what you need…") and again with its goal; its shape is
+capped (five lines of work, four rules, four screens, three questions), which took the design
+model from 13–22s to 11–13s a plan. `intentBlock` turns it into a block that rides in the
+design call's user turn after the request, so the design solves the problem rather than the sentence; the block is not
 persisted (the thread keeps what the owner said). It is told as a `plan` step ("Understood:
 …"). Skipped when the owner is answering a design already drawn (last reply a blueprint). A
 plan that fails or does not parse is no plan: the design goes on as before. The setting is
@@ -219,7 +221,10 @@ actually be built (`describeBuild`), and answers `{unmet, redo}` — what is mis
 owner's own words, and one line to the designer when what is missing is the point of the
 request and can be built. A `redo` sends the design back once a turn (it spends one of the
 repair attempts); a second verdict stands. Told as a `critic` step ("Sent the design back…" /
-"Checked it does what you asked"). With a verdict in hand the gap pass below is skipped; with
+"Checked it does what you asked"). It reads on `ANTHROPIC_CRITIC_MODEL` (unset: the plan
+model): measured 2026-09-27 on two designs and their weakened copies, Haiku 4.5 sent good
+designs back for what they already did, Sonnet 5 agreed with Opus 5.5 every time at half the
+time — production runs it on Sonnet 5. With a verdict in hand the gap pass below is skipped; with
 the switch off, or the critic failing to answer, everything below runs as it always did.
 
 The plan step itself may look the store up (`PLAN_TOOLS`: search_store, store_metrics,
