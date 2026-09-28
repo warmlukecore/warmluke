@@ -89,6 +89,7 @@ import { lowStock, searchOrders, storeLeaders, storeOverview, storeValues } from
 import { routeQuestion } from "@/lib/route";
 import { fetchSlice } from "@/lib/slice";
 import type { AssistantReply, FeatureSchema, ModuleRow, ProjectRow, TurnEvent, UiSchema } from "@/lib/types";
+import { tapeRoad } from "@/lib/model-tape";
 
 /**
  * Validation errors are the assistant's own mistakes — a bad column
@@ -632,20 +633,25 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // misses, in the owner's words, and — once a turn — that it goes back.
   let critiqued: { unmet: string[] } | null = null;
   let sentBack = false;
+  // The design the critic sent back, which stood: kept, so a redo that
+  // fails does not cost the design it was redoing.
+  let sentBackDesign: { parsed: ReturnType<typeof parseReply>; raw: string; unmet: string[] } | null = null;
 
   for (let attempt = 0; attempt <= MAX_REPAIR_ATTEMPTS; attempt++) {
     tell({ step: "model", attempt: attempt + 1, of: MAX_REPAIR_ATTEMPTS + 1 });
     // Tools on the first attempt only: a repair fixes the reply's shape,
     // and what was looked up is already written into the reply it fixes.
-    raw = await callModel({
-      system,
-      turns: [...history, ...attemptTurns],
-      signal,
-      // The one they picked wins on both roads; otherwise each road's own.
-      model: model ?? (road === "talk" ? talkModel() : undefined),
-      lookups: attempt === 0 && tools ? { tools } : undefined,
-      onText: draft,
-    });
+    raw = await tapeRoad.run(road, () =>
+      callModel({
+        system,
+        turns: [...history, ...attemptTurns],
+        signal,
+        // The one they picked wins on both roads; otherwise each road's own.
+        model: model ?? (road === "talk" ? talkModel() : undefined),
+        lookups: attempt === 0 && tools ? { tools } : undefined,
+        onText: draft,
+      })
+    );
     // The talk road hands a build back: a "build" reply, or a design it
     // drew anyway. The design road then starts over, tools and all.
     if (road === "talk") {
@@ -748,6 +754,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         critiqued = { unmet: verdict.unmet };
         if (verdict.redo && !sentBack && attempt < MAX_REPAIR_ATTEMPTS) {
           sentBack = true;
+          sentBackDesign = { parsed, raw, unmet: verdict.unmet };
           tell({ step: "critic", verdict: "redo", missing: verdict.unmet.length });
           attemptTurns.push(
             { role: "assistant", content: raw },
@@ -788,6 +795,16 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           )}\n\nFix every one of these and reply again with the corrected JSON only. Do not apologise or explain — just the corrected reply. If a module name is already taken, either target the existing module instead of creating a new one, or choose a different name.`,
       }
     );
+  }
+
+  // Sent back by the critic, and the redo never stood: the design it
+  // sent back is the answer, with what the critic found missing said
+  // plainly as unmet. It once was thrown away, and a turn that had a
+  // good design told the owner "Luke could not get this right".
+  if ((!parsed || !parsed.ok) && sentBackDesign) {
+    parsed = sentBackDesign.parsed;
+    raw = sentBackDesign.raw;
+    critiqued = { unmet: sentBackDesign.unmet };
   }
 
   // Told to ask and out of attempts: the question is still asked.

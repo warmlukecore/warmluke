@@ -4,7 +4,8 @@
   "parts": {
     "system": "9adbfbf835eb1402",
     "tools": "4af7ff3618c201a0",
-    "conversation": "a823fcd3eba5283a"
+    "conversation": "a823fcd3eba5283a",
+    "tag": "talk"
   },
   "responses": [
     {

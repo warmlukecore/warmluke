@@ -979,7 +979,9 @@ export async function readStoreRows(
    */
   sort?: { field: string; dir: "asc" | "desc" } | null,
   /** Only rows whose `field` (a YYYY-MM-DD day) falls in from..to, inclusive. */
-  between?: { field: string; from: string; to: string } | null
+  between?: { field: string; from: string; to: string } | null,
+  /** Only rows whose `field` is one of `values`: the rows a scanned code opens, wherever they are in the list. */
+  equals?: { field: string; values: string[] } | null
 ): Promise<{ rows: Array<{ id: string; data: Record<string, unknown> }>; total: number }> {
   const spec = STORE_TABLES[table];
   const ordered = sort && sortable(spec, sort.field) ? sort : null;
@@ -1022,6 +1024,10 @@ export async function readStoreRows(
   if (between && sortable(spec, between.field)) {
     query = query.gte(between.field, between.from).lte(between.field, between.to);
   }
+  // ponytail: orders has no (store_id, order_number) index, so a scan's
+  // look-up reads the store's orders in full; add it when a store's
+  // order count makes the first scan slow.
+  if (equals && sortable(spec, equals.field) && equals.values.length) query = query.in(equals.field, equals.values);
 
   const { data, count, error } = await query;
   if (error) throw new Error(error.message);

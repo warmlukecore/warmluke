@@ -77,6 +77,7 @@ import {
 import { button, iconButton, note } from "@/components/ui/controls";
 import { Logo } from "@/components/ui/Logo";
 import { ThemeToggle } from "@/components/ThemeSync";
+import { codeSpellings } from "@/lib/scan";
 
 /**
  * Rows are fetched a page at a time. Search, filters and stats run over
@@ -938,6 +939,44 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
    * counted into the total until the next load; the count catches up
    * when the section is reopened.
    */
+  /**
+   * The rows a scanned code opens (scanMode.first), read by that code
+   * rather than looked for in the page already loaded: an order's lines
+   * are wherever they are in a list of a million. Placed into the
+   * section as loaded, and handed back.
+   */
+  const openScanGroup = useCallback(
+    async (field: string, code: string): Promise<RecordRow[]> => {
+      if (!selectedModuleId || !/^[a-z_][a-z0-9_]*$/i.test(field)) return [];
+      const values = codeSpellings(code);
+      let rows: RecordRow[];
+      if (isStoreTable(loadedSource) && storeId) {
+        const found = await readStoreRows(supabase, storeId, loadedSource, 500, undefined, null, null, {
+          field,
+          values,
+        });
+        rows = (await withOwnFields(supabase, selectedModuleId, found.rows)) as unknown as RecordRow[];
+      } else {
+        const { data, error } = await supabase
+          .from("records")
+          .select("*")
+          .eq("module_id", selectedModuleId)
+          .is("store_row_id", null)
+          .in(`data->>${field}`, values)
+          .limit(500);
+        if (error) throw new Error(error.message);
+        rows = (data ?? []) as RecordRow[];
+      }
+      if (rows.length)
+        setRecords((prev) => {
+          const got = new Map(rows.map((r) => [r.id, r]));
+          return [...prev.map((r) => got.get(r.id) ?? r), ...rows.filter((r) => !prev.some((p) => p.id === r.id))];
+        });
+      return rows;
+    },
+    [selectedModuleId, loadedSource, storeId]
+  );
+
   const patchRow = useCallback((row: Record<string, unknown> | undefined, moduleId: string | null): boolean => {
     const id = row && typeof row.id === "string" ? row.id : null;
     if (!row || !id || !moduleId) return false;
@@ -2626,6 +2665,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     totalRecords={recordTotal}
                     onLoadMore={records.length < recordTotal ? loadMoreRecords : undefined}
                     onStats={sectionStats}
+                    onScanGroup={openScanGroup}
                     {...(storeBacked
                       ? // No write handlers at all, which is how the renderer
                         // already expresses read-only. The import owns these

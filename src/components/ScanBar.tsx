@@ -10,10 +10,18 @@
 // sequenceField enforces an order: scanning something whose number
 // is lower than the last accepted scan is refused, which is the
 // point of a pick sequence.
+//
+// first opens a group before the items: the order's label, then the
+// SKUs in that order, in the same one input. The group's rows are read
+// from the database by the code (onOpenGroup), shown alone, and matched
+// alone; once every one of them is done, the bar says so and goes back
+// to the first scan by itself, so the packer's hands never leave the
+// scanner. A label scanned while a group is open opens that one.
 // ─────────────────────────────────────────────────────────────
 
 import { useEffect, useRef, useState } from "react";
-import { evalExpr } from "@/lib/expr";
+import { evalExpr, truthy } from "@/lib/expr";
+import { groupDone, rowsFor, sameCode } from "@/lib/scan";
 import { asError, nearest, type AppError, type FixAction } from "@/lib/errors";
 import ErrorNote from "@/components/ErrorNote";
 import type { FeatureSchema, RecordRow, SchemaColumn } from "@/lib/types";
@@ -21,7 +29,7 @@ import { fieldText } from "@/components/views";
 import { useLinkLabel } from "@/components/LinkContext";
 import { useFormat } from "@/lib/format";
 import { isId } from "@/lib/no-ids";
-import { Check, CircleX } from "lucide-react";
+import { Check, CircleX, X } from "lucide-react";
 
 type Scan = { ok: true; message: string } | { ok: false; error: AppError };
 
@@ -31,6 +39,9 @@ export default function ScanBar({
   records,
   onApply,
   onCreate,
+  group = null,
+  onGroup,
+  onOpenGroup,
 }: {
   scanMode: NonNullable<FeatureSchema["scanMode"]>;
   /** The section's columns, so a row is told apart by what it shows, not by its ids. */
@@ -39,6 +50,11 @@ export default function ScanBar({
   onApply: (rec: RecordRow, set: Record<string, unknown>) => Promise<void>;
   /** Makes a row, so a code that is not here yet can be, in one tap. */
   onCreate?: (data: Record<string, unknown>) => Promise<void>;
+  /** The group open now (scanMode.first), by its code; `records` are then its rows alone. */
+  group?: string | null;
+  onGroup?: (code: string | null) => void;
+  /** Reads a group's rows into the section by its code, wherever they are; how many there are. */
+  onOpenGroup?: (field: string, code: string) => Promise<RecordRow[]>;
 }) {
   const [code, setCode] = useState("");
   // One code can legitimately sit on several rows — the same barcode
@@ -48,7 +64,12 @@ export default function ScanBar({
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<Scan[]>([]);
   const [lastSeq, setLastSeq] = useState<number | null>(null);
+  // Whether an item was scanned in the group open now: a group done
+  // without one was done before it was opened.
+  const [scanned, setScanned] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const first = scanMode.first && onGroup ? scanMode.first : null;
+  const matchFields = [scanMode.lookupField, ...(scanMode.alsoMatch ?? [])];
 
   // A scanner types into whatever has focus, so keep the field ready.
   useEffect(() => {
@@ -66,7 +87,7 @@ export default function ScanBar({
   // What a row shows, column by column: a link as the row it points at,
   // a number as a number. A value that is only an id is nothing to a
   // person — "which one?" once offered two rows as four uuids each.
-  const fields = columns.filter((c) => c.field !== scanMode.lookupField).map((c) => c.field);
+  const fields = columns.filter((c) => !matchFields.includes(c.field)).map((c) => c.field);
   const shown = (rec: RecordRow, field: string) => {
     const text = fieldText(fmt, columns, rec, field, linkLabel);
     return text && text !== "(deleted)" && !isId(text) ? text : "";
@@ -103,7 +124,10 @@ export default function ScanBar({
     if (onCreate) {
       fix.push({
         label: `Add a row with ${value}`,
-        action: { type: "add_row", data: { [scanMode.lookupField]: value } },
+        action: {
+          type: "add_row",
+          data: { [scanMode.lookupField]: value, ...(first && group ? { [first.field]: group } : {}) },
+        },
         quiet: true,
       });
     }
@@ -141,11 +165,63 @@ export default function ScanBar({
     await submitValue(value);
   }
 
+  /**
+   * Opens the group a code names: its rows read in from the database,
+   * shown alone. False when the code names none.
+   */
+  async function open(code: string): Promise<boolean> {
+    if (!first || !onGroup) return false;
+    setBusy(true);
+    try {
+      const n = onOpenGroup
+        ? (await onOpenGroup(first.field, code)).length
+        : records.filter((r) => sameCode(r.data?.[first.field], code)).length;
+      if (!n) return false;
+      const was = group;
+      onGroup(code);
+      setScanned(false);
+      setLastSeq(null);
+      ok(`${was ? `${was} left open. ` : ""}Opened ${code}: ${n} line${n === 1 ? "" : "s"}. Scan the items.`);
+      return true;
+    } catch (e) {
+      fail(asError(e, "That code could not be looked up."));
+      return true;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Every row of the open group done: said, and the bar is back at its
+  // first scan for the next one, with no tap.
+  useEffect(() => {
+    if (!first || !group || !scanMode.done || busy || !groupDone(records, scanMode.done)) return;
+    ok(
+      scanned ? `${group} is done: every line checks out. Scan the next.` : `${group} was already done. Scan the next.`
+    );
+    setScanned(false);
+    onGroup?.(null);
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [records, group, busy]);
+
   async function submitValue(value: string) {
     if (!value || busy) return;
 
-    const matches = records.filter((r) => String(r.data?.[scanMode.lookupField] ?? "").trim() === value);
+    // The first scan opens a group; nothing else is matched until one is.
+    if (first && !group) {
+      if (!(await open(value))) {
+        fail({
+          kind: "data",
+          what: `Nothing with ${first.field} “${value}”.`,
+          why: "Check the label, or whether it has come in yet.",
+        });
+      }
+      return;
+    }
+
+    const matches = rowsFor(records, value, matchFields);
     if (matches.length === 0) {
+      // Another group's label while one is open: the packer moved on.
+      if (first && !sameCode(value, group) && (await open(value))) return;
       fail(missed(value));
       return;
     }
@@ -182,6 +258,7 @@ export default function ScanBar({
         resolved[f] = evalExpr(v, { ...match.data, id: match.id });
       }
       await onApply(match, resolved);
+      setScanned(true);
       ok(`${value} → ${scanMode.action.label}`);
     } catch (e) {
       fail(asError(e, "That didn't save."));
@@ -203,15 +280,41 @@ export default function ScanBar({
     return parts.length > 0 ? parts.join(" · ") : `Row ${siblings.indexOf(rec) + 1} of ${siblings.length}`;
   }
 
+  const doneCount =
+    first && group && scanMode.done
+      ? records.filter((r) => truthy(evalExpr(scanMode.done, { ...r.data, id: r.id }))).length
+      : null;
+  const title = !first
+    ? scanMode.action.label
+    : group
+      ? `${group} · ${doneCount !== null ? `${doneCount} of ${records.length} done` : `${records.length} lines`}`
+      : (first.label ?? `Scan the ${first.field}`);
+
   return (
     <div className="rounded-xl border border-line bg-surface p-3.5 shadow-sm">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <div className="text-xs font-semibold text-fg">{scanMode.action.label}</div>
+          <div className="text-xs font-semibold text-fg">{title}</div>
           <div className="text-[11px] text-fg-faint">
-            {scanMode.hint ?? `Scan or type a ${scanMode.lookupField} to apply it.`}
+            {first && group
+              ? `${scanMode.action.label}: scan each item.`
+              : (scanMode.hint ?? `Scan or type a ${scanMode.lookupField} to apply it.`)}
           </div>
         </div>
+        {first && group && (
+          <button
+            type="button"
+            onClick={() => {
+              onGroup?.(null);
+              setScanned(false);
+            }}
+            aria-label={`Close ${group}`}
+            className="inline-flex shrink-0 items-center gap-1 rounded-control px-1.5 py-1 text-[11px] text-fg-muted transition-colors hover:bg-surface-hover"
+          >
+            <X aria-hidden size={13} strokeWidth={2} />
+            Close
+          </button>
+        )}
         {lastSeq !== null && (
           <span className="shrink-0 rounded-full bg-surface-hover px-2 py-0.5 text-[10px] font-semibold text-fg-muted">
             at #{lastSeq}
@@ -231,7 +334,7 @@ export default function ScanBar({
             }
           }}
           disabled={busy}
-          placeholder="Scan here…"
+          placeholder={first ? (group ? "Scan an item…" : "Scan the label…") : "Scan here…"}
           className="min-w-0 flex-1 rounded-lg border border-line px-3 py-2 font-mono text-sm outline-none transition-colors focus:border-focus focus:ring-2 focus:ring-focus/15 disabled:opacity-60"
         />
         <button

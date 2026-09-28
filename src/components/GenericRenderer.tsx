@@ -36,9 +36,11 @@ export type StatResult = {
 type StatCard = { label: string; display: string; groups?: Array<{ key: string; display: string }> };
 import RecordModal from "@/components/RecordModal";
 import ScanBar from "@/components/ScanBar";
+import CustomView from "@/components/CustomView";
 import { BoardView, CalendarView, CardsView, ListView, TableView, compare } from "@/components/views";
 import { useFormat } from "@/lib/format";
 import { evalExpr, truthy, withComputed } from "@/lib/expr";
+import { sameCode } from "@/lib/scan";
 import { button } from "@/components/ui/controls";
 import { Plus } from "lucide-react";
 
@@ -48,6 +50,7 @@ const VIEW_LABELS: Record<ViewSpec["type"], string> = {
   calendar: "Calendar",
   cards: "Cards",
   list: "List",
+  custom: "Custom",
 };
 
 export default function GenericRenderer({
@@ -61,6 +64,7 @@ export default function GenericRenderer({
   onDelete,
   onStats,
   onInspect,
+  onScanGroup,
 }: {
   schema: UiSchema;
   records: RecordRow[];
@@ -85,6 +89,8 @@ export default function GenericRenderer({
    * is exactly the thing a merchant taps to see what was in it.
    */
   onInspect?: (rec: RecordRow) => void;
+  /** Reads the rows whose field holds a code into the section, wherever they are, and hands them back (a scan's group, a written screen's wl.find). */
+  onScanGroup?: (field: string, code: string) => Promise<RecordRow[]>;
 }) {
   const fmt = useFormat();
   const total = totalRecords ?? records.length;
@@ -104,6 +110,9 @@ export default function GenericRenderer({
   const features: FeatureSchema | null = (schema as UiSchema & { features?: FeatureSchema | null })?.features ?? null;
 
   const [search, setSearch] = useState("");
+  // The group a scan opened (scanMode.first): while it is open the
+  // section shows its rows alone, and the scan bar matches only them.
+  const [scanGroup, setScanGroup] = useState<string | null>(null);
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
   const [sort, setSort] = useState<{ field: string; dir: "asc" | "desc" } | null>(null);
 
@@ -123,6 +132,8 @@ export default function GenericRenderer({
 
   const filteredRecords = useMemo(() => {
     let rows = rowsWithComputed;
+    const opens = features?.scanMode?.first?.field;
+    if (opens && scanGroup) rows = rows.filter((r) => sameCode(r.data?.[opens], scanGroup));
 
     if (features?.search?.enabled && search.trim()) {
       const q = search.trim().toLowerCase();
@@ -155,7 +166,7 @@ export default function GenericRenderer({
     }
 
     return rows;
-  }, [rowsWithComputed, columns, features, search, filterValues, effectiveSort]);
+  }, [rowsWithComputed, columns, features, search, filterValues, effectiveSort, scanGroup]);
 
   const rowCurrencyFields = useMemo(
     () => [
@@ -324,6 +335,18 @@ export default function GenericRenderer({
         return <CardsView {...viewProps} view={view} />;
       case "list":
         return <ListView {...viewProps} view={view} />;
+      case "custom":
+        return (
+          <CustomView
+            view={view}
+            columns={columns}
+            records={filteredRecords}
+            // Straight to the handlers: a refused write is the screen's to say, not a note above it.
+            onSet={canSet ? (id, set) => onUpdate!(id, set) : undefined}
+            onAdd={editable ? onCreate : undefined}
+            onFind={preview ? undefined : onScanGroup}
+          />
+        );
       case "table":
       default:
         return (
@@ -353,6 +376,9 @@ export default function GenericRenderer({
           records={filteredRecords}
           onApply={(rec, set) => onUpdate!(rec.id, set)}
           onCreate={onCreate}
+          group={scanGroup}
+          onGroup={setScanGroup}
+          onOpenGroup={onScanGroup}
         />
       )}
 

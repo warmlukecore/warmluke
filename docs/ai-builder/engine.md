@@ -70,6 +70,33 @@ registry should be neither advertised nor accepted.
 Supported column types currently include text, long text, numbers, currency, percent,
 date, time, boolean, badge, dropdown, phone, email, URL, record link, and barcode.
 
+### When the grammar does not reach
+
+The grammar is the default: fast, checked, and the same for everyone. Where it stops, Luke
+writes the part itself instead of refusing or squeezing the owner's flow into a table:
+
+- **A screen** (view type `custom`, `src/lib/custom-view.ts`, `components/CustomView.tsx`):
+  HTML with a script, for a flow none of the views draws — a packing station, big counters,
+  the owner's own steps. It runs in a sandboxed frame (scripts only, an origin of its own, a
+  content policy with no network) and reaches its section only through `window.wl`
+  (`onRows`, `find`, `set`, `add`), each call answered by the section's own handlers.
+- **Logic** (rule action `run_code`, `src/lib/code-run.ts`, `src/lib/code-rules.ts`): a
+  function for what expressions cannot say — a slab rate, a rate card to look up, totals
+  across sections. It runs in a Vercel Sandbox (Sydney, every outbound connection denied, 45
+  seconds) after the owner's own write in the app, is handed the row, the rows of the
+  sections it `reads` and today, and returns writes that go back through
+  `lib/record-write.ts`, the one door every write uses. Those writes run no code rules of
+  their own. Measured locally: about 2 s to make the machine, 2 s to hand it the files,
+  1.3 s to run, 7.5 s from a write to its result on screen.
+- **A scan that opens a group first** (`scanMode.first`, `alsoMatch`, `done`): the order's
+  label, then the items in it, in one input, and on to the next order by itself.
+- **A rule that keeps the owner's field on a store row** (0133): "when every line is
+  scanned, mark the order packed" finds the order by the store's own field and writes a
+  field of theirs beside it, never one of the store's.
+
+The prompt says so, and says one more thing: when the owner describes how it should work,
+that is the spec — build their flow, and put what cannot be built in unmet in their words.
+
 ## Two roads
 
 A turn takes one of two roads, decided in code before any model is called (`roadFor` in
@@ -238,7 +265,10 @@ use: it is given the owner's words, what Luke understood (the plan block) and wh
 actually be built (`describeBuild`), and answers `{unmet, redo}` — what is missing in the
 owner's own words, and one line to the designer when what is missing is the point of the
 request and can be built. A `redo` sends the design back once a turn (it spends one of the
-repair attempts); a second verdict stands. Told as a `critic` step ("Sent the design back…" /
+repair attempts); a second verdict stands. The design it sent back is kept: if the redo
+never passes the gates, that design is the answer, with what the critic found missing as
+its unmet. It was once thrown away, and a turn with a good design ended in "Luke could not
+get this right" (the packing eval, 2026-09-28). Told as a `critic` step ("Sent the design back…" /
 "Checked it does what you asked"). It reads on `ANTHROPIC_CRITIC_MODEL` (unset: the plan
 model): measured 2026-09-27 on two designs and their weakened copies, Haiku 4.5 sent good
 designs back for what they already did, Sonnet 5 agreed with Opus 5.5 every time at half the

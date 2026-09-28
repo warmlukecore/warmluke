@@ -160,6 +160,10 @@ export const VIEWS = {
       metaField: { required: false },
     },
   },
+  custom: {
+    doc: "a screen you write, HTML with a script, for a flow or a look none of the views above draws (see CUSTOM VIEW)",
+    fields: { title: { required: true }, html: { required: true } },
+  },
 } as const satisfies Record<string, ViewSpecDoc>;
 
 export type ViewType = keyof typeof VIEWS;
@@ -187,6 +191,8 @@ export const AUTOMATION_ACTIONS = {
   set_fields: "write fields on the row that fired, or on matching rows in another section",
   create_record:
     "add a row to another section, filling its fields from this one. This is how work moves between sections without the owner retyping it: an order that gets refused opens a return, a job marked done raises an invoice, a delivery that fails becomes a callback. Whenever two sections describe the same thing at different stages, the second one should be created by a rule, not by hand — typed twice means the two drift apart",
+  run_code:
+    "run a function you write, for logic the expressions cannot say — a slab rate, a table to look up, a sum across sections, a calendar. It is handed the row and the rows it reads, and returns the fields to set (see CODE RULE)",
 } as const;
 
 export type AutomationActionType = keyof typeof AUTOMATION_ACTIONS;
@@ -302,6 +308,7 @@ export function capabilitySummary(): string {
   return `WHAT LUKE CAN BUILD — say no more than this about the platform, in these words:
 - Sections of rows with typed fields (${COLUMN_TYPES.join(", ")}), shown as a ${VIEW_TYPES.join(", ")}.
 - Search, filters, stat cards, sorting, one-tap row buttons, and a barcode scan bar.
+- A screen written for their own flow when none of the views above draws it, and a rule's own code for logic the expressions cannot say.
 - Rules that run when a row is ${on.join(" or ")}, or on a schedule, and then ${does.join(" or ")}.
 - Sections over the connected store's own lists (orders, products, customers, stock and the rest), with the owner's fields kept beside each row.
 NOT POSSIBLE — never promise these, never describe a workaround: ${NOT_SUPPORTED.map((n) => n.label).join("; ")}.`;

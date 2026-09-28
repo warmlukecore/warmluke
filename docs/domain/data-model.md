@@ -83,7 +83,13 @@ store view and retain only their added computed columns and presentation feature
 An automation has one trigger and one or more actions:
 
 - triggers: record created, record updated, or scheduled;
-- actions: set fields on self/matching rows or create a record in another module.
+- actions: set fields on self/matching rows or create a record in another module, or run
+  the rule's own code (`run_code`).
+
+A rule writing a section over the store (0133) finds the store's row by one of the store's
+own fields and keeps what it writes beside that row (a record with `store_row_id`, as
+0128), never in the store's own list. `run_code` is not run by the database: the app runs
+it after its own write (`src/lib/code-rules.ts`), on record created or updated only.
 
 The TypeScript contract includes a webhook action for historical compatibility, but the
 platform capability registry advertises only implemented/accepted actions. Treat

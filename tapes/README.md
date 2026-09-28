@@ -17,9 +17,16 @@ or a system prompt. The answers are about the checks' own throwaway stores.
 
 ## When a check says "no recording"
 
-The request changed. The log line says whether the system prompt did (what the model is
-told), the tools did, or the conversation did. If the change is intended, record again,
-with the check database idle (`gh run list --limit 1` says completed):
+A tape is keyed by its conversation: what was asked, with the context the check sends.
+The system prompt, the tools and the output cap are left out of the match, so editing the
+prompt needs no recording. A request whose prompt changed plays the conversation's
+recording and says so once ("recorded under another prompt"). Tapes test the code around
+the model; how good its answers are is judged by evals on the real model, by hand, on the
+exact asks that matter.
+
+"No recording" therefore means a conversation changed: a check sends new words, or the
+context it builds reads differently. Record only that check, with the check database idle
+(`gh run list --limit 1` says completed):
 
 ```sh
 # the router eval: no database, no server

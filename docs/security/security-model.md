@@ -189,6 +189,24 @@ refuses (`PT409`, a plain 409) a save over a newer one. One account's whole stor
 admin screens' CSV downloads write any cell starting with `= + - @` as text, so a name
 typed as a formula stays a name in the administrator's spreadsheet (`check-follow-up`).
 
+## Code Luke writes
+
+A written screen and a rule's own code run where they can reach nothing:
+
+- **Screens** render in `<iframe sandbox="allow-scripts">` with a content policy first in
+  their page (`default-src 'none'`, no frames, no forms), so they have no network, no
+  cookies and no access to the app's page. The validator and the frame both refuse a
+  screen with a web address, navigation, a frame, a form, a script from elsewhere or a
+  network call (`customViewProblem`). The frame reaches its section only through messages
+  from itself, answered by the section's handlers; a preview has none, so it only reads.
+- **Code rules** run in a Vercel Sandbox microVM with `networkPolicy: "deny-all"`, no
+  environment of the app's, and a 45-second life. They receive JSON and return JSON; the
+  writes go through `writeRecord` under the owner's rights (their RLS, the section's
+  schema, never the store's fields) and trigger no further code rules.
+- Locally, a sandbox is reached with `VERCEL_SANDBOX_TOKEN`, `VERCEL_TEAM_ID` and
+  `VERCEL_PROJECT_ID`; on Vercel with the function's own OIDC identity. Neither is a
+  secret the code can see.
+
 ## Web and transport protections
 
 `next.config.mjs` applies content type, framing, referrer, permissions, and conditional

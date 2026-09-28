@@ -34,6 +34,8 @@ import {
 } from "@/lib/store-read";
 // One definition, shared with the Shopify importer rather than copied.
 import { isTransient } from "@/lib/retry";
+import { customViewProblem } from "@/lib/custom-view";
+import { codeProblem } from "@/lib/code-run";
 import { asJob, record } from "@/lib/usage";
 import {
   ALLOWED_ICONS,
@@ -187,7 +189,7 @@ HOW TO CHOOSE changeType:
 
   CATCHING DUPLICATES AND CLASHES: count_matching is how a rule sees the rest of the section. Two appointments in one slot, a repeated SKU, the same customer entered twice — trigger record_created AND a second rule on record_updated, both with NO "when", each setting the flag on self to { "op": "if", "args": [ { "op": ">", "args": [ { "op": "count_matching", "args": [ { "field": "appointment_date" }, { "field": "appointment_time" } ] }, { "const": 0 } ] }, { "const": "Yes" }, { "const": "No" } ] } — so moving an appointment out of a clash clears its flag. Add the flag field in the same plan. It marks the clash the moment it is saved; it does not refuse the save, so never describe it as preventing or blocking.
 
-  "IS EVERY CHILD DONE?" — count_matching with a condition answers it, and it is how a parent moves on when its last child finishes: on the child, count siblings sharing the parent key that are NOT yet done; zero means this was the last one, so set the parent. Without the condition you are only counting siblings, which is never zero for a parent with more than one child.
+  "IS EVERY CHILD DONE?" — count_matching with a condition answers it, and it is how a parent moves on when its last child finishes: on the child, count siblings sharing the parent key that are NOT yet done; zero means this was the last one, so set the parent. The parent may be a section over the store (the order, when its lines are scanned): the rule finds it by the store's own field ("match": { "field": "order_number", "to": { "field": "order_number" } }) and sets a field of the owner's on it (packed, packed_on), never one of the store's. Without the condition you are only counting siblings, which is never zero for a parent with more than one child.
 
   Every "field"/"was" name must exist in the triggering section's columns. Write the rule the owner actually described — do not simplify it into something easier.
 
@@ -371,7 +373,19 @@ CHOOSING THE VIEW — this is a real design decision, make it deliberately:
 - "list" — a simple queue or checklist, one line each, read top to bottom.
 - "table" — many columns that need comparing side by side, or numbers the owner scans down a column. Choose it because the data really is tabular, NEVER because it is the safe default.
 - Pick from how the owner described their day, not from what the section is called. If they said "I want to see what's at each stage", that is a board even if the section is called Orders.
-- If none of these five genuinely fit what they need to see, say so in blueprint.limitations and pick the closest one — do not pretend.
+- If none of the five draws what the owner described — their own steps on one screen, a station for busy hands, big counters, a flow that moves on by itself — write a "custom" view rather than squeezing their flow into a table.
+
+CODE RULE — when a rule needs logic the expressions cannot say (a slab rate by weight, a table to look up, a total across sections, working days), write it: an automation whose action is { "type": "run_code", "reads": ["#courier-rates"], "code": "export default function run({ row, previous, sections, today }) { … return { set: [{ id: row.id, fields: { courier_charge: 65 } }] }; }" }.
+- Trigger record_created or record_updated (with a "when" as usual). It runs after the owner's own write in the app, sealed off: no network, nothing outside what it is handed.
+- It is handed row ({ id, ...fields } — store fields too on a section over the store), previous (the fields before, on an update), sections (the rows of each section in "reads", by the name you listed, each { id, ...fields }), and today (YYYY-MM-DD).
+- It returns { set: [{ id, fields, section? }], add: [{ fields }] }: set writes fields on rows it was handed (section is the "reads" name, left out for this section); add makes rows in this section, when it is the owner's own. Only the owner's fields are written, never the store's. Keep it short and plain JavaScript.
+- Data the logic needs that nobody has typed yet (the courier's rate card) goes in a section of its own in the same design, for the owner to fill, and the rule reads it.
+
+CUSTOM VIEW — { "type": "custom", "title": "Packing station", "html": "<div id=app></div><style>…</style><script>…</script>" }:
+- It is HTML with its own <style> and <script>, run sealed off: no web addresses, no network, nothing loaded from elsewhere, no forms. Keep it under 150 lines.
+- It reaches the section only through window.wl: wl.columns (the fields); wl.onRows(fn), called with the rows ([{ id, data }]) now and whenever they change; wl.find(field, value), a promise of the rows whose field is that value, read from the whole section (an order's lines by its number); wl.set(id, { field: value }), a promise, keeps fields on a row (on a store section only the owner's own fields, never the store's); wl.add({ … }), a new row, on a section of their own.
+- The section's columns still hold the data: add the fields the screen writes (scanned_qty, packed_on) to the plan as usual. Computed columns arrive worked out in data.
+- Colours: var(--fg), var(--fg-muted), var(--surface), var(--surface-subdued), var(--line), var(--primary), var(--on-primary), var(--success), var(--success-fg), var(--critical), var(--critical-fg). Say every outcome on screen in words, not colour alone. Put focus where their scanner types. It must read well on a phone 390px wide as on a desk screen: size text with clamp() or media queries, never one fixed size that breaks a count across lines.
 - Every field a view references (groupBy, dateField, titleField, …) must exist in that same plan's columns, with the right type.
 
 ${HOW_AN_ANSWER_READS}
@@ -392,6 +406,8 @@ HARD RULES:
 - CHOOSE THE COLUMN TYPE THAT MATCHES THE THING. A customer's number is "phone", not text — the owner taps it to call. An address for their website is "url". A repair note is "longtext". "Paid?" is "boolean". A commission is "percent". Falling back to "text" throws away what the interface could do with it.
 - Every row also has an "id" that no schema lists. A rule that creates a linked row sets the link field to { "field": "id" } — the id of the row that fired it.
 - "link" is how two sections stay ONE thing. A return that points at its order, an order that points at its customer: the row stores the other row's id, so nothing is retyped and nothing drifts. It needs "linkTo" naming that section — a uuid, or "#slug" for one created in the same batch. Whenever a new section repeats fields that already exist in another (an order number, a customer name), that is a link, not a copy.
+- A scan can open a group first. When the owner scans one thing and then the items in it (the order's label, then its SKUs; a purchase order, then what arrived), set "first": { "field": "order_number", "label": "Scan the order label" } — the field every row of the group shares — and "done": the expression for a finished row (line_status is "Matched"). The bar takes the first scan, shows only that group's rows, matches the next scans within them, and goes back to the first scan by itself once every row is done. "alsoMatch": ["barcode"] lets an item be scanned by another code too. One input does it all.
+- When the owner says how it should work — which scan comes first, what the screen shows, what happens next — that is the spec: build that flow, not a different one you prefer. What cannot be built goes in unmet, in their words.
 - A scan is ONE event. If scanMode writes a number field, build it from that field's own current value — { "op": "+", "args": [{ "field": "qty_packed" }, { "const": 1 }] } — and decide the status from that count. Setting a number to another field or a flat value records a quantity nobody counted, so a short pack leaves a perfect record and the mistake is lost for good.
 - "barcode" is ONLY for a code an actual barcode scanner reads. A reference number, order number or SKU that people type is "text". Marking something barcode invites a scanning workflow the owner never asked for.
 - UI_CHANGE only references fields that exist in the module's current schema (in CONTEXT).
@@ -889,6 +905,12 @@ function validateView(view: unknown, columns: SchemaColumn[] | null, errors: str
     case "list":
       need(v.titleField, "titleField");
       break;
+    case "custom": {
+      if (typeof v.title !== "string" || !v.title.trim()) err(errors, 'A custom view needs a "title".');
+      const problem = customViewProblem(v.html);
+      if (problem) err(errors, problem);
+      break;
+    }
   }
 }
 
@@ -1093,6 +1115,21 @@ export function validateFeatures(
     }
     if (f.scanMode.sequenceField && !hasField(f.scanMode.sequenceField)) {
       err(errors, `scanMode.sequenceField "${f.scanMode.sequenceField}" doesn't exist in the module schema.`);
+    }
+    for (const m of Array.isArray(f.scanMode.alsoMatch) ? f.scanMode.alsoMatch : []) {
+      if (!hasField(m)) err(errors, `scanMode.alsoMatch "${m}" doesn't exist in the module schema.`);
+    }
+    const first = f.scanMode.first;
+    if (first !== undefined && (!isPlainObject(first) || typeof first.field !== "string" || !hasField(first.field))) {
+      err(
+        errors,
+        `scanMode.first needs a "field" of this section that every row of a group shares, like the order number.`
+      );
+    }
+    if (f.scanMode.done !== undefined) {
+      if (!first)
+        err(errors, `scanMode.done says when an open group is finished, so it needs scanMode.first to open one.`);
+      validateExpr(f.scanMode.done, hasField, errors, "client");
     }
   }
   if (missed) {
@@ -1370,12 +1407,35 @@ function validateAutomation(
           err(errors, "A rule writes to a section that isn't in this project.");
           continue;
         }
-        if (sourceOf(target.module_id)) {
-          err(
-            errors,
-            "A rule may not change the rows of a section over the store: they are the store's, and change in Shopify."
-          );
-          continue;
+        // A section over the store: its row is found by one of the
+        // store's own fields, and what is written is the merchant's,
+        // kept beside it (0133). The store's own fields stay the store's.
+        const over = sourceOf(target.module_id);
+        if (over) {
+          if (!isStoreTable(over) || !canCarryOwnFields(over)) {
+            err(
+              errors,
+              "That section's rows each total many others: a rule has no one row there to keep a field beside."
+            );
+            continue;
+          }
+          const theirs = new Set(storeRowFields(over));
+          const by = isPlainObject(target.match) ? target.match.field : undefined;
+          if (typeof by !== "string" || !theirs.has(by)) {
+            err(
+              errors,
+              `A rule that writes a section over the store finds its row by one of the store's own fields (${[...theirs].slice(0, 10).join(", ")}): "match": { "field": "order_number", "to": { "field": "order_number" } }.`
+            );
+            continue;
+          }
+          const writesTheirs = Object.keys(isPlainObject(a.set) ? a.set : {}).filter((f) => theirs.has(f));
+          if (writesTheirs.length) {
+            err(
+              errors,
+              `The rule writes ${writesTheirs.map((f) => `"${f}"`).join(", ")}, which the store owns: the next import would put it back. Keep a field of theirs beside the row instead (a tick "packed", a date "packed_on").`
+            );
+            continue;
+          }
         }
         if (!isPlainObject(target.match) || typeof target.match.field !== "string") {
           err(errors, "A rule that writes to another section needs a match field.");
@@ -1428,7 +1488,33 @@ function validateAutomation(
       continue;
     }
 
-    err(errors, `Action type "${String((a as { type?: unknown }).type)}" must be set_fields or create_record.`);
+    if (a.type === "run_code") {
+      // The app runs it after a write it makes (lib/code-rules.ts): the
+      // database never sees it, so it rides only on a row's own events.
+      if (trigger.type !== "record_created" && trigger.type !== "record_updated") {
+        err(
+          errors,
+          'A run_code rule runs when a row is added or changed: trigger "record_created" or "record_updated".'
+        );
+        continue;
+      }
+      if (trigger.when !== undefined) validateExpr(trigger.when, ownHas, errors, "client");
+      const problem = codeProblem(a.code);
+      if (problem) err(errors, problem);
+      const reads = (a as { reads?: unknown }).reads;
+      // By id, or "#slug" for one made in this batch or one already here.
+      const known = (r: unknown) =>
+        typeof r === "string" && (moduleOk(r) || modules.some((m) => `#${m.name}` === r.trim().toLowerCase()));
+      if (reads !== undefined && (!Array.isArray(reads) || !reads.every(known))) {
+        err(errors, 'A run_code rule\'s "reads" lists sections of this project, by id or "#slug".');
+      }
+      continue;
+    }
+
+    err(
+      errors,
+      `Action type "${String((a as { type?: unknown }).type)}" must be set_fields, create_record or run_code.`
+    );
   }
 }
 

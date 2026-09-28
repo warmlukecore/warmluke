@@ -157,7 +157,19 @@ export function describeFeaturesFull(f: FeatureSchema, modules: ModuleRow[]): st
   if (f.view) {
     const v = f.view;
     const detail = v.type === "board" ? ` grouped by ${v.groupBy}` : v.type === "calendar" ? ` by ${v.dateField}` : "";
-    out.push(`Shown as a ${v.type}${detail}`);
+    // A written screen, told by what it says on it: its words, not its code.
+    const said = (html: string) =>
+      html
+        .replace(/<(style|script)[\s\S]*?<\/\1>/gi, " ")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 300);
+    out.push(
+      v.type === "custom"
+        ? `A screen written for it, “${v.title}”${said(v.html) ? `: ${said(v.html)}` : ""}`
+        : `Shown as a ${v.type}${detail}`
+    );
   }
   if (f.search?.enabled) {
     out.push(`Search${f.search.fields?.length ? ` over ${f.search.fields.join(", ")}` : ""}`);
@@ -186,9 +198,14 @@ export function describeFeaturesFull(f: FeatureSchema, modules: ModuleRow[]): st
     const sets = Object.entries(f.scanMode.action.set)
       .map(([k, v]) => `${k} = ${exprText(v)}`)
       .join(", ");
+    const matches = [f.scanMode.lookupField, ...(f.scanMode.alsoMatch ?? [])].join(" or ");
     out.push(
-      `Scan bar on ${f.scanMode.lookupField} — “${f.scanMode.action.label}” sets ${sets}` +
-        (f.scanMode.sequenceField ? `, in ${f.scanMode.sequenceField} order` : "")
+      (f.scanMode.first ? `Scan bar: first a ${f.scanMode.first.field} opens its rows, then ` : "Scan bar on ") +
+        `${matches} — “${f.scanMode.action.label}” sets ${sets}` +
+        (f.scanMode.sequenceField ? `, in ${f.scanMode.sequenceField} order` : "") +
+        (f.scanMode.done
+          ? `; when every open row has ${exprText(f.scanMode.done)}, it is done and the bar goes back to the first scan`
+          : "")
     );
   }
   void modules;
@@ -710,6 +727,19 @@ export function reuseQuestion(
  * orders looking like data. So the section may stand; the made-up
  * rows may not. Said back with the list to build over instead.
  */
+/** Whether a new section keeps any of the fields of the store list its name points at. */
+function keepsStoreFields(p: AssistantPlan): boolean {
+  const name = `${p.newModule?.nav_label ?? ""} ${p.newModule?.name ?? ""}`;
+  const topic = STORE_TOPICS.find((t) => t.words.test(name));
+  const theirs = topic && isStoreTable(topic.table) ? STORE_TABLES[topic.table].columns : [];
+  const norm = (s: unknown) =>
+    String(s ?? "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "");
+  const mine = new Set((p.newSchema?.columns ?? []).flatMap((c) => [norm(c.field), norm(c.label)]));
+  return theirs.some((c) => mine.has(norm(c.field)) || mine.has(norm(c.label)));
+}
+
 export function seededCopies(plans: AssistantPlan[], store: StoreFacts | null): string[] {
   if (!store) return [];
   const out: string[] = [];
@@ -717,6 +747,10 @@ export function seededCopies(plans: AssistantPlan[], store: StoreFacts | null): 
     if (p.changeType !== "NEW_MODULE" || !p.newModule || p.newModule.source_table) continue;
     const overlap = storeOverlap(p, store);
     if (!overlap.length) continue;
+    // A copy is known by its fields, not its name: "Courier Rates" says
+    // courier and holds a rate card, nothing of the shipments' own. Only
+    // a section that keeps some of the store list's own fields is one.
+    if (!keepsStoreFields(p)) continue;
     const seededHere =
       (p.newRecords?.length ?? 0) > 0 ||
       plans.some(

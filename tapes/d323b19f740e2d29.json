@@ -4,7 +4,8 @@
   "parts": {
     "system": "e8e596171c26dddb",
     "tools": "4af7ff3618c201a0",
-    "conversation": "f014b73563780912"
+    "conversation": "f014b73563780912",
+    "tag": "design"
   },
   "responses": [
     {

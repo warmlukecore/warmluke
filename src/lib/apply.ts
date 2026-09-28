@@ -497,6 +497,8 @@ function resolveSlugRefs(plan: AssistantPlan, modules: ModuleRow[]): void {
     } else if (action.type === "set_fields" && !("self" in action.target)) {
       const resolved = idFor(action.target.module_id);
       if (resolved) action.target.module_id = resolved;
+    } else if (action.type === "run_code" && Array.isArray(action.reads)) {
+      action.reads = action.reads.map((r) => idFor(r) ?? r);
     }
   }
 }

@@ -119,11 +119,11 @@ database decides who may do what.
   ("does not provide an export named …"); `tsc` elides it and says nothing. Before committing
   an engine change, `node --experimental-strip-types --import ./scripts/ts-hook.mjs -e
   'await import("./src/lib/engine.ts")'` is the two-second proof.
-- **Changed a prompt, a tool or a model call?** Its tapes no longer match, on purpose.
-  Record again (`tapes/README.md`), replay with no keys, review the new answers, commit
-  them with the change. When recording, the checks need the same `ANTHROPIC_*` names as
-  the server in their environment, or a check that calls the engine itself records a
-  request shaped for whatever `.env.local` names, under a key no replay asks for.
+- **Changed a prompt or a tool?** Nothing to record: tapes match on the conversation, and
+  a changed prompt plays the conversation's recording (`tapes/README.md`). Judge the new
+  prompt with an eval on the real model, on the asks it was changed for. Record only when
+  a check's conversation changes, and then with the same `ANTHROPIC_*` names as the server
+  in the checks' environment.
 - Live, through a real server: start
   `(set -a; . ./.env.check.local; set +a; pnpm exec next dev -p 3101)` and run the checks
   with `ENV_FILE=.env.check.local APP_URL=http://localhost:3101`. Without `ENV_FILE` a

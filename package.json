@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "version": "0.1.0",
-  "description": "Adaptive Business OS \u2014 schema-driven business app platform prototype",
+  "description": "Adaptive Business OS — schema-driven business app platform prototype",
   "scripts": {
     "dev": "next dev -p 3100",
     "build": "NODE_ENV=production next build",
@@ -24,6 +24,7 @@
     "@ai-sdk/google": "^4.0.78",
     "@ai-sdk/workflow": "^2.0.47",
     "@supabase/supabase-js": "^2.116.0",
+    "@vercel/sandbox": "3.5.0",
     "ai": "^7.0.112",
     "cobe": "2.0.1",
     "lucide-react": "^1.47.0",

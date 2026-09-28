@@ -1,0 +1,157 @@
+// A section's code rules (automation action "run_code"), run after the
+// owner's own write.
+//
+// The database runs a rule's expressions; a rule's own code runs here,
+// once the write it follows stands: the row as the owner's screen sees
+// it (the store's fields under theirs), the rows of the sections it
+// reads, and today, handed to the code in a sealed sandbox
+// (lib/code-run.ts). What it hands back is written through the same
+// door as the owner's writes (lib/record-write.ts), under their rights,
+// and those writes run no code rules of their own: no rule can loop.
+//
+// Callers: src/app/api/records/route.ts (after the answer is out).
+
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { runCode, type CodeResult } from "@/lib/code-run";
+import { evalExpr, truthy, withComputed } from "@/lib/expr";
+import { writeRecord, type Written } from "@/lib/record-write";
+import { STORE_TABLES, isStoreTable, readStoreRows, withOwnFields, type StoreTable } from "@/lib/store-read";
+import type { AutomationDefinition } from "@/lib/types";
+
+/** Rows of a read section handed to the code. ponytail: the newest 500; a rule over a bigger list is asked to read less. */
+const ROWS_A_SECTION = 500;
+
+type Place = { moduleId: string; table: StoreTable | null };
+
+/** The rows of each section a rule reads, by the name it was listed under ("#courier-rates") and by id. */
+async function readSections(client: SupabaseClient, projectId: string, refs: string[]) {
+  const rows: Record<string, Array<Record<string, unknown>>> = {};
+  const places: Record<string, Place> = {};
+  if (!refs.length) return { rows, places };
+  const { data: mods } = await client.from("modules").select("id, name, source_table").eq("project_id", projectId);
+  const { data: store } = await client
+    .from("stores")
+    .select("id")
+    .eq("project_id", projectId)
+    .in("status", ["connected", "uninstalled"])
+    .maybeSingle();
+  for (const ref of refs) {
+    const m = (mods ?? []).find((x) => x.id === ref || `#${x.name}` === ref);
+    if (!m) continue;
+    const table = isStoreTable(m.source_table) ? (m.source_table as StoreTable) : null;
+    let got: Array<Record<string, unknown>> = [];
+    if (table && store) {
+      const { rows: theirs } = await readStoreRows(client, store.id as string, table, ROWS_A_SECTION);
+      got = (await withOwnFields(client, m.id as string, theirs)).map((r) => ({ id: r.id, ...r.data }));
+    } else if (!table) {
+      const { data } = await client
+        .from("records")
+        .select("id, data")
+        .eq("module_id", m.id)
+        .is("store_row_id", null)
+        .order("created_at", { ascending: false })
+        .limit(ROWS_A_SECTION);
+      got = (data ?? []).map((r) => ({ id: r.id, ...((r.data ?? {}) as Record<string, unknown>) }));
+    }
+    const place = { moduleId: m.id as string, table };
+    for (const key of [ref, `#${m.name}`, m.id as string]) {
+      rows[key] = got;
+      places[key] = place;
+    }
+  }
+  return { rows, places };
+}
+
+/** What the code handed back, written through the owner's own door. */
+async function applyWrites(
+  client: SupabaseClient,
+  w: Written,
+  here: Place,
+  places: Record<string, Place>,
+  out: CodeResult
+) {
+  for (const s of out.set) {
+    const where = s.section ? places[s.section] : here;
+    if (!where) continue;
+    const res = await writeRecord(client, {
+      projectId: w.projectId,
+      moduleId: where.moduleId,
+      ...(where.table
+        ? { action: "update_store_row" as const, storeRowId: s.id }
+        : { action: "update" as const, recordId: s.id }),
+      data: s.fields,
+    });
+    if (res.status !== 200)
+      console.error(
+        `[code rule] a write to ${where.moduleId} (project ${w.projectId}) was refused: ${String(res.body.error ?? res.status)}`
+      );
+  }
+  if (here.table) return;
+  for (const a of out.add) {
+    const res = await writeRecord(client, {
+      action: "create",
+      projectId: w.projectId,
+      moduleId: w.moduleId,
+      data: a.fields,
+    });
+    if (res.status !== 200) console.error(`[code rule] a row was refused: ${String(res.body.error ?? res.status)}`);
+  }
+}
+
+export async function runCodeRules(client: SupabaseClient, w: Written): Promise<void> {
+  try {
+    const { data: rules } = await client
+      .from("automations")
+      .select("id, name, definition")
+      .eq("module_id", w.moduleId)
+      .eq("enabled", true);
+    const coded = (rules ?? []).filter((r) =>
+      (r.definition as AutomationDefinition | null)?.actions?.some((a) => a.type === "run_code")
+    );
+    if (!coded.length) return;
+
+    // The row as the owner's screen sees it: on a section over the store,
+    // the store's fields under theirs, and the store row's own id.
+    const own = (w.record.data ?? {}) as Record<string, unknown>;
+    let theirs: Record<string, unknown> = {};
+    if (w.table && w.storeRowId) {
+      const spec = STORE_TABLES[w.table];
+      const { data } = await client.from(spec.view).select(spec.select).eq("id", w.storeRowId).maybeSingle();
+      theirs = (data ?? {}) as Record<string, unknown>;
+    }
+    const row = withComputed(w.columns, { ...own, ...theirs });
+    const previous = w.previous ? withComputed(w.columns, { ...w.previous, ...theirs }) : null;
+    const id = w.table && w.storeRowId ? w.storeRowId : String(w.record.id);
+    const here: Place = { moduleId: w.moduleId, table: w.table };
+
+    for (const r of coded) {
+      const def = r.definition as AutomationDefinition;
+      const on = def.trigger?.type;
+      if (!((on === "record_created" && w.event === "created") || (on === "record_updated" && w.event === "updated"))) {
+        continue;
+      }
+      if (def.trigger.when !== undefined && !truthy(evalExpr(def.trigger.when, row, previous ?? {}))) continue;
+      for (const a of def.actions) {
+        if (a.type !== "run_code") continue;
+        const t0 = Date.now();
+        const { rows, places } = await readSections(client, w.projectId, a.reads ?? []);
+        const read = Date.now() - t0;
+        const out = await runCode(a.code, {
+          row: { id, ...row },
+          previous,
+          sections: rows,
+          today: new Date().toISOString().slice(0, 10),
+        });
+        if (!out.ok) {
+          console.error(`[code rule] "${r.name}": ${out.error}`);
+          continue;
+        }
+        const ran = Date.now() - t0 - read;
+        await applyWrites(client, w, here, places, out.result);
+        console.log(`[code rule] "${r.name}": read ${read}ms, ran ${ran}ms, wrote ${Date.now() - t0 - read - ran}ms`);
+      }
+    }
+  } catch (e) {
+    console.error(`[code rule] ${e instanceof Error ? e.message : "failed"}`);
+  }
+}

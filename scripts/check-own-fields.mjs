@@ -425,6 +425,57 @@ try {
     .eq("data->>packed_at", "flagged")
     .not("store_row_id", "in", `(${row.id},${row2.id})`);
 
+  console.log("\na rule on another section ticks the order it names (0133)");
+  // A list of their own whose row names an order: when it says done,
+  // the order is marked packed, found by the store's own number. The
+  // store's fields stay the store's, whatever the rule names.
+  const { data: named, error: namedErr } = await admin
+    .from("orders")
+    .select("id, order_number, financial_status")
+    .eq("store_id", store.id)
+    .limit(3);
+  if (namedErr) throw new Error(`could not read the orders: ${namedErr.message}`);
+  const target = named.find((o) => o.id !== row.id && o.id !== row2.id) ?? named[0];
+  const { data: made6, error: e6 } = await admin
+    .from("automations")
+    .insert({
+      project_id: project.id,
+      module_id: ownList,
+      name: "an order packed from the list",
+      definition: {
+        trigger: { type: "record_created" },
+        actions: [
+          {
+            type: "set_fields",
+            target: { module_id: orders, match: { field: "order_number", to: { field: "note" } } },
+            set: { packed: { const: true }, financial_status: { const: "hacked" } },
+          },
+        ],
+      },
+    })
+    .select("id")
+    .single();
+  if (e6) throw new Error(`could not make the cross-section rule: ${e6.message}`);
+  const { error: addErr } = await admin
+    .from("records")
+    .insert({ project_id: project.id, module_id: ownList, data: { note: target.order_number } });
+  if (addErr) throw new Error(`could not add the list row: ${addErr.message}`);
+  const { data: ticked2 } = await admin
+    .from("records")
+    .select("data")
+    .eq("module_id", orders)
+    .eq("store_row_id", target.id)
+    .maybeSingle();
+  check("the order the row names is marked packed, beside the store's row", ticked2?.data?.packed === true);
+  if (!ticked2?.data?.packed) {
+    const { data: runs } = await admin.from("automation_runs").select("ok, detail").eq("automation_id", made6.id);
+    console.log("     →", JSON.stringify({ order: target.order_number, runs }));
+  }
+  check("and nothing of the store's is written there", !("financial_status" in (ticked2?.data ?? {})));
+  const { data: stillTheirs } = await admin.from("orders").select("financial_status").eq("id", target.id).single();
+  check("nor in the store's own list", stillTheirs.financial_status === target.financial_status);
+  await admin.from("automations").delete().eq("module_id", ownList);
+
   console.log("\nan assistant searching the list sees them, under the section's name");
   const found = await storeTool("search_store").run(
     { table: "orders", limit: 200 },

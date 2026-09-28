@@ -24,7 +24,7 @@ const store = {
   currency: "INR",
   counts: { orders: 40, order_line_items: 90, refunds: 2, variants: 12 },
 };
-const section = (nav_label, extra = {}) => ({
+const section = (nav_label, extra = {}, columns = [{ field: "sku", label: "SKU", type: "text" }]) => ({
   changeType: "NEW_MODULE",
   targetModuleId: null,
   newModule: {
@@ -34,7 +34,7 @@ const section = (nav_label, extra = {}) => ({
     source_table: null,
     ...extra,
   },
-  newSchema: { columns: [{ field: "sku", label: "SKU", type: "text" }] },
+  newSchema: { columns },
   explanation: "x",
 });
 const rows = [{ sku: "BA141-BLK" }, { sku: "CASE-M" }];
@@ -50,9 +50,28 @@ console.log("what is refused");
     store
   );
   check("the same rows seeded by a later plan in the batch", seededLater.length === 1);
+  const refundCols = [
+    { field: "order_number", label: "Order", type: "text" },
+    { field: "amount", label: "Amount", type: "currency" },
+  ];
   check(
     "a copy of the refunds, seeded",
-    seededCopies([{ ...section("Refund tracker"), newRecords: rows }], store).length === 1
+    seededCopies(
+      [{ ...section("Refund tracker", {}, refundCols), newRecords: [{ order_number: "#1001", amount: 400 }] }],
+      store
+    ).length === 1
+  );
+  // Named like a store list, holding nothing of it: the owner's own data.
+  const card = [
+    { field: "upto_g", label: "Up to (g)", type: "number" },
+    { field: "charge", label: "Charge", type: "currency" },
+  ];
+  check(
+    "but a rate card that only shares a word with the shipments is theirs to fill",
+    seededCopies([{ ...section("Courier Rates", {}, card), newRecords: [{ upto_g: 500, charge: 40 }] }], {
+      ...store,
+      counts: { ...store.counts, fulfillments: 6 },
+    }).length === 0
   );
   check(
     "a copy of the variants, seeded",

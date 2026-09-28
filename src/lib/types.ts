@@ -75,6 +75,8 @@ export type AutomationAction =
       set: Record<string, Expr>;
     }
   | { type: "create_record"; module_id: string; data: Record<string, Expr> }
+  /** The rule's own function, run sealed off (lib/code-run.ts), for logic the expressions cannot say. */
+  | { type: "run_code"; code: string; reads?: string[] }
   | { type: "webhook"; url: string };
 
 export interface AutomationDefinition {
@@ -130,7 +132,9 @@ export type ViewSpec =
       secondaryField?: string;
       badgeField?: string;
       metaField?: string;
-    };
+    }
+  /** A screen Luke wrote for a flow none of the others draws, run sealed off (lib/custom-view.ts). */
+  | { type: "custom"; title: string; html: string };
 
 // ── Module-level features (all AI-editable via prompt) ───────
 
@@ -176,6 +180,16 @@ export interface FeatureSchema {
   scanMode?: {
     /** Which barcode field to scan into for lookup. */
     lookupField: string;
+    /** Other fields a scan may match too: a maker's barcode beside the SKU. */
+    alsoMatch?: string[];
+    /**
+     * A first scan that opens one group: the order's label, then the items
+     * in that order. `field` is what every row of the group shares; the
+     * item scans after it match only that group's rows.
+     */
+    first?: { field: string; label?: string };
+    /** When this holds for every row of the open group, the group is done and the bar goes back to its first scan. */
+    done?: Expr;
     /** Applied to the scanned row; values are expressions, as elsewhere. */
     action: { label: string; set: Record<string, Expr> };
     /** Optional: block if this numeric field is lower than the last scan. */

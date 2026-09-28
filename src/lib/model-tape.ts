@@ -33,7 +33,9 @@
 // src/lib/jev.ts, scripts/check-model-tape.mjs.
 // ─────────────────────────────────────────────────────────────
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
+import { jobNow } from "@/lib/usage";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
@@ -88,7 +90,8 @@ type Kept = {
   label: string;
   /** The last thing the user said, for a person reading the tape. */
   asked: string;
-  parts: { system: string; tools: string; conversation: string };
+  /** tag: what the call was for (the road for a reply, else its job), read when a prompt that changed falls back. */
+  parts: { system: string; tools: string; conversation: string; tag?: string };
   responses: Array<{ status: number; type: string; body: string }>;
 };
 
@@ -125,6 +128,9 @@ function renumberCalls<T>(value: T): T {
   return walk(value) as T;
 }
 
+/** The cap every recording was made under (lib/ai.ts MAX_OUTPUT_TOKENS on 2026-09-28). */
+const KEYED_CAP = 12000;
+
 /** A request, as the parts it is known by. */
 export function fingerprint(label: string, url: string, body: string) {
   let o: Record<string, unknown>;
@@ -137,6 +143,12 @@ export function fingerprint(label: string, url: string, body: string) {
   const tools = o.tools ?? null;
   const rest: Record<string, unknown> = renumberCalls({ ...o });
   for (const k of ["system", "systemInstruction", "tools", "model"]) delete rest[k];
+  // The output cap is a setting, not the conversation. Keyed as the cap
+  // the recordings were made under, so moving it changes no key: moving
+  // it from 6000 to 12000 once cost every recording there was.
+  if (typeof rest.max_tokens === "number") rest.max_tokens = KEYED_CAP;
+  const gen = rest.generationConfig as Record<string, unknown> | undefined;
+  if (gen && typeof gen.maxOutputTokens === "number") rest.generationConfig = { ...gen, maxOutputTokens: KEYED_CAP };
   // The road, without the model: Gemini names it in the path. And
   // without a proxy's prefix: a router serving Anthropic's API at
   // /api/v1/messages answers the same request as /v1/messages, and a
@@ -170,18 +182,56 @@ const read = (file: string): Kept | null => {
   }
 };
 
-/** Why a replayed request has no recording, as precisely as the tapes can say. */
+/**
+ * Which road a reply call is on, said by the engine around the call: the
+ * talk road and the design road can send the very same conversation, and
+ * a prompt that changed must still play the one made on its own road.
+ */
+export const tapeRoad = new AsyncLocalStorage<string>();
+const tagNow = () => {
+  const job = jobNow();
+  return job && job !== "reply" ? job : (tapeRoad.getStore() ?? "reply");
+};
+
+/** Why a replayed request has no recording: its conversation was never recorded, under any prompt. */
 function diagnose(label: string, fp: ReturnType<typeof fingerprint>): string {
-  const all = existsSync(dir()) ? readdirSync(dir()).filter((f) => f.endsWith(".json") && !f.startsWith("_")) : [];
-  const kin = all.map((f) => read(join(dir(), f))).filter((k): k is Kept => !!k && k.label === label);
-  const same = kin.find((k) => k.parts.conversation === fp.parts.conversation);
-  const why = same
-    ? same.parts.system !== fp.parts.system
-      ? "this conversation was recorded against a different system prompt: what the model is told changed"
-      : "this conversation was recorded with different tools"
-    : "nothing like this conversation was recorded";
-  return `[tape] no recording for a ${label} call (${fp.key}): ${why}. Asked: "${fp.asked.slice(-100)}". Record again with MODEL_TAPE=record.`;
+  return `[tape] no recording for a ${label} call (${fp.key}): nothing like this conversation was recorded. Asked: "${fp.asked.slice(-100)}". Record again with MODEL_TAPE=record.`;
 }
+
+// The recordings by conversation, read once a process (and again after
+// a recording is written): what a prompt that changed falls back on.
+let byConversation: Map<string, Array<{ key: string; kept: Kept }>> | null = null;
+
+/**
+ * This very conversation, recorded under another prompt or other tools.
+ * What the model is told changes with every prompt edit, and a tape keyed
+ * on it died with each one: a paid re-record for replies that test the
+ * same plumbing. So a prompt that changed plays the conversation's
+ * recording anyway, and says so once. Tapes test the code around the
+ * model; how good its answers are is for evals on the real model.
+ * Recorded under two prompts: the one made for the same thing (its road
+ * or job), else the one with the same tools, else the first by name.
+ */
+function sameConversation(label: string, fp: ReturnType<typeof fingerprint>, tag: string) {
+  if (!byConversation) {
+    byConversation = new Map();
+    const all = existsSync(dir()) ? readdirSync(dir()).filter((f) => f.endsWith(".json") && !f.startsWith("_")) : [];
+    for (const f of all.sort()) {
+      const kept = read(join(dir(), f));
+      if (!kept?.responses?.length) continue;
+      const at = `${kept.label}|${kept.parts.conversation}`;
+      byConversation.set(at, [...(byConversation.get(at) ?? []), { key: f.slice(0, -5), kept }]);
+    }
+  }
+  const found = byConversation.get(`${label}|${fp.parts.conversation}`) ?? [];
+  return (
+    found.find((c) => c.kept.parts.tag === tag) ??
+    found.find((c) => c.kept.parts.tools === fp.parts.tools) ??
+    found[0] ??
+    null
+  );
+}
+const toldOnce = new Set<string>();
 
 // Per process: how far through each recording replay has got, and which
 // recordings this run has started over.
@@ -212,8 +262,9 @@ export function tapeFetch(label: string, real: typeof fetch): typeof fetch {
 
     if (mode === "replay") {
       if (init?.signal?.aborted) throw stopped();
-      const kept = read(file);
-      if (!kept?.responses.length) {
+      const exact = read(file);
+      const played = exact?.responses?.length ? { key: fp.key, kept: exact } : sameConversation(label, fp, tagNow());
+      if (!played) {
         console.error(diagnose(label, fp));
         // Not a busy provider: nothing is worth retrying, and nothing should fall back.
         return new Response(JSON.stringify({ error: { message: "no recording for this request" } }), {
@@ -221,11 +272,16 @@ export function tapeFetch(label: string, real: typeof fetch): typeof fetch {
           headers: { "content-type": "application/json" },
         });
       }
-      const i = Math.min(cursor.get(fp.key) ?? 0, kept.responses.length - 1);
-      cursor.set(fp.key, i + 1);
+      if (played.key !== fp.key && !toldOnce.has(fp.key)) {
+        toldOnce.add(fp.key);
+        console.error(`[tape] ${label} call ${fp.key} played ${played.key}, recorded under another prompt`);
+      }
+      const kept = played.kept;
+      const i = Math.min(cursor.get(played.key) ?? 0, kept.responses.length - 1);
+      cursor.set(played.key, i + 1);
       // Which recordings a run actually plays, one key a line, when asked
       // (MODEL_TAPE_HITS=<file>): the list a prune of stale tapes is cut by.
-      if (process.env.MODEL_TAPE_HITS) appendFileSync(process.env.MODEL_TAPE_HITS, `${fp.key}\n`);
+      if (process.env.MODEL_TAPE_HITS) appendFileSync(process.env.MODEL_TAPE_HITS, `${played.key}\n`);
       const r = kept.responses[i];
       return new Response(r.body, { status: r.status, headers: { "content-type": r.type } });
     }
@@ -238,13 +294,14 @@ export function tapeFetch(label: string, real: typeof fetch): typeof fetch {
     const kept: Kept = {
       label,
       asked: fp.asked,
-      parts: fp.parts,
+      parts: { ...fp.parts, tag: tagNow() },
       responses: [
         ...(earlier?.responses ?? []),
         { status: res.status, type: res.headers.get("content-type") ?? "application/json", body },
       ],
     };
     writeFileSync(file, `${JSON.stringify(kept, null, 2)}\n`);
+    byConversation = null;
     return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
   };
 }

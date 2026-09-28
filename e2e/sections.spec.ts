@@ -152,3 +152,200 @@ test("a code copies in every view — board, cards and list", async ({ signedIn:
     for (const id of ids) await shop.admin.from("modules").delete().eq("id", id);
   }
 });
+
+// The owner's own flow, as they said it: one input; the order's label
+// first, which opens that order's lines alone; then each item in it;
+// and once every line is done, back to the label for the next order,
+// with no tap. Built straight from a design, no model in the way.
+test("scan the order's label, then its items, and it moves on to the next order by itself", async ({
+  signedIn: page,
+  shop,
+}) => {
+  const headers = { Authorization: `Bearer ${(shop.session as { access_token: string }).access_token}` };
+  const name = "e2e-pack-flow";
+  const made = await page.request.post("/api/apply", {
+    headers,
+    data: {
+      projectId: shop.projectId,
+      plans: [
+        {
+          changeType: "NEW_MODULE",
+          targetModuleId: null,
+          newModule: { name, nav_label: "Pack flow", icon: "table" },
+          newSchema: {
+            columns: [
+              { field: "order_number", label: "Order", type: "text" },
+              { field: "sku", label: "SKU", type: "text" },
+              { field: "qty", label: "Qty", type: "number" },
+              { field: "scanned", label: "Scanned", type: "number" },
+            ],
+          },
+          features: {
+            scanMode: {
+              lookupField: "sku",
+              first: { field: "order_number", label: "Scan the order label" },
+              done: { op: ">=", args: [{ field: "scanned" }, { field: "qty" }] },
+              action: {
+                label: "Scan item",
+                set: {
+                  scanned: {
+                    op: "if",
+                    args: [
+                      { op: "is_empty", args: [{ field: "scanned" }] },
+                      { const: 1 },
+                      { op: "+", args: [{ field: "scanned" }, { const: 1 }] },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+          explanation: "Order lines, packed by scanning the label and then the items.",
+        },
+      ],
+    },
+  });
+  expect(made.ok(), "the section was built").toBe(true);
+  const { data: row } = await shop.admin
+    .from("modules")
+    .select("id")
+    .eq("project_id", shop.projectId)
+    .eq("name", name)
+    .single();
+  const id = row!.id as string;
+  try {
+    for (const data of [
+      { order_number: "#2001", sku: "CF-0001-1", qty: 1 },
+      { order_number: "#2001", sku: "CF-0002-1", qty: 2 },
+      { order_number: "#2002", sku: "CF-0003-1", qty: 1 },
+    ]) {
+      const put = await page.request.post("/api/records", {
+        headers,
+        data: { action: "create", projectId: shop.projectId, moduleId: id, data },
+      });
+      expect(put.ok(), "a line went in").toBe(true);
+    }
+    await page.goto(`/app/${shop.projectId}?section=${id}`);
+    const bar = page.getByPlaceholder("Scan the label…");
+    await expect(bar).toBeVisible();
+    const scan = async (code: string) => {
+      const input = page.getByPlaceholder(/Scan (the label|an item)…/);
+      await input.fill(code);
+      await input.press("Enter");
+    };
+
+    // The label opens that order alone.
+    await scan("2001");
+    await expect(page.getByText("Opened 2001: 2 lines. Scan the items.")).toBeVisible();
+    await expect(page.getByText("2001 · 0 of 2 done")).toBeVisible();
+    await expect(page.getByRole("cell", { name: "CF-0003-1" })).toHaveCount(0);
+
+    // Its items, each unit a scan; the count is told as it goes.
+    await scan("CF-0001-1");
+    await expect(page.getByText("2001 · 1 of 2 done")).toBeVisible();
+    await scan("cf-0002-1");
+    await scan("CF-0002-1");
+
+    // Every line done: said, and straight back to the label, no tap.
+    await expect(page.getByText("2001 is done: every line checks out. Scan the next.")).toBeVisible();
+    await expect(page.getByPlaceholder("Scan the label…")).toBeVisible();
+    await expect(page.getByPlaceholder("Scan the label…")).toBeFocused();
+    await scan("#2002");
+    await expect(page.getByText("#2002 · 0 of 1 done")).toBeVisible();
+
+    const { data: kept } = await shop.admin.from("records").select("data").eq("module_id", id);
+    const scannedOf = (sku: string) => kept!.find((r) => r.data.sku === sku)?.data.scanned;
+    expect([scannedOf("CF-0001-1"), scannedOf("CF-0002-1"), scannedOf("CF-0003-1") ?? null]).toEqual([1, 2, null]);
+  } finally {
+    await shop.admin.from("modules").delete().eq("id", id);
+  }
+});
+
+// A screen written for the section runs sealed off: it draws the rows it
+// is given, writes through window.wl like any button, finds rows by a
+// code across the whole section, and reaches neither the network nor the
+// app's own page. Built straight from a design, no model in the way.
+test("a written screen draws the rows, writes through wl, and reaches nothing else", async ({
+  signedIn: page,
+  shop,
+}) => {
+  const headers = { Authorization: `Bearer ${(shop.session as { access_token: string }).access_token}` };
+  const name = "e2e-station";
+  const html = `<div id=list></div><p id=net>…</p><p id=app>…</p><button id=finder>Find 2001</button><p id=found></p>
+<script>
+wl.onRows((rows) => {
+  list.innerHTML = "";
+  for (const r of rows) {
+    const b = document.createElement("button");
+    b.textContent = (r.data.packed ? "Packed " : "Pack ") + r.data.sku;
+    b.onclick = () => wl.set(r.id, { packed: true });
+    list.append(b);
+  }
+});
+window["fe" + "tch"]("/api/records").then(() => (net.textContent = "network reached"), () => (net.textContent = "network blocked"));
+try { parent.document.title; app.textContent = "app reached"; } catch { app.textContent = "app sealed"; }
+finder.onclick = async () => { const rows = await wl.find("order_number", "2001"); found.textContent = rows.length + " found"; };
+</script>`;
+  const made = await page.request.post("/api/apply", {
+    headers,
+    data: {
+      projectId: shop.projectId,
+      plans: [
+        {
+          changeType: "NEW_MODULE",
+          targetModuleId: null,
+          newModule: { name, nav_label: "Station", icon: "table" },
+          newSchema: {
+            columns: [
+              { field: "order_number", label: "Order", type: "text" },
+              { field: "sku", label: "SKU", type: "text" },
+              { field: "packed", label: "Packed", type: "boolean" },
+            ],
+          },
+          features: { view: { type: "custom", title: "Station", html } },
+          explanation: "A packing screen written for the section.",
+        },
+      ],
+    },
+  });
+  expect(made.ok(), "the section was built").toBe(true);
+  const { data: row } = await shop.admin
+    .from("modules")
+    .select("id")
+    .eq("project_id", shop.projectId)
+    .eq("name", name)
+    .single();
+  const id = row!.id as string;
+  try {
+    for (const data of [
+      { order_number: "#2001", sku: "CF-0001-1" },
+      { order_number: "#2001", sku: "CF-0002-1" },
+      { order_number: "#2002", sku: "CF-0003-1" },
+    ]) {
+      const put = await page.request.post("/api/records", {
+        headers,
+        data: { action: "create", projectId: shop.projectId, moduleId: id, data },
+      });
+      expect(put.ok(), "a line went in").toBe(true);
+    }
+    await page.goto(`/app/${shop.projectId}?section=${id}`);
+    const screen = page.frameLocator('iframe[title="Station"]');
+    await expect(screen.getByRole("button", { name: "Pack CF-0001-1" })).toBeVisible();
+
+    // Sealed: no network, no reach into the app's page.
+    await expect(screen.getByText("network blocked")).toBeVisible();
+    await expect(screen.getByText("app sealed")).toBeVisible();
+
+    // It writes the way a button does, and the new row comes back to it.
+    await screen.getByRole("button", { name: "Pack CF-0001-1" }).click();
+    await expect(screen.getByRole("button", { name: "Packed CF-0001-1" })).toBeVisible();
+    const { data: kept } = await shop.admin.from("records").select("data").eq("module_id", id);
+    expect(kept!.find((r) => r.data.sku === "CF-0001-1")?.data.packed).toBe(true);
+
+    // And finds by a code across the whole section, "#" or not.
+    await screen.getByRole("button", { name: "Find 2001" }).click();
+    await expect(screen.getByText("2 found")).toBeVisible();
+  } finally {
+    await shop.admin.from("modules").delete().eq("id", id);
+  }
+});

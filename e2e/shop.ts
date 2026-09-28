@@ -105,7 +105,17 @@ export const test = base.extend<{ signedIn: Page }, { shop: Shop }>({
   signedIn: async ({ page, shop }, use) => {
     // The session the app would have stored after a sign-in, where supabase-js looks for it.
     const key = `sb-${new URL(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL).hostname.split(".")[0]}-auth-token`;
-    await page.addInitScript(([k, v]) => localStorage.setItem(k, v), [key, JSON.stringify(shop.session)] as const);
+    // Every frame runs it, a sealed one too (a written screen has no storage): only where there is some.
+    await page.addInitScript(
+      ([k, v]) => {
+        try {
+          localStorage.setItem(k, v);
+        } catch {
+          /* a sandboxed frame */
+        }
+      },
+      [key, JSON.stringify(shop.session)] as const
+    );
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(e.message));
     await use(page);

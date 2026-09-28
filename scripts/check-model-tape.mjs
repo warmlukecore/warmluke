@@ -1,10 +1,11 @@
-// Model calls are recorded once and played back, and a recording answers
-// only the request it was made for.
+// Model calls are recorded once and played back. A recording answers its
+// own conversation, whatever the prompt around it has become since.
 //
 // Everything here runs in a temporary tape folder with the network stood
 // in for: off unless asked, never in production, the same request from
-// two runs is one recording, a different question or a different prompt
-// is not, a recorded retry plays back in order, a miss says what changed,
+// two runs is one recording, a different question is not, a changed
+// prompt or cap plays the conversation's recording, a recorded retry
+// plays back in order, a miss says what is missing,
 // a stop stays a stop, and a whole model call through callModel comes
 // back from the tape with no key and no network at all.
 //
@@ -101,8 +102,16 @@ try {
   );
   const e = fingerprint("anthropic", "https://api.anthropic.com/v1/messages", request("is #1001 paid?"));
   check(
-    "nor is the same question under a different prompt",
+    "the same question under a different prompt is its own recording, of the same conversation",
     d.key !== e.key && d.parts.conversation === e.parts.conversation
+  );
+  check(
+    "and the output cap is a setting, not the question: moving it changes no key",
+    fingerprint(
+      "anthropic",
+      "https://api.anthropic.com/v1/messages",
+      request("is #1001 paid?", "the contract", { max_tokens: 9000 })
+    ).key === e.key
   );
   const g1 = fingerprint("gemini", "https://x/v1beta/models/gemini-3.6-flash:streamGenerateContent", '{"contents":[]}');
   const g2 = fingerprint("gemini", "https://x/v1beta/models/gemini-9:streamGenerateContent", '{"contents":[]}');
@@ -182,19 +191,17 @@ try {
     p2.headers.get("content-type") === "text/event-stream"
   );
 
-  console.log("\na miss says what changed");
+  console.log("\na changed prompt plays the conversation's recording; a new conversation misses");
   logged.length = 0;
-  const miss = await ask("tag #1003 VIP", "a changed contract");
-  check("is refused, not retried: a 400, not a busy provider", miss.status === 400);
-  check(
-    "and says the prompt changed, and how to fix it",
-    logged.some((l) => /different system prompt/.test(l) && /MODEL_TAPE=record/.test(l))
-  );
+  const edited = await ask("tag #1003 VIP", "a changed contract");
+  check("a prompt edit needs no new recording: the conversation's plays", edited.status === 200 && calls === 0);
+  check("and says so once", logged.filter((l) => /recorded under another prompt/.test(l)).length === 1);
   logged.length = 0;
-  await ask("something never asked");
+  const miss = await ask("something never asked");
+  check("a conversation never recorded is refused, not retried: a 400", miss.status === 400);
   check(
-    "or that nothing like it was recorded",
-    logged.some((l) => /nothing like this conversation was recorded/.test(l))
+    "and says nothing like it was recorded, and how to fix it",
+    logged.some((l) => /nothing like this conversation was recorded/.test(l) && /MODEL_TAPE=record/.test(l))
   );
   const halt = new AbortController();
   halt.abort();
@@ -264,5 +271,9 @@ try {
   rmSync(tapes, { recursive: true, force: true });
 }
 
-console.log(fails.length === 0 ? "\na recording answers only the request it was made for" : `\n${fails.length} FAILED`);
+console.log(
+  fails.length === 0
+    ? "\na recording answers its conversation, whatever the prompt has become"
+    : `\n${fails.length} FAILED`
+);
 process.exit(fails.length === 0 ? 0 : 1);

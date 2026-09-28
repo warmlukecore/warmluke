@@ -61,6 +61,9 @@ export async function metered<T>(fn: () => Promise<T>): Promise<[T, () => TurnUs
   return [result, () => summarise(meter)];
 }
 
+/** The job the call being made now is for, inside a metered turn. */
+export const jobNow = (): Job | null => meters.getStore()?.job ?? null;
+
 /** Runs part of a turn as another job: its calls are counted apart. */
 export function asJob<T>(job: Job, fn: () => Promise<T>): Promise<T> {
   const at = meters.getStore();

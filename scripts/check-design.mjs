@@ -549,6 +549,77 @@ console.log("\na section over the store keeps the store's shape, and the merchan
     cols.slice(0, ordersSchema.columns.length).join() === ordersSchema.columns.map((c) => c.field).join() &&
       cols.at(-1) === "packed"
   );
+  // The owner's own flow: the order's label first, then the items in it,
+  // in one input, and on to the next order once every line is done.
+  const lineScan = (scan) =>
+    parse([
+      {
+        changeType: "NEW_MODULE",
+        targetModuleId: null,
+        newModule: { name: "pack-lines", nav_label: "Pack lines", icon: "table" },
+        newSchema: {
+          columns: [
+            { field: "order_number", label: "Order", type: "text" },
+            { field: "sku", label: "SKU", type: "text" },
+            { field: "maker_code", label: "Maker code", type: "text" },
+            { field: "qty", label: "Qty", type: "number" },
+            { field: "scanned", label: "Scanned", type: "number" },
+          ],
+        },
+        features: {
+          scanMode: {
+            lookupField: "sku",
+            action: { label: "Scan item", set: { scanned: { op: "+", args: [{ field: "scanned" }, { const: 1 }] } } },
+            ...scan,
+          },
+        },
+        newRecords: null,
+        explanation: "Order lines to pack by scanning.",
+      },
+    ]);
+  const flow = lineScan({
+    first: { field: "order_number", label: "Scan the order label" },
+    alsoMatch: ["maker_code"],
+    done: { op: ">=", args: [{ field: "scanned" }, { field: "qty" }] },
+  });
+  check("a scan that opens the order first, then its items, is built as asked", flow.ok);
+  if (!flow.ok) console.log("     →", flow.errors);
+  const nowhere = lineScan({ first: { field: "box" } });
+  check(
+    "a first scan on a field the section does not have is refused, and says what it needs",
+    !nowhere.ok && nowhere.errors.some((e) => /scanMode.first/.test(e))
+  );
+  const doneAlone = lineScan({ done: { op: ">=", args: [{ field: "scanned" }, { field: "qty" }] } });
+  check(
+    "a done with no group to finish is refused",
+    !doneAlone.ok && doneAlone.errors.some((e) => /needs scanMode.first/.test(e))
+  );
+  // A screen of their own when no view draws what they described.
+  const written = (html) =>
+    parse([
+      {
+        changeType: "NEW_MODULE",
+        targetModuleId: null,
+        newModule: { name: "station", nav_label: "Packing station", icon: "table" },
+        newSchema: { columns: [{ field: "sku", label: "SKU", type: "text" }] },
+        features: { view: { type: "custom", title: "Packing station", html } },
+        newRecords: null,
+        explanation: "A screen for the packers.",
+      },
+    ]);
+  check(
+    "a screen written for their flow is taken",
+    written("<div id=app></div><script>wl.onRows(() => {})</script>").ok
+  );
+  const leaks = written(`<img src="https://x.test/a.png">`);
+  check("but not one that reaches off the page", !leaks.ok && leaks.errors.some((e) => /web address/.test(e)));
+
+  const strayMatch = lineScan({ alsoMatch: ["ean"] });
+  check(
+    "another code to match must be a field of the section",
+    !strayMatch.ok && strayMatch.errors.some((e) => /alsoMatch "ean"/.test(e))
+  );
+
   const setsTheirs = parse([
     packing({ features: { actions: [{ label: "Mark paid", set: { status: { const: "paid" } } }] } }),
   ]);
