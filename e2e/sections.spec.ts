@@ -92,3 +92,63 @@ test("a section in the sidebar is a link: its own address, a new tab, a refresh,
     await shop.admin.from("modules").delete().eq("id", id);
   }
 });
+
+// A value that reads as a code copies wherever it is drawn: the board,
+// the cards and the list draw their fields through the same cell as
+// the table, so one rule reaches every view. Copying never opens the row.
+test("a code copies in every view — board, cards and list", async ({ signedIn: page, shop }) => {
+  const headers = { Authorization: `Bearer ${(shop.session as { access_token: string }).access_token}` };
+  const columns = [
+    { field: "sku", label: "SKU", type: "text" },
+    { field: "stage", label: "Stage", type: "dropdown", options: ["Packed", "Sent"] },
+    { field: "note", label: "Note", type: "text" },
+  ];
+  const views = {
+    board: { type: "board", groupBy: "stage", cardTitle: "note", cardFields: ["sku"] },
+    cards: { type: "cards", titleField: "note", fields: ["sku"] },
+    list: { type: "list", titleField: "note", secondaryField: "sku" },
+  };
+  const made = await page.request.post("/api/apply", {
+    headers,
+    data: {
+      projectId: shop.projectId,
+      plans: Object.entries(views).map(([kind, view]) => ({
+        changeType: "NEW_MODULE",
+        targetModuleId: null,
+        newModule: { name: `e2e-code-${kind}`, nav_label: `Code ${kind}`, icon: "table" },
+        newSchema: { columns, view },
+        explanation: `Somewhere to see a code on a ${kind}.`,
+      })),
+    },
+  });
+  expect(made.ok(), "the three sections were built").toBe(true);
+  const { data: rows } = await shop.admin
+    .from("modules")
+    .select("id, name")
+    .eq("project_id", shop.projectId)
+    .like("name", "e2e-code-%");
+  const ids = (rows ?? []).map((r) => r.id as string);
+  expect(ids).toHaveLength(3);
+  try {
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    for (const { id, name } of rows ?? []) {
+      const put = await page.request.post("/api/records", {
+        headers,
+        data: {
+          action: "create",
+          projectId: shop.projectId,
+          moduleId: id,
+          data: { sku: "CF-0055-1", stage: "Packed", note: "Blue case" },
+        },
+      });
+      expect(put.ok(), `a row went into ${name}`).toBe(true);
+      await page.goto(`/app/${shop.projectId}?section=${id}`);
+      await expect(page.getByText("Blue case")).toBeVisible();
+      await page.getByRole("button", { name: "Copy CF-0055-1" }).click();
+      await expect(page.getByRole("button", { name: "Copied" })).toBeVisible();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+    }
+  } finally {
+    for (const id of ids) await shop.admin.from("modules").delete().eq("id", id);
+  }
+});

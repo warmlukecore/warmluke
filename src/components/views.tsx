@@ -69,6 +69,12 @@ export function CodeValue({ text }: { text: string }) {
   );
 }
 
+/** The currency a row's amount is in, when the column names the field that says. */
+function amountCurrency(col: SchemaColumn, rec: RecordRow): string | null {
+  const c = col.currencyField ? rec.data?.[col.currencyField] : null;
+  return typeof c === "string" ? c : null;
+}
+
 export function Cell({ col, value, currency }: { col: SchemaColumn; value: unknown; currency?: string | null }) {
   const fmt = useFormat();
   const linkLabel = useLinkLabel();
@@ -379,15 +385,7 @@ export function TableView({
               >
                 {columns.map((col) => (
                   <td key={col.field} className="px-3 py-2 align-middle whitespace-nowrap">
-                    <Cell
-                      col={col}
-                      value={rec.data?.[col.field]}
-                      currency={
-                        col.currencyField && typeof rec.data?.[col.currencyField] === "string"
-                          ? (rec.data[col.currencyField] as string)
-                          : null
-                      }
-                    />
+                    <Cell col={col} value={rec.data?.[col.field]} currency={amountCurrency(col, rec)} />
                   </td>
                 ))}
                 {hasActions && (
@@ -467,7 +465,9 @@ export function BoardView({
                     return (
                       <div key={col.field} className="mt-1 flex gap-1.5 text-[11px] leading-snug">
                         <span className="shrink-0 text-fg-faint">{col.label}</span>
-                        <span className="min-w-0 truncate text-fg-muted">{val}</span>
+                        <span className="min-w-0 truncate text-fg-muted">
+                          <Cell col={col} value={rec.data?.[col.field]} currency={amountCurrency(col, rec)} />
+                        </span>
                       </div>
                     );
                   })}
@@ -645,7 +645,9 @@ export function CardsView({
                 return (
                   <div key={col.field} className="flex justify-between gap-2 text-[11px]">
                     <dt className="text-fg-faint">{col.label}</dt>
-                    <dd className="truncate font-medium text-fg">{val}</dd>
+                    <dd className="truncate font-medium text-fg">
+                      <Cell col={col} value={rec.data?.[col.field]} currency={amountCurrency(col, rec)} />
+                    </dd>
                   </div>
                 );
               })}
@@ -661,6 +663,15 @@ export function CardsView({
 }
 
 // ── List ─────────────────────────────────────────────────────
+
+/** A named field of a row, drawn as the table would draw it; a field the section no longer has is its raw text. */
+function FieldValue({ columns, rec, field }: { columns: SchemaColumn[]; rec: RecordRow; field: string }) {
+  const col = columns.find((c) => c.field === field);
+  const fmt = useFormat();
+  const linkLabel = useLinkLabel();
+  if (!col) return <>{fieldText(fmt, columns, rec, field, linkLabel)}</>;
+  return <Cell col={col} value={rec.data?.[field]} currency={amountCurrency(col, rec)} />;
+}
 
 export function ListView({
   columns,
@@ -691,13 +702,13 @@ export function ListView({
             </div>
             {view.secondaryField && (
               <div className="truncate text-[11px] text-fg-muted">
-                {fieldText(fmt, columns, rec, view.secondaryField, linkLabel)}
+                <FieldValue columns={columns} rec={rec} field={view.secondaryField} />
               </div>
             )}
           </div>
           {view.metaField && (
             <div className="shrink-0 text-[11px] text-fg-muted tabular-nums">
-              {fieldText(fmt, columns, rec, view.metaField, linkLabel)}
+              <FieldValue columns={columns} rec={rec} field={view.metaField} />
             </div>
           )}
           {view.badgeField && rec.data?.[view.badgeField] != null && (
