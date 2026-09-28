@@ -325,6 +325,8 @@ export default function GenericRenderer({
     busyRecordId,
   };
 
+  const custom = view.type === "custom";
+
   function renderView() {
     switch (view.type) {
       case "board":
@@ -414,7 +416,8 @@ export default function GenericRenderer({
         </div>
       )}
 
-      <div className="relative overflow-hidden rounded-card bg-surface shadow-card">
+      {/* A written screen is the section: it carries its own search and steps, so the list's are not drawn around it. */}
+      <div className={custom ? "relative" : "relative overflow-hidden rounded-card bg-surface shadow-card"}>
         {preview && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
             <span className="font-display -rotate-12 text-6xl font-black tracking-widest text-fg/5 select-none">
@@ -423,40 +426,42 @@ export default function GenericRenderer({
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-2 border-b border-line px-3.5 py-2.5">
-          {features?.search?.enabled && (
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={features.search.placeholder ?? "Search…"}
-              className="w-full min-w-0 rounded-lg border border-line px-3 py-1.5 text-sm outline-none transition-colors focus:border-focus focus:ring-2 focus:ring-focus/15 sm:w-52"
-            />
-          )}
-          {(features?.filters ?? []).map((fl) => (
-            <select
-              key={fl.field}
-              value={filterValues[fl.field] ?? ""}
-              onChange={(e) => setFilterValues((prev) => ({ ...prev, [fl.field]: e.target.value }))}
-              className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm text-fg-muted outline-none transition-colors focus:border-focus"
-            >
-              <option value="">{fl.label}: All</option>
-              {filterOptions(fl.options ?? [], rowsWithComputed, fl.field).map((o) => (
-                <option key={o} value={o}>
-                  {o}
-                </option>
-              ))}
-            </select>
-          ))}
-          <span className="ml-auto hidden rounded-lg bg-tone-neutral px-2 py-0.5 text-xs text-fg-muted sm:inline">
-            {VIEW_LABELS[view.type]}
-          </span>
-          {editable && (
-            <button onClick={() => setAdding(true)} className={button("primary", "sm")}>
-              <Plus aria-hidden size={14} strokeWidth={2} />
-              Add
-            </button>
-          )}
-        </div>
+        {!custom && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-line px-3.5 py-2.5">
+            {features?.search?.enabled && (
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={features.search.placeholder ?? "Search…"}
+                className="w-full min-w-0 rounded-lg border border-line px-3 py-1.5 text-sm outline-none transition-colors focus:border-focus focus:ring-2 focus:ring-focus/15 sm:w-52"
+              />
+            )}
+            {(features?.filters ?? []).map((fl) => (
+              <select
+                key={fl.field}
+                value={filterValues[fl.field] ?? ""}
+                onChange={(e) => setFilterValues((prev) => ({ ...prev, [fl.field]: e.target.value }))}
+                className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm text-fg-muted outline-none transition-colors focus:border-focus"
+              >
+                <option value="">{fl.label}: All</option>
+                {filterOptions(fl.options ?? [], rowsWithComputed, fl.field).map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
+              </select>
+            ))}
+            <span className="ml-auto hidden rounded-lg bg-tone-neutral px-2 py-0.5 text-xs text-fg-muted sm:inline">
+              {VIEW_LABELS[view.type]}
+            </span>
+            {editable && (
+              <button onClick={() => setAdding(true)} className={button("primary", "sm")}>
+                <Plus aria-hidden size={14} strokeWidth={2} />
+                Add
+              </button>
+            )}
+          </div>
+        )}
 
         {writeError && (
           <div className="border-b border-tone-critical/70 px-4 py-2">
@@ -464,7 +469,7 @@ export default function GenericRenderer({
           </div>
         )}
 
-        {records.length === 0 ? (
+        {records.length === 0 && !custom ? (
           <div className="px-4 py-12 text-center">
             <div className="text-sm text-fg-muted">Nothing here yet.</div>
             {editable && (
@@ -480,30 +485,32 @@ export default function GenericRenderer({
           renderView()
         )}
 
-        <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-2 text-[11px] text-fg-faint">
-          <span>
-            {filteredRecords.length} of {records.length} record{records.length === 1 ? "" : "s"}
-            {total > records.length && ` shown · ${total} in total`}
-            {preview && " · not saved yet"}
-          </span>
-          {onLoadMore && (
-            <button
-              onClick={async () => {
-                setLoadingMore(true);
-                try {
-                  await onLoadMore();
-                } finally {
-                  setLoadingMore(false);
-                }
-              }}
-              disabled={loadingMore}
-              className="ml-auto rounded-md border border-line px-2 py-1 font-medium text-fg-muted transition-colors hover:bg-surface-hover disabled:opacity-50"
-            >
-              {loadingMore ? "Loading…" : "Load more"}
-            </button>
-          )}
-        </div>
-        {total > records.length && (
+        {!custom && (
+          <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-2 text-[11px] text-fg-faint">
+            <span>
+              {filteredRecords.length} of {records.length} record{records.length === 1 ? "" : "s"}
+              {total > records.length && ` shown · ${total} in total`}
+              {preview && " · not saved yet"}
+            </span>
+            {onLoadMore && (
+              <button
+                onClick={async () => {
+                  setLoadingMore(true);
+                  try {
+                    await onLoadMore();
+                  } finally {
+                    setLoadingMore(false);
+                  }
+                }}
+                disabled={loadingMore}
+                className="ml-auto rounded-md border border-line px-2 py-1 font-medium text-fg-muted transition-colors hover:bg-surface-hover disabled:opacity-50"
+              >
+                {loadingMore ? "Loading…" : "Load more"}
+              </button>
+            )}
+          </div>
+        )}
+        {total > records.length && !custom && (
           <div className="border-t border-tone-attention/70 bg-tone-attention/25 px-4 py-1.5 text-[10px] text-tone-attention-fg">
             {onStats
               ? `The totals above cover all ${fmt.number(total)} rows; the list below is the ${records.length} loaded so far.`

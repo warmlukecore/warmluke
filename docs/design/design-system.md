@@ -76,6 +76,22 @@ Why size and width are separate: two Tailwind classes for the same property on o
 element are resolved by stylesheet order, not by the order written. `field w-32` or
 `button("plain") text-red…` therefore renders either way. Ask for the variant instead.
 
+## Screens Luke writes
+
+A custom view runs in a sealed frame, so it cannot reach the app's stylesheet. It is
+handed the look instead (`CUSTOM_VIEW_KIT` and `CUSTOM_VIEW_TOKENS` in
+`src/lib/custom-view.ts`): the app's two faces, read from its own stylesheet and passed in
+inline (the frame's policy allows fonts from data only); its colours, corners and depth, in
+light or dark; and a small kit drawn as the app draws them. The kit is `wl-page`,
+`wl-stack`, `wl-inline`, `wl-grid`, `wl-card` (`now`, `bad`), `wl-title`, `wl-big`,
+`wl-count`, `wl-label`, `wl-muted`, `wl-scan`, `wl-banner` and `wl-badge` (`ok`, `bad`,
+`warn`, `info`), `wl-list` of `wl-row` (`done`, `bad`), and `wl-button` (`primary`,
+`critical`, `big`). Plain headings, inputs, buttons and tables are styled too. Luke is told
+to build from the kit and write CSS for layout alone. A custom screen is the section: it
+fills the page below Luke's counters, without the list's search, filters or paging, and
+offers full screen for a device at a desk. `check-custom-view` holds that every piece the
+prompt names is drawn, and that the kit sets no colour of its own.
+
 ## Meaning of a badge
 
 [`src/lib/tone.ts`](../../src/lib/tone.ts) decides what a status says and how it is

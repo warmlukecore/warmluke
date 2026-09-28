@@ -9,7 +9,14 @@
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-custom-view.mjs
 
-import { CUSTOM_VIEW_CSP, CUSTOM_VIEW_MAX, customViewPage, customViewProblem } from "../src/lib/custom-view.ts";
+import {
+  CUSTOM_VIEW_CSP,
+  CUSTOM_VIEW_KIT,
+  CUSTOM_VIEW_MAX,
+  CUSTOM_VIEW_TOKENS,
+  customViewPage,
+  customViewProblem,
+} from "../src/lib/custom-view.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -58,6 +65,55 @@ check(
 check("window.wl comes before the screen's own code", page.indexOf("window.wl") < page.indexOf("wl.onRows"));
 check("a column label cannot close the script it is carried in", !page.includes("</script><script>x()"));
 check("nor a colour break out of its rule", !/--fg:red;}/.test(page));
+
+// The app's look comes with the page, so a screen builds from it rather
+// than inventing one: its faces, its values, and the kit's pieces.
+console.log("\nthe app's look, on the page");
+const face = '@font-face{font-family:"WL Sans";src:url(data:font/woff2;base64,AAAA) format("woff2")}';
+const styled = customViewPage(screen, [], { "radius-card": "0.75rem" }, face);
+check(
+  "the kit is in every page, before the screen's own code",
+  styled.indexOf(CUSTOM_VIEW_KIT) > 0 && styled.indexOf(CUSTOM_VIEW_KIT) < styled.indexOf("wl.onRows")
+);
+check(
+  "with the app's corners and depth among its values",
+  "radius-card" in CUSTOM_VIEW_TOKENS && "shadow-card" in CUSTOM_VIEW_TOKENS && styled.includes("--radius-card:0.75rem")
+);
+check(
+  "the faces it is handed come first, inline, as the policy allows",
+  styled.indexOf(face) > 0 &&
+    styled.indexOf(face) < styled.indexOf(CUSTOM_VIEW_KIT) &&
+    /font-src data:/.test(CUSTOM_VIEW_CSP)
+);
+check(
+  "and a face cannot close the style it is carried in",
+  !customViewPage(screen, [], {}, "</style><script>x()</script>").includes("</style><script>x()")
+);
+check(
+  "every piece the prompt names is drawn by the kit",
+  [
+    "wl-page",
+    "wl-stack",
+    "wl-inline",
+    "wl-grid",
+    "wl-card",
+    "wl-title",
+    "wl-big",
+    "wl-count",
+    "wl-label",
+    "wl-muted",
+    "wl-scan",
+    "wl-banner",
+    "wl-list",
+    "wl-row",
+    "wl-button",
+    "wl-badge",
+  ].every((c) => CUSTOM_VIEW_KIT.includes(`.${c}`))
+);
+check(
+  "and it sets no colour of its own but white on the solid red",
+  !/#[0-9a-f]{3,6}\b/i.test(CUSTOM_VIEW_KIT.replace("color:#fff", ""))
+);
 
 console.log(
   fails.length === 0 ? "\na written screen runs sealed, and only with what it is for" : `\n${fails.length} FAILED`

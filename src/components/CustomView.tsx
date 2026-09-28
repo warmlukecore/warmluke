@@ -11,19 +11,71 @@
 // preview's screen can read and never write.
 // ─────────────────────────────────────────────────────────────
 
+import { Maximize2, Minimize2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { button } from "@/components/ui/controls";
 import { CUSTOM_VIEW_TOKENS, customViewPage, customViewProblem } from "@/lib/custom-view";
 import { withComputed } from "@/lib/expr";
 import type { RecordRow, SchemaColumn } from "@/lib/types";
 
 type Call = { wl: 1; id: number; call: "find" | "set" | "add"; args: unknown[] };
 
-/** The app's colours now, light or dark, by the names the screen was told. */
+/** The app's values now, light or dark, by the names the screen was told. */
 function colours(): Record<string, string> {
   const css = getComputedStyle(document.documentElement);
   return Object.fromEntries(
     Object.entries(CUSTOM_VIEW_TOKENS).map(([name, token]) => [name, css.getPropertyValue(token).trim()])
   );
+}
+
+/**
+ * The app's two faces, as @font-face rules with their files inline: the
+ * frame may load nothing, but a font it is handed is its own. Read once a
+ * session from the app's own stylesheet; "" when they cannot be read, and
+ * the screen falls back to the system's face.
+ */
+let facesOnce: Promise<string> | null = null;
+function appFaces(): Promise<string> {
+  facesOnce ??= (async () => {
+    const css = getComputedStyle(document.documentElement);
+    const rules = [...document.styleSheets]
+      .flatMap((sheet) => {
+        try {
+          return [...sheet.cssRules];
+        } catch {
+          return [];
+        }
+      })
+      .filter((r): r is CSSFontFaceRule => r instanceof CSSFontFaceRule);
+    const out: string[] = [];
+    for (const [variable, name] of [
+      ["--font-manrope", "WL Sans"],
+      ["--font-bricolage", "WL Display"],
+    ]) {
+      const family = css
+        .getPropertyValue(variable)
+        .split(",")[0]
+        .trim()
+        .replace(/^['"]|['"]$/g, "");
+      const mine = rules.filter((r) => r.style.getPropertyValue("font-family").replace(/['"]/g, "").trim() === family);
+      // The Latin file: the one whose range starts at U+0000, or the only one there is.
+      const rule = mine.find((r) => /U\+0+-/i.test(r.style.getPropertyValue("unicode-range"))) ?? mine[0];
+      const url = rule && /url\(["']?([^"')]+)/.exec(rule.style.getPropertyValue("src"))?.[1];
+      if (!url) continue;
+      const blob = await (await fetch(url)).blob();
+      const data = await new Promise<string>((ok, no) => {
+        const read = new FileReader();
+        read.onload = () => ok(String(read.result));
+        read.onerror = no;
+        read.readAsDataURL(blob);
+      });
+      out.push(
+        `@font-face{font-family:"${name}";src:url(${data}) format("woff2");font-weight:100 900;font-display:block}`
+      );
+    }
+    return out.join("");
+  })().catch(() => "");
+  return facesOnce;
 }
 
 const asRows = (rows: RecordRow[], columns: SchemaColumn[]) =>
@@ -45,13 +97,47 @@ export default function CustomView({
   onFind?: (field: string, code: string) => Promise<RecordRow[]>;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
+  const box = useRef<HTMLDivElement>(null);
   const [page, setPage] = useState<string | null>(null);
+  const [height, setHeight] = useState<number | null>(null);
+  const [full, setFull] = useState(false);
   const problem = customViewProblem(view.html);
 
-  // Built in the browser: the colours are the page's as it is now.
+  // Built in the browser: the values are the page's as it is now, and the
+  // faces are waited for (a moment, once) so the screen never reloads to
+  // take them: a reload would lose where its user was.
   useEffect(() => {
-    if (!problem) setPage(customViewPage(view.html, columns, colours()));
+    if (problem) return;
+    let alive = true;
+    const late = new Promise<string>((done) => setTimeout(() => done(""), 2000));
+    void Promise.race([appFaces(), late]).then((faces) => {
+      if (alive) setPage(customViewPage(view.html, columns, colours(), faces));
+    });
+    return () => {
+      alive = false;
+    };
   }, [view.html, columns, problem]);
+
+  // The screen is the section: it takes the page below it, and the whole
+  // screen when asked (a tablet at a packing desk).
+  useEffect(() => {
+    const fit = () => {
+      const top = Math.max(0, box.current?.getBoundingClientRect().top ?? 0);
+      setHeight(Math.max(480, Math.round(window.innerHeight - top - 56)));
+    };
+    const onFull = () => {
+      setFull(document.fullscreenElement === box.current);
+      // Back to the screen, where a scanner types.
+      frame.current?.focus();
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    document.addEventListener("fullscreenchange", onFull);
+    return () => {
+      window.removeEventListener("resize", fit);
+      document.removeEventListener("fullscreenchange", onFull);
+    };
+  }, []);
 
   const rows = useMemo(() => asRows(records, columns), [records, columns]);
   const send = (message: unknown) => frame.current?.contentWindow?.postMessage(message, "*");
@@ -106,23 +192,36 @@ export default function CustomView({
 
   if (problem) {
     return (
-      <div className="rounded-xl border border-line bg-surface p-4 text-[13px] text-fg-muted">
+      <div className="rounded-card bg-surface p-4 text-[13px] text-fg-muted shadow-card">
         This screen was not shown: {problem}
       </div>
     );
   }
   return (
-    <iframe
-      ref={frame}
-      title={view.title}
-      sandbox="allow-scripts"
-      srcDoc={page ?? undefined}
-      onLoad={() => {
-        send({ wl: 1, type: "rows", rows });
-        // A scanner types into whatever has focus; the screen is where it goes.
-        frame.current?.focus();
-      }}
-      className="h-[70vh] min-h-[420px] w-full rounded-xl border border-line bg-surface"
-    />
+    <div ref={box} className={full ? "flex h-screen flex-col gap-2 bg-canvas p-3" : "flex flex-col gap-2"}>
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => (full ? document.exitFullscreen() : box.current?.requestFullscreen())}
+          className={button("plain", "sm")}
+        >
+          {full ? <Minimize2 aria-hidden size={14} /> : <Maximize2 aria-hidden size={14} />}
+          {full ? "Leave full screen" : "Full screen"}
+        </button>
+      </div>
+      <iframe
+        ref={frame}
+        title={view.title}
+        sandbox="allow-scripts"
+        srcDoc={page ?? undefined}
+        onLoad={() => {
+          send({ wl: 1, type: "rows", rows });
+          // A scanner types into whatever has focus; the screen is where it goes.
+          frame.current?.focus();
+        }}
+        style={full ? undefined : { height: height ?? 480 }}
+        className={`w-full rounded-card bg-surface shadow-card ${full ? "flex-1" : ""}`}
+      />
+    </div>
   );
 }

@@ -79,7 +79,10 @@ writes the part itself instead of refusing or squeezing the owner's flow into a 
   HTML with a script, for a flow none of the views draws — a packing station, big counters,
   the owner's own steps. It runs in a sandboxed frame (scripts only, an origin of its own, a
   content policy with no network) and reaches its section only through `window.wl`
-  (`onRows`, `find`, `set`, `add`), each call answered by the section's own handlers.
+  (`onRows`, `find`, `set`, `add`), each call answered by the section's own handlers. It
+  is handed the app's look, fonts included, and builds from a small kit of its pieces
+  ([design system](../design/design-system.md#screens-luke-writes)); it fills the page, with
+  full screen for a device at a desk.
 - **Logic** (rule action `run_code`, `src/lib/code-run.ts`, `src/lib/code-rules.ts`): a
   function for what expressions cannot say — a slab rate, a rate card to look up, totals
   across sections. It runs in a Vercel Sandbox (Sydney, every outbound connection denied, 45

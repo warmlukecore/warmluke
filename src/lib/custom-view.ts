@@ -50,7 +50,7 @@ export function customViewProblem(html: unknown): string | null {
 export const CUSTOM_VIEW_CSP =
   "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; frame-src 'none'; base-uri 'none'";
 
-/** The page's colours, by the short names a custom screen is told to use. */
+/** The app's values (colours, corners, depth), by the short names a custom screen is told to use. */
 export const CUSTOM_VIEW_TOKENS = {
   fg: "--color-fg",
   "fg-muted": "--color-fg-muted",
@@ -59,13 +59,70 @@ export const CUSTOM_VIEW_TOKENS = {
   "surface-subdued": "--color-surface-subdued",
   "surface-hover": "--color-surface-hover",
   line: "--color-line",
+  "line-strong": "--color-line-strong",
+  focus: "--color-focus",
   primary: "--color-primary",
+  "primary-hover": "--color-primary-hover",
   "on-primary": "--color-on-primary",
+  "critical-solid": "--color-critical",
   success: "--color-tone-success",
   "success-fg": "--color-tone-success-fg",
   critical: "--color-tone-critical",
   "critical-fg": "--color-tone-critical-fg",
+  attention: "--color-tone-attention",
+  "attention-fg": "--color-tone-attention-fg",
+  info: "--color-tone-info",
+  "info-fg": "--color-tone-info-fg",
+  neutral: "--color-tone-neutral",
+  "neutral-fg": "--color-tone-neutral-fg",
+  "radius-card": "--radius-card",
+  "radius-control": "--radius-control",
+  "shadow-card": "--shadow-card",
+  "shadow-control": "--shadow-control",
 } as const;
+
+/**
+ * The app's look, for a screen Luke writes: its two faces, its type, and
+ * the handful of pieces a working screen is made of, drawn as the app
+ * draws them (ui/controls.ts, the stat cards, the table's rows). A screen
+ * builds from these and writes its own CSS for layout alone, so every
+ * screen looks like the rest of the app, in light and dark. Plain
+ * elements (a heading, an input, a button, a table) look right unstyled.
+ */
+export const CUSTOM_VIEW_KIT = `
+:root{--font:"WL Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;--font-display:"WL Display",var(--font)}
+html,body{margin:0;background:var(--surface);color:var(--fg);font:14px/1.5 var(--font);-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+h1,h2,h3,.wl-title,.wl-big,.wl-count{font-family:var(--font-display);margin:0;letter-spacing:-.01em}
+h1{font-size:20px;font-weight:650;line-height:1.3}h2,.wl-title{font-size:16px;font-weight:600;line-height:1.35}h3{font-size:14px;font-weight:600}
+p{margin:0}
+input,select,textarea{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-control);padding:6px 10px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--focus);box-shadow:0 0 0 3px color-mix(in srgb,var(--focus) 15%,transparent)}
+button,.wl-button{font:inherit;font-size:13px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border:0;border-radius:var(--radius-control);background:var(--surface);color:var(--fg);box-shadow:var(--shadow-card);cursor:pointer;white-space:nowrap}
+button:hover,.wl-button:hover{background:var(--surface-hover)}button:active{transform:translateY(1px)}
+button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.wl-button.primary{background:var(--primary);color:var(--on-primary);box-shadow:var(--shadow-control)}.wl-button.primary:hover{background:var(--primary-hover)}
+.wl-button.critical{background:var(--critical-solid);color:#fff;box-shadow:var(--shadow-control)}
+.wl-button.big{height:48px;padding:0 20px;font-size:16px;font-weight:600}
+table{width:100%;border-collapse:collapse}th{text-align:left;font-size:12px;font-weight:500;color:var(--fg-muted);padding:8px 12px;border-bottom:1px solid var(--line)}td{padding:10px 12px;border-bottom:1px solid var(--line)}
+.wl-page{max-width:960px;margin:0 auto;padding:16px;display:grid;gap:12px}
+.wl-stack{display:grid;gap:12px}.wl-inline{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.wl-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
+.wl-card{background:var(--surface);border-radius:var(--radius-card);box-shadow:var(--shadow-card);padding:16px}
+.wl-card.now{box-shadow:0 0 0 2px var(--primary)}.wl-card.bad{box-shadow:0 0 0 2px var(--critical-fg)}
+.wl-label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-muted)}
+.wl-muted{color:var(--fg-muted)}.wl-faint{color:var(--fg-faint)}
+.wl-big{font-size:clamp(18px,4.2vw,24px);font-weight:600;line-height:1.25}
+.wl-count{font-size:clamp(32px,8vw,48px);font-weight:650;line-height:1.05;font-variant-numeric:tabular-nums}
+.wl-scan{width:100%;height:auto;font-size:clamp(17px,3.6vw,20px);padding:12px 14px;border-color:var(--line-strong);box-shadow:var(--shadow-control)}
+.wl-banner{border-radius:var(--radius-card);padding:12px 16px;font-size:clamp(15px,3.4vw,18px);font-weight:600;line-height:1.35;background:var(--surface-subdued);color:var(--fg)}
+.ok.wl-banner,.ok.wl-badge{background:var(--success);color:var(--success-fg)}.bad.wl-banner,.bad.wl-badge{background:var(--critical);color:var(--critical-fg)}
+.warn.wl-banner,.warn.wl-badge{background:var(--attention);color:var(--attention-fg)}.info.wl-banner,.info.wl-badge{background:var(--info);color:var(--info-fg)}
+.wl-list{background:var(--surface);border-radius:var(--radius-card);box-shadow:var(--shadow-card);overflow:hidden}
+.wl-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-top:1px solid var(--line)}.wl-row:first-child{border-top:0}
+.wl-row.done{color:var(--fg-muted)}.wl-row.bad{background:color-mix(in srgb,var(--critical) 45%,transparent)}
+.wl-badge{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;font-size:12px;font-weight:500;background:var(--neutral);color:var(--neutral-fg)}
+@media (max-width:480px){.wl-page{padding:12px}.wl-card{padding:14px}}
+`.replace(/\n/g, "");
 
 /** window.wl, as the frame sees it: every call a message to the section, answered by id. */
 const RUNTIME = `(() => {
@@ -101,14 +158,17 @@ const RUNTIME = `(() => {
 })();`;
 
 /**
- * The frame's whole page: the policy, the page's colours as variables,
- * window.wl, then the screen Luke wrote. `colours` are the app's values
- * now (light or dark), read by the caller from the page.
+ * The frame's whole page: the policy, the app's faces and its values as
+ * variables (light or dark, read by the caller from the page), the kit,
+ * window.wl, then the screen Luke wrote. `fonts` is the app's own
+ * @font-face rules with their files inline, which the policy allows; a
+ * page without them falls back to the system's face.
  */
 export function customViewPage(
   html: string,
   columns: Array<{ field: string; label: string; type: string }>,
-  colours: Record<string, string>
+  colours: Record<string, string>,
+  fonts = ""
 ): string {
   const vars = Object.entries(colours)
     .map(([k, v]) => `--${k}:${v.replace(/[;{}<>]/g, "")};`)
@@ -117,5 +177,5 @@ export function customViewPage(
     /</g,
     "\\u003c"
   );
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CUSTOM_VIEW_CSP}"><meta name="viewport" content="width=device-width,initial-scale=1"><style>:root{${vars}color-scheme:light dark}html,body{margin:0;background:var(--surface);color:var(--fg);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}*{box-sizing:border-box}</style><script>${RUNTIME.replace("__COLUMNS__", cols)}</script></head><body>${html}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CUSTOM_VIEW_CSP}"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${fonts.replace(/<\/?style/gi, "")}:root{${vars}color-scheme:light dark}${CUSTOM_VIEW_KIT}</style><script>${RUNTIME.replace("__COLUMNS__", cols)}</script></head><body>${html}</body></html>`;
 }
