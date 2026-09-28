@@ -55,3 +55,14 @@ played and never fails anything; it only sits here. To find those: run the repla
 (one key a line), then every `tapes/<key>.json` not in it is stale — after the whole live tier
 and the whole e2e have run, not a subset, or a recording some check still needs is cut with
 them. Reading files does not tell (a miss's diagnosis reads them all); the hit list does.
+
+CI does this on every run of `main`: the live job's server writes the list and uploads it as
+the `tape-hits` artifact. To prune from it:
+
+```sh
+gh run download <run id> -n tape-hits -D /tmp/hits
+sort -u /tmp/hits/tape-hits.txt > /tmp/played.txt
+ls tapes/*.json | sed 's#tapes/##; s#\.json##' | grep -v '^_' | sort | comm -23 - /tmp/played.txt
+```
+
+Every key printed is a recording nothing played; delete those files, replay once more, commit.

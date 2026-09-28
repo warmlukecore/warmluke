@@ -187,6 +187,9 @@ jobs:
       - name: serve
         env:
           MODEL_TAPE: replay
+          # Every recording the server plays, one key a line: the list a
+          # prune of stale tapes is cut by (tapes/README.md), uploaded below.
+          MODEL_TAPE_HITS: ${{ github.workspace }}/tape-hits.txt
         run: |
           (pnpm start > server.log 2>&1 &)
           for i in $(seq 1 60); do curl -sf -o /dev/null http://localhost:3100/login && break; sleep 1; done
@@ -217,6 +220,17 @@ jobs:
       - name: server log, when something went red
         if: failure()
         run: tail -60 server.log
+
+      # Which recordings the whole live tier and the whole e2e played: a
+      # tape not in this list is stale. Kept a month, read by hand.
+      - name: recordings played
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tape-hits
+          path: tape-hits.txt
+          retention-days: 30
+          if-no-files-found: ignore
 
   # Production, after the checks that could have stopped it.
   #
