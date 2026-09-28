@@ -14,12 +14,12 @@
 // Callers: src/app/api/spike/luke/route.ts.
 
 import { createClient } from "@supabase/supabase-js";
-import { createHook, getWritable, sleep } from "workflow";
+import { createHook, getStepMetadata, getWritable, sleep } from "workflow";
 import { buildTalkPrompt, callModel } from "@/lib/ai";
 import type { ModuleRow } from "@/lib/types";
 
 export type SpikeEvent =
-  | { step: string; at: number }
+  | { step: string; at: number; attempt?: number }
   | { words: string }
   | { reply: string }
   | { waiting: string }
@@ -30,7 +30,12 @@ export type SpikeInput = {
   message: string;
   /** The owner's access token: the steps read as them. */
   token: string;
-  /** Sleep this long inside the model step before calling: time to kill the process. */
+  /**
+   * On the step's FIRST attempt only, sleep this long before calling —
+   * past the function's limit, so the platform kills the invocation
+   * mid-step. The retry answers. That is the crash proof, on the real
+   * infrastructure, with no hand on the process.
+   */
   slowMs?: number;
 };
 
@@ -63,8 +68,9 @@ async function prepare(projectId: string, token: string) {
 /** The model, on the talk road, its words streamed as they come: a call, as a step. */
 async function answer(ctx: Awaited<ReturnType<typeof prepare>>, message: string, slowMs: number) {
   "use step";
-  await say({ step: "answer", at: Date.now() });
-  if (slowMs > 0) await new Promise((r) => setTimeout(r, slowMs));
+  const { attempt } = getStepMetadata();
+  await say({ step: "answer", at: Date.now(), attempt });
+  if (slowMs > 0 && attempt === 1) await new Promise((r) => setTimeout(r, slowMs));
   const system = buildTalkPrompt(
     ctx.modules,
     ctx.project?.name ?? "Shop",

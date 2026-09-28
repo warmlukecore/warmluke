@@ -36,6 +36,15 @@ A check that talks to the server refuses to run when the server records or plays
 differently from it (the `x-model-tape` header says which), since the two halves would
 then answer from different places.
 
+Give the check the same model names as the server (`ANTHROPIC_MODEL`,
+`ANTHROPIC_TALK_MODEL`, …) in its environment. A check that calls the engine in its own
+process reads `.env.local` for any name the shell leaves unset, and a request built for
+another model is a different request: the provider shapes it by the model's name, and
+the recording lands under a key that a replay, which takes its names from
+`_models.json`, never asks for. That is how a lookups recording went missing once.
+`MODEL_TAPE_DUMP=<dir>` writes each request as sent, named by its key, for reading two
+such requests side by side.
+
 Then replay once with no keys to confirm, and commit the tapes with the change that
 needed them. Two things that broke replays, so they are not done again: the same data
 must read the same to the model (a list with ties has to break them by what the rows
