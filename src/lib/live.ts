@@ -19,8 +19,10 @@ export type Watch = {
   filter?: string;
   /**
    * The row as it now stands, when the change carried one — an insert
-   * or an update. A caller that only needs to know something moved
-   * ignores it; one deciding WHICH thread to reload cannot.
+   * or an update — and the burst it arrived in was that one row's.
+   * Several rows in a burst hand over nothing: the caller that places
+   * one row cannot place them all, and reloads. A caller that only
+   * needs to know something moved ignores it.
    */
   onChange: (row?: Record<string, unknown>) => void;
 };
@@ -41,17 +43,22 @@ export function watchRows(channelName: string, watches: Watch[]): () => void {
   // succession. Reloading on each would run three round trips and
   // repaint three times to arrive at the same screen.
   type Row = Record<string, unknown> | undefined;
-  const pending = new Map<Watch["onChange"], { timer: ReturnType<typeof setTimeout>; row: Row }>();
+  const pending = new Map<Watch["onChange"], { timer: ReturnType<typeof setTimeout>; row: Row; ids: Set<unknown> }>();
   const coalesce = (fn: Watch["onChange"], row: Row) => {
-    clearTimeout(pending.get(fn)?.timer);
+    const was = pending.get(fn);
+    clearTimeout(was?.timer);
+    const ids = was?.ids ?? new Set<unknown>();
+    ids.add(row?.id);
     pending.set(fn, {
-      // The newest wins. Three writes in a burst are one reload, and
-      // the row it reloads should be the last state, not the first.
+      // The newest wins. Three writes in a burst are one call, and the
+      // row it hands over should be the last state, not the first —
+      // and only when the burst was one row's; otherwise nothing.
       row,
+      ids,
       timer: setTimeout(() => {
         const last = pending.get(fn);
         pending.delete(fn);
-        fn(last?.row);
+        fn(last && last.ids.size === 1 ? last.row : undefined);
       }, 150),
     });
   };

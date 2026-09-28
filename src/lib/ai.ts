@@ -977,6 +977,15 @@ export function validateFeatures(
     if (!Array.isArray(f.filters)) {
       err(errors, "features.filters must be an array or null.");
     } else {
+      // A filter with one option or none is no filter, and one with
+      // more than fifteen is a list: cosmetic, so shaped rather than
+      // refused — a whole attempt was spent on a filter over a column
+      // the store held one value in.
+      f.filters = f.filters.filter(
+        (fl) => !fl || typeof fl.field !== "string" || !Array.isArray(fl.options) || fl.options.length >= 2
+      );
+      for (const fl of f.filters)
+        if (fl && Array.isArray(fl.options) && fl.options.length > 15) fl.options = fl.options.slice(0, 15);
       const seen = new Set<string>();
       for (const fl of f.filters) {
         if (!fl || typeof fl.field !== "string") {
@@ -997,8 +1006,8 @@ export function validateFeatures(
         if (typeof fl.label !== "string" || !fl.label.trim()) {
           err(errors, `Filter "${fl.field}" needs a label — the words shown above the dropdown.`);
         }
-        if (!Array.isArray(fl.options) || fl.options.length < 2 || fl.options.length > 15) {
-          err(errors, `Filter "${fl.field}" needs 2-15 options.`);
+        if (!Array.isArray(fl.options)) {
+          err(errors, `Filter "${fl.field}" needs "options": the values to pick from.`);
         }
       }
     }
@@ -2344,7 +2353,11 @@ export function modelError(provider: Provider, status: number, raw: string): Mod
 //   - a stop is a stop, passed through untouched.
 
 /** Every reply is capped here, as it was: a whole design fits, a runaway does not. */
-const MAX_OUTPUT_TOKENS = 6000;
+// Room for a design and the thought before it. Six thousand cut a P&L
+// dashboard off mid-JSON three attempts running (the reply ran ~6,600
+// tokens each time), and a Claude 5 model's adaptive thinking cannot be
+// budgeted, only given room; what is not used is not billed.
+const MAX_OUTPUT_TOKENS = 12000;
 
 /**
  * Which model does which job: the setting each one reads, when a call is

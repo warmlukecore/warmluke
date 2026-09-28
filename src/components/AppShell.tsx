@@ -586,6 +586,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         const last = rebuilt[rebuilt.length - 1];
         if (last && retired) last.superseded = true;
         if (last && p.usage) last.usage = p.usage;
+        if (last && p.trace) last.trace = p.trace;
       }
       for (const m of rebuilt) {
         const built = builds.get(m.id);
@@ -919,6 +920,38 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     await loadModuleData(selectedModuleId, records.length + RECORD_PAGE);
   }, [selectedModuleId, records.length, loadModuleData]);
 
+  /**
+   * One row's change, placed in the section as loaded, instead of the
+   * section reloaded for it. Every write used to reload everything —
+   * schema, its history, two hundred rows, their own fields, a count
+   * over the store's table — and the live watcher reloaded it once
+   * more when the write came back as a change. A scan a second was a
+   * reload a second, growing with the store.
+   *
+   * A row kept beside a store row (0128) merges into that row; a row
+   * of the section replaces its own or joins the end; a row of another
+   * section is nothing to this screen. False when there is nothing to
+   * place — a delete carries no row, a burst none — and the caller
+   * reloads.
+   *
+   * ponytail: a row joining from elsewhere (a rule, a colleague) is not
+   * counted into the total until the next load; the count catches up
+   * when the section is reopened.
+   */
+  const patchRow = useCallback((row: Record<string, unknown> | undefined, moduleId: string | null): boolean => {
+    const id = row && typeof row.id === "string" ? row.id : null;
+    if (!row || !id || !moduleId) return false;
+    if (row.module_id !== moduleId) return true;
+    const beside = typeof row.store_row_id === "string" ? row.store_row_id : null;
+    const data = (row.data ?? {}) as Record<string, unknown>;
+    setRecords((prev) => {
+      if (beside) return prev.map((r) => (r.id === beside ? { ...r, data: { ...r.data, ...data } } : r));
+      const rec = row as unknown as RecordRow;
+      return prev.some((r) => r.id === id) ? prev.map((r) => (r.id === id ? rec : r)) : [...prev, rec];
+    });
+    return true;
+  }, []);
+
   // Stat cards counted over the whole section, not the page. The
   // function evaluates the same expressions the browser would, over
   // every row, and narrows by the same search and filters.
@@ -952,8 +985,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       {
         table: "records",
         filter: `project_id=eq.${projectId}`,
-        onChange: () => {
-          if (selectedModuleId) loadModuleData(selectedModuleId);
+        onChange: (row) => {
+          if (selectedModuleId && !patchRow(row, selectedModuleId)) loadModuleData(selectedModuleId);
         },
       },
       ...(selectedModuleId
@@ -968,7 +1001,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           ]
         : []),
     ]);
-  }, [projectId, selectedModuleId, loadModules, loadModuleData]);
+  }, [projectId, selectedModuleId, loadModules, loadModuleData, patchRow]);
 
   // Read inside a subscription that is set up once, so the values it
   // sees have to be current rather than whatever they were then.
@@ -1333,9 +1366,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         if (data.conversationId && data.conversationId !== openThread) {
           rememberConversation(data.conversationId as string);
           // A brand-new thread needs to appear in the switcher: re-listed
-          // only. Reloading it rebuilt the panel from the saved rows, which
-          // carry no trace, so the first reply's "Read your store · 14s"
-          // vanished a moment after it appeared.
+          // only, never reloaded under a reply that has just landed.
           loadThread().catch(() => {});
         }
 
@@ -1688,10 +1719,22 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         ...body,
       });
       if (!ok || data.error) throw new Error((data.error as string) ?? "That didn't save.");
-      // Automations may have changed other sections too, so reload both.
-      await loadModuleData(selectedModuleId);
+      // The row as the server left it, placed where it is; a rule that
+      // wrote another section is seen when that section is opened.
+      if (body.action === "delete") {
+        setRecords((prev) => prev.filter((r) => r.id !== body.recordId));
+        setRecordTotal((t) => Math.max(0, t - 1));
+        return;
+      }
+      const rec = data.record as Record<string, unknown> | undefined;
+      if (body.action === "create" && typeof rec?.id === "string") {
+        setRecords((prev) => [...prev, rec as unknown as RecordRow]);
+        setRecordTotal((t) => t + 1);
+        return;
+      }
+      if (!patchRow(rec, selectedModuleId)) await loadModuleData(selectedModuleId);
     },
-    [projectId, selectedModuleId, loadModuleData]
+    [projectId, selectedModuleId, loadModuleData, patchRow]
   );
 
   const createRecord = useCallback(

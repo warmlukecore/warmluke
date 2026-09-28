@@ -121,6 +121,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "This section has no fields of your own yet." }, { status: 400 });
     }
     const clean = cleanData(writable, data);
+    // The row as it stands once the rules on it have run: RETURNING
+    // shows the write, not what an after-trigger set on the same row,
+    // and the browser places this row instead of reloading the section.
+    const fresh = async (id: string) => {
+      const { data: row, error } = await client.from("records").select("*").eq("id", id).single();
+      if (error) throw new Error(error.message);
+      return row;
+    };
 
     // A link is only meaningful if it points at a row that exists in
     // the section the column names; anything else silently renders as
@@ -147,10 +155,10 @@ export async function POST(req: Request) {
       const { data: created, error } = await client
         .from("records")
         .insert({ project_id: projectId, module_id: moduleId, data: clean })
-        .select()
+        .select("id")
         .single();
       if (error) throw new Error(error.message);
-      return NextResponse.json({ ok: true, record: created });
+      return NextResponse.json({ ok: true, record: await fresh(created.id) });
     }
 
     if (action === "update") {
@@ -162,14 +170,12 @@ export async function POST(req: Request) {
       const { data: existing } = await client.from("records").select("data").eq("id", recordId).limit(1);
       const prev = (existing?.[0]?.data ?? {}) as Record<string, unknown>;
 
-      const { data: updated, error } = await client
+      const { error } = await client
         .from("records")
         .update({ data: { ...prev, ...clean }, updated_at: new Date().toISOString() })
-        .eq("id", recordId)
-        .select()
-        .single();
+        .eq("id", recordId);
       if (error) throw new Error(error.message);
-      return NextResponse.json({ ok: true, record: updated });
+      return NextResponse.json({ ok: true, record: await fresh(recordId) });
     }
 
     if (action === "update_store_row" && table) {
@@ -206,30 +212,28 @@ export async function POST(req: Request) {
           .eq("store_row_id", storeRowId)
           .maybeSingle();
         if (!have) return null;
-        const { data: updated, error } = await client
+        const { error } = await client
           .from("records")
           .update({
             data: { ...((have.data ?? {}) as Record<string, unknown>), ...clean },
             updated_at: new Date().toISOString(),
           })
-          .eq("id", have.id)
-          .select()
-          .single();
+          .eq("id", have.id);
         if (error) throw new Error(error.message);
-        return updated;
+        return fresh(have.id as string);
       };
       const merged = await merge();
       if (merged) return NextResponse.json({ ok: true, record: merged });
       const { data: created, error } = await client
         .from("records")
         .insert({ project_id: projectId, module_id: moduleId, store_row_id: storeRowId, data: clean })
-        .select()
+        .select("id")
         .single();
       // Two tabs keeping the first field of the same row at once: the
       // one that lost the insert merges into the one that won.
       if (error?.code === "23505") return NextResponse.json({ ok: true, record: await merge() });
       if (error) throw new Error(error.message);
-      return NextResponse.json({ ok: true, record: created });
+      return NextResponse.json({ ok: true, record: await fresh(created.id) });
     }
 
     return NextResponse.json({ error: `Unknown action "${action}".` }, { status: 400 });

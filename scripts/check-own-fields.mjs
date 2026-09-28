@@ -332,6 +332,7 @@ try {
   });
   const { data: ticked } = await admin.from("records").select("data").eq("id", firstTick.json?.record?.id).single();
   check("a rule on a change fires on a row's first field", ticked?.data?.packed_at === "stamped");
+  check("and the reply already carries what the rule stamped", firstTick.json?.record?.data?.packed_at === "stamped");
   check("and one on a row being added does not", ticked?.data?.packed === true);
 
   console.log("\na rule reads the store's row under theirs (0130)");

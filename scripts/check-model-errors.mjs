@@ -186,8 +186,8 @@ try {
     req?.url === "https://api.anthropic.com/v1/messages" && req.headers.get("x-api-key") === "test-key"
   );
   check(
-    "the model named, and replies capped at 6000 tokens",
-    req?.body?.model === "claude-test" && req.body.max_tokens === 6000
+    "the model named, and replies capped at 12000 tokens",
+    req?.body?.model === "claude-test" && req.body.max_tokens === 12000
   );
   check(
     "the contract is cached, what changes per project is not",
@@ -254,9 +254,9 @@ try {
       g.headers.get("x-goog-api-key") === "gemini-key"
   );
   check(
-    "asked for JSON, capped at 6000",
+    "asked for JSON, capped at 12000",
     g?.body?.generationConfig?.responseMimeType === "application/json" &&
-      g.body.generationConfig.maxOutputTokens === 6000
+      g.body.generationConfig.maxOutputTokens === 12000
   );
   check(
     "the blocks as one instruction",
@@ -334,7 +334,7 @@ try {
   );
   check(
     "every step still caches the contract and caps the reply",
-    sent.every((r) => r.body?.system?.[0]?.cache_control?.type === "ephemeral" && r.body.max_tokens === 6000)
+    sent.every((r) => r.body?.system?.[0]?.cache_control?.type === "ephemeral" && r.body.max_tokens === 12000)
   );
 
   sent.length = 0;
@@ -491,7 +491,7 @@ try {
     "asked as a stream, still caching the contract and capping the reply",
     sent[0]?.body?.stream === true &&
       sent[0].body.system?.[0]?.cache_control?.type === "ephemeral" &&
-      sent[0].body.max_tokens === 6000
+      sent[0].body.max_tokens === 12000
   );
   const refusedStream = await (async () => {
     queue.push({ status: 529, body: '{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}' });

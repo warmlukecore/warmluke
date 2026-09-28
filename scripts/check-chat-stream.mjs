@@ -148,6 +148,22 @@ try {
       /,checked/.test(order) && !!turn.data.reply && !!turn.data.conversationId
     );
     if (!turn.data.reply) show(turn.data);
+    // And the saved reply carries what the turn did, so a reopened
+    // thread shows it: the same steps, and how long it took.
+    const { data: saved } = await admin
+      .from("messages")
+      .select("payload")
+      .eq("conversation_id", turn.data.conversationId)
+      .eq("role", "assistant")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const kept = saved?.payload?.trace;
+    check(
+      "the saved reply carries the turn's steps and its time",
+      Array.isArray(kept?.steps) && kept.steps.length >= 4 && typeof kept.ms === "number" && kept.ms >= 0
+    );
+    if (!kept) show(saved?.payload);
   }
   check(
     modelDown ? "a turn the model failed is given back" : "a greeting is not a design, so the turn is given back",

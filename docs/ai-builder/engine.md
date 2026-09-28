@@ -290,6 +290,10 @@ the model, what the calls took, how many repairs and their errors, what stayed u
 plan understood, the critic's verdict, and how long the turn took. Read by whoever may use
 the project, never by the model. `check-chat-stream` holds that a turn leaves one.
 
+The reply carries the same steps and the time as `trace` on its stored payload, beside
+`usage`, so a thread reopened after a refresh shows what each turn did (the "Read your
+store · 14s" line) without reading `turn_traces`. `check-chat-stream` holds that too.
+
 ## Durability spike (Workflow)
 
 A turn is one request today: the process dies, the turn is lost. The team of agents to

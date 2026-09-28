@@ -547,6 +547,9 @@ export async function POST(req: Request) {
         // What the calls took, kept with the reply so a reload says the same.
         const usage = took();
         if (usage) turn.reply.usage = usage;
+        // And what it did: the same steps the panel was told, so a
+        // thread reopened after a refresh still shows them.
+        turn.reply.trace = { steps, ms: Date.now() - askedAt };
         if (turn.reply.type === "answer" && turn.reply.kind === "store") {
           turn.reply.grounding = {
             kind: "store_snapshot",

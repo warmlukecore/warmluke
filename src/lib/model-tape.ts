@@ -201,6 +201,14 @@ export function tapeFetch(label: string, real: typeof fetch): typeof fetch {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const fp = fingerprint(label, url, typeof init?.body === "string" ? init.body : "");
     const file = join(dir(), `${fp.key}.json`);
+    // MODEL_TAPE_DUMP=<dir> keeps each request as sent, named by its key,
+    // so a key that never matches can be read side by side with the one
+    // that was recorded, part by part.
+    if (process.env.MODEL_TAPE_DUMP)
+      writeFileSync(
+        join(process.env.MODEL_TAPE_DUMP, `${fp.key}.request.json`),
+        JSON.stringify({ label, url, parts: fp.parts, body: init?.body ?? null }, null, 1)
+      );
 
     if (mode === "replay") {
       if (init?.signal?.aborted) throw stopped();

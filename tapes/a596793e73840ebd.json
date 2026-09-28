@@ -1,0 +1,16 @@
+{
+  "label": "anthropic",
+  "asked": "",
+  "parts": {
+    "system": "9058cac0671011c8",
+    "tools": "edaf5ab188823e1b",
+    "conversation": "282bdcd3f4d19447"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"claude-haiku-4-5-20251001\",\"id\":\"msg_011CfVaU4draDQGwbjmqtMAS\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"```json\\n{\\n  \\\"type\\\": \\\"answer\\\",\\n  \\\"kind\\\": \\\"store\\\",\\n  \\\"title\\\": \\\"Order #1001 payment status\\\",\\n  \\\"message\\\": \\\"Order #1001 is **not paid** — it is still **PENDING**. The order total is **777 INR**.\\\\n\\\\nThis is a cash-on-delivery order awaiting payment from the customer.\\\",\\n  \\\"next\\\": [\\n    {\\n      \\\"label\\\": \\\"What items are in #1001\\\",\\n      \\\"prompt\\\": \\\"What's inside order #1001\\\"\\n    },\\n    {\\n      \\\"label\\\": \\\"Show me all pending COD orders\\\",\\n      \\\"prompt\\\": \\\"Which orders are still awaiting COD payment\\\"\\n    }\\n  ]\\n}\\n```\"}],\"container\":null,\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":7600,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":175,\"service_tier\":\"standard\",\"inference_geo\":\"not_available\"},\"diagnostics\":null}"
+    }
+  ]
+}

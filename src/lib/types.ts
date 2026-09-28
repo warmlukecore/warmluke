@@ -468,6 +468,8 @@ export type AssistantReply =
     title?: string;
     /** What the turn's model calls took, written by the server (lib/usage.ts), never the model. */
     usage?: TurnUsage;
+    /** What the turn did to arrive here and how long it took, as the server told it (lib/trace.ts keeps the same). */
+    trace?: { steps: TurnEvent[]; ms: number };
   };
 
 /** What a model call was for: the reply itself, the gap pass, or routing the question. */

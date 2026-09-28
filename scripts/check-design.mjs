@@ -189,6 +189,33 @@ console.log("\nwhat a client is told the shape is");
   if (!example.ok) console.log(`     errors were: ${example.errors.join(" | ")}`);
 }
 
+// ── A filter with one option is dropped, not a rejection ──
+console.log("\na filter with nothing to choose between");
+{
+  const got = run(
+    [
+      {
+        changeType: "FEATURE_UPDATE",
+        targetModuleId: MOD,
+        features: {
+          filters: [
+            { field: "stage", label: "Stage", options: ["Open", "Done"] },
+            { field: "customer", label: "Customer", options: ["Only one"] },
+          ],
+        },
+        explanation: "Filters.",
+      },
+    ],
+    schemas
+  );
+  check(
+    "is dropped and the design stands, the real filter kept",
+    got.ok &&
+      got.reply.plans[0].features.filters.length === 1 &&
+      got.reply.plans[0].features.filters[0].field === "stage"
+  );
+}
+
 // ── An icon off the list is the neutral one, not a rejection ──
 console.log("\nan icon off the list");
 {

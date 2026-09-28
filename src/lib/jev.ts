@@ -7,7 +7,7 @@
 // refusal, a page instead of JSON. The caller decides what null means;
 // here it only means "you have nothing from the model".
 
-import { keyFor, tapeFetch } from "@/lib/model-tape";
+import { keyFor, tapeFetch, tapeMode } from "@/lib/model-tape";
 import { record } from "@/lib/usage";
 
 export type JevAnswer = {
@@ -32,10 +32,15 @@ export async function askJev(
   // While replaying, a stand-in: the answer comes from the tape (model-tape.ts).
   const key = keyFor(process.env.TYPESAFE_API_KEY);
   if (!key) return null;
+  // The judge's request carries the store as it stands — its name, its
+  // counts — which a check mints fresh every run, so no recording of it
+  // ever played again: it is not taped, and under replay it is not asked.
+  const send = tag === "judge" ? (tapeMode() === "replay" ? null : fetch) : tapeFetch("jev", fetch);
+  if (!send) return null;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const r = await tapeFetch("jev", fetch)(process.env.TYPESAFE_API_URL || "https://api.typesafe.ai/v1/systemone", {
+    const r = await send(process.env.TYPESAFE_API_URL || "https://api.typesafe.ai/v1/systemone", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({ model: model(), state, questions }),

@@ -1,0 +1,16 @@
+{
+  "label": "anthropic",
+  "asked": "figured) CONTEXT — rules already running on this app. Do not propose one that is already here; to change a rule, remove it and add the new one. none USER REQUEST: Is order #1001 paid? How much was it?",
+  "parts": {
+    "system": "9058cac0671011c8",
+    "tools": "edaf5ab188823e1b",
+    "conversation": "c112428c83029b00"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"claude-haiku-4-5-20251001\",\"id\":\"msg_011CfVaTx3ioGuQUYdty92Et\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_01WuzjHtLrTFdQE5AmXqAXLZ\",\"name\":\"get_order\",\"input\":{\"order_number\":\"1001\"},\"caller\":{\"type\":\"direct\"}}],\"container\":null,\"stop_reason\":\"tool_use\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":7466,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":57,\"service_tier\":\"standard\",\"inference_geo\":\"not_available\"},\"diagnostics\":null}"
+    }
+  ]
+}

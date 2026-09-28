@@ -138,8 +138,8 @@ export interface ChatMessage {
   next?: NextStep[];
   /**
    * What the turn did to arrive at this reply, as the server said it,
-   * and how long it took. Session only — a reloaded thread does not
-   * carry it, and does not need to.
+   * and how long it took. Kept on the saved reply, so a reloaded thread
+   * shows it too.
    */
   trace?: { steps: TurnEvent[]; ms: number };
   /** A build from the chat still running, as its thread says, and since when. */

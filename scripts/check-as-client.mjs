@@ -181,7 +181,7 @@ try {
   // client cannot write at the table. Proven with a client's token, or
   // it is only proven for the owner. Needs the server to hold the key;
   // without it no row comes, and that is what "no key" means.
-  if (keyFor(env.TYPESAFE_API_KEY)) {
+  if (keyFor(env.TYPESAFE_API_KEY) && process.env.MODEL_TAPE !== "replay") {
     let judged = null;
     for (let i = 0; i < 40 && !judged; i++) {
       const { data } = await admin
@@ -195,7 +195,9 @@ try {
     }
     check("the judge's verdict on the client's design landed", judged?.source === "mcp");
   } else {
-    console.log("  skip  no TYPESAFE_API_KEY — whether the judge writes for a client was not checked");
+    console.log(
+      "  skip  no TYPESAFE_API_KEY, or replay (the judge is not asked) — whether the judge writes for a client was not checked"
+    );
   }
 
   const history = await tool("build_history", { limit: 10 });

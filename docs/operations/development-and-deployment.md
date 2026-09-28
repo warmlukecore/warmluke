@@ -107,6 +107,12 @@ only, leaving previews on other branches alone.
 The production build is `pnpm build`, and the server expects the same runtime environment
 variables documented in [Environment reference](../reference/environment.md).
 
+Functions run in Sydney (`regions` in `vercel.json`), beside the production database
+(Supabase `ap-southeast-2`). They ran in Vercel's default, Washington, until 2026-09-28,
+and every route paid a Pacific round trip per query: a scan that saves one field made
+seven of them in a row, and its auth-only path alone measured 0.55 s from India (0.10 s
+of that the edge). Keep the two together if either ever moves.
+
 Before deployment:
 
 - apply required migrations;

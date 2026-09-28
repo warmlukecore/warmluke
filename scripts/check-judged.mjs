@@ -120,6 +120,10 @@ try {
   row = await judged(20_000);
   if (!row && !keyFor(env.TYPESAFE_API_KEY)) {
     console.log("  skip  no TYPESAFE_API_KEY in this env, and no judgement came — which is the point of having no key");
+  } else if (!row && process.env.MODEL_TAPE === "replay") {
+    console.log(
+      "  skip  under replay the judge is not asked (its request is never the same twice), so no judgement came"
+    );
   } else {
     check("and a judgement landed on its own", !!row);
     if (row) {
