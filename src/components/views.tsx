@@ -8,13 +8,14 @@
 // knows what any particular field means.
 // ─────────────────────────────────────────────────────────────
 
+import { useEffect, useState } from "react";
 import type { FeatureSchema, RecordRow, SchemaColumn, ViewSpec } from "@/lib/types";
 import { badgeClasses, badgeLabel, knownStatus } from "@/lib/tone";
 import { evalExpr, truthy } from "@/lib/expr";
 import { useFormat, type Formatting } from "@/lib/format";
-import { isId } from "@/lib/no-ids";
+import { isId, looksLikeCode } from "@/lib/no-ids";
 import { useLinkLabel } from "@/components/LinkContext";
-import { ArrowDown, ArrowUp, Check } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Copy } from "lucide-react";
 
 export function compare(a: unknown, b: unknown, type: SchemaColumn["type"]): number {
   if (type === "number" || type === "currency" || type === "percent") {
@@ -27,6 +28,45 @@ export function compare(a: unknown, b: unknown, type: SchemaColumn["type"]): num
   }
   // Times are zero-padded HH:MM, so text order is chronological order.
   return String(a ?? "").localeCompare(String(b ?? ""));
+}
+
+/**
+ * A code as a person uses one: in a face where 0 and O differ, with a
+ * button that copies it and says so for a moment. The click stays here,
+ * so copying a number never opens the row. Every code in every view
+ * gets this — the value decides (lib/no-ids), not the field's name.
+ */
+export function CodeValue({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="font-mono text-[13px]">{text}</span>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          navigator.clipboard
+            ?.writeText(text)
+            .then(() => setCopied(true))
+            .catch(() => {});
+        }}
+        aria-label={copied ? "Copied" : `Copy ${text}`}
+        title={copied ? "Copied" : "Copy"}
+        className="inline-flex h-6 w-6 items-center justify-center rounded-control text-fg-faint transition-colors hover:bg-surface-hover hover:text-fg-muted"
+      >
+        {copied ? (
+          <Check aria-hidden size={13} strokeWidth={2.25} className="text-tone-success-fg" />
+        ) : (
+          <Copy aria-hidden size={13} strokeWidth={2} />
+        )}
+      </button>
+    </span>
+  );
 }
 
 export function Cell({ col, value, currency }: { col: SchemaColumn; value: unknown; currency?: string | null }) {
@@ -134,6 +174,7 @@ export function Cell({ col, value, currency }: { col: SchemaColumn; value: unkno
           </span>
         );
       }
+      if (col.type === "barcode" || looksLikeCode(value)) return <CodeValue text={String(value).trim()} />;
       return <span>{String(value)}</span>;
   }
 }

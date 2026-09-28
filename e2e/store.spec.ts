@@ -98,6 +98,11 @@ test("a field of the merchant's sits on the store's own orders: set by a button,
     await page.goto(`/app/${shop.projectId}?section=${id}`);
     await expect(page.getByRole("heading", { level: 1, name: "Packing" })).toBeVisible();
     const order = page.getByRole("row").filter({ hasText: "#1010" });
+    // The order's number reads as a code, so it copies — without opening the row.
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await order.getByRole("button", { name: "Copy #1010" }).click();
+    await expect(order.getByRole("button", { name: "Copied" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your fields" })).toHaveCount(0);
     await order.getByRole("button", { name: "Mark packed" }).click();
     // Packed, the button has done its work, and it stays so on a reload.
     await expect(order.getByRole("button", { name: "Mark packed" })).toHaveCount(0);

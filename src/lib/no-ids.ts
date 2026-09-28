@@ -22,6 +22,24 @@ const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 export const isId = (v: unknown) =>
   typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim());
 
+/**
+ * A value that reads as a code — a SKU, an AWB, an order number, a
+ * coupon — and so is something a person copies rather than reads: one
+ * token, no spaces, with a digit in it, in the characters codes are made
+ * of. Decided from the value, never from a list of field names, so a
+ * merchant's own "special" SKU counts the moment it is typed. Not a
+ * date, not an internal id, not a plain sentence.
+ *
+ * ponytail: a heuristic. A text column of four-digit years would get a
+ * copy button; when that bites, let the owner mark a column in settings.
+ */
+export const looksLikeCode = (v: unknown) => {
+  if (typeof v !== "string") return false;
+  const s = v.trim();
+  if (s.length < 3 || s.length > 40 || isId(s) || /^\d{4}-\d{2}-\d{2}/.test(s)) return false;
+  return /^[A-Za-z0-9#][A-Za-z0-9#_./:-]*$/.test(s) && /\d/.test(s);
+};
+
 /** Text as a person reads it: ids named where they are known, and gone where they are not. */
 export function withoutIds(text: string, names?: ReadonlyMap<string, string>): string {
   if (!text || !new RegExp(UUID.source, "i").test(text)) return text;
