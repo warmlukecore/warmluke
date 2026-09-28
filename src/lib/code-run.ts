@@ -93,8 +93,14 @@ function credentials() {
   return token && teamId && projectId ? { token, teamId, projectId } : {};
 }
 
-/** Whether a sandbox can be reached from here at all. */
-export const canRunCode = () => !!process.env.VERCEL_OIDC_TOKEN || !!process.env.VERCEL_SANDBOX_TOKEN;
+/**
+ * Whether a sandbox can be reached from here at all. On Vercel the
+ * function's identity comes in each request's x-vercel-oidc-token
+ * header, not always in the environment; if the project has it turned
+ * off, the sandbox says so and the rule logs it.
+ */
+export const canRunCode = () =>
+  process.env.VERCEL === "1" || !!process.env.VERCEL_OIDC_TOKEN || !!process.env.VERCEL_SANDBOX_TOKEN;
 
 type Ran = { ok: true; result: CodeResult } | { ok: false; error: string };
 

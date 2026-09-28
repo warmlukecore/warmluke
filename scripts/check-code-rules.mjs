@@ -11,7 +11,7 @@
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-code-rules.mjs
 
-import { CODE_MAX, codeProblem, parseResult } from "../src/lib/code-run.ts";
+import { CODE_MAX, canRunCode, codeProblem, parseResult } from "../src/lib/code-run.ts";
 import { parseReply } from "../src/lib/ai.ts";
 
 const fails = [];
@@ -148,6 +148,23 @@ const serverOnly = rule(
   { type: "run_code", code }
 );
 check("and its when is what the app can evaluate", !serverOnly.ok);
+
+// On Vercel the function's identity comes with each request, not always
+// in the environment: a test of the environment alone refused every rule.
+console.log("\nwhere a sandbox can be reached");
+const ways = ["VERCEL", "VERCEL_OIDC_TOKEN", "VERCEL_SANDBOX_TOKEN"];
+const kept = Object.fromEntries(ways.map((k) => [k, process.env[k]]));
+for (const k of ways) delete process.env[k];
+check("nowhere, with nothing to reach one by", !canRunCode());
+process.env.VERCEL = "1";
+check("on Vercel, with no token in the environment", canRunCode());
+delete process.env.VERCEL;
+process.env.VERCEL_SANDBOX_TOKEN = "t";
+check("elsewhere, with a token of its own", canRunCode());
+for (const k of ways) {
+  if (kept[k] === undefined) delete process.env[k];
+  else process.env[k] = kept[k];
+}
 
 console.log(
   fails.length === 0
