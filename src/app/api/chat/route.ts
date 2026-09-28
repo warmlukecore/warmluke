@@ -566,24 +566,6 @@ export async function POST(req: Request) {
         if (!kept) return { conversationId: thread, stopped: true };
         const replyId = answerId;
 
-        // What this exchange said about the business, written down for
-        // next time (0131) — after the answer is out, never in its way.
-        const said = turn.reply;
-        after(() => learn(client, { projectId: proj.id, message: message.trim(), reply: said, known: turn.known }));
-        after(() =>
-          traceTurn(client, {
-            projectId: proj.id,
-            conversationId: thread,
-            turnId: replyId,
-            steps,
-            usage: usage ?? null,
-            repairs: turn.repairs,
-            repairErrors: turn.repairErrors,
-            unmet: turn.unmet,
-            tookMs: Date.now() - askedAt,
-          })
-        );
-
         // Only a turn that produced a design, and got it written down,
         // counts.
         //
@@ -616,6 +598,24 @@ export async function POST(req: Request) {
             })
           );
         }
+
+        // What this exchange said about the business, written down for
+        // next time (0131) — after the answer is out, never in its way.
+        const said = turn.reply;
+        after(() => learn(client, { projectId: proj.id, message: message.trim(), reply: said, known: turn.known }));
+        after(() =>
+          traceTurn(client, {
+            projectId: proj.id,
+            conversationId: thread,
+            turnId: replyId,
+            steps,
+            usage: usage ?? null,
+            repairs: turn.repairs,
+            repairErrors: turn.repairErrors,
+            unmet: turn.unmet,
+            tookMs: Date.now() - askedAt,
+          })
+        );
         // A thread is named after whatever was typed first, which is
         // how six of them end up called "hello". Once a design exists
         // there is something better to call it — and only then, because
