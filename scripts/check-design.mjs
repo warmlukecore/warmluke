@@ -762,21 +762,27 @@ console.log("\na design that claims to have happened already");
       null,
       schemas
     );
-  const refused = (m) => {
+  // The sentence is left out and the design kept: refusing it threw a
+  // sound design away, and a minute of Opus, for one line of prose.
+  const kept = (m, gone) => {
     const r = one(m);
-    return !r.ok && r.errors.some((e) => /already happened/.test(e));
+    return r.ok && !String(r.reply.message ?? "").includes(gone);
   };
   // Both of the real ones, from production.
   check(
-    '"I have removed the duplicate Product-2 section" is refused',
-    refused("I have removed the duplicate Product-2 section and updated Products.")
+    '"I have removed the duplicate Product-2 section" is left out, the design kept',
+    kept("I have removed the duplicate Product-2 section and updated Products.", "removed")
   );
   check(
-    '"I have added the section Off Check" is refused',
-    refused("I have added the section Off Check with a single text field.")
+    '"I have added the section Off Check" is left out too',
+    kept("I have added the section Off Check with a single text field.", "added")
   );
-  check('and "I made the change you asked for"', refused("I made the change you asked for."));
-  check('and "I\u2019ve updated Products"', refused("I\u2019ve updated Products with a status filter."));
+  check('and "I made the change you asked for"', kept("I made the change you asked for.", "made"));
+  check('and "I\u2019ve updated Products"', kept("I\u2019ve updated Products with a status filter.", "updated"));
+  check(
+    "only that sentence goes; the rest of the line stays",
+    one("This adds a note field to Jobs. I have added it already.").reply?.message === "This adds a note field to Jobs."
+  );
   // And the sentences that must still get through. A validator that
   // fails these is one the model cannot satisfy.
   check("a future-tense line passes", one("This adds a note field to Jobs.").ok);

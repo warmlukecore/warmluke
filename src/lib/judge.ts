@@ -50,15 +50,36 @@ export function describeBuild(
   plans: AssistantPlan[],
   modules: ModuleRow[],
   columns?: Array<{ field: string; label: string }>,
-  store?: StoreFacts | null
+  store?: StoreFacts | null,
+  /**
+   * With each written screen's own code. The card tells a screen by its
+   * words; what it does (the scans it takes, what it writes, what comes
+   * next) is in its script, and a critic without it named the scanning
+   * and the "next by itself" the screen did as missing, and sent a sound
+   * design back. For the critic and the gap pass, never the owner.
+   */
+  opts: { screens?: boolean } = {}
 ): string {
   return plans
     .map((pl) => {
       const d = describePlan(pl, modules, columns, store);
-      return [d.title, ...d.lines].join("\n  ");
+      const view = pl.features?.view;
+      const code =
+        opts.screens && view?.type === "custom" && typeof view.html === "string"
+          ? [
+              `Its screen's own code, which is what the screen does when used:\n${view.html
+                .replace(/<style[\s\S]*?<\/style>/gi, "")
+                .trim()
+                .slice(0, SCREEN_CODE_MAX)}`,
+            ]
+          : [];
+      return [d.title, ...d.lines, ...code].join("\n  ");
     })
     .join("\n");
 }
+
+/** A written screen's code as the critic reads it; the rest is cut. */
+const SCREEN_CODE_MAX = 8000;
 
 // What can and cannot be built, from the declarations the validator
 // and the prompt already share. Generated, not written: a hand-written

@@ -823,7 +823,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       const verdict = await critique({
         ownerWords: message.trim(),
         understood: planBlock,
-        builtDescription: describeBuild(plans, modules, currentSchema?.columns, store),
+        builtDescription: describeBuild(plans, modules, currentSchema?.columns, store, { screens: true }),
         model: model ?? criticModel() ?? planOn,
         signal,
       });
@@ -914,7 +914,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       // The critic already read this design against the ask.
       gaps = critiqued.unmet;
     } else {
-      const built = describeBuild(plans, modules, currentSchema?.columns, store);
+      const built = describeBuild(plans, modules, currentSchema?.columns, store, { screens: true });
       tell({ step: "gaps" });
       gaps = await findGaps(message.trim(), built, signal);
     }

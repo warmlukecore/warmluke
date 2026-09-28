@@ -151,6 +151,49 @@ check(
   !noSuch.ok && /doesn't exist in this section/.test(said(noSuch))
 );
 
+// A section over orders made in the same design: its filters and counts
+// read the store's own fields as its rules do. Refused, they cost a whole
+// Opus attempt on a filter by payment status (the packing eval, 2026-09-29).
+console.log("\nwhat a new section over the store may filter and count on");
+const overOrders = (features) =>
+  parseReply(
+    JSON.stringify({
+      plans: [
+        {
+          changeType: "NEW_MODULE",
+          targetModuleId: null,
+          newModule: { name: "packed-orders", nav_label: "Packed orders", icon: "package", source_table: "orders" },
+          newSchema: { columns: [{ field: "packed", label: "Packed", type: "boolean" }] },
+          features,
+          explanation: "The store's orders, with a tick of theirs beside each.",
+        },
+      ],
+    }),
+    [],
+    null,
+    null,
+    () => null
+  );
+const readsStore = overOrders({
+  filters: [{ field: "financial_status", label: "Payment", options: ["PAID", "PENDING"] }],
+  stats: [
+    {
+      op: "count",
+      label: "Cancelled",
+      where: { op: "not", args: [{ op: "is_empty", args: [{ field: "cancelled_at" }] }] },
+    },
+  ],
+});
+check(
+  "a filter by payment status and a count of cancelled orders are taken",
+  readsStore.ok
+);
+if (!readsStore.ok) console.log("     →", said(readsStore));
+const buttonWritesStore = overOrders({
+  actions: [{ label: "Mark paid", set: { financial_status: { const: "PAID" } } }],
+});
+check("and a button still may not write one", !buttonWritesStore.ok && /the store's/.test(said(buttonWritesStore)));
+
 console.log(
   fails.length === 0 ? "\na rule over the store reads both and writes only theirs" : `\n${fails.length} FAILED`
 );

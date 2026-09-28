@@ -951,8 +951,15 @@ export function validateFeatures(
   // and nothing else, which leaves it guessing again from the same
   // place. The columns are listed once, at the end, not seven times.
   let missed = false;
+  // On a section over the store, every row carries the store's own fields
+  // (financial_status, cancelled_at), listed as columns or not: a filter
+  // or a count may read them. Writing one is refused below (notTheStores).
   const hasField = (name: string) => {
-    const ok = RESERVED_FIELDS.has(name) || columns.some((c) => c.field === name) || !!pendingFields?.has(name);
+    const ok =
+      RESERVED_FIELDS.has(name) ||
+      columns.some((c) => c.field === name) ||
+      !!pendingFields?.has(name) ||
+      !!storeFields?.has(name);
     if (!ok) missed = true;
     return ok;
   };
@@ -2288,15 +2295,26 @@ function parsePlans(
  * given. Two of the last twenty-six requests said it.
  *
  * The prompt asks for the future tense; this is what happens when it
- * does not get it. Rejected rather than rewritten: the sentence is
- * the model's to write, and a validator that edits prose is a
- * validator nobody can predict.
+ * does not get it. The sentence that says so is left out, whole, and
+ * the design kept: refusing it threw away a sound design and a whole
+ * attempt (a minute of Opus) for one sentence, while the card still
+ * carries the engine's own description of the change. Only a summary
+ * with nothing left once it is gone is refused.
  *
  * Updating the DESIGN really has happened by the time it is said, so
  * that one is allowed through.
  */
 const ALREADY_DONE =
   /\bi(?:'ve|\u2019ve| have| had)?\s+(?:removed|added|updated|created|built|deleted|renamed|changed|fixed|moved|made)\b(?!\s+(?:the |this |a |your )?(?:design|blueprint|plan|plans|proposal))/i;
+
+/** A line without its sentences that say the change is already made. */
+function withoutDoneClaims(text: string): string {
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => !ALREADY_DONE.test(sentence))
+    .join(" ")
+    .trim();
+}
 
 /**
  * Parses the assistant's reply envelope: clarify (questions), blueprint
@@ -2370,18 +2388,24 @@ function parseShape(
     case "blueprint":
     case "plans": {
       // Both land on the approval card, and both put a sentence of
-      // the model's own above the description the engine writes.
-      const said = [parsed.message, isPlainObject(parsed.blueprint) ? parsed.blueprint.summary : null].find(
-        (v): v is string => typeof v === "string" && ALREADY_DONE.test(v)
-      );
-      if (said) {
-        const hit = said.trim().slice(0, 90);
-        return {
-          ok: false,
-          errors: [
-            `You wrote this as though it had already happened: "${hit}". Nothing is built until the owner approves it, and they have not seen this yet. Say what it would do, not what you have done.`,
-          ],
-        };
+      // the model's own above the description the engine writes. A
+      // sentence there saying the change is made is left out.
+      if (typeof parsed.message === "string" && ALREADY_DONE.test(parsed.message)) {
+        console.log(`[validator] left out a line saying it was done: "${parsed.message.match(ALREADY_DONE)?.[0]}"`);
+        parsed.message = withoutDoneClaims(parsed.message);
+      }
+      const bp = isPlainObject(parsed.blueprint) ? parsed.blueprint : null;
+      if (bp && typeof bp.summary === "string" && ALREADY_DONE.test(bp.summary)) {
+        const kept = withoutDoneClaims(bp.summary);
+        if (kept.length < 10) {
+          return {
+            ok: false,
+            errors: [
+              `Your summary says it has already happened ("${bp.summary.match(ALREADY_DONE)?.[0]}"). Nothing is built until the owner approves it. Say what they told you and what this would do.`,
+            ],
+          };
+        }
+        parsed.blueprint = { ...bp, summary: kept };
       }
       return type === "blueprint"
         ? parseBlueprint(parsed, modules, currentSchema, currentFeatures, schemas)
@@ -2899,6 +2923,7 @@ Rules:
 - Equipment they told you they own (a scanner, a label printer, a weighing machine) that nothing in the build uses IS missing. They mentioned it because it was part of the answer.
 - A problem they stated that nothing detects IS missing. Showing information is not detecting: a list of bookings does not catch a clash, and a quantity field does not catch a short pack.
 - Do NOT list things they never asked for. Do NOT suggest improvements. Do NOT repeat something the build already covers.
+- A screen written for a section comes with its code, and what the screen does when used is what that code does: read it before saying a step is missing.
 - Nothing missing is a normal answer: {"unmet": []}.
 - At most 4 entries, the most important first.`;
 
@@ -2946,6 +2971,7 @@ Reply with JSON only, no prose:
 - "unmet": what THE OWNER asked for that the build does not do, each in the OWNER'S OWN WORDS (a quote, not your explanation). The plan is there to help you read the ask, not a checklist: a line the plan added on its own (a nice-to-have, a "who", a stat) is never missing. Equipment they own (a scanner, a printer) that nothing uses IS missing. A problem they stated that nothing detects IS missing. At most 4, most important first; [] when nothing is.
 - "redo": one line to the designer naming what to change, ONLY when something in "unmet" is the point of the request in the owner's own words (the goal itself, or a step of the work without which the rest is useless) AND it can plainly be built here. Otherwise null. Never for extras, never for what only the plan said, never for wording.
 - Do not list what they never asked for. Do not suggest improvements. Do not repeat what the build already covers — read the build closely before saying a thing is missing; a field, a filter, a stat or a rule in the build that answers it counts.
+- A screen written for a section comes with its code, and what the screen does when used is what that code does: read it (what it takes a scan as, what it writes, what it shows next) before saying a step is missing.
 - Keep the owner's language in the quotes.`;
 
 export type Critique = { unmet: string[]; redo: string | null };
