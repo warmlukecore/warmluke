@@ -3,22 +3,12 @@ import { getUserClient } from "@/lib/supabase-server";
 import { lukeSettings, modelFor } from "@/lib/luke-models";
 import { metered } from "@/lib/usage";
 import { tapeHeaders } from "@/lib/model-tape";
-import { MAX_REPAIR_ATTEMPTS, answeredTurns, runTurn } from "@/lib/engine";
-import { noteJudgement } from "@/lib/judge";
-import { learn } from "@/lib/memory";
-import { traceTurn } from "@/lib/trace";
-import type { ChatTurn } from "@/lib/ai";
+import { runTurn } from "@/lib/engine";
+import { finishTurn, settleAnswer, turnContext, type TurnJob } from "@/lib/turn-run";
+import { start } from "workflow/api";
+import { lukeTurn } from "@/workflows/luke-turn";
 import { TITLE_MAX } from "@/lib/types";
-import type {
-  AssistantReply,
-  FeatureSchema,
-  MessageRow,
-  ModuleRow,
-  ProjectRow,
-  TurnEvent,
-  UiSchema,
-  UiSchemaRow,
-} from "@/lib/types";
+import type { ProjectRow, TurnEvent } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -111,8 +101,6 @@ export async function GET(req: Request) {
   });
 }
 
-type SchemaJsonWithFeatures = UiSchema & { features?: FeatureSchema | null };
-
 /** How often a running turn looks for its stop. */
 const STOP_POLL_MS = 1500;
 
@@ -140,15 +128,24 @@ export async function DELETE(req: Request) {
   return NextResponse.json({ stopped: !!at });
 }
 
-/** How many past turns to replay. Enough for a full discovery loop. */
-const HISTORY_LIMIT = 30;
-
 /**
  * Each turn is a large model call, and the repair loop can triple it.
  * Without a ceiling one stuck client loop runs up an unbounded bill, so
  * cap what a single owner can spend per hour.
  */
 const MAX_TURNS_PER_HOUR = 60;
+
+/** Life a token needs left for a durable turn: several legs, with room. */
+const TOKEN_LEFT_MS = 15 * 60_000;
+
+/** When a verified bearer token lapses (epoch ms), or 0 when it cannot be read. */
+function lapsesAt(token: string): number {
+  try {
+    return Number(JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString()).exp) * 1000 || 0;
+  } catch {
+    return 0;
+  }
+}
 
 /** How often a draft of Luke's words is sent: often enough to read as typing, not a line a token. */
 const WORDS_EVERY_MS = 80;
@@ -254,32 +251,6 @@ export async function POST(req: Request) {
       );
     }
 
-    const { data: modules, error: modErr } = await client
-      .from("modules")
-      .select("*")
-      .eq("project_id", projectId)
-      .order("sort_order", { ascending: true });
-    if (modErr) throw new Error(modErr.message);
-
-    const moduleList = (modules ?? []) as ModuleRow[];
-
-    let currentSchema: UiSchema | null = null;
-    let currentFeatures: FeatureSchema | null = null;
-    if (moduleId) {
-      const { data: schemaRow } = await client
-        .from("ui_schemas")
-        .select("*")
-        .eq("module_id", moduleId)
-        .order("version", { ascending: false })
-        .limit(1);
-      const row = schemaRow?.[0] as UiSchemaRow | undefined;
-      if (row) {
-        const sj = row.schema_json as SchemaJsonWithFeatures;
-        currentSchema = { columns: sj.columns };
-        currentFeatures = sj.features ?? null;
-      }
-    }
-
     // ── Conversation: resume the thread, or start one ──
     let convId = conversationId ?? null;
     if (convId) {
@@ -297,46 +268,10 @@ export async function POST(req: Request) {
     // the question to come back to.
     const isNewConversation = !convId;
 
-    const { data: historyRows, error: histErr } = convId
-      ? await client
-          .from("messages")
-          .select("role, content, ptype:payload->>type, said:payload->>text")
-          .eq("conversation_id", convId)
-          // Newest first, then turned back round below. Ascending with a
-          // limit keeps the OLDEST rows, so past this many messages the
-          // assistant was replaying the start of the conversation for
-          // ever and had no idea what had just been decided — it asked
-          // again for answers it had been given, and designed against
-          // requirements the owner had already replaced.
-          .order("created_at", { ascending: false })
-          .limit(HISTORY_LIMIT)
-      : { data: [], error: null };
-    if (histErr) throw new Error(histErr.message);
-
-    type HistoryRow = Pick<MessageRow, "role" | "content"> & {
-      ptype: string | null;
-      said: string | null;
-    };
-    // Back into the order they were said in; a model reading a
-    // conversation backwards is worse than one reading half of it.
-    const rows = [...((historyRows ?? []) as HistoryRow[])].reverse();
-
-    // Replay the owner's actual words, not the CONTEXT-wrapped turn we
-    // sent at the time: that block is a snapshot of the schema as it was,
-    // and a thread of stale snapshots both costs tokens and contradicts
-    // the fresh one on the newest turn.
-    // A question whose answer never came (still being answered, stopped,
-    // or failed) is not replayed, and neither is the line that stood in
-    // for it: the model is told only what was said and answered.
-    const history = answeredTurns(rows).map((m): ChatTurn => ({
-      role: m.role,
-      content: m.role === "user" ? (m.said ?? m.content) : m.content,
-    }));
-
-    // Has the owner already seen a design for this thread? New sections may
-    // only be built after one — otherwise the assistant can skip straight to
-    // creating things the owner never agreed to.
-    const blueprintShown = rows.some((m) => m.ptype === "blueprint");
+    // The sections, the open one's schema and the thread so far: read the
+    // same way a durable leg reads them (lib/turn-run.ts).
+    const ctx = await turnContext(client, proj, { projectId, moduleId: moduleId ?? null, conversationId: convId });
+    const { moduleList, currentSchema, currentFeatures, history, blueprintShown } = ctx;
 
     // The store the assistant is designing on top of, if there is one.
     // One engine, two callers. The MCP tool designs a merchant's
@@ -432,17 +367,50 @@ export async function POST(req: Request) {
     }
     await client.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
     const thread = convId;
-    /** The answer's line, filled once; a line already stopped is left as it is. */
-    const settle = async (payload: Record<string, unknown>, content = "") => {
-      const { data } = await client
-        .from("messages")
-        .update({ payload, content })
-        .eq("id", answerId)
-        .eq("payload->>type", "answering")
-        .select("id");
-      await client.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", thread);
-      return (data?.length ?? 0) > 0;
+    const job: TurnJob = {
+      userId: auth.userId,
+      projectId,
+      moduleId: moduleId ?? null,
+      conversationId: thread,
+      askedId,
+      answerId,
+      message,
+      askedModel: typeof askedModel === "string" ? askedModel : null,
+      askedAt,
+      isNewConversation,
     };
+    const settle = (payload: Record<string, unknown>, content = "") => settleAnswer(client, job, payload, content);
+
+    // A durable turn (workflows/luke-turn.ts): run in legs past any one
+    // function's time, the charge and its giving back with it. The lines
+    // the browser reads come from the run's own stream. A run that cannot
+    // start leaves the turn to this request, as it always ran.
+    // ponytail: the steps act with the owner's own token, carried in the
+    // run's input until it lapses (about an hour from when the browser got
+    // it); a token with too little life left for a whole turn runs the turn
+    // here. A token minted per turn would lift both.
+    const token = (req.headers.get("authorization") ?? "").slice(7).trim();
+    if (process.env.LUKE_WORKFLOW === "1" && lapsesAt(token) - Date.now() > TOKEN_LEFT_MS) {
+      try {
+        const run = await start(lukeTurn, [{ ...job, token, spendId: refundable }]);
+        refundable = null;
+        const lines = new TransformStream<unknown, Uint8Array>({
+          transform(chunk, controller) {
+            controller.enqueue(new TextEncoder().encode(`${JSON.stringify(chunk)}\n`));
+          },
+        });
+        return new Response(run.readable.pipeThrough(lines), {
+          headers: {
+            "content-type": "application/x-ndjson; charset=utf-8",
+            "cache-control": "no-store",
+            "x-workflow-run-id": run.runId,
+            ...tapeHeaders(),
+          },
+        });
+      } catch (e) {
+        console.error(`[durable turn] not started, running here: ${e instanceof Error ? e.message : e}`);
+      }
+    }
 
     // Luke's words as they are written, one line at most every
     // WORDS_EVERY_MS: a fast model would otherwise send a line a token.
@@ -510,138 +478,9 @@ export async function POST(req: Request) {
           })
         );
 
-        if (!turn.ok) {
-          // Our engine could not produce something it trusts. Charging
-          // for that is charging for our own failure.
-          await settle({
-            type: "unanswered",
-            message: "Luke could not get this right, so nothing was changed. Ask again, in other words.",
-          });
-          after(() =>
-            traceTurn(client, {
-              projectId: proj.id,
-              conversationId: thread,
-              turnId: answerId,
-              steps,
-              usage: took(),
-              repairs: turn.repairs,
-              repairErrors: turn.repairErrors,
-              unmet: [],
-              tookMs: Date.now() - askedAt,
-            })
-          );
-          return {
-            conversationId: convId,
-            repairs: turn.repairs,
-            errors: turn.errors,
-            hint: `The assistant tried ${MAX_REPAIR_ATTEMPTS + 1} times and its plan still failed validation, so nothing was changed. Try rephrasing your request.`,
-          };
-        }
-
-        // Written here, by the server, from what the server actually
-        // read — and before the row is stored, so the thread keeps the
-        // receipt rather than only this response carrying it. The model
-        // is never asked to attest that it looked; an assertion from
-        // the thing being checked is not a check. Only an answer about
-        // the store gets one: a greeting read no rows.
-        // What the calls took, kept with the reply so a reload says the same.
-        const usage = took();
-        if (usage) turn.reply.usage = usage;
-        // And what it did: the same steps the panel was told, so a
-        // thread reopened after a refresh still shows them.
-        turn.reply.trace = { steps, ms: Date.now() - askedAt };
-        if (turn.reply.type === "answer" && turn.reply.kind === "store") {
-          turn.reply.grounding = {
-            kind: "store_snapshot",
-            last_synced_at: turn.store?.snapshot?.last_synced_at ?? null,
-            shop: turn.store?.shop_domain ?? "",
-            ...(turn.lookedUp.length ? { looked_up: turn.lookedUp } : {}),
-          };
-        }
-
-        // Into the line that waited for it. Stopped meanwhile, the answer
-        // is not kept and the turn is given back.
-        await client.from("messages").update({ content: turn.userTurn }).eq("id", askedId);
-        const kept = await settle(
-          turn.repairErrors.length > 0 ? { ...turn.reply, repairErrors: turn.repairErrors } : turn.reply,
-          turn.raw
-        );
-        if (!kept) return { conversationId: thread, stopped: true };
-        const replyId = answerId;
-
-        // Only a turn that produced a design, and got it written down,
-        // counts.
-        //
-        // The card shown when the counter runs out says "Asking about
-        // your store still works" — and asking is what had been using
-        // it up. Every question answered, and every question the
-        // assistant asked BACK, spent one of the ten, so a single
-        // design that needed one round of clarifying cost two or
-        // three. Charged only here rather than never charged, because
-        // the charge has to happen before the model runs: a client in
-        // a loop pays for its own stop.
-        if (turn.reply.type === "plans" || turn.reply.type === "blueprint") {
-          refundable = null;
-          // A second opinion on the design, taken after the reply has
-          // gone out and written down where nothing reads it yet. A
-          // clarify or an answer has no design to judge.
-          const reply = turn.reply;
-          const store = turn.store;
-          after(() =>
-            noteJudgement(client, {
-              projectId: proj.id,
-              source: "chat",
-              ref: replyId,
-              request: message.trim(),
-              plans: reply.type === "blueprint" ? reply.blueprint.plans : reply.plans,
-              modules: moduleList,
-              columns: currentSchema?.columns,
-              store,
-              unmet: turn.unmet,
-            })
-          );
-        }
-
-        // What this exchange said about the business, written down for
-        // next time (0131) — after the answer is out, never in its way.
-        const said = turn.reply;
-        after(() => learn(client, { projectId: proj.id, message: message.trim(), reply: said, known: turn.known }));
-        after(() =>
-          traceTurn(client, {
-            projectId: proj.id,
-            conversationId: thread,
-            turnId: replyId,
-            steps,
-            usage: usage ?? null,
-            repairs: turn.repairs,
-            repairErrors: turn.repairErrors,
-            unmet: turn.unmet,
-            tookMs: Date.now() - askedAt,
-          })
-        );
-        // A thread is named after whatever was typed first, which is
-        // how six of them end up called "hello". Once a design exists
-        // there is something better to call it — and only then, because
-        // renaming on every turn would move a thread the owner was
-        // looking for.
-        //
-        // The model names the conversation on every reply now, and keeps
-        // the name while the subject holds, so the list reads as what each
-        // thread was about ("Pending COD payments") rather than "hello".
-        // Without one, the old rule: named once, from the design.
-        //
-        // A name the owner gave in the list is theirs (0126): the reply
-        // moves the thread up, and leaves its name alone.
-        const named =
-          turn.reply.title ?? (isNewConversation || looksLikeAGreeting(message) ? titleFor(turn.reply) : null);
-        await client.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
-        if (named) {
-          await client.from("conversations").update({ title: named }).eq("id", convId).eq("named_by_owner", false);
-        }
-
-        // The reply's row, so the panel can show it under that id and a
-        // reload of the thread knows which reply it already has on screen.
-        return { conversationId: convId, reply: turn.reply, repairs: turn.repairs, replyId };
+        const done = await finishTurn(client, job, ctx, turn, took(), steps, (fn) => after(fn));
+        if (done.charged) refundable = null;
+        return done.last;
       } catch (e) {
         const why = e instanceof Error ? e.message : "Unknown error";
         if (!halt.signal.aborted) await settle({ type: "unanswered", message: why });
@@ -708,24 +547,4 @@ export async function POST(req: Request) {
     const msg = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json({ error: msg }, { status: 500 });
   }
-}
-
-/** Words that say nothing about what the thread is for. */
-function looksLikeAGreeting(message: string): boolean {
-  return /^(hi|hey|hello|yo|test|hola|namaste)\b[\s!.?]*$/i.test(message.trim());
-}
-
-/**
- * What to call a thread, taken from what the assistant decided to do
- * rather than from the first thing anybody typed.
- */
-function titleFor(reply: AssistantReply): string | null {
-  const from =
-    reply.type === "blueprint"
-      ? (reply.blueprint.summary ?? reply.message)
-      : reply.type === "plans"
-        ? reply.message
-        : null;
-  const line = from?.split(/[.\n]/)[0]?.trim();
-  return line && line.length > 3 ? line.slice(0, TITLE_MAX) : null;
 }

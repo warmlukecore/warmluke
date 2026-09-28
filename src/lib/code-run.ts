@@ -56,21 +56,35 @@ export function parseResult(raw: unknown): CodeResult | null {
   return { set: set.slice(0, 500), add: add.slice(0, 100) };
 }
 
-/** Runs the rule's function once, inside the machine; prints one line of JSON. */
+/**
+ * Runs the rule's function on each input in turn, inside the machine, and
+ * prints one line of JSON: an answer for each, in order. One machine and
+ * one process for them all: a store bringing in fifty orders is one run.
+ */
 const RUNNER = `import { readFileSync } from "node:fs";
-const input = JSON.parse(readFileSync("input.json", "utf8"));
-const say = (o) => process.stdout.write(JSON.stringify(o));
+const inputs = JSON.parse(readFileSync("inputs.json", "utf8"));
+const out = [];
+let run;
 try {
-  const run = (await import("./rule.mjs")).default;
-  const out = await Promise.race([
-    Promise.resolve(run(input)),
-    // unref: a timer left running kept every run alive its full twenty seconds.
-    new Promise((_, no) => setTimeout(() => no(new Error("the code took longer than 20 seconds")), 20000).unref()),
-  ]);
-  say({ ok: true, out: out ?? {} });
+  run = (await import("./rule.mjs")).default;
 } catch (e) {
-  say({ ok: false, error: String(e && e.message ? e.message : e).slice(0, 300) });
-}`;
+  const error = String(e && e.message ? e.message : e).slice(0, 300);
+  process.stdout.write(JSON.stringify(inputs.map(() => ({ ok: false, error }))));
+  process.exit(0);
+}
+for (const input of inputs) {
+  try {
+    const answer = await Promise.race([
+      Promise.resolve(run(input)),
+      // unref: a timer left running kept every run alive its full twenty seconds.
+      new Promise((_, no) => setTimeout(() => no(new Error("the code took longer than 20 seconds")), 20000).unref()),
+    ]);
+    out.push({ ok: true, out: answer ?? {} });
+  } catch (e) {
+    out.push({ ok: false, error: String(e && e.message ? e.message : e).slice(0, 300) });
+  }
+}
+process.stdout.write(JSON.stringify(out));`;
 
 function credentials() {
   const token = process.env.VERCEL_SANDBOX_TOKEN;
@@ -82,50 +96,59 @@ function credentials() {
 /** Whether a sandbox can be reached from here at all. */
 export const canRunCode = () => !!process.env.VERCEL_OIDC_TOKEN || !!process.env.VERCEL_SANDBOX_TOKEN;
 
+type Ran = { ok: true; result: CodeResult } | { ok: false; error: string };
+
+/** The code, run once on this input, in a machine of its own. Never throws. */
+export async function runCode(code: string, input: unknown): Promise<Ran> {
+  return (await runCodeEach(code, [input]))[0];
+}
+
 /**
- * The code, run once on this input, in a machine of its own. Resolves to
- * what it handed back, or to why there is nothing: never throws.
+ * The code, run on each input in turn, in one machine of its own. An
+ * answer for every input, in order, each what it handed back or why
+ * there is nothing. Never throws.
  */
-export async function runCode(
-  code: string,
-  input: unknown
-): Promise<{ ok: true; result: CodeResult } | { ok: false; error: string }> {
+export async function runCodeEach(code: string, inputs: unknown[]): Promise<Ran[]> {
+  const all = (error: string): Ran[] => inputs.map(() => ({ ok: false, error }));
   const problem = codeProblem(code);
-  if (problem) return { ok: false, error: problem };
-  const json = JSON.stringify(input);
-  if (json.length > INPUT_MAX)
-    return { ok: false, error: "The rows this rule reads are too many to hand it in one go." };
-  if (!canRunCode()) return { ok: false, error: "Code rules cannot run here: no sandbox is reachable." };
+  if (problem) return all(problem);
+  if (!inputs.length) return [];
+  const json = JSON.stringify(inputs);
+  if (json.length > INPUT_MAX) return all("The rows this rule reads are too many to hand it in one go.");
+  if (!canRunCode()) return all("Code rules cannot run here: no sandbox is reachable.");
   let sandbox: Sandbox | null = null;
   try {
     sandbox = await Sandbox.create({
       ...credentials(),
       runtime: "node24",
       region: "syd1",
-      timeout: 45_000,
+      // Its life: a minute, and a little more for each input past the first.
+      timeout: Math.min(45_000 + inputs.length * 200, 240_000),
       resources: { vcpus: 1 },
       networkPolicy: "deny-all",
     });
     await sandbox.writeFiles([
       { path: "rule.mjs", content: Buffer.from(code) },
       { path: "runner.mjs", content: Buffer.from(RUNNER) },
-      { path: "input.json", content: Buffer.from(json) },
+      { path: "inputs.json", content: Buffer.from(json) },
     ]);
     const done = await sandbox.runCommand("node", ["runner.mjs"]);
-    const said = (await done.stdout()).trim();
-    let answer: { ok?: boolean; out?: unknown; error?: string } = {};
+    let answers: Array<{ ok?: boolean; out?: unknown; error?: string }> = [];
     try {
-      answer = JSON.parse(said) as typeof answer;
+      answers = JSON.parse((await done.stdout()).trim()) as typeof answers;
     } catch {
-      return { ok: false, error: "The code printed something of its own instead of returning its result." };
+      return all("The code printed something of its own instead of returning its result.");
     }
-    if (!answer.ok) return { ok: false, error: answer.error ?? "The code failed." };
-    const result = parseResult(answer.out);
-    return result ? { ok: true, result } : { ok: false, error: "The code returned nothing to write." };
+    return inputs.map((_, i): Ran => {
+      const a = answers[i];
+      if (!a?.ok) return { ok: false, error: a?.error ?? "The code failed." };
+      const result = parseResult(a.out);
+      return result ? { ok: true, result } : { ok: false, error: "The code returned nothing to write." };
+    });
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message.slice(0, 300) : "The sandbox could not be reached." };
+    return all(e instanceof Error ? e.message.slice(0, 300) : "The sandbox could not be reached.");
   } finally {
-    // Not waited for: the answer is in hand, and a machine left running
+    // Not waited for: the answers are in hand, and a machine left running
     // ends by itself at its timeout.
     void sandbox?.stop().catch(() => {});
   }

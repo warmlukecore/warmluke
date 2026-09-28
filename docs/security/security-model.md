@@ -10,16 +10,20 @@ There is no service-role key in the application runtime path. Administrative scr
 live checks may use privileged credentials against an explicitly selected project. The
 background importer is no exception: it acts through a per-store ticket that the database
 mints and checks (see [Shopify integration](../integrations/shopify.md#import-strategy)).
+Code rules that run with nobody watching do the same with a per-project ticket (0134). A
+durable turn's steps have no session; they act with the owner's own token, verified by the
+chat route before the run starts.
 
 ## Identities
 
-| Identity          | Token characteristic                              | Intended access                                                         |
-| ----------------- | ------------------------------------------------- | ----------------------------------------------------------------------- |
-| Anonymous visitor | Supabase anon role                                | Public pages, bounded landing-event insert, verified OAuth/webhook RPCs |
-| Import worker     | Anon role plus an `x-import-ticket` header        | One store's importer tables, while the ticket is live                   |
-| Application user  | Authenticated JWT without `client_id`             | Owner or member access determined by project RLS                        |
-| OAuth AI client   | Authenticated JWT with `client_id`                | Reads under the owner identity; direct table writes refused             |
-| Superadmin        | Authenticated user with protected account setting | Narrow admin RPCs only; not a general service-role session              |
+| Identity          | Token characteristic                              | Intended access                                                                                                       |
+| ----------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Anonymous visitor | Supabase anon role                                | Public pages, bounded landing-event insert, verified OAuth/webhook RPCs                                               |
+| Import worker     | Anon role plus an `x-import-ticket` header        | One store's importer tables, while the ticket is live                                                                 |
+| Code worker       | Anon role plus an `x-code-ticket` header          | One project's sections, rules, records, code jobs and store rows (never the store's tokens), while the ticket is live |
+| Application user  | Authenticated JWT without `client_id`             | Owner or member access determined by project RLS                                                                      |
+| OAuth AI client   | Authenticated JWT with `client_id`                | Reads under the owner identity; direct table writes refused                                                           |
+| Superadmin        | Authenticated user with protected account setting | Narrow admin RPCs only; not a general service-role session                                                            |
 
 `getUserClient` verifies a bearer token with Supabase Auth, then creates a Supabase client
 whose access-token callback supplies that same JWT. PostgREST therefore evaluates RLS as
@@ -203,6 +207,11 @@ A written screen and a rule's own code run where they can reach nothing:
   environment of the app's, and a 45-second life. They receive JSON and return JSON; the
   writes go through `writeRecord` under the owner's rights (their RLS, the section's
   schema, never the store's fields) and trigger no further code rules.
+- **Queued code rules** (a schedule, a row the store brought in) run on a ticket the
+  database mints for one project, keeps only as a hash in `code_leases`, and posts to the
+  worker. Its policies reach that project's rows and no other's; the store's tokens are
+  outside its column grant. `check-code-jobs-live` tries another project, the tokens and a
+  made-up ticket.
 - Locally, a sandbox is reached with `VERCEL_SANDBOX_TOKEN`, `VERCEL_TEAM_ID` and
   `VERCEL_PROJECT_ID`; on Vercel with the function's own OIDC identity. Neither is a
   secret the code can see.

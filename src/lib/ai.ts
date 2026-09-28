@@ -376,8 +376,8 @@ CHOOSING THE VIEW — this is a real design decision, make it deliberately:
 - If none of the five draws what the owner described — their own steps on one screen, a station for busy hands, big counters, a flow that moves on by itself — write a "custom" view rather than squeezing their flow into a table.
 
 CODE RULE — when a rule needs logic the expressions cannot say (a slab rate by weight, a table to look up, a total across sections, working days), write it: an automation whose action is { "type": "run_code", "reads": ["#courier-rates"], "code": "export default function run({ row, previous, sections, today }) { … return { set: [{ id: row.id, fields: { courier_charge: 65 } }] }; }" }.
-- Trigger record_created or record_updated (with a "when" as usual). It runs after the owner's own write in the app, sealed off: no network, nothing outside what it is handed.
-- It is handed row ({ id, ...fields } — store fields too on a section over the store), previous (the fields before, on an update), sections (the rows of each section in "reads", by the name you listed, each { id, ...fields }), and today (YYYY-MM-DD).
+- When it runs: record_created or record_updated, after the owner's own write in the app; "schedule" with "every" (hourly, daily, weekly), with nobody watching; or "store_row_added" on a section over the store, when the store brings a row in (a new order, a new customer). A "when" filters the rows as usual. A scheduled or store_row_added rule carries run_code actions only. It runs sealed off: no network, nothing outside what it is handed.
+- It is handed row ({ id, ...fields } — store fields too on a section over the store; on a schedule there is no row, and rows holds the section's rows instead), previous (the fields before, on an update), sections (the rows of each section in "reads", by the name you listed, each { id, ...fields }), and today (YYYY-MM-DD).
 - It returns { set: [{ id, fields, section? }], add: [{ fields }] }: set writes fields on rows it was handed (section is the "reads" name, left out for this section); add makes rows in this section, when it is the owner's own. Only the owner's fields are written, never the store's. Keep it short and plain JavaScript.
 - Data the logic needs that nobody has typed yet (the courier's rate card) goes in a section of its own in the same design, for the owner to fill, and the rule reads it.
 
@@ -1359,6 +1359,36 @@ function validateAutomation(
   // on a change to a field of theirs or on a schedule over every row of
   // the list. Nobody adds a row here, so a rule on one being added
   // would never fire.
+  // A row the store brings in wakes a rule's own code only (0134): the
+  // database has no runner of its own for it.
+  if (trigger.type === "store_row_added") {
+    if (!storeFields) {
+      err(
+        errors,
+        'A "store_row_added" rule sits on a section over the store: it wakes when the store brings a row in.'
+      );
+    }
+    const acts = (def as AutomationDefinition).actions;
+    if (Array.isArray(acts) && acts.some((x) => !isPlainObject(x) || x.type !== "run_code")) {
+      err(errors, 'A "store_row_added" rule runs its own code: its actions are run_code only.');
+    }
+  }
+  // Nor has it a runner for a scheduled rule's code: such a rule is the
+  // app's alone, so it carries nothing else.
+  if (trigger.type === "schedule") {
+    const acts = (def as AutomationDefinition).actions;
+    if (
+      Array.isArray(acts) &&
+      acts.some((x) => isPlainObject(x) && x.type === "run_code") &&
+      acts.some((x) => !isPlainObject(x) || x.type !== "run_code")
+    ) {
+      err(
+        errors,
+        "A scheduled rule that runs its own code runs only that: put its other actions in a rule of their own."
+      );
+    }
+  }
+
   if (storeFields && trigger.type === "record_created") {
     err(
       errors,
@@ -1489,12 +1519,13 @@ function validateAutomation(
     }
 
     if (a.type === "run_code") {
-      // The app runs it after a write it makes (lib/code-rules.ts): the
-      // database never sees it, so it rides only on a row's own events.
-      if (trigger.type !== "record_created" && trigger.type !== "record_updated") {
+      // The app runs it: after its own write (record_created,
+      // record_updated), or from the queue with nobody watching (schedule,
+      // store_row_added; 0134, lib/code-rules.ts).
+      if (!["record_created", "record_updated", "schedule", "store_row_added"].includes(trigger.type)) {
         err(
           errors,
-          'A run_code rule runs when a row is added or changed: trigger "record_created" or "record_updated".'
+          'A run_code rule runs when a row is added or changed ("record_created", "record_updated"), on a schedule, or when the store brings a row in ("store_row_added").'
         );
         continue;
       }

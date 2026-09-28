@@ -6,18 +6,19 @@ Database RLS remains authoritative.
 
 ## Projects and application structure
 
-| Method and path                   | Purpose                                       | Important rules                                                                      |
-| --------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `GET /api/projects`               | List projects visible to the caller           | RLS includes owned and joined projects as applicable                                 |
-| `POST /api/projects`              | Create an empty project                       | Owner is the authenticated user                                                      |
-| `PATCH /api/projects`             | Rename/update locale, currency, or auto-build | Owner-only writes; chosen currency is tracked separately from its default            |
-| `DELETE /api/projects`            | Delete a project                              | Owner-only and explicitly confirmed by the UI; cascades project data                 |
-| `GET /api/modules?projectId=&id=` | Preview module deletion impact                | Returns row and child-section impact                                                 |
-| `POST /api/modules`               | Create a section manually                     | Validates source table and creates initial schema                                    |
-| `PATCH /api/modules`              | Rename/reorder/reparent/change source         | Prevents invalid nesting/source transitions; versions schema changes                 |
-| `DELETE /api/modules`             | Delete a section                              | Owner-only with confirmation name and dependency checks                              |
-| `POST /api/records`               | Create, update, delete, or apply a row action | Reloads current schema, strips undeclared data, enforces computed/store restrictions |
-| `POST /api/rollback`              | Restore an earlier UI schema                  | Appends a new schema version rather than rewriting history                           |
+| Method and path                   | Purpose                                       | Important rules                                                                                                    |
+| --------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/projects`               | List projects visible to the caller           | RLS includes owned and joined projects as applicable                                                               |
+| `POST /api/projects`              | Create an empty project                       | Owner is the authenticated user                                                                                    |
+| `PATCH /api/projects`             | Rename/update locale, currency, or auto-build | Owner-only writes; chosen currency is tracked separately from its default                                          |
+| `DELETE /api/projects`            | Delete a project                              | Owner-only and explicitly confirmed by the UI; cascades project data                                               |
+| `GET /api/modules?projectId=&id=` | Preview module deletion impact                | Returns row and child-section impact                                                                               |
+| `POST /api/modules`               | Create a section manually                     | Validates source table and creates initial schema                                                                  |
+| `PATCH /api/modules`              | Rename/reorder/reparent/change source         | Prevents invalid nesting/source transitions; versions schema changes                                               |
+| `DELETE /api/modules`             | Delete a section                              | Owner-only with confirmation name and dependency checks                                                            |
+| `POST /api/records`               | Create, update, delete, or apply a row action | Reloads current schema, strips undeclared data, enforces computed/store restrictions                               |
+| `POST /api/rollback`              | Restore an earlier UI schema                  | Appends a new schema version rather than rewriting history                                                         |
+| `POST /api/code-rules/worker`     | Run a project's queued code rules             | Called by the database only; `{ project, ticket }`, the ticket checked by the database; 202, the work in `after()` |
 
 The browser performs many ordinary reads directly through Supabase under RLS. These API
 routes exist where server-side validation, orchestration, or secrets are required.

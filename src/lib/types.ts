@@ -59,7 +59,8 @@ export type Expr =
   | { op: ExprOp; args?: Expr[] };
 
 export interface AutomationTrigger {
-  type: "record_created" | "record_updated" | "schedule";
+  /** store_row_added: a row the store brought in (0134), for a rule's own code on a section over the store. */
+  type: "record_created" | "record_updated" | "schedule" | "store_row_added";
   /** For schedule type; the engine runs hourly and filters with `when`. */
   every?: "hourly" | "daily" | "weekly";
   /** One expression deciding whether the rule fires. */

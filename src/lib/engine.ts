@@ -241,7 +241,43 @@ export type TurnInput = {
    * account may use (luke-models.ts). Absent, the server's design model.
    */
   model?: string;
+  /**
+   * When this invocation must hand the turn on (epoch ms). Past it, with
+   * too little left for another attempt, the turn pauses between
+   * attempts and returns its state. Absent, it runs to the end.
+   */
+  deadline?: number;
+  /** A paused turn's state, to go on from where it stopped. */
+  resume?: TurnState;
 };
+
+/**
+ * A turn stopped between attempts, to go on in another invocation: all
+ * it had, as plain data. A durable turn (workflows/luke-turn.ts) runs
+ * in legs, each short of a function's time, and hands this from one to
+ * the next; a leg that dies starts again from the last one handed on.
+ */
+export type TurnState = {
+  store: StoreContext | null;
+  road: Road;
+  planned: boolean;
+  planBlock: string;
+  attemptTurns: ChatTurn[];
+  attempt: number;
+  raw: string;
+  parsed: ReturnType<typeof parseReply> | null;
+  repairs: number;
+  repairErrors: string[];
+  reuse: ReturnType<typeof reuseQuestion>;
+  onlyAsking: boolean;
+  critiqued: { unmet: string[] } | null;
+  sentBack: boolean;
+  sentBackDesign: { parsed: ReturnType<typeof parseReply>; raw: string; unmet: string[] } | null;
+  lookedUp: string[];
+};
+
+/** What one design attempt, and the critic after it, can take: the time a leg keeps in hand before starting one. */
+export const ATTEMPT_MS = 120_000;
 
 export type TurnResult =
   | {
@@ -263,7 +299,14 @@ export type TurnResult =
       /** What was known about the business when this turn was made, newest first. */
       known: string[];
     }
-  | { ok: false; errors: string[]; repairs: number; repairErrors: string[] };
+  | {
+      ok: false;
+      errors: string[];
+      repairs: number;
+      repairErrors: string[];
+      /** Only with a deadline: out of time between attempts, the turn so far to go on from. */
+      paused?: TurnState;
+    };
 
 /**
  * Runs the model, repairs what the validator rejects, and fills in the
@@ -433,6 +476,8 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     onEvent,
     onWords,
     model,
+    deadline,
+    resume,
   } = input;
   // Said after the fact, with what was found. A listener that throws
   // must not take the turn down with it: the work is the point, the
@@ -445,8 +490,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     }
   };
 
-  const store = await storeContextFor(client, project.id, message);
-  tell({ step: "store", shop: store?.shop_domain ?? null, read: store?.snapshot?.slice?.what ?? null });
+  // Read on the first leg only: every leg after designs on the same store it planned on.
+  const store = resume ? resume.store : await storeContextFor(client, project.id, message);
+  if (!resume) tell({ step: "store", shop: store?.shop_domain ?? null, read: store?.snapshot?.slice?.what ?? null });
   // What already runs on this app. Left out, the designer proposes a
   // rule that exists, or tells the merchant no rule exists when one
   // fires every morning. It goes in the user turn rather than the
@@ -480,13 +526,13 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // Every section's columns, so a design that touches one the caller
   // did not have open is both checked and readable.
   const schemas = await schemasFor(client, modules);
-  tell({ step: "context", sections: modules.length, rules: (ruleRows ?? []).length });
+  if (!resume) tell({ step: "context", sections: modules.length, rules: (ruleRows ?? []).length });
 
   // The store tools, when this caller allows them and there is a store
   // to read. Each lookup is told as it comes back and kept once for the
   // receipt: a transient retry that runs the same lookup again is still
   // one thing looked up.
-  const lookedUp: string[] = [];
+  const lookedUp: string[] = [...(resume?.lookedUp ?? [])];
   const heard = new Set<string>();
   const hear = ({ about, tool, args }: { tool: string; about: string; args: unknown }) => {
     const key = `${tool}:${JSON.stringify(args)}`;
@@ -550,8 +596,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // Which road: only how to answer, or the whole design contract. The
   // talk road hands a build back (below), so a wrong turn onto it costs
   // one small call; a wrong turn onto the design road costs tokens.
-  let road: Road = roadFor({ message, lastReplyType: lastReplyTypeOf(history), routed: !!store?.snapshot?.slice });
-  tell({ step: "road", road });
+  let road: Road =
+    resume?.road ?? roadFor({ message, lastReplyType: lastReplyTypeOf(history), routed: !!store?.snapshot?.slice });
+  if (!resume) tell({ step: "road", road });
   const designSystem = () =>
     buildSystemPrompt(modules, project.name, project.locale, project.currency, store, merchant);
   let system =
@@ -573,8 +620,8 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // design call. Once a turn; not when the owner is answering a design
   // already drawn (a yes, a no, a tweak). A plan that fails to come or
   // to parse is no plan, and the design goes on as it always did.
-  let planBlock = "";
-  let planned = false;
+  let planBlock = resume?.planBlock ?? "";
+  let planned = resume?.planned ?? false;
   // The setting is the switch: no plan model, no plan step — and no critic.
   const planOn = planModel();
   const plan = async () => {
@@ -617,27 +664,57 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // history would only teach it to repeat the mistake. The plan's words
   // ride with the request here and are not persisted either: the
   // thread keeps what the owner said, not what Luke made of it.
-  const attemptTurns: ChatTurn[] = [{ role: "user", content: userTurn + planBlock }];
-  let raw = "";
-  let parsed: ReturnType<typeof parseReply> | null = null;
-  let repairs = 0;
+  const attemptTurns: ChatTurn[] = resume?.attemptTurns ?? [{ role: "user", content: userTurn + planBlock }];
+  let raw = resume?.raw ?? "";
+  let parsed: ReturnType<typeof parseReply> | null = resume?.parsed ?? null;
+  let repairs = resume?.repairs ?? 0;
   // The question the code would ask about where this work goes, once the
   // model has been told to ask it: its words are the fallback.
-  let reuse: ReturnType<typeof reuseQuestion> = null;
-  let onlyAsking = false;
+  let reuse: ReturnType<typeof reuseQuestion> = resume?.reuse ?? null;
+  let onlyAsking = resume?.onlyAsking ?? false;
   // Which gate fired, not just how often something did. The count
   // alone cannot tell a malformed shape from a design that missed the
   // point, and those want opposite remedies.
-  const repairErrors: string[] = [];
+  const repairErrors: string[] = [...(resume?.repairErrors ?? [])];
   // The critic's word on a design that passed every gate: what it still
   // misses, in the owner's words, and — once a turn — that it goes back.
-  let critiqued: { unmet: string[] } | null = null;
-  let sentBack = false;
+  let critiqued: { unmet: string[] } | null = resume?.critiqued ?? null;
+  let sentBack = resume?.sentBack ?? false;
   // The design the critic sent back, which stood: kept, so a redo that
   // fails does not cost the design it was redoing.
-  let sentBackDesign: { parsed: ReturnType<typeof parseReply>; raw: string; unmet: string[] } | null = null;
+  let sentBackDesign: { parsed: ReturnType<typeof parseReply>; raw: string; unmet: string[] } | null =
+    resume?.sentBackDesign ?? null;
 
-  for (let attempt = 0; attempt <= MAX_REPAIR_ATTEMPTS; attempt++) {
+  const firstAttempt = resume?.attempt ?? 0;
+  for (let attempt = firstAttempt; attempt <= MAX_REPAIR_ATTEMPTS; attempt++) {
+    // Out of this invocation's time, with an attempt made in it: the
+    // turn so far, handed on whole, to go on in a fresh one.
+    if (deadline && attempt > firstAttempt && Date.now() + ATTEMPT_MS > deadline) {
+      return {
+        ok: false,
+        errors: [],
+        repairs,
+        repairErrors,
+        paused: {
+          store,
+          road,
+          planned,
+          planBlock,
+          attemptTurns,
+          attempt,
+          raw,
+          parsed,
+          repairs,
+          repairErrors,
+          reuse,
+          onlyAsking,
+          critiqued,
+          sentBack,
+          sentBackDesign,
+          lookedUp,
+        },
+      };
+    }
     tell({ step: "model", attempt: attempt + 1, of: MAX_REPAIR_ATTEMPTS + 1 });
     // Tools on the first attempt only: a repair fixes the reply's shape,
     // and what was looked up is already written into the reply it fixes.

@@ -70,6 +70,25 @@ export function asJob<T>(job: Job, fn: () => Promise<T>): Promise<T> {
   return at ? meters.run({ meter: at.meter, job }, fn) : fn();
 }
 
+/** Several legs of one turn (workflows/luke-turn.ts), as one: their calls added up, priced once. */
+export function combine(parts: Array<TurnUsage | null | undefined>): TurnUsage | null {
+  const meter: Meter = { uses: [], replyModel: null };
+  for (const p of parts) {
+    if (!p) continue;
+    if (p.model) meter.replyModel = p.model;
+    for (const u of p.uses) {
+      const same = meter.uses.find((m) => m.provider === u.provider && m.model === u.model && m.job === u.job);
+      if (!same) meter.uses.push({ ...u, usd: null });
+      else
+        for (const k of ["calls", "input", "cacheRead", "cacheWrite", "output"] as const) {
+          const sum = same[k] + u[k];
+          if (Number.isSafeInteger(sum)) same[k] = sum;
+        }
+    }
+  }
+  return summarise(meter);
+}
+
 export function summarise(meter: Meter): TurnUsage | null {
   if (meter.uses.length === 0) return null;
   const uses = meter.uses.map((u) => ({ ...u, usd: costOf(u.model, u) }));

@@ -83,8 +83,10 @@ const classify = (name) => {
   // Checks that import from src/ run TypeScript through the hook the
   // rest of the scripts already use — an import() partway through too:
   // check-apply read describe.ts that way, and ran without the hook
-  // until describe.ts first imported a value of its own.
-  const hook = /(from |import\()"\.\.\/src\//.test(src);
+  // until describe.ts first imported a value of its own. A TypeScript
+  // fixture counts too: check-code-jobs-live imported only seed-shop.ts,
+  // whose "@/lib" paths nothing resolves without the hook.
+  const hook = /(from |import\()"(\.\.\/src\/|[^"]+\.ts")/.test(src);
   // The management PAT is account-wide — it reaches production from
   // anywhere it is held — so it never goes to CI. A check that needs
   // it is skipped there, by name, rather than failing on a missing

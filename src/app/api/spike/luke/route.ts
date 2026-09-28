@@ -13,7 +13,8 @@ import { askSpike, lukeSpike, type SpikeEvent } from "@/workflows/luke-spike";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const on = () => process.env.LUKE_WORKFLOW === "1";
+// Never in production: the chat's own durable turn shares the switch (workflows/luke-turn.ts).
+const on = () => process.env.LUKE_WORKFLOW === "1" && process.env.VERCEL_ENV !== "production";
 
 /** Chunks as lines, one JSON object each, as the chat streams them. */
 const ndjson = () =>

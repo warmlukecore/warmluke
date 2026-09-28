@@ -66,6 +66,8 @@ erDiagram
 | `ui_schemas`      | Append-only module designs                                           | Versioned schema JSON, author, and change description                                                                                |
 | `automations`     | Declarative business rules                                           | Optional module scope, enabled state, expression/action definition                                                                   |
 | `automation_runs` | Automation execution history                                         | Success flag, triggering record, and details                                                                                         |
+| `code_jobs` | Code rules waiting to run with nobody watching (0134) | Kind `schedule` or `added` (the store rows it is for), status, tries, why it failed; one open job a rule and kind; read by the project's members, written by the database and the project's ticket |
+| `code_leases` | The code worker's lock and ticket (0134) | One row a project while a worker holds it: the ticket's hash and when it lapses; no client reads it |
 
 ### UI schema
 
@@ -82,14 +84,16 @@ store view and retain only their added computed columns and presentation feature
 
 An automation has one trigger and one or more actions:
 
-- triggers: record created, record updated, or scheduled;
+- triggers: record created, record updated, scheduled, or, for a code rule on a section
+  over the store, a row the store brings in (`store_row_added`);
 - actions: set fields on self/matching rows or create a record in another module, or run
   the rule's own code (`run_code`).
 
 A rule writing a section over the store (0133) finds the store's row by one of the store's
 own fields and keeps what it writes beside that row (a record with `store_row_id`, as
 0128), never in the store's own list. `run_code` is not run by the database: the app runs
-it after its own write (`src/lib/code-rules.ts`), on record created or updated only.
+it after its own write (`src/lib/code-rules.ts`), and on a schedule or a row the store
+brings in through the queue below (0134).
 
 The TypeScript contract includes a webhook action for historical compatibility, but the
 platform capability registry advertises only implemented/accepted actions. Treat

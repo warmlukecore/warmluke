@@ -46,6 +46,9 @@ const check = (name, cond) => {
 console.log("a turn that designed nothing is not an included design");
 {
   const chat = readFileSync(new URL("../src/app/api/chat/route.ts", import.meta.url), "utf8");
+  // What follows the model, for the chat and the durable turn alike (lib/turn-run.ts).
+  const finish = readFileSync(new URL("../src/lib/turn-run.ts", import.meta.url), "utf8");
+  const durable = readFileSync(new URL("../src/workflows/luke-turn.ts", import.meta.url), "utf8");
   const mcp = readFileSync(new URL("../src/app/api/mcp/route.ts", import.meta.url), "utf8");
 
   // The turn is refundable from the moment it is spent, and stops
@@ -58,13 +61,17 @@ console.log("a turn that designed nothing is not an included design");
     "the chat charges only once a design is written down",
     // Written down is the answer's line filled (settle); a line stopped
     // meanwhile is not filled, and that turn goes back like any other.
-    /const kept = await settle\([\s\S]{0,1400}reply\.type === "plans" \|\| turn\.reply\.type === "blueprint"\) \{\s*refundable = null/.test(
-      chat
-    )
+    /const kept = await settleAnswer\([\s\S]{0,1400}reply\.type === "plans" \|\| turn\.reply\.type === "blueprint"\) \{\s*charged = true/.test(
+      finish
+    ) && /if \(done\.charged\) refundable = null;/.test(chat)
   );
   check(
     "stated as what a design is, so a new reply type is free by default",
-    !/reply\.type === "answer"[\s\S]{0,120}refundable = null/.test(chat)
+    !/reply\.type === "answer"[\s\S]{0,120}charged = true/.test(finish)
+  );
+  check(
+    "and a durable turn gives back what it did not design, in its last step",
+    /finally \{[\s\S]{0,300}if \(!charged && job\.spendId\) await client\.rpc\("abo_refund_turn"/.test(durable)
   );
   check(
     "and every other way out gives it back in one place",

@@ -23,6 +23,31 @@ export function ticketClient(ticket: string): SupabaseClient {
   });
 }
 
+/**
+ * The same, for a project's queued code (0134): anon to the database,
+ * which accepts x-code-ticket for that one project's sections, rules,
+ * records and store rows while the ticket lives — and nothing else.
+ */
+export function codeTicketClient(ticket: string): SupabaseClient {
+  return createClient(url, anonKey, {
+    global: { headers: { "x-code-ticket": ticket } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+/**
+ * A client that is the owner of this token, for work carried on past the
+ * request that verified it (a durable turn's legs). RLS decides every
+ * read and write, as for any client of theirs; a token past its hour is
+ * refused by the database, not here.
+ */
+export function clientForToken(token: string): SupabaseClient {
+  return createClient(url, anonKey, {
+    accessToken: async () => token,
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
 export async function getUserClient(req: Request): Promise<{ client: SupabaseClient; userId: string } | null> {
   const authHeader = req.headers.get("authorization") ?? "";
   const token = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : null;
@@ -38,10 +63,5 @@ export async function getUserClient(req: Request): Promise<{ client: SupabaseCli
   const userId = user.id ?? user.sub;
   if (!userId) return null;
 
-  const client = createClient(url, anonKey, {
-    accessToken: async () => token,
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-
-  return { client, userId };
+  return { client: clientForToken(token), userId };
 }

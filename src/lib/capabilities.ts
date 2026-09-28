@@ -180,6 +180,8 @@ export const TRIGGERS = {
   record_updated: "a row is changed",
   schedule:
     'nobody touched anything — re-checks every row on its own. This is the only way to catch things that go quiet: an unpaid invoice, a job nobody moved, a follow-up never made. Needs "every": hourly, daily or weekly, and its "when" picks which rows to act on',
+  store_row_added:
+    "a new row came in from the store — a new order, a new customer. Only on a section over the store, and only for a rule's own code (run_code)",
 } as const;
 
 export type TriggerType = keyof typeof TRIGGERS;

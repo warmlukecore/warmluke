@@ -86,7 +86,10 @@ writes the part itself instead of refusing or squeezing the owner's flow into a 
   seconds) after the owner's own write in the app, is handed the row, the rows of the
   sections it `reads` and today, and returns writes that go back through
   `lib/record-write.ts`, the one door every write uses. Those writes run no code rules of
-  their own. Measured locally: about 2 s to make the machine, 2 s to hand it the files,
+  their own. It also runs with nobody watching: on a `schedule`, handed the section's
+  `rows`, and on `store_row_added`, once for each row the store brings into a section over
+  its list. The database queues those runs and a worker takes them on a ticket for one
+  project (see [Code with nobody watching](#code-with-nobody-watching)). Measured locally: about 2 s to make the machine, 2 s to hand it the files,
   1.3 s to run, 7.5 s from a write to its result on screen.
 - **A scan that opens a group first** (`scanMode.first`, `alsoMatch`, `done`): the order's
   label, then the items in it, in one input, and on to the next order by itself.
@@ -214,7 +217,8 @@ columns are, for the screen, the engine, apply and the validator. Its row action
 scan mode may set only the merchant's fields. A rule on it reads the store's fields and the
 merchant's — 0130 lays the store's row under the record when a rule is judged, the store's
 value winning a shared name — and writes only the merchant's. It runs on `record_updated`
-(from the first field set on a row) or on a `schedule` over every row of the store's list
+(from the first field set on a row), on a `schedule` over every row of the store's list, or,
+for a code rule only, on `store_row_added`
 (`run_scheduled_automations` walks the list, and a row the rule acts on gets its record
 then); `record_created` is refused, since no row is added here. A change in Shopify is not
 seen the moment it happens; a schedule rule sees it on its next run. No rule elsewhere may
@@ -324,24 +328,53 @@ The reply carries the same steps and the time as `trace` on its stored payload, 
 `usage`, so a thread reopened after a refresh shows what each turn did (the "Read your
 store · 14s" line) without reading `turn_traces`. `check-chat-stream` holds that too.
 
-## Durability spike (Workflow)
+## A turn in legs (Workflow)
 
-A turn is one request today: the process dies, the turn is lost. The team of agents to
-come (planner, specialists, critic, a sandbox run, a wait for the owner's answer) needs
-durable steps. Vercel Workflow (`workflow@5` beta, `@ai-sdk/workflow`) was tried behind
-`LUKE_WORKFLOW=1` on its own route (`src/workflows/luke-spike.ts`,
-`src/app/api/spike/luke/route.ts`; the chat's path is untouched). Found: it compiles and
-runs under `next dev` on Next 16 with `withWorkflow`; each step is recorded with its
-input and output and every event is listed (`pnpm exec workflow inspect runs|steps|events`);
-a run streams what it says as it goes (`getWritable` from steps; the stream must be
-closed from a final step or a reader waits for ever); a run pauses on a hook and resumes
-from a route (`createHook` / `resumeHook`). Not shown locally: a step whose process is
-killed being retried. The local world re-enqueues runs on start but its in-flight step
-message dies with the process (`WORKFLOW_LOCAL_QUEUE_MAX_VISIBILITY` did not change that
-in beta.48); on Vercel, Queues re-deliver after a visibility timeout, which a preview
-deployment has to prove. Two things the real design must settle: a step has no session,
-so it must mint a short-lived token for the owner rather than run as the service role
-(the spike does); and `PORT` / `WORKFLOW_LOCAL_BASE_URL` must name the dev port.
+A design turn is a plan, up to three design attempts and the critic after each: past a
+function's five minutes on a big ask. With `LUKE_WORKFLOW=1` the chat route starts the
+turn as a Vercel Workflow run (`src/workflows/luke-turn.ts`) and streams the run's own
+lines, the same ones as ever. The turn runs in legs. Each leg is a durable step with a
+function's time of its own: it reads the app and the thread afresh and goes on from where
+the last leg stopped (`TurnState` in `engine.ts`: the plan, the attempt reached, the last
+design and why it was refused). A leg hands its state on when too little time is left for
+another attempt (`deadline`, `ATTEMPT_MS`). A leg that dies is run again from the state it
+was handed, so attempts already made are not paid for twice. A last step does what the
+route does once the model is done (`lib/turn-run.ts`: the answer written, the charge kept
+or given back, the title) and ends the stream. Every leg reads and writes as the owner,
+with the token the route verified; no step runs as the service role. That token rides in
+the run's input until it lapses, so one with under fifteen minutes left runs the turn in the
+request instead; a token minted per turn would lift that. Without the switch the turn runs
+in the request, as before.
+
+`LUKE_LEG_MS` shortens a leg for testing. `check-turn-legs` holds that a turn paused and
+resumed after every attempt answers as one run straight through, with the same model
+calls. Known ceiling: `abo_refund_turn` gives back only a charge of the last five minutes,
+so a turn that ran longer and made no design keeps its charge.
+
+The spike it grew from (`src/workflows/luke-spike.ts`, `/api/spike/luke`) stays for
+trying hooks by hand, never in production. Found there: the local world does not retry a
+step whose process was killed; on Vercel, Queues re-deliver it after a visibility timeout,
+which a preview deployment has to prove. `PORT` / `WORKFLOW_LOCAL_BASE_URL` must name the
+dev port.
+
+## Code with nobody watching
+
+A code rule on a schedule, or on a row the store brings in, has no owner's write to follow,
+so the database queues it (0134). `abo_code_schedule` (every ten minutes) queues a job for
+each scheduled code rule whose time has come; `run_scheduled_automations` leaves those rules
+alone. A trigger on each store table queues an `added` job for each code rule on a section
+over that list, and rows that arrive while it waits join it, up to 500. Nothing is queued
+while the store's first import runs. `abo_code_tick` (each minute) mints a ticket for each
+project with work waiting and no worker on it, and posts it to the vault address
+`code_worker_url`; without that address nothing is sent, as with the import worker.
+
+The worker (`src/app/api/code-rules/worker/route.ts`) checks the ticket with the database,
+answers 202, and runs the project's jobs for about 200 seconds in `after()`
+(`runQueuedJobs`): each claimed, run in one sandbox for all its rows, and marked done or
+failed with why. Writes go through the same door as ever. A job whose worker died is found
+by the tick fifteen minutes on: its rows join the rule's open job, or it goes back on the
+queue, three tries in all. `check-code-jobs-live` holds all of it, the ticket's reach
+included.
 
 ## Extending the engine safely
 

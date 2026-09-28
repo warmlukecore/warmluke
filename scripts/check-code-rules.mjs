@@ -3,9 +3,10 @@
 //
 // Code that exports its function is taken; code that does not, or is
 // past the size a rule should be, is not. A code rule rides on a row
-// being added or changed, never a schedule (the app runs it after its
-// own write), reads only sections of the project, and its "when" is
-// what the app can evaluate. What the code hands back is read as
+// being added or changed, on a schedule, or on a row the store brings
+// in (then only on a section over the store, carrying code alone), reads
+// only sections of the project, and its "when" is what the app can
+// evaluate. What the code hands back is read as
 // writes and rows, and anything else in it is dropped.
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-code-rules.mjs
@@ -100,9 +101,42 @@ const taken = rule(changedWeight, { type: "run_code", reads: ["#rates"], code })
 check("a code rule on a changed weight, reading the rate card, is taken", taken.ok);
 if (!taken.ok) console.log("     →", taken.errors);
 const scheduled = rule({ type: "schedule", every: "daily" }, { type: "run_code", code });
+check("on a schedule too, with nobody watching", scheduled.ok);
+if (!scheduled.ok) console.log("     →", scheduled.errors);
+const mixed = parseReply(
+  JSON.stringify({
+    type: "plans",
+    message: "A rule.",
+    plans: [
+      {
+        changeType: "AUTOMATION_ADD",
+        targetModuleId: modules[0].id,
+        automation: {
+          name: "both",
+          definition: {
+            trigger: { type: "schedule", every: "daily" },
+            actions: [
+              { type: "run_code", code },
+              { type: "set_fields", target: { self: true }, set: { charge: { const: 1 } } },
+            ],
+          },
+        },
+        explanation: "Works out the courier charge every day.",
+      },
+    ],
+  }),
+  modules,
+  schema,
+  null
+);
 check(
-  "but not on a schedule: it runs after the owner's own write",
-  !scheduled.ok && scheduled.errors.some((e) => /record_created" or "record_updated/.test(e))
+  "but a scheduled rule that runs code runs only that",
+  !mixed.ok && mixed.errors.some((e) => /runs only that/.test(e))
+);
+const addedOnOwn = rule({ type: "store_row_added" }, { type: "run_code", code });
+check(
+  "and a row the store brings in wakes only a section over the store",
+  !addedOnOwn.ok && addedOnOwn.errors.some((e) => /section over the store/.test(e))
 );
 const nowhere = rule(changedWeight, { type: "run_code", reads: ["#nowhere"], code });
 check("and it reads only sections of this project", !nowhere.ok && nowhere.errors.some((e) => /"reads"/.test(e)));

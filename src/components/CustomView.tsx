@@ -61,7 +61,9 @@ export default function CustomView({
 
   // The handlers as they are now, read by the listener when a call arrives.
   const handlers = useRef({ onSet, onAdd, onFind, columns });
-  handlers.current = { onSet, onAdd, onFind, columns };
+  useEffect(() => {
+    handlers.current = { onSet, onAdd, onFind, columns };
+  }, [onSet, onAdd, onFind, columns]);
 
   useEffect(() => {
     const listen = async (e: MessageEvent) => {

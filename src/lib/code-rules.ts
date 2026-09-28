@@ -9,14 +9,26 @@
 // door as the owner's writes (lib/record-write.ts), under their rights,
 // and those writes run no code rules of their own: no rule can loop.
 //
-// Callers: src/app/api/records/route.ts (after the answer is out).
+// And with nobody watching (0134): a rule on a schedule, or on a row the
+// store brings in, is queued by the database and run here by the worker
+// on the project's ticket (runQueuedJobs), through the same door.
+//
+// Callers: src/app/api/records/route.ts (after the answer is out),
+// src/app/api/code-rules/worker/route.ts (the queue).
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { runCode, type CodeResult } from "@/lib/code-run";
+import { runCode, runCodeEach, type CodeResult } from "@/lib/code-run";
 import { evalExpr, truthy, withComputed } from "@/lib/expr";
 import { writeRecord, type Written } from "@/lib/record-write";
-import { STORE_TABLES, isStoreTable, readStoreRows, withOwnFields, type StoreTable } from "@/lib/store-read";
-import type { AutomationDefinition } from "@/lib/types";
+import {
+  STORE_TABLES,
+  isStoreTable,
+  readStoreRows,
+  storeSectionColumns,
+  withOwnFields,
+  type StoreTable,
+} from "@/lib/store-read";
+import type { AutomationDefinition, SchemaColumn, UiSchema } from "@/lib/types";
 
 /** Rows of a read section handed to the code. ponytail: the newest 500; a rule over a bigger list is asked to read less. */
 const ROWS_A_SECTION = 500;
@@ -65,7 +77,7 @@ async function readSections(client: SupabaseClient, projectId: string, refs: str
 /** What the code handed back, written through the owner's own door. */
 async function applyWrites(
   client: SupabaseClient,
-  w: Written,
+  w: Pick<Written, "projectId" | "moduleId">,
   here: Place,
   places: Record<string, Place>,
   out: CodeResult
@@ -154,4 +166,127 @@ export async function runCodeRules(client: SupabaseClient, w: Written): Promise<
   } catch (e) {
     console.error(`[code rule] ${e instanceof Error ? e.message : "failed"}`);
   }
+}
+
+/** A job as the queue keeps it (0134). */
+type Job = { id: string; automation_id: string; kind: "schedule" | "added"; row_ids: string[]; attempts: number };
+
+/** The project's store, when it has one it may read. */
+async function storeOf(client: SupabaseClient, projectId: string): Promise<string | null> {
+  const { data } = await client
+    .from("stores")
+    .select("id")
+    .eq("project_id", projectId)
+    .in("status", ["connected", "uninstalled"])
+    .maybeSingle();
+  return (data?.id as string | undefined) ?? null;
+}
+
+/** One queued job, run: why it did not, or null. */
+async function runJob(client: SupabaseClient, projectId: string, job: Job): Promise<string | null> {
+  const { data: rule } = await client
+    .from("automations")
+    .select("id, name, module_id, enabled, definition")
+    .eq("id", job.automation_id)
+    .maybeSingle();
+  if (!rule?.enabled) return "The rule is off, or gone.";
+  const def = rule.definition as AutomationDefinition;
+  const moduleId = rule.module_id as string;
+  const { data: mod } = await client.from("modules").select("source_table").eq("id", moduleId).maybeSingle();
+  const table = isStoreTable(mod?.source_table) ? (mod!.source_table as StoreTable) : null;
+  const { data: schemaRow } = await client
+    .from("ui_schemas")
+    .select("schema_json")
+    .eq("module_id", moduleId)
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const saved = (schemaRow?.schema_json as UiSchema | undefined)?.columns ?? [];
+  const columns: SchemaColumn[] = table ? storeSectionColumns(table, saved) : saved;
+  const storeId = table ? await storeOf(client, projectId) : null;
+  if (table && !storeId) return "The project has no store to read.";
+
+  // The rows it is for: the ones the store brought in, or every row of the section.
+  let rows: Array<{ id: string; data: Record<string, unknown> }>;
+  if (job.kind === "added") {
+    const spec = STORE_TABLES[table!];
+    const { data } = await client.from(spec.view).select(spec.select).eq("store_id", storeId!).in("id", job.row_ids);
+    rows = ((data ?? []) as unknown as Array<Record<string, unknown>>).map((r) => ({ id: String(r.id), data: r }));
+    rows = await withOwnFields(client, moduleId, rows);
+  } else if (table) {
+    rows = await withOwnFields(client, moduleId, (await readStoreRows(client, storeId!, table, ROWS_A_SECTION)).rows);
+  } else {
+    const { data } = await client
+      .from("records")
+      .select("id, data")
+      .eq("module_id", moduleId)
+      .is("store_row_id", null)
+      .order("created_at", { ascending: false })
+      .limit(ROWS_A_SECTION);
+    rows = (data ?? []).map((r) => ({ id: r.id as string, data: (r.data ?? {}) as Record<string, unknown> }));
+  }
+  const seen = rows
+    .map((r) => ({ id: r.id, ...withComputed(columns, r.data) }))
+    .filter((r) => def.trigger.when === undefined || truthy(evalExpr(def.trigger.when, r, {})));
+
+  const today = new Date().toISOString().slice(0, 10);
+  const here: Place = { moduleId, table };
+  const errors: string[] = [];
+  for (const a of def.actions) {
+    if (a.type !== "run_code") continue;
+    const { rows: sections, places } = await readSections(client, projectId, a.reads ?? []);
+    // A row the store brought in is handed as a row, as an added one is;
+    // a schedule hands the section's rows, and no row.
+    const inputs =
+      job.kind === "added"
+        ? seen.map((row) => ({ row, previous: null, sections, today }))
+        : [{ rows: seen, sections, today }];
+    const outs = await runCodeEach(a.code, inputs);
+    for (const out of outs) {
+      if (out.ok) await applyWrites(client, { projectId, moduleId }, here, places, out.result);
+      else errors.push(out.error);
+    }
+    console.log(
+      `[code rule] "${rule.name}" (${job.kind}): ${inputs.length} run${inputs.length === 1 ? "" : "s"}, ${errors.length} failed`
+    );
+  }
+  return errors.length ? errors[0] : null;
+}
+
+/**
+ * The project's queued code, run until `until` (epoch ms): each job
+ * claimed, run, and marked done or failed with why. The client carries
+ * the project's ticket; everything it reads and writes is that project's.
+ */
+export async function runQueuedJobs(client: SupabaseClient, projectId: string, until: number): Promise<number> {
+  const { data: jobs } = await client
+    .from("code_jobs")
+    .select("id, automation_id, kind, row_ids, attempts")
+    .eq("project_id", projectId)
+    .eq("status", "queued")
+    .order("created_at", { ascending: true })
+    .limit(20);
+  let ran = 0;
+  for (const job of (jobs ?? []) as Job[]) {
+    if (Date.now() > until) break;
+    const { data: claimed } = await client
+      .from("code_jobs")
+      .update({ status: "running", attempts: job.attempts + 1, started_at: new Date().toISOString() })
+      .eq("id", job.id)
+      .eq("status", "queued")
+      .select("id");
+    if (!claimed?.length) continue;
+    let why: string | null;
+    try {
+      why = await runJob(client, projectId, job);
+    } catch (e) {
+      why = e instanceof Error ? e.message : "The job failed.";
+    }
+    await client
+      .from("code_jobs")
+      .update({ status: why ? "failed" : "done", error: why, finished_at: new Date().toISOString() })
+      .eq("id", job.id);
+    ran += 1;
+  }
+  return ran;
 }
