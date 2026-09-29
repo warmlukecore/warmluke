@@ -56,6 +56,7 @@ notification for replaced functions.
 
 ```bash
 pnpm dev             # Next.js development server on port 3100
+pnpm dev:sandbox     # the same, with code rules able to run: your Vercel CLI login reaches the sandbox
 pnpm typecheck       # tsc --noEmit
 pnpm build           # Production Next.js build
 pnpm start           # Serve production build on port 3100

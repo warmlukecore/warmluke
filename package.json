@@ -6,6 +6,7 @@
   "description": "Adaptive Business OS — schema-driven business app platform prototype",
   "scripts": {
     "dev": "next dev -p 3100",
+    "dev:sandbox": "sh scripts/dev-sandbox.sh",
     "build": "NODE_ENV=production next build",
     "start": "next start -p 3100",
     "typecheck": "tsc --noEmit",

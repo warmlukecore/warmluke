@@ -213,7 +213,8 @@ A written screen and a rule's own code run where they can reach nothing:
   outside its column grant. `check-code-jobs-live` tries another project, the tokens and a
   made-up ticket.
 - Locally, a sandbox is reached with `VERCEL_SANDBOX_TOKEN`, `VERCEL_TEAM_ID` and
-  `VERCEL_PROJECT_ID`; on Vercel with the function's own OIDC identity. Neither is a
+  `VERCEL_PROJECT_ID`, which `pnpm dev:sandbox` fills from the developer's own Vercel CLI
+  login as the server starts, never in a file; on Vercel with the function's own OIDC identity. Neither is a
   secret the code can see.
 
 ## Web and transport protections
