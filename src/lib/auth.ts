@@ -65,8 +65,14 @@ export function authMessage(
   return { message: error?.message || "Something went wrong. Try again." };
 }
 
+/**
+ * Out of this browser only. Supabase's default is every session the
+ * account has, and an AI the merchant connected holds one of them: a
+ * sign-out here cut ChatGPT off mid-task. Disconnecting an AI is its
+ * own button, in "Use your own AI".
+ */
 export async function signOut(router: ReturnType<typeof useRouter>) {
-  await supabase.auth.signOut();
+  await supabase.auth.signOut({ scope: "local" });
   router.replace("/");
 }
 

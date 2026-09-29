@@ -48,7 +48,9 @@ export function clientForToken(token: string): SupabaseClient {
   });
 }
 
-export async function getUserClient(req: Request): Promise<{ client: SupabaseClient; userId: string } | null> {
+export async function getUserClient(
+  req: Request
+): Promise<{ client: SupabaseClient; userId: string; email: string | null } | null> {
   const authHeader = req.headers.get("authorization") ?? "";
   const token = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : null;
   if (!token || !url || !anonKey) return null;
@@ -59,9 +61,9 @@ export async function getUserClient(req: Request): Promise<{ client: SupabaseCli
     headers: { apikey: anonKey, Authorization: `Bearer ${token}` },
   });
   if (!verifyRes.ok) return null;
-  const user = (await verifyRes.json()) as { id?: string; sub?: string };
+  const user = (await verifyRes.json()) as { id?: string; sub?: string; email?: string };
   const userId = user.id ?? user.sub;
   if (!userId) return null;
 
-  return { client: clientForToken(token), userId };
+  return { client: clientForToken(token), userId, email: user.email ?? null };
 }

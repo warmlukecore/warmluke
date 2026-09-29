@@ -78,6 +78,21 @@ for (const m of ["initialize", "tools/list", "ping"]) {
     /resource_metadata="https?:\/\//.test(r.headers.get("www-authenticate") ?? "")
   );
 }
+// A sign-in that ended (signed out, disconnected) says so, or ChatGPT
+// reports "internal error" instead of offering to connect again.
+{
+  const r = await fetch(MCP, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer not-a-live-token" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping", params: {} }),
+  });
+  const said = r.headers.get("www-authenticate") ?? "";
+  check("an ended sign-in is refused with 401", r.status === 401);
+  check(
+    "and named invalid_token, still pointing at the metadata",
+    /error="invalid_token"/.test(said) && /resource_metadata="https?:\/\//.test(said)
+  );
+}
 
 console.log("\nthe handshake a client does before anything else");
 const init = await rpc(
@@ -211,6 +226,8 @@ try {
   // valid token sees nothing, because RLS decides — not this route.
   const theirs = await rpc("tools/call", { name: "store_overview", arguments: {} }, strangerToken);
   check("a signed-in stranger is told there is no store", /no shopify store/i.test(toolText(theirs)?.error ?? ""));
+  // Named, because the usual cause is having signed in as the wrong account.
+  check("on the account it signed in as, by name", (toolText(theirs)?.error ?? "").includes(email));
   const theirOrders = await rpc("tools/call", { name: "search_orders", arguments: { limit: 100 } }, strangerToken);
   check("and cannot search orders either", /no shopify store/i.test(toolText(theirOrders)?.error ?? ""));
 

@@ -1020,12 +1020,13 @@ test("their own AI, any of them, is told how to connect: ChatGPT's steps with th
 }) => {
   await page.goto(`/app/${shop.projectId}`);
   const { panel } = await luke(page);
-  await panel.getByText(LUKE_COPY.ownAi).click();
-  await panel.getByText("ChatGPT", { exact: true }).click();
+  await panel.locator("summary", { hasText: LUKE_COPY.ownAi }).click();
+  await panel.getByRole("button", { name: "ChatGPT", exact: true }).click();
   await expect(panel.getByText(/turn on Developer mode/)).toBeVisible();
   const address = new URL("/api/mcp", page.url()).href;
   await expect(panel.locator("code", { hasText: address }).first()).toBeVisible();
-  // And any other assistant, by the rule.
-  await panel.getByText("Any other assistant", { exact: true }).click();
-  await expect(panel.getByText(/remote MCP servers with a sign-in/)).toBeVisible();
+  // And any other assistant, by the rule; one assistant's steps at a time.
+  await panel.getByRole("button", { name: "Other", exact: true }).click();
+  await expect(panel.getByText(/remote MCP with OAuth/)).toBeVisible();
+  await expect(panel.getByText(/turn on Developer mode/)).toBeHidden();
 });

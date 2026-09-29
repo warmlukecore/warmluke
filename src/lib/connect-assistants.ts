@@ -9,7 +9,7 @@
 
 export type ConnectStep = {
   text: string;
-  /** Something to paste: the address, a command, a config. */
+  /** Something to paste that is not the address shown above the list: a command, a config. */
   copy?: string;
 };
 
@@ -22,31 +22,30 @@ export type Assistant = {
   steps: (address: string) => ConnectStep[];
 };
 
+// The address sits once, above the list, with its own copy button;
+// a step says where to paste it rather than printing it again.
 export const ASSISTANTS: readonly Assistant[] = [
   {
     id: "chatgpt",
     name: "ChatGPT",
     logo: "/logos/openai.svg",
     plan: "Plus, Pro, Business or Enterprise",
-    steps: (address) => [
-      { text: "Open Apps in the sidebar, then Advanced settings, and turn on Developer mode." },
-      {
-        text: "Back in Apps, choose Create app. Name it Warmluke and paste this as the MCP server URL:",
-        copy: address,
-      },
-      { text: "Set Authentication to OAuth, tick “I understand and want to continue”, and choose Create." },
-      { text: "Sign in to Warmluke when it asks, and allow it." },
+    steps: () => [
+      { text: "Apps → Advanced settings: turn on Developer mode." },
+      { text: "Apps → Create app. Name it Warmluke and paste the address as the MCP server URL." },
+      { text: "Authentication: OAuth. Confirm, then Create." },
+      { text: "Sign in to Warmluke and allow it." },
     ],
   },
   {
     id: "claude",
     name: "Claude",
     logo: "/logos/claude.svg",
-    plan: "Any plan; on Team and Enterprise an owner adds it first",
-    steps: (address) => [
-      { text: "Open Customize, then Connectors, choose + and Add custom connector." },
-      { text: "Paste this address and choose Add:", copy: address },
-      { text: "Choose Connect, sign in to Warmluke, and allow it." },
+    plan: "Team and Enterprise: an owner adds it first",
+    steps: () => [
+      { text: "Customize → Connectors → + → Add custom connector." },
+      { text: "Paste the address, then Add." },
+      { text: "Connect, sign in to Warmluke and allow it." },
     ],
   },
   {
@@ -54,8 +53,8 @@ export const ASSISTANTS: readonly Assistant[] = [
     name: "Claude Code",
     logo: "/logos/claude.svg",
     steps: (address) => [
-      { text: "In a terminal, run:", copy: `claude mcp add --transport http warmluke ${address}` },
-      { text: "Then in Claude Code, run /mcp, choose warmluke, and sign in." },
+      { text: "In a terminal:", copy: `claude mcp add --transport http warmluke ${address}` },
+      { text: "Then /mcp → warmluke → sign in." },
     ],
   },
   {
@@ -63,29 +62,26 @@ export const ASSISTANTS: readonly Assistant[] = [
     name: "Cursor",
     steps: (address) => [
       {
-        text: "Open Cursor Settings, then MCP, and add this server to mcp.json:",
-        copy: JSON.stringify({ mcpServers: { warmluke: { url: address } } }, null, 2),
+        text: "Settings → MCP. Add to mcp.json:",
+        copy: JSON.stringify({ mcpServers: { warmluke: { url: address } } }),
       },
-      { text: "Sign in to Warmluke when it asks, and allow it." },
+      { text: "Sign in to Warmluke when asked." },
     ],
   },
   {
     id: "vscode",
     name: "VS Code",
-    steps: (address) => [
-      { text: "Run “MCP: Add Server…” from the Command Palette, choose HTTP, and paste:", copy: address },
-      { text: "Name it warmluke, then sign in when it asks." },
+    steps: () => [
+      { text: "Command Palette → MCP: Add Server… → HTTP. Paste the address." },
+      { text: "Name it warmluke and sign in when asked." },
     ],
   },
   {
     id: "any",
-    name: "Any other assistant",
-    steps: (address) => [
-      {
-        text: "Any assistant that connects to remote MCP servers with a sign-in (OAuth) can use this address:",
-        copy: address,
-      },
-      { text: "Sign in to Warmluke when it asks, and allow it." },
+    name: "Other",
+    steps: () => [
+      { text: "Any client that supports remote MCP with OAuth: add the address as a server." },
+      { text: "Sign in to Warmluke when asked." },
     ],
   },
 ];

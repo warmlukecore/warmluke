@@ -1,6 +1,6 @@
 // How a merchant connects the AI they already use (lib/connect-assistants):
 // ChatGPT and Claude by name, any other MCP assistant by the rule, and
-// every one of them handed this app's own address. Pure.
+// every one of them handed this app's own address, or pointed at it. Pure.
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-connect-assistants.mjs
 
@@ -23,9 +23,10 @@ check("and any other, by the rule", ASSISTANTS.at(-1)?.id === "any");
 check("each once", new Set(ASSISTANTS.map((a) => a.id)).size === ASSISTANTS.length);
 for (const a of ASSISTANTS) {
   const steps = a.steps(address);
+  // The address itself, or where to paste the one shown above the list.
   check(
     `${a.name}: steps, and this app's address in one of them`,
-    steps.some((s) => s.copy?.includes(address))
+    steps.some((s) => s.copy?.includes(address) || /\bthe address\b/.test(s.text))
   );
 }
 check(

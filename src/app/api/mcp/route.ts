@@ -803,11 +803,26 @@ export async function POST(req: Request) {
   const auth = await getUserClient(req);
   if (!auth) {
     const meta = `${new URL(req.url).origin}/.well-known/oauth-protected-resource`;
+    // A token that was sent and refused (signed out, disconnected) is
+    // said as such (RFC 6750), so the client offers to sign in again
+    // rather than reporting "internal error", as ChatGPT did.
+    const refused = /^bearer\s+\S/i.test(req.headers.get("authorization") ?? "");
     return NextResponse.json(
-      { jsonrpc: "2.0", id: null, error: { code: -32001, message: "Sign in to use this server." } },
+      {
+        jsonrpc: "2.0",
+        id: null,
+        error: {
+          code: -32001,
+          message: refused ? "This sign-in has ended. Connect Warmluke again." : "Sign in to use this server.",
+        },
+      },
       {
         status: 401,
-        headers: { "WWW-Authenticate": `Bearer resource_metadata="${meta}"` },
+        headers: {
+          "WWW-Authenticate": refused
+            ? `Bearer error="invalid_token", resource_metadata="${meta}"`
+            : `Bearer resource_metadata="${meta}"`,
+        },
       }
     );
   }
@@ -2061,7 +2076,14 @@ export async function POST(req: Request) {
     // reads as "you have no orders".
     const stores = await listStores(db);
     if (stores.length === 0) {
-      return ok(id, text({ error: "No Shopify store is connected to this account yet." }));
+      // Named, because the usual cause is signing in as the wrong
+      // account: its own email, to its own owner, over their grant.
+      return ok(
+        id,
+        text({
+          error: `No Shopify store is connected to ${auth.email ?? "this account"}. If the store is on another Warmluke account, disconnect and connect again signed in as that one.`,
+        })
+      );
     }
     const wanted = (args.shop_domain as string | undefined)?.trim().toLowerCase();
     // An owner with two projects has two stores, and stores[0] is

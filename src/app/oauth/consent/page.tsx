@@ -48,6 +48,8 @@ function ConsentInner() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"approve" | "deny" | null>(null);
   const [loading, setLoading] = useState(true);
+  /** Who is agreeing. A browser signed in to the wrong account connected ChatGPT to an account with no store. */
+  const [email, setEmail] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -66,6 +68,7 @@ function ConsentInner() {
         window.location.href = `/login?next=${encodeURIComponent(back)}`;
         return;
       }
+      setEmail(sess.session.user.email ?? null);
 
       const { data, error: err } = await supabase.auth.oauth.getAuthorizationDetails(authorizationId);
       if (err) {
@@ -83,6 +86,13 @@ function ConsentInner() {
       setLoading(false);
     })();
   }, [authorizationId]);
+
+  // Out of this browser only, then back here as whoever signs in.
+  const switchAccount = useCallback(async () => {
+    await supabase.auth.signOut({ scope: "local" });
+    const back = `${window.location.pathname}${window.location.search}`;
+    window.location.href = `/login?next=${encodeURIComponent(back)}`;
+  }, []);
 
   const decide = useCallback(
     async (approve: boolean) => {
@@ -132,6 +142,18 @@ function ConsentInner() {
   return (
     <Shell>
       <h1 className="text-base font-semibold text-fg">{name} wants access to your store</h1>
+      {email && (
+        <p className="mt-1 text-xs text-fg-muted">
+          Signed in as <span className="font-medium text-fg">{email}</span> ·{" "}
+          <button
+            onClick={switchAccount}
+            disabled={!!busy}
+            className="font-medium text-fg underline-offset-2 hover:underline"
+          >
+            Use another account
+          </button>
+        </p>
+      )}
       <p className="mt-2">
         It will be able to see your Shopify products, customers and orders through Warmluke, and to ask for changes: to
         this app, and to your shop.

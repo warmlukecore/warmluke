@@ -252,8 +252,7 @@ function since(iso: string): string {
   return days === 1 ? "yesterday" : `${days} days ago`;
 }
 
-/** An assistant's mark, by the name it registered with; null for one we have no mark for. */
-/** A thing to paste, and its copy button: an address, a command, a config. */
+/** A thing to paste, and its copy button: a command, a config. */
 function CopyValue({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -282,6 +281,7 @@ function CopyValue({ value }: { value: string }) {
   );
 }
 
+/** An assistant's mark, by the name it registered with; null for one we have no mark for. */
 function assistantLogo(name: string): string | null {
   if (/claude/i.test(name)) return "/logos/claude.svg";
   if (/chatgpt|openai/i.test(name)) return "/logos/openai.svg";
@@ -1741,6 +1741,8 @@ export default function ChatPanel({
   /** Whether the connect-your-own-AI block is open, so the button
    *  offered when the included designs run out can open it. */
   const [ownAiOpen, setOwnAiOpen] = useState(false);
+  /** The assistant whose steps are open under "Use your own AI"; one at a time. */
+  const [howTo, setHowTo] = useState<string | null>(null);
   // What their AI has asked for and nobody has looked at yet. Without
   // this the request lands in the database and dies there: Claude says
   // "I've asked Warmluke to build it" and the merchant never sees it.
@@ -3821,10 +3823,10 @@ export default function ChatPanel({
                 />
               </summary>
 
-              <div className="mt-2.5 space-y-2.5">
-                <p className="text-xs leading-relaxed text-fg-muted">
-                  Connect the AI you already use to this address. It reads your store and designs as Luke does, and
-                  anything it wants to build comes back here for you to approve.
+              <div className="mt-2.5 space-y-2">
+                <p className="text-[11px] leading-relaxed text-fg-muted">
+                  ChatGPT, Claude or any MCP client can read your store and design as Luke does. Every change waits here
+                  for your approval.
                 </p>
                 <div className="flex items-center gap-1 rounded-control border border-line bg-surface-subdued py-1 pr-1 pl-2.5">
                   <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-fg" title={mcpUrl}>
@@ -3851,48 +3853,48 @@ export default function ChatPanel({
                   </button>
                 </div>
 
-                {/* Where the buttons are in each assistant (lib/connect-assistants); the last is any other. */}
-                <ul className="divide-y divide-line overflow-hidden rounded-card border border-line">
+                {/* Where the buttons are in each assistant (lib/connect-assistants), one
+                at a time: six rows of steps made the panel longer than the chat. */}
+                <div
+                  role="group"
+                  aria-label="Connect from"
+                  className="grid grid-cols-3 gap-1 rounded-control bg-surface-subdued p-1"
+                >
                   {ASSISTANTS.map((a) => (
-                    <li key={a.id}>
-                      <details className="group/how">
-                        <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs text-fg hover:bg-surface-hover">
-                          {a.logo ? (
-                            // eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise
-                            <img
-                              src={a.logo}
-                              alt=""
-                              width={13}
-                              height={13}
-                              className="h-3.5 w-3.5 shrink-0 object-contain"
-                            />
-                          ) : (
-                            <Plug aria-hidden size={13} strokeWidth={1.75} className="shrink-0 text-fg-muted" />
-                          )}
-                          <span className="min-w-0 flex-1 truncate font-medium">{a.name}</span>
-                          <ChevronRight
-                            aria-hidden
-                            size={13}
-                            strokeWidth={2}
-                            className="shrink-0 text-fg-faint transition-transform duration-150 group-open/how:rotate-90"
-                          />
-                        </summary>
-                        <ol className="space-y-2 px-3 pt-1 pb-3 text-[11px] leading-relaxed text-fg-muted">
-                          {a.plan && <li className="list-none text-fg-faint">{a.plan}</li>}
-                          {a.steps(mcpUrl).map((s, i) => (
-                            <li key={i} className="flex gap-2">
-                              <span className="shrink-0 tabular-nums text-fg-faint">{i + 1}.</span>
-                              <span className="min-w-0 flex-1 space-y-1">
-                                <span className="block">{s.text}</span>
-                                {s.copy && <CopyValue value={s.copy} />}
-                              </span>
-                            </li>
-                          ))}
-                        </ol>
-                      </details>
-                    </li>
+                    <button
+                      key={a.id}
+                      onClick={() => setHowTo(howTo === a.id ? null : a.id)}
+                      aria-pressed={howTo === a.id}
+                      className={`${button(howTo === a.id ? "secondary" : "plain", "sm")} min-w-0`}
+                    >
+                      {a.logo ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise
+                        <img src={a.logo} alt="" width={12} height={12} className="h-3 w-3 shrink-0 object-contain" />
+                      ) : (
+                        <Plug aria-hidden size={12} strokeWidth={1.75} className="shrink-0" />
+                      )}
+                      <span className="truncate">{a.name}</span>
+                    </button>
                   ))}
-                </ul>
+                </div>
+                {(() => {
+                  const a = ASSISTANTS.find((x) => x.id === howTo);
+                  if (!a) return null;
+                  return (
+                    <ol className="space-y-1.5 px-1 text-[11px] leading-relaxed text-fg-muted">
+                      {a.steps(mcpUrl).map((s, i) => (
+                        <li key={i} className="flex gap-2">
+                          <span className="shrink-0 tabular-nums text-fg-faint">{i + 1}.</span>
+                          <span className="min-w-0 flex-1 space-y-1">
+                            <span className="block">{s.text}</span>
+                            {s.copy && <CopyValue value={s.copy} />}
+                          </span>
+                        </li>
+                      ))}
+                      {a.plan && <li className="list-none pl-5 text-fg-faint">{a.plan}</li>}
+                    </ol>
+                  );
+                })()}
 
                 {assistants.length > 0 && (
                   <ul className="overflow-hidden rounded-card border border-line">

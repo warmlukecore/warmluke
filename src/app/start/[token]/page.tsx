@@ -179,7 +179,7 @@ export default function StartPage() {
           {closed === "someone_else" ? (
             <button
               onClick={async () => {
-                await supabase.auth.signOut();
+                await supabase.auth.signOut({ scope: "local" });
                 window.location.replace(back);
               }}
               className={button("primary")}
