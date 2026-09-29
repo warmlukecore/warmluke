@@ -90,6 +90,7 @@ test("a section in the sidebar is a link: its own address, a new tab, a refresh,
     await expect(page).toHaveURL(new RegExp(`/app/${shop.projectId}$`));
   } finally {
     await shop.admin.from("modules").delete().eq("id", id);
+    await shop.admin.from("modules").delete().eq("project_id", shop.projectId).eq("name", "e2e-rates");
   }
 });
 
@@ -271,11 +272,15 @@ test("a written screen draws the rows, writes through wl, and reaches nothing el
 }) => {
   const headers = { Authorization: `Bearer ${(shop.session as { access_token: string }).access_token}` };
   const name = "e2e-station";
-  const html = `<input id=scan placeholder=Scan><button id=asker>Ask</button><p id=answer></p><div id=list></div><p id=net>…</p><p id=app>…</p><button id=finder>Find 2001</button><p id=found></p>
+  const html = `<input id=scan placeholder=Scan><button id=asker>Ask</button><p id=answer></p><p id=cash></p><p id=rates></p><p id=rate></p><div id=list></div><p id=net>…</p><p id=app>…</p><button id=finder>Find 2001</button><p id=found></p>
 <script>
 // As station screens do: the scan box takes focus back whenever it loses it.
 scan.addEventListener("blur", () => setTimeout(() => scan.focus(), 50));
 scan.focus();
+// Money as the app writes it, and another section read by its name.
+cash.textContent = wl.money(1424, "INR");
+wl.read("#e2e-rates").then((r) => (rates.textContent = r.length + " rates"));
+wl.find("code", "R1", "#e2e-rates").then((r) => (rate.textContent = "rate " + r[0].data.rate));
 asker.onclick = async () => { answer.textContent = (await wl.ask("Reset it?", "Reset", "Keep")) ? "reset" : "kept"; };
 wl.onRows((rows) => {
   list.innerHTML = "";
@@ -308,6 +313,19 @@ finder.onclick = async () => { const rows = await wl.find("order_number", "2001"
           },
           features: { view: { type: "custom", title: "Station", html } },
           explanation: "A packing screen written for the section.",
+        },
+        {
+          changeType: "NEW_MODULE",
+          targetModuleId: null,
+          newModule: { name: "e2e-rates", nav_label: "Rates", icon: "table" },
+          newSchema: {
+            columns: [
+              { field: "code", label: "Code", type: "text" },
+              { field: "rate", label: "Rate", type: "number" },
+            ],
+          },
+          newRecords: [{ code: "R1", rate: 42 }],
+          explanation: "A rate card another screen reads.",
         },
       ],
     },
@@ -367,6 +385,11 @@ finder.onclick = async () => { const rows = await wl.find("order_number", "2001"
     await screen.getByRole("button", { name: "Reset", exact: true }).click();
     await expect(screen.locator("#answer")).toHaveText("reset");
     await expect(screen.getByRole("dialog")).toHaveCount(0);
+
+    // Money in the app's own words, and the rest of the app read, not written.
+    await expect(screen.locator("#cash")).toHaveText(/₹\s?1,424/);
+    await expect(screen.locator("#rates")).toHaveText("1 rates");
+    await expect(screen.locator("#rate")).toHaveText("rate 42");
 
     // Sealed: no network, no reach into the app's page.
     await expect(screen.getByText("network blocked")).toBeVisible();

@@ -238,12 +238,36 @@ const RUNTIME = `(() => {
     document.body.append(back);
   });
   window.alert = (message) => { void ask(message, "OK", null); };
+  // Money as the app writes it: its locale, and the currency named (a
+  // store row's own) or else the project's. A screen that wrote "Rs 1424"
+  // beside a table saying "₹1,424.00" read as two apps.
+  const FORMAT = __FORMAT__;
+  const moneyFormats = new Map();
+  const money = (amount, currency) => {
+    const n = Number(amount);
+    if (amount === null || amount === undefined || amount === "" || Number.isNaN(n)) return "—";
+    const code = typeof currency === "string" && /^[A-Za-z]{3}$/.test(currency) ? currency.toUpperCase() : FORMAT.currency;
+    let f = moneyFormats.get(code);
+    if (!f) {
+      try {
+        f = new Intl.NumberFormat(FORMAT.locale, { style: "currency", currency: code, maximumFractionDigits: 2 });
+      } catch {
+        f = new Intl.NumberFormat(FORMAT.locale, { style: "currency", currency: FORMAT.currency, maximumFractionDigits: 2 });
+      }
+      moneyFormats.set(code, f);
+    }
+    return f.format(n);
+  };
   window.wl = Object.freeze({
     columns: __COLUMNS__,
     ask,
     rows: () => rows,
     onRows: (f) => { watchers.push(f); if (rows.length) f(rows); },
-    find: (field, value) => call("find", [String(field), String(value)]),
+    find: (field, value, section) =>
+      call("find", section === undefined ? [String(field), String(value)] : [String(field), String(value), String(section)]),
+    read: (section) => call("read", [String(section)]),
+    money,
+    currency: FORMAT.currency,
     set: (id, fields) => call("set", [String(id), fields]),
     add: (fields) => call("add", [fields]),
   });
@@ -260,7 +284,9 @@ export function customViewPage(
   html: string,
   columns: Array<{ field: string; label: string; type: string }>,
   colours: Record<string, string>,
-  fonts = ""
+  fonts = "",
+  /** The app's locale and the project's currency, for wl.money. */
+  format: { locale: string; currency: string } = { locale: "en-IN", currency: "INR" }
 ): string {
   const vars = Object.entries(colours)
     .map(([k, v]) => `--${k}:${v.replace(/[;{}<>]/g, "")};`)
@@ -269,5 +295,10 @@ export function customViewPage(
     /</g,
     "\\u003c"
   );
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CUSTOM_VIEW_CSP}"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${fonts.replace(/<\/?style/gi, "")}:root{${vars}color-scheme:light dark}${CUSTOM_VIEW_KIT}</style><script>${RUNTIME.replace("__COLUMNS__", cols)}</script></head><body>${html}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CUSTOM_VIEW_CSP}"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${fonts.replace(/<\/?style/gi, "")}:root{${vars}color-scheme:light dark}${CUSTOM_VIEW_KIT}</style><script>${RUNTIME.replace(
+    "__COLUMNS__",
+    () => cols
+  ).replace("__FORMAT__", () =>
+    JSON.stringify({ locale: String(format.locale), currency: String(format.currency) }).replace(/</g, "\\u003c")
+  )}</script></head><body>${html}</body></html>`;
 }

@@ -127,6 +127,16 @@ check(
 );
 check("and alert shows it rather than nothing", /window\.alert\s*=/.test(asking));
 
+// The rest of the app, read only, and money as the app writes it.
+console.log("\nwhat a screen reads beyond its rows, and how it says money");
+const reading = customViewPage(screen, [{ field: "price", label: "Price $& more", type: "currency" }], {}, "", {
+  locale: "en-IN",
+  currency: "INR",
+});
+check("every screen is given wl.read, and wl.money", /\bread:/.test(reading) && /\bmoney,/.test(reading));
+check("with the app's locale and the project's currency", reading.includes('{"locale":"en-IN","currency":"INR"}'));
+check("and a label with $& in it is carried as it is, not read as a pattern", reading.includes("Price $& more"));
+
 // A screen whose script cannot parse is a blank screen: it goes back to
 // Luke with the browser's words. Parsing only; a screen that parses is
 // never refused for it, whatever modern syntax it uses.

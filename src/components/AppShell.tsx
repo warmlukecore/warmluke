@@ -53,6 +53,7 @@ import type {
   ModuleRow,
   LukeShows,
   RecordRow,
+  SchemaColumn,
   ThreadSummary,
   TurnEvent,
   UiSchema,
@@ -77,6 +78,7 @@ import {
 import { button, iconButton, note } from "@/components/ui/controls";
 import { Logo } from "@/components/ui/Logo";
 import { ThemeToggle } from "@/components/ThemeSync";
+import { withComputed } from "@/lib/expr";
 import { codeSpellings } from "@/lib/scan";
 
 /**
@@ -975,6 +977,55 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       return rows;
     },
     [selectedModuleId, loadedSource, storeId]
+  );
+
+  // Another section of this app, as its owner reads it: what a written
+  // screen reads beyond its own rows (wl.read, wl.find with a section).
+  // Found by its name ("#customers"), its label or its id, never outside
+  // this app; the store's rows with the owner's fields beside them, or
+  // their own rows; worked out by that section's own computed columns.
+  const readSection = useCallback(
+    async (ref: string, match?: { field: string; code: string }) => {
+      const key = ref.trim().replace(/^#/, "").toLowerCase();
+      const mod = modules.find(
+        (m) => m.id === ref || m.name.toLowerCase() === key || m.nav_label.toLowerCase() === key
+      );
+      if (!mod) throw new Error(`There is no section called "${ref}" in this app.`);
+      if (match && !/^[a-z_][a-z0-9_]*$/i.test(match.field)) throw new Error("A field is letters, digits and _.");
+      const { data: latest } = await supabase
+        .from("ui_schemas")
+        .select("schema_json")
+        .eq("module_id", mod.id)
+        .order("version", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const saved = ((latest?.schema_json as UiSchema | undefined)?.columns ?? []) as SchemaColumn[];
+      const table = isStoreTable(mod.source_table) ? mod.source_table : null;
+      let rows: Array<{ id: string; data: Record<string, unknown> }>;
+      if (table) {
+        if (!storeId) return [];
+        const found = await readStoreRows(
+          supabase,
+          storeId,
+          table,
+          500,
+          undefined,
+          null,
+          null,
+          match ? { field: match.field, values: codeSpellings(match.code) } : null
+        );
+        rows = await withOwnFields(supabase, mod.id, found.rows);
+      } else {
+        let q = supabase.from("records").select("id, data").eq("module_id", mod.id).is("store_row_id", null);
+        if (match) q = q.in(`data->>${match.field}`, codeSpellings(match.code));
+        const { data, error } = await q.order("created_at", { ascending: false }).limit(500);
+        if (error) throw new Error(error.message);
+        rows = (data ?? []).map((r) => ({ id: r.id as string, data: (r.data ?? {}) as Record<string, unknown> }));
+      }
+      const columns = table ? storeSectionColumns(table, saved) : saved;
+      return rows.map((r) => ({ id: r.id, data: withComputed(columns, r.data) }));
+    },
+    [modules, storeId]
   );
 
   const patchRow = useCallback((row: Record<string, unknown> | undefined, moduleId: string | null): boolean => {
@@ -2666,6 +2717,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     onLoadMore={records.length < recordTotal ? loadMoreRecords : undefined}
                     onStats={sectionStats}
                     onScanGroup={openScanGroup}
+                    onReadSection={readSection}
                     {...(storeBacked
                       ? // No write handlers at all, which is how the renderer
                         // already expresses read-only. The import owns these
@@ -2708,6 +2760,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             <FormatProvider locale={project?.locale} currency={sectionMoneyCurrency} approxRate={sectionApprox}>
               <ChatPanel
                 projectId={projectId}
+                onReadSection={readSection}
                 threadOpening={threadOpening}
                 luke={luke}
                 model={pickedModel}

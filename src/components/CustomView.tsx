@@ -14,11 +14,12 @@
 import { Maximize2, Minimize2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { button } from "@/components/ui/controls";
+import { useFormat } from "@/lib/format";
 import { CUSTOM_VIEW_TOKENS, customViewPage, customViewProblem } from "@/lib/custom-view";
 import { withComputed } from "@/lib/expr";
 import type { RecordRow, SchemaColumn } from "@/lib/types";
 
-type Call = { wl: 1; id: number; call: "find" | "set" | "add"; args: unknown[] };
+type Call = { wl: 1; id: number; call: "find" | "read" | "set" | "add"; args: unknown[] };
 
 /** A preview's height in Luke's panel: enough to read the screen, not the whole panel. */
 const PREVIEW_HEIGHT = 420;
@@ -95,6 +96,7 @@ export default function CustomView({
   onSet,
   onAdd,
   onFind,
+  onRead,
   preview = false,
 }: {
   view: { title: string; html: string };
@@ -103,6 +105,14 @@ export default function CustomView({
   onSet?: (id: string, fields: Record<string, unknown>) => Promise<void>;
   onAdd?: (fields: Record<string, unknown>) => Promise<void>;
   onFind?: (field: string, code: string) => Promise<RecordRow[]>;
+  /**
+   * Another section of this app, read as the owner reads it: its rows,
+   * worked out, or those whose field is a code. Read only.
+   */
+  onRead?: (
+    section: string,
+    match?: { field: string; code: string }
+  ) => Promise<Array<{ id: string; data: Record<string, unknown> }>>;
   /** A proposal's preview, in Luke's panel: a card of its own size, and it leaves the owner's focus where it is. */
   preview?: boolean;
 }) {
@@ -112,6 +122,7 @@ export default function CustomView({
   const [height, setHeight] = useState<number | null>(null);
   const [full, setFull] = useState(false);
   const problem = customViewProblem(view.html);
+  const fmt = useFormat();
 
   // Built in the browser: the values are the page's as it is now, and the
   // faces are waited for (a moment, once) so the screen never reloads to
@@ -121,12 +132,13 @@ export default function CustomView({
     let alive = true;
     const late = new Promise<string>((done) => setTimeout(() => done(""), 2000));
     void Promise.race([appFaces(), late]).then((faces) => {
-      if (alive) setPage(customViewPage(view.html, columns, colours(), faces));
+      if (alive)
+        setPage(customViewPage(view.html, columns, colours(), faces, { locale: fmt.locale, currency: fmt.currency }));
     });
     return () => {
       alive = false;
     };
-  }, [view.html, columns, problem]);
+  }, [view.html, columns, problem, fmt.locale, fmt.currency]);
 
   // The screen is the section: it takes the page below it, and the whole
   // screen when asked (a tablet at a packing desk).
@@ -157,10 +169,10 @@ export default function CustomView({
   }, [rows]);
 
   // The handlers as they are now, read by the listener when a call arrives.
-  const handlers = useRef({ onSet, onAdd, onFind, columns });
+  const handlers = useRef({ onSet, onAdd, onFind, onRead, columns });
   useEffect(() => {
-    handlers.current = { onSet, onAdd, onFind, columns };
-  }, [onSet, onAdd, onFind, columns]);
+    handlers.current = { onSet, onAdd, onFind, onRead, columns };
+  }, [onSet, onAdd, onFind, onRead, columns]);
 
   useEffect(() => {
     const listen = async (e: MessageEvent) => {
@@ -173,6 +185,18 @@ export default function CustomView({
       const fields = (v: unknown) =>
         v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
       try {
+        if (m.call === "read" || (m.call === "find" && m.args.length === 3)) {
+          const section = m.call === "read" ? m.args[0] : m.args[2];
+          const [field, code] = m.args;
+          if (!h.onRead || typeof section !== "string")
+            return answer(false, undefined, "Other sections are not open here.");
+          if (m.call === "find" && (typeof field !== "string" || typeof code !== "string"))
+            return answer(false, undefined, "find needs a field and a code.");
+          return answer(
+            true,
+            await h.onRead(section, m.call === "find" ? { field: field as string, code: code as string } : undefined)
+          );
+        }
         if (m.call === "find") {
           const [field, code] = m.args;
           if (!h.onFind || typeof field !== "string" || typeof code !== "string")

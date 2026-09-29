@@ -65,6 +65,7 @@ export default function GenericRenderer({
   onStats,
   onInspect,
   onScanGroup,
+  onReadSection,
 }: {
   schema: UiSchema;
   records: RecordRow[];
@@ -91,6 +92,11 @@ export default function GenericRenderer({
   onInspect?: (rec: RecordRow) => void;
   /** Reads the rows whose field holds a code into the section, wherever they are, and hands them back (a scan's group, a written screen's wl.find). */
   onScanGroup?: (field: string, code: string) => Promise<RecordRow[]>;
+  /** Another section of this app, read only: what a written screen reads beyond its own rows. */
+  onReadSection?: (
+    section: string,
+    match?: { field: string; code: string }
+  ) => Promise<Array<{ id: string; data: Record<string, unknown> }>>;
 }) {
   const fmt = useFormat();
   const total = totalRecords ?? records.length;
@@ -347,6 +353,7 @@ export default function GenericRenderer({
             onSet={canSet ? (id, set) => onUpdate!(id, set) : undefined}
             onAdd={editable ? onCreate : undefined}
             onFind={preview ? undefined : onScanGroup}
+            onRead={onReadSection}
             preview={preview}
           />
         );

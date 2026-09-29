@@ -1405,6 +1405,7 @@ function KnownNotes({ projectId }: { projectId: string }) {
 
 export default function ChatPanel({
   projectId,
+  onReadSection,
   width,
   dragging,
   onResizeStart,
@@ -1446,6 +1447,11 @@ export default function ChatPanel({
   autoBuild,
   onWaiting,
 }: {
+  /** Another section of this app, read only: what a written screen in a preview reads beyond its own rows. */
+  onReadSection?: (
+    section: string,
+    match?: { field: string; code: string }
+  ) => Promise<Array<{ id: string; data: Record<string, unknown> }>>;
   /** Panel width above lg; below it the panel is a full-width drawer. */
   width: number;
   dragging: boolean;
@@ -3226,7 +3232,12 @@ export default function ChatPanel({
                     )}
 
                     {(plan.changeType === "UI_CHANGE" || plan.changeType === "FIELD_ADD") && (
-                      <GenericRenderer schema={plan.newSchema} records={records} preview />
+                      <GenericRenderer
+                        schema={plan.newSchema}
+                        records={records}
+                        preview
+                        onReadSection={onReadSection}
+                      />
                     )}
 
                     {plan.changeType === "NEW_MODULE" && plan.newModule && (
@@ -3247,6 +3258,7 @@ export default function ChatPanel({
                             updated_at: "",
                           }))}
                           preview
+                          onReadSection={onReadSection}
                         />
                       </>
                     )}
@@ -3298,6 +3310,7 @@ export default function ChatPanel({
                           }}
                           records={records}
                           preview
+                          onReadSection={onReadSection}
                         />
                       </>
                     )}
