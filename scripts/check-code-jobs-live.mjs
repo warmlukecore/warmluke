@@ -273,6 +273,18 @@ try {
   );
   check("with no open job, it goes back on the queue", at[alone]?.status === "queued");
   check("and after three tries it is closed, not left running", at[spent]?.status === "failed");
+
+  // What the clock sends: the check project never has code_worker_url, so
+  // the tick returns before it sends, and a variable in it that read as a
+  // column failed every tick in production once the url was set (0136).
+  // Its choice is asked directly.
+  const { data: waiting, error: waitErr } = await admin.rpc("abo_code_waiting");
+  check("the clock would send this project its queued code", !waitErr && (waiting ?? []).includes(project.id));
+  if (waitErr) console.log("     →", waitErr.message);
+  const { data: held } = await admin.rpc("abo_code_mint", { p_project: project.id });
+  const { data: stillWaiting } = await admin.rpc("abo_code_waiting");
+  check("and not while a worker is on it", typeof held === "string" && !(stillWaiting ?? []).includes(project.id));
+  await admin.from("code_leases").delete().eq("project_id", project.id);
 } finally {
   await project.remove();
   await other.remove();
