@@ -56,6 +56,7 @@ const GUARDED = {
   abo_code_holds_module: "the code worker's ticket",
   abo_code_project: "the code worker's ticket",
   abo_code_release: "the code worker's ticket",
+  abo_code_next: "the code worker's ticket, for the rule's own project (abo_code_holds)",
 };
 
 /** What a body that checks its caller says. */
