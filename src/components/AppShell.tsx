@@ -987,8 +987,16 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   const readSection = useCallback(
     async (ref: string, match?: { field: string; code: string }) => {
       const key = ref.trim().replace(/^#/, "").toLowerCase();
-      const mod = modules.find(
-        (m) => m.id === ref || m.name.toLowerCase() === key || m.nav_label.toLowerCase() === key
+      // Read from the database, not the sidebar's list: a screen reads
+      // the moment it opens, and opened straight from a link the list
+      // was still loading, so every section was "not there".
+      const { data: mods, error: modsError } = await supabase
+        .from("modules")
+        .select("id, name, nav_label, source_table")
+        .eq("project_id", projectId);
+      if (modsError) throw new Error(modsError.message);
+      const mod = (mods ?? []).find(
+        (m) => m.id === ref || String(m.name).toLowerCase() === key || String(m.nav_label).toLowerCase() === key
       );
       if (!mod) throw new Error(`There is no section called "${ref}" in this app.`);
       if (match && !/^[a-z_][a-z0-9_]*$/i.test(match.field)) throw new Error("A field is letters, digits and _.");
@@ -1003,10 +1011,21 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       const table = isStoreTable(mod.source_table) ? mod.source_table : null;
       let rows: Array<{ id: string; data: Record<string, unknown> }>;
       if (table) {
-        if (!storeId) return [];
+        // The store's id the same way: it too may not be in hand yet.
+        const store =
+          storeId ??
+          ((
+            await supabase
+              .from("stores")
+              .select("id")
+              .eq("project_id", projectId)
+              .in("status", ["connected", "uninstalled"])
+              .maybeSingle()
+          ).data?.id as string | undefined);
+        if (!store) return [];
         const found = await readStoreRows(
           supabase,
-          storeId,
+          store,
           table,
           500,
           undefined,
@@ -1025,7 +1044,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       const columns = table ? storeSectionColumns(table, saved) : saved;
       return rows.map((r) => ({ id: r.id, data: withComputed(columns, r.data) }));
     },
-    [modules, storeId]
+    [projectId, storeId]
   );
 
   const patchRow = useCallback((row: Record<string, unknown> | undefined, moduleId: string | null): boolean => {
