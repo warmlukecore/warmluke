@@ -23,6 +23,7 @@ import { asError, engineError, fixPrompt, type FixAction } from "@/lib/errors";
 import VersionHistory from "@/components/VersionHistory";
 import AutomationsPanel from "@/components/AutomationsPanel";
 import { FormatProvider } from "@/lib/format";
+import { projectFormat } from "@/lib/money";
 import ProjectSettings from "@/components/ProjectSettings";
 import { LinkProvider, type LinkOptions } from "@/components/LinkContext";
 import { labelForRow } from "@/lib/links";
@@ -219,7 +220,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   const [userId, setUserId] = useState<string | null>(null);
   // The connected store, so a section pointed at it knows where to read
   // from. Null for a project without one, which is the common case.
-  const [store, setStore] = useState<{ id: string; currency: string } | null>(null);
+  const [store, setStore] = useState<{ id: string; currency: string; country: string | null } | null>(null);
   // A rate, only ever used to annotate. Imported amounts are rendered
   // in the currency Shopify recorded them in; this is the rough second
   // line underneath, for a merchant who thinks in their own money.
@@ -1335,11 +1336,21 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     // came back from Shopify has nothing to show.
     supabase
       .from("stores")
-      .select("id, currency")
+      .select("id, currency, country")
       .eq("project_id", projectId)
       .in("status", ["connected", "uninstalled"])
       .maybeSingle()
-      .then(({ data }) => setStore(data ? { id: data.id as string, currency: data.currency as string } : null));
+      .then(({ data }) =>
+        setStore(
+          data
+            ? {
+                id: data.id as string,
+                currency: data.currency as string,
+                country: (data.country as string | null) ?? null,
+              }
+            : null
+        )
+      );
   }, [projectId]);
 
   useEffect(() => {
@@ -2242,7 +2253,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
    * store-backed section defaults to the shop's currency; an imported
    * order can override it with the currency stored on that order.
    */
-  const sectionMoneyCurrency = storeBacked && store ? store.currency : project?.currency;
+  // The project's own money: what the owner chose, else their shop's (lib/money projectFormat).
+  const own = projectFormat(project, store);
+  const sectionMoneyCurrency = storeBacked && store ? store.currency : own.currency;
   // Offered only where it can be true: a store-backed section, a rate
   // on hand, and the shop's currency being the one the rate is from.
   const sectionApprox =
@@ -2782,30 +2795,29 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 // Shopify money stays in the currency Shopify recorded.
                 // The provider supplies the normal shop currency; an order
                 // whose own currency differs overrides it at the cell.
-                <FormatProvider locale={project?.locale} currency={sectionMoneyCurrency} approxRate={sectionApprox}>
+                <FormatProvider locale={own.locale} currency={sectionMoneyCurrency} approxRate={sectionApprox}>
                   {storeBacked &&
                     store &&
-                    project?.currency &&
                     hasMoneyColumns &&
-                    (store.currency !== project.currency || recordedCurrencies.length > 1) && (
+                    (store.currency !== own.currency || recordedCurrencies.length > 1) && (
                       // One quiet line, not a notice: the fact fits in a sentence,
                       // and a box of it above every store section read as a warning.
                       <div className="mb-2 text-[11px] leading-snug text-fg-muted">
                         {recordedCurrencies.length > 1 ? (
                           <>
                             Shopify recorded these orders in {recordedCurrencies.join(" and ")}; each amount is shown as
-                            recorded, never combined. Sections you create here use {project.currency}.
+                            recorded, never combined. Sections you create here use {own.currency}.
                           </>
                         ) : (
                           <>
                             Amounts are in {recordedCurrencies[0] ?? store.currency}, as Shopify recorded them
                             {sectionApprox ? (
                               <>
-                                ; the smaller {project.currency} figure is a rough conversion at today&rsquo;s rate
+                                ; the smaller {own.currency} figure is a rough conversion at today&rsquo;s rate
                                 {fx?.as_of ? ` (${fx.as_of})` : ""}, for a feel of the size, not for reconciling
                               </>
                             ) : null}
-                            . Sections you create here use {project.currency}.
+                            . Sections you create here use {own.currency}.
                           </>
                         )}
                       </div>
@@ -2857,7 +2869,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
 
           {/* ── Assistant + history ── */}
           {isOwner && (
-            <FormatProvider locale={project?.locale} currency={sectionMoneyCurrency} approxRate={sectionApprox}>
+            <FormatProvider locale={own.locale} currency={sectionMoneyCurrency} approxRate={sectionApprox}>
               <ChatPanel
                 projectId={projectId}
                 onReadSection={readSection}

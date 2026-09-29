@@ -9,6 +9,8 @@
 
 import { validateSchedule } from "../src/lib/ai.ts";
 import { scheduleWords } from "../src/lib/describe.ts";
+import { parseResult } from "../src/lib/code-run.ts";
+import { storeClock } from "../src/lib/code-rules.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -68,6 +70,26 @@ check(
 check(
   "an interval alone keeps its words, which the critic's recordings hold",
   scheduleWords({ type: "schedule", every: "daily" }) === null
+);
+
+// A rule's code works on the store's clock and says when it runs next
+// in it (0138): no timezone arithmetic in the code, no timing words in
+// the platform.
+console.log("\na rule's code keeps the store's clock");
+const evening = new Date("2026-09-29T18:45:00Z");
+check(
+  "past 18:30 in UTC it is already tomorrow in Kolkata",
+  JSON.stringify(storeClock("Asia/Kolkata", evening)) ===
+    JSON.stringify({ today: "2026-09-30", now: "2026-09-30T00:15" })
+);
+check("a zone this runtime does not know reads as UTC", storeClock("Mars/Olympus", evening).now === "2026-09-29T18:45");
+check(
+  "what it hands back as next is kept",
+  parseResult({ set: [], next: "2026-09-30T07:00" })?.next === "2026-09-30T07:00"
+);
+check(
+  "and only a date and time: anything else is no next",
+  parseResult({ next: "tomorrow 7am" })?.next === undefined && parseResult({ next: 7 })?.next === undefined
 );
 
 console.log(fails.length === 0 ? "\na schedule says when, on the store's clock" : `\n${fails.length} FAILED`);

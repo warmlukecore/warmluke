@@ -337,7 +337,13 @@ export default function ProjectSettings({
                 {/* Without this, a project that has never been touched
                   showed "India — ₹" as though somebody had picked it,
                   and there was no way back to not having picked. */}
-                <option value="default">Follow each shop — no second currency shown</option>
+                {/* Following the shop: its currency in the store's sections and in their own
+                  ones too, as Shopify keeps it (lib/money projectFormat). */}
+                <option value="default">
+                  {shop?.currency
+                    ? `Follow the shop — ${shop.currency}, as Shopify keeps it`
+                    : "Follow the shop's currency"}
+                </option>
                 {LOCALES.map((o) => (
                   <option key={o.locale} value={`${o.locale}|${o.currency}`}>
                     {o.label}

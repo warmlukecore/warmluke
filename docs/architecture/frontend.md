@@ -224,6 +224,11 @@ Screens are drawn from the [design system](../design/design-system.md).
 - Preserve the boundary between display filtering and server-wide statistics. A stat is
   over the section, not only the currently loaded page.
 - Keep store money in its source currency; conversion is a secondary dated estimate.
+- A project's own sections, Luke's prompt and the screens Luke writes use one money and number
+  style, `projectFormat` in `lib/money.ts`: the currency the owner chose in Project settings,
+  otherwise the connected Shopify store's (its currency, numbers as its country writes them),
+  otherwise the defaults. Nothing assumes a country: a shop in dollars reads in dollars.
+- Time on a rule is the store's own clock, the `iana_timezone` Shopify gives at connect.
 - When adding a view, column type, action, or expression, update the capability registry,
   validator, renderer/evaluator, database evaluator when applicable, and parity checks.
 - Large coordinator components should be refactored by behavior boundary, not by moving

@@ -152,7 +152,7 @@ export async function runCodeRules(client: SupabaseClient, w: Written): Promise<
           row: { id, ...row },
           previous,
           sections: rows,
-          today: new Date().toISOString().slice(0, 10),
+          ...storeClock(await storeZone(client, w.projectId)),
         });
         if (!out.ok) {
           console.error(`[code rule] "${r.name}": ${out.error}`);
@@ -169,6 +169,46 @@ export async function runCodeRules(client: SupabaseClient, w: Written): Promise<
 }
 
 /** A job as the queue keeps it (0134). */
+/**
+ * The store's own clock: today and now as they read there, "YYYY-MM-DD"
+ * and "YYYY-MM-DDTHH:MM". A rule's code works in these and answers in
+ * them ("next"), so it never does timezone arithmetic; UTC without a
+ * store or with a zone this runtime does not know.
+ */
+export function storeClock(zone: string, at = new Date()): { today: string; now: string } {
+  let parts: Record<string, string>;
+  try {
+    parts = Object.fromEntries(
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone: zone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      })
+        .formatToParts(at)
+        .map((p) => [p.type, p.value])
+    );
+  } catch {
+    return storeClock("UTC", at);
+  }
+  const today = `${parts.year}-${parts.month}-${parts.day}`;
+  return { today, now: `${today}T${parts.hour}:${parts.minute}` };
+}
+
+/** The timezone a project's store keeps, the clock its rules run on. */
+async function storeZone(client: SupabaseClient, projectId: string): Promise<string> {
+  const { data } = await client
+    .from("stores")
+    .select("timezone")
+    .eq("project_id", projectId)
+    .in("status", ["connected", "uninstalled"])
+    .maybeSingle();
+  return (data?.timezone as string | undefined) || "UTC";
+}
+
 type Job = { id: string; automation_id: string; kind: "schedule" | "added"; row_ids: string[]; attempts: number };
 
 /** The project's store, when it has one it may read. */
@@ -229,7 +269,7 @@ async function runJob(client: SupabaseClient, projectId: string, job: Job): Prom
     .map((r) => ({ id: r.id, ...withComputed(columns, r.data) }))
     .filter((r) => def.trigger.when === undefined || truthy(evalExpr(def.trigger.when, r, {})));
 
-  const today = new Date().toISOString().slice(0, 10);
+  const clock = storeClock(await storeZone(client, projectId));
   const here: Place = { moduleId, table };
   const errors: string[] = [];
   for (const a of def.actions) {
@@ -239,12 +279,19 @@ async function runJob(client: SupabaseClient, projectId: string, job: Job): Prom
     // a schedule hands the section's rows, and no row.
     const inputs =
       job.kind === "added"
-        ? seen.map((row) => ({ row, previous: null, sections, today }))
-        : [{ rows: seen, sections, today }];
+        ? seen.map((row) => ({ row, previous: null, sections, ...clock }))
+        : [{ rows: seen, sections, ...clock }];
     const outs = await runCodeEach(a.code, inputs);
     for (const out of outs) {
-      if (out.ok) await applyWrites(client, { projectId, moduleId }, here, places, out.result);
-      else errors.push(out.error);
+      if (!out.ok) {
+        errors.push(out.error);
+        continue;
+      }
+      await applyWrites(client, { projectId, moduleId }, here, places, out.result);
+      // A schedule's own code may say when it runs next; the database keeps it on the rule.
+      if (job.kind === "schedule" && out.result.next) {
+        await client.rpc("abo_code_next", { p_rule: rule.id, p_at: out.result.next });
+      }
     }
     console.log(
       `[code rule] "${rule.name}" (${job.kind}): ${inputs.length} run${inputs.length === 1 ? "" : "s"}, ${errors.length} failed`

@@ -20,6 +20,8 @@ export type CodeResult = {
   /** section: the name a row came under in "sections"; left out, the rule's own section. */
   set: Array<{ id: string; fields: Record<string, unknown>; section?: string }>;
   add: Array<{ fields: Record<string, unknown> }>;
+  /** A scheduled rule's next run, "YYYY-MM-DDTHH:MM" on the store's clock (0138). */
+  next?: string;
 };
 
 /** Past this a rule's code is not small. */
@@ -40,7 +42,7 @@ export function codeProblem(code: unknown): string | null {
 /** Reads what the code handed back; anything else is no result. */
 export function parseResult(raw: unknown): CodeResult | null {
   if (!raw || typeof raw !== "object") return null;
-  const r = raw as { set?: unknown; add?: unknown };
+  const r = raw as { set?: unknown; add?: unknown; next?: unknown };
   const obj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
   const set = Array.isArray(r.set)
     ? r.set
@@ -53,7 +55,8 @@ export function parseResult(raw: unknown): CodeResult | null {
   const add = Array.isArray(r.add)
     ? r.add.filter((a): a is { fields: Record<string, unknown> } => obj(a) && obj(a.fields))
     : [];
-  return { set: set.slice(0, 500), add: add.slice(0, 100) };
+  const next = typeof r.next === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(r.next) ? r.next : undefined;
+  return { set: set.slice(0, 500), add: add.slice(0, 100), ...(next ? { next } : {}) };
 }
 
 /**

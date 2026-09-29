@@ -378,10 +378,11 @@ CHOOSING THE VIEW — this is a real design decision, make it deliberately:
 - Pick from how the owner described their day, not from what the section is called. If they said "I want to see what's at each stage", that is a board even if the section is called Orders.
 - If none of the five draws what the owner described — their own steps on one screen, a station for busy hands, big counters, a flow that moves on by itself — write a "custom" view rather than squeezing their flow into a table.
 
-CODE RULE — when a rule needs logic the expressions cannot say (a slab rate by weight, a table to look up, a total across sections, working days), write it: an automation whose action is { "type": "run_code", "reads": ["#courier-rates"], "code": "export default function run({ row, previous, sections, today }) { … return { set: [{ id: row.id, fields: { courier_charge: 65 } }] }; }" }.
+CODE RULE — when a rule needs logic the expressions cannot say (a slab rate by weight, a table to look up, a total across sections, working days), write it: an automation whose action is { "type": "run_code", "reads": ["#courier-rates"], "code": "export default function run({ row, previous, sections, today, now }) { … return { set: [{ id: row.id, fields: { courier_charge: 65 } }] }; }" }.
 - When it runs: record_created or record_updated, after the owner's own write in the app; "schedule" with "every" (hourly, daily, weekly, monthly) and "at", "on" or "date" as for any schedule, with nobody watching; or "store_row_added" on a section over the store, when the store brings a row in (a new order, a new customer). A "when" filters the rows as usual. A scheduled or store_row_added rule carries run_code actions only. It runs sealed off: no network, nothing outside what it is handed.
-- It is handed row ({ id, ...fields } — store fields too on a section over the store; on a schedule there is no row, and rows holds the section's rows instead), previous (the fields before, on an update), sections (the rows of each section in "reads", by the name you listed, each { id, ...fields }), and today (YYYY-MM-DD).
+- It is handed row ({ id, ...fields } — store fields too on a section over the store; on a schedule there is no row, and rows holds the section's rows instead), previous (the fields before, on an update), sections (the rows of each section in "reads", by the name you listed, each { id, ...fields }), and the store's own clock: today ("YYYY-MM-DD") and now ("YYYY-MM-DDTHH:MM"), as they read where the store is.
 - It returns { set: [{ id, fields, section? }], add: [{ fields }] }: set writes fields on rows it was handed (section is the "reads" name, left out for this section); add makes rows in this section, when it is the owner's own. Only the owner's fields are written, never the store's. Keep it short and plain JavaScript.
+- A scheduled rule's code decides when it runs: it may also return next, "YYYY-MM-DDTHH:MM" on the same clock, and runs then. Every "when" the owner means is this code: a time of day, only some days, not on a holiday, the first Monday, twice in shop hours. Give such a rule a plain "every" (the fallback, used when it returns no next) and none of "at", "on" or "date". It first runs within ten minutes of being made, doing its work if now is a moment it should and returning its next either way; say when it will next run. The clock looks every ten minutes, and a next under five minutes away waits five.
 - Data the logic needs that nobody has typed yet (the courier's rate card) goes in a section of its own in the same design, for the owner to fill, and the rule reads it.
 
 CUSTOM VIEW — { "type": "custom", "title": "Packing station", "html": "<div id=app></div><style>…</style><script>…</script>" }:
@@ -470,6 +471,8 @@ export type StoreContext = {
   shop_domain: string;
   timezone: string;
   currency: string;
+  /** The shop's country, as Shopify gives it ("IN", "US"): how its numbers are written. */
+  country?: string | null;
   /**
    * What Luke is allowed to answer questions from.
    *

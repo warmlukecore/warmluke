@@ -123,7 +123,8 @@ try {
                 {
                   type: "run_code",
                   reads: ["#courier"],
-                  code: "export default function run({ sections, today }) { const n = (sections['#courier'] ?? []).length; return { add: [{ fields: { note: today + ': ' + n + ' orders' } }] }; }",
+                  // And says when it runs next: tomorrow at seven, on the store's clock (0138).
+                  code: "export default function run({ sections, today }) { const n = (sections['#courier'] ?? []).length; const d = new Date(today + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 1); return { add: [{ fields: { note: today + ': ' + n + ' orders' } }], next: d.toISOString().slice(0, 10) + 'T07:00' }; }",
                 },
               ],
             },
@@ -222,6 +223,25 @@ try {
     check(
       "and the day's line is written",
       (notes ?? []).length === 1 && String(notes[0].data.note).endsWith(" orders")
+    );
+    const { data: dayRule } = await admin
+      .from("automations")
+      .select("next_run_at")
+      .eq("project_id", project.id)
+      .eq("name", "a line a day")
+      .single();
+    const nextAt = dayRule?.next_run_at ? new Date(dayRule.next_run_at) : null;
+    const wall = nextAt
+      ? new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Asia/Kolkata",
+          hour: "2-digit",
+          minute: "2-digit",
+          hourCycle: "h23",
+        }).format(nextAt)
+      : "";
+    check(
+      "and its code says when it runs next: tomorrow at 07:00, the store's time",
+      wall === "07:00" && nextAt > new Date()
     );
   }
   let lease = [];
@@ -384,6 +404,61 @@ try {
       "id",
       timedRules.map((r) => r.id)
     );
+
+  // A rule's own code says when it runs next (0138): kept in the store's
+  // time, only with the project's ticket, never sooner than five minutes.
+  console.log("\na rule's code says when it runs next");
+  const { data: lineRow } = await admin
+    .from("automations")
+    .select("id")
+    .eq("project_id", project.id)
+    .eq("name", "a line a day")
+    .single();
+  const lineRule = lineRow.id;
+  await admin.from("code_jobs").delete().eq("automation_id", lineRule).in("status", ["queued", "running"]);
+  const { data: nextTicket } = await admin.rpc("abo_code_mint", { p_project: project.id });
+  const tn = ticketed(nextTicket);
+  const nextOf = async () =>
+    (await admin.from("automations").select("next_run_at").eq("id", lineRule).single()).data?.next_run_at ?? null;
+  const kept = (await tn.rpc("abo_code_next", { p_rule: lineRule, p_at: "2027-01-05T07:00" })).data;
+  check(
+    "the moment it names is kept, in the store's time",
+    kept === true && Date.parse(await nextOf()) === Date.parse("2027-01-05T01:30:00Z")
+  );
+  const past = (await tn.rpc("abo_code_next", { p_rule: lineRule, p_at: "2020-01-01T00:00" })).data;
+  check(
+    "a moment gone by waits five minutes, so it never runs every tick",
+    past === true && Date.parse(await nextOf()) >= Date.now() + 4 * 60_000
+  );
+  const stranger = (await ticketed("f".repeat(64)).rpc("abo_code_next", { p_rule: lineRule, p_at: "2027-01-05T07:00" }))
+    .data;
+  check("and nobody without the project's ticket can move it", stranger === false);
+  await admin.from("code_leases").delete().eq("project_id", project.id);
+  await admin
+    .from("automations")
+    .update({ next_run_at: new Date(Date.now() + 3_600_000).toISOString() })
+    .eq("id", lineRule);
+  await admin.rpc("abo_code_schedule");
+  const openFor = async () =>
+    (
+      await admin
+        .from("code_jobs")
+        .select("id")
+        .eq("automation_id", lineRule)
+        .eq("kind", "schedule")
+        .eq("status", "queued")
+    ).data ?? [];
+  check("the clock waits for the moment the code named", (await openFor()).length === 0);
+  await admin
+    .from("automations")
+    .update({ next_run_at: new Date(Date.now() - 60_000).toISOString() })
+    .eq("id", lineRule);
+  await admin.rpc("abo_code_schedule");
+  check(
+    "and queues it once it comes, leaving when next to that run",
+    (await openFor()).length === 1 && (await nextOf()) === null
+  );
+  await admin.from("code_jobs").delete().eq("automation_id", lineRule).eq("status", "queued");
 } finally {
   await project.remove();
   await other.remove();

@@ -408,6 +408,15 @@ it runs. Before 0137 that runner ignored `every` and ran every schedule rule eve
 `check-schedule` holds what a trigger may say and how it reads; `check-code-jobs-live` the
 moments and the code clock; `check-own-fields` that a daily rule runs once.
 
+A rule with code decides when it runs itself (0138), so no timing ever needs a new word here.
+Its code is handed the store's clock, `today` ("YYYY-MM-DD") and `now` ("YYYY-MM-DDTHH:MM"),
+as they read where the store is (`storeClock` in `lib/code-rules.ts`), and a scheduled rule may
+return `next` on that same clock. The worker hands it to `abo_code_next`, which only a ticket
+for the rule's project may call; it is kept on `automations.next_run_at`, never under five
+minutes away nor over 400 days. `abo_code_schedule` runs the rule at that moment, clearing it
+as it queues, so a run that names no next falls back to the schedule's `every`. The first
+Monday, a holiday list, shop hours: each is a few lines of that rule's own code.
+
 ## Extending the engine safely
 
 Adding a capability normally requires coordinated changes to:

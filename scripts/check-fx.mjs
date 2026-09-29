@@ -13,7 +13,7 @@
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-fx.mjs
 
 import { existsSync, readFileSync } from "node:fs";
-import { makeFormatting } from "../src/lib/money.ts";
+import { makeFormatting, projectFormat } from "../src/lib/money.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -142,6 +142,29 @@ console.log("\nand it is actually wired up");
   // The note is one short line now; the promise in it is the same.
   check("and says not to reconcile with it", /never to reconcile|not for\s+reconciling/.test(shell));
 }
+
+// A project's own money follows its shop unless its owner chose: a shop
+// in dollars had its owner's own sections, and Luke, in rupees nobody picked.
+console.log("\na project's own sections keep its shop's money, unless the owner chose");
+const untouched = { locale: "en-IN", currency: "INR", currency_set_by_user: false };
+const us = projectFormat(untouched, { currency: "USD", country: "US" });
+check("a shop in dollars: dollars, written as the US writes them", us.currency === "USD" && us.locale === "en-US");
+const de = projectFormat(untouched, { currency: "EUR", country: "DE" });
+check("a shop in euros: euros", de.currency === "EUR" && de.locale === "en-DE");
+check(
+  "an owner who chose keeps their choice, whatever the shop",
+  JSON.stringify(
+    projectFormat({ locale: "en-GB", currency: "GBP", currency_set_by_user: true }, { currency: "USD", country: "US" })
+  ) === JSON.stringify({ locale: "en-GB", currency: "GBP" })
+);
+check(
+  "with no shop, the project's own",
+  JSON.stringify(projectFormat(untouched, null)) === JSON.stringify({ locale: "en-IN", currency: "INR" })
+);
+check(
+  "and a dollar amount in a US shop reads as one",
+  makeFormatting(us.locale, us.currency).money(1250) === "$1,250.00"
+);
 
 console.log(fails.length === 0 ? "\nmoney means what its source says" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

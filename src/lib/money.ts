@@ -46,6 +46,27 @@ export const DEFAULT_LOCALE = "en-IN";
 export const DEFAULT_CURRENCY = "INR";
 
 /**
+ * The money and number style a project's own sections, screens and
+ * rules use: what its owner chose, else what their Shopify store keeps
+ * (its currency, and numbers as its country writes them), else the
+ * defaults. A shop in dollars had its owner's own sections in rupees
+ * nobody picked, and Luke writing rupees for them.
+ */
+export function projectFormat(
+  project:
+    | { locale?: string | null; currency?: string | null; currency_set_by_user?: boolean | null }
+    | null
+    | undefined,
+  store: { currency?: string | null; country?: string | null } | null | undefined
+): { locale: string; currency: string } {
+  if (project?.currency_set_by_user === true || !store?.currency) {
+    return { locale: project?.locale || DEFAULT_LOCALE, currency: project?.currency || DEFAULT_CURRENCY };
+  }
+  const byCountry = store.country && /^[A-Za-z]{2}$/.test(store.country) ? `en-${store.country.toUpperCase()}` : null;
+  return { locale: byCountry ?? project?.locale ?? DEFAULT_LOCALE, currency: store.currency };
+}
+
+/**
  * A rate for one pair, and the day it is from.
  *
  * Only ever used to annotate. Nothing here replaces a recorded amount.

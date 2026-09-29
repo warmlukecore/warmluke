@@ -88,7 +88,16 @@ const RULES_IN_CONTEXT = 40;
 import { lowStock, searchOrders, storeLeaders, storeOverview, storeValues } from "@/lib/store-read";
 import { routeQuestion } from "@/lib/route";
 import { fetchSlice } from "@/lib/slice";
-import type { AssistantPlan, AssistantReply, FeatureSchema, ModuleRow, ProjectRow, TurnEvent, UiSchema } from "@/lib/types";
+import { projectFormat } from "@/lib/money";
+import type {
+  AssistantPlan,
+  AssistantReply,
+  FeatureSchema,
+  ModuleRow,
+  ProjectRow,
+  TurnEvent,
+  UiSchema,
+} from "@/lib/types";
 import { tapeRoad } from "@/lib/model-tape";
 
 /**
@@ -115,7 +124,7 @@ export async function storeContextFor(
   // a member who cannot see it — simply gets null.
   const { data: storeRow } = await client
     .from("stores")
-    .select("id, shop_domain, timezone, currency, last_synced_at")
+    .select("id, shop_domain, timezone, currency, country, last_synced_at")
     .eq("project_id", projectId)
     .eq("status", "connected")
     .maybeSingle();
@@ -157,6 +166,7 @@ export async function storeContextFor(
     shop_domain: storeRow.shop_domain as string,
     timezone: storeRow.timezone as string,
     currency: storeRow.currency as string,
+    country: (storeRow.country as string | null) ?? null,
     // Counts quoted mid-import are partial, and a design built on "you
     // have 4 orders" is wrong if 4,000 are still arriving.
     importing: runList.length === 0 || runList.some((r) => r.status !== "done"),
@@ -603,11 +613,12 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   let road: Road =
     resume?.road ?? roadFor({ message, lastReplyType: lastReplyTypeOf(history), routed: !!store?.snapshot?.slice });
   if (!resume) tell({ step: "road", road });
-  const designSystem = () =>
-    buildSystemPrompt(modules, project.name, project.locale, project.currency, store, merchant);
+  // Money as the owner chose it, else as their shop keeps it: Luke writes the same currency the app shows.
+  const money = projectFormat(project, store);
+  const designSystem = () => buildSystemPrompt(modules, project.name, money.locale, money.currency, store, merchant);
   let system =
     road === "talk"
-      ? buildTalkPrompt(modules, project.name, project.locale, project.currency, store, merchant)
+      ? buildTalkPrompt(modules, project.name, money.locale, money.currency, store, merchant)
       : designSystem();
   const userTurn = buildUserMessage(
     message,
@@ -643,7 +654,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       const planTools = toolStore ? aiStoreTools(toolStore, { only: PLAN_TOOLS, observe: hear }) : null;
       const raw = await asJob("plan", () =>
         callModel({
-          system: buildPlanPrompt(modules, project.name, project.locale, project.currency, store, merchant),
+          system: buildPlanPrompt(modules, project.name, money.locale, money.currency, store, merchant),
           turns: [...history, { role: "user", content: userTurn }],
           signal,
           model: model ?? planOn,

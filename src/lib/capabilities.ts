@@ -177,7 +177,7 @@ export const VIEW_TYPES = Object.keys(VIEWS) as ViewType[];
 
 /** When a schedule runs, said once for every place Luke is told about schedules. */
 export const SCHEDULE_TIMING =
-  'It runs on the store\'s clock. "at": "07:00" is the time (daily, weekly, monthly); "on": ["mon", "sat"] the days of the week (daily or weekly; weekly needs it); monthly takes "date", 1 to 31 (past a month\'s end, its last day). "Roz subah", "every Monday", "on the 1st" are these, not an interval: say the time you chose. A rule with a time first runs at the next one, never at once. Without them it runs an interval after its last run';
+  'A rule with code chooses its own times (it returns next, below). A rule without code runs on the store\'s clock: "at": "07:00" is the time (daily, weekly, monthly); "on": ["mon", "sat"] the days of the week (daily or weekly; weekly needs it); monthly takes "date", 1 to 31 (past a month\'s end, its last day). "Roz subah", "every Monday", "on the 1st" are these, not an interval: say the time you chose. A rule with a time first runs at the next one, never at once. Without them it runs an interval after its last run';
 
 export const TRIGGERS = {
   record_created: "a row is added",
