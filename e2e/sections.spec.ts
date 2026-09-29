@@ -279,8 +279,8 @@ scan.addEventListener("blur", () => setTimeout(() => scan.focus(), 50));
 scan.focus();
 // Money as the app writes it, and another section read by its name.
 cash.textContent = wl.money(1424, "INR");
-wl.read("#e2e-rates").then((r) => (rates.textContent = r.length + " rates"));
-wl.find("code", "R1", "#e2e-rates").then((r) => (rate.textContent = "rate " + r[0].data.rate));
+wl.read("#e2e-rates").then((r) => (rates.textContent = r.length + " rates"), (e) => (rates.textContent = e.message));
+wl.find("code", "R1", "#e2e-rates").then((r) => (rate.textContent = "rate " + r[0].data.rate), (e) => (rate.textContent = e.message));
 asker.onclick = async () => { answer.textContent = (await wl.ask("Reset it?", "Reset", "Keep")) ? "reset" : "kept"; };
 wl.onRows((rows) => {
   list.innerHTML = "";

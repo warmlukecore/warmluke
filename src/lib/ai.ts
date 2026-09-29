@@ -40,7 +40,6 @@ import { asJob, record } from "@/lib/usage";
 import {
   ALLOWED_ICONS,
   COLUMN_TYPES,
-  mergeFeatures,
   TITLE_MAX,
   VIEW_TYPES,
   type AssistantPlan,
@@ -1899,18 +1898,12 @@ export function validatePlan(
     }
 
     if (plan.changeType === "FEATURE_UPDATE") {
-      if (isPlainObject(plan.features)) {
-        // Checked as the section will have them: the change laid over what it has.
-        const laid = mergeFeatures(currentFeatures, plan.features);
-        validateFeatures(laid, currentSchema?.columns ?? null, errors, pendingFields, storeFields);
-        // What the check settles in place (a filter with one option dropped)
-        // is the change's own, for the parts it names.
-        const change = plan.features as Record<string, unknown>;
-        for (const part of Object.keys(change))
-          if (change[part] !== null) change[part] = (laid as Record<string, unknown>)[part];
-      } else {
-        validateFeatures(plan.features, currentSchema?.columns ?? null, errors, pendingFields, storeFields);
-      }
+      // The parts it names, each checked on its own as always. What it
+      // leaves out stays as the section has it and is not judged again:
+      // a part accepted long ago, under older rules, must not block a new
+      // change to another part (a recorded handover design was refused
+      // for its section's old scan settings).
+      validateFeatures(plan.features, currentSchema?.columns ?? null, errors, pendingFields, storeFields);
     }
 
     if (plan.changeType === "AUTOMATION_ADD") {

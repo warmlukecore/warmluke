@@ -82,6 +82,10 @@ check(
   "and is still checked: a stat over a field there is not is refused",
   !bad.ok && /weight/.test(bad.errors.join(" "))
 );
+// A part the section has had for a long time, which today's rules would
+// refuse, stays as it is and does not block a change to another part.
+const legacy = { ...features, actions: [{ label: "Tick", set: { gone: { const: true } } }] };
+check("a part the change leaves out is not judged again", validatePlan(plan(change), modules, schema, legacy).ok);
 
 console.log("\na field added with the columns in another order");
 const add = (columns) =>
