@@ -12,6 +12,7 @@ import {
 } from "@/lib/store-read";
 import { blueprintAsText, runTurn, schemasFor, storeFactsFor } from "@/lib/engine";
 import { describeBuild } from "@/lib/judge";
+import { inTime } from "@/lib/in-time";
 import { CODE_RULE_GUIDE, CUSTOM_VIEW_GUIDE, PLAN_FORMAT, WORKED_EXAMPLE, findGaps, parseReply } from "@/lib/ai";
 import { vocabularyPrompt } from "@/lib/capabilities";
 import {
@@ -65,6 +66,12 @@ const KNOWN = new Set([LATEST_KNOWN, "2025-06-18", "2025-03-26", "2024-11-05"]);
 
 /** A revision is a date. Anything else is a client with a bug. */
 const VERSION_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * How long propose_change waits for its design before answering "still
+ * designing": under the minute a client is commonly given for a tool.
+ */
+const DESIGN_WAIT_MS = Number(process.env.MCP_DESIGN_WAIT_MS) || 40_000;
 
 type Json = Record<string, unknown>;
 type RpcRequest = { jsonrpc: "2.0"; id?: string | number | null; method: string; params?: Json };
@@ -938,80 +945,104 @@ export async function POST(req: Request) {
       // for a request, a throw anywhere after the charge — hands it
       // back in `finally`. The chat route settles the same way.
       let refundable: string | null = turns.spend_id ?? null;
-      try {
-        const turn = await runTurn({
-          client: db,
-          project,
-          modules: moduleList,
-          message: request,
-          // This tool cannot build. The design it hands back is the
-          // showing, so plain plans are a perfectly good answer — in
-          // the chat they would mean building before anyone had seen a
-          // plan.
-          plansAllowed: true,
-          signal: req.signal,
-        });
-        if (!turn.ok) {
-          return ok(
+      // The design, from the turn to the request row, as work of its own.
+      const work = (async () => {
+        try {
+          const turn = await runTurn({
+            client: db,
+            project,
+            modules: moduleList,
+            message: request,
+            // This tool cannot build. The design it hands back is the
+            // showing, so plain plans are a perfectly good answer — in
+            // the chat they would mean building before anyone had seen a
+            // plan.
+            plansAllowed: true,
+            // Not the request's signal: a client that stops waiting does
+            // not throw the design away (lib/in-time).
+          });
+          if (!turn.ok) {
+            return ok(
+              id,
+              text({
+                error: "Warmluke could not turn that into a design it trusts.",
+                detail: turn.errors.slice(0, 3),
+                note: "Say it again with more about how they actually work, and what should happen when.",
+              })
+            );
+          }
+
+          // Questions come back unanswered rather than guessed at. The
+          // merchant is already in this conversation, so they answer
+          // here and the request comes back complete — no trip to the
+          // app to fill in what could have been asked out loud. The
+          // note says nothing has been requested; charging a design for
+          // it would make that sentence false.
+          if (turn.reply.type === "clarify") {
+            return ok(
+              id,
+              text({
+                status: "needs answers",
+                note: "Nothing has been requested yet. Ask the merchant these, then call propose_change again with their answers included.",
+                message: turn.reply.message,
+                questions: turn.reply.questions,
+              })
+            );
+          }
+
+          // An answer is a reply to a question, and nobody asked one
+          // here: this path exists to design a change. Refusing beats
+          // settling a design that has no plans in it.
+          if (turn.reply.type === "answer") {
+            return ok(id, text({ error: "That reads as a question, not a change to make." }));
+          }
+
+          const design = blueprintAsText(turn.reply, moduleList, turn.store, turn.unmet);
+          const plans = turn.reply.type === "blueprint" ? turn.reply.blueprint.plans : turn.reply.plans;
+
+          return await settleDesign({
+            db,
             id,
-            text({
-              error: "Warmluke could not turn that into a design it trusts.",
-              detail: turn.errors.slice(0, 3),
-              note: "Say it again with more about how they actually work, and what should happen when.",
-            })
-          );
+            origin: new URL(req.url).origin,
+            project,
+            moduleList,
+            plans,
+            design,
+            unmet: turn.unmet ?? [],
+            next: turn.reply.type === "blueprint" ? turn.reply.blueprint.next : turn.reply.next,
+            request,
+            store: turn.store,
+            // Charged the moment the request row exists — that is what
+            // the merchant gets for the turn. A row that would not
+            // insert is our failure, and the turn comes back.
+            charged: () => {
+              refundable = null;
+            },
+          });
+        } finally {
+          if (refundable) await db.rpc("abo_refund_turn", { p_spend: refundable });
         }
-
-        // Questions come back unanswered rather than guessed at. The
-        // merchant is already in this conversation, so they answer
-        // here and the request comes back complete — no trip to the
-        // app to fill in what could have been asked out loud. The
-        // note says nothing has been requested; charging a design for
-        // it would make that sentence false.
-        if (turn.reply.type === "clarify") {
-          return ok(
-            id,
-            text({
-              status: "needs answers",
-              note: "Nothing has been requested yet. Ask the merchant these, then call propose_change again with their answers included.",
-              message: turn.reply.message,
-              questions: turn.reply.questions,
-            })
-          );
-        }
-
-        // An answer is a reply to a question, and nobody asked one
-        // here: this path exists to design a change. Refusing beats
-        // settling a design that has no plans in it.
-        if (turn.reply.type === "answer") {
-          return ok(id, text({ error: "That reads as a question, not a change to make." }));
-        }
-
-        const design = blueprintAsText(turn.reply, moduleList, turn.store, turn.unmet);
-        const plans = turn.reply.type === "blueprint" ? turn.reply.blueprint.plans : turn.reply.plans;
-
-        return await settleDesign({
-          db,
-          id,
-          origin: new URL(req.url).origin,
-          project,
-          moduleList,
-          plans,
-          design,
-          unmet: turn.unmet ?? [],
-          next: turn.reply.type === "blueprint" ? turn.reply.blueprint.next : turn.reply.next,
-          request,
-          store: turn.store,
-          // Charged the moment the request row exists — that is what
-          // the merchant gets for the turn. A row that would not
-          // insert is our failure, and the turn comes back.
-          charged: () => {
-            refundable = null;
-          },
-        });
-      } finally {
-        if (refundable) await db.rpc("abo_refund_turn", { p_spend: refundable });
-      }
+      })();
+      const origin = new URL(req.url).origin;
+      const answered = await inTime(work, DESIGN_WAIT_MS, (rest) =>
+        after(() =>
+          rest.then(
+            () => undefined,
+            (e) =>
+              console.error(`[mcp] a design finished after its answer failed: ${e instanceof Error ? e.message : e}`)
+          )
+        )
+      );
+      if (answered) return answered;
+      // Past the wait: said so, and the design goes on after this answer.
+      return ok(
+        id,
+        text({
+          status: "still designing",
+          note: "Warmluke is still designing this and keeps going without you. Call pending_changes in a minute or two: it will be there, waiting for the merchant's approval, and in their app too. Nothing is built until they say yes. If it needed answers first, it will not appear: call propose_change again with more about how they work.",
+          open: openAt(origin, project.id),
+        })
+      );
     }
 
     if (name === "read_section") {
