@@ -332,6 +332,18 @@ finder.onclick = async () => { const rows = await wl.find("order_number", "2001"
     const screen = page.frameLocator('iframe[title="Station"]');
     await expect(screen.getByRole("button", { name: "Pack CF-0001-1" })).toBeVisible();
 
+    // It wears the app's face, handed in: the built app's CSS names its font
+    // files relative to itself, and a path read against the page found none.
+    await expect
+      .poll(() =>
+        screen
+          .locator("body")
+          .evaluate(() =>
+            [...document.fonts].some((f) => f.family.replace(/"/g, "") === "WL Sans" && f.status === "loaded")
+          )
+      )
+      .toBe(true);
+
     // Sealed: no network, no reach into the app's page.
     await expect(screen.getByText("network blocked")).toBeVisible();
     await expect(screen.getByText("app sealed")).toBeVisible();

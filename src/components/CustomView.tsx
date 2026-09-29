@@ -60,9 +60,13 @@ function appFaces(): Promise<string> {
       const mine = rules.filter((r) => r.style.getPropertyValue("font-family").replace(/['"]/g, "").trim() === family);
       // The Latin file: the one whose range starts at U+0000, or the only one there is.
       const rule = mine.find((r) => /U\+0+-/i.test(r.style.getPropertyValue("unicode-range"))) ?? mine[0];
-      const url = rule && /url\(["']?([^"')]+)/.exec(rule.style.getPropertyValue("src"))?.[1];
-      if (!url) continue;
-      const blob = await (await fetch(url)).blob();
+      const src = rule && /url\(["']?([^"')]+)/.exec(rule.style.getPropertyValue("src"))?.[1];
+      if (!src) continue;
+      // Written relative to its stylesheet, not to the page: a built app's
+      // CSS says "../media/…", which from /app/… is a file that is not there.
+      const res = await fetch(new URL(src, rule.parentStyleSheet?.href ?? document.baseURI).href);
+      if (!res.ok) continue;
+      const blob = await res.blob();
       const data = await new Promise<string>((ok, no) => {
         const read = new FileReader();
         read.onload = () => ok(String(read.result));
