@@ -39,6 +39,11 @@ MODEL_TAPE=record ENV_FILE=.env.check.local APP_URL=http://localhost:3101 \
   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-luke-lookups.mjs
 ```
 
+`MODEL_TAPE=fill` in place of `record` on both plays every call that has a recording and
+makes and keeps only the ones that do not, so a change that alters one request of a long
+check pays for that request, not the whole check again. The server says which calls it made
+("has no recording: asking the model").
+
 A check that talks to the server refuses to run when the server records or plays back
 differently from it (the `x-model-tape` header says which), since the two halves would
 then answer from different places.

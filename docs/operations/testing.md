@@ -137,7 +137,8 @@ place.
 ## Real models, recorded
 
 Checks that need a model do not call one in CI. `src/lib/model-tape.ts` records a real
-answer once (`MODEL_TAPE=record`) and plays it back after (`MODEL_TAPE=replay`), keyed by
+answer once (`MODEL_TAPE=record`) and plays it back after (`MODEL_TAPE=replay`;
+`MODEL_TAPE=fill` plays what it has and records only what it lacks), keyed by
 the whole request, normalised, without the model's name. CI's server runs in replay, so
 `check-luke-lookups` runs there with no key; `check-route-eval` replays by default. A
 request nothing was recorded for fails at once and says what changed: the system prompt,

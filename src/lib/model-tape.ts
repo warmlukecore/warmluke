@@ -39,17 +39,24 @@ import { jobNow } from "@/lib/usage";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-export type TapeMode = "record" | "replay";
+/**
+ * record: every call is made and kept. replay: every call is played, and
+ * one never recorded fails. fill: played as replay, and only a call with
+ * no recording is made and kept, so a change that alters one request
+ * costs that request and not the whole check again.
+ */
+export type TapeMode = "record" | "replay" | "fill";
 
 /** Recording, replaying, or neither. Never either in production. */
 export function tapeMode(): TapeMode | null {
   const m = process.env.MODEL_TAPE?.trim();
-  if (m !== "record" && m !== "replay") return null;
+  if (m !== "record" && m !== "replay" && m !== "fill") return null;
   if (process.env.VERCEL_ENV === "production") return null;
   return m;
 }
 
-export const replaying = () => tapeMode() === "replay";
+/** Replaying, or filling in: what was recorded plays, as it would in CI. */
+export const replaying = () => tapeMode() === "replay" || tapeMode() === "fill";
 
 /**
  * Says on a response whether this server's model calls are recorded or
@@ -260,10 +267,17 @@ export function tapeFetch(label: string, real: typeof fetch): typeof fetch {
         JSON.stringify({ label, url, parts: fp.parts, body: init?.body ?? null }, null, 1)
       );
 
-    if (mode === "replay") {
+    const exact = mode === "record" ? null : read(file);
+    const played =
+      mode === "record"
+        ? null
+        : exact?.responses?.length
+          ? { key: fp.key, kept: exact }
+          : sameConversation(label, fp, tagNow());
+    if (mode === "fill" && !played)
+      console.error(`[tape] ${label} call ${fp.key} has no recording: asking the model, and keeping it`);
+    if (mode === "replay" || (mode === "fill" && played)) {
       if (init?.signal?.aborted) throw stopped();
-      const exact = read(file);
-      const played = exact?.responses?.length ? { key: fp.key, kept: exact } : sameConversation(label, fp, tagNow());
       if (!played) {
         console.error(diagnose(label, fp));
         // Not a busy provider: nothing is worth retrying, and nothing should fall back.
@@ -315,7 +329,7 @@ const SETTINGS = "_models.json";
  */
 export function tapedSetting(name: string, fromEnv: string | undefined): string | undefined {
   const mode = tapeMode();
-  if (mode === "replay") {
+  if (mode === "replay" || mode === "fill") {
     const kept = (() => {
       try {
         return JSON.parse(readFileSync(join(dir(), SETTINGS), "utf8")) as Record<string, string>;
