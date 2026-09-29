@@ -576,9 +576,10 @@ export type TurnEvent =
   /** A change to the shop was asked for; it waits for the merchant's yes. `summary` is the card's own sentence. */
   | { step: "proposed"; summary: string }
   /** The validator has spoken: no problems, or this many going back to the model. */
-  | { step: "checked"; problems: number }
+  /** parts: what the design builds, by name, when it passed ("Add fields to Orders"). */
+  | { step: "checked"; problems: number; parts?: string[] }
   /** A design came out; the pass that finds what it misses is running. */
-  | { step: "gaps" }
+  | { step: "gaps"; parts?: string[] }
   /** The critic read the design against what was asked: it fits, or it went back once. `missing` counts what it still lacks. */
   | { step: "critic"; verdict: "fits" | "redo"; missing: number };
 

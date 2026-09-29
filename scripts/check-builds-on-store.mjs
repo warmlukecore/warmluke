@@ -65,7 +65,8 @@ async function ask(message, conversationId = null) {
     .split("\n")
     .filter(Boolean)
     .map((l) => JSON.parse(l));
-  return lines.filter((l) => !("step" in l) && !("words" in l)).at(-1) ?? {};
+  const out = lines.filter((l) => !("step" in l) && !("words" in l)).at(-1) ?? {};
+  return { ...out, steps: lines.filter((l) => "step" in l) };
 }
 
 const WORK = [
@@ -126,6 +127,12 @@ try {
     const copies = retypedCopies(plans, { shop_domain: "", currency: "INR", counts: {} });
     check("and no second list of it typed in by hand", copies.length === 0);
     if (copies.length) show(copies);
+    // The owner watches their own build checked, named, not a line that reads the same for every ask.
+    const named = out.steps.filter((s) => s.step === "checked").at(-1)?.parts ?? [];
+    check(
+      "and its steps name what was checked",
+      over ? named.includes(`New section: ${over.newModule.nav_label}`) : named.length > 0
+    );
   }
 
   // Work that belongs to rows a section of theirs already works on: the

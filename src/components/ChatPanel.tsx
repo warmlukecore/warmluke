@@ -284,16 +284,26 @@ const STEP_MARK: Record<TurnEvent["step"], LucideIcon> = {
 /** A step already taken: its mark and its words, in the margin's voice. */
 function StepRow({ step }: { step: TurnEvent }) {
   const Mark = step.step === "checked" && step.problems > 0 ? TriangleAlert : STEP_MARK[step.step];
+  const words = stepWords(step);
+  if (!words) return null;
   return (
     <li className="flex items-center gap-1.5 truncate">
       <Mark aria-hidden size={12} strokeWidth={2} className="shrink-0 text-fg-faint" />
-      {stepWords(step)}
+      {words}
     </li>
   );
 }
 
-function stepWords(step: TurnEvent): string {
+/**
+ * A step in words, naming what it touched where it knows: the store it
+ * read, what it looked up, the parts of the design it checked. Null for
+ * a step that says nothing of this ask ("Designing" read the same for
+ * every build).
+ */
+function stepWords(step: TurnEvent): string | null {
   const n = (count: number, one: string) => `${count} ${one}${count === 1 ? "" : "s"}`;
+  const quoted = (parts: string[]) =>
+    parts.length === 1 ? `“${parts[0]}”` : `“${parts.slice(0, -1).join("”, “")}” and “${parts[parts.length - 1]}”`;
   switch (step.step) {
     case "accepted":
       return "Luke has it";
@@ -309,11 +319,15 @@ function stepWords(step: TurnEvent): string {
     case "proposed":
       return withoutIds(`Asked for your yes: ${step.summary}`);
     case "checked":
-      return step.problems === 0 ? "Checked the reply" : `Found ${n(step.problems, "problem")} — sending it back`;
+      if (step.problems > 0) return `Found ${n(step.problems, "problem")} — sending it back`;
+      return step.parts?.length ? withoutIds(`Checked the design: ${step.parts.join(" · ")}`) : "Checked the reply";
     case "gaps":
-      return "Checking what the design misses…";
+      if (!step.parts?.length) return "Checking what the design misses…";
+      return step.parts.length <= 2
+        ? withoutIds(`Checking ${quoted(step.parts)} ${step.parts.length === 1 ? "does" : "do"} all you asked…`)
+        : `Checking the ${step.parts.length} parts do all you asked…`;
     case "road":
-      return step.road === "talk" ? "Answering" : "Designing";
+      return null;
     case "plan":
       return step.goal ? withoutIds(`Understood: ${step.goal}`) : "Working out what you need…";
     case "critic":
@@ -3536,7 +3550,12 @@ export default function ChatPanel({
                   >
                     <LukeMark size="xs" state="thinking" />
                     <span className="shimmer min-w-0 truncate">
-                      {draft ? "Writing…" : steps.length ? stepWords(steps[steps.length - 1]) : "Working on it…"}
+                      {draft
+                        ? "Writing…"
+                        : (steps
+                            .map(stepWords)
+                            .filter((w): w is string => !!w)
+                            .at(-1) ?? "Working on it…")}
                     </span>
                     {stepSeconds >= 2 && <span className="shrink-0 tabular-nums text-fg-faint">{stepSeconds}s</span>}
                     {steps.length > 1 && (

@@ -88,7 +88,7 @@ const RULES_IN_CONTEXT = 40;
 import { lowStock, searchOrders, storeLeaders, storeOverview, storeValues } from "@/lib/store-read";
 import { routeQuestion } from "@/lib/route";
 import { fetchSlice } from "@/lib/slice";
-import type { AssistantReply, FeatureSchema, ModuleRow, ProjectRow, TurnEvent, UiSchema } from "@/lib/types";
+import type { AssistantPlan, AssistantReply, FeatureSchema, ModuleRow, ProjectRow, TurnEvent, UiSchema } from "@/lib/types";
 import { tapeRoad } from "@/lib/model-tape";
 
 /**
@@ -312,6 +312,10 @@ export type TurnResult =
  * Runs the model, repairs what the validator rejects, and fills in the
  * gaps a blueprint failed to mention. Writes nothing.
  */
+/** What a design builds, by name, for the steps the owner watches: "Add fields to Orders", "Rule: Ship by". */
+const partsOf = (plans: AssistantPlan[], modules: ModuleRow[]): string[] =>
+  plans.slice(0, 6).map((p) => describePlan(p, modules).title);
+
 /**
  * The current schema of every section in a project, by module id.
  *
@@ -812,7 +816,20 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
 
     // What the validator actually said — zero problems, or this many on
     // their way back to the model. Not "checked" because time passed.
-    tell({ step: "checked", problems: parsed.ok || onlyAsking ? 0 : parsed.errors.length });
+    // Named when it passed, so the owner watches their own build being
+    // checked, not a line that reads the same for every ask.
+    tell({
+      step: "checked",
+      problems: parsed.ok || onlyAsking ? 0 : parsed.errors.length,
+      ...(parsed.ok && (parsed.reply.type === "plans" || parsed.reply.type === "blueprint")
+        ? {
+            parts: partsOf(
+              parsed.reply.type === "blueprint" ? parsed.reply.blueprint.plans : parsed.reply.plans,
+              modules
+            ),
+          }
+        : {}),
+    });
 
     // The gates cover the grammar; the critic covers the point. With the
     // plan switch on it reads the ask, what was understood and what will
@@ -915,7 +932,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       gaps = critiqued.unmet;
     } else {
       const built = describeBuild(plans, modules, currentSchema?.columns, store, { screens: true });
-      tell({ step: "gaps" });
+      tell({ step: "gaps", parts: partsOf(plans, modules) });
       gaps = await findGaps(message.trim(), built, signal);
     }
     const existing = parsed.reply.type === "blueprint" ? (parsed.reply.blueprint.unmet ?? []) : [];
