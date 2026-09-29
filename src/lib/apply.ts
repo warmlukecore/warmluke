@@ -15,7 +15,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { undoableFrom, type UndoStep } from "@/lib/undo";
 import { validatePlan } from "@/lib/ai";
 import { isStoreTable, storeSectionColumns } from "@/lib/store-read";
-import type { AssistantPlan, FeatureSchema, ModuleRow, UiSchema, UiSchemaRow } from "@/lib/types";
+import {
+  mergeFeatures,
+  type AssistantPlan,
+  type FeatureSchema,
+  type ModuleRow,
+  type UiSchema,
+  type UiSchemaRow,
+} from "@/lib/types";
 
 type SchemaJsonWithFeatures = UiSchema & { features?: FeatureSchema | null };
 type Db = SupabaseClient;
@@ -651,7 +658,11 @@ async function validateAndApply(
 
     await write("schema_insert", {
       module_id: plan.targetModuleId!,
-      schema_json: { columns: sj.columns, features: plan.features } as SchemaJsonWithFeatures,
+      // Laid over what the section has: what the change leaves out stays.
+      schema_json: {
+        columns: sj.columns,
+        features: mergeFeatures(sj.features, plan.features),
+      } as SchemaJsonWithFeatures,
       version: nextVersion,
       created_by: "ai",
       change_description: plan.explanation,

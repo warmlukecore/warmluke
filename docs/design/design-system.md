@@ -86,13 +86,25 @@ light or dark; and a small kit drawn as the app draws them. The kit is `wl-page`
 `wl-stack`, `wl-inline`, `wl-grid`, `wl-card` (`now`, `bad`), `wl-title`, `wl-big`,
 `wl-count`, `wl-label`, `wl-muted`, `wl-scan`, `wl-banner` and `wl-badge` (`ok`, `bad`,
 `warn`, `info`), `wl-list` of `wl-row` (`done`, `bad`), and `wl-button` (`primary`,
-`critical`, `big`). Plain headings, inputs, buttons and tables are styled too. Luke is told
+`critical`, `big`). Its sizes are the app's own (a `wl-count` is a stat card's figure);
+`big` on a count or a banner is for a station read from a step away. A question is
+`wl.ask`, drawn as the app's dialog: the frame blocks the browser's own, so `alert` shows
+it too, and while it is open a key from outside it (a scanner's Enter) answers nothing. Plain headings, inputs, buttons and tables are styled too. Luke is told
 to build from the kit and write CSS for layout alone. A custom screen is the section: it
 fills the page below Luke's counters, without the list's search, filters or paging, and
 offers full screen for a device at a desk. A screen may keep focus on its own scan box, but
 never takes it back from the page around it: while the owner is in Luke's panel its request
 waits, and is kept when they return to the screen. `check-custom-view` holds that every piece the
 prompt names is drawn, and that the kit sets no colour of its own.
+
+## Previews
+
+What Luke proposes is shown before it is built, with a bar of its own at the top: a small
+info dot, "Preview", and "Nothing is built until you approve it", as a browser frame
+labels what it holds, never a word laid across the rows. A written screen in a preview is a
+card of fixed height with no full screen, and leaves the owner's focus in Luke's panel. The
+section's stat cards size to the space they are in, so four do not break every word in a
+narrow preview.
 
 ## Meaning of a badge
 

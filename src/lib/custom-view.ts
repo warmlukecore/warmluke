@@ -102,6 +102,7 @@ export const CUSTOM_VIEW_TOKENS = {
   "radius-control": "--radius-control",
   "shadow-card": "--shadow-card",
   "shadow-control": "--shadow-control",
+  "shadow-dialog": "--shadow-dialog",
 } as const;
 
 /**
@@ -133,17 +134,18 @@ table{width:100%;border-collapse:collapse}th{text-align:left;font-size:12px;font
 .wl-stack{display:grid;gap:12px}.wl-inline{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.wl-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
 .wl-card{background:var(--surface);border-radius:var(--radius-card);box-shadow:var(--shadow-card);padding:16px}
 .wl-card.now{box-shadow:0 0 0 2px var(--primary)}.wl-card.bad{box-shadow:0 0 0 2px var(--critical-fg)}
-.wl-label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-muted)}
+.wl-label{font-size:12px;font-weight:500;color:var(--fg-muted)}
 .wl-muted{color:var(--fg-muted)}.wl-faint{color:var(--fg-faint)}
-.wl-big{font-size:clamp(18px,4.2vw,24px);font-weight:600;line-height:1.25}
-.wl-count{font-size:clamp(32px,8vw,48px);font-weight:650;line-height:1.05;font-variant-numeric:tabular-nums}
+.wl-big{font-size:clamp(16px,3.6vw,20px);font-weight:600;line-height:1.3}
+.wl-count{font-size:24px;font-weight:600;line-height:1.15;font-variant-numeric:tabular-nums}.wl-count.big{font-size:clamp(32px,8vw,48px);line-height:1.05}
 .wl-scan{width:100%;height:auto;font-size:clamp(17px,3.6vw,20px);padding:12px 14px;border-color:var(--line-strong);box-shadow:var(--shadow-control)}
-.wl-banner{border-radius:var(--radius-card);padding:12px 16px;font-size:clamp(15px,3.4vw,18px);font-weight:600;line-height:1.35;background:var(--surface-subdued);color:var(--fg)}
+.wl-banner{border-radius:var(--radius-card);padding:10px 14px;font-size:14px;font-weight:500;line-height:1.4;background:var(--surface-subdued);color:var(--fg)}.wl-banner.big{padding:12px 16px;font-size:clamp(15px,3.4vw,18px);font-weight:600}
 .ok.wl-banner,.ok.wl-badge{background:var(--success);color:var(--success-fg)}.bad.wl-banner,.bad.wl-badge{background:var(--critical);color:var(--critical-fg)}
 .warn.wl-banner,.warn.wl-badge{background:var(--attention);color:var(--attention-fg)}.info.wl-banner,.info.wl-badge{background:var(--info);color:var(--info-fg)}
 .wl-list{background:var(--surface);border-radius:var(--radius-card);box-shadow:var(--shadow-card);overflow:hidden}
 .wl-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-top:1px solid var(--line)}.wl-row:first-child{border-top:0}
 .wl-row.done{color:var(--fg-muted)}.wl-row.bad{background:color-mix(in srgb,var(--critical) 45%,transparent)}
+.wl-dialog{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:16px;background:color-mix(in srgb,var(--fg) 35%,transparent)}.wl-dialog>.wl-card{width:min(440px,100%);box-shadow:var(--shadow-dialog)}
 .wl-badge{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;font-size:12px;font-weight:500;background:var(--neutral);color:var(--neutral-fg)}
 @media (max-width:480px){.wl-page{padding:12px}.wl-card{padding:14px}}
 `.replace(/\n/g, "");
@@ -187,8 +189,58 @@ const RUNTIME = `(() => {
     waiting.set(id, { resolve, reject });
     parent.postMessage({ wl: 1, id, call: name, args }, "*");
   });
+  // The app's dialog, for a question: the frame may not open the
+  // browser's own (alert, confirm and prompt do nothing in it). While it
+  // is open a key from outside it is held, so a scanner's Enter never
+  // answers it; Tab moves into it, and a button there, tapped or
+  // pressed, does. Escape is "no".
+  const ask = (question, yes, no) => new Promise((done) => {
+    const back = document.createElement("div");
+    back.className = "wl-dialog";
+    back.setAttribute("role", "dialog");
+    back.setAttribute("aria-modal", "true");
+    const card = document.createElement("div");
+    card.className = "wl-card wl-stack";
+    const said = document.createElement("div");
+    said.className = "wl-title";
+    said.textContent = String(question);
+    const row = document.createElement("div");
+    row.className = "wl-inline";
+    const buttons = [];
+    const close = (value) => {
+      removeEventListener("keydown", keys, true);
+      back.remove();
+      done(value);
+    };
+    const add = (text, value, primary) => {
+      const b = document.createElement("button");
+      b.className = "wl-button big" + (primary ? " primary" : "");
+      b.textContent = text;
+      b.onclick = () => close(value);
+      row.append(b);
+      buttons.push(b);
+    };
+    const keys = (e) => {
+      if (back.contains(e.target)) {
+        if (e.key === "Escape") close(false);
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === "Escape") close(false);
+      else if (e.key === "Tab") buttons[0].focus();
+    };
+    add(yes == null ? "Yes" : String(yes), true, true);
+    if (no !== null) add(no == null ? "No" : String(no), false, false);
+    card.append(said, row);
+    back.append(card);
+    addEventListener("keydown", keys, true);
+    document.body.append(back);
+  });
+  window.alert = (message) => { void ask(message, "OK", null); };
   window.wl = Object.freeze({
     columns: __COLUMNS__,
+    ask,
     rows: () => rows,
     onRows: (f) => { watchers.push(f); if (rows.length) f(rows); },
     find: (field, value) => call("find", [String(field), String(value)]),

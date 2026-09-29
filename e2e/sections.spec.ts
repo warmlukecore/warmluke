@@ -271,11 +271,12 @@ test("a written screen draws the rows, writes through wl, and reaches nothing el
 }) => {
   const headers = { Authorization: `Bearer ${(shop.session as { access_token: string }).access_token}` };
   const name = "e2e-station";
-  const html = `<input id=scan placeholder=Scan><div id=list></div><p id=net>…</p><p id=app>…</p><button id=finder>Find 2001</button><p id=found></p>
+  const html = `<input id=scan placeholder=Scan><button id=asker>Ask</button><p id=answer></p><div id=list></div><p id=net>…</p><p id=app>…</p><button id=finder>Find 2001</button><p id=found></p>
 <script>
 // As station screens do: the scan box takes focus back whenever it loses it.
 scan.addEventListener("blur", () => setTimeout(() => scan.focus(), 50));
 scan.focus();
+asker.onclick = async () => { answer.textContent = (await wl.ask("Reset it?", "Reset", "Keep")) ? "reset" : "kept"; };
 wl.onRows((rows) => {
   list.innerHTML = "";
   for (const r of rows) {
@@ -356,6 +357,16 @@ finder.onclick = async () => { const rows = await wl.find("order_number", "2001"
     // And the moment the owner is back on the screen, the box has it again.
     await screen.locator("#net").click();
     await expect.poll(() => screen.locator("#scan").evaluate((el) => document.activeElement === el)).toBe(true);
+
+    // A question, in the app's dialog: the browser's own are blocked in the
+    // frame. A scanner's Enter does not answer it; a tap does.
+    await screen.getByRole("button", { name: "Ask", exact: true }).click();
+    await expect(screen.getByRole("dialog")).toContainText("Reset it?");
+    await page.keyboard.press("Enter");
+    await expect(screen.getByRole("dialog"), "an Enter from outside it answers nothing").toBeVisible();
+    await screen.getByRole("button", { name: "Reset", exact: true }).click();
+    await expect(screen.locator("#answer")).toHaveText("reset");
+    await expect(screen.getByRole("dialog")).toHaveCount(0);
 
     // Sealed: no network, no reach into the app's page.
     await expect(screen.getByText("network blocked")).toBeVisible();

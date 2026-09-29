@@ -40,6 +40,7 @@ import { asJob, record } from "@/lib/usage";
 import {
   ALLOWED_ICONS,
   COLUMN_TYPES,
+  mergeFeatures,
   TITLE_MAX,
   VIEW_TYPES,
   type AssistantPlan,
@@ -141,7 +142,7 @@ HOW TO CHOOSE changeType:
   )}, whose rows each total many others, so there is no one row for it to sit beside. The store's own fields are read here, never written: a row action or scan mode sets a field of theirs ("Mark packed" sets packed; scanning the order number finds the order and ticks it). A rule on such a section reads the store's fields and theirs, and sets only theirs. It runs when a field of theirs changes (record_updated, from the first one set on a row), or on a schedule over every row of the list ("when" picks the rows; a row it acts on gets its fields then) — so "flag the COD orders delivered a week ago and still unpaid" is a daily rule reading gateway, fulfilment_status and financial_status. A change in Shopify is not seen the moment it happens; a schedule rule sees it on its next run. No rule adds rows to it (record_created is refused). Filters, search, stats and sort work over both.
 - MODULE_UPDATE — nav metadata only: rename label, change icon, move it inside another section (parent_id), reposition (sort_order: below the lowest existing value for top, midpoint like 1.5 for between, above max for bottom).
 - MODULE_DELETE — only when the user clearly asks to delete/remove a whole section. deleteConfirmName = exact name slug.
-- FEATURE_UPDATE — search box, dropdown filters, STAT CARDS (op: count | sum | avg | min | max over "value", an EXPRESSION evaluated per row — so a stock value is { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, not a bare column; optional "where" expression limits which rows count. Never label a stat as something the expression does not actually compute), default sort, ROW ACTION buttons (a one-click change to that row: "set" maps field -> EXPRESSION, and the optional "when" is an EXPRESSION deciding whether the button shows on that row — same operators as automations, so "only while it isn't Done" is { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }), or SCAN MODE (a scan-and-go bar: lookupField = the code column scanned into it, action.set = field -> expression applied to the matched row, sequenceField = a numeric column that must never go backwards between scans, for picking or queue order). It works with any USB or Bluetooth barcode scanner, which types the code like a keyboard — there is no camera scanning. A scan that matches nothing changes NOTHING: the person sees it on screen and that is the whole safeguard. Nothing is recorded, so never add a "scan errors" or "mistakes" count — no rule can fill it, and a stat built on it counts successful scans instead. Scanning only reaches rows currently in view, so the section needs a filter that narrows to the job in hand. Provide the FULL new config.
+- FEATURE_UPDATE — search box, dropdown filters, STAT CARDS (op: count | sum | avg | min | max over "value", an EXPRESSION evaluated per row — so a stock value is { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, not a bare column; optional "where" expression limits which rows count. Never label a stat as something the expression does not actually compute), default sort, ROW ACTION buttons (a one-click change to that row: "set" maps field -> EXPRESSION, and the optional "when" is an EXPRESSION deciding whether the button shows on that row — same operators as automations, so "only while it isn't Done" is { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }), or SCAN MODE (a scan-and-go bar: lookupField = the code column scanned into it, action.set = field -> expression applied to the matched row, sequenceField = a numeric column that must never go backwards between scans, for picking or queue order). It works with any USB or Bluetooth barcode scanner, which types the code like a keyboard — there is no camera scanning. A scan that matches nothing changes NOTHING: the person sees it on screen and that is the whole safeguard. Nothing is recorded, so never add a "scan errors" or "mistakes" count — no rule can fill it, and a stat built on it counts successful scans instead. Scanning only reaches rows currently in view, so the section needs a filter that narrows to the job in hand. Send only the parts you change: each part you send (view, stats, filters, actions, scanMode, search, defaultSort) replaces that part whole, a part you leave out stays exactly as it is, and null removes it. To add a stat, send "stats" with the old ones and the new; leave a written screen's "view" out unless you are changing the screen.
 - RECORD_SEED — ADDS rows to an existing module. It only ever inserts; it cannot change or delete a row that is already there. Never use it to "correct" or "update" existing data — that produces a duplicate and tells the owner it was an edit. Changing a value is something they do themselves by opening the row.
 - RECORD_SEED — add rows to an existing module (field names must exist in its schema).
 - AUTOMATION_ADD — business logic that runs automatically. "targetModuleId" is the section whose rows trigger it. You BUILD the rule out of the operators below — there is no menu of pre-made rule types, so express exactly what the owner described.
@@ -383,10 +384,10 @@ CODE RULE — when a rule needs logic the expressions cannot say (a slab rate by
 
 CUSTOM VIEW — { "type": "custom", "title": "Packing station", "html": "<div id=app></div><style>…</style><script>…</script>" }:
 - It is HTML with its own <style> and <script>, run sealed off: no web addresses, no network, nothing loaded from elsewhere, no forms. Keep it under 150 lines.
-- It reaches the section only through window.wl: wl.columns (the fields); wl.onRows(fn), called with the rows ([{ id, data }]) now and whenever they change; wl.find(field, value), a promise of the rows whose field is that value, read from the whole section (an order's lines by its number); wl.set(id, { field: value }), a promise, keeps fields on a row (on a store section only the owner's own fields, never the store's); wl.add({ … }), a new row, on a section of their own.
+- It reaches the section only through window.wl: wl.columns (the fields); wl.onRows(fn), called with the rows ([{ id, data }]) now and whenever they change; wl.find(field, value), a promise of the rows whose field is that value, read from the whole section (an order's lines by its number); wl.set(id, { field: value }), a promise, keeps fields on a row (on a store section only the owner's own fields, never the store's); wl.add({ … }), a new row, on a section of their own; await wl.ask("Reset this line?", "Reset", "Keep") shows the app's dialog and answers true or false (alert shows one with OK; confirm and prompt do nothing here). Where hands are full, ask rarely.
 - The section's columns still hold the data: add the fields the screen writes (scanned_qty, packed_on) to the plan as usual. Computed columns arrive worked out in data.
-- Its look is the app's, already on the page: the app's fonts, colours, corners and a kit of classes. Build from the kit and write your own CSS for layout alone (grid, widths, order, spacing); never set a font, a colour outside the variables, or text larger than the kit's. The kit: wl-page (the screen's frame), wl-stack / wl-inline / wl-grid (spacing), wl-card (a panel; add "now" to ring the one in hand, "bad" for a problem), wl-title, wl-big (the thing to act on), wl-count (a number to read from a step away), wl-label, wl-muted, wl-scan (the input a scanner types into), wl-banner with ok / bad / warn / info (what just happened, in words), wl-list of wl-row (add "done" or "bad"), wl-button with primary / critical / big, wl-badge with ok / bad / warn / info. Plain headings, inputs, buttons and tables are already styled. Variables for layout: var(--fg), var(--fg-muted), var(--surface), var(--surface-subdued), var(--line), var(--primary), var(--radius-card), var(--radius-control).
-- One thing is big (the count, or what to scan next), and nothing on screen says the same thing twice. Say every outcome in words, not colour alone. Put focus where their scanner types. Where their hands are full, no step needs a tap: the next scan moves on, and a mistake clears when the right thing is scanned. Show what a scan did at once and save after, without waiting on wl.set; if a save fails, say so on screen. It must read well on a phone 390px wide as on a desk screen.
+- Its look is the app's, already on the page: the app's fonts, colours, corners and a kit of classes. Build from the kit and write your own CSS for layout alone (grid, widths, order, spacing); never set a font, a colour outside the variables, or text larger than the kit's. The kit: wl-page (the screen's frame), wl-stack / wl-inline / wl-grid (spacing), wl-card (a panel; add "now" to ring the one in hand, "bad" for a problem), wl-title, wl-big (the thing to act on), wl-count (a number, at the size the app's counters are; add "big" only for one read from a step away at a station), wl-label, wl-muted, wl-scan (the input a scanner types into), wl-banner with ok / bad / warn / info (what just happened, in words; "big" at a station), wl-list of wl-row (add "done" or "bad"), wl-button with primary / critical / big, wl-badge with ok / bad / warn / info. Plain headings, inputs, buttons and tables are already styled. Variables for layout: var(--fg), var(--fg-muted), var(--surface), var(--surface-subdued), var(--line), var(--primary), var(--radius-card), var(--radius-control).
+- One thing is big (the count, or what to scan next), and nothing on screen says the same thing twice: the section's own stats already sit above the screen, so never draw those counts again inside it. Say every outcome in words, not colour alone. Put focus where their scanner types. Where their hands are full, no step needs a tap: the next scan moves on, and a mistake clears when the right thing is scanned. Show what a scan did at once and save after, without waiting on wl.set; if a save fails, say so on screen. It must read well on a phone 390px wide as on a desk screen.
 - Every field a view references (groupBy, dateField, titleField, …) must exist in that same plan's columns, with the right type.
 
 ${HOW_AN_ANSWER_READS}
@@ -1837,12 +1838,14 @@ export function validatePlan(
       } else if (columns) {
         const existingFields = currentSchema.columns.map((c) => c.field);
         const incomingFields = columns.map((c) => c.field);
-        for (let i = 0; i < existingFields.length; i++) {
-          if (incomingFields[i] !== existingFields[i]) {
-            err(errors, `FIELD_ADD must keep existing column "${existingFields[i]}" at position ${i + 1}.`);
-            break;
-          }
-        }
+        // The section's columns in their place, then the new ones. An
+        // existing column sent again (relabelled) is taken as sent; one
+        // left out, or moved, is kept where it was. A whole attempt was
+        // refused for "order_number" not being first.
+        plan.newSchema!.columns = [
+          ...currentSchema.columns.map((c) => columns.find((x) => x?.field === c.field) ?? c),
+          ...columns.filter((c) => !existingFields.includes(c?.field)),
+        ];
         const added = incomingFields.filter((f) => !existingFields.includes(f));
         if (added.length === 0) err(errors, "FIELD_ADD didn't add any new column.");
         // A section over the store owns none of the store's columns, but
@@ -1895,7 +1898,18 @@ export function validatePlan(
     }
 
     if (plan.changeType === "FEATURE_UPDATE") {
-      validateFeatures(plan.features, currentSchema?.columns ?? null, errors, pendingFields, storeFields);
+      if (isPlainObject(plan.features)) {
+        // Checked as the section will have them: the change laid over what it has.
+        const laid = mergeFeatures(currentFeatures, plan.features);
+        validateFeatures(laid, currentSchema?.columns ?? null, errors, pendingFields, storeFields);
+        // What the check settles in place (a filter with one option dropped)
+        // is the change's own, for the parts it names.
+        const change = plan.features as Record<string, unknown>;
+        for (const part of Object.keys(change))
+          if (change[part] !== null) change[part] = (laid as Record<string, unknown>)[part];
+      } else {
+        validateFeatures(plan.features, currentSchema?.columns ?? null, errors, pendingFields, storeFields);
+      }
     }
 
     if (plan.changeType === "AUTOMATION_ADD") {

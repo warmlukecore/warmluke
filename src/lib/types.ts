@@ -199,6 +199,26 @@ export interface FeatureSchema {
   };
 }
 
+/**
+ * A change to a section's features, laid over what it has: a part the
+ * change names (view, stats, filters, actions, scanMode, search,
+ * defaultSort) replaces that part, a part it leaves out stays, and null
+ * takes it away. A change used to replace them all, so to add one
+ * counter Luke sent every part back, and a part he missed was gone: a
+ * counter on a written screen meant sending the whole screen again.
+ */
+export function mergeFeatures(
+  current: FeatureSchema | null | undefined,
+  change: FeatureSchema | Record<string, unknown> | null | undefined
+): FeatureSchema {
+  const out: Record<string, unknown> = { ...current };
+  for (const [part, value] of Object.entries(change ?? {})) {
+    if (value === null) delete out[part];
+    else if (value !== undefined) out[part] = value;
+  }
+  return out as FeatureSchema;
+}
+
 export interface UiSchema {
   columns: SchemaColumn[];
   features?: FeatureSchema | null;

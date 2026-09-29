@@ -360,6 +360,15 @@ step whose process was killed; on Vercel, Queues re-deliver it after a visibilit
 which a preview deployment has to prove. `PORT` / `WORKFLOW_LOCAL_BASE_URL` must name the
 dev port.
 
+## A change is laid over the section
+
+A features change (`FEATURE_UPDATE`) is laid over what the section has
+(`mergeFeatures` in `types.ts`): each part it names (view, stats, filters, actions,
+scanMode, search, defaultSort) replaces that part, a part it leaves out stays, and null
+removes one. It is checked as the section will have it, and the preview draws it so. A field
+added (`FIELD_ADD`) keeps the section's columns in their place whatever order they were
+sent in, and appends the new ones. `check-feature-merge` and `check-apply` hold both.
+
 ## Code with nobody watching
 
 A code rule on a schedule, or on a row the store brings in, has no owner's write to follow,

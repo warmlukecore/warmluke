@@ -35,7 +35,7 @@ import type {
   UiSchema,
 } from "@/lib/types";
 import { ago, dayGroup } from "@/lib/when";
-import { TITLE_MAX } from "@/lib/types";
+import { mergeFeatures, TITLE_MAX } from "@/lib/types";
 import { Icon } from "@/components/ui/Icon";
 import {
   ArrowDown,
@@ -3293,7 +3293,8 @@ export default function ChatPanel({
                         <GenericRenderer
                           schema={{
                             columns: currentSchema?.columns ?? [],
-                            features: plan.features ?? undefined,
+                            // As it will be: the change laid over what the section has.
+                            features: mergeFeatures(currentSchema?.features, plan.features),
                           }}
                           records={records}
                           preview

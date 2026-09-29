@@ -20,6 +20,9 @@ import type { RecordRow, SchemaColumn } from "@/lib/types";
 
 type Call = { wl: 1; id: number; call: "find" | "set" | "add"; args: unknown[] };
 
+/** A preview's height in Luke's panel: enough to read the screen, not the whole panel. */
+const PREVIEW_HEIGHT = 420;
+
 /** The app's values now, light or dark, by the names the screen was told. */
 function colours(): Record<string, string> {
   const css = getComputedStyle(document.documentElement);
@@ -92,6 +95,7 @@ export default function CustomView({
   onSet,
   onAdd,
   onFind,
+  preview = false,
 }: {
   view: { title: string; html: string };
   columns: SchemaColumn[];
@@ -99,6 +103,8 @@ export default function CustomView({
   onSet?: (id: string, fields: Record<string, unknown>) => Promise<void>;
   onAdd?: (fields: Record<string, unknown>) => Promise<void>;
   onFind?: (field: string, code: string) => Promise<RecordRow[]>;
+  /** A proposal's preview, in Luke's panel: a card of its own size, and it leaves the owner's focus where it is. */
+  preview?: boolean;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -134,6 +140,7 @@ export default function CustomView({
       // Back to the screen, where a scanner types.
       frame.current?.focus();
     };
+    if (preview) return;
     fit();
     window.addEventListener("resize", fit);
     document.addEventListener("fullscreenchange", onFull);
@@ -141,7 +148,7 @@ export default function CustomView({
       window.removeEventListener("resize", fit);
       document.removeEventListener("fullscreenchange", onFull);
     };
-  }, []);
+  }, [preview]);
 
   const rows = useMemo(() => asRows(records, columns), [records, columns]);
   const send = (message: unknown) => frame.current?.contentWindow?.postMessage(message, "*");
@@ -203,16 +210,18 @@ export default function CustomView({
   }
   return (
     <div ref={box} className={full ? "flex h-screen flex-col gap-2 bg-canvas p-3" : "flex flex-col gap-2"}>
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={() => (full ? document.exitFullscreen() : box.current?.requestFullscreen())}
-          className={button("plain", "sm")}
-        >
-          {full ? <Minimize2 aria-hidden size={14} /> : <Maximize2 aria-hidden size={14} />}
-          {full ? "Leave full screen" : "Full screen"}
-        </button>
-      </div>
+      {!preview && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => (full ? document.exitFullscreen() : box.current?.requestFullscreen())}
+            className={button("plain", "sm")}
+          >
+            {full ? <Minimize2 aria-hidden size={14} /> : <Maximize2 aria-hidden size={14} />}
+            {full ? "Leave full screen" : "Full screen"}
+          </button>
+        </div>
+      )}
       <iframe
         ref={frame}
         title={view.title}
@@ -220,10 +229,11 @@ export default function CustomView({
         srcDoc={page ?? undefined}
         onLoad={() => {
           send({ wl: 1, type: "rows", rows });
-          // A scanner types into whatever has focus; the screen is where it goes.
-          frame.current?.focus();
+          // A scanner types into whatever has focus; the screen is where it
+          // goes. Not a preview's: the owner is typing to Luke beside it.
+          if (!preview) frame.current?.focus();
         }}
-        style={full ? undefined : { height: height ?? 480 }}
+        style={full ? undefined : { height: preview ? PREVIEW_HEIGHT : (height ?? 480) }}
         className={`w-full rounded-card bg-surface shadow-card ${full ? "flex-1" : ""}`}
       />
     </div>

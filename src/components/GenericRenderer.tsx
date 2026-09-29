@@ -347,6 +347,7 @@ export default function GenericRenderer({
             onSet={canSet ? (id, set) => onUpdate!(id, set) : undefined}
             onAdd={editable ? onCreate : undefined}
             onFind={preview ? undefined : onScanGroup}
+            preview={preview}
           />
         );
       case "table":
@@ -367,6 +368,15 @@ export default function GenericRenderer({
 
   return (
     <div className="space-y-4">
+      {preview && (
+        // A preview says so in a bar of its own above what it shows, as a
+        // browser frame would, rather than a word laid across the rows.
+        <div className="flex items-center gap-2 rounded-card bg-surface-subdued px-3.5 py-2 text-xs shadow-card">
+          <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-signal-info" />
+          <span className="font-medium text-fg">Preview</span>
+          <span className="truncate text-fg-muted">Nothing is built until you approve it</span>
+        </div>
+      )}
       {canSet && features?.scanMode && (
         <ScanBar
           scanMode={features.scanMode}
@@ -385,7 +395,9 @@ export default function GenericRenderer({
       )}
 
       {stats.length > 0 && (
-        <div className="grid grid-cols-2 gap-2.5 sm:gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        // As many as fit the space they are in: a preview in Luke's panel
+        // is narrow however wide the window, and four there broke every word.
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-2.5 sm:gap-3">
           {stats.map((s, i) => (
             <div key={i} className="rounded-card bg-surface px-4 py-3 shadow-card transition-shadow hover:shadow-md">
               <div className="text-xs font-medium text-fg-muted">{s.label}</div>
@@ -418,14 +430,6 @@ export default function GenericRenderer({
 
       {/* A written screen is the section: it carries its own search and steps, so the list's are not drawn around it. */}
       <div className={custom ? "relative" : "relative overflow-hidden rounded-card bg-surface shadow-card"}>
-        {preview && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
-            <span className="font-display -rotate-12 text-6xl font-black tracking-widest text-fg/5 select-none">
-              PREVIEW
-            </span>
-          </div>
-        )}
-
         {!custom && (
           <div className="flex flex-wrap items-center gap-2 border-b border-line px-3.5 py-2.5">
             {features?.search?.enabled && (

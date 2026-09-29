@@ -124,6 +124,45 @@ try {
   ]);
   check("more rows can be seeded", seeded2.json?.results?.[0]?.seeded === 1);
 
+  // A features change is laid over what the section has: one naming only
+  // a count leaves its screen and its filter where they were.
+  console.log("\nits features, a change laid over what it has");
+  const withScreen = await apply([
+    plan({
+      changeType: "FEATURE_UPDATE",
+      targetModuleId: moduleId,
+      features: {
+        view: {
+          type: "custom",
+          title: "Station",
+          html: "<div class=wl-page>Scan</div><script>wl.onRows(() => {});</script>",
+        },
+        filters: [{ field: "packer", label: "Packed by", options: ["Asha", "Ravi"] }],
+      },
+    }),
+  ]);
+  check("a screen and a filter go in", withScreen.json?.applied === true);
+  if (withScreen.json?.applied !== true) console.log("     →", JSON.stringify(withScreen.json).slice(0, 300));
+  const countOnly = await apply([
+    plan({
+      changeType: "FEATURE_UPDATE",
+      targetModuleId: moduleId,
+      features: { stats: [{ op: "count", label: "Rows" }] },
+    }),
+  ]);
+  check("a change naming only a count is built", countOnly.json?.applied === true);
+  const { data: laid } = await db
+    .from("ui_schemas")
+    .select("schema_json")
+    .eq("module_id", moduleId)
+    .order("version", { ascending: false })
+    .limit(1);
+  const kept = laid?.[0]?.schema_json?.features ?? {};
+  check(
+    "and the screen and the filter it left out are still there",
+    kept.view?.type === "custom" && kept.filters?.length === 1 && kept.stats?.length === 1
+  );
+
   console.log("\nrules");
   const rule = await apply([
     plan({

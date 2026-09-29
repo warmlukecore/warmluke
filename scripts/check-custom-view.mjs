@@ -116,6 +116,17 @@ check(
   !/#[0-9a-f]{3,6}\b/i.test(CUSTOM_VIEW_KIT.replace("color:#fff", ""))
 );
 
+// A question is the app's dialog, not the browser's: alert, confirm and
+// prompt do nothing in the sealed frame.
+console.log("\na screen asks in the app's dialog");
+const asking = customViewPage(screen, [], {});
+check("every screen is given wl.ask", /\bask,/.test(asking) && asking.indexOf("ask,") < asking.indexOf("wl.onRows"));
+check(
+  "drawn by the kit, in the app's depth",
+  CUSTOM_VIEW_KIT.includes(".wl-dialog") && "shadow-dialog" in CUSTOM_VIEW_TOKENS
+);
+check("and alert shows it rather than nothing", /window\.alert\s*=/.test(asking));
+
 // A screen whose script cannot parse is a blank screen: it goes back to
 // Luke with the browser's words. Parsing only; a screen that parses is
 // never refused for it, whatever modern syntax it uses.
