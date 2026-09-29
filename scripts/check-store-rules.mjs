@@ -184,10 +184,7 @@ const readsStore = overOrders({
     },
   ],
 });
-check(
-  "a filter by payment status and a count of cancelled orders are taken",
-  readsStore.ok
-);
+check("a filter by payment status and a count of cancelled orders are taken", readsStore.ok);
 if (!readsStore.ok) console.log("     →", said(readsStore));
 const buttonWritesStore = overOrders({
   actions: [{ label: "Mark paid", set: { financial_status: { const: "PAID" } } }],
