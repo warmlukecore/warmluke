@@ -89,7 +89,9 @@ light or dark; and a small kit drawn as the app draws them. The kit is `wl-page`
 `critical`, `big`). Plain headings, inputs, buttons and tables are styled too. Luke is told
 to build from the kit and write CSS for layout alone. A custom screen is the section: it
 fills the page below Luke's counters, without the list's search, filters or paging, and
-offers full screen for a device at a desk. `check-custom-view` holds that every piece the
+offers full screen for a device at a desk. A screen may keep focus on its own scan box, but
+never takes it back from the page around it: while the owner is in Luke's panel its request
+waits, and is kept when they return to the screen. `check-custom-view` holds that every piece the
 prompt names is drawn, and that the kit sets no colour of its own.
 
 ## Meaning of a badge

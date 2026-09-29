@@ -271,8 +271,11 @@ test("a written screen draws the rows, writes through wl, and reaches nothing el
 }) => {
   const headers = { Authorization: `Bearer ${(shop.session as { access_token: string }).access_token}` };
   const name = "e2e-station";
-  const html = `<div id=list></div><p id=net>…</p><p id=app>…</p><button id=finder>Find 2001</button><p id=found></p>
+  const html = `<input id=scan placeholder=Scan><div id=list></div><p id=net>…</p><p id=app>…</p><button id=finder>Find 2001</button><p id=found></p>
 <script>
+// As station screens do: the scan box takes focus back whenever it loses it.
+scan.addEventListener("blur", () => setTimeout(() => scan.focus(), 50));
+scan.focus();
 wl.onRows((rows) => {
   list.innerHTML = "";
   for (const r of rows) {
@@ -343,6 +346,16 @@ finder.onclick = async () => { const rows = await wl.find("order_number", "2001"
           )
       )
       .toBe(true);
+
+    // A screen may keep its scan box focused, but not take focus back from
+    // the page: with it pulled back, nothing in Luke's panel could be copied.
+    await screen.locator("#scan").click();
+    await page.locator("h1").first().click();
+    await page.waitForTimeout(400);
+    expect(await page.evaluate(() => document.activeElement?.tagName), "focus stays on the page").not.toBe("IFRAME");
+    // And the moment the owner is back on the screen, the box has it again.
+    await screen.locator("#net").click();
+    await expect.poll(() => screen.locator("#scan").evaluate((el) => document.activeElement === el)).toBe(true);
 
     // Sealed: no network, no reach into the app's page.
     await expect(screen.getByText("network blocked")).toBeVisible();

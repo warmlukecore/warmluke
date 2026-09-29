@@ -106,6 +106,7 @@ button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .wl-button.big{height:48px;padding:0 20px;font-size:16px;font-weight:600}
 table{width:100%;border-collapse:collapse}th{text-align:left;font-size:12px;font-weight:500;color:var(--fg-muted);padding:8px 12px;border-bottom:1px solid var(--line)}td{padding:10px 12px;border-bottom:1px solid var(--line)}
 .wl-page{max-width:960px;margin:0 auto;padding:16px;display:grid;gap:12px}
+:not(.wl-stack,.wl-grid,.wl-inline,.wl-page,.wl-list)>:is(.wl-card,.wl-list,.wl-banner,.wl-inline,.wl-grid,.wl-scan)+:is(.wl-card,.wl-list,.wl-banner,.wl-inline,.wl-grid,.wl-scan){margin-top:12px}
 .wl-stack{display:grid;gap:12px}.wl-inline{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.wl-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
 .wl-card{background:var(--surface);border-radius:var(--radius-card);box-shadow:var(--shadow-card);padding:16px}
 .wl-card.now{box-shadow:0 0 0 2px var(--primary)}.wl-card.bad{box-shadow:0 0 0 2px var(--critical-fg)}
@@ -126,6 +127,22 @@ table{width:100%;border-collapse:collapse}th{text-align:left;font-size:12px;font
 
 /** window.wl, as the frame sees it: every call a message to the section, answered by id. */
 const RUNTIME = `(() => {
+  // A screen keeps focus where its scanner types, but never takes it back
+  // from the page around it: a screen that refocused its input on blur
+  // pulled focus out of Luke's panel, and the owner could not copy from
+  // it. While the frame is not the one in use, the request waits, and is
+  // kept the moment the owner comes back to the screen.
+  const focusNow = HTMLElement.prototype.focus;
+  let wanted = null;
+  HTMLElement.prototype.focus = function (options) {
+    if (document.hasFocus()) return focusNow.call(this, options);
+    wanted = this;
+  };
+  addEventListener("focus", () => {
+    const w = wanted;
+    wanted = null;
+    if (w && w.isConnected && document.activeElement !== w) focusNow.call(w);
+  });
   let next = 0, rows = [];
   const waiting = new Map(), watchers = [];
   addEventListener("message", (e) => {
