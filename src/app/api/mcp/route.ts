@@ -11,7 +11,8 @@ import {
   withOwnFields,
 } from "@/lib/store-read";
 import { blueprintAsText, runTurn, schemasFor, storeFactsFor } from "@/lib/engine";
-import { CODE_RULE_GUIDE, CUSTOM_VIEW_GUIDE, PLAN_FORMAT, WORKED_EXAMPLE, parseReply } from "@/lib/ai";
+import { describeBuild } from "@/lib/judge";
+import { CODE_RULE_GUIDE, CUSTOM_VIEW_GUIDE, PLAN_FORMAT, WORKED_EXAMPLE, findGaps, parseReply } from "@/lib/ai";
 import { vocabularyPrompt } from "@/lib/capabilities";
 import {
   describePlan,
@@ -1635,6 +1636,15 @@ export async function POST(req: Request) {
           .join(" ") ||
         "A change designed by their own assistant";
 
+      // What they asked for that this does not do, said as Luke's own
+      // designs say it: the same gap pass, over the merchant's words when
+      // the assistant passed them. Without their words there is nothing
+      // to hold the design against. A pass that fails says nothing.
+      const ownerWords = String(args.request ?? "").trim();
+      const unmet = ownerWords
+        ? await findGaps(ownerWords, describeBuild(plans, moduleList, undefined, facts, { screens: true }))
+        : [];
+
       return settleDesign({
         db,
         id,
@@ -1642,8 +1652,8 @@ export async function POST(req: Request) {
         project,
         moduleList,
         plans,
-        design: blueprintAsText({ type: "plans", plans }, moduleList, null, []),
-        unmet: [],
+        design: blueprintAsText({ type: "plans", plans }, moduleList, null, unmet),
+        unmet,
         request,
         store: null,
       });

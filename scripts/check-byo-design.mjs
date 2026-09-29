@@ -70,7 +70,10 @@ const sweepOwnCalls = async (userId) => {
   await admin.from("mcp_calls").delete().eq("user_id", userId).gte("created_at", runStartedAt);
 };
 
-const stamp = Date.now().toString(36);
+// A fresh id each run, which the model tapes read as one ("‹id›"): a
+// submitted design's gap pass reads the request and the section's name,
+// and a stamp they could not normalise made every run a new recording.
+const stamp = crypto.randomUUID();
 const spent = async () =>
   (await admin.from("account_settings").select("turns_used").eq("user_id", uid).single()).data.turns_used;
 
@@ -266,6 +269,43 @@ try {
   if (good?.status !== "waiting for approval") console.log("     →", JSON.stringify(good).slice(0, 300));
   check("and comes back with a request to approve", typeof good?.request_id === "string");
   if (good?.request_id) made.push(good.request_id);
+
+  // What it asked for and this design does not do is said, as Luke's own
+  // designs say it: the same gap pass over the merchant's words.
+  console.log("\nwhat a design it wrote leaves out is said");
+  const partial = await tool(
+    "submit_design",
+    {
+      request:
+        "A suppliers list, and a WhatsApp message to each supplier every Monday morning with what we need to reorder",
+      project_id: project.id,
+      plans: [
+        {
+          changeType: "NEW_MODULE",
+          targetModuleId: null,
+          newModule: { name: `suppliers-${stamp}`, nav_label: `Suppliers ${stamp}`, icon: "table" },
+          newSchema: {
+            columns: [
+              { field: "supplier", label: "Supplier", type: "text" },
+              { field: "phone", label: "Phone", type: "text" },
+            ],
+            view: { type: "table" },
+          },
+          explanation: "A list of suppliers.",
+        },
+      ],
+    },
+    41
+  );
+  if (partial?.request_id) made.push(partial.request_id);
+  const { data: partialRow } = partial?.request_id
+    ? await admin.from("build_requests").select("unmet").eq("id", partial.request_id).single()
+    : { data: null };
+  check(
+    "a design that leaves part of the ask undone says which part",
+    (partialRow?.unmet ?? []).some((u) => /whatsapp|message|monday/i.test(u))
+  );
+  if (!(partialRow?.unmet ?? []).length) console.log("     →", JSON.stringify(partial).slice(0, 300));
 
   const row = good?.request_id
     ? (await admin.from("build_requests").select("status, approved_at, plans").eq("id", good.request_id).single()).data

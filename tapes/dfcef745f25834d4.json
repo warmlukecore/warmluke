@@ -1,0 +1,17 @@
+{
+  "label": "anthropic",
+  "asked": "OWNER SAID: A suppliers list, and a WhatsApp message to each supplier every Monday morning with what we need to reorder WHAT WILL ACTUALLY BE BUILT: New section: Suppliers ‹id› Fields: Supplier, Phone",
+  "parts": {
+    "system": "c3bf90d97ed87dde",
+    "tools": "74234e98afe7498f",
+    "conversation": "5ec9f94c8e443ef1",
+    "tag": "reply"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"claude-haiku-4-5-20251001\",\"id\":\"msg_011CfXn8b6HCuKMrFXko9Pdk\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"```json\\n{\\n  \\\"unmet\\\": [\\n    \\\"WhatsApp message to each supplier every Monday morning with what we need to reorder\\\"\\n  ]\\n}\\n```\"}],\"container\":null,\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":351,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":42,\"service_tier\":\"standard\",\"inference_geo\":\"not_available\"},\"diagnostics\":null}"
+    }
+  ]
+}

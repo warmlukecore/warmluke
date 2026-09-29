@@ -1,0 +1,17 @@
+{
+  "label": "anthropic",
+  "asked": "THE OWNER SAID: BYO refuse ‹id› WHAT WILL ACTUALLY BE BUILT: New section: BYO No ‹id› Fields: Note",
+  "parts": {
+    "system": "c3bf90d97ed87dde",
+    "tools": "74234e98afe7498f",
+    "conversation": "ef984f220a615da6",
+    "tag": "reply"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"claude-haiku-4-5-20251001\",\"id\":\"msg_011CfXn9ZssknApNV1RgfBcA\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"```json\\n{\\\"unmet\\\": []}\\n```\"}],\"container\":null,\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":357,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":14,\"service_tier\":\"standard\",\"inference_geo\":\"not_available\"},\"diagnostics\":null}"
+    }
+  ]
+}

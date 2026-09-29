@@ -1,0 +1,17 @@
+{
+  "label": "anthropic",
+  "asked": "THE OWNER SAID: BYO check ‹id› WHAT WILL ACTUALLY BE BUILT: New section: BYO ‹id› Fields: Note",
+  "parts": {
+    "system": "c3bf90d97ed87dde",
+    "tools": "74234e98afe7498f",
+    "conversation": "41152950529f9345",
+    "tag": "reply"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"claude-haiku-4-5-20251001\",\"id\":\"msg_011CfXn8EHdeZjDSG8ELiaso\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"I need to look up what the owner said about \\\"BYO check 1ce95b0d-feae-4eb1-a99f-1c4e704cd179\\\" to identify their actual requirements and compare them to the build plan.\\n\\nHowever, you've only provided me with a reference ID and a note that a new section called \\\"BYO\\\" will be built with a \\\"Note\\\" field. Without access to the owner's original statement (the requirements document, email, or conversation where they explained what \\\"BYO check\\\" means and what they need it to do), I cannot determine what is missing.\\n\\nCould you provide the owner's full statement describing what the BYO check should do, what fields or validations they need, and what problems it should solve?\"}],\"container\":null,\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":356,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":170,\"service_tier\":\"standard\",\"inference_geo\":\"not_available\"},\"diagnostics\":null}"
+    }
+  ]
+}
