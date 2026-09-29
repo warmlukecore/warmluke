@@ -498,7 +498,10 @@ try {
     "a row with fields of theirs carries them",
     byNumber.get(numberOf(row2.id))?.yours?.[`packing`]?.packed === true
   );
-  const bare2 = found.rows.find((r) => ![numberOf(row.id), numberOf(row2.id)].includes(r.order_number));
+  // Not the order the rule above ticked (0133): that one has a field of theirs now.
+  const bare2 = found.rows.find(
+    (r) => ![numberOf(row.id), numberOf(row2.id), target.order_number].includes(r.order_number)
+  );
   check("and one without any reads as the store has it", !!bare2 && !("yours" in bare2));
 
   console.log("\na stranger sees nothing");
