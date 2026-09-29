@@ -388,6 +388,26 @@ by the tick fifteen minutes on: its rows join the rule's open job, or it goes ba
 queue, three tries in all. `check-code-jobs-live` holds all of it, the ticket's reach
 included.
 
+`abo_code_tick` picks the projects to send with `abo_code_waiting()`, a SQL function of its
+own (0136): the query once sat in the tick beside a record variable of the same name, which
+PL/pgSQL read in its place, and every tick failed from the moment `code_worker_url` was set.
+The check project never has the address, so `check-code-jobs-live` asks the function directly.
+
+## When a schedule runs
+
+A schedule trigger says how often (`every`: hourly, daily, weekly, monthly) and may name the
+moment on the store's clock (0137): `at` "07:00", `on` the days of the week (daily or weekly;
+weekly needs it), and for monthly `date` 1 to 31, past a month's end its last day. The store's
+`timezone` is the clock (`abo_rule_tz`, UTC without a store). `abo_schedule_slot` finds the
+latest such moment; `abo_schedule_due` says a rule is due when that moment has come since it
+was made and since it last ran, so a rule made in the evening "at 07:00" first runs the next
+morning, and a missed moment is run once, late, never twice. Naming none, a rule runs an
+interval after its last run, as before. Both clocks ask it, every ten minutes: the code clock
+against a rule's jobs, `run_scheduled_automations` against `automations.scheduled_at`, set as
+it runs. Before 0137 that runner ignored `every` and ran every schedule rule every hour.
+`check-schedule` holds what a trigger may say and how it reads; `check-code-jobs-live` the
+moments and the code clock; `check-own-fields` that a daily rule runs once.
+
 ## Extending the engine safely
 
 Adding a capability normally requires coordinated changes to:

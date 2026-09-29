@@ -175,11 +175,14 @@ export const VIEW_TYPES = Object.keys(VIEWS) as ViewType[];
 // so the assistant rarely reached for it — and a rule that notices
 // without being asked is the whole reason automations exist.
 
+/** When a schedule runs, said once for every place Luke is told about schedules. */
+export const SCHEDULE_TIMING =
+  'It runs on the store\'s clock. "at": "07:00" is the time (daily, weekly, monthly); "on": ["mon", "sat"] the days of the week (daily or weekly; weekly needs it); monthly takes "date", 1 to 31 (past a month\'s end, its last day). "Roz subah", "every Monday", "on the 1st" are these, not an interval: say the time you chose. A rule with a time first runs at the next one, never at once. Without them it runs an interval after its last run';
+
 export const TRIGGERS = {
   record_created: "a row is added",
   record_updated: "a row is changed",
-  schedule:
-    'nobody touched anything — re-checks every row on its own. This is the only way to catch things that go quiet: an unpaid invoice, a job nobody moved, a follow-up never made. Needs "every": hourly, daily or weekly, and its "when" picks which rows to act on',
+  schedule: `nobody touched anything — re-checks every row on its own. This is the only way to catch things that go quiet: an unpaid invoice, a job nobody moved, a follow-up never made. Needs "every": hourly, daily, weekly or monthly, and its "when" picks which rows to act on. ${SCHEDULE_TIMING}`,
   store_row_added:
     "a new row came in from the store — a new order, a new customer. Only on a section over the store, and only for a rule's own code (run_code)",
 } as const;

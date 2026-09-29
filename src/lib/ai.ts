@@ -46,6 +46,7 @@ import {
   type AssistantReply,
   type ClarifyQuestion,
   type AutomationDefinition,
+  type AutomationTrigger,
   type FeatureSchema,
   type ModuleRow,
   type NextStep,
@@ -58,6 +59,7 @@ import {
   EXPR_OPS,
   OPERATORS,
   STAT_OP_LIST,
+  SCHEDULE_TIMING,
   TRIGGER_TYPES,
   isOperator,
   isServerOnly,
@@ -146,7 +148,8 @@ HOW TO CHOOSE changeType:
 - RECORD_SEED — add rows to an existing module (field names must exist in its schema).
 - AUTOMATION_ADD — business logic that runs automatically. "targetModuleId" is the section whose rows trigger it. You BUILD the rule out of the operators below — there is no menu of pre-made rule types, so express exactly what the owner described.
 
-  trigger: { "type": "record_created" | "record_updated" | "schedule", "every": "hourly"|"daily"|"weekly" (schedule only), "when": <expression, optional> }
+  trigger: { "type": "record_created" | "record_updated" | "schedule", "every": "hourly"|"daily"|"weekly"|"monthly", "at": "HH:MM", "on": ["mon", …], "date": 1-31 (schedule only), "when": <expression, optional> }
+    ${SCHEDULE_TIMING}.
     The "when" expression decides whether the rule fires. For schedules it is evaluated against every row, so it is how you pick which rows to act on.
 
   EXPRESSIONS — a tree of these. Leaves read a value:
@@ -376,7 +379,7 @@ CHOOSING THE VIEW — this is a real design decision, make it deliberately:
 - If none of the five draws what the owner described — their own steps on one screen, a station for busy hands, big counters, a flow that moves on by itself — write a "custom" view rather than squeezing their flow into a table.
 
 CODE RULE — when a rule needs logic the expressions cannot say (a slab rate by weight, a table to look up, a total across sections, working days), write it: an automation whose action is { "type": "run_code", "reads": ["#courier-rates"], "code": "export default function run({ row, previous, sections, today }) { … return { set: [{ id: row.id, fields: { courier_charge: 65 } }] }; }" }.
-- When it runs: record_created or record_updated, after the owner's own write in the app; "schedule" with "every" (hourly, daily, weekly), with nobody watching; or "store_row_added" on a section over the store, when the store brings a row in (a new order, a new customer). A "when" filters the rows as usual. A scheduled or store_row_added rule carries run_code actions only. It runs sealed off: no network, nothing outside what it is handed.
+- When it runs: record_created or record_updated, after the owner's own write in the app; "schedule" with "every" (hourly, daily, weekly, monthly) and "at", "on" or "date" as for any schedule, with nobody watching; or "store_row_added" on a section over the store, when the store brings a row in (a new order, a new customer). A "when" filters the rows as usual. A scheduled or store_row_added rule carries run_code actions only. It runs sealed off: no network, nothing outside what it is handed.
 - It is handed row ({ id, ...fields } — store fields too on a section over the store; on a schedule there is no row, and rows holds the section's rows instead), previous (the fields before, on an update), sections (the rows of each section in "reads", by the name you listed, each { id, ...fields }), and today (YYYY-MM-DD).
 - It returns { set: [{ id, fields, section? }], add: [{ fields }] }: set writes fields on rows it was handed (section is the "reads" name, left out for this section); add makes rows in this section, when it is the owner's own. Only the owner's fields are written, never the store's. Keep it short and plain JavaScript.
 - Data the logic needs that nobody has typed yet (the courier's rate card) goes in a section of its own in the same design, for the owner to fill, and the rule reads it.
@@ -1275,6 +1278,38 @@ function rejectClockDerivedWrites(node: unknown, where: string, errors: string[]
  * dereference is checked up front: the module ids must belong to this
  * project, and the fields must exist on the schemas they point at.
  */
+const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
+/** A schedule's timing: how often, and at what time, days and date of the month on the store's clock (0137). */
+export function validateSchedule(trigger: AutomationTrigger, errors: string[]): void {
+  const every = trigger.every;
+  if (!["hourly", "daily", "weekly", "monthly"].includes(every ?? "")) {
+    err(errors, "A schedule trigger needs every: hourly, daily, weekly or monthly.");
+    return;
+  }
+  if (trigger.at !== undefined) {
+    if (every === "hourly") err(errors, `An hourly schedule has no "at": it runs every hour.`);
+    else if (typeof trigger.at !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(trigger.at)) {
+      err(errors, `"at" is a time of day, "HH:MM" from 00:00 to 23:59 on the store's clock, like "07:00".`);
+    }
+  }
+  if (trigger.on !== undefined) {
+    const days = Array.isArray(trigger.on) ? trigger.on : [trigger.on];
+    if (every !== "daily" && every !== "weekly") err(errors, `"on" is for a daily or weekly schedule.`);
+    else if (!days.length || days.some((d) => !WEEKDAYS.includes(String(d).toLowerCase()))) {
+      err(errors, `"on" is the days it runs, from ${WEEKDAYS.join(", ")}.`);
+    }
+  } else if (every === "weekly" && trigger.at !== undefined) {
+    err(errors, `A weekly schedule at a time says which day: "on": ["mon"].`);
+  }
+  if (
+    trigger.date !== undefined &&
+    (every !== "monthly" || !Number.isInteger(trigger.date) || trigger.date < 1 || trigger.date > 31)
+  ) {
+    err(errors, `"date" is the day of the month, 1 to 31, for a monthly schedule.`);
+  }
+}
+
 /** Every field a rule reads, however deeply buried. */
 function fieldsRead(node: unknown, out: Set<string> = new Set(), depth = 0): Set<string> {
   if (depth > 12 || node === null || typeof node !== "object") return out;
@@ -1320,8 +1355,9 @@ function validateAutomation(
   if (!(TRIGGER_TYPES as string[]).includes(trigger.type)) {
     err(errors, `Trigger type "${trigger.type}" must be one of: ${TRIGGER_TYPES.join(", ")}.`);
   }
-  if (trigger.type === "schedule" && !["hourly", "daily", "weekly"].includes(trigger.every ?? "")) {
-    err(errors, "A schedule trigger needs every: hourly, daily or weekly.");
+  if (trigger.type === "schedule") validateSchedule(trigger, errors);
+  else if (trigger.at !== undefined || trigger.on !== undefined || trigger.date !== undefined) {
+    err(errors, `"at", "on" and "date" belong to a schedule trigger, not ${trigger.type}.`);
   }
 
   // Fields of the section this rule hangs off — its own columns, or the

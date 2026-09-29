@@ -58,11 +58,19 @@ export type Expr =
   | { target: string }
   | { op: ExprOp; args?: Expr[] };
 
+export type Weekday = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+
 export interface AutomationTrigger {
   /** store_row_added: a row the store brought in (0134), for a rule's own code on a section over the store. */
   type: "record_created" | "record_updated" | "schedule" | "store_row_added";
-  /** For schedule type; the engine runs hourly and filters with `when`. */
-  every?: "hourly" | "daily" | "weekly";
+  /** For schedule type: how often, filtering its rows with `when` (0137). */
+  every?: "hourly" | "daily" | "weekly" | "monthly";
+  /** Schedule: the time it runs, "HH:MM" on the store's clock (daily, weekly, monthly). */
+  at?: string;
+  /** Schedule: the days of the week it runs (daily or weekly). */
+  on?: Weekday | Weekday[];
+  /** Schedule, monthly: the day of the month, 1 to 31; past a month's end, its last day. */
+  date?: number;
   /** One expression deciding whether the rule fires. */
   when?: Expr;
 }

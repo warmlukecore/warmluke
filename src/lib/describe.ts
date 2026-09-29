@@ -4,7 +4,15 @@
 // form of them they ever see.
 // ─────────────────────────────────────────────────────────────
 
-import type { AssistantPlan, AutomationDefinition, ClarifyQuestion, Expr, FeatureSchema, ModuleRow } from "./types";
+import type {
+  AssistantPlan,
+  AutomationDefinition,
+  AutomationTrigger,
+  ClarifyQuestion,
+  Expr,
+  FeatureSchema,
+  ModuleRow,
+} from "./types";
 import { STORE_TABLES, isStoreTable, storeTableSchema } from "./store-read";
 
 /** Renders an expression tree as something a non-technical owner reads. */
@@ -89,6 +97,38 @@ export type RuleRow = {
   definition: AutomationDefinition;
 };
 
+const DAY_NAMES: Record<string, string> = {
+  mon: "Monday",
+  tue: "Tuesday",
+  wed: "Wednesday",
+  thu: "Thursday",
+  fri: "Friday",
+  sat: "Saturday",
+  sun: "Sunday",
+};
+const ordinal = (n: number) =>
+  `${n}${n === 1 || n === 21 || n === 31 ? "st" : n === 2 || n === 22 ? "nd" : n === 3 || n === 23 ? "rd" : "th"}`;
+
+/**
+ * "Every day at 07:00", "Every Monday and Saturday at 09:00", "Every month
+ * on the 1st", on the store's clock. Null for an interval alone, which
+ * keeps its words ("daily"): the critic's recordings hold them.
+ */
+export function scheduleWords(t: AutomationTrigger): string | null {
+  if (t.every !== "monthly" && t.at === undefined && t.on === undefined) return null;
+  const at = t.at ? ` at ${t.at}` : "";
+  const days = (Array.isArray(t.on) ? t.on : t.on ? [t.on] : []).map((d) => DAY_NAMES[String(d).toLowerCase()] ?? d);
+  const named = days.length > 1 ? `${days.slice(0, -1).join(", ")} and ${days[days.length - 1]}` : days[0];
+  switch (t.every) {
+    case "weekly":
+      return `Every ${named}${at}`;
+    case "monthly":
+      return `Every month on the ${ordinal(t.date ?? 1)}${at}`;
+    default:
+      return named ? `Every ${named}${at}` : `Every day${at}`;
+  }
+}
+
 /**
  * The rules already running, in the words the approval card uses.
  *
@@ -120,7 +160,8 @@ export function describeAutomation(
     out.push(cond ? `When ${cond}` : "When a row is edited");
   } else if (t?.type === "schedule") {
     const every = t.every ?? "daily";
-    out.push(cond ? `${every[0].toUpperCase()}${every.slice(1)}, for rows where ${cond}` : `${every}`);
+    const when = scheduleWords(t) ?? `${every[0].toUpperCase()}${every.slice(1)}`;
+    out.push(cond ? `${when}, for rows where ${cond}` : (scheduleWords(t) ?? every));
   }
 
   const nameFor = (id: string) =>

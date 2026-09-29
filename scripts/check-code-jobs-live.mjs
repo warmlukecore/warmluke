@@ -285,6 +285,105 @@ try {
   const { data: stillWaiting } = await admin.rpc("abo_code_waiting");
   check("and not while a worker is on it", typeof held === "string" && !(stillWaiting ?? []).includes(project.id));
   await admin.from("code_leases").delete().eq("project_id", project.id);
+
+  // A schedule at a time of day, on the store's clock (0137). Asked at
+  // moments of the check's choosing, so the answers do not depend on when
+  // it runs. The store here keeps Asia/Kolkata, UTC+05:30.
+  console.log("\na schedule at a time, on the store's clock");
+  const tz = { p_tz: "Asia/Kolkata" };
+  const slot = async (trigger, now) =>
+    (await admin.rpc("abo_schedule_slot", { p_trigger: trigger, ...tz, p_now: now })).data;
+  const due = async (trigger, last, made, now) =>
+    (await admin.rpc("abo_schedule_due", { p_trigger: trigger, ...tz, p_last: last, p_made: made, p_now: now })).data;
+  const same = (a, b) => typeof a === "string" && Date.parse(a) === Date.parse(b);
+  const seven = { type: "schedule", every: "daily", at: "07:00" };
+  check(
+    "asked in the evening: this morning's seven",
+    same(await slot(seven, "2026-09-29T12:00:00Z"), "2026-09-29T01:30:00Z")
+  );
+  check("asked before seven: yesterday's", same(await slot(seven, "2026-09-29T01:00:00Z"), "2026-09-28T01:30:00Z"));
+  check(
+    "every Monday at nine, asked on a Wednesday: Monday's",
+    same(
+      await slot({ type: "schedule", every: "weekly", on: ["mon"], at: "09:00" }, "2026-09-30T12:00:00Z"),
+      "2026-09-28T03:30:00Z"
+    )
+  );
+  check(
+    "Monday to Saturday, asked on a Sunday: Saturday's",
+    same(
+      await slot(
+        { type: "schedule", every: "daily", on: ["mon", "tue", "wed", "thu", "fri", "sat"], at: "09:00" },
+        "2026-09-27T12:00:00Z"
+      ),
+      "2026-09-26T03:30:00Z"
+    )
+  );
+  check(
+    "the 31st, in a month of thirty days, is its last",
+    same(await slot({ type: "schedule", every: "monthly", date: 31 }, "2026-09-30T12:00:00Z"), "2026-09-29T18:30:00Z")
+  );
+  check(
+    "an interval alone names no moment",
+    (await slot({ type: "schedule", every: "daily" }, "2026-09-29T12:00:00Z")) === null
+  );
+  check(
+    "made after this morning's seven, it waits for tomorrow's",
+    (await due(seven, null, "2026-09-29T11:00:00Z", "2026-09-29T12:00:00Z")) === false
+  );
+  check("made before it, it is due", (await due(seven, null, "2026-09-28T00:00:00Z", "2026-09-29T12:00:00Z")) === true);
+  check(
+    "and not again once it ran",
+    (await due(seven, "2026-09-29T01:31:00Z", "2026-09-28T00:00:00Z", "2026-09-29T12:00:00Z")) === false
+  );
+  const daily = { type: "schedule", every: "daily" };
+  check(
+    "an interval, as before: a day after its last run",
+    (await due(daily, "2026-09-28T13:00:00Z", "2026-09-01T00:00:00Z", "2026-09-29T12:00:00Z")) === false &&
+      (await due(daily, "2026-09-28T12:00:00Z", "2026-09-01T00:00:00Z", "2026-09-29T12:00:00Z")) === true
+  );
+
+  // The code clock itself: a rule whose time has come is queued, one made since waits.
+  const home = mods[0].id;
+  const timed = (name, made) => ({
+    project_id: project.id,
+    module_id: home,
+    name,
+    enabled: true,
+    created_at: made,
+    definition: {
+      trigger: { type: "schedule", every: "daily", at: "00:00" },
+      actions: [{ type: "run_code", code: "export default function run() { return { set: [], add: [] }; }" }],
+    },
+  });
+  const { data: timedRules, error: timedErr } = await admin
+    .from("automations")
+    .insert([
+      timed("at midnight, made before", new Date(Date.now() - 2 * 86_400_000).toISOString()),
+      timed("at midnight, made now", new Date().toISOString()),
+    ])
+    .select("id, name");
+  if (timedErr) throw new Error(`could not make the timed rules: ${timedErr.message}`);
+  await admin.rpc("abo_code_schedule");
+  const { data: timedJobs } = await admin
+    .from("code_jobs")
+    .select("automation_id")
+    .eq("kind", "schedule")
+    .in(
+      "automation_id",
+      timedRules.map((r) => r.id)
+    );
+  const queuedFor = new Set((timedJobs ?? []).map((j) => j.automation_id));
+  const timedId = (n) => timedRules.find((r) => r.name === n).id;
+  check("the code clock queues a rule whose time has come", queuedFor.has(timedId("at midnight, made before")));
+  check("and not one made since, which waits for the next", !queuedFor.has(timedId("at midnight, made now")));
+  await admin
+    .from("automations")
+    .delete()
+    .in(
+      "id",
+      timedRules.map((r) => r.id)
+    );
 } finally {
   await project.remove();
   await other.remove();

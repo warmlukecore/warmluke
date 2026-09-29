@@ -416,6 +416,34 @@ try {
   );
   if (fails.length)
     console.log("     →", JSON.stringify({ recordsBefore, recordsAfter, matching, flagged: (flagged ?? []).length }));
+
+  // A daily rule runs once a day, not each time the clock asks: every
+  // schedule rule ran every hour, a "daily" one twenty-four times (0137).
+  const { data: ruleRow } = await admin
+    .from("automations")
+    .select("id, scheduled_at")
+    .eq("module_id", orders)
+    .eq("name", "flag by gateway")
+    .single();
+  const made = (flagged ?? []).find((f) => f.store_row_id !== row.id && f.store_row_id !== row2.id);
+  await admin
+    .from("records")
+    .update({ data: { ...made.data, packed_at: null } })
+    .eq("module_id", orders)
+    .eq("store_row_id", made.store_row_id);
+  await admin.rpc("run_scheduled_automations");
+  const { data: again } = await admin
+    .from("records")
+    .select("data")
+    .eq("module_id", orders)
+    .eq("store_row_id", made.store_row_id)
+    .single();
+  const { data: ruleAfter } = await admin.from("automations").select("scheduled_at").eq("id", ruleRow.id).single();
+  check(
+    "and a daily rule runs once a day, not each time the clock asks",
+    !!ruleRow.scheduled_at && again?.data?.packed_at == null && ruleAfter?.scheduled_at === ruleRow.scheduled_at
+  );
+  await admin.from("records").delete().eq("module_id", orders).eq("store_row_id", made.store_row_id);
   // Put back what the schedule made, so the rows below are as the seed left them.
   await admin.from("automations").delete().eq("module_id", orders);
   await admin
