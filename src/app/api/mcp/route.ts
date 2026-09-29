@@ -603,6 +603,8 @@ async function settleDesign(opts: {
     // nothing there could have known what this design offered.
     p_next: followUps.length ? followUps : null,
   });
+  if (err) return ok(id, text({ error: err.message }));
+  charged?.();
   // What the merchant's AI draws beside this answer, when it can (lib/design-view).
   const { data: shop } = await db
     .from("stores")
@@ -619,8 +621,6 @@ async function settleDesign(opts: {
       format: projectFormat(project, shop),
     }),
   });
-  if (err) return ok(id, text({ error: err.message }));
-  charged?.();
 
   // A second opinion on the design — Luke's or the assistant's own
   // — taken after this answer has gone out, and written down where
