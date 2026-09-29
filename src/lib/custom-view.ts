@@ -84,6 +84,7 @@ export const CUSTOM_VIEW_TOKENS = {
   line: "--color-line",
   "line-strong": "--color-line-strong",
   focus: "--color-focus",
+  link: "--color-link",
   primary: "--color-primary",
   "primary-hover": "--color-primary-hover",
   "on-primary": "--color-on-primary",
@@ -120,6 +121,7 @@ html,body{margin:0;background:var(--surface);color:var(--fg);font:14px/1.5 var(-
 h1,h2,h3,.wl-title,.wl-big,.wl-count{font-family:var(--font-display);margin:0;letter-spacing:-.01em}
 h1{font-size:20px;font-weight:650;line-height:1.3}h2,.wl-title{font-size:16px;font-weight:600;line-height:1.35}h3{font-size:14px;font-weight:600}
 p{margin:0}
+a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
 input,select,textarea{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-control);padding:6px 10px;outline:none}
 input:focus,select:focus,textarea:focus{border-color:var(--focus);box-shadow:0 0 0 3px color-mix(in srgb,var(--focus) 15%,transparent)}
 button,.wl-button{font:inherit;font-size:13px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border:0;border-radius:var(--radius-control);background:var(--surface);color:var(--fg);box-shadow:var(--shadow-card);cursor:pointer;white-space:nowrap}
