@@ -892,12 +892,19 @@ function ChangePreview({
   plan,
   peek,
   onReadSection,
+  siblings = [],
 }: {
   plan: AssistantPlan;
   peek?: SectionPeek;
   onReadSection?: ComponentProps<typeof GenericRenderer>["onReadSection"];
+  /** The design's other parts: a "#slug" it changes is a section one of them makes. */
+  siblings?: AssistantPlan[];
 }) {
-  const target = plan.changeType === "NEW_MODULE" ? null : plan.targetModuleId;
+  // A change to a section the same design makes: drawn over that new section, not looked up.
+  const made = plan.targetModuleId?.startsWith("#")
+    ? siblings.find((p) => p.changeType === "NEW_MODULE" && p.newModule?.name === plan.targetModuleId!.slice(1))
+    : undefined;
+  const target = plan.changeType === "NEW_MODULE" || plan.targetModuleId?.startsWith("#") ? null : plan.targetModuleId;
   const [section, setSection] = useState<{ schema: UiSchema; records: RecordRow[] } | "failed" | null>(null);
   useEffect(() => {
     if (!target || !peek) return;
@@ -912,9 +919,14 @@ function ChangePreview({
   }, [target, peek]);
 
   if (!target) {
-    const shown = changeShown(plan, null);
+    const base = made ?? (plan.changeType === "NEW_MODULE" ? plan : null);
+    if (!base) return null;
+    const shown = changeShown(
+      plan,
+      made ? { columns: made.newSchema?.columns ?? [], features: made.features ?? null } : null
+    );
     if (!shown) return null;
-    const rows = previewRows((plan.newRecords ?? []).map((data, i) => ({ id: `preview-${i}`, data })));
+    const rows = previewRows((base.newRecords ?? []).map((data, i) => ({ id: `preview-${i}`, data })));
     return <GenericRenderer schema={shown} records={rows} preview onReadSection={onReadSection} />;
   }
   if (section === "failed" || !peek) return null;
@@ -923,6 +935,25 @@ function ChangePreview({
   return shown ? (
     <GenericRenderer schema={shown} records={section.records} preview onReadSection={onReadSection} />
   ) : null;
+}
+
+/** The kinds of change a preview can draw. */
+const PREVIEWABLE = new Set<AssistantPlan["changeType"]>(["NEW_MODULE", "FIELD_ADD", "UI_CHANGE", "FEATURE_UPDATE"]);
+
+/** "Preview", folded: the change is drawn only once opened, so a list of designs reads nothing until asked. */
+function PreviewFold(props: ComponentProps<typeof ChangePreview>) {
+  const [open, setOpen] = useState(false);
+  if (!PREVIEWABLE.has(props.plan.changeType)) return null;
+  return (
+    <details className="mt-1" onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary className="cursor-pointer list-none text-[10px] text-fg-muted hover:underline">Preview</summary>
+      {open && (
+        <div className="mt-1.5">
+          <ChangePreview {...props} />
+        </div>
+      )}
+    </details>
+  );
 }
 
 function BlueprintCard({
@@ -936,6 +967,8 @@ function BlueprintCard({
   recorded,
   onApprove,
   onAmend,
+  peek,
+  onReadSection,
 }: {
   message: string;
   blueprint: Blueprint;
@@ -952,6 +985,9 @@ function BlueprintCard({
   /** Receives the exact plans the owner ticked, and where each sits in the design. */
   onApprove: (plans: AssistantPlan[], sent: number[]) => Promise<BuildOutcome>;
   onAmend: () => void;
+  /** Reads the section a part changes, for its preview. */
+  peek?: SectionPeek;
+  onReadSection?: ComponentProps<typeof GenericRenderer>["onReadSection"];
 }) {
   const idNames = useIdNames();
   const [dropped, setDropped] = useState<Record<number, boolean>>({});
@@ -1047,7 +1083,9 @@ function BlueprintCard({
     const off = status.kind === "left-out" || status.kind === "already-there" || status.kind === "section-gone";
     const cascaded = !dropped[i] && referencesDropped(plan);
     const canUntick = !!plan.optional && !done && !run && !cascaded && !staleOf(plan);
-    const hasDetail = summary.lines.length > 0;
+    // Its preview, while the design is still to be built: in the row's own fold, one part at a time.
+    const previewable = PREVIEWABLE.has(plan.changeType) && !done && !run;
+    const hasDetail = summary.lines.length > 0 || previewable;
     const open = !!expanded[i];
     const toggleDetail = () => hasDetail && setExpanded((p) => ({ ...p, [i]: !p[i] }));
     const { name, sub } = planHeading(plan, summary.title);
@@ -1106,7 +1144,7 @@ function BlueprintCard({
               <span className={open ? "" : "line-clamp-2"}>{w}</span>
             </div>
           ))}
-          {open && hasDetail && (
+          {open && summary.lines.length > 0 && (
             <ul className="mt-1.5 space-y-0.5 border-l border-line pl-2.5">
               {summary.lines.map((line, j) => (
                 <li key={j} className="text-[11px] leading-relaxed text-fg-muted">
@@ -1114,6 +1152,11 @@ function BlueprintCard({
                 </li>
               ))}
             </ul>
+          )}
+          {open && previewable && (
+            <div className="mt-2">
+              <ChangePreview plan={plan} siblings={blueprint.plans} peek={peek} onReadSection={onReadSection} />
+            </div>
           )}
         </div>
         {canUntick && (
@@ -2700,6 +2743,14 @@ export default function ChatPanel({
                                         </ul>
                                       </details>
                                     )}
+                                    {!done && (
+                                      <PreviewFold
+                                        plan={plan}
+                                        siblings={r.plans ?? []}
+                                        peek={onPeekSection}
+                                        onReadSection={onReadSection}
+                                      />
+                                    )}
                                   </div>
                                 );
                               })}
@@ -3217,6 +3268,8 @@ export default function ChatPanel({
                           setInput("Change this in the design: ");
                           inputRef.current?.focus();
                         }}
+                        peek={onPeekSection}
+                        onReadSection={onReadSection}
                       />
                       {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} />}
                     </div>

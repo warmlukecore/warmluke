@@ -959,3 +959,57 @@ test("a proposed change shows only what it changes, holds still, and says Done w
       .in("id", [idOf(lines), idOf(other)]);
   }
 });
+
+test("every design's parts open to a preview: Luke's, and one their own AI asked for", async ({
+  signedIn: page,
+  shop,
+}) => {
+  const html = `<div class="wl-page"><div class="wl-banner info">Scan the order at the desk</div></div>`;
+  const thread = await designThread(shop, [
+    { ...newSection("e2e-desk", "Desk"), newRecords: [{ note: "first at the desk" }] },
+    {
+      changeType: "FEATURE_UPDATE",
+      targetModuleId: "#e2e-desk",
+      features: { view: { type: "custom", title: "Desk screen", html } },
+      explanation: "Draws the desk's screen.",
+    },
+  ]);
+  const { data: asked, error } = await shop.admin
+    .from("build_requests")
+    .insert({
+      project_id: shop.projectId,
+      requested_by: shop.userId,
+      client_id: "e2e-assistant",
+      request: "A list of returns",
+      status: "pending",
+      plans: [{ ...newSection("e2e-returns", "Returns"), newRecords: [{ note: "first return" }] }],
+    })
+    .select("id")
+    .single();
+  expect(error, "the assistant's request went in").toBeNull();
+  try {
+    await page.goto(`/app/${shop.projectId}`);
+    const { panel } = await luke(page);
+    // Luke's design: a part, opened, shows what it makes.
+    await panel.getByRole("button", { name: /^Desk/ }).click();
+    await expect(panel.getByText("first at the desk")).toBeVisible();
+    // And a screen for a section the same design makes, drawn over that new section.
+    await panel.getByRole("button", { name: /^Change how .* works/ }).click();
+    await expect(
+      panel.frameLocator('iframe[title="Desk screen"]').getByText("Scan the order at the desk")
+    ).toBeVisible();
+
+    // One their own AI asked for: its part folds out to the same preview.
+    await page.locator('button[title="What your AI asked for"]:visible').first().click();
+    const card = page
+      .locator("div")
+      .filter({ hasText: /^Asked for by your AI/ })
+      .filter({ hasText: "A list of returns" })
+      .last();
+    await card.getByText("Preview", { exact: true }).click();
+    await expect(card.getByText("first return")).toBeVisible();
+  } finally {
+    await shop.admin.from("build_requests").delete().eq("id", asked!.id);
+    await clearUp(shop, thread, ["e2e-desk", "e2e-returns"]);
+  }
+});
