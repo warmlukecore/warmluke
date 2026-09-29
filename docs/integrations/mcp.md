@@ -78,11 +78,42 @@ by changing a request argument because identity comes from the token.
 built-in chat. It persists the exact validated plans and returns a request ID plus a
 deterministic human-readable description.
 
+The design runs as work of its own, not tied to the request: `propose_change` waits for it
+for 40 seconds (`MCP_DESIGN_WAIT_MS`) and otherwise answers `still designing`, the rest
+running after the answer (`lib/in-time`, `after()`) and landing in `pending_changes` and
+the merchant's app. A client that stops waiting no longer throws the design away.
+
 ### Client-authored design
 
 A capable external assistant may call `design_format`, construct plans, and iterate with
 `validate_design`. `submit_design` runs the same project-aware validation and creates the
-same kind of approval request without spending a Warmluke model turn.
+same kind of approval request without spending a Warmluke model turn. `design_format`
+carries the plan's shape and the same guides Luke designs by, from the same constants:
+`written_screens` (`CUSTOM_VIEW_GUIDE`: `window.wl`, the kit) and `code_rules`
+(`CODE_RULE_GUIDE`: what a rule's code is handed, the store's clock, `next`). When the
+assistant passes the merchant's own words as `request`, the submitted design goes through
+Luke's gap pass and carries what it leaves out, as Luke's designs do.
+
+### The design drawn in the assistant
+
+Hosts that speak MCP Apps (2026-01-26: Claude, ChatGPT, VS Code, Goose) draw a page a
+server hands them beside a tool's answer. `initialize` declares the extension
+`io.modelcontextprotocol/ui`; `resources/list` and `resources/read` serve
+`ui://warmluke/design` (`text/html;profile=mcp-app`, `lib/design-view`); `propose_change`
+and `submit_design` name it in `_meta.ui.resourceUri` (and `openai/outputTemplate`). Each
+design's answer carries `structuredContent.design`: every part's words, the fields it shows
+and a few rows of the section it changes, and a written screen, which the page runs
+read-only over those rows. The page loads nothing, follows the host's theme, and opens the
+design in Warmluke through the host. Text stays the whole answer for any other client.
+`check-byo-design` holds the server's side; `e2e/mcp-view.spec.ts` the page, against a
+stand-in host speaking the protocol.
+
+### Connecting an assistant
+
+Any assistant that connects to remote MCP servers with OAuth can connect: the sign-in
+registers clients itself (dynamic client registration), which ChatGPT requires. The panel's
+"Use your own AI" lists the steps for ChatGPT, Claude, Claude Code, Cursor, VS Code and any
+other from one list, `lib/connect-assistants.ts`.
 
 ### Decision and build
 

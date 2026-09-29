@@ -65,6 +65,19 @@ const tool = async (name, args, id = 1) => {
 // Calls this run makes count against the account's hourly ceiling, so
 // after a few runs the check cannot reach the server it is checking.
 // Its own calls are not a merchant's; they are swept at the end.
+/** The whole JSON-RPC answer, for what sits beside a tool's text (structuredContent). */
+const raw = async (method, params = {}, id = 1) => {
+  const res = await fetch(`${APP}/api/mcp`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+  });
+  return (await res.json()).result;
+};
 const runStartedAt = new Date().toISOString();
 const sweepOwnCalls = async (userId) => {
   await admin.from("mcp_calls").delete().eq("user_id", userId).gte("created_at", runStartedAt);
@@ -306,6 +319,72 @@ try {
     (partialRow?.unmet ?? []).some((u) => /whatsapp|message|monday/i.test(u))
   );
   if (!(partialRow?.unmet ?? []).length) console.log("     →", JSON.stringify(partial).slice(0, 300));
+
+  // The design drawn inside the merchant's own AI, where it speaks MCP
+  // Apps (lib/design-view): a design came back as words, and was said
+  // yes to unseen.
+  console.log("\nthe design is drawn beside the answer, where the assistant can");
+  const init = await raw("initialize", {
+    protocolVersion: "2025-11-25",
+    capabilities: {},
+    clientInfo: { name: "check" },
+  });
+  check(
+    "the server says it has a page to draw",
+    (init?.capabilities?.extensions?.["io.modelcontextprotocol/ui"]?.mimeTypes ?? []).includes(
+      "text/html;profile=mcp-app"
+    )
+  );
+  const listed = await raw("resources/list");
+  check("lists it", listed?.resources?.[0]?.uri === "ui://warmluke/design");
+  const page = await raw("resources/read", { uri: "ui://warmluke/design" });
+  check(
+    "and hands it over, a page that speaks the host's protocol",
+    page?.contents?.[0]?.mimeType === "text/html;profile=mcp-app" && /ui\/initialize/.test(page.contents[0].text ?? "")
+  );
+  const tools = await raw("tools/list");
+  check(
+    "the design tools name it",
+    ["propose_change", "submit_design"].every(
+      (n) => tools?.tools?.find((t) => t.name === n)?._meta?.ui?.resourceUri === "ui://warmluke/design"
+    )
+  );
+  const drawn = await raw(
+    "tools/call",
+    {
+      name: "submit_design",
+      arguments: {
+        // No request: its gap pass is held elsewhere, and this asks no model.
+        project_id: project.id,
+        plans: [
+          {
+            changeType: "NEW_MODULE",
+            targetModuleId: null,
+            newModule: { name: `couriers-${stamp}`, nav_label: "Couriers", icon: "table" },
+            newSchema: { columns: [{ field: "courier", label: "Courier", type: "text" }], view: { type: "table" } },
+            newRecords: [{ courier: "Delhivery" }],
+            explanation: "A list of couriers.",
+          },
+        ],
+      },
+    },
+    42
+  );
+  const drawnId = (() => {
+    try {
+      return JSON.parse(drawn.content[0].text).request_id;
+    } catch {
+      return null;
+    }
+  })();
+  if (drawnId) made.push(drawnId);
+  const part = drawn?.structuredContent?.design?.parts?.[0];
+  check(
+    "and its answer carries what to draw: each part, its fields and its rows",
+    drawn?.structuredContent?.design?.status === "waiting" &&
+      part?.columns?.[0]?.label === "Courier" &&
+      part?.rows?.[0]?.data?.courier === "Delhivery"
+  );
 
   const row = good?.request_id
     ? (await admin.from("build_requests").select("status, approved_at, plans").eq("id", good.request_id).single()).data

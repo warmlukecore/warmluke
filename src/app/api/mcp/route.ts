@@ -13,6 +13,8 @@ import {
 import { blueprintAsText, runTurn, schemasFor, storeFactsFor } from "@/lib/engine";
 import { describeBuild } from "@/lib/judge";
 import { inTime } from "@/lib/in-time";
+import { DESIGN_VIEW_MIME, DESIGN_VIEW_URI, designForView, designViewHtml, type ViewDesign } from "@/lib/design-view";
+import { projectFormat } from "@/lib/money";
 import { CODE_RULE_GUIDE, CUSTOM_VIEW_GUIDE, PLAN_FORMAT, WORKED_EXAMPLE, findGaps, parseReply } from "@/lib/ai";
 import { vocabularyPrompt } from "@/lib/capabilities";
 import {
@@ -126,6 +128,8 @@ const TOOLS = [
   },
   {
     name: "propose_change",
+    // Drawn beside the answer by a host that speaks MCP Apps (lib/design-view).
+    _meta: { ui: { resourceUri: DESIGN_VIEW_URI }, "openai/outputTemplate": DESIGN_VIEW_URI },
     description:
       "Ask for something to be built or changed in the merchant's Warmluke app — a new section, a rule, a fix. Describe the problem in their own words, not a database design. Warmluke designs it and returns the plan; read that plan back to the merchant word for word and, if they approve, call approve_change. Nothing is built until then.",
     inputSchema: {
@@ -244,6 +248,8 @@ const TOOLS = [
   },
   {
     name: "submit_design",
+    // Drawn beside the answer by a host that speaks MCP Apps (lib/design-view).
+    _meta: { ui: { resourceUri: DESIGN_VIEW_URI }, "openai/outputTemplate": DESIGN_VIEW_URI },
     description:
       "Submit a design you wrote yourself. Warmluke checks it against the same validator its own engine answers to and, if it holds, puts it in front of the merchant for approval exactly like propose_change does. Rejections come back as a list of what is wrong, so you can correct it and submit again. Unlike propose_change this runs no Warmluke model, so it does not use one of the merchant's included designs — use it when they have run out, or whenever you would rather design it yourself.",
     inputSchema: {
@@ -597,6 +603,22 @@ async function settleDesign(opts: {
     // nothing there could have known what this design offered.
     p_next: followUps.length ? followUps : null,
   });
+  // What the merchant's AI draws beside this answer, when it can (lib/design-view).
+  const { data: shop } = await db
+    .from("stores")
+    .select("currency, country")
+    .eq("project_id", project.id)
+    .in("status", ["connected", "uninstalled"])
+    .maybeSingle();
+  const viewOf = async (status: ViewDesign["status"]) => ({
+    design: await designForView(db, project.id, moduleList, plans, {
+      status,
+      request,
+      open: typeof requestId === "string" ? openAt(origin, project.id, requestId) : openAt(origin, project.id),
+      notCovered: unmet,
+      format: projectFormat(project, shop),
+    }),
+  });
   if (err) return ok(id, text({ error: err.message }));
   charged?.();
 
@@ -667,9 +689,8 @@ async function settleDesign(opts: {
       // did not record it, the app would change and the merchant's
       // history would stay blank.
       await logClientBuild(db, project.id, request, builtLine(plans, moduleList, errors), applied);
-      return ok(
-        id,
-        text({
+      return ok(id, {
+        ...text({
           status: errors.length ? "partly built" : "built",
           note: "This app builds without waiting for approval. Tell the merchant what was built — it is already live and shows in their panel. They can carry on here, or open Warmluke and ask Luke inside it; both reach the same app.",
           ...whatNext,
@@ -695,8 +716,9 @@ async function settleDesign(opts: {
               }
             : {}),
           open: openAt(origin, project.id, requestId as string),
-        })
-      );
+        }),
+        structuredContent: await viewOf("built"),
+      });
     }
     // Nothing applied. It stays a request for a person to look at
     // rather than being reported as done — but the reason it could
@@ -720,9 +742,8 @@ async function settleDesign(opts: {
     });
   }
 
-  return ok(
-    id,
-    text({
+  return ok(id, {
+    ...text({
       // Said plainly so the model reports it plainly: nothing has
       // been built, and somebody still has to say yes.
       status: "waiting for approval",
@@ -750,8 +771,9 @@ async function settleDesign(opts: {
         openAt(origin, project.id, requestId as string)
       ),
       open: openAt(origin, project.id, requestId as string),
-    })
-  );
+    }),
+    structuredContent: await viewOf("waiting"),
+  });
 }
 
 export async function POST(req: Request) {
@@ -832,7 +854,12 @@ export async function POST(req: Request) {
     const asked = (params as { protocolVersion?: string }).protocolVersion;
     return ok(id, {
       protocolVersion: asked && KNOWN.has(asked) ? asked : LATEST_KNOWN,
-      capabilities: { tools: {} },
+      // Tools, and the page a host that speaks MCP Apps draws beside a design (lib/design-view).
+      capabilities: {
+        tools: {},
+        resources: {},
+        extensions: { "io.modelcontextprotocol/ui": { mimeTypes: [DESIGN_VIEW_MIME] } },
+      },
       serverInfo: { name: "warmluke", version: "0.1.0" },
       instructions:
         // The first thing every connected assistant reads about this
@@ -846,6 +873,26 @@ export async function POST(req: Request) {
 
   if (method === "ping") return ok(id, {});
   if (method === "tools/list") return ok(id, { tools: TOOLS });
+  // The design's preview: one page, the same for every design, which draws what each answer carries.
+  if (method === "resources/list") {
+    return ok(id, {
+      resources: [
+        {
+          uri: DESIGN_VIEW_URI,
+          name: "Design preview",
+          description: "A Warmluke design drawn: each part, its fields and a few rows, and a written screen.",
+          mimeType: DESIGN_VIEW_MIME,
+        },
+      ],
+    });
+  }
+  if (method === "resources/read") {
+    const uri = (params as { uri?: string }).uri;
+    if (uri !== DESIGN_VIEW_URI) return rpcError(id, -32002, `No resource "${uri}".`);
+    return ok(id, {
+      contents: [{ uri, mimeType: DESIGN_VIEW_MIME, text: designViewHtml(), _meta: { ui: { prefersBorder: true } } }],
+    });
+  }
 
   if (method !== "tools/call") {
     return rpcError(id, -32601, `No method "${method}".`);
@@ -1035,14 +1082,22 @@ export async function POST(req: Request) {
       );
       if (answered) return answered;
       // Past the wait: said so, and the design goes on after this answer.
-      return ok(
-        id,
-        text({
+      return ok(id, {
+        ...text({
           status: "still designing",
           note: "Warmluke is still designing this and keeps going without you. Call pending_changes in a minute or two: it will be there, waiting for the merchant's approval, and in their app too. Nothing is built until they say yes. If it needed answers first, it will not appear: call propose_change again with more about how they work.",
           open: openAt(origin, project.id),
-        })
-      );
+        }),
+        structuredContent: {
+          design: {
+            status: "designing",
+            request,
+            open: openAt(origin, project.id),
+            format: projectFormat(project, null),
+            parts: [],
+          } satisfies ViewDesign,
+        },
+      });
     }
 
     if (name === "read_section") {
