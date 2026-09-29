@@ -43,6 +43,29 @@ export function customViewProblem(html: unknown): string | null {
 }
 
 /**
+ * A written screen's script that would not even parse, as the browser
+ * would read it; null when every script parses. Parsing, never running:
+ * new Function compiles a body and calls nothing. A screen that cannot
+ * parse is a blank screen, so it goes back to Luke with the browser's
+ * own words instead of reaching the owner. Where compiling is not
+ * allowed (a page whose policy forbids it) nothing can be said, and
+ * nothing is refused.
+ */
+export function customViewScriptProblem(html: string): string | null {
+  for (const [, script] of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)) {
+    try {
+      new Function(script);
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        return `The screen's script would not run: ${e.message}. Fix the script; the screen would be blank as it is.`;
+      }
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
  * The frame's own policy, first in its head: no network of any kind, no
  * frames, no forms, nothing loaded but the page's own inline script and
  * styles. A policy written later in the page can only narrow it.

@@ -16,6 +16,7 @@ import {
   CUSTOM_VIEW_TOKENS,
   customViewPage,
   customViewProblem,
+  customViewScriptProblem,
 } from "../src/lib/custom-view.ts";
 
 const fails = [];
@@ -114,6 +115,25 @@ check(
   "and it sets no colour of its own but white on the solid red",
   !/#[0-9a-f]{3,6}\b/i.test(CUSTOM_VIEW_KIT.replace("color:#fff", ""))
 );
+
+// A screen whose script cannot parse is a blank screen: it goes back to
+// Luke with the browser's words. Parsing only; a screen that parses is
+// never refused for it, whatever modern syntax it uses.
+console.log("\na screen's script is parsed before it is shown");
+const broken = customViewScriptProblem("<div id=a></div><script>const x = ;</script>");
+check(
+  "a script that cannot parse is refused, in the browser's words",
+  typeof broken === "string" && /would not run/.test(broken)
+);
+const modern = `<div class=wl-page><input id=scan class=wl-scan></div>
+<script type="text/javascript">
+const S = { order: null, lines: [] };
+const cur = () => S.lines.find((l) => (l.data?.scanned_qty ?? 0) < +l.data.quantity);
+class Beep { play() { return \`ok \${1 + 1}\`; } }
+async function open(n) { const rows = await wl.find("order_number", \`#\${n}\`); S.lines = [...rows]; }
+</script><script>wl.onRows((rows) => { for (const r of rows) void r; });</script>`;
+check("a screen in today's syntax parses, and is not refused", customViewScriptProblem(modern) === null);
+check("and parsing runs nothing", customViewScriptProblem("<script>throw new Error('ran')</script>") === null);
 
 console.log(
   fails.length === 0 ? "\na written screen runs sealed, and only with what it is for" : `\n${fails.length} FAILED`

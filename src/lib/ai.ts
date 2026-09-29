@@ -34,7 +34,7 @@ import {
 } from "@/lib/store-read";
 // One definition, shared with the Shopify importer rather than copied.
 import { isTransient } from "@/lib/retry";
-import { customViewProblem } from "@/lib/custom-view";
+import { customViewProblem, customViewScriptProblem } from "@/lib/custom-view";
 import { codeProblem } from "@/lib/code-run";
 import { asJob, record } from "@/lib/usage";
 import {
@@ -908,7 +908,7 @@ function validateView(view: unknown, columns: SchemaColumn[] | null, errors: str
       break;
     case "custom": {
       if (typeof v.title !== "string" || !v.title.trim()) err(errors, 'A custom view needs a "title".');
-      const problem = customViewProblem(v.html);
+      const problem = customViewProblem(v.html) ?? customViewScriptProblem(String(v.html));
       if (problem) err(errors, problem);
       break;
     }
