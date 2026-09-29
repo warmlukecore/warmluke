@@ -10,6 +10,8 @@
 
 import { validatePlan } from "../src/lib/ai.ts";
 import { mergeFeatures } from "../src/lib/types.ts";
+import { changeShown } from "../src/lib/change-preview.ts";
+import { describeForOwner, describePlan } from "../src/lib/describe.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -111,6 +113,76 @@ check(
 check("one sent again with a new label is taken as sent", cols[1]?.label === "Item code");
 check("and the new one comes after them", cols[3]?.field === "packed_by" && cols.length === 4);
 check("a field add with nothing new is still refused", !add(schema.columns).ok);
+
+// Its preview draws what it changes, not the section again: the whole
+// section beside the chat showed what was behind it already.
+console.log("\na preview draws only what the change does");
+const here = {
+  columns: [
+    { field: "order_number", label: "Order", type: "text" },
+    { field: "sku", label: "SKU", type: "text" },
+  ],
+  features: { stats: [{ label: "Lines", op: "count" }], search: { enabled: true } },
+};
+const seen = (plan) => changeShown({ targetModuleId: MOD, explanation: "", ...plan }, here);
+const fieldAdd = seen({
+  changeType: "FIELD_ADD",
+  newSchema: { columns: [...here.columns, { field: "packed_by", label: "Packed by", type: "text" }] },
+});
+check(
+  "a field added: the new one beside the first, and nothing else",
+  fieldAdd?.columns.map((c) => c.field).join() === "order_number,packed_by" && !fieldAdd.features
+);
+const counter = seen({ changeType: "FEATURE_UPDATE", features: { stats: [{ label: "Packed", op: "count" }] } });
+check(
+  "a part changed: that part, over the section's columns",
+  JSON.stringify(Object.keys(counter?.features ?? {})) === '["stats"]' && counter.columns.length === 2
+);
+const written = seen({
+  changeType: "FEATURE_UPDATE",
+  features: { view: { type: "custom", title: "Station", html: "<p>" }, stats: [{ label: "Packed", op: "count" }] },
+});
+check("a written screen: the screen alone", JSON.stringify(Object.keys(written?.features ?? {})) === '["view"]');
+check("a part only removed draws nothing", seen({ changeType: "FEATURE_UPDATE", features: { search: null } }) === null);
+check(
+  "and its card names only the new field, not the section's own",
+  describeForOwner(
+    {
+      changeType: "FIELD_ADD",
+      targetModuleId: MOD,
+      explanation: "",
+      newSchema: { columns: [...here.columns, { field: "packed_by", label: "Packed by", type: "text" }] },
+    },
+    modules,
+    here.columns
+  ).lines[0] === "New: Packed by"
+);
+const screenPlan = {
+  changeType: "FEATURE_UPDATE",
+  targetModuleId: MOD,
+  explanation: "",
+  features: { view: { type: "custom", title: "Station", html: "<p>Scan the box label</p>" } },
+};
+check(
+  "a written screen is named on the card, not read out: the preview shows it",
+  describeForOwner(screenPlan, modules).lines.includes("A screen written for it, “Station”")
+);
+check(
+  "while the critic's words are as its recordings hold them",
+  describePlan(screenPlan, modules).lines.some((l) => l.includes("Scan the box label"))
+);
+check("a rename draws nothing", seen({ changeType: "MODULE_UPDATE", moduleUpdate: { nav_label: "Pack" } }) === null);
+const fresh = changeShown(
+  {
+    changeType: "NEW_MODULE",
+    targetModuleId: null,
+    explanation: "",
+    newSchema: { columns: here.columns },
+    features: { view: { type: "custom", title: "Station", html: "<p>" } },
+  },
+  null
+);
+check("a new section, with its parts: its written screen too", fresh?.features?.view?.type === "custom");
 
 console.log(
   fails.length === 0 ? "\na change is laid over the section, and keeps what it leaves out" : `\n${fails.length} FAILED`

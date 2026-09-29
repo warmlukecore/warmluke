@@ -137,6 +137,21 @@ check("every screen is given wl.read, and wl.money", /\bread:/.test(reading) && 
 check("with the app's locale and the project's currency", reading.includes('{"locale":"en-IN","currency":"INR"}'));
 check("and a label with $& in it is carried as it is, not read as a pattern", reading.includes("Price $& more"));
 
+// Light or dark as the app chose it, and a switch taken in place: the
+// computer's setting drew a light box inside a dark app, and values read
+// once kept a screen in the theme it opened in.
+console.log("\na screen is light or dark as the app is");
+check("light unless told", customViewPage(screen, [], {}).includes("color-scheme:light}"));
+const night = customViewPage(screen, [], {}, "", undefined, "dark");
+check(
+  "dark when the app is, and never the computer's choice",
+  night.includes("color-scheme:dark}") && !night.includes("light dark")
+);
+check(
+  "and told new values while open, without a reload",
+  /m\.type === "colours"/.test(night) && /setProperty\("--" \+ k/.test(night)
+);
+
 // A screen whose script cannot parse is a blank screen: it goes back to
 // Luke with the browser's words. Parsing only; a screen that parses is
 // never refused for it, whatever modern syntax it uses.

@@ -818,3 +818,144 @@ test("what Luke knows about you is shown, and a line is yours to strike", async 
     )
     .toBe(1);
 });
+
+test("a proposed change shows only what it changes, holds still, and says Done when built", async ({
+  signedIn: page,
+  shop,
+}) => {
+  const headers = { Authorization: `Bearer ${(shop.session as { access_token: string }).access_token}` };
+  const lines = "e2e-lines";
+  const other = "e2e-other";
+  const made = await page.request.post("/api/apply", {
+    headers,
+    data: {
+      projectId: shop.projectId,
+      plans: [lines, other].map((name) => ({
+        changeType: "NEW_MODULE",
+        targetModuleId: null,
+        newModule: { name, nav_label: name === lines ? "Lines" : "Other", icon: "table" },
+        newSchema: {
+          columns:
+            name === lines
+              ? [
+                  { field: "order_number", label: "Order", type: "text" },
+                  { field: "sku", label: "SKU", type: "text" },
+                ]
+              : [{ field: "note", label: "Note", type: "text" }],
+        },
+        newRecords:
+          name === lines
+            ? ["#3001", "#3002", "#3003", "#3004"].map((order_number, i) => ({ order_number, sku: `LN-${i}` }))
+            : [{ note: "elsewhere" }],
+        explanation: "A section for the preview to change.",
+      })),
+    },
+  });
+  expect(made.ok(), "the sections were built").toBe(true);
+  const { data: mods } = await shop.admin
+    .from("modules")
+    .select("id, name")
+    .eq("project_id", shop.projectId)
+    .in("name", [lines, other]);
+  const idOf = (n: string) => mods!.find((m) => m.name === n)!.id as string;
+
+  // A card Luke proposed, as the chat route keeps it: one change, and what to ask next.
+  const reply = {
+    type: "plans",
+    message: "This adds who packed each line.",
+    plans: [
+      {
+        changeType: "FIELD_ADD",
+        targetModuleId: idOf(lines),
+        newSchema: {
+          columns: [
+            { field: "order_number", label: "Order", type: "text" },
+            { field: "sku", label: "SKU", type: "text" },
+            { field: "packed_by", label: "Packed by", type: "text" },
+          ],
+        },
+        features: null,
+        explanation: "Adds a Packed by field.",
+      },
+    ],
+    next: [{ label: "Fill it from the scan", prompt: "Fill Packed by from the packer's scan" }],
+  };
+  const { data: thread } = await shop.admin
+    .from("conversations")
+    .insert({
+      project_id: shop.projectId,
+      title: "e2e preview",
+      updated_at: new Date(Date.now() + 60_000).toISOString(),
+    })
+    .select("id")
+    .single();
+  // Every row with every column: a bulk insert writes null where one leaves a column out.
+  const { error: kept } = await shop.admin.from("messages").insert([
+    {
+      conversation_id: thread!.id,
+      role: "user",
+      content: "Add who packed each line",
+      payload: null,
+      created_at: new Date().toISOString(),
+    },
+    {
+      conversation_id: thread!.id,
+      role: "assistant",
+      content: JSON.stringify(reply),
+      payload: reply,
+      created_at: new Date(Date.now() + 1000).toISOString(),
+    },
+  ]);
+  expect(kept, "the card went into the thread").toBeNull();
+
+  const open = async (section: string) => {
+    await page.goto(`/app/${shop.projectId}?section=${idOf(section)}`);
+    const panel = page.getByRole("complementary", { name: "Luke" });
+    if ((page.viewportSize()?.width ?? 0) < 1024) await page.getByRole("button", { name: /^Luke/ }).first().click();
+    await expect(panel.getByRole("status", { name: "Opening your conversation" })).toHaveCount(0);
+    return panel;
+  };
+  try {
+    let panel = await open(lines);
+    await expect(panel.getByText("Proposed change · New fields")).toBeVisible();
+    // Only the change: the new field beside the section's first, three rows of it.
+    const preview = panel.locator("table").last();
+    await expect(preview.getByRole("columnheader", { name: "Packed by" })).toBeVisible();
+    await expect(preview.getByRole("columnheader", { name: "Order" })).toBeVisible();
+    await expect(preview.getByRole("columnheader", { name: "SKU" })).toHaveCount(0);
+    await expect(preview.locator("tbody tr")).toHaveCount(3);
+    await expect(panel.getByText("3 of 4 records")).toBeVisible();
+
+    // Another section open: the preview still draws the section it changes.
+    panel = await open(other);
+    await expect(panel.locator("table").last().getByText("#3001")).toBeVisible();
+    await expect(panel.locator("table").last().getByText("elsewhere")).toHaveCount(0);
+
+    // Built: the preview goes, Done says where, and what to ask next is right under it.
+    await panel.getByRole("button", { name: "Build this" }).click();
+    await expect(panel.getByRole("status").filter({ hasText: "Done. Lines is updated." })).toBeVisible({
+      timeout: BUILD_MS,
+    });
+    await expect(panel.getByText("Proposed change · New fields")).toBeVisible();
+    await expect(panel.getByRole("columnheader", { name: "Packed by" })).toHaveCount(0);
+    await expect(panel.getByRole("button", { name: "Ask: Fill Packed by from the packer's scan" })).toBeVisible();
+    const { data: schema } = await shop.admin
+      .from("ui_schemas")
+      .select("schema_json")
+      .eq("module_id", idOf(lines))
+      .order("version", { ascending: false })
+      .limit(1)
+      .single();
+    expect((schema!.schema_json as { columns: Array<{ field: string }> }).columns.map((c) => c.field)).toEqual([
+      "order_number",
+      "sku",
+      "packed_by",
+    ]);
+  } finally {
+    await shop.admin.from("conversations").delete().eq("id", thread!.id);
+    await shop.admin
+      .from("modules")
+      .delete()
+      .in("id", [idOf(lines), idOf(other)]);
+  }
+});

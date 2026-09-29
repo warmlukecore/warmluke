@@ -71,6 +71,8 @@ import {
   Menu,
   Plus,
   Search,
+  Maximize2,
+  Minimize2,
   Settings,
   Sparkles,
   Zap,
@@ -264,6 +266,31 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   const [rulesOpen, setRulesOpen] = useState(false);
   // Below lg the three panes become drawers: the phone shows one at a time.
   const [navOpen, setNavOpen] = useState(false);
+  // Which pane has a wide screen: all three, the section alone, or Luke
+  // alone. The section alone keeps the sidebar and Luke a tap away, as the
+  // drawers a phone already opens them in. Kept per browser.
+  const [focus, setFocus] = useState<"section" | "luke" | null>(null);
+  useEffect(() => {
+    try {
+      const kept = localStorage.getItem("abo_focus");
+      if (kept === "section" || kept === "luke") setFocus(kept);
+    } catch {
+      // A private window may refuse; the panes then start as three.
+    }
+  }, []);
+  const focusOn = (next: "section" | "luke" | null) => {
+    setFocus(next);
+    setNavOpen(false);
+    setChatOpen(false);
+    try {
+      if (next) localStorage.setItem("abo_focus", next);
+      else localStorage.removeItem("abo_focus");
+    } catch {
+      // As above: this page only.
+    }
+  };
+  const navDocked = focus === null;
+  const lukeDocked = focus !== "section";
   // Finding a section by name, from the sidebar's search box.
   const [navQuery, setNavQuery] = useState("");
   const [chatOpen, setChatOpen] = useState(false);
@@ -561,7 +588,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           // comes from what follows it in the thread, as for every card.
           rebuilt.push(
             p.plans.length === 1
-              ? { id: m.id, role: "assistant", plan: p.plans[0] }
+              ? { id: m.id, role: "assistant", plan: p.plans[0], ...(p.next?.length ? { next: p.next } : {}) }
               : { id: m.id, role: "assistant", ...batchCard(p) }
           );
         } else {
@@ -984,7 +1011,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // Found by its name ("#customers"), its label or its id, never outside
   // this app; the store's rows with the owner's fields beside them, or
   // their own rows; worked out by that section's own computed columns.
-  const readSection = useCallback(
+  const loadSection = useCallback(
     async (ref: string, match?: { field: string; code: string }) => {
       const key = ref.trim().replace(/^#/, "").toLowerCase();
       // Read from the database, not the sidebar's list: a screen reads
@@ -1022,7 +1049,14 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               .in("status", ["connected", "uninstalled"])
               .maybeSingle()
           ).data?.id as string | undefined);
-        if (!store) return [];
+        if (!store)
+          return {
+            schema: {
+              ...(latest?.schema_json as UiSchema | undefined),
+              columns: storeSectionColumns(table, saved),
+            } as UiSchema,
+            rows: [],
+          };
         const found = await readStoreRows(
           supabase,
           store,
@@ -1042,10 +1076,20 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         rows = (data ?? []).map((r) => ({ id: r.id as string, data: (r.data ?? {}) as Record<string, unknown> }));
       }
       const columns = table ? storeSectionColumns(table, saved) : saved;
-      return rows.map((r) => ({ id: r.id, data: withComputed(columns, r.data) }));
+      return { schema: { ...(latest?.schema_json as UiSchema | undefined), columns } as UiSchema, rows };
     },
     [projectId, storeId]
   );
+  const readSection = useCallback(
+    async (ref: string, match?: { field: string; code: string }) => {
+      const { schema, rows } = await loadSection(ref, match);
+      return rows.map((r) => ({ id: r.id, data: withComputed(schema.columns, r.data) }));
+    },
+    [loadSection]
+  );
+  // The section a proposal changes, as it is: its preview is drawn over
+  // it, read once, rather than over whichever section happens to be open.
+  const peekSection = useCallback((id: string) => loadSection(id), [loadSection]);
 
   const patchRow = useCallback((row: Record<string, unknown> | undefined, moduleId: string | null): boolean => {
     const id = row && typeof row.id === "string" ? row.id : null;
@@ -1586,7 +1630,17 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           return;
         }
 
-        setChatMessages((prev) => [...prev, { id, role: "assistant", plan: plans[0], trace: trace(), ...took }]);
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            id,
+            role: "assistant",
+            plan: plans[0],
+            ...(reply.next?.length ? { next: reply.next } : {}),
+            trace: trace(),
+            ...took,
+          },
+        ]);
       } catch (e) {
         const aborted = (e as Error)?.name === "AbortError";
         setChatMessages((prev) => [
@@ -1727,15 +1781,23 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   );
 
   const applyPlan = useCallback(
-    async (plan: AssistantPlan, planId: string) => {
+    async (plan: AssistantPlan, planId: string, next?: NextStep[]) => {
       // Written into the thread by the server, as buildApproved does, so
-      // closing the app mid-apply still leaves the receipt behind.
+      // closing the app mid-apply still leaves the receipt behind. With
+      // what Luke offered to do next, which the receipt shows once built.
       const thread = conversationIdRef.current;
       const { ok, data } = await apiFetch("/api/apply", {
         projectId,
         plans: [plan],
         ...(thread
-          ? { thread: { conversationId: thread, designId: STORED_ID.test(planId) ? planId : null, sent: [0] } }
+          ? {
+              thread: {
+                conversationId: thread,
+                designId: STORED_ID.test(planId) ? planId : null,
+                sent: [0],
+                ...(next?.length ? { next } : {}),
+              },
+            }
           : {}),
       });
       if (ok && data.applied && typeof data.recorded === "string") {
@@ -2426,14 +2488,14 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 setNavOpen(false);
                 setChatOpen(false);
               }}
-              className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+              className={`fixed inset-0 z-30 bg-black/40 ${navDocked && lukeDocked ? "lg:hidden" : ""}`}
             />
           )}
 
           {/* ── Sidebar ── */}
           <aside
             style={{ ["--nav-w" as string]: `${nav.width}px` }}
-            className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col overflow-hidden bg-frame text-frame-fg lg:static lg:w-[var(--nav-w)] lg:translate-x-0 ${
+            className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col overflow-hidden bg-frame text-frame-fg ${navDocked ? "lg:static lg:w-[var(--nav-w)] lg:translate-x-0" : ""} ${
               nav.dragging ? "" : "transition-transform duration-200"
             } ${navOpen ? "translate-x-0" : "-translate-x-full"}`}
           >
@@ -2580,27 +2642,31 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               )}
             </div>
 
-            <ResizeHandle
-              edge="left"
-              label="Resize the sidebar"
-              width={nav.width}
-              min={nav.min}
-              max={nav.max}
-              dragging={nav.dragging}
-              onPointerDown={nav.onPointerDown}
-              onReset={nav.reset}
-              onNudge={nav.nudge}
-            />
+            {navDocked && (
+              <ResizeHandle
+                edge="left"
+                label="Resize the sidebar"
+                width={nav.width}
+                min={nav.min}
+                max={nav.max}
+                dragging={nav.dragging}
+                onPointerDown={nav.onPointerDown}
+                onReset={nav.reset}
+                onNudge={nav.nudge}
+              />
+            )}
           </aside>
 
           {/* ── Main area ── */}
-          <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas lg:rounded-card lg:shadow-card">
+          <main
+            className={`flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas lg:rounded-card lg:shadow-card ${focus === "luke" ? "lg:hidden" : ""}`}
+          >
             <header className="flex items-center justify-between gap-2 border-b border-line bg-canvas px-3 py-3 sm:px-6 sm:py-3.5">
               <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                 <button
                   onClick={() => setNavOpen(true)}
                   aria-label="Open sections"
-                  className={`${iconButton} -ml-1 lg:hidden`}
+                  className={`${iconButton} -ml-1 ${navDocked ? "lg:hidden" : ""}`}
                 >
                   <Menu aria-hidden size={18} strokeWidth={1.75} />
                 </button>
@@ -2615,6 +2681,21 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 )}
               </div>
               <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+                {/* Wide screens only: a phone already shows one pane at a time. */}
+                <span className="hidden lg:inline-flex">
+                  <button
+                    onClick={() => focusOn(focus === "section" ? null : "section")}
+                    aria-label={focus === "section" ? "Show the side panels" : "Show only this section"}
+                    title={focus === "section" ? "Show the side panels" : "Show only this section"}
+                    className={iconButton}
+                  >
+                    {focus === "section" ? (
+                      <Minimize2 aria-hidden size={16} strokeWidth={1.75} />
+                    ) : (
+                      <Maximize2 aria-hidden size={16} strokeWidth={1.75} />
+                    )}
+                  </button>
+                </span>
                 {isOwner && (
                   <button onClick={() => setRulesOpen(true)} title="Rules" className={button("secondary")}>
                     <Zap aria-hidden size={15} strokeWidth={1.75} />
@@ -2631,7 +2712,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                   <button
                     onClick={() => setChatOpen(true)}
                     aria-label={waiting > 0 ? `Luke — ${waiting} waiting for you` : "Luke"}
-                    className={`${button("primary")} relative lg:hidden`}
+                    className={`${button("primary")} relative ${lukeDocked ? "lg:hidden" : ""}`}
                   >
                     <Sparkles aria-hidden size={15} strokeWidth={1.75} />
                     <span className="hidden sm:inline">Luke</span>
@@ -2780,6 +2861,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               <ChatPanel
                 projectId={projectId}
                 onReadSection={readSection}
+                onPeekSection={peekSection}
+                openSectionId={selectedModuleId}
                 threadOpening={threadOpening}
                 luke={luke}
                 model={pickedModel}
@@ -2796,10 +2879,12 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 resizeBounds={{ min: chat.min, max: chat.max }}
                 open={chatOpen}
                 onClose={() => setChatOpen(false)}
+                docked={lukeDocked}
+                wide={focus === "luke"}
+                onWide={() => focusOn(focus === "luke" ? null : "luke")}
                 onWaiting={setWaiting}
                 modules={modules}
                 currentSchema={schema?.schema_json ?? null}
-                records={records}
                 messages={chatMessages}
                 busy={chatBusy || building}
                 steps={chatSteps}

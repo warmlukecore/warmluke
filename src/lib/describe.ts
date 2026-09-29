@@ -291,6 +291,32 @@ export function storeOverlap(plan: AssistantPlan, store: StoreFacts | null): str
 }
 
 /**
+ * A plan in the owner's card. A field add carries the section's columns
+ * with the new ones after them, and describePlan names them all; the card
+ * names the new ones. A written screen is in the preview beside it, so its
+ * words are not read out again. The critic and the gap pass still read
+ * describePlan's words, which their recordings hold.
+ * ponytail: give them the same, with one fill-in recording of the checks that add a field.
+ */
+export function describeForOwner(
+  plan: AssistantPlan,
+  modules: ModuleRow[],
+  currentColumns?: Array<{ field: string; label: string }>,
+  store?: StoreFacts | null
+): ReturnType<typeof describePlan> {
+  const d = describePlan(plan, modules, currentColumns, store);
+  const view = plan.features?.view;
+  const screen = view?.type === "custom" ? `A screen written for it, “${view.title}”` : null;
+  let lines = screen ? d.lines.map((l) => (l.startsWith(screen) ? screen : l)) : d.lines;
+  if (plan.changeType === "FIELD_ADD" && currentColumns) {
+    const had = new Set(currentColumns.map((c) => c.field));
+    const added = (plan.newSchema?.columns ?? []).filter((c) => !had.has(c.field));
+    lines = [`New: ${added.map((c) => c.label).join(", ")}`, ...lines.slice(1)];
+  }
+  return { ...d, lines };
+}
+
+/**
  * Describes a plan from the plan itself, never from the sentence the
  * assistant wrote next to it. A generated description cannot promise
  * something the plan does not do.

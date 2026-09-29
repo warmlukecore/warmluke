@@ -41,6 +41,7 @@ import { BoardView, CalendarView, CardsView, ListView, TableView, compare } from
 import { useFormat } from "@/lib/format";
 import { evalExpr, truthy, withComputed } from "@/lib/expr";
 import { sameCode } from "@/lib/scan";
+import { PREVIEW_ROWS } from "@/lib/change-preview";
 import { button } from "@/components/ui/controls";
 import { Plus } from "lucide-react";
 
@@ -321,7 +322,8 @@ export default function GenericRenderer({
 
   const viewProps = {
     columns,
-    records: filteredRecords,
+    // A preview's list is a glimpse; its totals above still count every row.
+    records: preview ? filteredRecords.slice(0, PREVIEW_ROWS) : filteredRecords,
     allRecordCount: records.length,
     onOpen: editable ? (rec: RecordRow) => setEditing(rec) : preview ? undefined : onInspect,
     actions: features?.actions,
@@ -437,7 +439,8 @@ export default function GenericRenderer({
 
       {/* A written screen is the section: it carries its own search and steps, so the list's are not drawn around it. */}
       <div className={custom ? "relative" : "relative overflow-hidden rounded-card bg-surface shadow-card"}>
-        {!custom && (
+        {/* In a preview, only when the change put a search or a filter there: a bar holding a lone "Table" said nothing. */}
+        {!custom && (!preview || features?.search?.enabled || (features?.filters?.length ?? 0) > 0) && (
           <div className="flex flex-wrap items-center gap-2 border-b border-line px-3.5 py-2.5">
             {features?.search?.enabled && (
               <input
@@ -499,9 +502,9 @@ export default function GenericRenderer({
         {!custom && (
           <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-2 text-[11px] text-fg-faint">
             <span>
-              {filteredRecords.length} of {records.length} record{records.length === 1 ? "" : "s"}
+              {preview ? Math.min(PREVIEW_ROWS, filteredRecords.length) : filteredRecords.length} of {records.length}{" "}
+              record{records.length === 1 ? "" : "s"}
               {total > records.length && ` shown · ${total} in total`}
-              {preview && " · not saved yet"}
             </span>
             {onLoadMore && (
               <button

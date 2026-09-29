@@ -6,10 +6,10 @@
 // Deletion always requires typing the module's name.
 // ─────────────────────────────────────────────────────────────
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { watchRows } from "@/lib/live";
 import GenericRenderer from "@/components/GenericRenderer";
-import { describeAutomation, describePlan, WAITING_BUTTONS, type StoreFacts } from "@/lib/describe";
+import { describeAutomation, describeForOwner, describePlan, WAITING_BUTTONS, type StoreFacts } from "@/lib/describe";
 import { actionSpec } from "@/lib/store-actions";
 import { apiFetch } from "@/lib/auth";
 import { engineError, fixPrompt, type AppError, type FixAction } from "@/lib/errors";
@@ -35,7 +35,8 @@ import type {
   UiSchema,
 } from "@/lib/types";
 import { ago, dayGroup } from "@/lib/when";
-import { mergeFeatures, TITLE_MAX } from "@/lib/types";
+import { TITLE_MAX } from "@/lib/types";
+import { changeShown } from "@/lib/change-preview";
 import { Icon } from "@/components/ui/Icon";
 import {
   ArrowDown,
@@ -71,6 +72,8 @@ import {
   Trash2,
   TriangleAlert,
   Undo2,
+  Maximize2,
+  Minimize2,
   X,
   Zap,
   ZapOff,
@@ -78,7 +81,7 @@ import {
   Compass,
   Signpost,
 } from "lucide-react";
-import { button, fieldOf, menu, menuItem } from "@/components/ui/controls";
+import { button, fieldOf, iconButton, menu, menuItem } from "@/components/ui/controls";
 import { costOf, dollars, modelName, tokensShort, type Tokens } from "@/lib/model-prices";
 import type { OfferedModel } from "@/lib/luke-models";
 import { LukeMark } from "@/components/ui/LukeMark";
@@ -320,17 +323,6 @@ function stepWords(step: TurnEvent): string {
           ? "Checked it does what you asked"
           : `Checked it: ${n(step.missing, "thing")} it cannot do, listed below`;
   }
-}
-
-function describeFeatures(f: NonNullable<AssistantPlan["features"]>): string[] {
-  const out: string[] = [];
-  if (f.search?.enabled) out.push(`Search${f.search.fields?.length ? ` over ${f.search.fields.join(", ")}` : ""}`);
-  for (const fl of f.filters ?? []) out.push(`Filter: ${fl.label} (${fl.options.join(" / ")})`);
-  for (const s of f.stats ?? [])
-    out.push(`Stat: ${s.label} (${s.op}${s.field ? ` of ${s.field}` : ""}${s.by ? ` by ${s.by}` : ""})`);
-  if (f.defaultSort) out.push(`Default sort: ${f.defaultSort.field} ${f.defaultSort.dir}`);
-  if (out.length === 0) out.push("No features — plain table");
-  return out;
 }
 
 // ── Discovery cards ──────────────────────────────────────────
@@ -862,11 +854,69 @@ function planHeading(plan: AssistantPlan, title: string): { name: string; sub: s
   }
 }
 
+type SectionPeek = (
+  id: string
+) => Promise<{ schema: UiSchema; rows: Array<{ id: string; data: Record<string, unknown> }> }>;
+
+const previewRows = (rows: Array<{ id: string; data: Record<string, unknown> }>): RecordRow[] =>
+  rows.map((r) => ({
+    id: r.id,
+    project_id: "preview",
+    module_id: "preview",
+    data: r.data,
+    created_at: "",
+    updated_at: "",
+  }));
+
+/**
+ * A proposal's preview: only what it changes (lib/change-preview.ts), over
+ * the section it is for, read once as the card first shows. It holds still
+ * while the owner works in the app beside it, and draws the right section
+ * whichever one is open.
+ */
+function ChangePreview({
+  plan,
+  peek,
+  onReadSection,
+}: {
+  plan: AssistantPlan;
+  peek?: SectionPeek;
+  onReadSection?: ComponentProps<typeof GenericRenderer>["onReadSection"];
+}) {
+  const target = plan.changeType === "NEW_MODULE" ? null : plan.targetModuleId;
+  const [section, setSection] = useState<{ schema: UiSchema; records: RecordRow[] } | "failed" | null>(null);
+  useEffect(() => {
+    if (!target || !peek) return;
+    let alive = true;
+    peek(target).then(
+      ({ schema, rows }) => alive && setSection({ schema, records: previewRows(rows) }),
+      () => alive && setSection("failed")
+    );
+    return () => {
+      alive = false;
+    };
+  }, [target, peek]);
+
+  if (!target) {
+    const shown = changeShown(plan, null);
+    if (!shown) return null;
+    const rows = previewRows((plan.newRecords ?? []).map((data, i) => ({ id: `preview-${i}`, data })));
+    return <GenericRenderer schema={shown} records={rows} preview onReadSection={onReadSection} />;
+  }
+  if (section === "failed" || !peek) return null;
+  if (!section) return <div aria-hidden className="skeleton h-28 rounded-card" />;
+  const shown = changeShown(plan, section.schema);
+  return shown ? (
+    <GenericRenderer schema={shown} records={section.records} preview onReadSection={onReadSection} />
+  ) : null;
+}
+
 function BlueprintCard({
   message,
   blueprint,
   modules,
   currentColumns,
+  openSectionId = null,
   storeFacts,
   done,
   recorded,
@@ -878,6 +928,8 @@ function BlueprintCard({
   modules: ModuleRow[];
   /** Columns of the section in view, so a plan that adds some says so. */
   currentColumns?: Array<{ field: string; label: string }>;
+  /** Which section that is: another section's plan is not described by its columns. */
+  openSectionId?: string | null;
   /** The connected store, so a duplicating section is flagged here. */
   storeFacts: StoreFacts | null;
   done: boolean;
@@ -971,7 +1023,12 @@ function BlueprintCard({
   };
 
   const row = (plan: AssistantPlan, i: number) => {
-    const summary = describePlan(plan, modules, currentColumns, storeFacts);
+    const summary = describeForOwner(
+      plan,
+      modules,
+      plan.targetModuleId === openSectionId ? currentColumns : undefined,
+      storeFacts
+    );
     const status = statusOf(i);
     const off = status.kind === "left-out" || status.kind === "already-there" || status.kind === "section-gone";
     const cascaded = !dropped[i] && referencesDropped(plan);
@@ -1414,9 +1471,11 @@ export default function ChatPanel({
   resizeBounds,
   open,
   onClose,
+  docked = true,
+  wide = false,
+  onWide,
   modules,
   currentSchema,
-  records,
   messages,
   busy,
   threads,
@@ -1439,6 +1498,8 @@ export default function ChatPanel({
   inr = null,
   onSend,
   onEditPrompt,
+  onPeekSection,
+  openSectionId = null,
   onApply,
   onBuild,
   onDiscard,
@@ -1452,6 +1513,10 @@ export default function ChatPanel({
     section: string,
     match?: { field: string; code: string }
   ) => Promise<Array<{ id: string; data: Record<string, unknown> }>>;
+  /** The section a proposal changes, as it is now: what its preview is drawn over. */
+  onPeekSection?: SectionPeek;
+  /** The section open beside the panel: its columns describe only a change to it. */
+  openSectionId?: string | null;
   /** Panel width above lg; below it the panel is a full-width drawer. */
   width: number;
   dragging: boolean;
@@ -1460,9 +1525,15 @@ export default function ChatPanel({
   /** A keyboard step on the edge; with the bounds a drag keeps to. */
   onResizeNudge: (delta: number) => void;
   resizeBounds: { min: number; max: number };
-  /** Drawer state below lg; the panel is always visible above it. */
+  /** Drawer state below lg, and above it while the panel is not docked. */
   open: boolean;
   onClose: () => void;
+  /** In the layout beside the section (wide screens); otherwise a drawer, as on a phone. */
+  docked?: boolean;
+  /** Luke alone, across the whole screen. */
+  wide?: boolean;
+  /** Luke alone, or back to the three panes. */
+  onWide?: () => void;
   /**
    * How many things are waiting on the merchant, whenever it changes.
    *
@@ -1475,7 +1546,6 @@ export default function ChatPanel({
   onWaiting?: (count: number) => void;
   modules: ModuleRow[];
   currentSchema: UiSchema | null;
-  records: RecordRow[];
   messages: ChatMessage[];
   /** Past threads for this project, newest first. */
   threads: ThreadSummary[];
@@ -1517,7 +1587,7 @@ export default function ChatPanel({
    * turn it starts is the same one the box starts.
    */
   onEditPrompt?: (messageId: string, text: string) => void | Promise<void>;
-  onApply: (plan: AssistantPlan, planId: string) => void;
+  onApply: (plan: AssistantPlan, planId: string, next?: NextStep[]) => void;
   /** Applies an approved blueprint's plans directly, with no model round trip. */
   onBuild: (
     plans: AssistantPlan[],
@@ -2148,10 +2218,10 @@ export default function ChatPanel({
     onSend(text);
   }
 
-  async function apply(plan: AssistantPlan, planId: string) {
+  async function apply(plan: AssistantPlan, planId: string, next?: NextStep[]) {
     setApplyingPlanId(planId);
     try {
-      await onApply(plan, planId);
+      await onApply(plan, planId, next);
     } finally {
       setApplyingPlanId(null);
     }
@@ -2302,21 +2372,25 @@ export default function ChatPanel({
       <aside
         aria-label="Luke"
         style={{ ["--chat-w" as string]: `${width}px` }}
-        className={`fixed inset-y-0 right-0 z-40 flex w-full max-w-[420px] shrink-0 flex-col overflow-hidden border-l border-line bg-surface lg:relative lg:w-[var(--chat-w)] lg:max-w-none lg:translate-x-0 lg:rounded-card lg:border-l-0 lg:shadow-card ${
-          dragging ? "" : "transition-transform duration-200"
-        } ${open ? "translate-x-0" : "translate-x-full"}`}
+        className={`fixed inset-y-0 right-0 z-40 flex w-full max-w-[420px] shrink-0 flex-col overflow-hidden border-l border-line bg-surface ${
+          docked
+            ? `lg:relative lg:max-w-none lg:translate-x-0 lg:rounded-card lg:border-l-0 lg:shadow-card ${wide ? "lg:flex-1" : "lg:w-[var(--chat-w)]"}`
+            : ""
+        } ${dragging ? "" : "transition-transform duration-200"} ${open ? "translate-x-0" : "translate-x-full"}`}
       >
-        <ResizeHandle
-          edge="right"
-          label="Resize Luke's panel"
-          width={width}
-          min={resizeBounds.min}
-          max={resizeBounds.max}
-          dragging={dragging}
-          onPointerDown={onResizeStart}
-          onReset={onResizeReset}
-          onNudge={onResizeNudge}
-        />
+        {docked && !wide && (
+          <ResizeHandle
+            edge="right"
+            label="Resize Luke's panel"
+            width={width}
+            min={resizeBounds.min}
+            max={resizeBounds.max}
+            dragging={dragging}
+            onPointerDown={onResizeStart}
+            onReset={onResizeReset}
+            onNudge={onResizeNudge}
+          />
+        )}
         <div className="border-b border-line px-4 py-3">
           <div className="flex items-center gap-2">
             <LukeMark state={busy ? "thinking" : "idle"} />
@@ -2911,842 +2985,854 @@ export default function ChatPanel({
                 </div>
               )}
             </div>
+            {onWide && (
+              <span className="hidden lg:inline-flex">
+                <button
+                  onClick={onWide}
+                  aria-label={wide ? "Back to three panes" : "Open Luke full width"}
+                  title={wide ? "Back to three panes" : "Open Luke full width"}
+                  className={iconButton}
+                >
+                  {wide ? (
+                    <Minimize2 aria-hidden size={16} strokeWidth={1.75} />
+                  ) : (
+                    <Maximize2 aria-hidden size={16} strokeWidth={1.75} />
+                  )}
+                </button>
+              </span>
+            )}
             <button
               onClick={onClose}
               aria-label="Close Luke"
-              className="rounded-lg px-2 py-1 text-fg-faint transition-colors hover:bg-surface-hover hover:text-fg-muted lg:hidden"
+              className={`rounded-lg px-2 py-1 text-fg-faint transition-colors hover:bg-surface-hover hover:text-fg-muted ${docked ? "lg:hidden" : ""}`}
             >
               <X aria-hidden size={14} strokeWidth={2} />
             </button>
           </div>
         </div>
 
-        {/* Messages */}
-        <div
-          ref={listRef}
-          role="log"
-          aria-label="Conversation"
-          className="relative flex-1 overflow-y-auto px-4 py-4 thin-scroll"
-        >
-          {/* Four invented problems used to sit here — a double-booked
+        {/* Luke alone on a wide screen: what is below the header reads as a
+          column, not a line the width of the screen. */}
+        <div className={wide ? "mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col" : "contents"}>
+          {/* Messages */}
+          <div
+            ref={listRef}
+            role="log"
+            aria-label="Conversation"
+            className="relative flex-1 overflow-y-auto px-4 py-4 thin-scroll"
+          >
+            {/* Four invented problems used to sit here — a double-booked
             slot, parts coming off a job. They were written to show what
             the engine can do, and to a shop selling phone cases they
             read as a product for somebody else. A prompt for their own
             words is the honest opening. */}
-          {/* The last conversation is on its way: its shape, not the empty
+            {/* The last conversation is on its way: its shape, not the empty
             screen's welcome, which read as the thread being gone. */}
-          {messages.length === 0 && threadOpening && (
-            <div role="status" aria-label="Opening your conversation" className="space-y-3 pt-1">
-              <div className="ml-auto h-9 w-3/5 rounded-2xl bg-surface-subdued motion-safe:animate-pulse" />
-              <div className="h-3 w-5/6 rounded bg-surface-subdued motion-safe:animate-pulse" />
-              <div className="h-3 w-2/3 rounded bg-surface-subdued motion-safe:animate-pulse" />
-              <div className="h-3 w-1/2 rounded bg-surface-subdued motion-safe:animate-pulse" />
-            </div>
-          )}
-          {messages.length === 0 && !threadOpening && (
-            <div className="rise flex min-h-[55%] flex-col items-center justify-center px-4 text-center">
-              <LukeMark size="lg" />
-              <h2 className="mt-4 text-lg font-semibold text-fg">{LUKE_COPY.emptyTitle}</h2>
-              <p className="mt-1.5 max-w-xs text-[13px] leading-relaxed text-fg-muted">{LUKE_COPY.emptyBody}</p>
-            </div>
-          )}
+            {messages.length === 0 && threadOpening && (
+              <div role="status" aria-label="Opening your conversation" className="space-y-3 pt-1">
+                <div className="ml-auto h-9 w-3/5 rounded-2xl bg-surface-subdued motion-safe:animate-pulse" />
+                <div className="h-3 w-5/6 rounded bg-surface-subdued motion-safe:animate-pulse" />
+                <div className="h-3 w-2/3 rounded bg-surface-subdued motion-safe:animate-pulse" />
+                <div className="h-3 w-1/2 rounded bg-surface-subdued motion-safe:animate-pulse" />
+              </div>
+            )}
+            {messages.length === 0 && !threadOpening && (
+              <div className="rise flex min-h-[55%] flex-col items-center justify-center px-4 text-center">
+                <LukeMark size="lg" />
+                <h2 className="mt-4 text-lg font-semibold text-fg">{LUKE_COPY.emptyTitle}</h2>
+                <p className="mt-1.5 max-w-xs text-[13px] leading-relaxed text-fg-muted">{LUKE_COPY.emptyBody}</p>
+              </div>
+            )}
 
-          <div ref={contentRef} className="space-y-4">
-            {messages.map((m, i) => {
-              // A card with anything after it was already answered. Derived
-              // from position, not remembered: resolvedCards is session
-              // state, so a reloaded thread came back with every old
-              // clarify and blueprint looking live again.
-              const answered = i < messages.length - 1;
-              if (m.role === "user") {
-                const editing = editingId === m.id;
-                const send = () => {
-                  const said = editText.trim();
-                  if (!said || busy) return;
-                  setEditingId(null);
-                  void onEditPrompt?.(m.id, said);
-                };
-                return (
-                  <div key={m.id} data-message-id={m.id} className="rise group flex flex-col items-end" style={RISE}>
-                    {m.viaClient && (
-                      <div className="mb-0.5 pr-1 text-[10px] tracking-wide text-fg-faint uppercase">
-                        Asked through your AI
-                      </div>
-                    )}
-                    {editing ? (
-                      <div className="w-full max-w-[85%] rounded-2xl rounded-br-sm border border-line-strong bg-surface p-2">
-                        <textarea
-                          autoFocus
-                          rows={2}
-                          value={editText}
-                          onChange={(e) => setEditText(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey) {
-                              e.preventDefault();
-                              send();
-                            }
-                            if (e.key === "Escape") setEditingId(null);
-                          }}
-                          className="w-full resize-none bg-transparent text-sm break-words text-fg outline-none"
-                        />
-                        <div className="mt-1 flex items-center justify-end gap-3 text-[11px]">
-                          <button onClick={() => setEditingId(null)} className="text-fg-muted hover:text-fg">
-                            Cancel
-                          </button>
-                          <button
-                            onClick={send}
-                            disabled={!editText.trim() || busy}
-                            className="font-medium text-link hover:text-link disabled:text-fg-faint"
-                          >
-                            Send again
-                          </button>
+            <div ref={contentRef} className="space-y-4">
+              {messages.map((m, i) => {
+                // A card with anything after it was already answered. Derived
+                // from position, not remembered: resolvedCards is session
+                // state, so a reloaded thread came back with every old
+                // clarify and blueprint looking live again.
+                const answered = i < messages.length - 1;
+                if (m.role === "user") {
+                  const editing = editingId === m.id;
+                  const send = () => {
+                    const said = editText.trim();
+                    if (!said || busy) return;
+                    setEditingId(null);
+                    void onEditPrompt?.(m.id, said);
+                  };
+                  return (
+                    <div key={m.id} data-message-id={m.id} className="rise group flex flex-col items-end" style={RISE}>
+                      {m.viaClient && (
+                        <div className="mb-0.5 pr-1 text-[10px] tracking-wide text-fg-faint uppercase">
+                          Asked through your AI
                         </div>
-                      </div>
-                    ) : (
-                      <div className={`flex max-w-[85%] items-start gap-2 ${m.superseded ? "opacity-45" : ""}`}>
-                        {/* Their own words only. A request their assistant
+                      )}
+                      {editing ? (
+                        <div className="w-full max-w-[85%] rounded-2xl rounded-br-sm border border-line-strong bg-surface p-2">
+                          <textarea
+                            autoFocus
+                            rows={2}
+                            value={editText}
+                            onChange={(e) => setEditText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                send();
+                              }
+                              if (e.key === "Escape") setEditingId(null);
+                            }}
+                            className="w-full resize-none bg-transparent text-sm break-words text-fg outline-none"
+                          />
+                          <div className="mt-1 flex items-center justify-end gap-3 text-[11px]">
+                            <button onClick={() => setEditingId(null)} className="text-fg-muted hover:text-fg">
+                              Cancel
+                            </button>
+                            <button
+                              onClick={send}
+                              disabled={!editText.trim() || busy}
+                              className="font-medium text-link hover:text-link disabled:text-fg-faint"
+                            >
+                              Send again
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className={`flex max-w-[85%] items-start gap-2 ${m.superseded ? "opacity-45" : ""}`}>
+                          {/* Their own words only. A request their assistant
                         made was never typed here, and editing it would
                         put words in Claude's mouth. */}
-                        {onEditPrompt && !m.viaClient && !m.superseded && !busy && (
-                          <button
-                            onClick={() => {
-                              setEditingId(m.id);
-                              setEditText(m.text ?? "");
-                            }}
-                            aria-label="Edit this message and send it again"
-                            className="mt-2 shrink-0 text-[11px] text-fg-faint opacity-0 transition group-hover:opacity-100 focus:opacity-100 hover:text-fg-muted"
-                          >
-                            Edit
-                          </button>
-                        )}
-                        {/* break-words, because a request is not always made of
+                          {onEditPrompt && !m.viaClient && !m.superseded && !busy && (
+                            <button
+                              onClick={() => {
+                                setEditingId(m.id);
+                                setEditText(m.text ?? "");
+                              }}
+                              aria-label="Edit this message and send it again"
+                              className="mt-2 shrink-0 text-[11px] text-fg-faint opacity-0 transition group-hover:opacity-100 focus:opacity-100 hover:text-fg-muted"
+                            >
+                              Edit
+                            </button>
+                          )}
+                          {/* break-words, because a request is not always made of
                         words: "(Pending/Packed/Verified/Discrepancy)" is one
                         unbreakable token, and without this it ran straight
                         off the right edge of the panel and was cut in half.
                         Same for a pasted URL or a list of SKUs. */}
-                        <div className="rounded-2xl rounded-br-md bg-canvas px-3 py-2 text-[13px] leading-relaxed break-words text-fg">
-                          {(() => {
-                            const pairs = answerPairs(m.text ?? "");
-                            return pairs ? <AnswerSummary pairs={pairs} /> : m.text;
-                          })()}
+                          <div className="rounded-2xl rounded-br-md bg-canvas px-3 py-2 text-[13px] leading-relaxed break-words text-fg">
+                            {(() => {
+                              const pairs = answerPairs(m.text ?? "");
+                              return pairs ? <AnswerSummary pairs={pairs} /> : m.text;
+                            })()}
+                          </div>
                         </div>
-                      </div>
-                    )}
-                    {m.superseded && !editing && (
-                      <div className="mt-0.5 pr-1 text-[10px] text-fg-faint">replaced by an edit</div>
-                    )}
-                  </div>
-                );
-              }
-
-              if (m.role === "system") {
-                if (m.error) {
-                  return (
-                    <div key={m.id}>
-                      <ErrorNote error={m.error} onFix={onFix} />
+                      )}
+                      {m.superseded && !editing && (
+                        <div className="mt-0.5 pr-1 text-[10px] text-fg-faint">replaced by an edit</div>
+                      )}
                     </div>
                   );
                 }
-                // A line of what happened — building, stopped, discarded —
-                // in the margin's voice, not a box in the conversation.
-                return (
-                  <div key={m.id} className="flex items-start gap-1.5 text-[11px] leading-relaxed text-fg-faint">
-                    <span className="w-3.5 shrink-0 text-center">·</span>
-                    <div className="min-w-0">
-                      <div className="break-words">{m.text}</div>
-                      {m.errors && m.errors.length > 0 && (
-                        <ul className="mt-0.5 list-disc space-y-0.5 pl-4">
-                          {m.errors.map((e, i) => (
-                            <li key={i}>{withoutIds(e, idNames)}</li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  </div>
-                );
-              }
 
-              if (m.questions) {
-                return (
-                  <div key={m.id} className="space-y-1">
-                    {m.trace && <TraceLine trace={m.trace} />}
-                    <ClarifyCard
-                      message={m.text ?? ""}
-                      questions={m.questions}
-                      together={m.together}
-                      done={!!resolvedCards[m.id] || answered || busy}
-                      reply={messages[i + 1]?.role === "user" ? messages[i + 1].text : undefined}
-                      onSubmit={(composed) => resolveCard(m.id, composed)}
-                    />
-                    {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} />}
-                  </div>
-                );
-              }
-
-              if (m.blueprint) {
-                return (
-                  <div key={m.id} className="space-y-1">
-                    {m.trace && <TraceLine trace={m.trace} />}
-                    <BlueprintCard
-                      message={m.text ?? ""}
-                      blueprint={m.blueprint}
-                      modules={modules}
-                      currentColumns={currentSchema?.columns}
-                      storeFacts={storeFacts}
-                      done={!!resolvedCards[m.id] || answered}
-                      recorded={m.built}
-                      onApprove={async (chosen, sent) => {
-                        setResolvedCards((prev) => ({ ...prev, [m.id]: true }));
-                        const outcome = await onBuild(chosen, undefined, undefined, m.blueprint?.next, {
-                          id: m.id,
-                          sent,
-                        });
-                        // Nothing started, so nothing was answered: the card is live again.
-                        if (outcome.skipped) setResolvedCards((prev) => ({ ...prev, [m.id]: false }));
-                        return outcome;
-                      }}
-                      onAmend={() => {
-                        setInput("Change this in the design: ");
-                        inputRef.current?.focus();
-                      }}
-                    />
-                    {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} />}
-                  </div>
-                );
-              }
-
-              // Luke talking: an answer, a receipt of a build, a line of
-              // history. Plain text, no bubble — the owner's words are the
-              // ones in a bubble; Luke's read like the page.
-              if (m.building) {
-                return <BuildingLine key={m.id} text={m.text ?? "Building…"} startedAt={m.building.startedAt} />;
-              }
-
-              if (!m.plan) {
-                return (
-                  <div key={m.id} className="space-y-1">
-                    {m.trace && <TraceLine trace={m.trace} />}
-                    <Markdown>{m.text ?? ""}</Markdown>
-                    {(m.text || m.usage) && (
-                      <div className="flex flex-wrap items-center gap-x-2">
-                        {m.text && <CopyReply text={m.text} />}
-                        {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} />}
+                if (m.role === "system") {
+                  if (m.error) {
+                    return (
+                      <div key={m.id}>
+                        <ErrorNote error={m.error} onFix={onFix} />
                       </div>
-                    )}
-                    {/* Under the build, which is where they find out it
+                    );
+                  }
+                  // A line of what happened — building, stopped, discarded —
+                  // in the margin's voice, not a box in the conversation.
+                  return (
+                    <div key={m.id} className="flex items-start gap-1.5 text-[11px] leading-relaxed text-fg-faint">
+                      <span className="w-3.5 shrink-0 text-center">·</span>
+                      <div className="min-w-0">
+                        <div className="break-words">{m.text}</div>
+                        {m.errors && m.errors.length > 0 && (
+                          <ul className="mt-0.5 list-disc space-y-0.5 pl-4">
+                            {m.errors.map((e, i) => (
+                              <li key={i}>{withoutIds(e, idNames)}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (m.questions) {
+                  return (
+                    <div key={m.id} className="space-y-1">
+                      {m.trace && <TraceLine trace={m.trace} />}
+                      <ClarifyCard
+                        message={m.text ?? ""}
+                        questions={m.questions}
+                        together={m.together}
+                        done={!!resolvedCards[m.id] || answered || busy}
+                        reply={messages[i + 1]?.role === "user" ? messages[i + 1].text : undefined}
+                        onSubmit={(composed) => resolveCard(m.id, composed)}
+                      />
+                      {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} />}
+                    </div>
+                  );
+                }
+
+                if (m.blueprint) {
+                  return (
+                    <div key={m.id} className="space-y-1">
+                      {m.trace && <TraceLine trace={m.trace} />}
+                      <BlueprintCard
+                        message={m.text ?? ""}
+                        blueprint={m.blueprint}
+                        modules={modules}
+                        currentColumns={currentSchema?.columns}
+                        openSectionId={openSectionId}
+                        storeFacts={storeFacts}
+                        done={!!resolvedCards[m.id] || answered}
+                        recorded={m.built}
+                        onApprove={async (chosen, sent) => {
+                          setResolvedCards((prev) => ({ ...prev, [m.id]: true }));
+                          const outcome = await onBuild(chosen, undefined, undefined, m.blueprint?.next, {
+                            id: m.id,
+                            sent,
+                          });
+                          // Nothing started, so nothing was answered: the card is live again.
+                          if (outcome.skipped) setResolvedCards((prev) => ({ ...prev, [m.id]: false }));
+                          return outcome;
+                        }}
+                        onAmend={() => {
+                          setInput("Change this in the design: ");
+                          inputRef.current?.focus();
+                        }}
+                      />
+                      {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} />}
+                    </div>
+                  );
+                }
+
+                // Luke talking: an answer, a receipt of a build, a line of
+                // history. Plain text, no bubble — the owner's words are the
+                // ones in a bubble; Luke's read like the page.
+                if (m.building) {
+                  return <BuildingLine key={m.id} text={m.text ?? "Building…"} startedAt={m.building.startedAt} />;
+                }
+
+                if (!m.plan) {
+                  return (
+                    <div key={m.id} className="space-y-1">
+                      {m.trace && <TraceLine trace={m.trace} />}
+                      <Markdown>{m.text ?? ""}</Markdown>
+                      {(m.text || m.usage) && (
+                        <div className="flex flex-wrap items-center gap-x-2">
+                          {m.text && <CopyReply text={m.text} />}
+                          {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} />}
+                        </div>
+                      )}
+                      {/* Under the build, which is where they find out it
                     happened — a change made with nobody watching is
                     read here first, and this is the moment they want
                     to say no. It names what goes back, because "undo"
                     on its own does not say how much. */}
-                    {m.undo && onUndo && (
-                      <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-fg-faint">
-                        <button
-                          onClick={() => putItBack(m.undo!.messageId)}
-                          disabled={undoing !== null}
-                          className="text-fg-muted transition-colors hover:text-fg hover:underline disabled:opacity-50"
-                        >
-                          {undoing === m.undo.messageId ? "Putting it back…" : "Put it back"}
-                        </button>
-                        <span>{m.undo.what.join(", ")}</span>
-                      </div>
-                    )}
-                    {/* What they might ask next, each sent as written when
+                      {m.undo && onUndo && (
+                        <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-fg-faint">
+                          <button
+                            onClick={() => putItBack(m.undo!.messageId)}
+                            disabled={undoing !== null}
+                            className="text-fg-muted transition-colors hover:text-fg hover:underline disabled:opacity-50"
+                          >
+                            {undoing === m.undo.messageId ? "Putting it back…" : "Put it back"}
+                          </button>
+                          <span>{m.undo.what.join(", ")}</span>
+                        </div>
+                      )}
+                      {/* What they might ask next, each sent as written when
                     tapped. Only on the last thing in the thread: after a
                     question or a put-back, a suggestion about the app as
                     it was is stale. */}
-                    {m.next && m.next.length > 0 && i === messages.length - 1 && !busy && (
-                      <FollowUps next={m.next} onPick={(prompt) => send(prompt)} />
-                    )}
-                  </div>
-                );
-              }
+                      {m.next && m.next.length > 0 && i === messages.length - 1 && !busy && (
+                        <FollowUps next={m.next} onPick={(prompt) => send(prompt)} />
+                      )}
+                    </div>
+                  );
+                }
 
-              const plan = m.plan;
-              // A card with anything after it was dealt with — the same
-              // rule the clarify and blueprint cards already follow, and
-              // the one this card was left out of. Session state alone
-              // meant a reloaded thread offered Apply Change on a plan
-              // that had already been applied, and applying a RECORD_SEED
-              // twice writes its rows twice.
-              const isPending = applyingPlanId === m.id || answered;
-              const targetModule = modules.find((mod) => mod.id === plan.targetModuleId);
+                const plan = m.plan;
+                // A card with anything after it was dealt with — the same
+                // rule the clarify and blueprint cards already follow, and
+                // the one this card was left out of. Session state alone
+                // meant a reloaded thread offered Apply Change on a plan
+                // that had already been applied, and applying a RECORD_SEED
+                // twice writes its rows twice.
+                const isPending = applyingPlanId === m.id || answered;
+                const targetModule = modules.find((mod) => mod.id === plan.targetModuleId);
+                // Where its build stands: from this session while it runs, then
+                // from the record the server wrote into the thread.
+                const record = m.built;
+                const status: PlanStatus | null =
+                  applyingPlanId === m.id || record?.status === "building"
+                    ? { kind: "building" }
+                    : record?.status === "built"
+                      ? { kind: "built" }
+                      : record?.status === "refused"
+                        ? { kind: "refused", why: record.errors?.[0] ?? "it did not fit" }
+                        : record?.status === "unknown"
+                          ? { kind: "unknown" }
+                          : answered
+                            ? { kind: "not-tried" }
+                            : null;
+                const built = status?.kind === "built";
 
-              // The world can move on while a proposal sits in the thread: the
-              // section may already have been built by a later message. Applying
-              // it now would just fail validation, so retire the card instead.
-              const stale =
-                (plan.changeType === "NEW_MODULE" &&
-                  !!plan.newModule &&
-                  modules.some((mod) => mod.name === plan.newModule!.name)) ||
-                (plan.changeType !== "NEW_MODULE" && !!plan.targetModuleId && !targetModule);
+                // The world can move on while a proposal sits in the thread: the
+                // section may already have been built by a later message. Applying
+                // it now would just fail validation, so retire the card instead.
+                const stale =
+                  (plan.changeType === "NEW_MODULE" &&
+                    !!plan.newModule &&
+                    modules.some((mod) => mod.name === plan.newModule!.name)) ||
+                  (plan.changeType !== "NEW_MODULE" && !!plan.targetModuleId && !targetModule);
 
-              if (stale) {
+                if (stale) {
+                  return (
+                    <div
+                      key={m.id}
+                      className="rounded-xl border border-line bg-surface-subdued px-3 py-2 text-xs text-fg-muted"
+                    >
+                      <span className="font-medium text-fg-muted">Out of date</span> — “
+                      {plan.newModule?.nav_label ?? plan.explanation}” already changed since this was proposed, so there
+                      is nothing left to apply.
+                    </div>
+                  );
+                }
+
                 return (
-                  <div
-                    key={m.id}
-                    className="rounded-xl border border-line bg-surface-subdued px-3 py-2 text-xs text-fg-muted"
-                  >
-                    <span className="font-medium text-fg-muted">Out of date</span> — “
-                    {plan.newModule?.nav_label ?? plan.explanation}” already changed since this was proposed, so there
-                    is nothing left to apply.
-                  </div>
-                );
-              }
+                  <div key={m.id} className="space-y-2.5">
+                    {m.trace && <TraceLine trace={m.trace} />}
+                    <div className="text-[11px] tracking-wide text-fg-faint uppercase">
+                      Proposed change · {PLAN_KIND[plan.changeType]?.word ?? "Change"}
+                    </div>
 
-              return (
-                <div key={m.id} className="space-y-2.5">
-                  {m.trace && <TraceLine trace={m.trace} />}
-                  <div className="text-[11px] tracking-wide text-fg-faint uppercase">
-                    Proposed change · {plan.changeType.replace("_", " ").toLowerCase()}
-                  </div>
-
-                  <div className="space-y-2.5">
-                    {m.text ? (
-                      <p className="text-[13px] leading-relaxed text-fg">{m.text}</p>
-                    ) : (
-                      <>
-                        {/* Generated from the plan, not the sentence the
+                    <div className="space-y-2.5">
+                      {m.text ? (
+                        <p className="text-[13px] leading-relaxed text-fg">{m.text}</p>
+                      ) : (
+                        <>
+                          {/* Generated from the plan, not the sentence the
                         assistant wrote beside it. A plan that inserts a
                         row was described as "Changed the customer name
                         from Meena to Raman"; applying it would have left
                         the original row alone and added a duplicate. */}
-                        {(() => {
-                          const summary = describePlan(plan, modules, currentSchema?.columns);
-                          return (
-                            <>
-                              <p className="text-xs font-medium text-fg">{summary.title}</p>
-                              {summary.lines.length > 0 && (
-                                <ul className="mt-1 space-y-0.5">
-                                  {summary.lines.map((line, j) => (
-                                    <li key={j} className="text-[11px] leading-relaxed text-fg-muted">
-                                      {line}
-                                    </li>
-                                  ))}
-                                </ul>
-                              )}
-                            </>
-                          );
-                        })()}
-                        <p className="mt-1 text-[11px] text-fg-faint">{plan.explanation}</p>
-                      </>
-                    )}
+                          {(() => {
+                            const summary = describeForOwner(
+                              plan,
+                              modules,
+                              plan.targetModuleId === openSectionId ? currentSchema?.columns : undefined
+                            );
+                            return (
+                              <>
+                                <p className="text-xs font-medium text-fg">{summary.title}</p>
+                                {summary.lines.length > 0 && (
+                                  <ul className="mt-1 space-y-0.5">
+                                    {summary.lines.map((line, j) => (
+                                      <li key={j} className="text-[11px] leading-relaxed text-fg-muted">
+                                        {line}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </>
+                            );
+                          })()}
+                          <p className="mt-1 text-[11px] text-fg-faint">{plan.explanation}</p>
+                        </>
+                      )}
 
-                    {(plan.changeType === "UI_CHANGE" || plan.changeType === "FIELD_ADD") && (
-                      <GenericRenderer
-                        schema={plan.newSchema}
-                        records={records}
-                        preview
-                        onReadSection={onReadSection}
-                      />
-                    )}
-
-                    {plan.changeType === "NEW_MODULE" && plan.newModule && (
-                      <>
-                        <div className="flex items-center gap-2 rounded-lg bg-surface-subdued px-3 py-2 text-xs text-fg-muted">
-                          <Icon name={plan.newModule.icon} size={16} />
-                          New module: <b>{plan.newModule.nav_label}</b>
-                          <span className="text-fg-faint">({plan.newModule.name})</span>
-                        </div>
-                        <GenericRenderer
-                          schema={plan.newSchema}
-                          records={(plan.newRecords ?? []).map((data, i) => ({
-                            id: `preview-${i}`,
-                            project_id: "preview",
-                            module_id: "preview",
-                            data,
-                            created_at: "",
-                            updated_at: "",
-                          }))}
-                          preview
-                          onReadSection={onReadSection}
-                        />
-                      </>
-                    )}
-
-                    {plan.changeType === "MODULE_UPDATE" && plan.moduleUpdate && (
-                      <div className="space-y-1.5 rounded-lg bg-surface-subdued px-3 py-2 text-xs text-fg-muted">
-                        {plan.moduleUpdate.nav_label && (
-                          <div>
-                            <Pencil aria-hidden size={12} className="mr-1 inline align-[-1px]" />
-                            Rename: <b>{targetModule?.nav_label}</b> → <b>{plan.moduleUpdate.nav_label}</b>
+                      {plan.changeType === "NEW_MODULE" && plan.newModule && (
+                        <>
+                          <div className="flex items-center gap-2 rounded-lg bg-surface-subdued px-3 py-2 text-xs text-fg-muted">
+                            <Icon name={plan.newModule.icon} size={16} />
+                            New module: <b>{plan.newModule.nav_label}</b>
+                            <span className="text-fg-faint">({plan.newModule.name})</span>
                           </div>
-                        )}
-                        {plan.moduleUpdate.icon && (
-                          <div>
-                            Icon: <Icon name={targetModule?.icon} size={14} className="inline" /> →{" "}
-                            <Icon name={plan.moduleUpdate.icon} size={14} className="inline" />
+                        </>
+                      )}
+
+                      {plan.changeType === "MODULE_UPDATE" && plan.moduleUpdate && (
+                        <div className="space-y-1.5 rounded-lg bg-surface-subdued px-3 py-2 text-xs text-fg-muted">
+                          {plan.moduleUpdate.nav_label && (
+                            <div>
+                              <Pencil aria-hidden size={12} className="mr-1 inline align-[-1px]" />
+                              Rename: <b>{targetModule?.nav_label}</b> → <b>{plan.moduleUpdate.nav_label}</b>
+                            </div>
+                          )}
+                          {plan.moduleUpdate.icon && (
+                            <div>
+                              Icon: <Icon name={targetModule?.icon} size={14} className="inline" /> →{" "}
+                              <Icon name={plan.moduleUpdate.icon} size={14} className="inline" />
+                            </div>
+                          )}
+                          {plan.moduleUpdate.sort_order !== undefined && (
+                            <div>↕ Sidebar position: sort_order {plan.moduleUpdate.sort_order}</div>
+                          )}
+                        </div>
+                      )}
+
+                      {plan.changeType === "MODULE_DELETE" && targetModule && (
+                        <div className="rounded-lg border border-tone-critical/70 bg-tone-critical/40 px-3 py-2 text-xs text-tone-critical-fg">
+                          <div className="font-semibold">
+                            <TriangleAlert aria-hidden size={13} className="mr-1 inline align-[-2px]" />
+                            Delete “{targetModule.nav_label}” and all its records?
                           </div>
-                        )}
-                        {plan.moduleUpdate.sort_order !== undefined && (
-                          <div>↕ Sidebar position: sort_order {plan.moduleUpdate.sort_order}</div>
-                        )}
-                      </div>
-                    )}
-
-                    {plan.changeType === "MODULE_DELETE" && targetModule && (
-                      <div className="rounded-lg border border-tone-critical/70 bg-tone-critical/40 px-3 py-2 text-xs text-tone-critical-fg">
-                        <div className="font-semibold">
-                          <TriangleAlert aria-hidden size={13} className="mr-1 inline align-[-2px]" />
-                          Delete “{targetModule.nav_label}” and all its records?
+                          <div className="mt-1">
+                            Type <b>“{targetModule.nav_label}”</b> below to confirm.
+                          </div>
                         </div>
-                        <div className="mt-1">
-                          Type <b>“{targetModule.nav_label}”</b> below to confirm.
+                      )}
+
+                      {plan.changeType === "AUTOMATION_ADD" && plan.automation && (
+                        <div className="rounded-lg border border-tone-success bg-tone-success/30 px-3 py-2.5">
+                          <div className="text-[11px] font-semibold text-tone-success-fg">
+                            <Zap aria-hidden size={12} className="mr-1 inline align-[-1px]" />
+                            {plan.automation.name}
+                          </div>
+                          <ul className="mt-1 space-y-0.5">
+                            {describeAutomation(plan.automation, modules).map((line, i) => (
+                              <li key={i} className="text-[11px] leading-relaxed text-tone-success-fg">
+                                {line}
+                              </li>
+                            ))}
+                          </ul>
+                          <div className="mt-1.5 text-[10px] text-tone-success-fg/70">
+                            Runs on every change to this section, from anywhere.
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
 
-                    {plan.changeType === "FEATURE_UPDATE" && (
-                      <>
-                        <ul className="space-y-1 rounded-lg bg-surface-subdued px-3 py-2 text-xs text-fg-muted">
-                          {describeFeatures(plan.features!).map((line, i) => (
-                            <li key={i}>{line}</li>
-                          ))}
-                        </ul>
-                        <GenericRenderer
-                          schema={{
-                            columns: currentSchema?.columns ?? [],
-                            // As it will be: the change laid over what the section has.
-                            features: mergeFeatures(currentSchema?.features, plan.features),
-                          }}
-                          records={records}
-                          preview
-                          onReadSection={onReadSection}
-                        />
-                      </>
-                    )}
-
-                    {plan.changeType === "AUTOMATION_ADD" && plan.automation && (
-                      <div className="rounded-lg border border-tone-success bg-tone-success/30 px-3 py-2.5">
-                        <div className="text-[11px] font-semibold text-tone-success-fg">
-                          <Zap aria-hidden size={12} className="mr-1 inline align-[-1px]" />
-                          {plan.automation.name}
+                      {plan.changeType === "AUTOMATION_REMOVE" && (
+                        <div className="rounded-lg border border-line bg-surface-subdued px-3 py-2 text-[11px] text-fg-muted">
+                          Turns off the rule “{plan.automationRemoveName}”. Its history stays visible.
                         </div>
-                        <ul className="mt-1 space-y-0.5">
-                          {describeAutomation(plan.automation, modules).map((line, i) => (
-                            <li key={i} className="text-[11px] leading-relaxed text-tone-success-fg">
-                              {line}
-                            </li>
-                          ))}
-                        </ul>
-                        <div className="mt-1.5 text-[10px] text-tone-success-fg/70">
-                          Runs on every change to this section, from anywhere.
-                        </div>
-                      </div>
-                    )}
+                      )}
 
-                    {plan.changeType === "AUTOMATION_REMOVE" && (
-                      <div className="rounded-lg border border-line bg-surface-subdued px-3 py-2 text-[11px] text-fg-muted">
-                        Turns off the rule “{plan.automationRemoveName}”. Its history stays visible.
-                      </div>
-                    )}
-
-                    {plan.changeType === "RECORD_SEED" && (
-                      <div className="overflow-x-auto rounded-lg border border-line thin-scroll">
-                        <table className="w-full text-left text-xs">
-                          <thead>
-                            <tr className="border-b border-line bg-surface-subdued text-fg-muted">
-                              {Object.keys(plan.newRecords?.[0] ?? {}).map((k) => (
-                                <th key={k} className="px-2.5 py-1.5 font-semibold">
-                                  {k}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(plan.newRecords ?? []).map((row, i) => (
-                              <tr key={i} className="border-b border-line last:border-0">
+                      {plan.changeType === "RECORD_SEED" && (
+                        <div className="overflow-x-auto rounded-lg border border-line thin-scroll">
+                          <table className="w-full text-left text-xs">
+                            <thead>
+                              <tr className="border-b border-line bg-surface-subdued text-fg-muted">
                                 {Object.keys(plan.newRecords?.[0] ?? {}).map((k) => (
-                                  <td key={k} className="px-2.5 py-1.5">
-                                    {String(row[k] ?? "—")}
-                                  </td>
+                                  <th key={k} className="px-2.5 py-1.5 font-semibold">
+                                    {k}
+                                  </th>
                                 ))}
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                            </thead>
+                            <tbody>
+                              {(plan.newRecords ?? []).map((row, i) => (
+                                <tr key={i} className="border-b border-line last:border-0">
+                                  {Object.keys(plan.newRecords?.[0] ?? {}).map((k) => (
+                                    <td key={k} className="px-2.5 py-1.5">
+                                      {String(row[k] ?? "—")}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
 
-                    {/* Actions */}
-                    {plan.changeType === "MODULE_DELETE" && targetModule ? (
-                      <div className="space-y-2">
-                        <input
-                          value={deleteConfirm[m.id] ?? ""}
-                          onChange={(e) => setDeleteConfirm((prev) => ({ ...prev, [m.id]: e.target.value }))}
-                          placeholder={`Type "${targetModule.nav_label}" to enable deletion`}
-                          className="w-full rounded-lg border border-tone-critical/70 px-3 py-1.5 text-xs outline-none focus:border-tone-critical focus:ring-2 focus:ring-tone-critical/60"
-                        />
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => apply(plan, m.id)}
-                            disabled={
-                              isPending ||
-                              (deleteConfirm[m.id] ?? "").trim().toLowerCase() !== targetModule.nav_label.toLowerCase()
-                            }
-                            className="flex-1 rounded-lg bg-critical px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-critical-hover disabled:opacity-40"
-                          >
-                            {answered ? "Dealt with" : isPending ? "Deleting…" : "Delete module"}
+                      {!built && <ChangePreview plan={plan} peek={onPeekSection} onReadSection={onReadSection} />}
+
+                      {/* Actions */}
+                      {plan.changeType === "MODULE_DELETE" && targetModule ? (
+                        <div className="space-y-2">
+                          <input
+                            value={deleteConfirm[m.id] ?? ""}
+                            onChange={(e) => setDeleteConfirm((prev) => ({ ...prev, [m.id]: e.target.value }))}
+                            placeholder={`Type "${targetModule.nav_label}" to enable deletion`}
+                            className="w-full rounded-lg border border-tone-critical/70 px-3 py-1.5 text-xs outline-none focus:border-tone-critical focus:ring-2 focus:ring-tone-critical/60"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => apply(plan, m.id)}
+                              disabled={
+                                isPending ||
+                                (deleteConfirm[m.id] ?? "").trim().toLowerCase() !==
+                                  targetModule.nav_label.toLowerCase()
+                              }
+                              className="flex-1 rounded-lg bg-critical px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-critical-hover disabled:opacity-40"
+                            >
+                              {answered ? "Dealt with" : isPending ? "Deleting…" : "Delete module"}
+                            </button>
+                            <button
+                              onClick={() => onDiscard(m.id)}
+                              disabled={isPending}
+                              className="flex-1 rounded-lg border border-line px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-surface-hover disabled:opacity-50"
+                            >
+                              Discard
+                            </button>
+                          </div>
+                        </div>
+                      ) : built ? (
+                        // Done, and where: what to ask next sits right under it, on the receipt.
+                        <div
+                          role="status"
+                          className="flex items-center gap-1.5 text-[12px] font-medium text-tone-success-fg"
+                        >
+                          <Check aria-hidden size={14} strokeWidth={2} className="shrink-0" />
+                          {plan.changeType === "NEW_MODULE"
+                            ? `Done. ${plan.newModule?.nav_label ?? "It"} is in your sidebar.`
+                            : `Done. ${targetModule?.nav_label ?? "Your app"} is updated.`}
+                        </div>
+                      ) : status ? (
+                        <PlanStatusLine status={status} />
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <button onClick={() => apply(plan, m.id, m.next)} className={button("primary", "sm")}>
+                            Build this
                           </button>
                           <button
-                            onClick={() => onDiscard(m.id)}
-                            disabled={isPending}
-                            className="flex-1 rounded-lg border border-line px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-surface-hover disabled:opacity-50"
+                            onClick={() => {
+                              setInput("Change this in the design: ");
+                              inputRef.current?.focus();
+                            }}
+                            className={button("plain", "sm")}
                           >
-                            Discard
+                            Change something
                           </button>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={() => apply(plan, m.id)}
-                          disabled={isPending}
-                          className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-on-primary transition-colors hover:bg-primary-hover disabled:opacity-50"
-                        >
-                          {answered ? "Dealt with" : isPending ? "Applying…" : "Apply this"}
-                        </button>
-                        <button
-                          onClick={() => onDiscard(m.id)}
-                          disabled={isPending}
-                          className="text-xs text-fg-muted transition-colors hover:text-fg hover:underline disabled:opacity-50"
-                        >
-                          Discard
-                        </button>
-                      </div>
-                    )}
+                      )}
+                    </div>
+                    {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} />}
                   </div>
-                  {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} />}
-                </div>
-              );
-            })}
+                );
+              })}
 
-            {/* What their own AI asked for, read in the conversation it
+              {/* What their own AI asked for, read in the conversation it
             belongs to. As a banner above the header it pushed the
             whole panel down and a long design covered the chat
             entirely — the one place it must not be is on top of the
             thing it is asking about. */}
-            {/* Answering in a thread they left: said here, with the way back. */}
-            {busy && turnElsewhere && (
-              <div role="status" className="flex items-center gap-1.5 text-[11px] text-fg-faint">
-                <LukeMark size="xs" state="thinking" />
-                <span>Luke is still answering in another conversation.</span>
-                <button
-                  onClick={turnElsewhere}
-                  className="text-fg-muted underline-offset-2 hover:text-fg hover:underline"
-                >
-                  Go to it
-                </button>
-              </div>
-            )}
-            {busy && !turnElsewhere && (
-              <div className="text-[11px] text-fg-faint">
-                {/* One line: the step the server is on right now, with the
+              {/* Answering in a thread they left: said here, with the way back. */}
+              {busy && turnElsewhere && (
+                <div role="status" className="flex items-center gap-1.5 text-[11px] text-fg-faint">
+                  <LukeMark size="xs" state="thinking" />
+                  <span>Luke is still answering in another conversation.</span>
+                  <button
+                    onClick={turnElsewhere}
+                    className="text-fg-muted underline-offset-2 hover:text-fg hover:underline"
+                  >
+                    Go to it
+                  </button>
+                </div>
+              )}
+              {busy && !turnElsewhere && (
+                <div className="text-[11px] text-fg-faint">
+                  {/* One line: the step the server is on right now, with the
                 seconds climbing beside it, and the steps already taken
                 behind a caret. Nothing here is on a timer — a turn
                 that stalls shows a line that stays put. */}
-                <button
-                  onClick={() => setStepsOpen((o) => !o)}
-                  className="flex max-w-full items-center gap-1.5 text-left hover:text-fg-muted"
-                >
-                  <LukeMark size="xs" state="thinking" />
-                  <span className="shimmer min-w-0 truncate">
-                    {draft ? "Writing…" : steps.length ? stepWords(steps[steps.length - 1]) : "Working on it…"}
-                  </span>
-                  {stepSeconds >= 2 && <span className="shrink-0 tabular-nums text-fg-faint">{stepSeconds}s</span>}
-                  {steps.length > 1 && (
-                    <ChevronRight
-                      aria-hidden
-                      size={13}
-                      strokeWidth={2}
-                      className={`shrink-0 text-fg-faint transition-transform duration-150 ${stepsOpen ? "rotate-90" : ""}`}
-                    />
+                  <button
+                    onClick={() => setStepsOpen((o) => !o)}
+                    className="flex max-w-full items-center gap-1.5 text-left hover:text-fg-muted"
+                  >
+                    <LukeMark size="xs" state="thinking" />
+                    <span className="shimmer min-w-0 truncate">
+                      {draft ? "Writing…" : steps.length ? stepWords(steps[steps.length - 1]) : "Working on it…"}
+                    </span>
+                    {stepSeconds >= 2 && <span className="shrink-0 tabular-nums text-fg-faint">{stepSeconds}s</span>}
+                    {steps.length > 1 && (
+                      <ChevronRight
+                        aria-hidden
+                        size={13}
+                        strokeWidth={2}
+                        className={`shrink-0 text-fg-faint transition-transform duration-150 ${stepsOpen ? "rotate-90" : ""}`}
+                      />
+                    )}
+                  </button>
+                  {stepsOpen && steps.length > 1 && (
+                    <ul className="mt-1 space-y-0.5 pl-3 text-fg-faint">
+                      {steps.slice(0, -1).map((s, i) => (
+                        <StepRow key={i} step={s} />
+                      ))}
+                    </ul>
                   )}
-                </button>
-                {stepsOpen && steps.length > 1 && (
-                  <ul className="mt-1 space-y-0.5 pl-3 text-fg-faint">
-                    {steps.slice(0, -1).map((s, i) => (
-                      <StepRow key={i} step={s} />
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
-            {/* What Luke is saying, as it says it: the reply's own words, in
+                </div>
+              )}
+              {/* What Luke is saying, as it says it: the reply's own words, in
             the reply's own type. A draft, so a screen reader is not read
             every word; the reply that replaces it is. */}
-            {busy && draft && !turnElsewhere && (
-              <div aria-hidden>
-                <Markdown streaming>{draft}</Markdown>
-              </div>
-            )}
-            {/* The words are done and the rest is still being written: said,
+              {busy && draft && !turnElsewhere && (
+                <div aria-hidden>
+                  <Markdown streaming>{draft}</Markdown>
+                </div>
+              )}
+              {/* The words are done and the rest is still being written: said,
               so the panel does not go quiet before the questions arrive. */}
-            {busy && draft && phase && PHASE_WORDS[phase] && !turnElsewhere && (
-              <div className="flex items-center gap-1.5 text-[11px] text-fg-faint">
-                <Sparkles aria-hidden size={12} strokeWidth={2} className="shrink-0" />
-                <span className="shimmer">{PHASE_WORDS[phase]}</span>
+              {busy && draft && phase && PHASE_WORDS[phase] && !turnElsewhere && (
+                <div className="flex items-center gap-1.5 text-[11px] text-fg-faint">
+                  <Sparkles aria-hidden size={12} strokeWidth={2} className="shrink-0" />
+                  <span className="shimmer">{PHASE_WORDS[phase]}</span>
+                </div>
+              )}
+            </div>
+            {/* The room kept below a sent message for its reply (see pin). */}
+            <div ref={spacerRef} aria-hidden />
+            {/* Held at the foot of the list while the newest is out of view;
+            takes no room, so it moves nothing when it comes and goes. */}
+            {awayFromNewest && (
+              <div className="pointer-events-none sticky bottom-0 flex h-0 justify-center">
+                <button
+                  onClick={() => listRef.current?.scrollTo({ top: newestTop(), behavior: motion() })}
+                  aria-label="Go to the newest message"
+                  className="pointer-events-auto inline-flex -translate-y-[calc(100%+8px)] items-center gap-1 rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-medium text-fg-muted shadow-popover transition-colors hover:text-fg"
+                >
+                  <ArrowDown aria-hidden size={13} strokeWidth={2} />
+                  Latest
+                </button>
               </div>
             )}
           </div>
-          {/* The room kept below a sent message for its reply (see pin). */}
-          <div ref={spacerRef} aria-hidden />
-          {/* Held at the foot of the list while the newest is out of view;
-            takes no room, so it moves nothing when it comes and goes. */}
-          {awayFromNewest && (
-            <div className="pointer-events-none sticky bottom-0 flex h-0 justify-center">
-              <button
-                onClick={() => listRef.current?.scrollTo({ top: newestTop(), behavior: motion() })}
-                aria-label="Go to the newest message"
-                className="pointer-events-auto inline-flex -translate-y-[calc(100%+8px)] items-center gap-1 rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-medium text-fg-muted shadow-popover transition-colors hover:text-fg"
-              >
-                <ArrowDown aria-hidden size={13} strokeWidth={2} />
-                Latest
-              </button>
-            </div>
-          )}
-        </div>
 
-        {/* What just arrived, saying so. It floats rather than taking
+          {/* What just arrived, saying so. It floats rather than taking
           a place in the layout: an interruption that pushed the
           conversation around would be a worse interruption. Letting
           it go loses nothing — the bell above still has it. */}
-        {toasts.length > 0 && (
-          <div className="pointer-events-none absolute inset-x-3 bottom-32 z-30 space-y-2">
-            {toasts.map((id) => {
-              const r = requests.find((x) => x.id === id);
-              if (!r || r.status !== "pending") return null;
-              return (
-                <div
-                  key={id}
-                  className="pointer-events-auto rounded-xl border border-tone-attention bg-tone-attention/25 p-3 shadow-lg"
-                >
-                  <div className="flex items-start gap-2">
-                    <Sparkles
-                      aria-hidden
-                      size={14}
-                      strokeWidth={2}
-                      className="mt-0.5 shrink-0 text-tone-attention-fg"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[10px] font-semibold tracking-widest text-tone-attention-fg uppercase">
-                        Your AI asked for this
+          {toasts.length > 0 && (
+            <div className="pointer-events-none absolute inset-x-3 bottom-32 z-30 space-y-2">
+              {toasts.map((id) => {
+                const r = requests.find((x) => x.id === id);
+                if (!r || r.status !== "pending") return null;
+                return (
+                  <div
+                    key={id}
+                    className="pointer-events-auto rounded-xl border border-tone-attention bg-tone-attention/25 p-3 shadow-lg"
+                  >
+                    <div className="flex items-start gap-2">
+                      <Sparkles
+                        aria-hidden
+                        size={14}
+                        strokeWidth={2}
+                        className="mt-0.5 shrink-0 text-tone-attention-fg"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[10px] font-semibold tracking-widest text-tone-attention-fg uppercase">
+                          Your AI asked for this
+                        </div>
+                        <p className="mt-0.5 line-clamp-3 text-[11px] leading-relaxed text-tone-attention-fg">
+                          {r.request}
+                        </p>
                       </div>
-                      <p className="mt-0.5 line-clamp-3 text-[11px] leading-relaxed text-tone-attention-fg">
-                        {r.request}
-                      </p>
+                      <button
+                        onClick={() => setToasts((p) => p.filter((x) => x !== id))}
+                        aria-label="Later"
+                        className="shrink-0 text-[11px] text-tone-attention-fg hover:text-tone-attention-fg"
+                      >
+                        <X aria-hidden size={14} strokeWidth={2} />
+                      </button>
                     </div>
-                    <button
-                      onClick={() => setToasts((p) => p.filter((x) => x !== id))}
-                      aria-label="Later"
-                      className="shrink-0 text-[11px] text-tone-attention-fg hover:text-tone-attention-fg"
-                    >
-                      <X aria-hidden size={14} strokeWidth={2} />
-                    </button>
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    {/* Not offered for a design that removes a section.
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      {/* Not offered for a design that removes a section.
                       buildRequest refuses one until the name has been
                       typed, and there is nowhere to type it here — so
                       the button did nothing at all when it was
                       tapped. "See it" opens the card that can. */}
-                    {r.plans?.length && !removalsIn(r.plans).length ? (
+                      {r.plans?.length && !removalsIn(r.plans).length ? (
+                        <button
+                          onClick={() => {
+                            setToasts((p) => p.filter((x) => x !== id));
+                            buildRequest(r);
+                          }}
+                          disabled={busy}
+                          className="rounded-lg bg-primary px-2 py-1 text-[10px] font-medium text-on-primary hover:bg-primary-hover disabled:opacity-40"
+                        >
+                          {WAITING_BUTTONS.build}
+                        </button>
+                      ) : null}
                       <button
                         onClick={() => {
                           setToasts((p) => p.filter((x) => x !== id));
-                          buildRequest(r);
+                          setBellOpen(true);
                         }}
-                        disabled={busy}
-                        className="rounded-lg bg-primary px-2 py-1 text-[10px] font-medium text-on-primary hover:bg-primary-hover disabled:opacity-40"
+                        className="rounded-lg border border-tone-attention px-2 py-1 text-[10px] font-medium text-tone-attention-fg hover:bg-tone-attention/40"
                       >
-                        {WAITING_BUTTONS.build}
+                        See it
                       </button>
-                    ) : null}
-                    <button
-                      onClick={() => {
-                        setToasts((p) => p.filter((x) => x !== id));
-                        setBellOpen(true);
-                      }}
-                      className="rounded-lg border border-tone-attention px-2 py-1 text-[10px] font-medium text-tone-attention-fg hover:bg-tone-attention/40"
-                    >
-                      See it
-                    </button>
-                    <button
-                      onClick={() => {
-                        setToasts((p) => p.filter((x) => x !== id));
-                        dismissRequest(r.id);
-                      }}
-                      className="ml-auto text-[10px] text-tone-attention-fg hover:underline"
-                    >
-                      Dismiss
-                    </button>
+                      <button
+                        onClick={() => {
+                          setToasts((p) => p.filter((x) => x !== id));
+                          dismissRequest(r.id);
+                        }}
+                        className="ml-auto text-[10px] text-tone-attention-fg hover:underline"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          )}
 
-        {/* Their own AI. Shown alongside the chat rather than instead of
+          {/* Their own AI. Shown alongside the chat rather than instead of
           it: both can be on, and a merchant who has connected Claude
           still uses this panel to read and approve what it asked for. */}
-        {features.mcp && (
-          <details
-            className="group/ai border-t border-line px-3 py-2.5"
-            open={ownAiOpen || !features.chat}
-            onToggle={(e) => setOwnAiOpen((e.currentTarget as HTMLDetailsElement).open)}
-          >
-            <summary className="flex cursor-pointer list-none items-center gap-2.5 text-xs text-fg-muted hover:text-fg [&::-webkit-details-marker]:hidden">
-              {/* The marks of what is connected; before anything is, the two
+          {features.mcp && (
+            <details
+              className="group/ai border-t border-line px-3 py-2.5"
+              open={ownAiOpen || !features.chat}
+              onToggle={(e) => setOwnAiOpen((e.currentTarget as HTMLDetailsElement).open)}
+            >
+              <summary className="flex cursor-pointer list-none items-center gap-2.5 text-xs text-fg-muted hover:text-fg [&::-webkit-details-marker]:hidden">
+                {/* The marks of what is connected; before anything is, the two
                 it can be. */}
-              <span aria-hidden className="flex -space-x-1.5">
-                {(() => {
-                  const theirs = [
-                    ...new Set(assistants.map((c) => assistantLogo(c.name)).filter((l): l is string => !!l)),
-                  ];
-                  return theirs.length ? theirs : ["/logos/claude.svg", "/logos/openai.svg"];
-                })().map((src) => (
-                  <span
-                    key={src}
-                    className="flex h-6 w-6 items-center justify-center rounded-full border border-line bg-surface shadow-card"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise */}
-                    <img src={src} alt="" width={13} height={13} className="h-3.5 w-3.5 object-contain" />
-                  </span>
-                ))}
-              </span>
-              <span className="min-w-0 flex-1 truncate font-medium text-fg">{LUKE_COPY.ownAi}</span>
-              {assistants.length > 0 && (
-                <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-fg-muted">
-                  <span
-                    className={`h-1.5 w-1.5 rounded-full ${
-                      assistants.some((c) => c.calls24h > 0) ? "bg-signal-success" : "bg-line-strong"
-                    }`}
-                  />
-                  {assistants.length} connected
+                <span aria-hidden className="flex -space-x-1.5">
+                  {(() => {
+                    const theirs = [
+                      ...new Set(assistants.map((c) => assistantLogo(c.name)).filter((l): l is string => !!l)),
+                    ];
+                    return theirs.length ? theirs : ["/logos/claude.svg", "/logos/openai.svg"];
+                  })().map((src) => (
+                    <span
+                      key={src}
+                      className="flex h-6 w-6 items-center justify-center rounded-full border border-line bg-surface shadow-card"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise */}
+                      <img src={src} alt="" width={13} height={13} className="h-3.5 w-3.5 object-contain" />
+                    </span>
+                  ))}
                 </span>
-              )}
-              <ChevronRight
-                aria-hidden
-                size={14}
-                strokeWidth={2}
-                className="shrink-0 text-fg-faint transition-transform duration-150 group-open/ai:rotate-90"
-              />
-            </summary>
+                <span className="min-w-0 flex-1 truncate font-medium text-fg">{LUKE_COPY.ownAi}</span>
+                {assistants.length > 0 && (
+                  <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-fg-muted">
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        assistants.some((c) => c.calls24h > 0) ? "bg-signal-success" : "bg-line-strong"
+                      }`}
+                    />
+                    {assistants.length} connected
+                  </span>
+                )}
+                <ChevronRight
+                  aria-hidden
+                  size={14}
+                  strokeWidth={2}
+                  className="shrink-0 text-fg-faint transition-transform duration-150 group-open/ai:rotate-90"
+                />
+              </summary>
 
-            <div className="mt-2.5 space-y-2.5">
-              <p className="text-xs leading-relaxed text-fg-muted">
-                Add Warmluke as a custom connector with this address. It reads your store, and anything it wants to
-                build comes back here for you to approve.
-              </p>
-              <div className="flex items-center gap-1 rounded-control border border-line bg-surface-subdued py-1 pr-1 pl-2.5">
-                <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-fg" title={mcpUrl}>
-                  {mcpUrl}
-                </code>
-                <button
-                  onClick={() =>
-                    navigator.clipboard
-                      ?.writeText(mcpUrl)
-                      .then(() => {
-                        setCopied(true);
-                        setTimeout(() => setCopied(false), 1600);
-                      })
-                      .catch(() => {})
-                  }
-                  className={button("secondary", "sm")}
-                >
-                  {copied ? (
-                    <Check aria-hidden size={13} strokeWidth={2.25} className="text-signal-success" />
-                  ) : (
-                    <Copy aria-hidden size={13} strokeWidth={2} />
-                  )}
-                  {copied ? "Copied" : "Copy"}
-                </button>
-              </div>
+              <div className="mt-2.5 space-y-2.5">
+                <p className="text-xs leading-relaxed text-fg-muted">
+                  Add Warmluke as a custom connector with this address. It reads your store, and anything it wants to
+                  build comes back here for you to approve.
+                </p>
+                <div className="flex items-center gap-1 rounded-control border border-line bg-surface-subdued py-1 pr-1 pl-2.5">
+                  <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-fg" title={mcpUrl}>
+                    {mcpUrl}
+                  </code>
+                  <button
+                    onClick={() =>
+                      navigator.clipboard
+                        ?.writeText(mcpUrl)
+                        .then(() => {
+                          setCopied(true);
+                          setTimeout(() => setCopied(false), 1600);
+                        })
+                        .catch(() => {})
+                    }
+                    className={button("secondary", "sm")}
+                  >
+                    {copied ? (
+                      <Check aria-hidden size={13} strokeWidth={2.25} className="text-signal-success" />
+                    ) : (
+                      <Copy aria-hidden size={13} strokeWidth={2} />
+                    )}
+                    {copied ? "Copied" : "Copy"}
+                  </button>
+                </div>
 
-              {assistants.length > 0 && (
-                <ul className="overflow-hidden rounded-card border border-line">
-                  {assistants.map((c) => {
-                    const working = c.calls24h > 0;
-                    const logo = assistantLogo(c.name);
-                    // Working, as opposed to merely allowed: a key unused
-                    // for a month looks the same as one in use, and only
-                    // one of those is worth keeping.
-                    const status = c.lastCall
-                      ? `${working ? "Working" : "Quiet"} · last used ${since(c.lastCall)}${working ? ` · ${c.calls24h} today` : ""}`
-                      : "Connected, not used yet";
-                    return (
-                      <li
-                        key={c.name}
-                        className="flex items-center gap-2.5 border-b border-line px-2.5 py-2 last:border-b-0"
-                      >
-                        <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-control border border-line bg-surface">
-                          {logo ? (
-                            // eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise
-                            <img src={logo} alt="" width={16} height={16} className="h-4 w-4 object-contain" />
-                          ) : (
-                            <Plug aria-hidden size={14} strokeWidth={1.75} className="text-fg-muted" />
-                          )}
-                          <span
-                            className={`absolute -right-0.5 -bottom-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-surface ${
-                              working ? "bg-signal-success" : "bg-line-strong"
-                            }`}
-                          />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="truncate text-xs font-medium text-fg">{c.name}</span>
-                            {/* Said once, here, because otherwise five rows
-                              appear and look like five separate grants. */}
-                            {c.count > 1 && (
-                              <span
-                                title={`${c.count} connections, disconnected together`}
-                                className="shrink-0 rounded-full bg-surface-subdued px-1.5 text-[10px] text-fg-muted tabular-nums"
-                              >
-                                ×{c.count}
-                              </span>
+                {assistants.length > 0 && (
+                  <ul className="overflow-hidden rounded-card border border-line">
+                    {assistants.map((c) => {
+                      const working = c.calls24h > 0;
+                      const logo = assistantLogo(c.name);
+                      // Working, as opposed to merely allowed: a key unused
+                      // for a month looks the same as one in use, and only
+                      // one of those is worth keeping.
+                      const status = c.lastCall
+                        ? `${working ? "Working" : "Quiet"} · last used ${since(c.lastCall)}${working ? ` · ${c.calls24h} today` : ""}`
+                        : "Connected, not used yet";
+                      return (
+                        <li
+                          key={c.name}
+                          className="flex items-center gap-2.5 border-b border-line px-2.5 py-2 last:border-b-0"
+                        >
+                          <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-control border border-line bg-surface">
+                            {logo ? (
+                              // eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise
+                              <img src={logo} alt="" width={16} height={16} className="h-4 w-4 object-contain" />
+                            ) : (
+                              <Plug aria-hidden size={14} strokeWidth={1.75} className="text-fg-muted" />
                             )}
+                            <span
+                              className={`absolute -right-0.5 -bottom-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-surface ${
+                                working ? "bg-signal-success" : "bg-line-strong"
+                              }`}
+                            />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="truncate text-xs font-medium text-fg">{c.name}</span>
+                              {/* Said once, here, because otherwise five rows
+                              appear and look like five separate grants. */}
+                              {c.count > 1 && (
+                                <span
+                                  title={`${c.count} connections, disconnected together`}
+                                  className="shrink-0 rounded-full bg-surface-subdued px-1.5 text-[10px] text-fg-muted tabular-nums"
+                                >
+                                  ×{c.count}
+                                </span>
+                              )}
+                            </div>
+                            <div className="truncate text-[11px] text-fg-faint" title={status}>
+                              {status}
+                            </div>
                           </div>
-                          <div className="truncate text-[11px] text-fg-faint" title={status}>
-                            {status}
-                          </div>
-                        </div>
-                        {/* Worth a pause (the assistant stops mid-sentence and
+                          {/* Worth a pause (the assistant stops mid-sentence and
                           reconnecting means consent again), so the second
                           tap is the confirmation. */}
-                        {confirmRevoke === c.name ? (
-                          <span className="flex shrink-0 items-center gap-1">
+                          {confirmRevoke === c.name ? (
+                            <span className="flex shrink-0 items-center gap-1">
+                              <button
+                                onClick={() => {
+                                  setConfirmRevoke(null);
+                                  revoke(c);
+                                }}
+                                className={button("critical", "sm")}
+                              >
+                                Disconnect
+                              </button>
+                              <button onClick={() => setConfirmRevoke(null)} className={button("plain", "sm")}>
+                                Keep
+                              </button>
+                            </span>
+                          ) : (
                             <button
-                              onClick={() => {
-                                setConfirmRevoke(null);
-                                revoke(c);
-                              }}
-                              className={button("critical", "sm")}
+                              onClick={() => setConfirmRevoke(c.name)}
+                              disabled={revoking === c.name}
+                              className={button("critical-plain", "sm")}
                             >
-                              Disconnect
+                              {revoking === c.name ? "Disconnecting…" : "Disconnect"}
                             </button>
-                            <button onClick={() => setConfirmRevoke(null)} className={button("plain", "sm")}>
-                              Keep
-                            </button>
-                          </span>
-                        ) : (
-                          <button
-                            onClick={() => setConfirmRevoke(c.name)}
-                            disabled={revoking === c.name}
-                            className={button("critical-plain", "sm")}
-                          >
-                            {revoking === c.name ? "Disconnecting…" : "Disconnect"}
-                          </button>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-          </details>
-        )}
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            </details>
+          )}
 
-        {/* What their own AI asked for, where they are already looking.
+          {/* What their own AI asked for, where they are already looking.
           It is not a turn in the conversation — that was tried, and a
           card that cannot be scrolled past is worse than a bell
           nobody taps — and it is not a toast either, because a toast
@@ -3755,170 +3841,171 @@ export default function ChatPanel({
           Claude, and they come here afterwards. So: one line, above
           the composer, outside the scroll, gone the moment they say
           so. */}
-        {pendingCount > 0 && !bellOpen && waitingKey !== noticeCleared && (
-          <div className="flex items-center gap-2 border-t border-tone-attention/70 bg-tone-attention/25 px-3 py-1.5 text-[11px] text-tone-attention-fg">
-            <span className="min-w-0 flex-1 truncate">
-              Your AI asked for {pendingCount} {pendingCount === 1 ? "change" : "changes"}
-            </span>
-            <button
-              onClick={() => setBellOpen(true)}
-              className="shrink-0 font-medium text-tone-attention-fg underline underline-offset-2 hover:text-tone-attention-fg"
-            >
-              Open
-            </button>
-            <button
-              onClick={() => setNoticeCleared(waitingKey)}
-              aria-label="Hide this until something else arrives"
-              className="shrink-0 px-1 text-tone-attention-fg hover:text-tone-attention-fg"
-            >
-              <X aria-hidden size={14} strokeWidth={2} />
-            </button>
-          </div>
-        )}
-
-        {/* Input */}
-        {turns && !turns.unlimited && turns.used >= turns.free && features.chat ? (
-          // Not a locked door with a price on it. What they can still
-          // do is the larger half — reading their store never costs us
-          // anything — so it is offered first, by name.
-          <div className="border-t border-line p-3">
-            <div className="rounded-xl border border-line bg-surface-subdued p-3">
-              <div className="text-[11px] font-semibold text-fg">
-                You have used all {turns.free} included {turns.free === 1 ? "design" : "designs"}
-              </div>
-              <p className="mt-1 text-[11px] leading-relaxed text-fg-muted">
-                Asking about your store still works, and anything already designed can still be built. Designing
-                something new is the part that needs Warmluke AI.
-              </p>
-              <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                <button
-                  onClick={() => setWantsPlan(true)}
-                  className="rounded-lg bg-primary px-2.5 py-1.5 text-[11px] font-medium text-on-primary hover:bg-primary-hover"
-                >
-                  Get Warmluke AI
-                </button>
-                {features.mcp && (
-                  <button
-                    onClick={() => {
-                      setWantsPlan(false);
-                      setOwnAiOpen(true);
-                    }}
-                    className="rounded-lg border border-line-strong px-2.5 py-1.5 text-[11px] font-medium text-fg hover:bg-surface"
-                  >
-                    Use your own Claude
-                  </button>
-                )}
-              </div>
-              {wantsPlan && (
-                <div className="mt-2.5 rounded-lg border border-line bg-surface px-2.5 py-2 text-[11px] leading-relaxed text-fg-muted">
-                  Still being built — it releases soon. Until then your own Claude or ChatGPT does the asking, and
-                  Warmluke keeps building what you have already approved.
-                  <button
-                    onClick={() => setWantsPlan(false)}
-                    className="mt-1.5 block text-[10px] text-fg-faint hover:underline"
-                  >
-                    Close
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        ) : !features.chat ? (
-          <div className="border-t border-line p-3 text-[11px] leading-relaxed text-fg-muted">
-            Luke is off for this account.{" "}
-            {features.mcp
-              ? "Your own AI can still design changes, and you approve them above."
-              : "Ask us to turn Luke on for you."}
-          </div>
-        ) : (
-          <div className="border-t border-line p-3">
-            {/* One quiet box: the words inside it, the send inside it. A
-            thick ring and a labelled button made the composer the
-            loudest thing on the panel, and the conversation should be. */}
-            {/* While Luke works, a beam of its colour goes round the box;
-            while they type, a beam in the page's ink, flaring with each
-            key. Focused, the border takes Luke's colour. */}
-            <div
-              data-stroke={strokes % 2}
-              className={`flex items-end gap-2 rounded-2xl border border-line bg-surface px-3 py-2 shadow-card transition-all duration-150 focus-within:border-luke-light focus-within:shadow-[0_0_0_3px_rgb(139_126_255/0.14)] ${
-                busy ? "beam" : typing ? "beam beam-ink" : ""
-              }`}
-            >
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => {
-                  setInput(e.target.value);
-                  setStrokes((n) => n + 1);
-                  setTyping(true);
-                  if (typingTimer.current) clearTimeout(typingTimer.current);
-                  typingTimer.current = setTimeout(() => setTyping(false), 1200);
-                  // Grows with what is typed, up to a few lines, and
-                  // shrinks back; a fixed two rows was mostly empty.
-                  e.target.style.height = "auto";
-                  e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    send();
-                  }
-                }}
-                rows={1}
-                placeholder={LUKE_COPY.placeholder}
-                className="max-h-40 flex-1 resize-none bg-transparent py-0.5 text-[13px] leading-6 text-fg outline-none placeholder:text-fg-faint"
-              />
+          {pendingCount > 0 && !bellOpen && waitingKey !== noticeCleared && (
+            <div className="flex items-center gap-2 border-t border-tone-attention/70 bg-tone-attention/25 px-3 py-1.5 text-[11px] text-tone-attention-fg">
+              <span className="min-w-0 flex-1 truncate">
+                Your AI asked for {pendingCount} {pendingCount === 1 ? "change" : "changes"}
+              </span>
               <button
-                onClick={() => (canStop ? onStop() : send())}
-                disabled={busy && !canStop ? true : !canStop && !input.trim()}
-                aria-label={canStop ? "Stop" : "Send"}
-                title={canStop ? "Stop" : busy ? "Building…" : "Send"}
-                className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary transition-all duration-150 hover:bg-primary-hover active:scale-95 disabled:bg-line-strong disabled:text-surface"
+                onClick={() => setBellOpen(true)}
+                className="shrink-0 font-medium text-tone-attention-fg underline underline-offset-2 hover:text-tone-attention-fg"
               >
-                {canStop ? (
-                  <Square aria-hidden size={11} strokeWidth={0} fill="currentColor" />
-                ) : (
-                  <ArrowUp aria-hidden size={16} strokeWidth={2.25} />
-                )}
+                Open
+              </button>
+              <button
+                onClick={() => setNoticeCleared(waitingKey)}
+                aria-label="Hide this until something else arrives"
+                className="shrink-0 px-1 text-tone-attention-fg hover:text-tone-attention-fg"
+              >
+                <X aria-hidden size={14} strokeWidth={2} />
               </button>
             </div>
-            <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 text-[10px] text-fg-faint">
-              {/* Only with a choice to make: one model allowed is no picker. */}
-              {luke && luke.models.length > 1 && onModel && (
-                <ModelPicker
-                  models={luke.models}
-                  byDefault={luke.default}
-                  model={model}
-                  onModel={onModel}
-                  shows={shows}
-                  mix={replyMix}
+          )}
+
+          {/* Input */}
+          {turns && !turns.unlimited && turns.used >= turns.free && features.chat ? (
+            // Not a locked door with a price on it. What they can still
+            // do is the larger half — reading their store never costs us
+            // anything — so it is offered first, by name.
+            <div className="border-t border-line p-3">
+              <div className="rounded-xl border border-line bg-surface-subdued p-3">
+                <div className="text-[11px] font-semibold text-fg">
+                  You have used all {turns.free} included {turns.free === 1 ? "design" : "designs"}
+                </div>
+                <p className="mt-1 text-[11px] leading-relaxed text-fg-muted">
+                  Asking about your store still works, and anything already designed can still be built. Designing
+                  something new is the part that needs Warmluke AI.
+                </p>
+                <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                  <button
+                    onClick={() => setWantsPlan(true)}
+                    className="rounded-lg bg-primary px-2.5 py-1.5 text-[11px] font-medium text-on-primary hover:bg-primary-hover"
+                  >
+                    Get Warmluke AI
+                  </button>
+                  {features.mcp && (
+                    <button
+                      onClick={() => {
+                        setWantsPlan(false);
+                        setOwnAiOpen(true);
+                      }}
+                      className="rounded-lg border border-line-strong px-2.5 py-1.5 text-[11px] font-medium text-fg hover:bg-surface"
+                    >
+                      Use your own Claude
+                    </button>
+                  )}
+                </div>
+                {wantsPlan && (
+                  <div className="mt-2.5 rounded-lg border border-line bg-surface px-2.5 py-2 text-[11px] leading-relaxed text-fg-muted">
+                    Still being built — it releases soon. Until then your own Claude or ChatGPT does the asking, and
+                    Warmluke keeps building what you have already approved.
+                    <button
+                      onClick={() => setWantsPlan(false)}
+                      className="mt-1.5 block text-[10px] text-fg-faint hover:underline"
+                    >
+                      Close
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : !features.chat ? (
+            <div className="border-t border-line p-3 text-[11px] leading-relaxed text-fg-muted">
+              Luke is off for this account.{" "}
+              {features.mcp
+                ? "Your own AI can still design changes, and you approve them above."
+                : "Ask us to turn Luke on for you."}
+            </div>
+          ) : (
+            <div className="border-t border-line p-3">
+              {/* One quiet box: the words inside it, the send inside it. A
+            thick ring and a labelled button made the composer the
+            loudest thing on the panel, and the conversation should be. */}
+              {/* While Luke works, a beam of its colour goes round the box;
+            while they type, a beam in the page's ink, flaring with each
+            key. Focused, the border takes Luke's colour. */}
+              <div
+                data-stroke={strokes % 2}
+                className={`flex items-end gap-2 rounded-2xl border border-line bg-surface px-3 py-2 shadow-card transition-all duration-150 focus-within:border-luke-light focus-within:shadow-[0_0_0_3px_rgb(139_126_255/0.14)] ${
+                  busy ? "beam" : typing ? "beam beam-ink" : ""
+                }`}
+              >
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    setStrokes((n) => n + 1);
+                    setTyping(true);
+                    if (typingTimer.current) clearTimeout(typingTimer.current);
+                    typingTimer.current = setTimeout(() => setTyping(false), 1200);
+                    // Grows with what is typed, up to a few lines, and
+                    // shrinks back; a fixed two rows was mostly empty.
+                    e.target.style.height = "auto";
+                    e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      send();
+                    }
+                  }}
+                  rows={1}
+                  placeholder={LUKE_COPY.placeholder}
+                  className="max-h-40 flex-1 resize-none bg-transparent py-0.5 text-[13px] leading-6 text-fg outline-none placeholder:text-fg-faint"
                 />
-              )}
-              <span>{LUKE_COPY.promise}</span>
-              {/* From the engine's own registry, one tap away rather than
+                <button
+                  onClick={() => (canStop ? onStop() : send())}
+                  disabled={busy && !canStop ? true : !canStop && !input.trim()}
+                  aria-label={canStop ? "Stop" : "Send"}
+                  title={canStop ? "Stop" : busy ? "Building…" : "Send"}
+                  className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary transition-all duration-150 hover:bg-primary-hover active:scale-95 disabled:bg-line-strong disabled:text-surface"
+                >
+                  {canStop ? (
+                    <Square aria-hidden size={11} strokeWidth={0} fill="currentColor" />
+                  ) : (
+                    <ArrowUp aria-hidden size={16} strokeWidth={2.25} />
+                  )}
+                </button>
+              </div>
+              <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 text-[10px] text-fg-faint">
+                {/* Only with a choice to make: one model allowed is no picker. */}
+                {luke && luke.models.length > 1 && onModel && (
+                  <ModelPicker
+                    models={luke.models}
+                    byDefault={luke.default}
+                    model={model}
+                    onModel={onModel}
+                    shows={shows}
+                    mix={replyMix}
+                  />
+                )}
+                <span>{LUKE_COPY.promise}</span>
+                {/* From the engine's own registry, one tap away rather than
               repeated on every design. The assistant is told to flag
               anything it cannot do, but a prompt instruction is not a
               guarantee; the list is here whether or not it mentions it. */}
-              <details className="group">
-                <summary className="cursor-pointer list-none select-none hover:text-fg-muted">
-                  What Luke can&rsquo;t do
-                  <ChevronRight
-                    aria-hidden
-                    size={11}
-                    strokeWidth={2}
-                    className="ml-0.5 inline align-[-1px] transition-transform duration-150 group-open:rotate-90"
-                  />
-                </summary>
-                <ul className="mt-1 space-y-0.5 pl-3">
-                  {NOT_SUPPORTED.map((n) => (
-                    <li key={n.id}>{n.label}</li>
-                  ))}
-                </ul>
-              </details>
-              <KnownNotes projectId={projectId} />
+                <details className="group">
+                  <summary className="cursor-pointer list-none select-none hover:text-fg-muted">
+                    What Luke can&rsquo;t do
+                    <ChevronRight
+                      aria-hidden
+                      size={11}
+                      strokeWidth={2}
+                      className="ml-0.5 inline align-[-1px] transition-transform duration-150 group-open:rotate-90"
+                    />
+                  </summary>
+                  <ul className="mt-1 space-y-0.5 pl-3">
+                    {NOT_SUPPORTED.map((n) => (
+                      <li key={n.id}>{n.label}</li>
+                    ))}
+                  </ul>
+                </details>
+                <KnownNotes projectId={projectId} />
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </aside>
     </IdNames>
   );

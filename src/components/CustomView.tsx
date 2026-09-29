@@ -21,8 +21,13 @@ import type { RecordRow, SchemaColumn } from "@/lib/types";
 
 type Call = { wl: 1; id: number; call: "find" | "read" | "set" | "add"; args: unknown[] };
 
-/** A preview's height in Luke's panel: enough to read the screen, not the whole panel. */
-const PREVIEW_HEIGHT = 420;
+/**
+ * A preview in Luke's panel: the screen drawn smaller, whole, in a small
+ * box. At full size in a narrow panel it showed a corner of itself, and
+ * pushed the chat out of view.
+ */
+const PREVIEW_HEIGHT = 260;
+const PREVIEW_SCALE = 0.7;
 
 /** The app's values now, light or dark, by the names the screen was told. */
 function colours(): Record<string, string> {
@@ -31,6 +36,9 @@ function colours(): Record<string, string> {
     Object.entries(CUSTOM_VIEW_TOKENS).map(([name, token]) => [name, css.getPropertyValue(token).trim()])
   );
 }
+
+/** Light or dark, as the app chose it (lib/theme.ts), not as the computer is set. */
+const scheme = () => (document.documentElement.dataset.theme === "dark" ? "dark" : "light");
 
 /**
  * The app's two faces, as @font-face rules with their files inline: the
@@ -133,7 +141,9 @@ export default function CustomView({
     const late = new Promise<string>((done) => setTimeout(() => done(""), 2000));
     void Promise.race([appFaces(), late]).then((faces) => {
       if (alive)
-        setPage(customViewPage(view.html, columns, colours(), faces, { locale: fmt.locale, currency: fmt.currency }));
+        setPage(
+          customViewPage(view.html, columns, colours(), faces, { locale: fmt.locale, currency: fmt.currency }, scheme())
+        );
     });
     return () => {
       alive = false;
@@ -164,9 +174,18 @@ export default function CustomView({
 
   const rows = useMemo(() => asRows(records, columns), [records, columns]);
   const send = (message: unknown) => frame.current?.contentWindow?.postMessage(message, "*");
+  const tint = () => send({ wl: 1, type: "colours", colours: colours(), scheme: scheme() });
   useEffect(() => {
     send({ wl: 1, type: "rows", rows });
   }, [rows]);
+
+  // Light or dark changed: the screen is told in place. The page was
+  // built with the values of the moment it opened, and kept them.
+  useEffect(() => {
+    const watch = new MutationObserver(tint);
+    watch.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => watch.disconnect();
+  }, []);
 
   // The handlers as they are now, read by the listener when a call arrives.
   const handlers = useRef({ onSet, onAdd, onFind, onRead, columns });
@@ -232,34 +251,55 @@ export default function CustomView({
       </div>
     );
   }
+  const drawn = (
+    <iframe
+      ref={frame}
+      title={view.title}
+      sandbox="allow-scripts"
+      srcDoc={page ?? undefined}
+      onLoad={() => {
+        send({ wl: 1, type: "rows", rows });
+        // A switch between the page being built and its loading.
+        tint();
+        // A scanner types into whatever has focus; the screen is where it
+        // goes. Not a preview's: the owner is typing to Luke beside it.
+        if (!preview) frame.current?.focus();
+      }}
+      style={
+        full
+          ? undefined
+          : preview
+            ? {
+                width: `${100 / PREVIEW_SCALE}%`,
+                height: PREVIEW_HEIGHT / PREVIEW_SCALE,
+                transform: `scale(${PREVIEW_SCALE})`,
+                transformOrigin: "0 0",
+              }
+            : { height: height ?? 480 }
+      }
+      className={preview ? "block bg-surface" : `w-full rounded-card bg-surface shadow-card ${full ? "flex-1" : ""}`}
+    />
+  );
+  if (preview) {
+    return (
+      <div className="overflow-hidden rounded-card bg-surface shadow-card" style={{ height: PREVIEW_HEIGHT }}>
+        {drawn}
+      </div>
+    );
+  }
   return (
     <div ref={box} className={full ? "flex h-screen flex-col gap-2 bg-canvas p-3" : "flex flex-col gap-2"}>
-      {!preview && (
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={() => (full ? document.exitFullscreen() : box.current?.requestFullscreen())}
-            className={button("plain", "sm")}
-          >
-            {full ? <Minimize2 aria-hidden size={14} /> : <Maximize2 aria-hidden size={14} />}
-            {full ? "Leave full screen" : "Full screen"}
-          </button>
-        </div>
-      )}
-      <iframe
-        ref={frame}
-        title={view.title}
-        sandbox="allow-scripts"
-        srcDoc={page ?? undefined}
-        onLoad={() => {
-          send({ wl: 1, type: "rows", rows });
-          // A scanner types into whatever has focus; the screen is where it
-          // goes. Not a preview's: the owner is typing to Luke beside it.
-          if (!preview) frame.current?.focus();
-        }}
-        style={full ? undefined : { height: preview ? PREVIEW_HEIGHT : (height ?? 480) }}
-        className={`w-full rounded-card bg-surface shadow-card ${full ? "flex-1" : ""}`}
-      />
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => (full ? document.exitFullscreen() : box.current?.requestFullscreen())}
+          className={button("plain", "sm")}
+        >
+          {full ? <Minimize2 aria-hidden size={14} /> : <Maximize2 aria-hidden size={14} />}
+          {full ? "Leave full screen" : "Full screen"}
+        </button>
+      </div>
+      {drawn}
     </div>
   );
 }

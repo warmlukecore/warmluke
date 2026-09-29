@@ -391,6 +391,39 @@ finder.onclick = async () => { const rows = await wl.find("order_number", "2001"
     await expect(screen.locator("#rates")).toHaveText("1 rates");
     await expect(screen.locator("#rate")).toHaveText("rate 42");
 
+    // Light or dark as the app is, switched while it is open and without
+    // a reload: it kept the values it opened with, and the computer's
+    // setting, not the app's, drew its inputs.
+    const inFrame = () =>
+      screen.locator("body").evaluate(() => {
+        const css = getComputedStyle(document.documentElement);
+        return `${css.getPropertyValue("--surface").trim()}|${css.colorScheme}`;
+      });
+    const app = () =>
+      page.evaluate(() => {
+        const css = getComputedStyle(document.documentElement);
+        return `${css.getPropertyValue("--color-surface").trim()}|${document.documentElement.dataset.theme === "dark" ? "dark" : "light"}`;
+      });
+    const before = await inFrame();
+    // The switch sits in the sidebar, a drawer on a phone, closed by a tap beside it.
+    const flip = async () => {
+      const size = page.viewportSize()!;
+      const narrow = size.width < 1024;
+      if (narrow) await page.getByRole("button", { name: "Open sections" }).click();
+      await page
+        .getByRole("button", { name: /^Switch to the (dark|light) theme$/ })
+        .first()
+        .click();
+      if (narrow) await page.mouse.click(size.width - 8, size.height / 2);
+    };
+    await flip();
+    await expect.poll(inFrame, "the screen follows the switch").not.toBe(before);
+    expect(await inFrame(), "to the app's values and scheme").toBe(await app());
+    await screen.locator("#scan").fill("kept");
+    await flip();
+    await expect.poll(inFrame).toBe(before);
+    await expect(screen.locator("#scan"), "and nothing on it was lost").toHaveValue("kept");
+
     // Sealed: no network, no reach into the app's page.
     await expect(screen.getByText("network blocked")).toBeVisible();
     await expect(screen.getByText("app sealed")).toBeVisible();
@@ -407,4 +440,46 @@ finder.onclick = async () => { const rows = await wl.find("order_number", "2001"
   } finally {
     await shop.admin.from("modules").delete().eq("id", id);
   }
+});
+
+test("the section alone or Luke alone takes the whole screen, and the three come back", async ({
+  signedIn: page,
+  shop,
+}) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 1024, "a phone shows one pane at a time already");
+  await page.goto(`/app/${shop.projectId}`);
+  const width = page.viewportSize()!.width;
+  const main = page.locator("main");
+  const sidebar = page.getByRole("complementary").filter({ has: page.getByRole("link", { name: "Overview" }) });
+  const lukePanel = page.getByRole("complementary", { name: "Luke" });
+  await expect(lukePanel).toBeInViewport();
+
+  // The section alone: the sidebar and Luke fold into drawers, a tap away.
+  await page.getByRole("button", { name: "Show only this section" }).click();
+  await expect(sidebar).not.toBeInViewport();
+  await expect(lukePanel).not.toBeInViewport();
+  expect((await main.boundingBox())!.width, "the section has the width").toBeGreaterThan(width - 40);
+  await page.getByRole("button", { name: "Open sections" }).click();
+  await expect(sidebar).toBeInViewport();
+  await page.mouse.click(width - 8, 400);
+  await expect(sidebar).not.toBeInViewport();
+  await page.getByRole("button", { name: /^Luke/ }).first().click();
+  await expect(lukePanel).toBeInViewport();
+  await page.getByRole("button", { name: "Close Luke" }).click();
+  await expect(lukePanel).not.toBeInViewport();
+
+  // Kept on a reload, and put back by the same button.
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Show the side panels" })).toBeVisible();
+  await page.getByRole("button", { name: "Show the side panels" }).click();
+  await expect(sidebar).toBeInViewport();
+  await expect(lukePanel).toBeInViewport();
+
+  // Luke alone: the section goes, Luke takes the width, and comes back to its place.
+  await page.getByRole("button", { name: "Open Luke full width" }).click();
+  await expect(main).toBeHidden();
+  expect((await lukePanel.boundingBox())!.width, "Luke has the width").toBeGreaterThan(width * 0.6);
+  await page.getByRole("button", { name: "Back to three panes" }).click();
+  await expect(main).toBeVisible();
+  expect((await lukePanel.boundingBox())!.width).toBeLessThan(width * 0.5);
 });

@@ -181,6 +181,14 @@ const RUNTIME = `(() => {
       for (const f of watchers) { try { f(rows); } catch (err) { console.error(err); } }
       return;
     }
+    // The app switched light or dark: the new values, in place, so the
+    // screen keeps where its user was rather than reloading to take them.
+    if (m.type === "colours") {
+      const root = document.documentElement.style;
+      for (const [k, v] of Object.entries(m.colours || {})) root.setProperty("--" + k, String(v));
+      if (m.scheme === "dark" || m.scheme === "light") root.colorScheme = m.scheme;
+      return;
+    }
     const w = waiting.get(m.id);
     if (!w) return;
     waiting.delete(m.id);
@@ -288,7 +296,13 @@ export function customViewPage(
   colours: Record<string, string>,
   fonts = "",
   /** The app's locale and the project's currency, for wl.money. */
-  format: { locale: string; currency: string } = { locale: "en-IN", currency: "INR" }
+  format: { locale: string; currency: string } = { locale: "en-IN", currency: "INR" },
+  /**
+   * The app's own choice, not the computer's: "light dark" drew the
+   * frame's inputs and canvas by the computer's setting, so a dark app on
+   * a light computer showed a light box inside it.
+   */
+  scheme: "light" | "dark" = "light"
 ): string {
   const vars = Object.entries(colours)
     .map(([k, v]) => `--${k}:${v.replace(/[;{}<>]/g, "")};`)
@@ -297,7 +311,7 @@ export function customViewPage(
     /</g,
     "\\u003c"
   );
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CUSTOM_VIEW_CSP}"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${fonts.replace(/<\/?style/gi, "")}:root{${vars}color-scheme:light dark}${CUSTOM_VIEW_KIT}</style><script>${RUNTIME.replace(
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CUSTOM_VIEW_CSP}"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${fonts.replace(/<\/?style/gi, "")}:root{${vars}color-scheme:${scheme === "dark" ? "dark" : "light"}}${CUSTOM_VIEW_KIT}</style><script>${RUNTIME.replace(
     "__COLUMNS__",
     () => cols
   ).replace("__FORMAT__", () =>

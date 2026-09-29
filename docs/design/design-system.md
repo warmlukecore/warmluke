@@ -82,7 +82,8 @@ A custom view runs in a sealed frame, so it cannot reach the app's stylesheet. I
 handed the look instead (`CUSTOM_VIEW_KIT` and `CUSTOM_VIEW_TOKENS` in
 `src/lib/custom-view.ts`): the app's two faces, read from its own stylesheet and passed in
 inline (the frame's policy allows fonts from data only); its colours, corners and depth, in
-light or dark; and a small kit drawn as the app draws them. The kit is `wl-page`,
+light or dark as the app chose (never the computer's setting), and again in place, with no
+reload, the moment the owner switches; and a small kit drawn as the app draws them. The kit is `wl-page`,
 `wl-stack`, `wl-inline`, `wl-grid`, `wl-card` (`now`, `bad`), `wl-title`, `wl-big`,
 `wl-count`, `wl-label`, `wl-muted`, `wl-scan`, `wl-banner` and `wl-badge` (`ok`, `bad`,
 `warn`, `info`), `wl-list` of `wl-row` (`done`, `bad`), and `wl-button` (`primary`,
@@ -101,10 +102,17 @@ prompt names is drawn, and that the kit sets no colour of its own.
 
 What Luke proposes is shown before it is built, with a bar of its own at the top: a small
 info dot, "Preview", and "Nothing is built until you approve it", as a browser frame
-labels what it holds, never a word laid across the rows. A written screen in a preview is a
-card of fixed height with no full screen, and leaves the owner's focus in Luke's panel. The
-section's stat cards size to the space they are in, so four do not break every word in a
-narrow preview.
+labels what it holds, never a word laid across the rows. A preview draws only what the
+change does (`changeShown` in `src/lib/change-preview.ts`): new fields beside the section's
+first column, the parts of how it works the change names, a written screen alone, a new
+section whole with its parts. It is drawn over the section the change is for, read once when
+the card first shows, so it holds still while the owner works beside it and is right
+whichever section is open. Its list shows three rows; its stat cards count every row. A
+written screen in a preview is the screen drawn at 70% in a box 260px high, with no full
+screen, and leaves the owner's focus in Luke's panel. Under it, **Build this** and **Change
+something**; once built the preview goes and the card says Done and where, with what Luke
+offered to do next on the receipt right below. The section's stat cards size to the space
+they are in, so four do not break every word in a narrow preview.
 
 ## Meaning of a badge
 
@@ -118,7 +126,8 @@ word, so the same word always looks the same. `check-tone` holds this.
 
 The app has both. The dark theme is every product token given a night value under
 `[data-theme="dark"]` in `globals.css`, and nothing else: screens built from tokens
-follow without a line of their own. `ThemeToggle` (`components/ThemeSync.tsx`) sits in
+follow without a line of their own. A screen Luke wrote is told the new values in place
+(`CustomView`), so it switches with the app and keeps where its user was. `ThemeToggle` (`components/ThemeSync.tsx`) sits in
 the app's sidebar and the page frame; the choice is kept in the browser and put on
 `<html>` before the first paint (`lib/theme.ts`), so a dark app does not flash white.
 
@@ -140,6 +149,12 @@ the app's sidebar and the page frame; the choice is kept in the browser and put 
 
 - Dialogs open centred, the same width, and never from an edge; a phone gets a sheet from
   the bottom. Nothing leaves the frame or hides behind the assistant panel.
+- A wide screen shows three panes: the sidebar, the section, Luke. The section's header
+  offers **Show only this section**, and Luke's header **Open Luke full width** (its
+  conversation then a readable column in the middle); the same buttons bring the three back,
+  and the choice is kept in the browser. With the section alone, the sidebar and Luke are
+  the drawers a phone opens them in, behind the same header buttons. A phone shows one pane
+  at a time already, so neither button is there.
 - Long forms are `Group`s with a heading each; the danger group comes last.
 - Borders mark structure (a group, a list, a table); shadows mark something raised (a
   card, a menu, a dialog). One of the two, not both, per element.
