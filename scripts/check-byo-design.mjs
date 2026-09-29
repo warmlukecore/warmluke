@@ -110,6 +110,17 @@ try {
     "and it carries a design that actually validates",
     Array.isArray(format?.worked_example?.plans) && format.worked_example.plans.length > 0
   );
+  // The guides Luke designs screens and rule code by, the same text: a
+  // client writing its own had the plan's shape and not how a screen
+  // reaches the app (window.wl, the kit) or what a rule's code is handed.
+  check(
+    "and how a written screen is made, as Luke is told",
+    /window\.wl/.test(format?.written_screens ?? "") && /wl-page/.test(format?.written_screens ?? "")
+  );
+  check(
+    "and how a rule's own code is written, its clock and its next run included",
+    /run_code/.test(format?.code_rules ?? "") && /\bnext\b/.test(format?.code_rules ?? "")
+  );
   check("and hands over the whole vocabulary", (format?.vocabulary ?? "").length > 500);
   check(
     "and is plain that deleting is not on offer",

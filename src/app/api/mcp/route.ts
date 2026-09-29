@@ -11,7 +11,7 @@ import {
   withOwnFields,
 } from "@/lib/store-read";
 import { blueprintAsText, runTurn, schemasFor, storeFactsFor } from "@/lib/engine";
-import { PLAN_FORMAT, WORKED_EXAMPLE, parseReply } from "@/lib/ai";
+import { CODE_RULE_GUIDE, CUSTOM_VIEW_GUIDE, PLAN_FORMAT, WORKED_EXAMPLE, parseReply } from "@/lib/ai";
 import { vocabularyPrompt } from "@/lib/capabilities";
 import {
   describePlan,
@@ -1497,6 +1497,14 @@ export async function POST(req: Request) {
           removing_a_section:
             "MODULE_DELETE may be proposed and can never be built from here. It removes every row in the section and does not come back, so the merchant confirms it in Warmluke by typing the section's name. Propose it if that is plainly what they asked for, tell them it is waiting there for them to confirm, and do not call approve_change for it. A request is approved whole or not at all: put a removal in the same design as other changes and none of them can be built from here, so when they ask for a removal AND something else, propose them as two — the other one can then be approved in the conversation while the removal waits for them in Warmluke.",
           vocabulary: vocabularyPrompt(),
+          // The same guides Luke designs by, from the same constants, so a
+          // screen or a rule's code written here is written to the same
+          // contract the app runs it under. "CONTEXT" in them is the
+          // sections read_section lists.
+          written_screens: CUSTOM_VIEW_GUIDE,
+          code_rules: CODE_RULE_GUIDE,
+          context_means:
+            "Where these guides say CONTEXT, they mean the app's sections: call read_section to list them and their fields.",
         })
       );
     }
