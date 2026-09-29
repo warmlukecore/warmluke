@@ -88,6 +88,7 @@ import { LukeMark } from "@/components/ui/LukeMark";
 import { Markdown } from "@/components/ui/Markdown";
 import { IdNames, useIdNames, withoutIds } from "@/lib/no-ids";
 import { LUKE_COPY } from "@/lib/luke-copy";
+import { ASSISTANTS } from "@/lib/connect-assistants";
 
 /** A message arrives with a short rise; turned off when motion is asked to be reduced (globals.css). */
 const RISE = { ["--rise-from" as string]: "6px", ["--rise-for" as string]: "0.28s" } as React.CSSProperties;
@@ -252,6 +253,35 @@ function since(iso: string): string {
 }
 
 /** An assistant's mark, by the name it registered with; null for one we have no mark for. */
+/** A thing to paste, and its copy button: an address, a command, a config. */
+function CopyValue({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <span className="flex items-start gap-1 rounded-control border border-line bg-surface-subdued py-1 pr-1 pl-2">
+      <code className="min-w-0 flex-1 font-mono text-[10.5px] break-all whitespace-pre-wrap text-fg">{value}</code>
+      <button
+        onClick={() =>
+          navigator.clipboard
+            ?.writeText(value)
+            .then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1600);
+            })
+            .catch(() => {})
+        }
+        aria-label={copied ? "Copied" : "Copy"}
+        className={iconButton}
+      >
+        {copied ? (
+          <Check aria-hidden size={13} strokeWidth={2.25} className="text-signal-success" />
+        ) : (
+          <Copy aria-hidden size={13} strokeWidth={2} />
+        )}
+      </button>
+    </span>
+  );
+}
+
 function assistantLogo(name: string): string | null {
   if (/claude/i.test(name)) return "/logos/claude.svg";
   if (/chatgpt|openai/i.test(name)) return "/logos/openai.svg";
@@ -3793,8 +3823,8 @@ export default function ChatPanel({
 
               <div className="mt-2.5 space-y-2.5">
                 <p className="text-xs leading-relaxed text-fg-muted">
-                  Add Warmluke as a custom connector with this address. It reads your store, and anything it wants to
-                  build comes back here for you to approve.
+                  Connect the AI you already use to this address. It reads your store and designs as Luke does, and
+                  anything it wants to build comes back here for you to approve.
                 </p>
                 <div className="flex items-center gap-1 rounded-control border border-line bg-surface-subdued py-1 pr-1 pl-2.5">
                   <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-fg" title={mcpUrl}>
@@ -3820,6 +3850,49 @@ export default function ChatPanel({
                     {copied ? "Copied" : "Copy"}
                   </button>
                 </div>
+
+                {/* Where the buttons are in each assistant (lib/connect-assistants); the last is any other. */}
+                <ul className="divide-y divide-line overflow-hidden rounded-card border border-line">
+                  {ASSISTANTS.map((a) => (
+                    <li key={a.id}>
+                      <details className="group/how">
+                        <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs text-fg hover:bg-surface-hover">
+                          {a.logo ? (
+                            // eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise
+                            <img
+                              src={a.logo}
+                              alt=""
+                              width={13}
+                              height={13}
+                              className="h-3.5 w-3.5 shrink-0 object-contain"
+                            />
+                          ) : (
+                            <Plug aria-hidden size={13} strokeWidth={1.75} className="shrink-0 text-fg-muted" />
+                          )}
+                          <span className="min-w-0 flex-1 truncate font-medium">{a.name}</span>
+                          <ChevronRight
+                            aria-hidden
+                            size={13}
+                            strokeWidth={2}
+                            className="shrink-0 text-fg-faint transition-transform duration-150 group-open/how:rotate-90"
+                          />
+                        </summary>
+                        <ol className="space-y-2 px-3 pt-1 pb-3 text-[11px] leading-relaxed text-fg-muted">
+                          {a.plan && <li className="list-none text-fg-faint">{a.plan}</li>}
+                          {a.steps(mcpUrl).map((s, i) => (
+                            <li key={i} className="flex gap-2">
+                              <span className="shrink-0 tabular-nums text-fg-faint">{i + 1}.</span>
+                              <span className="min-w-0 flex-1 space-y-1">
+                                <span className="block">{s.text}</span>
+                                {s.copy && <CopyValue value={s.copy} />}
+                              </span>
+                            </li>
+                          ))}
+                        </ol>
+                      </details>
+                    </li>
+                  ))}
+                </ul>
 
                 {assistants.length > 0 && (
                   <ul className="overflow-hidden rounded-card border border-line">
@@ -3963,7 +4036,7 @@ export default function ChatPanel({
                       }}
                       className="rounded-lg border border-line-strong px-2.5 py-1.5 text-[11px] font-medium text-fg hover:bg-surface"
                     >
-                      Use your own Claude
+                      Use your own AI
                     </button>
                   )}
                 </div>

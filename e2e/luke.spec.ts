@@ -1013,3 +1013,19 @@ test("every design's parts open to a preview: Luke's, and one their own AI asked
     await clearUp(shop, thread, ["e2e-desk", "e2e-returns"]);
   }
 });
+
+test("their own AI, any of them, is told how to connect: ChatGPT's steps with this app's address", async ({
+  signedIn: page,
+  shop,
+}) => {
+  await page.goto(`/app/${shop.projectId}`);
+  const { panel } = await luke(page);
+  await panel.getByText(LUKE_COPY.ownAi).click();
+  await panel.getByText("ChatGPT", { exact: true }).click();
+  await expect(panel.getByText(/turn on Developer mode/)).toBeVisible();
+  const address = new URL("/api/mcp", page.url()).href;
+  await expect(panel.locator("code", { hasText: address }).first()).toBeVisible();
+  // And any other assistant, by the rule.
+  await panel.getByText("Any other assistant", { exact: true }).click();
+  await expect(panel.getByText(/remote MCP servers with a sign-in/)).toBeVisible();
+});

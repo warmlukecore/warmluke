@@ -10,7 +10,7 @@ export const LUKE_COPY = {
   emptyTitle: "Where should we begin?",
   emptyBody:
     "Tell me the problem you’re trying to solve, in your own words. I’ll ask how you work, show you a plan, and build only once you approve it.",
-  ownAi: "Use your own Claude or ChatGPT",
+  ownAi: "Use your own AI: Claude, ChatGPT or any other",
   placeholder: "Ask Luke to build or change something",
   promise: "Asked, previewed, versioned, reversible. Nothing applies without your approval.",
 };
