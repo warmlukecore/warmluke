@@ -82,6 +82,7 @@ import { button, iconButton, note } from "@/components/ui/controls";
 import { Logo } from "@/components/ui/Logo";
 import { ThemeToggle } from "@/components/ThemeSync";
 import { withComputed } from "@/lib/expr";
+import { findSection } from "@/lib/section-ref";
 import { codeSpellings } from "@/lib/scan";
 
 /**
@@ -1032,7 +1033,6 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // their own rows; worked out by that section's own computed columns.
   const loadSection = useCallback(
     async (ref: string, match?: { field: string; code: string }) => {
-      const key = ref.trim().replace(/^#/, "").toLowerCase();
       // Read from the database, not the sidebar's list: a screen reads
       // the moment it opens, and opened straight from a link the list
       // was still loading, so every section was "not there".
@@ -1041,9 +1041,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         .select("id, name, nav_label, source_table")
         .eq("project_id", projectId);
       if (modsError) throw new Error(modsError.message);
-      const mod = (mods ?? []).find(
-        (m) => m.id === ref || String(m.name).toLowerCase() === key || String(m.nav_label).toLowerCase() === key
-      );
+      // "#orders", "Orders", "#order_lines": one section however the screen spells it (lib/section-ref).
+      const mod = findSection(mods ?? [], ref);
       if (!mod) throw new Error(`There is no section called "${ref}" in this app.`);
       if (match && !/^[a-z_][a-z0-9_]*$/i.test(match.field)) throw new Error("A field is letters, digits and _.");
       const { data: latest } = await supabase

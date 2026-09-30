@@ -64,7 +64,10 @@ export function parseResult(raw: unknown): CodeResult | null {
  * prints one line of JSON: an answer for each, in order. One machine and
  * one process for them all: a store bringing in fifty orders is one run.
  */
-const RUNNER = `import { readFileSync } from "node:fs";
+/** The field an input carries its sections' other names in (lib/code-rules): taken off before the code sees it. */
+export const ALIASES = "__names";
+
+export const RUNNER = `import { readFileSync } from "node:fs";
 const inputs = JSON.parse(readFileSync("inputs.json", "utf8"));
 const out = [];
 let run;
@@ -75,7 +78,17 @@ try {
   process.stdout.write(JSON.stringify(inputs.map(() => ({ ok: false, error }))));
   process.exit(0);
 }
-for (const input of inputs) {
+// A section however the code spells it (lib/code-rules sectionKey): sections.orders
+// is sections["#orders"]. The rows come once; the names that mean them come beside.
+const key = (s) => String(s).trim().replace(/^#/, "").toLowerCase().replace(/[\\s_-]+/g, "-");
+const named = (rows, aliases) =>
+  new Proxy(rows, {
+    get: (t, p) => (typeof p !== "string" || p in t ? t[p] : t[aliases[key(p)]]),
+    has: (t, p) => p in t || (typeof p === "string" && aliases[key(p)] in t),
+  });
+for (const raw of inputs) {
+  const { ${ALIASES}: aliases, ...input } = raw;
+  if (input.sections && aliases) input.sections = named(input.sections, aliases);
   try {
     const answer = await Promise.race([
       Promise.resolve(run(input)),

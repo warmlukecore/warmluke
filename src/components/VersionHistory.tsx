@@ -9,6 +9,7 @@
 import { useState } from "react";
 import ErrorNote from "@/components/ErrorNote";
 import { asError } from "@/lib/errors";
+import { apiFetch } from "@/lib/auth";
 import type { UiSchemaRow } from "@/lib/types";
 import { Dialog } from "@/components/ui/Dialog";
 import { button } from "@/components/ui/controls";
@@ -40,14 +41,11 @@ export default function VersionHistory({
     setBusyVersion(row.version);
     setError(null);
     try {
-      const res = await fetch("/api/rollback", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ moduleId: row.module_id, version: row.version }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.applied) {
-        setError(data.error ?? "Rollback failed.");
+      // Signed, as every call to our API is: a bare fetch carried no token,
+      // and the server answered "Not signed in." to a signed-in owner.
+      const { ok, data } = await apiFetch("/api/rollback", { moduleId: row.module_id, version: row.version });
+      if (!ok || !data.applied) {
+        setError(typeof data.error === "string" ? data.error : "Rollback failed.");
         return;
       }
       onRollback(row.module_id);

@@ -17,7 +17,8 @@
 // src/app/api/code-rules/worker/route.ts (the queue).
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { runCode, runCodeEach, type CodeResult } from "@/lib/code-run";
+import { ALIASES, runCode, runCodeEach, type CodeResult } from "@/lib/code-run";
+import { findSection, sectionKey } from "@/lib/section-ref";
 import { evalExpr, truthy, withComputed } from "@/lib/expr";
 import { writeRecord, type Written } from "@/lib/record-write";
 import {
@@ -35,12 +36,28 @@ const ROWS_A_SECTION = 500;
 
 type Place = { moduleId: string; table: StoreTable | null };
 
-/** The rows of each section a rule reads, by the name it was listed under ("#courier-rates") and by id. */
-async function readSections(client: SupabaseClient, projectId: string, refs: string[]) {
-  const rows: Record<string, Array<Record<string, unknown>>> = {};
-  const places: Record<string, Place> = {};
-  if (!refs.length) return { rows, places };
-  const { data: mods } = await client.from("modules").select("id, name, source_table").eq("project_id", projectId);
+/** What a rule reads: each section's rows once, under "#name", and every spelling that means it. */
+export type SectionsRead = {
+  rows: Record<string, Array<Record<string, unknown>>>;
+  places: Record<string, Place>;
+  aliases: Record<string, string>;
+};
+
+/** Where a write naming `section` lands, however it was spelled; null for one the rule does not read. */
+export function placeFor(read: Pick<SectionsRead, "places" | "aliases">, section: string): Place | null {
+  return read.places[section] ?? read.places[read.aliases[sectionKey(section)] ?? ""] ?? null;
+}
+
+/** The rows of each section a rule reads, once each, and the names they may be asked for by. */
+async function readSections(client: SupabaseClient, projectId: string, refs: string[]): Promise<SectionsRead> {
+  const rows: SectionsRead["rows"] = {};
+  const places: SectionsRead["places"] = {};
+  const aliases: SectionsRead["aliases"] = {};
+  if (!refs.length) return { rows, places, aliases };
+  const { data: mods } = await client
+    .from("modules")
+    .select("id, name, nav_label, source_table")
+    .eq("project_id", projectId);
   const { data: store } = await client
     .from("stores")
     .select("id")
@@ -48,8 +65,11 @@ async function readSections(client: SupabaseClient, projectId: string, refs: str
     .in("status", ["connected", "uninstalled"])
     .maybeSingle();
   for (const ref of refs) {
-    const m = (mods ?? []).find((x) => x.id === ref || `#${x.name}` === ref);
-    if (!m) continue;
+    const m = findSection(mods ?? [], ref);
+    if (!m) {
+      console.error(`[code rule] reads "${ref}", which is no section of project ${projectId}; it is handed no rows.`);
+      continue;
+    }
     const table = isStoreTable(m.source_table) ? (m.source_table as StoreTable) : null;
     let got: Array<Record<string, unknown>> = [];
     if (table && store) {
@@ -65,13 +85,14 @@ async function readSections(client: SupabaseClient, projectId: string, refs: str
         .limit(ROWS_A_SECTION);
       got = (data ?? []).map((r) => ({ id: r.id, ...((r.data ?? {}) as Record<string, unknown>) }));
     }
-    const place = { moduleId: m.id as string, table };
-    for (const key of [ref, `#${m.name}`, m.id as string]) {
-      rows[key] = got;
-      places[key] = place;
+    const key = `#${m.name}`;
+    rows[key] = got;
+    places[key] = { moduleId: m.id as string, table };
+    for (const name of [ref, m.name, m.nav_label, m.id]) {
+      if (typeof name === "string" && name) aliases[sectionKey(name)] = key;
     }
   }
-  return { rows, places };
+  return { rows, places, aliases };
 }
 
 /** What the code handed back, written through the owner's own door. */
@@ -79,12 +100,18 @@ async function applyWrites(
   client: SupabaseClient,
   w: Pick<Written, "projectId" | "moduleId">,
   here: Place,
-  places: Record<string, Place>,
+  read: SectionsRead,
   out: CodeResult
 ) {
   for (const s of out.set) {
-    const where = s.section ? places[s.section] : here;
-    if (!where) continue;
+    const where = s.section ? placeFor(read, s.section) : here;
+    if (!where) {
+      // Said, not skipped: a write that lands nowhere looked exactly like a rule that ran.
+      console.error(
+        `[code rule] a write names section "${s.section}", which the rule does not read (project ${w.projectId}); nothing was written there.`
+      );
+      continue;
+    }
     const res = await writeRecord(client, {
       projectId: w.projectId,
       moduleId: where.moduleId,
@@ -146,12 +173,13 @@ export async function runCodeRules(client: SupabaseClient, w: Written): Promise<
       for (const a of def.actions) {
         if (a.type !== "run_code") continue;
         const t0 = Date.now();
-        const { rows, places } = await readSections(client, w.projectId, a.reads ?? []);
+        const given = await readSections(client, w.projectId, a.reads ?? []);
         const read = Date.now() - t0;
         const out = await runCode(a.code, {
           row: { id, ...row },
           previous,
-          sections: rows,
+          sections: given.rows,
+          [ALIASES]: given.aliases,
           ...storeClock(await storeZone(client, w.projectId)),
         });
         if (!out.ok) {
@@ -159,7 +187,7 @@ export async function runCodeRules(client: SupabaseClient, w: Written): Promise<
           continue;
         }
         const ran = Date.now() - t0 - read;
-        await applyWrites(client, w, here, places, out.result);
+        await applyWrites(client, w, here, given, out.result);
         console.log(`[code rule] "${r.name}": read ${read}ms, ran ${ran}ms, wrote ${Date.now() - t0 - read - ran}ms`);
       }
     }
@@ -274,20 +302,22 @@ async function runJob(client: SupabaseClient, projectId: string, job: Job): Prom
   const errors: string[] = [];
   for (const a of def.actions) {
     if (a.type !== "run_code") continue;
-    const { rows: sections, places } = await readSections(client, projectId, a.reads ?? []);
+    const given = await readSections(client, projectId, a.reads ?? []);
+    const sections = given.rows;
+    const named = { [ALIASES]: given.aliases };
     // A row the store brought in is handed as a row, as an added one is;
     // a schedule hands the section's rows, and no row.
     const inputs =
       job.kind === "added"
-        ? seen.map((row) => ({ row, previous: null, sections, ...clock }))
-        : [{ rows: seen, sections, ...clock }];
+        ? seen.map((row) => ({ row, previous: null, sections, ...named, ...clock }))
+        : [{ rows: seen, sections, ...named, ...clock }];
     const outs = await runCodeEach(a.code, inputs);
     for (const out of outs) {
       if (!out.ok) {
         errors.push(out.error);
         continue;
       }
-      await applyWrites(client, { projectId, moduleId }, here, places, out.result);
+      await applyWrites(client, { projectId, moduleId }, here, given, out.result);
       // A schedule's own code may say when it runs next; the database keeps it on the rule.
       if (job.kind === "schedule" && out.result.next) {
         await client.rpc("abo_code_next", { p_rule: rule.id, p_at: out.result.next });

@@ -15,6 +15,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { undoableFrom, type UndoStep } from "@/lib/undo";
 import { validatePlan } from "@/lib/ai";
 import { isStoreTable, storeSectionColumns } from "@/lib/store-read";
+import { findSection } from "@/lib/section-ref";
 import {
   mergeFeatures,
   type AssistantPlan,
@@ -471,10 +472,10 @@ export async function applyPlans(
 
 /** Rewrites "#slug" module references into real uuids, in place. */
 function resolveSlugRefs(plan: AssistantPlan, modules: ModuleRow[]): void {
+  // "#orders", "#Packing Scan", "#order_lines": one section however it is spelled (lib/section-ref).
   const idFor = (ref: unknown): string | null => {
     if (typeof ref !== "string" || !ref.startsWith("#")) return null;
-    const slug = ref.slice(1).trim().toLowerCase();
-    return modules.find((m) => m.name === slug)?.id ?? null;
+    return findSection(modules, ref)?.id ?? null;
   };
 
   const targetId = idFor(plan.targetModuleId);
