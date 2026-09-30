@@ -2370,6 +2370,62 @@ function withoutDoneClaims(text: string): string {
 }
 
 /**
+ * A reply as JSON, or why it is not, in words the repair can act on.
+ *
+ * It used to say "Luke returned invalid JSON. Try rephrasing" and no
+ * more, so the retry was blind: a packing screen asked for by ChatGPT
+ * spent two of its four attempts on it (2026-09-29 and 09-30) and never
+ * got built. A screen's HTML written inside a JSON string sometimes keeps
+ * its line breaks raw, which JSON.parse refuses though nothing else is
+ * wrong: those are escaped and it is read again. A reply that ends inside
+ * a string or with brackets open was cut off at the output cap, and says
+ * so, so the next attempt is shorter rather than the same again.
+ */
+export function readJson(text: string): { ok: true; value: unknown } | { ok: false; error: string } {
+  let first: unknown;
+  try {
+    return { ok: true, value: JSON.parse(text) };
+  } catch (e) {
+    first = e;
+  }
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  let depth = 0;
+  for (const ch of text) {
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      else if (ch === "\n" || ch === "\r" || ch === "\t") {
+        out += ch === "\n" ? "\\n" : ch === "\r" ? "\\r" : "\\t";
+        continue;
+      }
+    } else if (ch === '"') inString = true;
+    else if (ch === "{" || ch === "[") depth++;
+    else if (ch === "}" || ch === "]") depth--;
+    out += ch;
+  }
+  if (inString || depth > 0) {
+    return {
+      ok: false,
+      error: `Your reply was cut off before it ended: it ran past the ${MAX_OUTPUT_TOKENS} tokens one reply may use. Send the same design again, shorter: a written screen in fewer lines, and nothing it does not need.`,
+    };
+  }
+  try {
+    return { ok: true, value: JSON.parse(out) };
+  } catch {
+    const said = first instanceof Error ? first.message : String(first);
+    const at = Number(/position (\d+)/.exec(said)?.[1]);
+    const near = Number.isFinite(at) ? `, near ${JSON.stringify(text.slice(Math.max(0, at - 60), at + 20))}` : "";
+    return {
+      ok: false,
+      error: `Your reply was not valid JSON (${said}${near}). Send the whole reply again as one JSON object, with every quote and line break inside a string escaped.`,
+    };
+  }
+}
+
+/**
  * Parses the assistant's reply envelope: clarify (questions), blueprint
  * (design for approval), or plans (validated changes). Anything that
  * fails here never reaches the UI, let alone the database.
@@ -2382,12 +2438,9 @@ export function parseReply(
   /** Per-section schemas, for a design that touches more than one. */
   schemas?: SchemaLookup
 ): ParsedReply {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stripFences(raw));
-  } catch {
-    return { ok: false, errors: ["Luke returned invalid JSON. Try rephrasing your request."] };
-  }
+  const json = readJson(stripFences(raw));
+  if (!json.ok) return { ok: false, errors: [json.error] };
+  const parsed: unknown = json.value;
   if (!isPlainObject(parsed)) {
     return { ok: false, errors: ["Luke's reply wasn't a JSON object."] };
   }
@@ -2840,6 +2893,10 @@ async function generate(
       hear
     );
     text = result.text;
+    // Said, so a reply that fails to parse can be told apart from one cut short.
+    if (result.finishReason === "length") {
+      console.warn(`[model] ${provider} reply cut off at the ${MAX_OUTPUT_TOKENS}-token cap`);
+    }
     // The cap arrived while it was still looking things up, so no reply
     // was written. It is asked once more with what it found folded into
     // its last turn as plain words, and no tools. Not by withholding the
