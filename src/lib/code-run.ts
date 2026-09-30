@@ -143,7 +143,9 @@ export async function runCodeEach(code: string, inputs: unknown[]): Promise<Ran[
     sandbox = await Sandbox.create({
       ...credentials(),
       runtime: "node24",
-      region: "syd1",
+      // Beside the function that asks, which sits beside the database
+      // (vercel.json regions): Mumbai since 2026-09-30, and wherever it moves.
+      region: process.env.VERCEL_REGION || "bom1",
       // Its life: a minute, and a little more for each input past the first.
       timeout: Math.min(45_000 + inputs.length * 200, 240_000),
       resources: { vcpus: 1 },

@@ -79,6 +79,16 @@ const column = async (query) =>
 
 console.log(`${REF} via ${viaPsql ? "a direct connection" : "the management API"}`);
 await run(`
+  -- The ledger's guard names this function, which 0028 makes; on a project
+  -- built from nothing (the Mumbai move, 2026-09-30) 0028 has not run yet.
+  -- Its definition as 0028 writes it, which 0028 then writes again.
+  create or replace function public.abo_is_oauth_client()
+  returns boolean
+  language sql stable as $fn$
+    select nullif(auth.jwt() ->> 'client_id', '') is not null
+  $fn$;
+  grant execute on function public.abo_is_oauth_client() to anon, authenticated;
+
   create table if not exists public.abo_migrations (
     version       text primary key,
     name          text not null,
