@@ -3004,17 +3004,11 @@ async function generate(
     : undefined;
   hear?.("");
   let text: string;
+  const tools = lookups ? { tools: lookups.tools, stopWhen: isStepCount(lookups.steps ?? LOOKUP_STEPS) } : {};
   try {
-    const result = await step(
-      provider,
-      {
-        ...base,
-        messages: asMessages(turns),
-        ...(lookups ? { tools: lookups.tools, stopWhen: isStepCount(lookups.steps ?? LOOKUP_STEPS) } : {}),
-      },
-      hear
-    );
+    const result = await step(provider, { ...base, messages: asMessages(turns), ...tools }, hear);
     text = result.text;
+    let finish = result.finishReason;
     // Said, so a reply that fails to parse can be told apart from one cut short.
     if (result.finishReason === "length") {
       console.warn(`[model] ${provider} reply cut off at the ${MAX_OUTPUT_TOKENS}-token cap`);
@@ -3035,7 +3029,20 @@ async function generate(
         role: "user",
         content: `${last?.role === "user" ? `${last.content}\n\n` : ""}What your lookups returned, all you will get:\n${JSON.stringify(found).slice(0, FOLD_CHARS)}\n\nReply now, from these and the rows above, with the JSON only.`,
       };
-      ({ text } = await step(provider, { ...base, messages: asMessages(folded) }, hear));
+      ({ text, finishReason: finish } = await step(provider, { ...base, messages: asMessages(folded) }, hear));
+    }
+    // Out of room before a word was written, all of it spent thinking
+    // (Sonnet 5 at high effort on a hold that must never oversell,
+    // 2026-09-30). The same request once more, told to think less. Only a
+    // model that takes effort is asked again: any other would do the same.
+    if (!text && finish === "length" && "providerOptions" in base) {
+      console.warn(`[model] ${provider} wrote nothing before the cap; asking once more at low effort`);
+      hear?.("");
+      ({ text } = await step(
+        provider,
+        { ...base, providerOptions: { anthropic: { effort: "low" } }, messages: asMessages(turns), ...tools },
+        hear
+      ));
     }
   } catch (e) {
     throw asModelError(provider, signal?.aborted && !(e instanceof Error && e.name === "AbortError") ? stopped() : e);

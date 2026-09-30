@@ -228,6 +228,45 @@ try {
   );
   check("Opus 5.5 too, so production is asked as it was", (await effortOf("claude-opus-5-5")) === "medium");
   check("and Haiku 4.5, which takes none, is sent none", (await effortOf("claude-haiku-4-5-20251001")) === null);
+
+  // All of the cap spent thinking, not a word written (2026-09-30).
+  const thoughtOut = () => ({
+    status: 200,
+    body: JSON.stringify({
+      id: "msg_2",
+      type: "message",
+      role: "assistant",
+      model: "claude-test",
+      content: [{ type: "thinking", thinking: "", signature: "sig" }],
+      stop_reason: "max_tokens",
+      stop_sequence: null,
+      usage: { input_tokens: 10, output_tokens: 12000 },
+    }),
+  });
+  const bikes = (model) =>
+    callAnthropicChat("the contract", [{ role: "user", content: "track bikes" }], undefined, model).catch((e) => e);
+  sent.length = 0;
+  queue.push(thoughtOut(), reply('{"type":"clarify"}'));
+  const again = await bikes("claude-sonnet-5");
+  check(
+    "a reply that thought to the cap and wrote nothing is asked once more",
+    sent.length === 2 && again === '{"type":"clarify"}'
+  );
+  check(
+    "told to think less the second time",
+    sent[0]?.body?.output_config?.effort === "medium" && sent[1]?.body?.output_config?.effort === "low"
+  );
+  sent.length = 0;
+  queue.push(thoughtOut(), thoughtOut());
+  const twice = await bikes("claude-sonnet-5");
+  check(
+    "and if it writes nothing again, the merchant reads one sentence",
+    sent.length === 2 && twice?.kind === "empty" && /answered with nothing/.test(twice.message)
+  );
+  sent.length = 0;
+  queue.push(thoughtOut());
+  const small = await bikes("claude-haiku-4-5-20251001");
+  check("a model that takes no effort is not asked again for nothing", sent.length === 1 && small?.kind === "empty");
   sent.length = 0;
   await failing(529, '{"error":{"type":"overloaded_error"}}');
   check("a failure is tried once: retrying is the caller's call", sent.length === 1);
