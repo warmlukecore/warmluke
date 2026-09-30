@@ -198,6 +198,11 @@ async function copyAuthConfig() {
   throw new Error(`sign-in settings were refused; left out so far: ${left.join(", ")}`);
 }
 
+if (flag("--auth-config")) console.log(`sign-in settings: ${await copyAuthConfig()} copied`);
+// Settings alone read no table, so the source can be a paused project: the
+// Mumbai check project took the paused Sydney one's this way (2026-09-30).
+if (flag("--auth-config") && !flag("--copy") && !flag("--vault")) process.exit(0);
+
 const tables = await tablesOf(from);
 const theirs = new Set(await tablesOf(to));
 const missing = tables.filter((t) => !theirs.has(t));
@@ -207,8 +212,6 @@ if (missing.length) {
   );
   process.exit(1);
 }
-
-if (flag("--auth-config")) console.log(`sign-in settings: ${await copyAuthConfig()} copied`);
 
 if (flag("--copy")) {
   if (to.checkProject) {
