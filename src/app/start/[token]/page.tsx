@@ -195,8 +195,9 @@ export default function StartPage() {
               <Link href="/login" className={button("primary")}>
                 Sign in
               </Link>
-              <Link href="/signup" className={button("secondary")}>
-                Sign up
+              {/* Invite only (0141): an invite that has closed is asked for again, not replaced by a sign-up. */}
+              <Link href="/#book" className={button("secondary")}>
+                Ask for a new invite
               </Link>
             </>
           )}

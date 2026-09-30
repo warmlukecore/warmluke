@@ -21,6 +21,7 @@ import { useUser } from "@/lib/auth";
 import { PageFrame } from "@/components/PageFrame";
 import { Choices } from "@/components/AdminParts";
 import { button, card, field, fieldOf, label, note } from "@/components/ui/controls";
+import { Switch } from "@/components/ui/Switch";
 
 type Invite = {
   id: string;
@@ -127,6 +128,31 @@ export default function Invites() {
     if (user) load();
   }, [user, load]);
 
+  // Invite only (0141): whether a new account needs an invite to start an app.
+  const [inviteOnly, setInviteOnly] = useState<boolean | null>(null);
+  useEffect(() => {
+    supabase
+      .from("signup_gate")
+      .select("invite_only")
+      .maybeSingle()
+      .then(({ data, error: e }) => setInviteOnly(e ? null : data?.invite_only === true));
+    // Opened from an early-access request (the demos screen): what they told us, filled in.
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("email")) setEmail(q.get("email") ?? "");
+    if (q.get("name")) setFullName(q.get("name") ?? "");
+    if (q.get("business")) setBusiness(q.get("business") ?? "");
+    if (q.get("note")) setMemo((q.get("note") ?? "").slice(0, 300));
+  }, []);
+
+  async function setGate(on: boolean) {
+    setInviteOnly(on);
+    const { error: err } = await supabase.rpc("abo_admin_set_invite_only", { p_on: on });
+    if (err) {
+      setInviteOnly(!on);
+      setError(err.message);
+    }
+  }
+
   const named = email.trim().length > 0;
   const uses = named || !many ? 1 : Math.min(1000, Math.max(1, Number.parseInt(count, 10) || 1));
 
@@ -207,6 +233,20 @@ export default function Invites() {
         {error && (
           <div role="alert" className={`${note.critical} mt-5 text-[13px]`}>
             {error}
+          </div>
+        )}
+
+        {!refused && inviteOnly !== null && (
+          <div className={`${card} mt-6 flex items-start justify-between gap-4 p-5`}>
+            <div>
+              <h2 className="text-[13px] font-semibold text-fg">Invite only</h2>
+              <p className="mt-0.5 max-w-xl text-xs leading-relaxed text-fg-muted">
+                {inviteOnly
+                  ? "On: a new account needs an invite from here to start an app. Sign-up without one shows the early-access form. Accounts made before it went on, and people added to a team, are not affected. Signing in is never blocked."
+                  : "Off: anyone can make an account and start an app. Turn it on to let people in only through invites."}
+              </p>
+            </div>
+            <Switch checked={inviteOnly} onChange={setGate} label="Invite only" />
           </div>
         )}
 
@@ -329,7 +369,8 @@ export default function Invites() {
               )}
             </form>
 
-            <div className={`${card} thin-scroll mt-6 overflow-x-auto`}>
+            {/* relative: the sr-only label in the last column is absolute, and it stretched the page past a phone. */}
+            <div className={`${card} thin-scroll relative mt-6 overflow-x-auto`}>
               {rows.length === 0 ? (
                 <p className="px-4 py-8 text-center text-[13px] text-fg-muted">
                   No invites yet. The first one you make appears here.

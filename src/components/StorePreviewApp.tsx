@@ -530,7 +530,7 @@ function App({
               onClick={() => setLeaving(false)}
               className={`${button("primary", "sm")} mt-2.5`}
             >
-              Book a demo
+              Get early access
             </a>
           </div>
           <button onClick={() => setLeaving(false)} aria-label="Close" className={`${iconButton} -mt-1 -mr-1`}>

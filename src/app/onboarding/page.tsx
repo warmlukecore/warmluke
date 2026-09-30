@@ -45,6 +45,7 @@ import {
   type Step,
 } from "@/lib/onboarding";
 import { Logo } from "@/components/ui/Logo";
+import { InviteOnly } from "@/components/InviteOnly";
 
 const WATCH_MS = 3000;
 
@@ -75,6 +76,7 @@ export default function Onboarding() {
   const router = useRouter();
 
   const [ready, setReady] = useState(false);
+  const [uninvited, setUninvited] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Answers>(EMPTY);
   const [profileSaved, setProfileSaved] = useState(false);
@@ -104,7 +106,7 @@ export default function Onboarding() {
 
   const load = useCallback(async () => {
     if (!user) return;
-    const [profile, projects, settings, clients] = await Promise.all([
+    const [profile, projects, settings, clients, may] = await Promise.all([
       supabase.from("profiles").select("*").eq("user_id", user.id).maybeSingle(),
       supabase
         .from("projects")
@@ -113,7 +115,15 @@ export default function Onboarding() {
         .order("created_at", { ascending: true }),
       supabase.rpc("abo_my_settings"),
       supabase.rpc("abo_oauth_clients"),
+      supabase.rpc("abo_may_start_app"),
     ]);
+    // Invite only (0141): the database would refuse their app, so the
+    // questions about it are not asked. Unknown (before 0141) is allowed.
+    if (may.data === false) {
+      setUninvited(true);
+      setReady(true);
+      return;
+    }
     if (profile.error || projects.error) {
       setLoadError("Your details couldn’t be loaded. Reload the page to try again.");
       setReady(true);
@@ -243,6 +253,8 @@ export default function Onboarding() {
       </div>
     );
   }
+
+  if (uninvited) return <InviteOnly signedIn />;
 
   const reading = Object.values(progress).find((p) => p.label && p.status !== "done")?.label;
 

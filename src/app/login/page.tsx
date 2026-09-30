@@ -17,13 +17,22 @@ export default function Login() {
   // in it and no way back to the app they were sent to.
   const [next, setNext] = useState<string | null>(null);
   const [email, setEmail] = useState("");
+  // Invite only (0141): signing in is never gated, making an account is.
+  // Someone sent a team's link or an invite still gets the way to one.
+  const [inviteOnly, setInviteOnly] = useState(false);
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     setNext(q.get("next"));
     // Sent from a sign-up that found the address already has an account.
     const known = q.get("email");
     if (known) setEmail(known);
+    supabase
+      .from("signup_gate")
+      .select("invite_only")
+      .maybeSingle()
+      .then(({ data }) => setInviteOnly(data?.invite_only === true));
   }, []);
+  const invited = !!next && /^\/(join|start)\//.test(next);
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -98,13 +107,24 @@ export default function Login() {
       </form>
 
       <p className="mt-5 border-t border-line pt-4 text-center text-xs">
-        No account?{" "}
-        <Link
-          href={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"}
-          className="font-medium text-link hover:underline"
-        >
-          Start free
-        </Link>
+        {inviteOnly && !invited ? (
+          <>
+            New here? Warmluke is invite only for now.{" "}
+            <Link href="/#book" className="font-medium text-link hover:underline">
+              Get early access
+            </Link>
+          </>
+        ) : (
+          <>
+            No account?{" "}
+            <Link
+              href={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"}
+              className="font-medium text-link hover:underline"
+            >
+              {invited ? "Create one" : "Start free"}
+            </Link>
+          </>
+        )}
       </p>
     </CenteredCard>
   );

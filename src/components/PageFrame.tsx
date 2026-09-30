@@ -50,7 +50,7 @@ export function PageFrame({
         {/* The screen refuses anyone else; this only decides whether the door shows. */}
         {isSuperadmin && tab("/admin", "Accounts", ShieldCheck)}
         {isSuperadmin && tab("/admin/invites", "Invites", UserPlus)}
-        {isSuperadmin && tab("/admin/demos", "Demo requests", Inbox)}
+        {isSuperadmin && tab("/admin/demos", "Early access", Inbox)}
         <div className="ml-auto flex items-center gap-1">
           <ThemeToggle className="rounded-control p-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white" />
           <AccountMenu email={email} />

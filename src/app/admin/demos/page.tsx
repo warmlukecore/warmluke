@@ -52,7 +52,19 @@ type Lead = {
   /** Kept as the database wrote it: it is the version a save is made against. */
   followed_up_at?: string | null;
   followed_up_by?: string | null;
+  // 0141: the business they named, and when an invite was last made for their email.
+  business?: string | null;
+  invited_at?: string | null;
 };
+
+/** The invite form, filled in with what the request told us (0141). */
+const inviteHref = (r: Lead) =>
+  `/admin/invites?${new URLSearchParams({
+    email: (r.email ?? "").trim(),
+    name: (r.name ?? "").trim(),
+    business: (r.business ?? "").trim(),
+    note: `Early access${r.store ? `, ${r.store}` : ""}${r.note ? `: ${r.note}` : ""}`,
+  }).toString()}`;
 
 const NOTE_MAX = 4000;
 
@@ -60,6 +72,7 @@ const CSV_COLUMNS: Column<Lead>[] = [
   ["Asked", (r) => r.created_at],
   ["Name", (r) => r.name],
   ["Email", (r) => r.email],
+  ["Business", (r) => r.business ?? ""],
   ["Store", (r) => r.store],
   ["Team", (r) => labelOf(TEAM_OPTIONS, r.team_size)],
   ["Orders a month", (r) => labelOf(ORDER_OPTIONS, r.monthly_orders)],
@@ -179,9 +192,10 @@ export default function DemoRequests() {
   return (
     <PageFrame email={user.email} isSuperadmin={!error}>
       <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-8 sm:py-8">
-        <h1 className="text-xl font-semibold tracking-tight text-fg">Demo requests</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-fg">Early access</h1>
         <p className="mt-1 text-[13px] text-fg-muted">
-          Everyone who asked for a demo on the website, what they told us, and what sent them.
+          Everyone who asked for early access on the website, what they told us, and what sent them. Make an invite link
+          from any of them.
         </p>
 
         {error && (
@@ -236,7 +250,7 @@ export default function DemoRequests() {
               <Choices options={stageOptions} value={stage} onChange={setStage} />
             </div>
 
-            <div className={`${card} thin-scroll mt-3 overflow-x-auto`}>
+            <div className={`${card} thin-scroll relative mt-3 overflow-x-auto`}>
               <table className="w-full text-left text-[13px]">
                 <thead className="border-b border-line bg-surface-subdued text-xs text-fg-muted">
                   <tr>
@@ -292,6 +306,9 @@ export default function DemoRequests() {
                                   </span>
                                 )}
                               </div>
+                              {r.business && (
+                                <div className="max-w-[14rem] truncate text-xs text-fg-muted">{r.business}</div>
+                              )}
                               {r.email && (
                                 <a
                                   href={`mailto:${r.email}`}
@@ -299,6 +316,16 @@ export default function DemoRequests() {
                                 >
                                   {r.email}
                                 </a>
+                              )}
+                              {r.email && !r.has_account && (
+                                <Link
+                                  href={inviteHref(r)}
+                                  className="mt-1 inline-block text-xs font-medium text-link hover:underline"
+                                >
+                                  {r.invited_at
+                                    ? `Invited ${ago(r.invited_at, now)} · make another`
+                                    : "Make invite link"}
+                                </Link>
                               )}
                               <div
                                 className="text-[11px] whitespace-nowrap text-fg-faint"

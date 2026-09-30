@@ -316,6 +316,12 @@ function DashboardInner() {
       .select()
       .single();
     setCreating(false);
+    // Invite only (0141): someone on a team who has no invite of their own.
+    // Onboarding says so and offers the way to ask for one.
+    if (error?.code === "42501") {
+      router.push("/onboarding");
+      return null;
+    }
     if (error || !data) {
       console.error(error?.message);
       return null;

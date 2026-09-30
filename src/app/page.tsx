@@ -5,7 +5,8 @@
 // arrives already decided, so nobody watches one headline turn into
 // another, and the hero that gets measured is the hero that was read.
 //
-// One thing is being asked for — a demo. There is no Start Free, no
+// One thing is being asked for: early access, since sign-up is by invite
+// (0141), and every invite starts from one of these. There is no Start Free, no
 // Create Account, no Sign Up: the point of the page is to start a
 // conversation with a business, not to collect an account from
 // somebody who will never open it again. "Sign in" stays in the corner
@@ -74,7 +75,7 @@ export const metadata = {
 /** Asked six ways across the page; one place to change how it looks. */
 function Cta({
   where,
-  children = "Book a Demo",
+  children = "Get early access",
   tone = "solid",
 }: {
   where: string;
@@ -113,7 +114,7 @@ function PlayCta() {
     <a
       href="#book"
       data-cta="hero_play"
-      aria-label="Book a demo"
+      aria-label="Get early access"
       className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-[0_2px_12px_rgb(0_0_0/0.08)] transition-colors hover:bg-neutral-50"
     >
       <svg viewBox="0 0 24 24" className="h-4 w-4 fill-ink" aria-hidden="true">
@@ -316,13 +317,17 @@ const FOOTER_LINKS: Array<[string, string]> = [
   ["Use cases", "#uses"],
   ["Integrations", "#integrations"],
   ["Your own AI", "#mcp"],
-  ["Book a demo", "#book"],
+  ["Early access", "#book"],
   ["Sign in", "/login"],
   ["Privacy", "/privacy"],
   ["Terms", "/terms"],
 ];
 
-const BOOK_POINTS = ["Shown on your own store, not a sample one", "Your questions, in your words"];
+const BOOK_POINTS = [
+  "An invite link to your email, with your details already in",
+  "Built on your own store, not a sample one",
+  "Your questions, in your words",
+];
 
 /**
  * What a connected assistant can actually do, in two lines; the
@@ -638,7 +643,7 @@ export default async function Landing({
         </div>
 
         {/* gap-3 rather than justify-between alone: at 375px with the
-            longest call to action ("Book a Demo") the wordmark and
+            longest call to action ("Get early access") the wordmark and
             "Sign in" met in the middle with nothing between them.
             The gap is what stops them touching whatever the variant
             puts in the button; the smaller type below is what keeps
@@ -699,7 +704,7 @@ export default async function Landing({
                   key={c.name}
                   href="#book"
                   data-cta={`connector_${c.name.toLowerCase().replace(/\s+/g, "_")}`}
-                  title={`Need ${c.name}? Our team sets it up. Book a demo and tell us.`}
+                  title={`Need ${c.name}? Our team sets it up. Ask for early access and tell us.`}
                   aria-label={`${c.name}, set up by our team`}
                   className="opacity-80 transition-opacity hover:opacity-100"
                 >
@@ -983,7 +988,7 @@ export default async function Landing({
                 data-cta="connectors_ask"
                 className="text-accent underline underline-offset-2 hover:opacity-80"
               >
-                Tell us yours on the demo
+                Tell us yours when you ask for access
               </a>
               .
             </p>
@@ -1052,8 +1057,8 @@ export default async function Landing({
                 What would you ask Luke to fix first?
               </h2>
               <p className="mt-4 text-quiet">
-                Connect your ecommerce business to Warmluke and see what Luke could do for your team. No generic sales
-                pitch. Show us how your business works today and we&apos;ll show you what Warmluke can do with it.
+                Warmluke is invite only for now. Tell us how your business works today, and we&apos;ll send you an
+                invite link to start on your own store. No generic sales pitch.
               </p>
               <ul className="mt-6 space-y-2.5">
                 {BOOK_POINTS.map((p) => (

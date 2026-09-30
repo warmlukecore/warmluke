@@ -43,6 +43,8 @@ const pick = (v: FormDataEntryValue | null, options: Option[]) => {
 export async function bookDemo(_prev: BookingState, form: FormData): Promise<BookingState> {
   const name = text(form.get("name"), 120);
   const email = text(form.get("email"), 160);
+  // What the invite made from this request is addressed to (0141).
+  const business = text(form.get("business"), 160);
   const store = text(form.get("store"), 200);
   // The same lists onboarding asks from, so a lead and an account are
   // described in the same words on the admin screen.
@@ -54,8 +56,8 @@ export async function bookDemo(_prev: BookingState, form: FormData): Promise<Boo
   const heard_from_detail = heardDetailPrompt(heard_from) ? text(form.get("heard_from_detail"), 200) : "";
 
   // The browser checks these too; the browser is not the one to ask.
-  if (!name || !email || !store) {
-    return { ok: false, message: "Name, email and store are all needed." };
+  if (!name || !email || !business || !store) {
+    return { ok: false, message: "Name, email, business and store are all needed." };
   }
   // The picks are not required here. The form will not send without
   // them, but with JavaScript off it cannot open them at all, and a
@@ -89,6 +91,7 @@ export async function bookDemo(_prev: BookingState, form: FormData): Promise<Boo
       payload: {
         name,
         email,
+        business,
         store,
         note: text(form.get("note"), 600),
         team_size,

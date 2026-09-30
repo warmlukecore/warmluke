@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CenteredCard } from "@/components/CenteredCard";
+import { InviteOnly } from "@/components/InviteOnly";
 import { PasswordInput } from "@/components/ui/PasswordInput";
 import { button, field, label, note } from "@/components/ui/controls";
 import { useRouter } from "next/navigation";
@@ -16,8 +17,17 @@ export default function Signup() {
   // detour, or the invited person arrives at a dashboard with nothing
   // in it and no way back to the app they were sent to.
   const [next, setNext] = useState<string | null>(null);
+  // Invite only (0141): without an invite to go back to, there is no form,
+  // only the way to ask for one. Null until read, so neither flashes.
+  const [inviteOnly, setInviteOnly] = useState<boolean | null>(null);
   useEffect(() => {
     setNext(new URLSearchParams(window.location.search).get("next"));
+    supabase
+      .from("signup_gate")
+      .select("invite_only")
+      .maybeSingle()
+      // A database without the gate yet is an open one.
+      .then(({ data }) => setInviteOnly(data?.invite_only === true));
   }, []);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -49,9 +59,16 @@ export default function Signup() {
     }
   }
 
+  // A team's link (/join) or an invite to start (/start) is an invitation.
+  const invited = !!next && /^\/(join|start)\//.test(next);
+  if (inviteOnly === null) return <CenteredCard>{null}</CenteredCard>;
+  if (inviteOnly && !invited) return <InviteOnly />;
+
   return (
     <CenteredCard>
-      <h1 className="text-lg font-semibold tracking-tight text-fg">Start building free</h1>
+      <h1 className="text-lg font-semibold tracking-tight text-fg">
+        {invited ? "Create your account" : "Start building free"}
+      </h1>
       <p className="mt-1">Your own workspace, isolated and versioned.</p>
 
       <form onSubmit={submit} className="mt-6 space-y-4">

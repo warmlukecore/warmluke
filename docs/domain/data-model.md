@@ -58,11 +58,12 @@ erDiagram
 | Table             | Purpose                                                              | Important behavior                                                                                                                   |
 | ----------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `projects`        | Tenant and generated application                                     | Owner, name, locale, currency, auto-build setting                                                                                    |
-| `project_members` | Staff seats                                                          | Claimed with a secret token; one seat per user/project                                                                               |
+| `project_members` | Staff seats                                                          | Claimed with a secret token that lapses after 7 days; one seat per user/project; `can_see_store` (off for new seats) opens the store's rows; `last_seen_at` for the owner's People tab (0140)                                                                               |
+| `module_shares` | Which seats a section is shared with (0140) | Owner-written; a section shared with the team (`modules.shared_with_team`) needs none; a section under another is shared as its parent is |
 | `modules`         | Navigable application sections                                       | Per-project slug, ordering, one-level nesting, optional store source                                                                 |
 | `records`         | Owner-managed rows, and the merchant's own fields beside a store row | JSONB data; project/module scoped; update timestamp supports safe undo; `store_row_id` names the store row on a store section (0128) |
-| `merchant_notes` | What Luke learned about the business from its owner (0131) | One line each, per project; unique per project; the newest forty kept by a trigger; read into the plan and talk prompts; struck by the owner |
-| `turn_traces` | What each of Luke's turns did (0132) | One row a turn: steps, road, model, usage, repairs and their errors, unmet, plan goal, critic verdict, time taken; read by the project's members |
+| `merchant_notes` | What Luke learned about the business from its owner (0131) | One line each, per project; unique per project; the newest forty kept by a trigger; read into the plan and talk prompts; struck by the owner, and read by nobody else (0140) |
+| `turn_traces` | What each of Luke's turns did (0132) | One row a turn: steps, road, model, usage, repairs and their errors, unmet, plan goal, critic verdict, time taken; read by the project's owner (0140) |
 | `ui_schemas`      | Append-only module designs                                           | Versioned schema JSON, author, and change description                                                                                |
 | `automations`     | Declarative business rules                                           | Optional module scope, enabled state, expression/action definition                                                                   |
 | `automation_runs` | Automation execution history                                         | Success flag, triggering record, and details                                                                                         |
@@ -120,6 +121,7 @@ computed columns, guards, and local display behavior where allowed.
 | `admin_account_audit`   | Audit trail for administrator account changes                                                                                                                                                                                                                                                         |
 | `account_invites`       | Sign-up links an administrator makes: a 192-bit token, what is known of the person (email, name, business), uses allowed, `expires_at` (72 hours unless chosen), `revoked_at`; closed to every key, read and written only through `abo_admin_invite*` and `abo_invite_peek`/`abo_invite_claim` (0119) |
 | `account_invite_claims` | Who took each invite, one row per account and invite                                                                                                                                                                                                                                                  |
+| `signup_gate` | One row: `invite_only`, switched by an administrator (`abo_admin_set_invite_only`), and when it went on. On, a new account starts an app only with a claimed invite (`abo_may_start_app`, a restrictive insert policy on `projects`); older accounts, owners and team seats are unaffected, and signing in never is (0141) |
 | `demo_followups`        | One row per demo request an administrator has touched: its stage (new, contacted, scheduled, customer, not_a_fit) and a private note; written only through `abo_admin_demo_follow_up`, against the version last seen (0120)                                                                           |
 
 Build request state evolved across migrations. Current code recognizes `pending`,
@@ -157,8 +159,9 @@ application.
 ## Supporting tables
 
 - `fx_rates`: project-scoped currency conversion cache.
-- `landing_events`: rate-limited marketing attribution and conversion events. A demo
-  booking is one of them (`demo_booked`, the answers in `payload`), read only by
+- `landing_events`: rate-limited marketing attribution and conversion events. An
+  early-access request is one of them (`demo_booked`, the answers in `payload`, the business
+  among them since 0141), read only by
   administrators through `abo_admin_demo_requests` (0115), with where each stands
   (`demo_followups`, 0120).
 - `app_secrets`: server-side integration secrets used by database verification paths.

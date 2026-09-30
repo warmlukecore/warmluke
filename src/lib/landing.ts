@@ -75,7 +75,7 @@ export const HEROES: Hero[] = [
     headline: "Meet Luke. The AI that helps run your ecommerce business.",
     emphasis: "run",
     sub: "Connect your store, marketing, support and operations to Warmluke. Luke understands what's happening, helps you take action and builds the tools your business needs.",
-    cta: "Book a Demo",
+    cta: "Get early access",
     secondary: "See how it works",
     // No supporting line: the pill above the headline already says what
     // is connected, and a second line under the buttons said it again.
@@ -88,7 +88,7 @@ export const HEROES: Hero[] = [
     headline: "Your ecommerce business doesn't need another app.",
     emphasis: "another app",
     sub: "Warmluke brings your store, marketing, support and operations together. When you need something new, tell Luke instead of adding another SaaS subscription.",
-    cta: "Book a Demo",
+    cta: "Get early access",
   },
   {
     // Ten, not twenty-five.
@@ -122,7 +122,7 @@ export const HEROES: Hero[] = [
     // whole product to whoever landed on this variant.
     sub: "One that already knows your orders, stock and customers, answers from them, spots problems before you do, and builds the tools your team needs. You can reach it from ChatGPT or Claude too.",
     cta: "Meet Luke",
-    secondary: "Book a Demo",
+    secondary: "Get early access",
   },
   {
     id: "problem",
@@ -131,7 +131,7 @@ export const HEROES: Hero[] = [
     headline: "Have a problem with your ecommerce business? Tell Luke.",
     emphasis: "Tell Luke",
     sub: "Ask about your orders, customers and stock. Automate repetitive work. Or have Luke build the internal tool your business needs and can't buy.",
-    cta: "Book a Demo",
+    cta: "Get early access",
   },
   // Written and ready, but out of the running experiment: the first
   // test is four angles, not eight, or none of them sees enough
@@ -143,7 +143,7 @@ export const HEROES: Hero[] = [
     headline: "Run your ecommerce business from one place.",
     emphasis: "one place",
     sub: "Warmluke connects the systems your team already uses. Luke sits across them, understands your business and helps you get work done.",
-    cta: "Book a Demo",
+    cta: "Get early access",
   },
   {
     id: "saas",
@@ -152,7 +152,7 @@ export const HEROES: Hero[] = [
     headline: "Stop buying another app every time your store has a problem.",
     emphasis: "every time",
     sub: "Connect your ecommerce business to Warmluke and ask Luke to analyse, automate or build what you need.",
-    cta: "Book a Demo",
+    cta: "Get early access",
   },
   {
     id: "proactive",
@@ -161,7 +161,7 @@ export const HEROES: Hero[] = [
     headline: "Your business shouldn't wait for you to ask what's wrong.",
     emphasis: "wait for you",
     sub: "Luke understands what's happening across your ecommerce business and helps surface the things your team might otherwise miss.",
-    cta: "Book a Demo",
+    cta: "Get early access",
   },
   {
     id: "custom",
@@ -170,7 +170,7 @@ export const HEROES: Hero[] = [
     headline: "Your ecommerce business isn't generic. Your software shouldn't be either.",
     emphasis: "isn't generic",
     sub: "Warmluke adapts to how your business works. Ask Luke for the workflows, dashboards and tools your team actually needs.",
-    cta: "Book a Demo",
+    cta: "Get early access",
   },
 ];
 

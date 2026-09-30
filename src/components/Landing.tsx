@@ -302,9 +302,10 @@ function Pick({
 }
 
 /**
- * Asking for a demo.
+ * Asking for early access (invite only since 0141).
  *
- * Who they are and where their store is, then three picks: how big
+ * Who they are, their business and where their store is (what an invite
+ * is made of, so a request becomes one without retyping), then three picks: how big
  * the team is, how many orders, and where they heard of us. Picks and
  * not typing, so the form stays quick and the admin screen can count
  * them. The lists are onboarding's, so a lead and an account read the
@@ -351,8 +352,10 @@ export function DemoForm({ variant }: { variant: string }) {
   if (state.ok) {
     return (
       <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-8 text-center">
-        <div className="font-serif text-xl text-emerald-800">Got it. We&apos;ll be in touch.</div>
-        <p className="mt-2 text-sm text-quiet">We&apos;ll write to set up a time that suits you.</p>
+        <div className="font-serif text-xl text-emerald-800">You&apos;re on the list.</div>
+        <p className="mt-2 text-sm text-quiet">
+          We&apos;ll send your invite link to your email. It opens a sign-up with your details already in.
+        </p>
       </div>
     );
   }
@@ -385,12 +388,14 @@ export function DemoForm({ variant }: { variant: string }) {
       <input name="name" required aria-label="Your name" placeholder="Your name" className={INPUT} />
       <input name="email" type="email" required aria-label="Work email" placeholder="Work email" className={INPUT} />
       <input
-        name="store"
+        name="business"
         required
-        aria-label="Your store URL"
-        placeholder="Your store URL"
-        className={`${INPUT} sm:col-span-2`}
+        maxLength={160}
+        aria-label="Business name"
+        placeholder="Business name"
+        className={INPUT}
       />
+      <input name="store" required aria-label="Your store URL" placeholder="Your store URL" className={INPUT} />
       <Pick name="team_size" label="People on the team" options={TEAM_OPTIONS} onPick={() => setUnpicked(false)} />
       <Pick name="monthly_orders" label="Orders a month" options={ORDER_OPTIONS} onPick={() => setUnpicked(false)} />
       <Pick
@@ -426,7 +431,7 @@ export function DemoForm({ variant }: { variant: string }) {
           data-cta="book"
           className="rounded-full bg-ink px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
         >
-          {pending ? "Sending\u2026" : "Book a Demo"}
+          {pending ? "Sending\u2026" : "Request early access"}
         </button>
         {(unpicked || state.message) && (
           <span className="text-sm text-amber-700">

@@ -307,7 +307,7 @@ export default function Admin() {
               </button>
             </div>
 
-            <div className={`${card} thin-scroll mt-3 overflow-x-auto`}>
+            <div className={`${card} thin-scroll relative mt-3 overflow-x-auto`}>
               <table className="w-full text-left text-[13px]">
                 <thead className="border-b border-line bg-surface-subdued text-xs text-fg-muted">
                   <tr>
