@@ -34,9 +34,10 @@ remain authoritative; the documents explain how those sources fit together.
 ### Security reviewer
 
 1. [Security model](security/security-model.md)
-2. [MCP integration](integrations/mcp.md)
-3. [Shopify integration](integrations/shopify.md)
-4. [Testing strategy](operations/testing.md)
+2. [Incident response](security/incident-response.md)
+3. [MCP integration](integrations/mcp.md)
+4. [Shopify integration](integrations/shopify.md)
+5. [Testing strategy](operations/testing.md)
 
 ## Document map
 

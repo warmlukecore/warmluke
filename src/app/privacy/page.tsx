@@ -47,7 +47,7 @@ export default function Privacy() {
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-14 sm:px-6">
         <h1 className="font-serif text-2xl font-bold tracking-tight">Privacy</h1>
-        <p className="mt-2 text-sm text-quiet">Last updated 14 September 2026.</p>
+        <p className="mt-2 text-sm text-quiet">Last updated 1 October 2026.</p>
 
         <Section title="What we store">
           <p>
@@ -79,20 +79,21 @@ export default function Privacy() {
 
         <Section title="Who can see it">
           <p>
-            A store&rsquo;s data is readable only by the account that connected it and the staff that account invites.
-            This is enforced in the database itself, by row-level security, not by a check an endpoint could forget to
-            make.
+            A store&rsquo;s data is readable only by the account that connected it, and by the people on its team that
+            account chooses to let see the store. This is enforced in the database itself, by row-level security, not by
+            a check an endpoint could forget to make.
           </p>
           <p>
-            Data is held in Supabase (Postgres, hosted on AWS) and the app runs on Vercel. Both encrypt data at rest;
-            everything in transit is over TLS.
+            Data is held in Supabase (Postgres, hosted on AWS in Mumbai, India) and the app runs on Vercel, also in
+            Mumbai. Both encrypt data at rest, backups included, and everything in transit is over TLS.
           </p>
         </Section>
 
         <Section title="Getting it back, or gone">
           <p>
-            Disconnecting a store or uninstalling the app deletes everything we copied from it: products, orders,
-            customers and the access token, not just the link.
+            Disconnecting a store in Warmluke deletes everything we copied from it at once: products, orders, customers
+            and the access token, not just the link. Uninstalling the app from Shopify ends our access immediately, and
+            the copy is deleted when Shopify sends its erasure request, 48 hours later.
           </p>
           <p>
             A shopper&rsquo;s request to see or erase their data reaches us through Shopify&rsquo;s own channels and we

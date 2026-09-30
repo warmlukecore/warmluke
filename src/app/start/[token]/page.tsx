@@ -281,6 +281,17 @@ export default function StartPage() {
         <button type="submit" disabled={busy} className={`${button("primary", "lg")} w-full`}>
           {busy ? "Setting up…" : "Create my account"}
         </button>
+        <p className="text-center text-[11px] leading-relaxed text-fg-muted">
+          By creating an account you agree to the{" "}
+          <Link href="/terms" className="text-link hover:underline">
+            Terms
+          </Link>{" "}
+          and the{" "}
+          <Link href="/privacy" className="text-link hover:underline">
+            Privacy Policy
+          </Link>
+          .
+        </p>
       </form>
 
       <p className="mt-5 border-t border-line pt-4 text-center text-xs text-fg-muted">
