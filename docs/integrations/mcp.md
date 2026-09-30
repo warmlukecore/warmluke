@@ -78,10 +78,24 @@ by changing a request argument because identity comes from the token.
 built-in chat. It persists the exact validated plans and returns a request ID plus a
 deterministic human-readable description.
 
-The design runs as work of its own, not tied to the request: `propose_change` waits for it
-for 40 seconds (`MCP_DESIGN_WAIT_MS`) and otherwise answers `still designing`, the rest
-running after the answer (`lib/in-time`, `after()`) and landing in `pending_changes` and
-the merchant's app. A client that stops waiting no longer throws the design away.
+Each ask is a conversation of its own in the merchant's Luke panel, marked with the
+assistant that asked (migration 0139: `conversations.asked_by`, `asked_client`), and runs
+as Luke's turn does: durably (`workflows/luke-turn.ts`) when `LUKE_WORKFLOW=1` and the
+client's token has time left, otherwise inside the request, held open past its answer.
+A client's token may not write conversations or messages, so two definer functions write
+for it, scoped to its own threads: `abo_client_ask` keeps the question and a line for its
+answer (the same words again within 30 minutes are handed the ask already made, not a
+second design), and `abo_client_settle` fills that line once, only as an answer, a
+question, a failure or a build, never as a design card.
+
+The turn ends in `lib/client-turn.ts`: a design is settled as a request
+(`lib/client-design.ts`, shared with `submit_design`) and built at once if the merchant
+turned automatic builds on, recorded on the line with its undo; a question is shown to the
+merchant in the thread and returned with a `conversation_id` to carry on in; a failure says
+why in both places; a stop in Warmluke requests nothing. The assistant's own answer is kept
+on the line. `propose_change` waits 40 seconds (`MCP_DESIGN_WAIT_MS`) for it and otherwise
+answers `still designing`; `pending_changes` lists `your_asks` (still designing, needs
+answers, failed, or carried on in Warmluke) until they become requests.
 
 ### Client-authored design
 

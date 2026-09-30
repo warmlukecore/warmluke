@@ -217,6 +217,50 @@ test("an answer stays in the thread it was asked in, when the owner goes to anot
   }
 });
 
+test("Stop pressed the moment a question is sent stops it: nothing is designed", async ({ signedIn: page, shop }) => {
+  const before = await threadIds(shop);
+  try {
+    await page.goto(`/app/${shop.projectId}`);
+    const { panel, box } = await luke(page);
+    // A thread of its own, not whichever one an earlier test left open.
+    // With none open there is no button for it, and nothing to leave.
+    const fresh = panel.getByRole("button", { name: "New conversation" });
+    if (await fresh.isVisible()) await fresh.click();
+    // The question held back until Stop is pressed, so Stop comes before
+    // the server has named the turn — where it used to only cut the
+    // connection, and the turn designed on regardless.
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    await page.route("**/api/chat", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      await held;
+      await route.continue();
+    });
+    await box.fill("Add a Gift note field to Orders");
+    await box.press("Enter");
+    await panel.getByRole("button", { name: "Stop" }).click();
+    await expect(panel.getByRole("button", { name: "Stopping" })).toBeVisible();
+    release();
+    await expect(panel.getByText("Stopped.")).toBeVisible();
+    // Its line is marked stopped, and the turn leaves it so: no design.
+    const lineOf = async () => {
+      const made = await madeSince(shop, before);
+      if (!made.length) return "none";
+      const { data } = await shop.admin
+        .from("messages")
+        .select("payload")
+        .in("conversation_id", made)
+        .eq("role", "assistant");
+      return (data?.[0]?.payload as { type?: string } | undefined)?.type ?? "none";
+    };
+    await expect.poll(lineOf, { timeout: TURN_MS }).toBe("stopped");
+    await page.waitForTimeout(3_000);
+    expect(await lineOf()).toBe("stopped");
+  } finally {
+    for (const id of await madeSince(shop, before)) await shop.admin.from("conversations").delete().eq("id", id);
+  }
+});
+
 test("a change to the shop waits for a yes", async ({ signedIn: page, shop }) => {
   // The switch is per account and off by default; on for this test only.
   const { data: before } = await shop.admin

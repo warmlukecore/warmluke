@@ -196,7 +196,10 @@ try {
   console.log("\nthe screen describes what it actually does");
   {
     const settings = readFileSync(new URL("../src/components/ProjectSettings.tsx", import.meta.url), "utf8");
-    const route = readFileSync(new URL("../src/app/api/mcp/route.ts", import.meta.url), "utf8");
+    // With where a design is settled, which moved out of the route whole (lib/client-design).
+    const route =
+      readFileSync(new URL("../src/app/api/mcp/route.ts", import.meta.url), "utf8") +
+      readFileSync(new URL("../src/lib/client-design.ts", import.meta.url), "utf8");
     const panel = readFileSync(new URL("../src/components/ChatPanel.tsx", import.meta.url), "utf8");
     // Nothing is held back by what kind of change it is any more. A
     // list of allowed change types anywhere in this path means the

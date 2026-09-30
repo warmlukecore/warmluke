@@ -131,8 +131,13 @@ type BuildPayload = {
 /** How long a build may say "building" before the thread stops believing it: far past any real one. */
 const BUILD_LOST_MS = 10 * 60_000;
 
-/** An answer still "answering" after this long never arrived: the function that made it is gone. */
-const ANSWER_LOST_MS = 6 * 60_000;
+/**
+ * An answer still "answering" after this long never arrived: what made it
+ * is gone. Past a durable turn's longest (workflows/luke-turn: eight legs
+ * of four minutes), which six minutes was not: a long design read as lost
+ * while it was still being made.
+ */
+const ANSWER_LOST_MS = 35 * 60_000;
 
 /**
  * A sidebar link's click: a plain one opens the section here, at once; a
@@ -373,6 +378,11 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // What is being written once the draft's words are done ("questions").
   const [chatPhase, setChatPhase] = useState<string | null>(null);
   const chatAbort = useRef<AbortController | null>(null);
+  // Stop pressed before the server has named the turn: there is no line
+  // to mark yet, and cutting the connection alone left the turn running
+  // (it designed on, and landed under "Stopped."). Kept until it is named.
+  const stopWanted = useRef(false);
+  const [stopping, setStopping] = useState(false);
   // One thread per builder session: the server replays it so the
   // assistant remembers what it already asked.
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -479,6 +489,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             // Kept across a reload, or the thread would claim they
             // typed it here.
             viaClient: (p as { via?: string } | null)?.via === "client",
+            ...(typeof (p as { by?: unknown } | null)?.by === "string"
+              ? { viaName: (p as unknown as { by: string }).by }
+              : {}),
             superseded: retired,
           });
           continue;
@@ -563,6 +576,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     role: "assistant",
                     text: "Luke is answering…",
                     building: { startedAt: q.started_at ?? new Date().toISOString() },
+                    answering: true,
                   }
             );
           } else {
@@ -618,6 +632,10 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         if (last && retired) last.superseded = true;
         if (last && p.usage) last.usage = p.usage;
         if (last && p.trace) last.trace = p.trace;
+        // An ask from their AI that waits as a request (0139): the line
+        // says so, and what became of it is read off the request itself.
+        const waitsAs = (p as { request_id?: unknown }).request_id;
+        if (last && p.type === "answer" && typeof waitsAs === "string") last.requestId = waitsAs;
       }
       for (const m of rebuilt) {
         const built = builds.get(m.id);
@@ -1476,6 +1494,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       setTurnThread(openThread);
       const controller = new AbortController();
       chatAbort.current = controller;
+      stopWanted.current = false;
       // What the turn did, kept with the reply it produced so the
       // thread can say "read your store · thought it through · 14s"
       // above it once the working line has gone.
@@ -1503,6 +1522,12 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               ownThreads.current.add(told.conversationId);
               setTurnThread(told.conversationId);
               if (!conversationIdRef.current) rememberConversation(told.conversationId);
+              // Named now: the stop they already pressed goes through.
+              if (stopWanted.current) {
+                if (told.turn) apiFetch("/api/chat", { turn: told.turn }, "DELETE").catch(() => {});
+                controller.abort();
+                return;
+              }
             }
             seen.push(told);
             setChatSteps((prev) => [...prev, told]);
@@ -1675,6 +1700,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       } finally {
         chatAbort.current = null;
         turnRef.current = { thread: null, turn: null };
+        stopWanted.current = false;
+        setStopping(false);
         setTurnThread(null);
         setChatBusy(false);
         setChatSteps([]);
@@ -2903,14 +2930,28 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 draft={chatDraft}
                 phase={chatPhase}
                 canStop={chatBusy}
+                stopping={stopping}
                 threads={threads}
                 threadsMore={threadsMore}
                 conversationId={conversationId}
                 onNewThread={startNewThread}
                 onStop={() => {
                   const turn = turnRef.current.turn;
+                  if (!turn) {
+                    // Not named yet: sent the moment it is (accepted, in runPrompt).
+                    stopWanted.current = true;
+                    setStopping(true);
+                    return;
+                  }
                   chatAbort.current?.abort();
-                  if (turn) apiFetch("/api/chat", { turn }, "DELETE").catch(() => {});
+                  apiFetch("/api/chat", { turn }, "DELETE").catch(() => {});
+                }}
+                onStopTurn={(turn) => {
+                  // Their AI's turn, or another tab's: its line is marked, the
+                  // turn sees it wherever it runs, and the thread reads it back.
+                  apiFetch("/api/chat", { turn }, "DELETE")
+                    .then(() => loadThread(conversationIdRef.current ?? undefined))
+                    .catch(() => {});
                 }}
                 turnElsewhere={
                   chatBusy && turnThread !== null && conversationId !== turnThread

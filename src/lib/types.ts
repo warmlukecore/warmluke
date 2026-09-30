@@ -453,6 +453,8 @@ export interface ThreadSummary {
   /** Builds that landed in it. */
   built?: number;
   answers?: number;
+  /** The assistant that started it over MCP (0139), or none for the owner's own. */
+  asked_by?: string | null;
 }
 
 /** A follow-up the owner could send next, offered once a build lands. */

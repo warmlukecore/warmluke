@@ -17,7 +17,8 @@
 import { readFileSync } from "node:fs";
 
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
-const mcp = read("src/app/api/mcp/route.ts");
+// With where a design is settled, which moved out of the route whole (lib/client-design).
+const mcp = read("src/app/api/mcp/route.ts") + read("src/lib/client-design.ts");
 const panel = read("src/components/ChatPanel.tsx");
 const build = read("supabase/migrations/0085_one_list_of_store_tables.sql");
 

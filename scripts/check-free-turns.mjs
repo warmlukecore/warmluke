@@ -88,15 +88,23 @@ console.log("a turn that designed nothing is not an included design");
   // blunt version — a check that cannot fail is a check that lies.
   // The refund in the finally below is what actually makes a missed
   // charge harmless, and that one is exact.
+  // An ask from their own AI runs as a turn in its own thread (lib/client-turn):
+  // settled there as a request (lib/client-design), durably or in this request.
+  const design = readFileSync(new URL("../src/lib/client-design.ts", import.meta.url), "utf8");
+  const asked = readFileSync(new URL("../src/lib/client-turn.ts", import.meta.url), "utf8");
   check(
     "propose_change charges only once the request row exists",
-    /abo_mcp_propose[\s\S]{0,1200}charged\?\.\(\)/.test(mcp) &&
+    /abo_mcp_propose[\s\S]{0,1200}charged\?\.\(\)/.test(design) &&
+      /charged: \(\) => \{\s*charged = true;\s*\}/.test(asked) &&
+      // Given back by whichever runs it: the durable turn's last step (above), or here.
+      /finally \{\s*if \(!charged && spend\) await db\.rpc\("abo_refund_turn"/.test(mcp) &&
       /finally \{\s*if \(refundable\) await db\.rpc\("abo_refund_turn"/.test(mcp)
   );
   check(
     "and questions, refusals and throws all fall through to it",
-    !/reply\.type === "clarify"\) \{[\s\S]{0,400}(abo_refund_turn|refundable = null)/.test(mcp) &&
-      !/reply\.type === "answer"\) \{[\s\S]{0,200}(abo_refund_turn|refundable = null)/.test(mcp)
+    !/reply\.type === "clarify"\) \{[\s\S]{0,900}charged = true/.test(asked) &&
+      !/reply\.type === "answer"\) \{[\s\S]{0,400}charged = true/.test(asked) &&
+      /reply\.type === "clarify"\) \{[\s\S]{0,900}charged: false/.test(asked)
   );
   // Both still charge up front. A client in a loop has to pay for its
   // own stop, or the cap caps nothing.

@@ -13,6 +13,7 @@ import { MAX_REPAIR_ATTEMPTS, answeredTurns, type TurnResult } from "@/lib/engin
 import { noteJudgement } from "@/lib/judge";
 import { learn } from "@/lib/memory";
 import { traceTurn } from "@/lib/trace";
+import { finishClientTurn, settleClientLine } from "@/lib/client-turn";
 import { TITLE_MAX } from "@/lib/types";
 import type {
   AssistantReply,
@@ -43,7 +44,25 @@ export type TurnJob = {
   askedModel: string | null;
   askedAt: number;
   isNewConversation: boolean;
+  /**
+   * Asked by the merchant's own AI over MCP (propose_change), in a thread
+   * of its own: filled through abo_client_settle, since a client's token
+   * may not write messages, and ended as a request (lib/client-turn).
+   */
+  client?: { origin: string };
 };
+
+/** Life a token needs left for a durable turn: several legs, with room. */
+export const TOKEN_LEFT_MS = 15 * 60_000;
+
+/** When a verified bearer token lapses (epoch ms), or 0 when it cannot be read. */
+export function lapsesAt(token: string): number {
+  try {
+    return Number(JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString()).exp) * 1000 || 0;
+  } catch {
+    return 0;
+  }
+}
 
 /** What a turn reads about the app and the thread before the model runs. */
 export type TurnContext = {
@@ -151,10 +170,11 @@ export async function turnContext(
 /** The answer's line, filled once; a line already stopped is left as it is. */
 export async function settleAnswer(
   client: SupabaseClient,
-  job: Pick<TurnJob, "answerId" | "conversationId">,
+  job: Pick<TurnJob, "answerId" | "conversationId" | "client">,
   payload: Record<string, unknown>,
   content = ""
 ): Promise<boolean> {
+  if (job.client) return settleClientLine(client, job.answerId, payload, content);
   const { data } = await client
     .from("messages")
     .update({ payload, content })
@@ -180,6 +200,9 @@ export async function finishTurn(
   steps: TurnEvent[],
   later: (fn: () => Promise<unknown>) => void
 ): Promise<{ last: Record<string, unknown>; charged: boolean }> {
+  // Asked by their own AI: ended as a request, in its own thread.
+  // ponytail: no trace, learning or rename for these; each writes at a table a client's token may not write.
+  if (job.client) return finishClientTurn(client, job, ctx, turn, later);
   let charged = false;
   if (!turn.ok) {
     // Our engine could not produce something it trusts. Charging

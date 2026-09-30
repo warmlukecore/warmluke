@@ -4,7 +4,7 @@ import { lukeSettings, modelFor } from "@/lib/luke-models";
 import { metered } from "@/lib/usage";
 import { tapeHeaders } from "@/lib/model-tape";
 import { runTurn } from "@/lib/engine";
-import { finishTurn, settleAnswer, turnContext, type TurnJob } from "@/lib/turn-run";
+import { TOKEN_LEFT_MS, finishTurn, lapsesAt, settleAnswer, turnContext, type TurnJob } from "@/lib/turn-run";
 import { start } from "workflow/api";
 import { lukeTurn } from "@/workflows/luke-turn";
 import { TITLE_MAX } from "@/lib/types";
@@ -45,7 +45,7 @@ export async function GET(req: Request) {
   // ponytail: reads every message's type; a count kept on conversations if threads get long.
   let list = client
     .from("conversations")
-    .select("id, title, created_at, updated_at, messages(ptype:payload->>type, pstatus:payload->>status)")
+    .select("id, title, created_at, updated_at, asked_by, messages(ptype:payload->>type, pstatus:payload->>status)")
     .eq("project_id", projectId);
   // ponytail: paged by updated_at alone; two threads moved in the same microsecond could straddle a page.
   if (before) list = list.lt("updated_at", before);
@@ -134,18 +134,6 @@ export async function DELETE(req: Request) {
  * cap what a single owner can spend per hour.
  */
 const MAX_TURNS_PER_HOUR = 60;
-
-/** Life a token needs left for a durable turn: several legs, with room. */
-const TOKEN_LEFT_MS = 15 * 60_000;
-
-/** When a verified bearer token lapses (epoch ms), or 0 when it cannot be read. */
-function lapsesAt(token: string): number {
-  try {
-    return Number(JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString()).exp) * 1000 || 0;
-  } catch {
-    return 0;
-  }
-}
 
 /** How often a draft of Luke's words is sent: often enough to read as typing, not a line a token. */
 const WORDS_EVERY_MS = 80;
@@ -395,6 +383,12 @@ export async function POST(req: Request) {
         const run = await start(lukeTurn, [{ ...job, token, spendId: refundable }]);
         refundable = null;
         const lines = new TransformStream<unknown, Uint8Array>({
+          // The turn named at once, as the run starts: its first leg
+          // begins seconds later, and Stop needs a line to mark.
+          start(controller) {
+            const accepted: TurnEvent = { step: "accepted", conversationId: thread, turn: answerId };
+            controller.enqueue(new TextEncoder().encode(`${JSON.stringify(accepted)}\n`));
+          },
           transform(chunk, controller) {
             controller.enqueue(new TextEncoder().encode(`${JSON.stringify(chunk)}\n`));
           },

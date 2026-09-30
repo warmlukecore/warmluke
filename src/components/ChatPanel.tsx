@@ -118,6 +118,12 @@ export interface ChatMessage {
    * wrote it in this box and forgot.
    */
   viaClient?: boolean;
+  /** Which of their AIs asked, when it said (0139). */
+  viaName?: string;
+  /** The request an ask from their AI waits as (0139): its state is read live from the bell's list. */
+  requestId?: string;
+  /** Being answered, and not by this tab's own turn (their AI's, or another tab's): stoppable from here. */
+  answering?: boolean;
   /**
    * Corrected by a later edit. The bubble stays — it is what was
    * actually asked — but it is no longer the live question, and
@@ -228,6 +234,7 @@ function threadLine(t: ThreadSummary, now: number): string {
   const built = t.built ?? 0;
   const answers = t.answers ?? 0;
   return [
+    t.asked_by ?? null,
     ago(t.updated_at, now),
     built > 0 ? `${built} built` : null,
     answers > 0 ? `${answers} answer${answers === 1 ? "" : "s"}` : null,
@@ -816,7 +823,7 @@ function PlanStatusLine({ status }: { status: PlanStatus }) {
 const LIST_PAD = 16;
 const PIN_GAP = 12;
 
-function BuildingLine({ text, startedAt }: { text: string; startedAt: string }) {
+function BuildingLine({ text, startedAt, onStop }: { text: string; startedAt: string; onStop?: () => void }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -828,6 +835,11 @@ function BuildingLine({ text, startedAt }: { text: string; startedAt: string }) 
       <LoaderCircle aria-hidden size={13} strokeWidth={2} className="shrink-0 motion-safe:animate-spin" />
       <span>{text}</span>
       {Number.isFinite(seconds) && <span className="text-fg-faint tabular-nums">{seconds}s</span>}
+      {onStop && (
+        <button onClick={onStop} className="text-fg-muted transition-colors hover:text-fg hover:underline">
+          Stop
+        </button>
+      )}
     </div>
   );
 }
@@ -1573,7 +1585,9 @@ export default function ChatPanel({
   onDeleteThread,
   onRenameThread,
   onStop,
+  onStopTurn,
   canStop,
+  stopping = false,
   steps = [],
   draft = "",
   phase = null,
@@ -1656,9 +1670,13 @@ export default function ChatPanel({
   /** Names a thread for good: Luke's replies no longer rename it. */
   onRenameThread: (id: string, title: string) => void;
   onStop: () => void;
+  /** Stops a turn this tab did not start, by its answer's line: their AI's, or another tab's. */
+  onStopTurn?: (turnId: string) => void;
   /** Only a model call can be stopped. Applying a build must not be
    *  interrupted halfway, and there is nothing to abort during it. */
   canStop: boolean;
+  /** Stop pressed, and waiting for the server to name the turn it stops. */
+  stopping?: boolean;
   busy: boolean;
   /** What the running turn has done so far, oldest first. Empty until
    *  the server has taken the turn, and while a build is applied. */
@@ -3003,9 +3021,20 @@ export default function ChatPanel({
                                     className="min-w-0 flex-1 px-1.5 py-1.5 text-left"
                                   >
                                     <div
-                                      className={`truncate text-[12px] text-fg ${t.id === conversationId ? "font-medium" : ""}`}
+                                      className={`flex items-center gap-1.5 text-[12px] text-fg ${t.id === conversationId ? "font-medium" : ""}`}
                                     >
-                                      {t.title ?? "Untitled"}
+                                      {/* Started by their own AI (0139): its mark, so the list says who asked. */}
+                                      {t.asked_by && assistantLogo(t.asked_by) && (
+                                        // eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise
+                                        <img
+                                          src={assistantLogo(t.asked_by)!}
+                                          alt=""
+                                          width={11}
+                                          height={11}
+                                          className="h-[11px] w-[11px] shrink-0 object-contain"
+                                        />
+                                      )}
+                                      <span className="truncate">{t.title ?? "Untitled"}</span>
                                     </div>
                                     <div className="truncate text-[10px] text-fg-faint">{threadLine(t, now)}</div>
                                   </button>
@@ -3160,7 +3189,7 @@ export default function ChatPanel({
                     <div key={m.id} data-message-id={m.id} className="rise group flex flex-col items-end" style={RISE}>
                       {m.viaClient && (
                         <div className="mb-0.5 pr-1 text-[10px] tracking-wide text-fg-faint uppercase">
-                          Asked through your AI
+                          Asked through {m.viaName && m.viaName !== "Your AI" ? m.viaName : "your AI"}
                         </div>
                       )}
                       {editing ? (
@@ -3312,7 +3341,14 @@ export default function ChatPanel({
                 // history. Plain text, no bubble — the owner's words are the
                 // ones in a bubble; Luke's read like the page.
                 if (m.building) {
-                  return <BuildingLine key={m.id} text={m.text ?? "Building…"} startedAt={m.building.startedAt} />;
+                  return (
+                    <BuildingLine
+                      key={m.id}
+                      text={m.text ?? "Building…"}
+                      startedAt={m.building.startedAt}
+                      onStop={m.answering && onStopTurn ? () => onStopTurn(m.id) : undefined}
+                    />
+                  );
                 }
 
                 if (!m.plan) {
@@ -3343,6 +3379,33 @@ export default function ChatPanel({
                           <span>{m.undo.what.join(", ")}</span>
                         </div>
                       )}
+                      {/* A design their AI asked for, waiting as a request:
+                    what became of it since, read from the bell's own
+                    list, so a line that said "it waits" does not go on
+                    saying so after it was built or dismissed there. */}
+                      {m.requestId &&
+                        (() => {
+                          const r = requests.find((x) => x.id === m.requestId);
+                          if (!r) return null;
+                          if (r.status === "pending")
+                            return (
+                              <button
+                                onClick={() => setBellOpen(true)}
+                                className="text-[11px] text-fg-muted transition-colors hover:text-fg hover:underline"
+                              >
+                                Review it
+                              </button>
+                            );
+                          const since: Record<string, string> = {
+                            built: "Built since.",
+                            partly_built: "Partly built since: the bell says what is missing.",
+                            dismissed: "Dismissed since.",
+                            opened: "Taken into Luke since.",
+                          };
+                          return since[r.status] ? (
+                            <div className="text-[11px] text-fg-faint">{since[r.status]}</div>
+                          ) : null;
+                        })()}
                       {/* What they might ask next, each sent as written when
                     tapped. Only on the last thing in the thread: after a
                     question or a put-back, a suggestion about the app as
@@ -4103,9 +4166,9 @@ export default function ChatPanel({
                 />
                 <button
                   onClick={() => (canStop ? onStop() : send())}
-                  disabled={busy && !canStop ? true : !canStop && !input.trim()}
-                  aria-label={canStop ? "Stop" : "Send"}
-                  title={canStop ? "Stop" : busy ? "Building…" : "Send"}
+                  disabled={stopping || (busy && !canStop ? true : !canStop && !input.trim())}
+                  aria-label={stopping ? "Stopping" : canStop ? "Stop" : "Send"}
+                  title={stopping ? "Stopping…" : canStop ? "Stop" : busy ? "Building…" : "Send"}
                   className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary transition-all duration-150 hover:bg-primary-hover active:scale-95 disabled:bg-line-strong disabled:text-surface"
                 >
                   {canStop ? (

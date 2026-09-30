@@ -51,7 +51,7 @@ export async function lukeTurn(job: DurableTurn) {
   for (let leg = 0; leg < MAX_LEGS; leg++) {
     let out: Leg;
     try {
-      out = await turnLeg(job, state, leg);
+      out = await turnLeg(job, state);
     } catch (e) {
       const why = e instanceof Error ? e.message : "The turn could not go on.";
       await finishLeg(job, { ok: false, errors: [why], repairs: 0, repairErrors: [] }, usages, steps);
@@ -77,7 +77,7 @@ async function projectOf(job: DurableTurn) {
 }
 
 /** One leg: the turn from where it stood, until it ends or has to hand on. */
-async function turnLeg(job: DurableTurn, state: TurnState | null, leg: number): Promise<Leg> {
+async function turnLeg(job: DurableTurn, state: TurnState | null): Promise<Leg> {
   "use step";
   const { client, proj } = await projectOf(job);
   const ctx = await turnContext(client, proj, {
@@ -94,7 +94,9 @@ async function turnLeg(job: DurableTurn, state: TurnState | null, leg: number): 
     steps.push(e);
     say(e);
   };
-  if (leg === 0) tell({ step: "accepted", conversationId: job.conversationId, turn: job.answerId });
+  // "accepted" is said by the route as the run starts (api/chat), not
+  // here: a leg begins seconds later, and a stop pressed in between had
+  // no turn to mark.
 
   // The draft, one line at most every WORDS_EVERY_MS, as the route sends it.
   let waiting: ReturnType<typeof setTimeout> | null = null;
@@ -117,14 +119,20 @@ async function turnLeg(job: DurableTurn, state: TurnState | null, leg: number): 
     if (!waiting) waiting = setTimeout(send, Math.max(0, WORDS_EVERY_MS - (Date.now() - sentAt)));
   };
 
-  // Stop is a mark on the answer's line; the leg looks for it while it runs.
+  // Stop is a mark on the answer's line; the leg looks for it while it
+  // runs, and once before the model is asked: a stop pressed as the
+  // question went is already there, and nothing is asked at all.
   const halt = new AbortController();
-  const watch = setInterval(async () => {
+  const look = async () => {
     const { data } = await client.from("messages").select("payload->>type").eq("id", job.answerId).maybeSingle();
     if ((data as { type?: string } | null)?.type === "stopped") halt.abort();
-  }, STOP_POLL_MS);
+  };
+  const watch = setInterval(look, STOP_POLL_MS);
 
   try {
+    await look();
+    // An abort is final: the runtime does not retry it (workflow docs, cancellation).
+    halt.signal.throwIfAborted();
     const luke = await lukeSettings(client, job.userId);
     const picked = modelFor(luke, job.askedModel);
     const [turn, took] = await metered(() =>
@@ -138,10 +146,14 @@ async function turnLeg(job: DurableTurn, state: TurnState | null, leg: number): 
         currentFeatures: ctx.currentFeatures,
         blueprintShown: ctx.blueprintShown,
         moduleId: job.moduleId,
-        lookups: true,
+        // Asked by their own AI (propose_change): the turn that door
+        // always ran, which designs plain plans and looks nothing up.
+        // ponytail: no lookups for these, so their recordings still play; turn it on and record them to give them Luke's.
+        lookups: !job.client,
+        ...(job.client ? { plansAllowed: true } : {}),
         signal: halt.signal,
         onEvent: tell,
-        onWords: words,
+        onWords: job.client ? undefined : words,
         model: picked && picked !== luke.server ? picked : undefined,
         deadline: Date.now() + LEG_MS(),
         resume: state ?? undefined,

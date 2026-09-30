@@ -128,7 +128,8 @@ console.log("\nand the buttons really say what the steps quote");
 
 console.log("\nand every link goes to the thing, not to the front door");
 {
-  const mcp = read("src/app/api/mcp/route.ts");
+  // With where a design is settled, which moved out of the route whole (lib/client-design).
+  const mcp = read("src/app/api/mcp/route.ts") + read("src/lib/client-design.ts");
   const panel = read("src/components/ChatPanel.tsx");
   check("the links are built in one place", /const openAt = \(/.test(mcp));
   // The literal this replaced. One left behind is a link that lands
