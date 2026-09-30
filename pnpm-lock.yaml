@@ -6,6 +6,7 @@ settings:
 
 overrides:
   nanoid@>=4.0.0 <5.1.16: ^5.1.16
+  undici@>=7.0.0 <7.29.1: ^7.29.1
 
 importers:
 
@@ -3408,10 +3409,6 @@ packages:
   undici-types@8.9.0:
     resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
 
-  undici@7.29.0:
-    resolution: {integrity: sha512-IDxfleLmmbSskfWSUATiN1nfn2rDuvnMOqb5CWR92iIfojA0Ud+ulOAAEQ57LPr9rWmsreUyf5lwyao+7GNNVw==}
-    engines: {node: '>=20.18.1'}
-
   undici@7.29.1:
     resolution: {integrity: sha512-RYONW2MeafgYlkVOKYKkA/Ag7BmXqgIWCa8t1m0JcxrQg9pI9lEqRhAOruOBCbAohOa/gkCF+iPi9hrgvTzu6Q==}
     engines: {node: '>=20.18.1'}
@@ -4855,7 +4852,7 @@ snapshots:
       async-sema: 3.1.1
       proper-lockfile: 4.1.2
       ulid: 3.0.2
-      undici: 7.29.0
+      undici: 7.29.1
       zod: 4.5.4
 
   '@workflow/world-vercel@5.0.0-beta.52(@aws-sdk/credential-provider-web-identity@3.972.49)':
@@ -4868,7 +4865,7 @@ snapshots:
       '@workflow/world': 5.0.0-beta.39
       cbor-x: 1.6.0
       ulid: 3.0.2
-      undici: 7.29.0
+      undici: 7.29.1
       ws: 8.21.3
       zod: 4.5.4
     transitivePeerDependencies:
@@ -7062,8 +7059,6 @@ snapshots:
       unplugin: 2.3.11
 
   undici-types@8.9.0: {}
-
-  undici@7.29.0: {}
 
   undici@7.29.1: {}
 

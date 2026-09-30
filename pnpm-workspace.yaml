@@ -8,3 +8,6 @@ allowBuilds:
 # integer overflow); the patched line is API-compatible. Drop when it moves.
 overrides:
   "nanoid@>=4.0.0 <5.1.16": "^5.1.16"
+  # Workflow's CLI brings an undici with two high advisories (GHSA-rfgv-xxqx-mfg5,
+  # GHSA-w293-vg96-wgc3); 7.29.1 patches both within the same major. Drop when it moves.
+  "undici@>=7.0.0 <7.29.1": "^7.29.1"
