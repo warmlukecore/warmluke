@@ -1,0 +1,17 @@
+{
+  "label": "anthropic",
+  "asked": "over, handed_over_on = today if packed is true and handed_over is not true, otherwise handed_over_on, handed_over_at = right now if packed is true and handed_over is not true, otherwise handed_over_at",
+  "parts": {
+    "system": "c3bf90d97ed87dde",
+    "tools": "74234e98afe7498f",
+    "conversation": "11179becb8231e89",
+    "tag": "gap"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"claude-haiku-4-5-20251001\",\"id\":\"msg_011CfaCTc2AYKHr5BAhLcBiY\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"```json\\n{\\n  \\\"unmet\\\": [\\n    \\\"the time to the same orders\\\"\\n  ]\\n}\\n```\"}],\"container\":null,\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":659,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":31,\"service_tier\":\"standard\",\"inference_geo\":\"not_available\"},\"diagnostics\":null}"
+    }
+  ]
+}
