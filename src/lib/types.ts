@@ -310,6 +310,8 @@ export interface ModuleRow {
    * those rows and would overwrite an edit made here.
    */
   source_table: string | null;
+  /** Everyone on the team sees it (0140). Off, only the owner and those it is shared with. Absent before 0140: shared. */
+  shared_with_team?: boolean;
   created_at: string;
 }
 

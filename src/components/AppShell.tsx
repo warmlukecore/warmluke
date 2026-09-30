@@ -25,6 +25,7 @@ import AutomationsPanel from "@/components/AutomationsPanel";
 import { FormatProvider } from "@/lib/format";
 import { projectFormat } from "@/lib/money";
 import ProjectSettings from "@/components/ProjectSettings";
+import ShareSection from "@/components/ShareSection";
 import { LinkProvider, type LinkOptions } from "@/components/LinkContext";
 import { labelForRow } from "@/lib/links";
 import ModuleSettings from "@/components/ModuleSettings";
@@ -69,15 +70,19 @@ import {
   History,
   LayoutDashboard,
   LoaderCircle,
+  Lock,
   Menu,
   Plus,
   Search,
   Maximize2,
   Minimize2,
+  PanelLeftClose,
+  PanelLeftOpen,
   Settings,
-  Sparkles,
+  Users,
   Zap,
 } from "lucide-react";
+import { AskLuke } from "@/components/AskLuke";
 import { button, iconButton, note } from "@/components/ui/controls";
 import { Logo } from "@/components/ui/Logo";
 import { ThemeToggle } from "@/components/ThemeSync";
@@ -202,6 +207,64 @@ export type BuildOutcome = {
   unknown?: true;
 };
 
+/** A layout choice kept in this browser; a private window may refuse, and it lasts this page only. */
+function keep(key: string, value: string | null) {
+  try {
+    if (value) localStorage.setItem(key, value);
+    else localStorage.removeItem(key);
+  } catch {
+    /* this page only */
+  }
+}
+
+/** What the sidebar's icon rail is: at hand at once, and only a hover from its name. */
+const RAIL_W = 64;
+
+/** One place in the icon rail: a square on the frame, lit when it is where they are. */
+const railItem = (here: boolean) =>
+  `flex h-10 w-10 shrink-0 items-center justify-center rounded-control transition-colors focus-visible:outline-2 focus-visible:outline-focus ${
+    here ? "bg-frame-raised text-white" : "text-frame-fg-muted hover:bg-frame-raised/60 hover:text-white"
+  }`;
+
+/**
+ * The name of what the pointer or the keyboard is on in the icon rail,
+ * beside it. Drawn outside the sidebar, which clips what leaves it, and
+ * read from each control's own label, so a name is never said twice.
+ */
+function RailTip({ rail }: { rail: React.RefObject<HTMLElement | null> }) {
+  const [tip, setTip] = useState<{ text: string; top: number; left: number } | null>(null);
+  useEffect(() => {
+    const on = (e: Event) => {
+      const el = (e.target as Element | null)?.closest?.("a[aria-label], button[aria-label]");
+      // A phone's drawer is never the rail: a tap there is not a hover.
+      if (!el || !rail.current?.contains(el) || !window.matchMedia("(min-width: 1024px)").matches) return setTip(null);
+      const r = el.getBoundingClientRect();
+      setTip({ text: el.getAttribute("aria-label") ?? "", top: r.top + r.height / 2, left: r.right + 10 });
+    };
+    const off = () => setTip(null);
+    document.addEventListener("pointerover", on);
+    document.addEventListener("focusin", on);
+    document.addEventListener("focusout", off);
+    document.addEventListener("scroll", off, true);
+    return () => {
+      document.removeEventListener("pointerover", on);
+      document.removeEventListener("focusin", on);
+      document.removeEventListener("focusout", off);
+      document.removeEventListener("scroll", off, true);
+    };
+  }, [rail]);
+  if (!tip?.text) return null;
+  return (
+    <div
+      aria-hidden
+      style={{ top: tip.top, left: tip.left }}
+      className="pop pointer-events-none fixed z-50 -translate-y-1/2 rounded-control bg-primary px-2 py-1 text-xs font-medium whitespace-nowrap text-on-primary shadow-popover"
+    >
+      {tip.text}
+    </div>
+  );
+}
+
 /** A group's name in the sidebar, with the one thing that adds to it. */
 function NavHeading({ text, action }: { text: string; action?: React.ReactNode }) {
   return (
@@ -277,27 +340,39 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // alone. The section alone keeps the sidebar and Luke a tap away, as the
   // drawers a phone already opens them in. Kept per browser.
   const [focus, setFocus] = useState<"section" | "luke" | null>(null);
+  // Also each the owner's own, and kept per browser: the sidebar drawn as
+  // a rail of icons, and Luke's panel shut (Ask Luke floats over the page).
+  // The sidebar starts with its names, because what is in it is theirs and
+  // named by them: an icon alone would not say which section is which.
+  const [rail, setRail] = useState(false);
+  const [lukeShut, setLukeShut] = useState(false);
   useEffect(() => {
     try {
       const kept = localStorage.getItem("abo_focus");
       if (kept === "section" || kept === "luke") setFocus(kept);
+      setRail(localStorage.getItem("abo_nav_rail") === "1");
+      setLukeShut(localStorage.getItem("abo_luke_shut") === "1");
     } catch {
       // A private window may refuse; the panes then start as three.
     }
   }, []);
+  const shutLuke = (shut: boolean) => {
+    setLukeShut(shut);
+    keep("abo_luke_shut", shut ? "1" : null);
+  };
   const focusOn = (next: "section" | "luke" | null) => {
     setFocus(next);
     setNavOpen(false);
     setChatOpen(false);
-    try {
-      if (next) localStorage.setItem("abo_focus", next);
-      else localStorage.removeItem("abo_focus");
-    } catch {
-      // As above: this page only.
-    }
+    keep("abo_focus", next);
+    // "Show the side panels" brings Luke back too.
+    if (!next) shutLuke(false);
   };
   const navDocked = focus === null;
-  const lukeDocked = focus !== "section";
+  const railOn = rail && navDocked;
+  const lukeDocked = focus === "luke" || (focus === null && !lukeShut);
+  const navRef = useRef<HTMLElement>(null);
+  const navSearch = useRef<HTMLInputElement>(null);
   // Finding a section by name, from the sidebar's search box.
   const [navQuery, setNavQuery] = useState("");
   const [chatOpen, setChatOpen] = useState(false);
@@ -317,7 +392,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     if (typeof window === "undefined") return;
     if (new URLSearchParams(window.location.search).get("waiting")) setChatOpen(true);
   }, []);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  // "people" opens it on the team, from the share dialog's "Add people".
+  const [settingsOpen, setSettingsOpen] = useState<boolean | "people">(false);
+  const [shareOpen, setShareOpen] = useState(false);
   // The store's own page, and a store row opened from anywhere.
   const [showOverview, setShowOverview] = useState(false);
   const [inspecting, setInspecting] = useState<{
@@ -366,7 +443,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     edge: "right",
     liveMax: () => window.innerWidth - navWidthRef.current - MIN_MAIN,
   });
-  navWidthRef.current = nav.width;
+  navWidthRef.current = railOn ? RAIL_W : nav.width;
   chatWidthRef.current = chat.width;
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatBusy, setChatBusy] = useState(false);
@@ -1370,6 +1447,15 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       );
   }, [projectId]);
 
+  // A member opening the app is what the owner's "last active" reads (0140);
+  // the database writes it at most once in five minutes.
+  useEffect(() => {
+    if (project && userId && project.owner_id !== userId) {
+      // A query is only sent once something waits on it; nothing is done with the answer.
+      supabase.rpc("abo_member_seen", { p_project: project.id }).then(() => {});
+    }
+  }, [project, userId]);
+
   useEffect(() => {
     if (selectedModuleId) {
       loadModuleData(selectedModuleId);
@@ -1382,7 +1468,10 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   }, [selectedModuleId, loadModuleData]);
 
   const topLevel = useMemo(() => modules.filter((m) => !m.parent_id), [modules]);
-  const storeTop = useMemo(() => topLevel.filter((m) => !!m.source_table), [topLevel]);
+  // A member the owner has not let see the store is not shown its sections
+  // either (0140): they would only ever be empty.
+  const storeHidden = !!project && !!userId && project.owner_id !== userId && !store;
+  const storeTop = useMemo(() => topLevel.filter((m) => !!m.source_table && !storeHidden), [topLevel, storeHidden]);
   const ownTop = useMemo(() => topLevel.filter((m) => !m.source_table), [topLevel]);
 
   // A store project shows its Overview whenever no section is open, the
@@ -2355,6 +2444,48 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         </div>
       ));
 
+  /**
+   * Luke's panel, from Ask Luke: back in its place on a wide screen where
+   * the owner shut it, and as the drawer everywhere else.
+   */
+  const openLuke = () => {
+    if (lukeShut && focus === null && window.matchMedia("(min-width: 1024px)").matches) shutLuke(false);
+    else setChatOpen(true);
+  };
+  const hideLuke = () => {
+    setChatOpen(false);
+    shutLuke(true);
+  };
+  const toggleRail = () => {
+    setRail(!rail);
+    keep("abo_nav_rail", rail ? null : "1");
+  };
+  // Ask Luke floats over the page wherever Luke's panel is not on screen.
+  const askLuke = isOwner && !chatOpen && focus !== "luke";
+
+  /** A top section in the icon rail: its icon, named by its label. Lit while it or one inside it is open. */
+  const railRow = (m: ModuleRow) => (
+    <a
+      key={m.id}
+      href={sectionHref(m.id)}
+      draggable={false}
+      aria-label={m.nav_label}
+      aria-current={m.id === selectedModuleId ? "page" : undefined}
+      onClick={(e) => openHere(e, () => setSelectedModuleId(m.id))}
+      className={railItem(m.id === selectedModuleId || selectedModule?.parent_id === m.id)}
+    >
+      <Icon name={m.icon} />
+    </a>
+  );
+  const railBuilding = (inStore: boolean) =>
+    pendingSections
+      .filter((p) => p.store === inStore && !modules.some((m) => m.name === p.name))
+      .map((p) => (
+        <span key={`rail-${p.name}`} role="status" aria-label={`Building ${p.label}`} className={railItem(false)}>
+          <LoaderCircle aria-hidden size={16} strokeWidth={2} className="motion-safe:animate-spin" />
+        </span>
+      ));
+
   const renderTop = (m: ModuleRow) => {
     // A search shows the children it matched, and every child of a
     // parent it matched; it opens whatever it has to, to show them.
@@ -2533,37 +2664,56 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
 
           {/* ── Sidebar ── */}
           <aside
+            ref={navRef}
             style={{ ["--nav-w" as string]: `${nav.width}px` }}
-            className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col overflow-hidden bg-frame text-frame-fg ${navDocked ? "lg:static lg:w-[var(--nav-w)] lg:translate-x-0" : ""} ${
-              nav.dragging ? "" : "transition-transform duration-200"
-            } ${navOpen ? "translate-x-0" : "-translate-x-full"}`}
+            className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col overflow-hidden bg-frame text-frame-fg ${
+              navDocked ? `lg:static lg:translate-x-0 ${railOn ? "lg:w-16" : "lg:w-[var(--nav-w)]"}` : ""
+            } ${nav.dragging ? "" : "transition-[translate,width] duration-200"} ${navOpen ? "translate-x-0" : "-translate-x-full"}`}
           >
-            <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
+            <div className={`flex items-center gap-2.5 px-4 pt-4 pb-3 ${railOn ? "lg:flex-col lg:gap-3 lg:px-0" : ""}`}>
               <Link href="/dashboard" className="flex min-w-0 items-center gap-2.5 text-left" title="Back to dashboard">
                 <Logo className="h-5" onDark />
-                <div className="min-w-0">
+                <div className={`min-w-0 ${railOn ? "lg:hidden" : ""}`}>
                   <div className="truncate text-sm font-semibold text-white">{project?.name ?? "Warmluke"}</div>
                   <div className="max-w-[9rem] truncate text-[11px] text-frame-fg-muted">{ownerEmail}</div>
                 </div>
               </Link>
-              <ThemeToggle className="ml-auto rounded-control p-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white" />
-              {project && isOwner && (
+              {/* The panel glyph: the sidebar folds to a rail of icons and back. */}
+              {navDocked && (
                 <button
-                  onClick={() => setSettingsOpen(true)}
-                  aria-label="Project settings"
-                  title="Rename, currency, delete"
-                  className="rounded-control p-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white"
+                  onClick={toggleRail}
+                  aria-label={railOn ? "Expand the sidebar" : "Collapse the sidebar"}
+                  className={`ml-auto hidden rounded-control p-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white lg:inline-flex ${railOn ? "lg:ml-0" : ""}`}
                 >
-                  <Settings aria-hidden size={16} strokeWidth={1.75} />
+                  {railOn ? (
+                    <PanelLeftOpen aria-hidden size={16} strokeWidth={1.75} />
+                  ) : (
+                    <PanelLeftClose aria-hidden size={16} strokeWidth={1.75} />
+                  )}
                 </button>
               )}
             </div>
 
+            {modules.length > 0 && railOn && (
+              <div className="hidden justify-center pb-2 lg:flex">
+                <button
+                  onClick={() => {
+                    toggleRail();
+                    setTimeout(() => navSearch.current?.focus(), 0);
+                  }}
+                  aria-label="Search sections"
+                  className={railItem(false)}
+                >
+                  <Search aria-hidden size={16} strokeWidth={1.75} />
+                </button>
+              </div>
+            )}
             {modules.length > 0 && (
-              <div className="px-3 pb-2">
+              <div className={`px-3 pb-2 ${railOn ? "lg:hidden" : ""}`}>
                 <label className="flex items-center gap-2 rounded-control bg-frame-raised px-2.5 py-1.5 text-sm text-frame-fg-muted focus-within:ring-2 focus-within:ring-focus">
                   <Search aria-hidden size={15} strokeWidth={1.75} className="shrink-0" />
                   <input
+                    ref={navSearch}
                     value={navQuery}
                     onChange={(e) => setNavQuery(e.target.value)}
                     onKeyDown={(e) => e.key === "Escape" && setNavQuery("")}
@@ -2575,47 +2725,124 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               </div>
             )}
             <nav className="flex-1 overflow-y-auto px-3 py-1 thin-scroll-dark">
-              {loading && <NavSkeleton />}
-              {store && !navHits && !loading && (
-                <div
-                  className={`mb-1 flex items-center gap-1 rounded-lg pr-1 transition-colors ${
-                    showOverview
-                      ? "bg-frame-raised text-white"
-                      : "text-frame-fg hover:bg-frame-raised/60 hover:text-white"
-                  }`}
-                >
-                  <span className="w-[18px]" />
-                  <a
-                    href={sectionHref(null)}
-                    draggable={false}
-                    onClick={(e) =>
-                      openHere(e, () => {
-                        setSelectedModuleId(null);
-                        setShowOverview(true);
-                        setNavOpen(false);
-                      })
-                    }
-                    aria-current={showOverview ? "page" : undefined}
-                    className="flex min-w-0 flex-1 items-center gap-2.5 py-2 text-left text-sm"
-                  >
-                    <LayoutDashboard aria-hidden size={16} strokeWidth={1.75} />
-                    Overview
-                  </a>
+              {/* The rail: every top section as its icon, the store's and their own apart. */}
+              {railOn && (
+                <div className="hidden flex-col items-center gap-1 lg:flex">
+                  {loading &&
+                    [0, 1, 2, 3].map((i) => <div key={i} className="skeleton-dark h-10 w-10 rounded-control" />)}
+                  {!loading && store && (
+                    <a
+                      href={sectionHref(null)}
+                      draggable={false}
+                      aria-label="Overview"
+                      aria-current={showOverview ? "page" : undefined}
+                      onClick={(e) =>
+                        openHere(e, () => {
+                          setSelectedModuleId(null);
+                          setShowOverview(true);
+                        })
+                      }
+                      className={railItem(showOverview)}
+                    >
+                      <LayoutDashboard aria-hidden size={16} strokeWidth={1.75} />
+                    </a>
+                  )}
+                  {!loading && (storeTop.length > 0 || pendingSections.some((p) => p.store)) && (
+                    <>
+                      <hr className="my-1.5 w-8 border-frame-line" />
+                      {storeTop.map(railRow)}
+                      {railBuilding(true)}
+                    </>
+                  )}
+                  {!loading && (ownTop.length > 0 || pendingSections.some((p) => !p.store) || isOwner) && (
+                    <hr className="my-1.5 w-8 border-frame-line" />
+                  )}
+                  {ownTop.map(railRow)}
+                  {railBuilding(false)}
+                  {!loading && isOwner && (
+                    <button
+                      onClick={() => setNewSectionParent("")}
+                      aria-label="New section"
+                      className={railItem(false)}
+                    >
+                      <Plus aria-hidden size={16} strokeWidth={1.75} />
+                    </button>
+                  )}
                 </div>
               )}
+              <div className={railOn ? "lg:hidden" : ""}>
+                {loading && <NavSkeleton />}
+                {store && !navHits && !loading && (
+                  <div
+                    className={`mb-1 flex items-center gap-1 rounded-lg pr-1 transition-colors ${
+                      showOverview
+                        ? "bg-frame-raised text-white"
+                        : "text-frame-fg hover:bg-frame-raised/60 hover:text-white"
+                    }`}
+                  >
+                    <span className="w-[18px]" />
+                    <a
+                      href={sectionHref(null)}
+                      draggable={false}
+                      onClick={(e) =>
+                        openHere(e, () => {
+                          setSelectedModuleId(null);
+                          setShowOverview(true);
+                          setNavOpen(false);
+                        })
+                      }
+                      aria-current={showOverview ? "page" : undefined}
+                      className="flex min-w-0 flex-1 items-center gap-2.5 py-2 text-left text-sm"
+                    >
+                      <LayoutDashboard aria-hidden size={16} strokeWidth={1.75} />
+                      Overview
+                    </a>
+                  </div>
+                )}
 
-              {/* What comes from the store, apart from what they built: the
+                {/* What comes from the store, apart from what they built: the
               first is filled by Shopify, the second by them. */}
-              {!loading && (store || storeTop.length > 0) && (!navHits || storeTop.some(navVisible)) && (
-                <>
+                {!loading && (store || storeTop.length > 0) && (!navHits || storeTop.some(navVisible)) && (
+                  <>
+                    <NavHeading
+                      text="Store"
+                      action={
+                        isOwner && store ? (
+                          <button
+                            onClick={() => setPickerOpen(true)}
+                            aria-label="Add from your store"
+                            title="Add from your store"
+                            className="rounded px-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white"
+                          >
+                            <Plus aria-hidden size={14} strokeWidth={2} />
+                          </button>
+                        ) : null
+                      }
+                    />
+                    {storeTop.filter(navVisible).map(renderTop)}
+                    {!navHits && buildingRows(true)}
+                    {isOwner && store && storeTop.length === 0 && !navHits && (
+                      <button
+                        onClick={addCoreSections}
+                        disabled={addingCore}
+                        className="mb-1 flex w-full items-center gap-2.5 rounded-lg border border-dashed border-frame-line px-2.5 py-2 text-left text-[13px] leading-snug text-frame-fg-muted transition-colors hover:border-frame-fg-muted hover:text-white disabled:opacity-60"
+                      >
+                        <Plus aria-hidden size={14} strokeWidth={2} className="shrink-0" />
+                        {addingCore ? "Adding…" : `Add ${CORE_STORE_WORDS}`}
+                      </button>
+                    )}
+                  </>
+                )}
+
+                {!loading && (!navHits || ownTop.some(navVisible)) && (
                   <NavHeading
-                    text="Store"
+                    text={!isOwner ? "Shared with you" : store || storeTop.length > 0 ? "Your sections" : "Sections"}
                     action={
-                      isOwner && store ? (
+                      isOwner ? (
                         <button
-                          onClick={() => setPickerOpen(true)}
-                          aria-label="Add from your store"
-                          title="Add from your store"
+                          onClick={() => setNewSectionParent("")}
+                          aria-label="New section"
+                          title="New section"
                           className="rounded px-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white"
                         >
                           <Plus aria-hidden size={14} strokeWidth={2} />
@@ -2623,53 +2850,28 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                       ) : null
                     }
                   />
-                  {storeTop.filter(navVisible).map(renderTop)}
-                  {!navHits && buildingRows(true)}
-                  {isOwner && store && storeTop.length === 0 && !navHits && (
-                    <button
-                      onClick={addCoreSections}
-                      disabled={addingCore}
-                      className="mb-1 flex w-full items-center gap-2.5 rounded-lg border border-dashed border-frame-line px-2.5 py-2 text-left text-[13px] leading-snug text-frame-fg-muted transition-colors hover:border-frame-fg-muted hover:text-white disabled:opacity-60"
-                    >
-                      <Plus aria-hidden size={14} strokeWidth={2} className="shrink-0" />
-                      {addingCore ? "Adding…" : `Add ${CORE_STORE_WORDS}`}
-                    </button>
-                  )}
-                </>
-              )}
-
-              {!loading && (!navHits || ownTop.some(navVisible)) && (
-                <NavHeading
-                  text={store || storeTop.length > 0 ? "Your sections" : "Sections"}
-                  action={
-                    isOwner ? (
-                      <button
-                        onClick={() => setNewSectionParent("")}
-                        aria-label="New section"
-                        title="New section"
-                        className="rounded px-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white"
-                      >
-                        <Plus aria-hidden size={14} strokeWidth={2} />
-                      </button>
-                    ) : null
-                  }
-                />
-              )}
-              {ownTop.filter(navVisible).map(renderTop)}
-              {!navHits && buildingRows(false)}
-              {!loading && ownTop.length === 0 && !navHits && !pendingSections.some((p) => !p.store) && (
-                <div className="px-2 py-1 text-[13px] leading-relaxed text-frame-fg-muted">
-                  {store || storeTop.length > 0
-                    ? "Nothing of your own yet. Ask Luke for the tool you wish you had."
-                    : "No sections yet — describe your app to Luke to build them."}
-                </div>
-              )}
+                )}
+                {ownTop.filter(navVisible).map(renderTop)}
+                {!navHits && buildingRows(false)}
+                {!loading && ownTop.length === 0 && !navHits && !pendingSections.some((p) => !p.store) && (
+                  <div className="px-2 py-1 text-[13px] leading-relaxed text-frame-fg-muted">
+                    {!isOwner
+                      ? "Nothing shared with you here yet."
+                      : store || storeTop.length > 0
+                        ? "Nothing of your own yet. Ask Luke for the tool you wish you had."
+                        : "No sections yet — describe your app to Luke to build them."}
+                  </div>
+                )}
+              </div>
             </nav>
 
             {navHits && navHits.size === 0 && (
-              <p className="px-5 pb-2 text-xs text-frame-fg-muted">No section matches that.</p>
+              <p className={`px-5 pb-2 text-xs text-frame-fg-muted ${railOn ? "lg:hidden" : ""}`}>
+                No section matches that.
+              </p>
             )}
-            <div className="space-y-1 border-t border-frame-line px-3 py-3 empty:hidden">
+            {/* Out of sight on the rail, never unmounted: the strip tells the shell when the store has been read. */}
+            <div className={`space-y-1 border-t border-frame-line px-3 py-3 empty:hidden ${railOn ? "lg:hidden" : ""}`}>
               {/* Every store they can open, and the way to add another. */}
               <StoreSwitcher projectId={projectId} placement="sidebar" />
               {/* How the store stands, and the way to read it again. */}
@@ -2680,8 +2882,30 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 </p>
               )}
             </div>
+            {/* Pinned at the foot, as the rest of the frame keeps them: settings and the theme. */}
+            <div
+              className={`flex items-center gap-1 border-t border-frame-line px-3 py-2 ${railOn ? "lg:flex-col lg:px-0" : ""}`}
+            >
+              {project && isOwner && (
+                <button
+                  onClick={() => setSettingsOpen(true)}
+                  aria-label="Project settings"
+                  className={`flex items-center gap-2.5 rounded-control px-2 py-1.5 text-[13px] text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white ${
+                    railOn ? "lg:h-10 lg:w-10 lg:justify-center lg:px-0" : ""
+                  }`}
+                >
+                  <Settings aria-hidden size={16} strokeWidth={1.75} />
+                  <span className={railOn ? "lg:hidden" : ""}>Settings</span>
+                </button>
+              )}
+              <ThemeToggle
+                className={`rounded-control p-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white ${
+                  railOn ? "ml-auto lg:ml-0 lg:p-3" : "ml-auto"
+                }`}
+              />
+            </div>
 
-            {navDocked && (
+            {navDocked && !railOn && (
               <ResizeHandle
                 edge="left"
                 label="Resize the sidebar"
@@ -2695,10 +2919,11 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               />
             )}
           </aside>
+          {railOn && <RailTip rail={navRef} />}
 
           {/* ── Main area ── */}
           <main
-            className={`flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas lg:rounded-card lg:shadow-card ${focus === "luke" ? "lg:hidden" : ""}`}
+            className={`relative flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas lg:rounded-pane lg:shadow-card ${focus === "luke" ? "lg:hidden" : ""}`}
           >
             <header className="flex items-center justify-between gap-2 border-b border-line bg-canvas px-3 py-3 sm:px-6 sm:py-3.5">
               <div className="flex min-w-0 items-center gap-2 sm:gap-3">
@@ -2735,6 +2960,27 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     )}
                   </button>
                 </span>
+                {/* A section inside another is shared as its parent is (0140). */}
+                {selectedModule && isOwner && !selectedModule.parent_id && (
+                  <button
+                    onClick={() => setShareOpen(true)}
+                    // On a phone only the icon shows; this is its name.
+                    aria-label="Share"
+                    title={
+                      selectedModule.shared_with_team === false
+                        ? "Only you and the people you pick can see this"
+                        : "Everyone on your team can see this"
+                    }
+                    className={button("secondary")}
+                  >
+                    {selectedModule.shared_with_team === false ? (
+                      <Lock aria-hidden size={15} strokeWidth={1.75} />
+                    ) : (
+                      <Users aria-hidden size={15} strokeWidth={1.75} />
+                    )}
+                    <span className="hidden sm:inline">Share</span>
+                  </button>
+                )}
                 {isOwner && (
                   <button onClick={() => setRulesOpen(true)} title="Rules" className={button("secondary")}>
                     <Zap aria-hidden size={15} strokeWidth={1.75} />
@@ -2747,25 +2993,15 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     <span className="hidden sm:inline">History</span>
                   </button>
                 )}
-                {isOwner && (
-                  <button
-                    onClick={() => setChatOpen(true)}
-                    aria-label={waiting > 0 ? `Luke — ${waiting} waiting for you` : "Luke"}
-                    className={`${button("primary")} relative ${lukeDocked ? "lg:hidden" : ""}`}
-                  >
-                    <Sparkles aria-hidden size={15} strokeWidth={1.75} />
-                    <span className="hidden sm:inline">Luke</span>
-                    {waiting > 0 && (
-                      <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-signal-attention px-1 text-[9px] font-semibold text-white">
-                        {waiting}
-                      </span>
-                    )}
-                  </button>
-                )}
               </div>
             </header>
 
-            <div className="flex-1 overflow-y-auto p-3 thin-scroll sm:p-6">
+            {/* Clear of Ask Luke at its foot, so the last rows and the pages are never under it. */}
+            <div
+              className={`flex min-h-0 flex-1 flex-col overflow-y-auto p-3 thin-scroll sm:p-6 ${
+                askLuke ? `pb-24 sm:pb-24 ${lukeDocked ? "lg:pb-6" : ""}` : ""
+              }`}
+            >
               {loadError && (
                 <div role="alert" className={`${note.critical} mb-4 text-[13px]`}>
                   Couldn&rsquo;t load your data: {loadError}
@@ -2786,6 +3022,15 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     onInspect={(table, row) => setInspecting({ table, row })}
                   />
                 </FormatProvider>
+              ) : isEmpty && project && !isOwner ? (
+                // A member cannot build, so "Start building" would be a door that does not open.
+                <div className="flex h-full flex-col items-center justify-center text-center">
+                  <div className="text-xl font-semibold tracking-tight text-fg">Nothing shared with you yet</div>
+                  <p className="mt-2 max-w-sm text-[13px] leading-relaxed text-fg-muted">
+                    Whoever runs {project.name} decides which sections you see. When they share one, it appears here and
+                    in the menu.
+                  </p>
+                </div>
               ) : isEmpty ? (
                 <div className="flex h-full flex-col items-center justify-center text-center">
                   <div className="text-2xl font-semibold tracking-tight text-fg">Start building</div>
@@ -2891,6 +3136,22 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 </div>
               )}
             </div>
+            {askLuke && (
+              <div
+                className={`pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center px-3 sm:bottom-5 ${lukeDocked ? "lg:hidden" : ""}`}
+              >
+                <AskLuke
+                  className="pointer-events-auto"
+                  busy={chatBusy || building}
+                  waiting={waiting}
+                  onOpen={openLuke}
+                  onSend={(text) => {
+                    openLuke();
+                    void runPrompt(text);
+                  }}
+                />
+              </div>
+            )}
           </main>
 
           {/* ── Assistant + history ── */}
@@ -2920,6 +3181,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 docked={lukeDocked}
                 wide={focus === "luke"}
                 onWide={() => focusOn(focus === "luke" ? null : "luke")}
+                onHide={focus === null ? hideLuke : undefined}
                 onWaiting={setWaiting}
                 modules={modules}
                 currentSchema={schema?.schema_json ?? null}
@@ -2996,9 +3258,22 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               onClose={() => setModuleSettingsFor(null)}
             />
           )}
+          {shareOpen && selectedModule && isOwner && (
+            <ShareSection
+              projectId={projectId}
+              section={selectedModule}
+              onClose={() => setShareOpen(false)}
+              onChanged={loadModules}
+              onAddPeople={() => {
+                setShareOpen(false);
+                setSettingsOpen("people");
+              }}
+            />
+          )}
           {settingsOpen && project && (
             <ProjectSettings
               project={project}
+              initialTab={settingsOpen === "people" ? "people" : undefined}
               onSaved={setProject}
               onDeleted={() => router.replace("/dashboard")}
               onClose={() => setSettingsOpen(false)}

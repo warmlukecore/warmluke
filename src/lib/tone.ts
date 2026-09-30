@@ -50,6 +50,34 @@ const KNOWN: Record<string, Known> = {
   ARCHIVED: { label: "Archived", tone: "neutral", progress: "complete" },
   // The orders view says this for a cancelled order, whatever it was paid.
   CANCELLED: { label: "Cancelled", tone: "neutral", progress: "complete" },
+  // Shipments: a fulfilment's displayStatus, as the courier reports it.
+  LABEL_PRINTED: { label: "Label printed", tone: "info", progress: "partial" },
+  LABEL_PURCHASED: { label: "Label purchased", tone: "info", progress: "partial" },
+  LABEL_VOIDED: { label: "Label voided", tone: "neutral", progress: "complete" },
+  SUBMITTED: { label: "Submitted", tone: "info", progress: "incomplete" },
+  CONFIRMED: { label: "Confirmed", tone: "info", progress: "partial" },
+  CARRIER_PICKED_UP: { label: "With the courier", tone: "info", progress: "partial" },
+  IN_TRANSIT: { label: "In transit", tone: "info", progress: "partial" },
+  OUT_FOR_DELIVERY: { label: "Out for delivery", tone: "info", progress: "partial" },
+  READY_FOR_PICKUP: { label: "Ready for pickup", tone: "info", progress: "partial" },
+  DELAYED: { label: "Delayed", tone: "warning", progress: "incomplete" },
+  ATTEMPTED_DELIVERY: { label: "Delivery attempted", tone: "attention", progress: "incomplete" },
+  NOT_DELIVERED: { label: "Not delivered", tone: "critical", progress: "incomplete" },
+  FAILURE: { label: "Failed", tone: "critical", progress: "incomplete" },
+  DELIVERED: { label: "Delivered", tone: "neutral", progress: "complete" },
+  PICKED_UP: { label: "Picked up", tone: "neutral", progress: "complete" },
+  MARKED_AS_FULFILLED: { label: "Marked as fulfilled", tone: "neutral", progress: "complete" },
+  CANCELED: { label: "Cancelled", tone: "neutral", progress: "complete" },
+  // Transactions
+  SUCCESS: { label: "Successful", tone: "neutral", progress: "complete" },
+  ERROR: { label: "Error", tone: "critical", progress: "incomplete" },
+  AWAITING_RESPONSE: { label: "Awaiting response", tone: "attention", progress: "incomplete" },
+  // Draft orders and returns
+  INVOICE_SENT: { label: "Invoice sent", tone: "attention", progress: "incomplete" },
+  COMPLETED: { label: "Completed", tone: "neutral", progress: "complete" },
+  REQUESTED: { label: "Requested", tone: "attention", progress: "incomplete" },
+  DECLINED: { label: "Declined", tone: "neutral", progress: "complete" },
+  CLOSED: { label: "Closed", tone: "neutral", progress: "complete" },
 };
 
 /**
@@ -64,6 +92,17 @@ const SHOPIFY_FORM = /^[A-Z]+(?:_[A-Z]+)*$/;
 export function knownStatus(value: string): Known | null {
   const v = value.trim();
   return SHOPIFY_FORM.test(v) ? (KNOWN[v] ?? null) : null;
+}
+
+/**
+ * A status with nothing left in it for the merchant: finished, and quiet
+ * (Paid, Fulfilled, Delivered). A row whose statuses are all settled is
+ * drawn muted, so what still needs them stands out. Active is finished
+ * but not quiet: an active product is the norm, not old news.
+ */
+export function isSettled(value: string): boolean {
+  const k = knownStatus(value);
+  return !!k && k.progress === "complete" && k.tone === "neutral";
 }
 
 /** What a badge should say: the status's own words, or the value itself. */

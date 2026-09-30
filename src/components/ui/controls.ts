@@ -35,10 +35,15 @@ export const button = (tone: ButtonTone = "secondary", size: ButtonSize = "md") 
 
 /** A square button holding one icon. */
 const ICON =
-  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-control text-fg-muted transition-colors disabled:pointer-events-none disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
-export const iconButton = `${ICON} hover:bg-surface-hover hover:text-fg`;
+  "inline-flex h-8 w-8 shrink-0 items-center justify-center text-fg-muted transition-colors disabled:pointer-events-none disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
+export const iconButton = `${ICON} rounded-control hover:bg-surface-hover hover:text-fg`;
 /** The same, for removing something: it turns red under the pointer. */
-export const iconButtonCritical = `${ICON} hover:bg-tone-critical/40 hover:text-tone-critical-fg`;
+export const iconButtonCritical = `${ICON} rounded-control hover:bg-tone-critical/40 hover:text-tone-critical-fg`;
+/** The same, round: inside something round (the Ask Luke bar). */
+export const iconButtonRound = `${ICON} rounded-full hover:bg-surface-hover hover:text-fg`;
+/** A round send: the one filled button in a composer. */
+export const sendButton =
+  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary transition-all duration-150 hover:bg-primary-hover active:scale-95 disabled:bg-line-strong disabled:text-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
 
 /**
  * Text inputs, selects and text areas: one height, one focus ring, and

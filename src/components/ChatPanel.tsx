@@ -74,6 +74,7 @@ import {
   Undo2,
   Maximize2,
   Minimize2,
+  PanelRightClose,
   X,
   Zap,
   ZapOff,
@@ -1573,6 +1574,7 @@ export default function ChatPanel({
   docked = true,
   wide = false,
   onWide,
+  onHide,
   modules,
   currentSchema,
   messages,
@@ -1635,6 +1637,8 @@ export default function ChatPanel({
   wide?: boolean;
   /** Luke alone, or back to the three panes. */
   onWide?: () => void;
+  /** Shuts the docked panel on a wide screen; Ask Luke then floats over the page. */
+  onHide?: () => void;
   /**
    * How many things are waiting on the merchant, whenever it changes.
    *
@@ -2481,7 +2485,7 @@ export default function ChatPanel({
         style={{ ["--chat-w" as string]: `${width}px` }}
         className={`fixed inset-y-0 right-0 z-40 flex w-full max-w-[420px] shrink-0 flex-col overflow-hidden border-l border-line bg-surface ${
           docked
-            ? `lg:relative lg:max-w-none lg:translate-x-0 lg:rounded-card lg:border-l-0 lg:shadow-card ${wide ? "lg:flex-1" : "lg:w-[var(--chat-w)]"}`
+            ? `lg:relative lg:max-w-none lg:translate-x-0 lg:rounded-pane lg:border-l-0 lg:shadow-card ${wide ? "lg:flex-1" : "lg:w-[var(--chat-w)]"}`
             : ""
         } ${dragging ? "" : "transition-transform duration-200"} ${open ? "translate-x-0" : "translate-x-full"}`}
       >
@@ -3124,6 +3128,18 @@ export default function ChatPanel({
                   ) : (
                     <Maximize2 aria-hidden size={16} strokeWidth={1.75} />
                   )}
+                </button>
+              </span>
+            )}
+            {onHide && docked && !wide && (
+              <span className="hidden lg:inline-flex">
+                <button
+                  onClick={onHide}
+                  aria-label="Hide Luke's panel"
+                  title="Hide Luke's panel"
+                  className={iconButton}
+                >
+                  <PanelRightClose aria-hidden size={16} strokeWidth={1.75} />
                 </button>
               </span>
             )}

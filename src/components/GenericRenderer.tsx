@@ -11,7 +11,7 @@
 import { filterOptions, matchesFilter } from "@/lib/filters";
 import ErrorNote from "@/components/ErrorNote";
 import { asError } from "@/lib/errors";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { FeatureSchema, RecordRow, UiSchema, ViewSpec } from "@/lib/types";
 
 type StatSpec = NonNullable<FeatureSchema["stats"]>[number];
@@ -37,13 +37,156 @@ type StatCard = { label: string; display: string; groups?: Array<{ key: string; 
 import RecordModal from "@/components/RecordModal";
 import ScanBar from "@/components/ScanBar";
 import CustomView from "@/components/CustomView";
-import { BoardView, CalendarView, CardsView, ListView, TableView, compare } from "@/components/views";
+import {
+  Badge,
+  BoardView,
+  CalendarView,
+  CardsView,
+  EmptyState,
+  ListView,
+  TableView,
+  compare,
+} from "@/components/views";
 import { useFormat } from "@/lib/format";
 import { evalExpr, truthy, withComputed } from "@/lib/expr";
 import { sameCode } from "@/lib/scan";
 import { PREVIEW_ROWS } from "@/lib/change-preview";
-import { button } from "@/components/ui/controls";
-import { Plus } from "lucide-react";
+import { badgeLabel } from "@/lib/tone";
+import { button, fieldOf, iconButtonRound, menu, menuItem } from "@/components/ui/controls";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Plus } from "lucide-react";
+
+/** A table shows this many rows at a time; the rest are a page away. */
+const PAGE = 50;
+
+/**
+ * One filter, as the app's own listbox rather than the system's select
+ * menu: the choices in the app's type, a status as the badge it is, and
+ * arrows, Home, End, Enter and Escape as a list box answers them.
+ */
+function FilterMenu({
+  label,
+  options,
+  value,
+  badges,
+  onChange,
+}: {
+  label: string;
+  options: string[];
+  value: string;
+  /** The field holds statuses: each choice is drawn as its badge. */
+  badges: boolean;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  // Opens towards the space there is: from the right edge when the left would run off the window.
+  const [fromRight, setFromRight] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLUListElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const id = useId();
+  const all = ["", ...options];
+
+  useEffect(() => {
+    if (!open) return;
+    list.current?.focus({ preventScroll: true });
+    const away = (e: MouseEvent) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [open]);
+  useEffect(() => {
+    if (open) list.current?.children[active]?.scrollIntoView({ block: "nearest" });
+  }, [open, active]);
+
+  const show = () => {
+    const at = trigger.current?.getBoundingClientRect();
+    setFromRight(!!at && at.left + 208 > window.innerWidth - 8);
+    setActive(Math.max(0, all.indexOf(value)));
+    setOpen(true);
+  };
+  const choose = (i: number) => {
+    onChange(all[i]);
+    setOpen(false);
+    trigger.current?.focus();
+  };
+  const keys = (e: React.KeyboardEvent) => {
+    const last = all.length - 1;
+    if (e.key === "ArrowDown") setActive((a) => Math.min(last, a + 1));
+    else if (e.key === "ArrowUp") setActive((a) => Math.max(0, a - 1));
+    else if (e.key === "Home") setActive(0);
+    else if (e.key === "End") setActive(last);
+    else if (e.key === "Enter" || e.key === " ") choose(active);
+    else if (e.key === "Escape") {
+      setOpen(false);
+      trigger.current?.focus();
+    } else if (e.key === "Tab") return setOpen(false);
+    else return;
+    e.preventDefault();
+  };
+
+  return (
+    <div ref={box} className="relative">
+      <button
+        ref={trigger}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={`${id}-list`}
+        aria-label={`Filter by ${label}${value ? `: ${badges ? badgeLabel(value) : value}` : ""}`}
+        onClick={() => (open ? setOpen(false) : show())}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            show();
+          }
+        }}
+        className={button("secondary", "sm")}
+      >
+        <span className={value ? "text-fg-muted" : ""}>{label}</span>
+        {value && <span className="max-w-40 truncate">{badges ? badgeLabel(value) : value}</span>}
+        <ChevronDown
+          aria-hidden
+          size={13}
+          strokeWidth={2}
+          className={`text-fg-faint transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open && (
+        <div className={`${menu} absolute top-full mt-1 w-52 ${fromRight ? "right-0" : "left-0"}`}>
+          <ul
+            ref={list}
+            id={`${id}-list`}
+            role="listbox"
+            tabIndex={-1}
+            aria-label={label}
+            aria-activedescendant={`${id}-${active}`}
+            onKeyDown={keys}
+            className="max-h-64 overflow-y-auto outline-none thin-scroll"
+          >
+            {all.map((o, i) => (
+              <li
+                key={o || "all"}
+                id={`${id}-${i}`}
+                role="option"
+                aria-selected={o === value}
+                onClick={() => choose(i)}
+                onMouseEnter={() => setActive(i)}
+                className={`${menuItem} cursor-pointer ${i === active ? "bg-surface-hover" : ""}`}
+              >
+                <span className="min-w-0 flex-1 truncate">
+                  {!o ? `Any ${label.toLowerCase()}` : badges ? <Badge value={o} /> : o}
+                </span>
+                {o === value && <Check aria-hidden size={14} strokeWidth={2} className="shrink-0 text-fg-muted" />}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const VIEW_LABELS: Record<ViewSpec["type"], string> = {
   table: "Table",
@@ -122,6 +265,8 @@ export default function GenericRenderer({
   const [scanGroup, setScanGroup] = useState<string | null>(null);
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
   const [sort, setSort] = useState<{ field: string; dir: "asc" | "desc" } | null>(null);
+  // The table's page, over the rows loaded; back to the first whenever what is shown changes.
+  const [page, setPage] = useState(0);
 
   const effectiveSort = sort ?? features?.defaultSort ?? null;
   const view: ViewSpec = features?.view ?? { type: "table" };
@@ -320,10 +465,26 @@ export default function GenericRenderer({
     }
   }
 
+  const custom = view.type === "custom";
+  // What renderView draws as the table: its own type, and any it does not know.
+  const table = !custom && !["board", "calendar", "cards", "list"].includes(view.type);
+  // A section's table fills the page below its counters and scrolls within
+  // it, so its head and its foot (the pages, the count) stay in view.
+  const fill = table && !preview;
+  const pages = fill ? Math.max(1, Math.ceil(filteredRecords.length / PAGE)) : 1;
+  const at = Math.min(page, pages - 1);
+  const filtered = !!search.trim() || Object.values(filterValues).some(Boolean);
+  const clearFilters = () => {
+    setSearch("");
+    setFilterValues({});
+    setPage(0);
+  };
+
   const viewProps = {
     columns,
     // A preview's list is a glimpse; its totals above still count every row.
     records: preview ? filteredRecords.slice(0, PREVIEW_ROWS) : filteredRecords,
+    onClearFilters: filtered ? clearFilters : undefined,
     allRecordCount: records.length,
     onOpen: editable ? (rec: RecordRow) => setEditing(rec) : preview ? undefined : onInspect,
     actions: features?.actions,
@@ -332,8 +493,6 @@ export default function GenericRenderer({
       : undefined,
     busyRecordId,
   };
-
-  const custom = view.type === "custom";
 
   function renderView() {
     switch (view.type) {
@@ -364,19 +523,23 @@ export default function GenericRenderer({
         return (
           <TableView
             {...viewProps}
+            // A new page, or another section's table, starts at its top left.
+            key={`${at}:${columns.map((c) => c.field).join()}`}
+            records={fill ? filteredRecords.slice(at * PAGE, (at + 1) * PAGE) : viewProps.records}
             sort={effectiveSort}
-            onSort={(field) =>
+            onSort={(field) => {
+              setPage(0);
               setSort((prev) =>
                 prev?.field === field ? { field, dir: prev.dir === "asc" ? "desc" : "asc" } : { field, dir: "asc" }
-              )
-            }
+              );
+            }}
           />
         );
     }
   }
 
   return (
-    <div className="space-y-4">
+    <div className={`flex flex-col gap-4 ${fill ? "min-h-0 flex-1" : ""}`}>
       {preview && (
         // A preview says so in a bar of its own above what it shows, as a
         // browser frame would, rather than a word laid across the rows.
@@ -398,7 +561,10 @@ export default function GenericRenderer({
           onApply={(rec, set) => onUpdate!(rec.id, set)}
           onCreate={onCreate}
           group={scanGroup}
-          onGroup={setScanGroup}
+          onGroup={(g) => {
+            setScanGroup(g);
+            setPage(0);
+          }}
           onOpenGroup={onScanGroup}
         />
       )}
@@ -408,7 +574,7 @@ export default function GenericRenderer({
         // is narrow however wide the window, and four there broke every word.
         <div className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-2.5 sm:gap-3">
           {stats.map((s, i) => (
-            <div key={i} className="rounded-card bg-surface px-4 py-3 shadow-card transition-shadow hover:shadow-md">
+            <div key={i} className="rounded-card bg-surface px-4 py-3 shadow-card">
               <div className="text-xs font-medium text-fg-muted">{s.label}</div>
               {s.groups ? (
                 <div className="mt-1.5 space-y-0.5">
@@ -423,6 +589,9 @@ export default function GenericRenderer({
                     ))
                   )}
                 </div>
+              ) : s.display === "…" ? (
+                // Still being counted: a bar where the figure will be, not a mark that reads as one.
+                <div role="status" aria-label={`Counting ${s.label}`} className="skeleton mt-2.5 mb-1 h-5 w-20" />
               ) : (
                 <div
                   className={`font-display mt-1 font-semibold text-fg tabular-nums ${
@@ -438,34 +607,43 @@ export default function GenericRenderer({
       )}
 
       {/* A written screen is the section: it carries its own search and steps, so the list's are not drawn around it. */}
-      <div className={custom ? "relative" : "relative overflow-hidden rounded-card bg-surface shadow-card"}>
-        {/* In a preview, only when the change put a search or a filter there: a bar holding a lone "Table" said nothing. */}
-        {!custom && (!preview || features?.search?.enabled || (features?.filters?.length ?? 0) > 0) && (
-          <div className="flex flex-wrap items-center gap-2 border-b border-line px-3.5 py-2.5">
+      <div
+        className={
+          custom
+            ? "relative"
+            : `relative overflow-clip rounded-card bg-surface shadow-card ${fill ? "flex min-h-0 flex-col" : ""}`
+        }
+      >
+        {/* Only with something in it to use: a bar holding a lone "Table" said nothing. */}
+        {!custom && (features?.search?.enabled || (features?.filters?.length ?? 0) > 0 || editable) && (
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-2.5">
             {features?.search?.enabled && (
               <input
+                type="search"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(0);
+                }}
                 placeholder={features.search.placeholder ?? "Search…"}
-                className="w-full min-w-0 rounded-lg border border-line px-3 py-1.5 text-sm outline-none transition-colors focus:border-focus focus:ring-2 focus:ring-focus/15 sm:w-52"
+                aria-label={features.search.placeholder ?? "Search"}
+                className={`${fieldOf("md")} w-full min-w-0 sm:w-60`}
               />
             )}
             {(features?.filters ?? []).map((fl) => (
-              <select
+              <FilterMenu
                 key={fl.field}
+                label={fl.label}
                 value={filterValues[fl.field] ?? ""}
-                onChange={(e) => setFilterValues((prev) => ({ ...prev, [fl.field]: e.target.value }))}
-                className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm text-fg-muted outline-none transition-colors focus:border-focus"
-              >
-                <option value="">{fl.label}: All</option>
-                {filterOptions(fl.options ?? [], rowsWithComputed, fl.field).map((o) => (
-                  <option key={o} value={o}>
-                    {o}
-                  </option>
-                ))}
-              </select>
+                options={filterOptions(fl.options ?? [], rowsWithComputed, fl.field)}
+                badges={columns.find((c) => c.field === fl.field)?.type === "badge"}
+                onChange={(v) => {
+                  setFilterValues((prev) => ({ ...prev, [fl.field]: v }));
+                  setPage(0);
+                }}
+              />
             ))}
-            <span className="ml-auto hidden rounded-lg bg-tone-neutral px-2 py-0.5 text-xs text-fg-muted sm:inline">
+            <span className="ml-auto hidden rounded-full bg-tone-neutral px-2 py-0.5 text-xs text-tone-neutral-fg sm:inline">
               {VIEW_LABELS[view.type]}
             </span>
             {editable && (
@@ -484,24 +662,38 @@ export default function GenericRenderer({
         )}
 
         {records.length === 0 && !custom ? (
-          <div className="px-4 py-12 text-center">
-            <div className="text-sm text-fg-muted">Nothing here yet.</div>
-            {editable && (
-              <button
-                onClick={() => setAdding(true)}
-                className="mt-3 rounded-lg bg-primary px-3.5 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-primary-hover"
-              >
-                Add the first one
-              </button>
-            )}
-          </div>
+          <EmptyState total={0} onAdd={editable ? () => setAdding(true) : undefined} />
         ) : (
           renderView()
         )}
 
         {!custom && (
-          <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-2 text-[11px] text-fg-faint">
-            <span>
+          <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-line px-3 py-1.5 text-xs text-fg-muted">
+            {pages > 1 && (
+              // The pages of what is loaded, as one pill: back, where, on.
+              <div role="group" aria-label="Pages" className="flex items-center rounded-full bg-surface-subdued">
+                <button
+                  onClick={() => setPage(at - 1)}
+                  disabled={at === 0}
+                  aria-label="Previous page"
+                  className={iconButtonRound}
+                >
+                  <ChevronLeft aria-hidden size={16} strokeWidth={1.75} />
+                </button>
+                <span className="px-1 font-medium text-fg tabular-nums">
+                  {fmt.number(at * PAGE + 1)}–{fmt.number(Math.min((at + 1) * PAGE, filteredRecords.length))}
+                </span>
+                <button
+                  onClick={() => setPage(at + 1)}
+                  disabled={at >= pages - 1}
+                  aria-label="Next page"
+                  className={iconButtonRound}
+                >
+                  <ChevronRight aria-hidden size={16} strokeWidth={1.75} />
+                </button>
+              </div>
+            )}
+            <span className="tabular-nums">
               {preview ? Math.min(PREVIEW_ROWS, filteredRecords.length) : filteredRecords.length} of {records.length}{" "}
               record{records.length === 1 ? "" : "s"}
               {total > records.length && ` shown · ${total} in total`}
@@ -517,7 +709,7 @@ export default function GenericRenderer({
                   }
                 }}
                 disabled={loadingMore}
-                className="ml-auto rounded-md border border-line px-2 py-1 font-medium text-fg-muted transition-colors hover:bg-surface-hover disabled:opacity-50"
+                className={`${button("secondary", "sm")} ml-auto`}
               >
                 {loadingMore ? "Loading…" : "Load more"}
               </button>
@@ -525,7 +717,7 @@ export default function GenericRenderer({
           </div>
         )}
         {total > records.length && !custom && (
-          <div className="border-t border-tone-attention/70 bg-tone-attention/25 px-4 py-1.5 text-[10px] text-tone-attention-fg">
+          <div className="shrink-0 border-t border-tone-attention/70 bg-tone-attention/25 px-3 py-1.5 text-[11px] text-tone-attention-fg">
             {onStats
               ? `The totals above cover all ${fmt.number(total)} rows; the list below is the ${records.length} loaded so far.`
               : `Search, filters and the totals above cover the ${records.length} rows loaded so far.`}

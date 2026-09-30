@@ -51,6 +51,9 @@ const { data: seat } = await admin
     user_id: made.user.id,
     email,
     joined_at: new Date().toISOString(),
+    // Let see the store (0140): a seat without it is not shown the store at
+    // all, and this is about one that is and still must not reach the token.
+    can_see_store: true,
   })
   .select()
   .single();

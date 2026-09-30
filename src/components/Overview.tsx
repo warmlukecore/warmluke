@@ -35,6 +35,7 @@ import { readStoreRows, type StoreTable } from "@/lib/store-read";
 import { ago } from "@/lib/when";
 import { knownStatus, badgeLabel, quietClasses, type Tone } from "@/lib/tone";
 import { button, card, note } from "@/components/ui/controls";
+import { StatusMark } from "@/components/views";
 import type { DetailRow } from "@/components/StoreRecordDetail";
 
 type Money = {
@@ -621,21 +622,27 @@ function Panel({
   );
 }
 
-/** A status as a coloured dot and its words: lighter than a pill in a list. */
+/**
+ * A status as its mark and its words: lighter than a pill in a list. The
+ * mark is the badge's (hollow while something is left to do, filled once
+ * done), in the signal colour of what it means.
+ */
 const DOT: Record<Tone, string> = {
-  attention: "bg-signal-attention",
-  warning: "bg-signal-attention",
-  success: "bg-signal-success",
-  info: "bg-signal-info",
-  critical: "bg-signal-critical",
-  neutral: "bg-signal-neutral",
+  attention: "text-signal-attention",
+  warning: "text-signal-attention",
+  success: "text-signal-success",
+  info: "text-signal-info",
+  critical: "text-signal-critical",
+  neutral: "text-signal-neutral",
 };
 
 function StatusDot({ value }: { value: string }) {
-  const tone = knownStatus(value)?.tone ?? "neutral";
+  const known = knownStatus(value);
   return (
     <span className="mt-0.5 inline-flex items-center gap-1.5 text-[11px] text-fg-muted">
-      <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${DOT[tone]}`} />
+      <span className={`inline-flex ${DOT[known?.tone ?? "neutral"]}`}>
+        <StatusMark progress={known?.progress ?? "complete"} />
+      </span>
       {badgeLabel(value)}
     </span>
   );

@@ -12,7 +12,9 @@
 // what they do on the team (abo_member_about, 0118). The owner sees it on
 // the seat and the accounts screen sees whose app they joined, so nobody
 // has to ask afterwards. It can be skipped, and a seat already answered
-// goes straight through.
+// goes straight through. Above it, who invited them and what they will
+// find there (abo_seat_welcome, 0140). The owner opening their own link,
+// or someone already on the team, goes straight in and leaves the link.
 // ─────────────────────────────────────────────────────────────
 
 import { useEffect, useState } from "react";
@@ -21,8 +23,16 @@ import { supabase } from "@/lib/supabase-client";
 import { CenteredCard } from "@/components/CenteredCard";
 import { button, field, label, note } from "@/components/ui/controls";
 import { MEMBER_ROLE_OPTIONS, NAME_MAX } from "@/lib/onboarding";
+import { quietClasses } from "@/lib/tone";
 
-type About = { projectId: string; projectName: string | null };
+/** What abo_seat_welcome (0140) says about the app they joined. Absent before 0140. */
+type Welcome = {
+  invited_by: string | null;
+  business: string | null;
+  can_see_store: boolean;
+  sections: string[];
+};
+type About = { projectId: string; projectName: string | null; welcome: Welcome | null };
 
 export default function JoinPage() {
   const router = useRouter();
@@ -47,7 +57,7 @@ export default function JoinPage() {
         return;
       }
       if (!projectId) {
-        setError("This invite is no longer valid. Ask for a fresh link.");
+        setError("This link has expired, or someone else has already used it. Ask whoever sent it for a new one.");
         return;
       }
       const uid = data.session.user.id;
@@ -58,16 +68,22 @@ export default function JoinPage() {
           .eq("project_id", projectId)
           .eq("user_id", uid)
           .maybeSingle(),
-        supabase.from("projects").select("name").eq("id", projectId).maybeSingle(),
+        supabase.from("projects").select("name, owner_id").eq("id", projectId).maybeSingle(),
         supabase.from("profiles").select("full_name").eq("user_id", uid).maybeSingle(),
       ]);
-      // Answered before, on this link or another: nothing to ask.
-      if (seat.data?.full_name) {
+      // Answered before, on this link or another — or their own app, or a
+      // team they are already on through another link: nothing to ask.
+      if (seat.data?.full_name || !seat.data || project.data?.owner_id === uid) {
         router.replace(`/app/${projectId}`);
         return;
       }
+      const welcome = await supabase.rpc("abo_seat_welcome", { p_project: projectId });
       setName((profile.data?.full_name as string | undefined) ?? "");
-      setAbout({ projectId, projectName: (project.data?.name as string | undefined) ?? null });
+      setAbout({
+        projectId,
+        projectName: (project.data?.name as string | undefined) ?? null,
+        welcome: welcome.error ? null : (welcome.data as Welcome),
+      });
     })();
   }, [token, router]);
 
@@ -97,8 +113,39 @@ export default function JoinPage() {
             void save();
           }}
         >
+          {about.welcome?.invited_by && (
+            <div className="mb-4 flex items-center gap-3">
+              <span
+                aria-hidden
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${quietClasses(about.welcome.invited_by)}`}
+              >
+                {about.welcome.invited_by.charAt(0).toUpperCase()}
+              </span>
+              <p className="text-[13px] leading-snug text-fg-muted">
+                <span className="font-medium text-fg">{about.welcome.invited_by}</span> invited you
+                {about.welcome.business ? ` to ${about.welcome.business}` : ""}
+              </p>
+            </div>
+          )}
           <h1 className="text-lg font-semibold text-fg">You&rsquo;re joining {about.projectName ?? "the team"}</h1>
           <p className="mt-1 text-[13px] text-fg-muted">So the team knows who is who. It takes a few seconds.</p>
+
+          {about.welcome && (
+            // What they will find, so the first screen of the app is not a surprise.
+            <div className="mt-4 space-y-1.5 rounded-control bg-surface-subdued px-3 py-2.5 text-xs leading-relaxed text-fg-muted">
+              <div>
+                <span className="font-medium text-fg">You&rsquo;ll see: </span>
+                {about.welcome.sections.length
+                  ? about.welcome.sections.join(", ")
+                  : `nothing yet. ${about.welcome.invited_by ?? "The owner"} shares sections with you when they are ready.`}
+              </div>
+              <div>
+                <span className="font-medium text-fg">The store: </span>
+                {about.welcome.can_see_store ? "its orders, customers and products" : "not shared with you"}
+              </div>
+              <div>You can add and update rows. Changing how the app is built stays with them.</div>
+            </div>
+          )}
 
           <label className={`${label} mt-5`} htmlFor="join-name">
             Your name

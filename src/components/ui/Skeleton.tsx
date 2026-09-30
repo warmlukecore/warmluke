@@ -6,29 +6,32 @@
 
 const WIDTHS = ["w-4/5", "w-3/5", "w-2/3", "w-1/2", "w-3/4", "w-2/5"];
 
-/** A section's table while its rows load: its tools, its head, a few rows. */
+/** A section's table while its rows load: its tools, its head band, a few rows. */
 export function SectionSkeleton({ label }: { label?: string }) {
   return (
     <div role="status" aria-label={label ? `Loading ${label}` : "Loading the section"} className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="skeleton h-8 w-56 rounded-control" />
-        <div className="skeleton h-8 w-24 rounded-control" />
-      </div>
-      <div className="overflow-hidden rounded-card border border-line bg-surface">
-        <div className="flex gap-4 border-b border-line bg-surface-subdued px-4 py-3">
-          {[0, 1, 2, 3].map((c) => (
-            <div key={c} className="skeleton h-3 flex-1" />
-          ))}
+      <div className="overflow-hidden rounded-card bg-surface shadow-card">
+        <div className="border-b border-line px-3 py-2.5">
+          <div className="skeleton h-8 w-60 max-w-full rounded-control" />
         </div>
-        {[0, 1, 2, 3, 4, 5].map((r) => (
-          <div key={r} className="flex gap-4 border-b border-line px-4 py-3.5 last:border-b-0">
+        <div className="p-1.5">
+          <div className="flex h-9 items-center gap-4 rounded-lg bg-surface-subdued px-3">
             {[0, 1, 2, 3].map((c) => (
               <div key={c} className="flex-1">
-                <div className={`skeleton h-3 ${WIDTHS[(r + c) % WIDTHS.length]}`} />
+                <div className="skeleton h-2.5 w-1/2" />
               </div>
             ))}
           </div>
-        ))}
+          {[0, 1, 2, 3, 4, 5].map((r) => (
+            <div key={r} className="flex h-11 items-center gap-4 border-b border-line px-3 last:border-b-0">
+              {[0, 1, 2, 3].map((c) => (
+                <div key={c} className="flex-1">
+                  <div className={`skeleton h-3 ${WIDTHS[(r + c) % WIDTHS.length]}`} />
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

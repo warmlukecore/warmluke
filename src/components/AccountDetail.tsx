@@ -74,6 +74,17 @@ type Story = {
     name: string;
     created_at: string;
     members: number;
+    /** 0140: who is on the team, where each stands, and what each can open. Absent before it. */
+    team?: Array<{
+      name: string | null;
+      email: string | null;
+      role: string | null;
+      joined_at: string | null;
+      last_seen_at: string | null;
+      can_see_store: boolean;
+      sections: number;
+    }>;
+    sections?: number;
     stores: Array<{
       domain: string | null;
       status: string;
@@ -288,6 +299,29 @@ export function AccountDetail({ account: a, now, onClose }: { account: Account; 
                         Made {day(p.created_at)}
                         {p.members > 0 && ` · ${p.members} team ${p.members === 1 ? "member" : "members"}`}
                       </div>
+                      {!!p.team?.length && (
+                        // The team they built, as the owner sees it on People.
+                        <ul className="mt-1.5 space-y-1 border-l border-line pl-2.5 text-xs">
+                          {p.team.map((m, i) => (
+                            <li key={`${m.email}-${i}`}>
+                              <span className="font-medium text-fg">{m.name ?? m.email ?? "Someone"}</span>
+                              {m.role && (
+                                <span className="text-fg-muted"> · {labelOf(MEMBER_ROLE_OPTIONS, m.role)}</span>
+                              )}
+                              <span className="block text-fg-muted">
+                                {m.name && m.email ? `${m.email} · ` : ""}
+                                {m.last_seen_at
+                                  ? `last active ${ago(m.last_seen_at, now)}`
+                                  : m.joined_at
+                                    ? `joined ${ago(m.joined_at, now)}, not back since`
+                                    : "not joined yet"}
+                                {` · sees ${m.sections} of ${p.sections ?? 0} sections`}
+                                {m.can_see_store ? " · store" : " · no store"}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                       {p.stores.length === 0 ? (
                         <div className="mt-1 text-xs text-fg-faint">No store connected</div>
                       ) : (

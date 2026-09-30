@@ -58,7 +58,27 @@ type MemberRow = {
   joined_at: string | null;
   full_name: string | null;
   team_role: string | null;
+  /** 0140: whether they read the store, when they last opened the app, and when an unopened link stops working. */
+  can_see_store: boolean;
+  last_seen_at: string | null;
+  expires_at: string | null;
 };
+const SEAT = "id, email, token, joined_at, full_name, team_role, can_see_store, last_seen_at, expires_at";
+/** How long a link lasts, as the database's own default for it (0140). */
+const LINK_DAYS = 7;
+
+const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+
+/** Where a seat stands, said the way the owner would ask about it. */
+function seatStanding(seat: MemberRow, now: number): string {
+  if (!seat.joined_at) {
+    if (seat.expires_at && new Date(seat.expires_at).getTime() <= now) return "Link expired";
+    return seat.expires_at ? `Invited · link works until ${day(seat.expires_at)}` : "Invited · link not opened yet";
+  }
+  if (!seat.full_name) return `Joined ${day(seat.joined_at)} · hasn’t set up yet`;
+  if (seat.last_seen_at) return `Last active ${ago(seat.last_seen_at, now, "")}`;
+  return `Joined ${day(seat.joined_at)} · set up`;
+}
 
 export default function ProjectSettings({
   project,
@@ -66,8 +86,11 @@ export default function ProjectSettings({
   onDeleted,
   onClose,
   onStoreChanged,
+  initialTab = "general",
 }: {
   project: ProjectRow;
+  /** The tab it opens on; the share dialog opens it on People. */
+  initialTab?: Tab;
   onSaved: (p: ProjectRow) => void;
   onDeleted: (id: string) => void;
   onClose: () => void;
@@ -91,7 +114,12 @@ export default function ProjectSettings({
   const [removing, setRemoving] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [peopleError, setPeopleError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("general");
+  const [tab, setTab] = useState<Tab>(initialTab);
+  // The admin at the top of the team: whoever has this open, since only the owner can.
+  const [me, setMe] = useState<{ name: string | null; email: string | null } | null>(null);
+  // What each seat can open (0140): the top-level sections and who each is shared with.
+  const [sections, setSections] = useState<Array<{ id: string; team: boolean }>>([]);
+  const [shares, setShares] = useState<Array<{ module_id: string; member_id: string }>>([]);
   const [shop, setShop] = useState<ShopRow | null | undefined>(undefined);
   const [shopError, setShopError] = useState<string | null>(null);
   const [reconnecting, setReconnecting] = useState(false);
@@ -139,23 +167,73 @@ export default function ProjectSettings({
   }
 
   async function loadSeats() {
-    const { data, error: e } = await supabase
-      .from("project_members")
-      .select("id, email, token, joined_at, full_name, team_role")
-      .eq("project_id", project.id)
-      .order("created_at");
+    const [{ data, error: e }, mods, given] = await Promise.all([
+      supabase.from("project_members").select(SEAT).eq("project_id", project.id).order("created_at"),
+      supabase.from("modules").select("id, shared_with_team").eq("project_id", project.id).is("parent_id", null),
+      supabase
+        .from("module_shares")
+        .select("module_id, member_id, modules!inner(project_id)")
+        .eq("modules.project_id", project.id),
+    ]);
     // A list that failed to load is not a list of nobody.
     if (e) {
       setPeopleError("The people on this project couldn’t be loaded.");
       setSeats((prev) => prev ?? []);
       return;
     }
-    setSeats(data ?? []);
+    setSeats((data as MemberRow[] | null) ?? []);
+    setSections((mods.data ?? []).map((m) => ({ id: m.id as string, team: m.shared_with_team !== false })));
+    setShares((given.data ?? []).map((s) => ({ module_id: s.module_id as string, member_id: s.member_id as string })));
   }
   useEffect(() => {
     loadSeats();
+    supabase.auth.getUser().then(async ({ data }) => {
+      const user = data.user;
+      if (!user) return;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      setMe({ name: (profile?.full_name as string | null | undefined) ?? null, email: user.email ?? null });
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
+
+  /** How many of the app's sections a seat opens: those shared with the team, and those shared with them. */
+  const seesOf = (seat: MemberRow) =>
+    sections.filter((m) => m.team || shares.some((s) => s.module_id === m.id && s.member_id === seat.id)).length;
+
+  async function setSeatStore(seat: MemberRow, on: boolean) {
+    setPeopleError(null);
+    setSeats((prev) => prev?.map((s) => (s.id === seat.id ? { ...s, can_see_store: on } : s)) ?? prev);
+    const { error: e } = await supabase.from("project_members").update({ can_see_store: on }).eq("id", seat.id);
+    if (e) {
+      setPeopleError("That didn’t save. Try again.");
+      loadSeats();
+    }
+  }
+
+  /** An expired link made again: a new secret and seven more days, and whatever it was given stays given. */
+  async function renewLink(seat: MemberRow) {
+    setPeopleError(null);
+    const { data, error: e } = await supabase
+      .from("project_members")
+      .update({
+        token: crypto.randomUUID(),
+        expires_at: new Date(Date.now() + LINK_DAYS * 86_400_000).toISOString(),
+      })
+      .eq("id", seat.id)
+      .is("user_id", null)
+      .select(SEAT)
+      .single();
+    if (e || !data) {
+      setPeopleError("Couldn’t make a new link. Try again.");
+      return;
+    }
+    copyLink(data as MemberRow);
+    loadSeats();
+  }
 
   /** A new seat is a link; it is copied straight away, since that is the next thing anyone does with it. */
   async function addSeat() {
@@ -164,7 +242,7 @@ export default function ProjectSettings({
     const { data, error: e } = await supabase
       .from("project_members")
       .insert({ project_id: project.id })
-      .select("id, email, token, joined_at, full_name, team_role")
+      .select(SEAT)
       .single();
     setAdding(false);
     if (e || !data) {
@@ -577,8 +655,9 @@ export default function ProjectSettings({
         <div className="space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <p className="max-w-sm text-xs leading-relaxed text-fg-muted">
-              Share a link and whoever opens it can use this app — see the sections, add rows, update them. They cannot
-              change how the app is built, read your conversation with Luke, or delete anything.
+              Send a link and whoever opens it joins your team. They see the sections you share with them (Share, at the
+              top of a section), and your store only if you switch it on here. They can add and update rows, not change
+              how the app is built, read your conversations with Luke, or delete anything.
             </p>
             <button onClick={addSeat} disabled={adding} className={button("primary", "sm")}>
               <UserPlus aria-hidden size={14} strokeWidth={2} />
@@ -590,14 +669,35 @@ export default function ProjectSettings({
 
           {seats === null ? (
             <div className="h-14 animate-pulse rounded-card bg-surface-hover" />
-          ) : seats.length === 0 ? (
-            <div className="rounded-card border border-dashed border-line-strong px-4 py-8 text-center text-xs text-fg-muted">
-              Only you, for now. Add someone and send them the link.
-            </div>
           ) : (
             <ul className="divide-y divide-line overflow-hidden rounded-card border border-line">
+              {/* The admin: whoever owns the app, and so whoever has this open. */}
+              <li className="flex items-center gap-3 px-3 py-2.5">
+                <span
+                  aria-hidden
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${quietClasses(me?.email ?? project.owner_id)}`}
+                >
+                  {(me?.name ?? me?.email ?? "Y").charAt(0).toUpperCase()}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13px] text-fg">
+                    {me?.name ?? me?.email ?? "You"} <span className="text-fg-muted">· you</span>
+                  </div>
+                  <div className="truncate text-[11px] text-fg-faint">
+                    {me?.name && me.email ? `${me.email} · ` : ""}Sees and builds everything
+                  </div>
+                </div>
+                <span className="shrink-0 rounded-full bg-tone-neutral px-2 py-px text-[11px] font-medium text-tone-neutral-fg">
+                  Admin
+                </span>
+              </li>
+              {seats.length === 0 && (
+                <li className="px-4 py-6 text-center text-xs text-fg-muted">
+                  Nobody else yet. Add someone and send them the link.
+                </li>
+              )}
               {seats.map((seat) => (
-                <li key={seat.id} className="flex items-center gap-3 px-3 py-2.5">
+                <li key={seat.id} className="flex flex-wrap items-center gap-3 px-3 py-2.5">
                   {seat.email ? (
                     <span
                       aria-hidden
@@ -620,13 +720,23 @@ export default function ProjectSettings({
                         <span className="text-fg-muted"> · {labelOf(MEMBER_ROLE_OPTIONS, seat.team_role)}</span>
                       )}
                     </div>
-                    <div className="truncate text-[11px] text-fg-faint">
-                      {seat.full_name && seat.email ? `${seat.email} · ` : ""}
-                      {seat.joined_at
-                        ? `Joined ${new Date(seat.joined_at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })} · can use the app`
-                        : "Waiting for them to open it"}
+                    {/* Where they stand first: a long address cut it off when it came before. */}
+                    <div className="text-[11px] leading-snug text-fg-muted">
+                      {seatStanding(seat, Date.now())} · sees {seesOf(seat)} of {sections.length}{" "}
+                      {sections.length === 1 ? "section" : "sections"}
                     </div>
+                    {seat.full_name && seat.email && (
+                      <div className="truncate text-[11px] text-fg-faint">{seat.email}</div>
+                    )}
                   </div>
+                  <label className="flex shrink-0 items-center gap-2 text-[11px] text-fg-muted">
+                    Store
+                    <Switch
+                      checked={seat.can_see_store}
+                      onChange={(on) => setSeatStore(seat, on)}
+                      label={`Let ${seat.full_name ?? seat.email ?? "this person"} see the store's orders, customers and products`}
+                    />
+                  </label>
                   {removing === seat.id ? (
                     <div className="flex shrink-0 items-center gap-1">
                       <button onClick={() => removeSeat(seat.id)} className={button("critical", "sm")}>
@@ -638,19 +748,25 @@ export default function ProjectSettings({
                     </div>
                   ) : (
                     <div className="flex shrink-0 items-center">
-                      {!seat.joined_at && (
-                        <button
-                          onClick={() => copyLink(seat)}
-                          aria-label="Copy their link"
-                          title={copied === seat.id ? "Copied" : "Copy link"}
-                          className={iconButton}
-                        >
-                          {copied === seat.id ? (
-                            <Check aria-hidden size={15} strokeWidth={2} className="text-signal-success" />
-                          ) : (
-                            <Copy aria-hidden size={15} strokeWidth={1.75} />
-                          )}
+                      {!seat.joined_at && seat.expires_at && new Date(seat.expires_at).getTime() <= Date.now() ? (
+                        <button onClick={() => renewLink(seat)} className={button("secondary", "sm")}>
+                          {copied === seat.id ? "Copied" : "New link"}
                         </button>
+                      ) : (
+                        !seat.joined_at && (
+                          <button
+                            onClick={() => copyLink(seat)}
+                            aria-label="Copy their link"
+                            title={copied === seat.id ? "Copied" : "Copy link"}
+                            className={iconButton}
+                          >
+                            {copied === seat.id ? (
+                              <Check aria-hidden size={15} strokeWidth={2} className="text-signal-success" />
+                            ) : (
+                              <Copy aria-hidden size={15} strokeWidth={1.75} />
+                            )}
+                          </button>
+                        )
                       )}
                       <button
                         onClick={() => setRemoving(seat.id)}

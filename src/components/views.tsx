@@ -10,12 +10,13 @@
 
 import { useEffect, useState } from "react";
 import type { FeatureSchema, RecordRow, SchemaColumn, ViewSpec } from "@/lib/types";
-import { badgeClasses, badgeLabel, knownStatus } from "@/lib/tone";
+import { badgeClasses, badgeLabel, isSettled, knownStatus, type Progress } from "@/lib/tone";
 import { evalExpr, truthy } from "@/lib/expr";
 import { useFormat, type Formatting } from "@/lib/format";
 import { isId, looksLikeCode } from "@/lib/no-ids";
 import { useLinkLabel } from "@/components/LinkContext";
-import { ArrowDown, ArrowUp, Check, Copy } from "lucide-react";
+import { button, type ButtonTone } from "@/components/ui/controls";
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, Copy, Inbox, Plus, SearchX } from "lucide-react";
 
 export function compare(a: unknown, b: unknown, type: SchemaColumn["type"]): number {
   if (type === "number" || type === "currency" || type === "percent") {
@@ -186,28 +187,34 @@ export function Cell({ col, value, currency }: { col: SchemaColumn; value: unkno
 }
 
 /**
- * A value that has a state, drawn by what the state means (lib/tone).
- * A known store status says so in its own words, with a hollow circle
- * while there is something left to do and a filled one when there is
- * not; anything else is its own word in a calm colour.
+ * The mark before a status's words: a hollow ring while something is
+ * left to do, half filled while it is under way, filled once it is done.
  */
-export function Badge({ value, dot }: { value: string; dot?: boolean }) {
-  const known = knownStatus(value);
-  const progress = known?.progress;
+export function StatusMark({ progress }: { progress: Progress }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-0.5 text-xs font-medium whitespace-nowrap ${badgeClasses(value)}`}
+      aria-hidden
+      className={`h-2 w-2 shrink-0 rounded-full border-[1.5px] border-current ${progress === "complete" ? "bg-current" : ""}`}
+      style={
+        progress === "partial" ? { background: "linear-gradient(90deg, currentColor 50%, transparent 50%)" } : undefined
+      }
+    />
+  );
+}
+
+/**
+ * A value that has a state, drawn by what the state means (lib/tone).
+ * A known store status says so in its own words, as a pill with its
+ * mark; anything else is its own word in a calm colour.
+ */
+export function Badge({ value, dot }: { value: string; dot?: boolean }) {
+  const progress = knownStatus(value)?.progress;
+  return (
+    <span
+      className={`inline-flex h-5 items-center gap-1.5 rounded-full px-2 text-xs leading-none font-medium whitespace-nowrap ${badgeClasses(value)}`}
     >
       {progress ? (
-        <span
-          aria-hidden
-          className={`h-2 w-2 shrink-0 rounded-full border-[1.5px] border-current ${progress === "complete" ? "bg-current" : ""}`}
-          style={
-            progress === "partial"
-              ? { background: "linear-gradient(90deg, currentColor 50%, transparent 50%)" }
-              : undefined
-          }
-        />
+        <StatusMark progress={progress} />
       ) : (
         dot && <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-60" />
       )}
@@ -263,6 +270,8 @@ export interface ViewProps {
   /** Applies one action's field changes to a row. */
   onAction?: (rec: RecordRow, set: Record<string, unknown>) => void;
   busyRecordId?: string | null;
+  /** Empties the search and filters, offered when they hide every row. */
+  onClearFilters?: () => void;
 }
 
 /**
@@ -278,10 +287,10 @@ function actionsFor(actions: FeatureSchema["actions"], rec: RecordRow): NonNulla
   return (actions ?? []).filter((a) => a.when === undefined || truthy(evalExpr(a.when, withId(rec))));
 }
 
-const ACTION_STYLES: Record<string, string> = {
-  primary: "bg-primary text-on-primary hover:bg-primary-hover",
-  danger: "bg-critical text-white hover:bg-critical-hover",
-  neutral: "border border-line text-fg-muted hover:bg-surface-hover",
+const ACTION_TONES: Record<string, ButtonTone> = {
+  primary: "primary",
+  danger: "critical",
+  neutral: "secondary",
 };
 
 export function ActionButtons({
@@ -313,9 +322,7 @@ export function ActionButtons({
             }
             onAction(rec, resolved);
           }}
-          className={`rounded-md px-2 py-1 text-[11px] font-medium transition-colors disabled:opacity-40 ${
-            ACTION_STYLES[a.style ?? "neutral"] ?? ACTION_STYLES.neutral
-          }`}
+          className={button(ACTION_TONES[a.style ?? "neutral"] ?? "secondary", "sm")}
         >
           {a.label}
         </button>
@@ -326,6 +333,16 @@ export function ActionButtons({
 
 // ── Table ────────────────────────────────────────────────────
 
+/** Columns read as amounts: set to the right, so their digits line up. */
+const NUMERIC: ReadonlySet<SchemaColumn["type"]> = new Set(["number", "currency", "percent"]);
+
+/**
+ * The table every section can be. Its head is a band that stays in view
+ * while the rows scroll under it, and its first column (what the row is)
+ * stays at the left while the others scroll across. A row whose statuses
+ * are all settled (Paid, Fulfilled) is drawn muted, so what still needs
+ * the merchant stands out; a cancelled one is struck.
+ */
 export function TableView({
   columns,
   records,
@@ -334,6 +351,7 @@ export function TableView({
   actions,
   onAction,
   busyRecordId,
+  onClearFilters,
   sort,
   onSort,
 }: ViewProps & {
@@ -341,55 +359,85 @@ export function TableView({
   onSort: (field: string) => void;
 }) {
   const hasActions = (actions?.length ?? 0) > 0 && !!onAction;
+  const statusFields = columns.filter((c) => c.type === "badge").map((c) => c.field);
+  // Each cell paints the row's background, so the pinned first cell covers what scrolls under it.
+  // The wrapper's padding sets the band in from the card's edge; what is pinned sits on the edge
+  // itself (-1.5), or the rows would show through that strip as they scroll.
+  const cellBg = `bg-surface transition-colors ${onOpen ? "group-hover:bg-surface-hover" : ""}`;
   return (
-    <div className="overflow-x-auto thin-scroll">
-      <table className="w-full text-left text-sm">
+    <div className="min-h-0 overflow-auto p-1.5 thin-scroll">
+      <table className="w-full border-separate border-spacing-0 text-left text-[13px]">
         <thead>
-          <tr className="border-b border-line bg-surface-subdued text-xs text-fg-muted">
-            {columns.map((col) => (
-              <th
-                key={col.field}
-                onClick={() => onSort(col.field)}
-                className="cursor-pointer px-3 py-2 font-medium whitespace-nowrap transition-colors select-none hover:text-fg"
-                title="Click to sort"
-              >
-                <span className="inline-flex items-center gap-1">
-                  {col.label}
-                  <span className="text-fg-faint">
-                    {sort?.field === col.field ? (
-                      sort.dir === "asc" ? (
-                        <ArrowUp aria-hidden size={12} strokeWidth={2} />
-                      ) : (
-                        <ArrowDown aria-hidden size={12} strokeWidth={2} />
-                      )
-                    ) : null}
-                  </span>
-                </span>
+          <tr>
+            {columns.map((col, i) => {
+              const dir = sort?.field === col.field ? sort.dir : null;
+              return (
+                <th
+                  key={col.field}
+                  scope="col"
+                  aria-sort={dir ? (dir === "asc" ? "ascending" : "descending") : undefined}
+                  className={`sticky -top-1.5 bg-surface-subdued p-0 text-xs font-medium whitespace-nowrap text-fg-muted first:rounded-l-lg last:rounded-r-lg ${
+                    i === 0 ? "-left-1.5 z-20" : "z-10"
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => onSort(col.field)}
+                    className={`group/sort flex h-9 w-full items-center gap-1 rounded-lg px-3 transition-colors hover:text-fg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus ${
+                      NUMERIC.has(col.type) ? "justify-end" : ""
+                    } ${dir ? "text-fg" : ""}`}
+                  >
+                    {col.label}
+                    {dir === "asc" ? (
+                      <ArrowUp aria-hidden size={12} strokeWidth={2} />
+                    ) : dir === "desc" ? (
+                      <ArrowDown aria-hidden size={12} strokeWidth={2} />
+                    ) : (
+                      <ArrowUpDown
+                        aria-hidden
+                        size={12}
+                        strokeWidth={2}
+                        className="text-fg-faint opacity-0 transition-opacity group-hover/sort:opacity-100 group-focus-visible/sort:opacity-100"
+                      />
+                    )}
+                  </button>
+                </th>
+              );
+            })}
+            {hasActions && (
+              <th scope="col" className="sticky -top-1.5 z-10 rounded-r-lg bg-surface-subdued">
+                <span className="sr-only">Actions</span>
               </th>
-            ))}
-            {hasActions && <th className="px-3 py-2" />}
+            )}
           </tr>
         </thead>
-        <tbody>
+        <tbody className="[&>tr:last-child>td]:border-b-0">
           {records.map((rec) => {
             // The store's own mark for an order that no longer stands.
             // Struck, not hidden: it happened, and it still counts as one.
             const struck = !!rec.data?.cancelled_at;
+            const statuses = statusFields.map((f) => String(rec.data?.[f] ?? "")).filter((v) => knownStatus(v));
+            const settled = statuses.length > 0 && statuses.every(isSettled);
             return (
               <tr
                 key={rec.id}
                 onClick={() => onOpen?.(rec)}
-                className={`border-b border-line transition-colors last:border-0 hover:bg-surface-hover ${
-                  onOpen ? "cursor-pointer" : ""
-                } ${struck ? "text-fg-faint line-through" : "text-fg"}`}
+                className={`group ${onOpen ? "cursor-pointer" : ""} ${
+                  struck ? "text-fg-muted line-through" : settled ? "text-fg-muted" : "text-fg"
+                }`}
               >
-                {columns.map((col) => (
-                  <td key={col.field} className="px-3 py-2 align-middle whitespace-nowrap">
+                {columns.map((col, i) => (
+                  <td
+                    key={col.field}
+                    className={`h-11 border-b border-line px-3 align-middle whitespace-nowrap ${cellBg} ${
+                      NUMERIC.has(col.type) ? "text-right" : ""
+                    } ${i === 0 ? "sticky -left-1.5 z-[1] font-semibold" : ""}`}
+                  >
                     <Cell col={col} value={rec.data?.[col.field]} currency={amountCurrency(col, rec)} />
                   </td>
                 ))}
                 {hasActions && (
-                  <td className="px-3 py-2 text-right">
+                  <td className={`border-b border-line px-3 text-right ${cellBg}`}>
                     <ActionButtons rec={rec} actions={actions} onAction={onAction} busy={busyRecordId === rec.id} />
                   </td>
                 )}
@@ -399,7 +447,7 @@ export function TableView({
           {records.length === 0 && (
             <tr>
               <td colSpan={columns.length + (hasActions ? 1 : 0)}>
-                <EmptyState total={allRecordCount} />
+                <EmptyState total={allRecordCount} onClear={onClearFilters} />
               </td>
             </tr>
           )}
@@ -419,6 +467,7 @@ export function BoardView({
   actions,
   onAction,
   busyRecordId,
+  onClearFilters,
   view,
 }: ViewProps & { view: Extract<ViewSpec, { type: "board" }> }) {
   const fmt = useFormat();
@@ -431,7 +480,7 @@ export function BoardView({
     const g = String(r.data?.[view.groupBy] ?? "").trim() || "Unassigned";
     if (!groups.includes(g)) groups.push(g);
   }
-  if (groups.length === 0) return <EmptyState total={allRecordCount} />;
+  if (groups.length === 0) return <EmptyState total={allRecordCount} onClear={onClearFilters} />;
 
   const cardFields = (view.cardFields ?? [])
     .map((f) => columns.find((c) => c.field === f))
@@ -442,7 +491,7 @@ export function BoardView({
       {groups.map((g) => {
         const rows = records.filter((r) => (String(r.data?.[view.groupBy] ?? "").trim() || "Unassigned") === g);
         return (
-          <div key={g} className="flex w-[72vw] max-w-64 shrink-0 flex-col rounded-xl bg-surface-subdued p-2 sm:w-64">
+          <div key={g} className="flex w-[72vw] max-w-64 shrink-0 flex-col rounded-card bg-surface-subdued p-2 sm:w-64">
             <div className="flex items-center justify-between px-1.5 pb-2">
               <Badge value={g} dot />
               <span className="text-[11px] font-medium text-fg-faint tabular-nums">{rows.length}</span>
@@ -452,7 +501,7 @@ export function BoardView({
                 <div
                   key={rec.id}
                   onClick={() => onOpen?.(rec)}
-                  className={`rounded-lg border border-line bg-surface p-2.5 shadow-sm transition-shadow hover:shadow-md ${
+                  className={`rounded-lg bg-surface p-2.5 shadow-card transition-shadow hover:shadow-raised ${
                     onOpen ? "cursor-pointer" : ""
                   }`}
                 >
@@ -496,6 +545,7 @@ export function CalendarView({
   records,
   allRecordCount,
   onOpen,
+  onClearFilters,
   view,
 }: ViewProps & { view: Extract<ViewSpec, { type: "calendar" }> }) {
   const fmt = useFormat();
@@ -505,7 +555,7 @@ export function CalendarView({
     .map((x) => ({ ...x, d: new Date(x.raw) }))
     .filter((x) => !Number.isNaN(x.d.getTime()));
 
-  if (dated.length === 0) return <EmptyState total={allRecordCount} />;
+  if (dated.length === 0) return <EmptyState total={allRecordCount} onClear={onClearFilters} />;
 
   // Anchor on the month with the most entries so the owner lands on the
   // busy month rather than an empty "today".
@@ -603,11 +653,12 @@ export function CardsView({
   actions,
   onAction,
   busyRecordId,
+  onClearFilters,
   view,
 }: ViewProps & { view: Extract<ViewSpec, { type: "cards" }> }) {
   const fmt = useFormat();
   const linkLabel = useLinkLabel();
-  if (records.length === 0) return <EmptyState total={allRecordCount} />;
+  if (records.length === 0) return <EmptyState total={allRecordCount} onClear={onClearFilters} />;
   const extra = (view.fields ?? [])
     .map((f) => columns.find((c) => c.field === f))
     .filter((c): c is SchemaColumn => !!c);
@@ -618,7 +669,7 @@ export function CardsView({
         <div
           key={rec.id}
           onClick={() => onOpen?.(rec)}
-          className={`rounded-xl border border-line bg-surface p-3.5 shadow-sm transition-shadow hover:shadow-md ${
+          className={`rounded-card bg-surface p-3.5 shadow-card transition-shadow hover:shadow-raised ${
             onOpen ? "cursor-pointer" : ""
           }`}
         >
@@ -681,11 +732,12 @@ export function ListView({
   actions,
   onAction,
   busyRecordId,
+  onClearFilters,
   view,
 }: ViewProps & { view: Extract<ViewSpec, { type: "list" }> }) {
   const fmt = useFormat();
   const linkLabel = useLinkLabel();
-  if (records.length === 0) return <EmptyState total={allRecordCount} />;
+  if (records.length === 0) return <EmptyState total={allRecordCount} onClear={onClearFilters} />;
   return (
     <ul className="divide-y divide-line">
       {records.map((rec) => (
@@ -723,12 +775,34 @@ export function ListView({
 
 // ── Shared ───────────────────────────────────────────────────
 
-export function EmptyState({ total }: { total: number }) {
+/**
+ * What a section says with no rows to show: that there are none yet
+ * (with the way to add the first, where rows can be added), or that the
+ * search and filters hide them all (with the way to clear them).
+ */
+export function EmptyState({ total, onClear, onAdd }: { total: number; onClear?: () => void; onAdd?: () => void }) {
+  const none = total === 0;
+  const Glyph = none ? Inbox : SearchX;
   return (
-    <div className="px-4 py-12 text-center">
-      <div className="text-sm text-fg-muted">
-        {total === 0 ? "Nothing here yet." : "Nothing matches the current search or filters."}
-      </div>
+    <div className="flex flex-col items-center px-4 py-12 text-center">
+      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-subdued text-fg-faint">
+        <Glyph aria-hidden size={18} strokeWidth={1.75} />
+      </span>
+      <div className="mt-3 text-sm font-medium text-fg">{none ? "Nothing here yet" : "Nothing matches"}</div>
+      <p className="mt-1 max-w-xs text-[13px] leading-relaxed text-fg-muted">
+        {none ? "Rows show up here as soon as there are any." : "No row fits the current search or filters."}
+      </p>
+      {none && onAdd && (
+        <button onClick={onAdd} className={`${button("primary", "sm")} mt-4`}>
+          <Plus aria-hidden size={14} strokeWidth={2} />
+          Add the first one
+        </button>
+      )}
+      {!none && onClear && (
+        <button onClick={onClear} className={`${button("secondary", "sm")} mt-4`}>
+          Clear search and filters
+        </button>
+      )}
     </div>
   );
 }

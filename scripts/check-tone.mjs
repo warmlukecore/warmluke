@@ -7,7 +7,7 @@
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-tone.mjs
 
-import { badgeClasses, badgeLabel, knownStatus, quietClasses, TONE_CLASSES } from "../src/lib/tone.ts";
+import { badgeClasses, badgeLabel, isSettled, knownStatus, quietClasses, TONE_CLASSES } from "../src/lib/tone.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -25,6 +25,19 @@ check("UNFULFILLED is still to send", knownStatus("UNFULFILLED")?.progress === "
 check("PARTIALLY_FULFILLED is half way", knownStatus("PARTIALLY_FULFILLED")?.progress === "partial");
 check("with space around it, still the store's", badgeLabel(" PAID ") === "Paid");
 check("a product's status reads as words", badgeLabel("ACTIVE") === "Active" && badgeLabel("ARCHIVED") === "Archived");
+
+check(
+  "a shipment's status reads as words, by meaning",
+  badgeLabel("IN_TRANSIT") === "In transit" &&
+    knownStatus("DELIVERED")?.progress === "complete" &&
+    knownStatus("NOT_DELIVERED")?.tone === "critical"
+);
+
+console.log("\nwhat is settled is drawn quietly");
+check("paid and delivered are settled", isSettled("PAID") && isSettled("DELIVERED"));
+check("unfulfilled and payment pending are not", !isSettled("UNFULFILLED") && !isSettled("PENDING"));
+check("an active product is the norm, not settled", !isSettled("ACTIVE"));
+check("nor is a merchant's own 'Paid'", !isSettled("Paid"));
 
 console.log("\na merchant's own words stay theirs");
 check(

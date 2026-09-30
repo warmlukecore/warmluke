@@ -31,11 +31,11 @@
      The frame is the dark surround — sidebar and the edge around the
      page — and the page sits on it as a rounded card, the way a
      merchant's commerce admin is laid out. */
-  --color-frame: hsl(0 0% 10%);
-  --color-frame-raised: hsl(0 0% 17%);
-  --color-frame-line: hsl(0 0% 22%);
+  --color-frame: hsl(0 0% 4%);
+  --color-frame-raised: hsl(0 0% 15%);
+  --color-frame-line: hsl(0 0% 19%);
   --color-frame-fg: hsl(0 0% 89%);
-  --color-frame-fg-muted: hsl(0 0% 60%);
+  --color-frame-fg-muted: hsl(0 0% 62%);
 
   --color-canvas: hsl(0 0% 95%);
   --color-surface: hsl(0 0% 100%);
@@ -67,8 +67,10 @@
   --color-tone-info-fg: hsl(201 100% 24%);
   --color-tone-critical: hsl(2 94% 92%);
   --color-tone-critical-fg: hsl(350 86% 30%);
-  --color-tone-neutral: hsl(0 0% 89%);
-  --color-tone-neutral-fg: hsl(0 0% 38%);
+  /* A settled state (Paid, Fulfilled, Delivered): quiet grey, but its
+     words dark enough to read at a glance. */
+  --color-tone-neutral: hsl(0 0% 91%);
+  --color-tone-neutral-fg: hsl(0 0% 24%);
 
   /* Signals: the small solid marks — a status dot, a count — which need
      a mid tone the pale badge fills above cannot give. */
@@ -92,6 +94,8 @@
 
   --radius-card: 0.75rem;
   --radius-control: 0.5rem;
+  /* The panes set on the frame: the section and Luke's panel. */
+  --radius-pane: 1rem;
   --shadow-card: 0 1px 0 0 rgb(0 0 0 / 0.07), 0 0 0 1px rgb(0 0 0 / 0.06);
   --shadow-control: 0 1px 0 0 rgb(0 0 0 / 0.08), inset 0 -1px 0 0 rgb(0 0 0 / 0.12);
   --shadow-raised: 0 0 0 1px rgb(0 0 0 / 0.06), 0 4px 12px -2px rgb(0 0 0 / 0.1);
@@ -106,8 +110,8 @@
    or on any one element, as the landing's glimpse of the app does. */
 [data-theme="dark"] {
   color-scheme: dark;
-  --color-frame: hsl(0 0% 6%);
-  --color-frame-raised: hsl(0 0% 13%);
+  --color-frame: hsl(0 0% 4%);
+  --color-frame-raised: hsl(0 0% 14%);
   --color-frame-line: hsl(0 0% 18%);
   --color-frame-fg: hsl(0 0% 86%);
   --color-frame-fg-muted: hsl(0 0% 56%);
@@ -142,7 +146,7 @@
   --color-tone-critical: hsl(355 45% 17%);
   --color-tone-critical-fg: hsl(355 100% 78%);
   --color-tone-neutral: hsl(0 0% 20%);
-  --color-tone-neutral-fg: hsl(0 0% 72%);
+  --color-tone-neutral-fg: hsl(0 0% 82%);
 
   --color-signal-neutral: hsl(0 0% 45%);
   --color-critical: hsl(357 72% 52%);

@@ -142,8 +142,133 @@ try {
     !(await about(outsider.jwt, { p_project: proj.id, p_name: "Nobody", p_role: "other" })).ok
   );
 
-  console.log("\nwhat staff CAN do — this is the point of the feature");
+  console.log("\na section is the owner's until it is shared (0140)");
   check("staff sees the project", (await S(`projects?id=eq.${proj.id}`)).json.length === 1);
+  check("but not a section nobody shared with them", (await S(`modules?id=eq.${mod.id}`)).json.length === 0);
+  check("nor its rows", (await S(`records?id=eq.${rec.id}`)).json.length === 0);
+  check(
+    "nor can they add a row to it",
+    !(
+      await S("records", {
+        method: "POST",
+        body: JSON.stringify({ module_id: mod.id, project_id: proj.id, data: { stage: "New" } }),
+      })
+    ).ok
+  );
+  const share = (body) => O(`modules?id=eq.${mod.id}`, { method: "PATCH", body: JSON.stringify(body) });
+  await share({ shared_with_team: true });
+  check("shared with the team, they see it", (await S(`modules?id=eq.${mod.id}`)).json.length === 1);
+  await share({ shared_with_team: false });
+  check("taken back, it is gone again", (await S(`modules?id=eq.${mod.id}`)).json.length === 0);
+  check(
+    "the owner can share it with the one person",
+    (await O("module_shares", { method: "POST", body: JSON.stringify({ module_id: mod.id, member_id: seat.id }) })).ok
+  );
+  check("who then sees it", (await S(`modules?id=eq.${mod.id}`)).json.length === 1);
+  const child = (
+    await O("modules", {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: proj.id,
+        parent_id: mod.id,
+        name: `inside_${stamp}`,
+        nav_label: "Inside",
+        route: `/inside_${stamp}`,
+      }),
+    })
+  ).json[0];
+  check("and a section inside it, shared as its parent is", (await S(`modules?id=eq.${child.id}`)).json.length === 1);
+  const secret = (
+    await O("modules", {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: proj.id,
+        name: `margins_${stamp}`,
+        nav_label: "Margins",
+        route: `/m_${stamp}`,
+      }),
+    })
+  ).json[0];
+  check("another section stays the owner's", (await S(`modules?id=eq.${secret.id}`)).json.length === 0);
+  check(
+    "staff cannot share a section with themselves",
+    !(await S("module_shares", { method: "POST", body: JSON.stringify({ module_id: secret.id, member_id: seat.id }) }))
+      .ok
+  );
+  check(
+    "nor open one to the team",
+    (await S(`modules?id=eq.${secret.id}`, { method: "PATCH", body: JSON.stringify({ shared_with_team: true }) })).json
+      ?.length === 0
+  );
+  check(
+    "nor give themselves the store",
+    (await S(`project_members?id=eq.${seat.id}`, { method: "PATCH", body: JSON.stringify({ can_see_store: true }) }))
+      .json?.length === 0
+  );
+  const stats = await fetch(`${URL_}/rest/v1/rpc/abo_section_stats`, {
+    method: "POST",
+    headers: { apikey: ANON, Authorization: `Bearer ${staff.jwt}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ p_module: secret.id, p_stats: [] }),
+  });
+  check("nor count the rows of one not shared with them", !stats.ok);
+
+  console.log("\nwhat Luke knows is the owner's (0140)");
+  await O("merchant_notes", { method: "POST", body: JSON.stringify({ project_id: proj.id, note: "Margins are 40%" }) });
+  await O("turn_traces", {
+    method: "POST",
+    body: JSON.stringify({ project_id: proj.id, plan_goal: "A margin sheet" }),
+  });
+  check(
+    "the owner keeps notes about the business",
+    (await O(`merchant_notes?project_id=eq.${proj.id}`)).json.length === 1
+  );
+  check("staff cannot read them", (await S(`merchant_notes?project_id=eq.${proj.id}`)).json.length === 0);
+  check("nor what Luke's turns were about", (await S(`turn_traces?project_id=eq.${proj.id}`)).json.length === 0);
+
+  console.log("\nthe link itself (0140)");
+  const rpcAs = (jwt, fn, body) =>
+    fetch(`${URL_}/rest/v1/rpc/${fn}`, {
+      method: "POST",
+      headers: { apikey: ANON, Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => r.json());
+  const spare = (await O("project_members", { method: "POST", body: JSON.stringify({ project_id: proj.id }) })).json[0];
+  check(
+    "the owner opening their own link goes in",
+    (await rpcAs(owner.jwt, "abo_join", { p_token: spare.token })) === proj.id
+  );
+  check(
+    "someone already on the team goes in",
+    (await rpcAs(staff.jwt, "abo_join", { p_token: spare.token })) === proj.id
+  );
+  check(
+    "and neither uses the link up",
+    (await O(`project_members?id=eq.${spare.id}&select=user_id`)).json[0]?.user_id === null
+  );
+  const old = (
+    await O("project_members", {
+      method: "POST",
+      body: JSON.stringify({ project_id: proj.id, expires_at: new Date(Date.now() - 1000).toISOString() }),
+    })
+  ).json[0];
+  check("an expired link lets nobody in", (await rpcAs(outsider.jwt, "abo_join", { p_token: old.token })) === null);
+  const welcome = await rpcAs(staff.jwt, "abo_seat_welcome", { p_project: proj.id });
+  check(
+    "who joined is told who invited them and what they will find",
+    typeof welcome?.invited_by === "string" &&
+      welcome.sections?.includes("Orders") &&
+      !welcome.sections.includes("Margins")
+  );
+  check(
+    "an outsider is told nothing",
+    await fetch(`${URL_}/rest/v1/rpc/abo_seat_welcome`, {
+      method: "POST",
+      headers: { apikey: ANON, Authorization: `Bearer ${outsider.jwt}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ p_project: proj.id }),
+    }).then((r) => !r.ok)
+  );
+
+  console.log("\nwhat staff CAN do with what is shared — this is the point of the feature");
   check("staff sees the sections", (await S(`modules?id=eq.${mod.id}`)).json.length === 1);
   check("staff sees the rows", (await S(`records?id=eq.${rec.id}`)).json.length === 1);
   check(
@@ -226,6 +351,22 @@ try {
   ).json[0];
 
   check("the owner's store saved", !!store?.id);
+  // A seat starts without the store (0140): the customers' phones are not
+  // every packer's until the owner says so.
+  check("a new seat does not read the orders", (await S(`orders?id=eq.${ord.id}`)).json.length === 0);
+  check("nor the customers", (await S(`customers?id=eq.${cust.id}`)).json.length === 0);
+  check("nor sees a store at all", (await S(`stores?id=eq.${store.id}&select=id`)).json.length === 0);
+  const overview = await fetch(`${URL_}/rest/v1/rpc/abo_store_overview`, {
+    method: "POST",
+    headers: { apikey: ANON, Authorization: `Bearer ${staff.jwt}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ p_project: proj.id }),
+  });
+  check("nor its figures", !overview.ok);
+  check(
+    "the owner lets them see the store",
+    (await O(`project_members?id=eq.${seat.id}`, { method: "PATCH", body: JSON.stringify({ can_see_store: true }) }))
+      .json?.length === 1
+  );
   check("staff can read the orders", (await S(`orders?id=eq.${ord.id}`)).json.length === 1);
   check("staff can read the customers", (await S(`customers?id=eq.${cust.id}`)).json.length === 1);
   check(
