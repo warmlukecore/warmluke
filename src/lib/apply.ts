@@ -297,6 +297,9 @@ type Undo = { kind: "op"; op: string; payload: Record<string, unknown> } | { kin
  * and said out loud rather than quietly left behind.
  */
 function recording(client: Db, projectId: string, write: Write, undo: Undo[]): Write {
+  // Sections this build made: rows seeded into one go when it is removed,
+  // so they are nothing left behind.
+  const made = new Set<string>();
   return async (op, payload) => {
     // Anything needed to undo this write has to be read before it
     // happens; afterwards the old value is already gone.
@@ -332,6 +335,7 @@ function recording(client: Db, projectId: string, write: Write, undo: Undo[]): W
 
     switch (op) {
       case "module_insert":
+        made.add(String(result.id));
         undo.push({ kind: "op", op: "module_delete", payload: { module_id: result.id } });
         break;
       case "automation_insert":
@@ -381,10 +385,12 @@ function recording(client: Db, projectId: string, write: Write, undo: Undo[]): W
         }
         break;
       case "records_insert":
-        undo.push({
-          kind: "stranded",
-          what: `${result.count ?? "some"} row(s) added to a section that already existed`,
-        });
+        if (!made.has(String(payload.module_id))) {
+          undo.push({
+            kind: "stranded",
+            what: `${result.count ?? "some"} row(s) added to a section that already existed`,
+          });
+        }
         break;
       case "automation_disable":
         undo.push({ kind: "stranded", what: `the rule "${String(payload.name)}" was switched off` });
@@ -453,12 +459,19 @@ export async function applyPlans(
     }
 
     errors.push(...result.errors);
-    if (applied.length > 0) {
+    // Whatever was written, the failing plan's own first writes included:
+    // a section created before its fields failed to save was left in the
+    // nav, empty, when only whole earlier plans were put back.
+    if (undo.length > 0) {
       const stranded = await rollback(write, undo);
+      const what =
+        applied.length > 0
+          ? `${applied.length} earlier part(s) of this design, and what the part that failed had begun,`
+          : "what the part that failed had begun";
       errors.push(
         stranded.length === 0
-          ? `Nothing was built: ${applied.length} earlier part(s) of this design were put back, so the app is as it was.`
-          : `Nothing was built. ${applied.length} earlier part(s) were put back, except: ${stranded.join("; ")}.`
+          ? `Nothing was built: ${what} ${applied.length > 0 ? "were" : "was"} put back, so the app is as it was.`
+          : `This design was not built, and not all of what it began could be put back: ${stranded.join("; ")}.`
       );
       // Not one of them stands, so none of them is reported as applied.
       // Both callers read this to decide whether the request was built.

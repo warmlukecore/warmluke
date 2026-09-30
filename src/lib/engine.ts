@@ -52,7 +52,7 @@ import {
   type StoreFacts,
 } from "@/lib/describe";
 import { describeBuild } from "@/lib/judge";
-import { aiStoreTools } from "@/lib/store-tools";
+import { aiStoreTools, fitForModel } from "@/lib/store-tools";
 import { aiProposeTool } from "@/lib/store-action-propose";
 
 /**
@@ -284,7 +284,32 @@ export type TurnState = {
   sentBack: boolean;
   sentBackDesign: { parsed: ReturnType<typeof parseReply>; raw: string; unmet: string[] } | null;
   lookedUp: string[];
+  /** What the lookups returned, cut to size: a repair reads it again. Absent in a state from before it was kept. */
+  found?: Array<{ about: string; result: unknown }>;
 };
+
+/** How much of what the lookups returned rides along with a repair. */
+const FOUND_CHARS = 12_000;
+
+/**
+ * What the lookups returned, for a repair to read again: the rows as the
+ * tools gave them, every field they carried. Nothing when nothing was
+ * looked up, so a turn without lookups repairs exactly as before.
+ */
+export function foundBlock(found: Array<{ about: string; result: unknown }>): string {
+  if (found.length === 0) return "";
+  let out =
+    "\n\nWhat your lookups returned before, unchanged (every field the rows carry, not only what a section shows):";
+  for (const f of found) {
+    const line = `\n- ${f.about}: ${JSON.stringify(f.result)}`;
+    if (out.length + line.length > FOUND_CHARS) {
+      out += "\n- (the rest was cut to fit)";
+      break;
+    }
+    out += line;
+  }
+  return out;
+}
 
 /** What one design attempt, and the critic after it, can take: the time a leg keeps in hand before starting one. */
 export const ATTEMPT_MS = 120_000;
@@ -547,12 +572,18 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // receipt: a transient retry that runs the same lookup again is still
   // one thing looked up.
   const lookedUp: string[] = [...(resume?.lookedUp ?? [])];
+  // And what each one returned, cut to size. A repair has no tools, and
+  // used to have only its own rejected reply to go on: a design refused
+  // for naming a field could not look at the rows again to find the
+  // field it should have named.
+  const found: Array<{ about: string; result: unknown }> = [...(resume?.found ?? [])];
   const heard = new Set<string>();
-  const hear = ({ about, tool, args }: { tool: string; about: string; args: unknown }) => {
+  const hear = ({ about, tool, args, result }: { tool: string; about: string; args: unknown; result?: unknown }) => {
     const key = `${tool}:${JSON.stringify(args)}`;
     if (heard.has(key)) return;
     heard.add(key);
     lookedUp.push(about);
+    found.push({ about, result: fitForModel(result, 4_000) });
     tell({ step: "lookup", about });
   };
   const toolStore =
@@ -727,6 +758,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           sentBack,
           sentBackDesign,
           lookedUp,
+          found,
         },
       };
     }
@@ -897,7 +929,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           .map((e) => `- ${e}`)
           .join(
             "\n"
-          )}\n\nFix every one of these and reply again with the corrected JSON only. Do not apologise or explain — just the corrected reply. If a module name is already taken, either target the existing module instead of creating a new one, or choose a different name.`,
+          )}\n\nFix every one of these and reply again with the corrected JSON only. Do not apologise or explain — just the corrected reply. If a module name is already taken, either target the existing module instead of creating a new one, or choose a different name.${foundBlock(found)}`,
       }
     );
   }

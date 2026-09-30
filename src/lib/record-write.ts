@@ -70,6 +70,18 @@ export type Written = {
 const reply = (body: Record<string, unknown>, init?: { status: number }) => ({ status: init?.status ?? 200, body });
 
 /**
+ * A save a rule refused (0143, a before_save rule): the rule's own
+ * sentence, and nothing was written. Not a failure of the app, so the
+ * door answers 409 with it rather than 500, and a screen says it as it is.
+ */
+export class Refused extends Error {}
+
+/** The database's refusal as a Refused, anything else as the error it is. */
+function writeError(error: { message: string; hint?: string | null }): Error {
+  return error.hint === "abo_refused" ? new Refused(error.message) : new Error(error.message);
+}
+
+/**
  * A write to a section — body: { action, projectId, moduleId, recordId?, storeRowId?, data? }
  *
  * "update_store_row" keeps the merchant's own fields beside one of the
@@ -118,7 +130,7 @@ export async function writeRecord(
       return reply({ error: "recordId is required" }, { status: 400 });
     }
     const { error } = await client.from("records").delete().eq("id", recordId);
-    if (error) throw new Error(error.message);
+    if (error) throw writeError(error);
     return reply({ ok: true, deleted: recordId });
   }
 
@@ -157,7 +169,7 @@ export async function writeRecord(
   // and the browser places this row instead of reloading the section.
   const fresh = async (id: string) => {
     const { data: row, error } = await client.from("records").select("*").eq("id", id).single();
-    if (error) throw new Error(error.message);
+    if (error) throw writeError(error);
     return row;
   };
 
@@ -185,7 +197,7 @@ export async function writeRecord(
       .insert({ project_id: projectId, module_id: moduleId, data: clean })
       .select("id")
       .single();
-    if (error) throw new Error(error.message);
+    if (error) throw writeError(error);
     const made = await fresh(created.id);
     onWritten?.({ event: "created", record: made, previous: null });
     return reply({ ok: true, record: made });
@@ -204,7 +216,7 @@ export async function writeRecord(
       .from("records")
       .update({ data: { ...prev, ...clean }, updated_at: new Date().toISOString() })
       .eq("id", recordId);
-    if (error) throw new Error(error.message);
+    if (error) throw writeError(error);
     const now = await fresh(recordId);
     onWritten?.({ event: "updated", record: now, previous: prev });
     return reply({ ok: true, record: now });
@@ -253,7 +265,7 @@ export async function writeRecord(
           updated_at: new Date().toISOString(),
         })
         .eq("id", have.id);
-      if (error) throw new Error(error.message);
+      if (error) throw writeError(error);
       return fresh(have.id as string);
     };
     const kept = (record: Record<string, unknown> | null, event: "created" | "updated") => {
@@ -270,7 +282,7 @@ export async function writeRecord(
     // Two tabs keeping the first field of the same row at once: the
     // one that lost the insert merges into the one that won.
     if (error?.code === "23505") return kept(await merge(), "updated");
-    if (error) throw new Error(error.message);
+    if (error) throw writeError(error);
     return kept(await fresh(created.id), "created");
   }
 

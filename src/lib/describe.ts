@@ -65,6 +65,23 @@ export function exprText(e: Expr | undefined): string {
       const where = conds.length > 0 ? ` where ${conds.join(" and ")}` : "";
       return `other rows with the same ${fields}${where}`;
     }
+    case "sum_matching": {
+      const [value, ...rest] = e.args ?? [];
+      const fields = rest
+        .filter((x): x is { field: string } => !!x && "field" in x)
+        .map((x) => x.field)
+        .join(" and ");
+      const conds = rest.filter((x) => !!x && "op" in x).map(exprText);
+      const where = conds.length > 0 ? ` where ${conds.join(" and ")}` : "";
+      return `the ${exprText(value)} of other rows with the same ${fields}${where}, added up`;
+    }
+    case "store_value": {
+      // store_value("inventory_levels", "available", "inventory_item_id", item, …)
+      const [list, field, ...pairs] = a;
+      const by: string[] = [];
+      for (let i = 0; i + 1 < pairs.length; i += 2) by.push(`${pairs[i]} ${pairs[i + 1]}`);
+      return `the store's ${field} in ${list.replace(/_/g, " ")} for ${by.join(", ")}`;
+    }
     case "if":
       return `${a[1]} if ${a[0]}, otherwise ${a[2] ?? "nothing"}`;
     case "round":
@@ -158,6 +175,9 @@ export function describeAutomation(
     out.push(cond ? `When a row is added and ${cond}` : "When a row is added");
   } else if (t?.type === "record_updated") {
     out.push(cond ? `When ${cond}` : "When a row is edited");
+  } else if (t?.type === "before_save") {
+    // A rule that says no (0143): what it refuses, before anything is written.
+    out.push(cond ? `Before a row is saved, refuse it if ${cond}` : "Before a row is saved");
   } else if (t?.type === "schedule") {
     const every = t.every ?? "daily";
     const when = scheduleWords(t) ?? `${every[0].toUpperCase()}${every.slice(1)}`;
@@ -183,6 +203,8 @@ export function describeAutomation(
       }
     } else if (a.type === "create_record") {
       out.push(`→ add a row to ${nameFor(a.module_id)}`);
+    } else if (a.type === "refuse") {
+      out.push(`→ refuse, saying “${a.message}”`);
     } else if (a.type === "webhook") {
       out.push("→ call an external service");
     }

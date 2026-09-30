@@ -113,6 +113,14 @@ try {
       request("is #1001 paid?", "the contract", { max_tokens: 9000 })
     ).key === e.key
   );
+  check(
+    "nor is how hard it thinks: a recording made before effort was sent still plays",
+    fingerprint(
+      "anthropic",
+      "https://api.anthropic.com/v1/messages",
+      request("is #1001 paid?", "the contract", { output_config: { effort: "medium" } })
+    ).key === e.key
+  );
   const g1 = fingerprint("gemini", "https://x/v1beta/models/gemini-3.6-flash:streamGenerateContent", '{"contents":[]}');
   const g2 = fingerprint("gemini", "https://x/v1beta/models/gemini-9:streamGenerateContent", '{"contents":[]}');
   check("Gemini's model, named in the path, is left out too", g1.key === g2.key);

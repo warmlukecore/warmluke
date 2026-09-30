@@ -215,6 +215,19 @@ try {
     "and nothing the call never set, like a temperature",
     req?.body && !("temperature" in req.body) && !("top_p" in req.body)
   );
+  check("a model that takes no effort is sent none", req?.body && !("output_config" in req.body));
+  const effortOf = async (model) => {
+    sent.length = 0;
+    queue.push(reply("ok"));
+    await callAnthropicChat("the contract", [{ role: "user", content: "track bikes" }], undefined, model);
+    return sent[0]?.body?.output_config?.effort ?? null;
+  };
+  check(
+    "a Claude 5 model is asked to think at medium, Opus 5.5's own default",
+    (await effortOf("claude-sonnet-5")) === "medium"
+  );
+  check("Opus 5.5 too, so production is asked as it was", (await effortOf("claude-opus-5-5")) === "medium");
+  check("and Haiku 4.5, which takes none, is sent none", (await effortOf("claude-haiku-4-5-20251001")) === null);
   sent.length = 0;
   await failing(529, '{"error":{"type":"overloaded_error"}}');
   check("a failure is tried once: retrying is the caller's call", sent.length === 1);

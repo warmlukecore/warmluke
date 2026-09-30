@@ -6,7 +6,9 @@
 // the assistant generated without knowing anything about it.
 // ─────────────────────────────────────────────────────────────
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabase-client";
+import { ago } from "@/lib/when";
 import { useLinkOptions } from "@/components/LinkContext";
 import type { FeatureSchema, RecordRow, SchemaColumn, UiSchema } from "@/lib/types";
 import { Check } from "lucide-react";
@@ -146,6 +148,103 @@ export function Field({
   );
 }
 
+/** One thing that happened to a row (record_events, 0144). */
+type RowEvent = {
+  id: number;
+  at: string;
+  actor: string | null;
+  via: "person" | "rule" | "system";
+  kind: "added" | "changed" | "removed";
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+};
+
+const shown = (v: unknown) =>
+  v === null || v === undefined || v === "" ? "blank" : typeof v === "boolean" ? (v ? "Yes" : "No") : String(v);
+
+/**
+ * Who added the row, who changed it, and what each change was, from the
+ * database's own record of it: the login that saved, never a typed name.
+ * Nothing on a database without it (before 0144), rather than an error.
+ */
+function RowHistory({ record, columns }: { record: RecordRow; columns: SchemaColumn[] }) {
+  const [events, setEvents] = useState<RowEvent[] | null>(null);
+  const [names, setNames] = useState<Record<string, string>>({});
+  const [open, setOpen] = useState(false);
+  // When the history was read: "2 h ago" is from then, not re-read on every render.
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    let live = true;
+    supabase
+      .from("record_events")
+      .select("id, at, actor, via, kind, before, after")
+      .eq("record_id", record.id)
+      .order("id", { ascending: false })
+      .limit(20)
+      .then(async ({ data, error }) => {
+        if (!live) return;
+        const list = error ? [] : ((data ?? []) as RowEvent[]);
+        setNow(Date.now());
+        setEvents(list);
+        const ids = [
+          ...new Set([record.created_by, record.updated_by, ...list.map((e) => e.actor)].filter(Boolean) as string[]),
+        ];
+        if (ids.length === 0) return;
+        const { data: named } = await supabase.rpc("abo_names_for", { p_project: record.project_id, p_ids: ids });
+        if (live)
+          setNames(
+            Object.fromEntries(
+              ((named ?? []) as Array<{ user_id: string; name: string }>).map((n) => [n.user_id, n.name])
+            )
+          );
+      });
+    return () => {
+      live = false;
+    };
+  }, [record.id, record.project_id, record.created_by, record.updated_by]);
+
+  const labelOf = (f: string) => columns.find((c) => c.field === f)?.label ?? f;
+  const who = (id: string | null | undefined) => (id ? (names[id] ?? "someone on the team") : "the system");
+  const whatChanged = (e: RowEvent) => {
+    const keys = [...new Set([...Object.keys(e.before ?? {}), ...Object.keys(e.after ?? {})])].filter(
+      (k) => shown(e.before?.[k]) !== shown(e.after?.[k])
+    );
+    return keys
+      .slice(0, 3)
+      .map((k) => `${labelOf(k)}: ${shown(e.before?.[k])} → ${shown(e.after?.[k])}`)
+      .join(" · ");
+  };
+
+  if (!events || (events.length === 0 && !record.created_by)) return null;
+  return (
+    <div className="border-t border-line pt-3 text-xs text-fg-muted">
+      <div>
+        Added by {who(record.created_by)}
+        {record.updated_by && record.updated_by !== record.created_by
+          ? ` · last changed by ${who(record.updated_by)}`
+          : ""}
+        {events.length > 0 && (
+          <button onClick={() => setOpen((o) => !o)} className="ml-2 font-medium text-link hover:underline">
+            {open ? "Hide history" : `History (${events.length})`}
+          </button>
+        )}
+      </div>
+      {open && (
+        <ul className="mt-2 space-y-1.5">
+          {events.map((e) => (
+            <li key={e.id} className="leading-snug">
+              <span className="text-fg">{e.via === "rule" ? `A rule, on ${who(e.actor)}'s save` : who(e.actor)}</span>{" "}
+              {e.kind === "added" ? "added it" : e.kind === "removed" ? "removed it" : "changed it"}
+              {e.kind === "changed" && whatChanged(e) ? ` — ${whatChanged(e)}` : ""}
+              <span className="text-fg-faint"> · {ago(e.at, now)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export default function RecordModal({
   schema,
   records,
@@ -225,6 +324,7 @@ export default function RecordModal({
             />
           </div>
         ))}
+        {record && <RowHistory record={record} columns={schema.columns ?? []} />}
       </div>
     </Dialog>
   );

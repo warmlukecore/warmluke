@@ -154,6 +154,14 @@ export function fingerprint(label: string, url: string, body: string) {
   // the recordings were made under, so moving it changes no key: moving
   // it from 6000 to 12000 once cost every recording there was.
   if (typeof rest.max_tokens === "number") rest.max_tokens = KEYED_CAP;
+  // How hard it thinks is a setting too (lib/ai.ts EFFORT): recordings
+  // made before it was sent still play.
+  const oc = rest.output_config as Record<string, unknown> | undefined;
+  if (oc && "effort" in oc) {
+    const { effort: _effort, ...kept } = oc;
+    if (Object.keys(kept).length) rest.output_config = kept;
+    else delete rest.output_config;
+  }
   const gen = rest.generationConfig as Record<string, unknown> | undefined;
   if (gen && typeof gen.maxOutputTokens === "number") rest.generationConfig = { ...gen, maxOutputTokens: KEYED_CAP };
   // The road, without the model: Gemini names it in the path. And

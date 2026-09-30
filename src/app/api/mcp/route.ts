@@ -16,6 +16,7 @@ import { DESIGN_VIEW_MIME, DESIGN_VIEW_URI, designViewHtml, type ViewDesign } fr
 import { projectFormat } from "@/lib/money";
 import { CODE_RULE_GUIDE, CUSTOM_VIEW_GUIDE, PLAN_FORMAT, WORKED_EXAMPLE, findGaps, parseReply } from "@/lib/ai";
 import { vocabularyPrompt } from "@/lib/capabilities";
+import { abilitiesPrompt } from "@/lib/abilities";
 import {
   describePlan,
   describeRules,
@@ -1331,6 +1332,8 @@ export async function POST(req: Request) {
           // constant Luke is given, so what a client reads here and
           // what the validator enforces cannot drift apart.
           plan_format: PLAN_FORMAT,
+          // Where each thing works and what it promises: what Luke is told too (lib/abilities).
+          what_runs_where: abilitiesPrompt(),
           allowed_icons: ALLOWED_ICONS,
           worked_example: WORKED_EXAMPLE,
           two_things_that_get_guessed_wrong: [

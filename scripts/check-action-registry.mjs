@@ -85,8 +85,16 @@ for (const name of ACTIONS) {
   // with nothing in it, and the action is recorded as done.
   check("and it asks for userErrors", /userErrors\s*{[^}]*message/.test(spec.mutation));
 
-  const vars = spec.variables(sample.targets[0], sample.params);
+  const vars = spec.variables(sample.targets[0], sample.params, { key: "an-attempt-key" });
   check("one call names the thing it changes", JSON.stringify(vars).includes(sample.targets[0].id));
+  // Every $variable the mutation declares is one it is handed: a mutation
+  // that takes an idempotency key and is never given one is refused by
+  // Shopify on every call, which is how set_stock stood on 2026-07.
+  const declared = [...(spec.mutation.split("{")[0].matchAll(/\$([A-Za-z]+)\s*:/g) ?? [])].map((m) => m[1]);
+  check(
+    "every variable the mutation declares is given",
+    declared.length > 0 && declared.every((d) => vars[d] !== undefined)
+  );
 
   check(
     "a refusal is found in the answer",

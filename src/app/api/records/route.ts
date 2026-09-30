@@ -1,6 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { getUserClient } from "@/lib/supabase-server";
-import { writeRecord, type WriteInput } from "@/lib/record-write";
+import { Refused, writeRecord, type WriteInput } from "@/lib/record-write";
 import { runCodeRules } from "@/lib/code-rules";
 
 export const runtime = "nodejs";
@@ -22,6 +22,8 @@ export async function POST(req: Request) {
     const out = await writeRecord(client, input, (w) => after(() => runCodeRules(client, w)));
     return NextResponse.json(out.body, { status: out.status });
   } catch (e) {
+    // A rule said no (0143): its sentence, and nothing was written.
+    if (e instanceof Refused) return NextResponse.json({ error: e.message, refused: true }, { status: 409 });
     const msg = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json({ error: msg }, { status: 500 });
   }

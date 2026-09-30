@@ -23,6 +23,17 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { graphql } from "@/lib/shopify-import";
 import { ShopifyError } from "@/lib/shopify";
 import { actionSpec, MOST_TARGETS, type ActionParams, type ActionTarget } from "@/lib/store-actions";
+import { createHash } from "node:crypto";
+
+/**
+ * One target of one approved change, as a key Shopify remembers: the
+ * same however many times this runs, so a retry after a dropped answer
+ * is not a second change. UUID-shaped, as Shopify recommends.
+ */
+export function attemptKey(actionId: string, at: number): string {
+  const h = createHash("sha256").update(`${actionId}:${at}`).digest("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+}
 
 export interface ActionRun {
   /** What the row says now: done, partly_done, failed — or why nothing ran. */
@@ -119,13 +130,13 @@ export async function runAction(
             if (!token) {
               errors.push("Warmluke could not read this store's access token.");
             } else {
-              for (const target of targets) {
+              for (const [at, target] of targets.entries()) {
                 try {
                   const answer = await graphql<unknown>(
                     store.shop_domain,
                     token,
                     spec.mutation,
-                    spec.variables(target, params)
+                    spec.variables(target, params, { key: attemptKey(actionId, at) })
                   );
                   const refused = spec.errors(answer);
                   if (refused.length) errors.push(`${target.id}: ${refused.join("; ")}`);

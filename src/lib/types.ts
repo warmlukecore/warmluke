@@ -62,7 +62,8 @@ export type Weekday = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 
 export interface AutomationTrigger {
   /** store_row_added: a row the store brought in (0134), for a rule's own code on a section over the store. */
-  type: "record_created" | "record_updated" | "schedule" | "store_row_added";
+  /** before_save: a row about to be saved, which its rule may refuse (0143). */
+  type: "record_created" | "record_updated" | "schedule" | "store_row_added" | "before_save";
   /** For schedule type: how often, filtering its rows with `when` (0137). */
   every?: "hourly" | "daily" | "weekly" | "monthly";
   /** Schedule: the time it runs, "HH:MM" on the store's clock (daily, weekly, monthly). */
@@ -86,6 +87,8 @@ export type AutomationAction =
   | { type: "create_record"; module_id: string; data: Record<string, Expr> }
   /** The rule's own function, run sealed off (lib/code-run.ts), for logic the expressions cannot say. */
   | { type: "run_code"; code: string; reads?: string[] }
+  /** Stop the save, in the owner's words: only on a before_save rule (0143). Nothing is written. */
+  | { type: "refuse"; message: string }
   | { type: "webhook"; url: string };
 
 export interface AutomationDefinition {
@@ -322,6 +325,9 @@ export interface RecordRow {
   data: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  /** The logins that added it and last changed it, from the session (0144); null when no person did. */
+  created_by?: string | null;
+  updated_by?: string | null;
 }
 
 export interface UiSchemaRow {

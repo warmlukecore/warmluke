@@ -193,20 +193,30 @@ export async function proposeStoreAction(
     };
   }
 
+  // What the server knows about each target, added before anybody is
+  // asked: the count a stock line changes from, read from Warmluke's
+  // copy. It replaces anything the caller sent under the same name.
+  let prepared = targets;
+  if (spec.prepare) {
+    const got = await spec.prepare(db, store.id, targets);
+    if ("error" in got) return { ok: false, answer: { error: got.error } };
+    prepared = got.targets;
+  }
+
   // The sentence on the card is written from the change itself,
   // never from the assistant. Whatever it told the merchant this
   // does, what they agree to is this line.
-  const summary = spec.say(targets, params);
+  const summary = spec.say(prepared, params);
   const { data: actionId, error: proposeError } = await db.rpc("abo_action_propose", {
     p_project: store.project_id,
     p_store: store.id,
     p_action: wantedAction,
-    p_targets: targets,
+    p_targets: prepared,
     p_params: params,
     p_summary: summary,
   });
   if (proposeError) return { ok: false, answer: { error: proposeError.message } };
-  return { ok: true, id: actionId as string, action: wantedAction, summary, targets, spec };
+  return { ok: true, id: actionId as string, action: wantedAction, summary, targets: prepared, spec };
 }
 
 /**

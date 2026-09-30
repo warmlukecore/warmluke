@@ -28,6 +28,8 @@
 // Callers: to come — the executor, src/app/api/mcp/route.ts.
 // ─────────────────────────────────────────────────────────────
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 /**
  * One thing a change is done to, and whatever that one needs.
  *
@@ -83,9 +85,24 @@ export interface StoreActionSpec {
    * Returns the reason it is not, or null when it is fine.
    */
   check: (targets: ActionTarget[], params: ActionParams) => string | null;
+  /**
+   * What the server adds to each target before anybody is asked, read
+   * from Warmluke's own copy and never from whoever asked: the count a
+   * stock line is changed FROM. Returns the targets, or why it cannot.
+   */
+  prepare?: (
+    db: SupabaseClient,
+    storeId: string,
+    targets: ActionTarget[]
+  ) => Promise<{ targets: ActionTarget[] } | { error: string }>;
   /** The mutation, one target per call. */
   mutation: string;
-  variables: (target: ActionTarget, params: ActionParams) => Record<string, unknown>;
+  /**
+   * `key` is the same for the same target of the same approved change,
+   * however often it is sent: a retry after a dropped answer is the one
+   * change, not a second one (Shopify's @idempotent, where a mutation takes it).
+   */
+  variables: (target: ActionTarget, params: ActionParams, ctx: { key: string }) => Record<string, unknown>;
   /** Shopify puts its refusals in userErrors; this finds them. */
   errors: (data: unknown) => string[];
   /** The action that puts this one back, when there is one. */
@@ -118,6 +135,23 @@ function userErrors(data: unknown): string[] {
       } else {
         walk(val);
       }
+    }
+  };
+  walk(data);
+  return out;
+}
+
+/** The codes on Shopify's userErrors, wherever it put them. */
+function userErrorCodes(data: unknown): string[] {
+  const out: string[] = [];
+  const walk = (v: unknown) => {
+    if (Array.isArray(v)) return v.forEach(walk);
+    if (!v || typeof v !== "object") return;
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      if (k === "userErrors" && Array.isArray(val)) {
+        for (const e of val)
+          if (typeof (e as { code?: unknown })?.code === "string") out.push((e as { code: string }).code);
+      } else walk(val);
     }
   };
   walk(data);
@@ -228,8 +262,32 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
     confirm: "list",
     say: (targets) =>
       targets.length === 1
-        ? `Sets the count of one item to ${String(targets[0].quantity)}`
+        ? `Sets the count of one item${typeof targets[0].from === "number" ? ` from ${targets[0].from}` : ""} to ${String(targets[0].quantity)}`
         : `Sets the count of ${count(targets.length, "item")}`,
+    // The count each line is changed FROM, as Warmluke's copy has it now:
+    // Shopify refuses the change if its own count has moved since, so a
+    // number that went stale is never written over one that did not.
+    // Always the server's: whatever the caller sent as "from" is replaced.
+    prepare: async (db, storeId, targets) => {
+      const out: ActionTarget[] = [];
+      for (const t of targets) {
+        const { data } = await db
+          .from("store_inventory")
+          .select("available")
+          .eq("store_id", storeId)
+          .eq("inventory_item_id", t.id)
+          .eq("location_id", String(t.locationId ?? ""))
+          .maybeSingle();
+        if (typeof data?.available !== "number") {
+          return {
+            error:
+              "One of those items is not in Warmluke's copy of the stock at that location, so the count it would change from is not known. Nothing was asked for; look it up again with search_store.",
+          };
+        }
+        out.push({ ...t, from: data.available });
+      }
+      return { targets: out };
+    },
     check: (targets) =>
       targets.length === 0
         ? "No item was named."
@@ -238,27 +296,38 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
           : targets.some((t) => typeof t.locationId !== "string" || !t.locationId)
             ? "Every item needs the location it is counted at."
             : null,
-    mutation: `mutation SetStock($input: InventorySetQuantitiesInput!) {
-      inventorySetQuantities(input: $input) {
+    // 2026-07, as Shopify documents it: the idempotency key is required
+    // (since 2026-04), every line says the count it changes from
+    // (changeFromQuantity, compare-and-swap), and ignoreCompareQuantity
+    // is gone. The old shape was refused outright on this version.
+    mutation: `mutation SetStock($input: InventorySetQuantitiesInput!, $idempotencyKey: String!) {
+      inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) {
         inventoryAdjustmentGroup { createdAt }
-        userErrors { field message }
+        userErrors { field message code }
       }
     }`,
-    variables: (target) => ({
+    variables: (target, _params, { key }) => ({
       input: {
         name: "available",
         reason: "correction",
-        ignoreCompareQuantity: true,
         quantities: [
           {
             inventoryItemId: target.id,
             locationId: target.locationId,
             quantity: target.quantity,
+            // Null only for a change made before the count was kept with it.
+            changeFromQuantity: typeof target.from === "number" ? target.from : null,
           },
         ],
       },
+      idempotencyKey: key,
     }),
-    errors: userErrors,
+    errors: (data) =>
+      userErrorCodes(data).includes("CHANGE_FROM_QUANTITY_STALE")
+        ? [
+            "The count in Shopify changed after this was asked for, so nothing was changed. Ask again to set it from the count it has now.",
+          ]
+        : userErrors(data),
     // The count it had is in Warmluke, but it is a copy that may be
     // minutes old, and writing a stale number back is how a correction
     // becomes a second mistake.

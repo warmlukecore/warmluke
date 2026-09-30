@@ -30,6 +30,7 @@ import {
   storeSectionColumns,
   storeTableSchema,
   STORE_TABLES,
+  storeKeys,
   storeRowFields,
 } from "@/lib/store-read";
 // One definition, shared with the Shopify importer rather than copied.
@@ -66,6 +67,7 @@ import {
   vocabularyPrompt,
   capabilitySummary,
 } from "./capabilities";
+import { abilitiesPrompt } from "./abilities";
 
 const CHANGE_TYPES = [
   "UI_CHANGE",
@@ -140,7 +142,7 @@ HOW TO CHOOSE changeType:
   .map((t) => `"${t}"`)
   .join(
     ", "
-  )}, whose rows each total many others, so there is no one row for it to sit beside. The store's own fields are read here, never written: a row action or scan mode sets a field of theirs ("Mark packed" sets packed; scanning the order number finds the order and ticks it). A rule on such a section reads the store's fields and theirs, and sets only theirs. It runs when a field of theirs changes (record_updated, from the first one set on a row), or on a schedule over every row of the list ("when" picks the rows; a row it acts on gets its fields then) — so "flag the COD orders delivered a week ago and still unpaid" is a daily rule reading gateway, fulfilment_status and financial_status. A change in Shopify is not seen the moment it happens; a schedule rule sees it on its next run. No rule adds rows to it (record_created is refused). Filters, search, stats and sort work over both.
+  )}, whose rows each total many others, so there is no one row for it to sit beside. The store's own fields are read here, never written: a row action or scan mode sets a field of theirs ("Mark packed" sets packed; scanning the order number finds the order and ticks it). A rule on such a section reads the store's fields and theirs, and sets only theirs. It runs when a field of theirs changes (record_updated, from the first one set on a row), or on a schedule over every row of the list ("when" picks the rows; a row it acts on gets its fields then) — so "flag the COD orders delivered a week ago and still unpaid" is a daily rule reading gateway, fulfilment_status and financial_status. A change in Shopify reaches the rows within seconds, but it does not fire a rule: a rule over them runs when a field of theirs changes, or a schedule rule sees it on its next run. No rule adds rows to it (record_created is refused). Filters, search, stats and sort work over both.
 - MODULE_UPDATE — nav metadata only: rename label, change icon, move it inside another section (parent_id), reposition (sort_order: below the lowest existing value for top, midpoint like 1.5 for between, above max for bottom).
 - MODULE_DELETE — only when the user clearly asks to delete/remove a whole section. deleteConfirmName = exact name slug.
 - FEATURE_UPDATE — search box, dropdown filters, STAT CARDS (op: count | sum | avg | min | max over "value", an EXPRESSION evaluated per row — so a stock value is { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, not a bare column; optional "where" expression limits which rows count. Never label a stat as something the expression does not actually compute), default sort, ROW ACTION buttons (a one-click change to that row: "set" maps field -> EXPRESSION, and the optional "when" is an EXPRESSION deciding whether the button shows on that row — same operators as automations, so "only while it isn't Done" is { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }), or SCAN MODE (a scan-and-go bar: lookupField = the code column scanned into it, action.set = field -> expression applied to the matched row, sequenceField = a numeric column that must never go backwards between scans, for picking or queue order). It works with any USB or Bluetooth barcode scanner, which types the code like a keyboard — there is no camera scanning. A scan that matches nothing changes NOTHING: the person sees it on screen and that is the whole safeguard. Nothing is recorded, so never add a "scan errors" or "mistakes" count — no rule can fill it, and a stat built on it counts successful scans instead. Scanning only reaches rows currently in view, so the section needs a filter that narrows to the job in hand. Send only the parts you change: each part you send (view, stats, filters, actions, scanMode, search, defaultSort) replaces that part whole, a part you leave out stays exactly as it is, and null removes it. To add a stat, send "stats" with the old ones and the new; leave a written screen's "view" out unless you are changing the screen.
@@ -191,6 +193,7 @@ HOW TO CHOOSE changeType:
   A FLAG MUST BE ABLE TO CLEAR ITSELF. Setting a field only when something is true leaves it set forever once the condition passes — a clash flag stays on after the clash is resolved. Instead run the rule on every write (no "when"), and set the field to an "if": { "op": "if", "args": [ <test>, { "const": "Yes" }, { "const": "No" } ] }.
 
   CATCHING DUPLICATES AND CLASHES: count_matching is how a rule sees the rest of the section. Two appointments in one slot, a repeated SKU, the same customer entered twice — trigger record_created AND a second rule on record_updated, both with NO "when", each setting the flag on self to { "op": "if", "args": [ { "op": ">", "args": [ { "op": "count_matching", "args": [ { "field": "appointment_date" }, { "field": "appointment_time" } ] }, { "const": 0 } ] }, { "const": "Yes" }, { "const": "No" } ] } — so moving an appointment out of a clash clears its flag. Add the flag field in the same plan. It marks the clash the moment it is saved; it does not refuse the save, so never describe it as preventing or blocking.
+  STOPPING, NOT FLAGGING: when the second one must not happen at all — the last unit held twice, a slot booked twice, a job claimed by two people, a reference used again — build a rule that refuses it: trigger { "type": "before_save", "when": <true when this save would break it> } and the one action { "type": "refuse", "message": "<what to do instead, in their words>" }. The database judges it in the same moment as the save, one at a time, so two people at once cannot both get through. A second booking of a slot: "when" is { "op": ">=", "args": [ { "op": "count_matching", "args": [ { "field": "slot" } ] }, { "const": 1 } ] }. A hold on stock that must not pass what can be sold: "when" is { "op": ">", "args": [ { "op": "+", "args": [ { "op": "sum_matching", "args": [ { "field": "qty" }, { "field": "item" }, { "field": "place" }, { "op": "!=", "args": [ { "field": "status" }, { "const": "Released" } ] } ] }, { "field": "qty" } ] }, { "op": "store_value", "args": [ { "const": "inventory_levels" }, { "const": "available" }, { "const": "inventory_item_id" }, { "field": "item" }, { "const": "location_id" }, { "field": "place" } ] } ] }, where item and place hold the stock row's inventory_item_id and location_id — its keys, never its name. When they want the clash seen AND stopped, build both; when they only want to know, flagging is right. Say plainly which one you built.
 
   "IS EVERY CHILD DONE?" — count_matching with a condition answers it, and it is how a parent moves on when its last child finishes: on the child, count siblings sharing the parent key that are NOT yet done; zero means this was the last one, so set the parent. The parent may be a section over the store (the order, when its lines are scanned): the rule finds it by the store's own field ("match": { "field": "order_number", "to": { "field": "order_number" } }) and sets a field of the owner's on it (packed, packed_on), never one of the store's. Without the condition you are only counting siblings, which is never zero for a parent with more than one child.
 
@@ -304,6 +307,8 @@ const replyContract = () => `${WHO_LUKE_IS}
 
 ${vocabularyPrompt()}
 
+${abilitiesPrompt()}
+
 You reply with ONLY a single valid JSON object. No code fences, no commentary outside the JSON. Markdown lives only inside an answer's "message" (see HOW AN ANSWER READS). Every shape carries "title" (see TITLE). It must be one of four shapes:
 
 ${ANSWER_SHAPE}
@@ -328,7 +333,7 @@ ${ANSWER_SHAPE}
     "summary": "2-3 sentences: what this does for them, in their words",
     "plans": [ <plan>, <plan>, ... ],
     "workflow": [ { "step": "what happens in their day", "who": "which person does it" } ],
-    "unmet": [ "quote back, in the owner's OWN words, anything they asked for that these plans do not do" ],
+    "unmet": [ "quote back, in the owner's OWN words, anything they asked for that these plans do not do, each begun with why, as one of — Not in your data: / Only from this chat: / Not in Warmluke yet: / Needs another system: / Needs your decision:" ],
     "next": [ { "label": "a few words, as a button", "prompt": "the exact message they would send you to ask for it" } ]
   }
 }
@@ -409,7 +414,7 @@ WRITING FOR THE OWNER:
 - NOTHING YOU WRITE HAS HAPPENED YET. "message" and "summary" sit at the top of a card the owner has not approved, so write what this WOULD do — never "I have removed the duplicate section", "I've added a filter", "I updated Products". Their app is untouched until they say yes, and a sentence saying otherwise is read as a fact. The one thing you may say you have done is update the design itself.
 - Never describe a feature in prose. The interface renders every section, field, button and rule from the plans themselves, so a sentence about them can only ever contradict the thing.
 - "workflow" is their real-world process — people and steps as they happen in the world. Leave the scan step out of THIS LIST — the interface writes it itself from the scan bar in your plans, so yours is dropped. That applies to this list only: if they own a scanner, still build scanMode. Never say what the software shows, syncs, or who can see it: "appears on the calendar for everyone to see" is a claim about the platform, and a false one, because a project is used by its owner alone.
-- If anything the owner told you lands in the NOT POSSIBLE list — several people using it, messaging a customer, taking payment, photos — it MUST appear in "unmet" in their own words. Designing around it silently is the worst thing you can do: they will believe it is handled.
+- If anything the owner told you lands in the NOT POSSIBLE list — messaging a customer, taking payment, photos — or needs more than WHERE EACH THING WORKS promises (a rule choosing by who is saving, a section writing to Shopify on its own), it MUST appear in "unmet" in their own words. Designing around it silently is the worst thing you can do: they will believe it is handled.
 
 HARD RULES:
 - Column types, views, operators, actions and aggregations: ONLY those in the capability block above. Never invent one.
@@ -692,6 +697,8 @@ ${list}${storeBlock(store, currency)}`,
 const talkContract = () => `${WHO_LUKE_IS}
 
 ${capabilitySummary()}
+
+${abilitiesPrompt()}
 
 You reply with ONLY a single valid JSON object. No code fences, no commentary outside the JSON. Markdown lives only inside an answer's "message" (see HOW AN ANSWER READS). Every shape carries "title" (see TITLE). It must be one of two shapes:
 
@@ -1242,6 +1249,62 @@ function validateExpr(
       }
     }
   }
+  if (op === "sum_matching") {
+    // The value added up, then the siblings, matched as count_matching
+    // matches them. Without a field to match on it would add up the
+    // whole section, which is never what anyone means.
+    const [value, ...rest] = args;
+    if (!isPlainObject(value) || "field" in value === "op" in value) {
+      err(errors, '"sum_matching" first names what is added up, read from the other rows: { "field": "qty" }.');
+    }
+    if (!rest.some((a) => isPlainObject(a) && "field" in a)) {
+      err(
+        errors,
+        '"sum_matching" needs, after the value, at least one field to match siblings on: { "field": "item" }.'
+      );
+    }
+    for (const a of rest) {
+      if (!isPlainObject(a) || "field" in a === "op" in a) {
+        err(errors, '"sum_matching" matches on field leaves ({ "field": "x" }) or conditions ({ "op": ... }).');
+      }
+    }
+  }
+  if (op === "store_value") {
+    // The list, the field and the keys are the store's own names, as a
+    // row of that list has them (0143 reads only those); only the values
+    // are this row's.
+    const name = (a: unknown) => (isPlainObject(a) && typeof a.const === "string" ? a.const : null);
+    const table = name(args[0]);
+    if (!isStoreTable(table)) {
+      err(
+        errors,
+        `"store_value" first names one of the store's lists: { "const": "inventory_levels" }. One of: ${Object.keys(STORE_TABLES).join(", ")}.`
+      );
+      return;
+    }
+    const fields = new Set(storeRowFields(table));
+    const field = name(args[1]);
+    if (!field || !fields.has(field)) {
+      err(errors, `"store_value" reads a field ${table} rows have ({ "const": "…" }): ${[...fields].join(", ")}.`);
+    }
+    if ((args.length - 2) % 2 !== 0) {
+      err(
+        errors,
+        '"store_value" finds its row by key and value in pairs, after the list and the field: { "const": "inventory_item_id" }, { "field": "item" }, …'
+      );
+    }
+    for (let i = 2; i + 1 < args.length; i += 2) {
+      const key = name(args[i]);
+      if (!key || !fields.has(key)) {
+        err(
+          errors,
+          `"store_value" matches on ${table}'s own fields, and "${key ?? JSON.stringify(args[i])}" is not one; its keys are ${storeKeys(table).join(", ")}.`
+        );
+      }
+      validateExpr(args[i + 1], ownHas, errors, where, depth + 1);
+    }
+    return;
+  }
   for (const a of args) validateExpr(a, ownHas, errors, where, depth + 1);
 }
 
@@ -1365,7 +1428,19 @@ function validateAutomation(
     err(errors, `Trigger type "${trigger.type}" must be one of: ${TRIGGER_TYPES.join(", ")}.`);
   }
   if (trigger.type === "schedule") validateSchedule(trigger, errors);
-  else if (trigger.at !== undefined || trigger.on !== undefined || trigger.date !== undefined) {
+  // A rule that says no does one thing, and says it when its "when" holds.
+  if (trigger.type === "before_save") {
+    if (trigger.when === undefined) {
+      err(errors, 'A before_save rule needs a "when": the save is refused when it is true.');
+    }
+    const acts = (def as AutomationDefinition).actions;
+    if (!Array.isArray(acts) || acts.length !== 1 || !isPlainObject(acts[0]) || acts[0].type !== "refuse") {
+      err(
+        errors,
+        'A before_save rule does one thing: [{ "type": "refuse", "message": "…" }]. Anything else it should do goes in a rule of its own.'
+      );
+    }
+  } else if (trigger.at !== undefined || trigger.on !== undefined || trigger.date !== undefined) {
     err(errors, `"at", "on" and "date" belong to a schedule trigger, not ${trigger.type}.`);
   }
 
@@ -1596,9 +1671,22 @@ function validateAutomation(
       continue;
     }
 
+    if (a.type === "refuse") {
+      if (trigger.type !== "before_save") {
+        err(errors, 'Only a before_save rule can refuse a save: { "trigger": { "type": "before_save", "when": … } }.');
+      }
+      if (typeof a.message !== "string" || !a.message.trim() || a.message.length > 200) {
+        err(
+          errors,
+          'A refuse action says what to do instead, in one sentence of the owner\'s language: "message", up to 200 characters.'
+        );
+      }
+      continue;
+    }
+
     err(
       errors,
-      `Action type "${String((a as { type?: unknown }).type)}" must be set_fields, create_record or run_code.`
+      `Action type "${String((a as { type?: unknown }).type)}" must be set_fields, create_record, run_code or refuse.`
     );
   }
 }
@@ -2607,6 +2695,15 @@ export function modelError(provider: Provider, status: number, raw: string): Mod
 // budgeted, only given room; what is not used is not billed.
 const MAX_OUTPUT_TOKENS = 12000;
 
+// How hard a Claude 5 model thinks before it answers, which is what the
+// cap above has to hold. Sonnet 5 thinks at "high" unless told: on a hold
+// that must never oversell it spent all 12,000 tokens thinking and wrote
+// nothing (the 2026-09-30 before/after eval). "medium" is Opus 5.5's own
+// default, so production's model is asked exactly as it was. Haiku 4.5
+// takes no effort and is sent none.
+const EFFORT = "medium";
+const TAKES_EFFORT = /claude-(opus-(4-[5-9]|5)|sonnet-5|fable-5)/;
+
 /**
  * Which model does which job: the setting each one reads, when a call is
  * made, so changing a model is a deploy setting and never a code change.
@@ -2869,7 +2966,17 @@ async function generate(
   /** Hears the reply's text as it arrives, whole each time; "" when a new attempt starts. */
   onText?: (text: string) => void
 ): Promise<string> {
-  const base = { model, instructions, maxOutputTokens: MAX_OUTPUT_TOKENS, maxRetries: 0, abortSignal: signal };
+  const id = typeof model === "string" ? model : model.modelId;
+  const base = {
+    model,
+    instructions,
+    maxOutputTokens: MAX_OUTPUT_TOKENS,
+    maxRetries: 0,
+    abortSignal: signal,
+    ...(provider === "anthropic" && TAKES_EFFORT.test(id)
+      ? { providerOptions: { anthropic: { effort: EFFORT } } }
+      : {}),
+  };
   // A listener that throws does not take the call with it.
   const hear = onText
     ? (t: string) => {

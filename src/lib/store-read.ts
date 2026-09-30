@@ -828,7 +828,21 @@ export const isStoreTable = (v: unknown): v is StoreTable => typeof v === "strin
 export function storeRowFields(table: StoreTable): string[] {
   const shown = STORE_TABLES[table].columns.map((c) => c.field);
   const selected = STORE_TABLES[table].select.split(",").map((c) => c.trim());
-  return [...new Set([...selected, ...shown])].filter(Boolean);
+  return [...new Set([...selected, ...shown, ...storeKeys(table)])].filter(Boolean);
+}
+
+/**
+ * The fields that say which row this is, for good: Warmluke's row id and
+ * Shopify's own ids (what a change is aimed with, `gives`). Every reader
+ * gets them (readStoreRows appends them), and so does everyone told what
+ * a row holds: Luke was shown the displayed columns only, and said a stock
+ * row had no item or location id while the tool beside it returned both.
+ * Names and SKUs are for people; these are what rows are matched on.
+ */
+export function storeKeys(table: StoreTable): string[] {
+  const spec = STORE_TABLES[table];
+  const own = spec.select.split(",").some((c) => c.trim() === "id") ? ["id"] : [];
+  return [...new Set([...own, ...Object.values(spec.gives ?? {})])];
 }
 
 /** The schema a section gets when it is pointed at a store table. */

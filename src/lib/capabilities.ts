@@ -68,6 +68,18 @@ export const OPERATORS = {
     doc: "whole days from a date up to today — NEGATIVE for dates in the future. Use it for ageing ('sat 3 days'), never for countdowns: 'days_since <= 7' is true for every future date, however far off",
     group: "maths",
   },
+  sum_matching: {
+    arity: [2, 7],
+    doc: 'the first arg, read from each OTHER row of this section, added up over the rows that match — matched exactly as count_matching matches them. `sum_matching(qty, item, place, status != "Released")` is how many are already held of this item at this place',
+    group: "maths",
+    serverOnly: true,
+  },
+  store_value: {
+    arity: [4, 8],
+    doc: 'one field of one of this project\'s store rows, found by its keys: store_value("inventory_levels", "available", "inventory_item_id", item, "location_id", place) is what can be sold of that item there. The list, the field and each key are { "const": … } names from the store\'s own lists; each key\'s value is an expression (a { field } of this row). Null when no such row is in the store',
+    group: "maths",
+    serverOnly: true,
+  },
   count_matching: {
     arity: [1, 6],
     doc: 'how many OTHER rows in this section match. A { field } arg means the sibling must share this row\'s value for it; an operator arg is a test run against the sibling, where { field } reads the SIBLING\'s value. So `count_matching(order_id, verified != "Complete")` is "how many of this order\'s other lines are still unverified" — `= 0` on the row being finished means it was the last one. Use `> 0` with fields alone to catch a duplicate or a clash',
@@ -185,6 +197,8 @@ export const TRIGGERS = {
   schedule: `nobody touched anything — re-checks every row on its own. This is the only way to catch things that go quiet: an unpaid invoice, a job nobody moved, a follow-up never made. Needs "every": hourly, daily, weekly or monthly, and its "when" picks which rows to act on. ${SCHEDULE_TIMING}`,
   store_row_added:
     "a new row came in from the store — a new order, a new customer. Only on a section over the store, and only for a rule's own code (run_code)",
+  before_save:
+    "a row is ABOUT to be saved, and its rule may stop it: a \"when\" that is true refuses the save with the rule's own sentence (action refuse), and nothing is written. The database judges it in the same moment as the save, one save at a time for that rule, so two people saving at once can never both get the last unit, the same slot or the same claim; it holds for every way a row is written — the app, a screen, a rule, their own AI. Its only action is refuse. It does not stop Shopify, a till or another app changing the store's own figures",
 } as const;
 
 export type TriggerType = keyof typeof TRIGGERS;
@@ -198,6 +212,8 @@ export const AUTOMATION_ACTIONS = {
     "add a row to another section, filling its fields from this one. This is how work moves between sections without the owner retyping it: an order that gets refused opens a return, a job marked done raises an invoice, a delivery that fails becomes a callback. Whenever two sections describe the same thing at different stages, the second one should be created by a rule, not by hand — typed twice means the two drift apart",
   run_code:
     "run a function you write, for logic the expressions cannot say — a slab rate, a table to look up, a sum across sections, a calendar. It is handed the row and the rows it reads, and returns the fields to set (see CODE RULE)",
+  refuse:
+    'stop the save and show { "message": "…" }, one sentence in the owner\'s language saying what to do instead ("Only what is left can be held — release a hold first"). Only on a before_save rule, and alone',
 } as const;
 
 export type AutomationActionType = keyof typeof AUTOMATION_ACTIONS;
@@ -226,7 +242,11 @@ export const NOT_SUPPORTED: Array<{ id: string; label: string }> = [
   { id: "payments", label: "taking payments, carts or checkout" },
   { id: "messaging", label: "sending email, SMS or WhatsApp" },
   { id: "files", label: "photos, files or attachments" },
-  { id: "external_sync", label: "syncing with another system or website" },
+  {
+    id: "external_sync",
+    label:
+      "keeping another system or website in step with this one (single changes to your own Shopify store can be asked for in the chat)",
+  },
   // Badge colours come from the value itself, so every vocabulary gets
   // stable distinct colours without a lookup table. The trade is that
   // a specific colour cannot be chosen.

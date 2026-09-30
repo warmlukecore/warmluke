@@ -197,5 +197,37 @@ console.log("\nthe same build, this time with seeded rows");
   );
 }
 
+console.log("\nthe first plan fails halfway: its section was made, its fields were not");
+{
+  // Nothing before it had finished, and the undo ran only for plans that
+  // had: the section stayed in the nav with no fields, and the error said
+  // only that the fields were refused.
+  const { client, tables, ops } = stubDb({ failOn: "schema_insert" });
+  const out = await applyPlans(client, PROJECT, structuredClone(plans));
+  check("nothing is reported as applied", out.applied.length === 0);
+  check("the half-made section is gone", tables.modules.length === 0);
+  check(
+    "because the undo ran for it",
+    ops.some((o) => o.op === "module_delete")
+  );
+  check(
+    "and the owner is told what was put back",
+    out.errors.some((e) => /Nothing was built: what the part that failed had begun was put back/.test(e))
+  );
+  check("the second plan was never tried", !ops.some((o) => o.op === "automation_insert"));
+  check("and where it stopped is said", out.failedAt === 0);
+}
+
+console.log("\nrows seeded into a section this build made are not left behind");
+{
+  const { client } = stubDb({ failOn: "automation_insert" });
+  const seeded = [{ ...plans[0], newRecords: [{ product: "A cable", stage: "Low" }] }, plans[1]];
+  const out = await applyPlans(client, PROJECT, structuredClone(seeded));
+  check(
+    "they go with the section, so nothing is said to be stranded",
+    !out.errors.some((e) => /already existed|could not be put back/.test(e))
+  );
+}
+
 console.log(fails.length === 0 ? "\na build is one thing or none" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);
