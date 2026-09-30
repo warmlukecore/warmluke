@@ -50,6 +50,8 @@ export type WriteInput = {
   recordId?: string;
   storeRowId?: string;
   data?: Record<string, unknown>;
+  /** On an update: the fields being changed, as the person saw them (0149). */
+  expected?: Record<string, unknown>;
 };
 
 /** A row written, as a rule that runs on it needs to know it. */
@@ -96,7 +98,7 @@ export async function writeRecord(
   /** Told of each row written, after the write stands. */
   written?: (w: Written) => void
 ): Promise<{ status: number; body: Record<string, unknown> }> {
-  const { action, projectId, moduleId, recordId, storeRowId, data } = input;
+  const { action, projectId, moduleId, recordId, storeRowId, data, expected } = input;
 
   if (!action || !projectId || !moduleId) {
     return reply({ error: "action, projectId and moduleId are required" }, { status: 400 });
@@ -173,6 +175,46 @@ export async function writeRecord(
     return row;
   };
 
+  // The fields sent, onto the row in one step (0149), and the answer when
+  // they did not land: gone, or changed since they were seen.
+  const patch = async (
+    id: string,
+    fields: Record<string, unknown>,
+    seen: Record<string, unknown> | null
+  ): Promise<
+    | { status: "applied"; before: Record<string, unknown> }
+    | { status: "missing" | "conflict"; answer: { status: number; body: Record<string, unknown> } }
+  > => {
+    const { data: done, error } = await client.rpc("abo_record_patch", {
+      p_record: id,
+      p_patch: fields,
+      p_expected: seen,
+    });
+    if (error) throw writeError(error);
+    const res = done as { status: string; before?: Record<string, unknown>; now?: Record<string, unknown> };
+    if (res.status === "applied") return { status: "applied", before: res.before ?? {} };
+    if (res.status === "missing") {
+      return { status: "missing", answer: reply({ error: "That row is no longer there." }, { status: 404 }) };
+    }
+    const label = (f: string) => columns.find((c) => c.field === f)?.label ?? f;
+    const shown = (v: unknown) =>
+      v === null || v === "" ? "empty" : `“${typeof v === "string" ? v : JSON.stringify(v)}”`;
+    const now = Object.entries(res.now ?? {})
+      .map(([f, v]) => `${label(f)} is now ${shown(v)}`)
+      .join(", ");
+    return {
+      status: "conflict",
+      answer: reply(
+        {
+          error: `Someone changed this row while you had it open: ${now}. Nothing of yours was saved, and the row shows theirs now.`,
+          conflict: true,
+          record: await fresh(id),
+        },
+        { status: 409 }
+      ),
+    };
+  };
+
   // A link is only meaningful if it points at a row that exists in
   // the section the column names; anything else silently renders as
   // "(deleted)" forever.
@@ -207,18 +249,15 @@ export async function writeRecord(
     if (!recordId) {
       return reply({ error: "recordId is required" }, { status: 400 });
     }
-    // Merge rather than replace: a partial edit (a row action setting one
-    // field) must not blank out everything it didn't mention.
-    const { data: existing } = await client.from("records").select("data").eq("id", recordId).limit(1);
-    const prev = (existing?.[0]?.data ?? {}) as Record<string, unknown>;
-
-    const { error } = await client
-      .from("records")
-      .update({ data: { ...prev, ...clean }, updated_at: new Date().toISOString() })
-      .eq("id", recordId);
-    if (error) throw writeError(error);
+    // Only the fields sent change, in one step in the database (0149): a
+    // partial edit (a row action setting one field) blanks out nothing it
+    // didn't mention, and two people saving the same row at once each
+    // keep what they changed. What they saw is compared for just those.
+    const seen = expected ? Object.fromEntries(Object.keys(clean).map((f) => [f, expected[f] ?? null])) : null;
+    const patched = await patch(recordId, clean, seen);
+    if (patched.status !== "applied") return patched.answer;
     const now = await fresh(recordId);
-    onWritten?.({ event: "updated", record: now, previous: prev });
+    onWritten?.({ event: "updated", record: now, previous: patched.before });
     return reply({ ok: true, record: now });
   }
 
@@ -249,23 +288,20 @@ export async function writeRecord(
       return reply({ error: "That row is not in your store's list." }, { status: 404 });
     }
     let before: Record<string, unknown> | null = null;
+    // ponytail: no "what you saw" here yet, so the same field saved by two
+    // people at once is the last one's; the merge itself is one step (0149).
     const merge = async () => {
       const { data: have } = await client
         .from("records")
-        .select("id, data")
+        .select("id")
         .eq("module_id", moduleId)
         .eq("store_row_id", storeRowId)
         .maybeSingle();
       if (!have) return null;
-      before = (have.data ?? {}) as Record<string, unknown>;
-      const { error } = await client
-        .from("records")
-        .update({
-          data: { ...((have.data ?? {}) as Record<string, unknown>), ...clean },
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", have.id);
-      if (error) throw writeError(error);
+      const patched = await patch(have.id as string, clean, null);
+      // Gone between the look and the write: it is made again below.
+      if (patched.status !== "applied") return null;
+      before = patched.before;
       return fresh(have.id as string);
     };
     const kept = (record: Record<string, unknown> | null, event: "created" | "updated") => {

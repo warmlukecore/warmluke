@@ -2049,7 +2049,11 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         moduleId: selectedModuleId,
         ...body,
       });
-      if (!ok || data.error) throw new Error((data.error as string) ?? "That didn't save.");
+      if (!ok || data.error) {
+        // Someone else's save got there first (0149): their row, on screen, with why.
+        if (data.conflict && data.record) patchRow(data.record as Record<string, unknown>, selectedModuleId);
+        throw new Error((data.error as string) ?? "That didn't save.");
+      }
       // The row as the server left it, placed where it is; a rule that
       // wrote another section is seen when that section is opened.
       if (body.action === "delete") {
@@ -2073,8 +2077,16 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     [writeRecord]
   );
 
+  // What each changed field showed when it was changed: a save lands only
+  // on the row as it was seen (0149), whichever screen or button it came from.
+  const shownRows = useRef(records);
+  shownRows.current = records;
   const updateRecord = useCallback(
-    (recordId: string, data: Record<string, unknown>) => writeRecord({ action: "update", recordId, data }),
+    (recordId: string, data: Record<string, unknown>) => {
+      const seen = (shownRows.current.find((r) => r.id === recordId)?.data ?? {}) as Record<string, unknown>;
+      const expected = Object.fromEntries(Object.keys(data).map((f) => [f, seen[f] ?? null]));
+      return writeRecord({ action: "update", recordId, data, expected });
+    },
     [writeRecord]
   );
 
