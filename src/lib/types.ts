@@ -315,6 +315,10 @@ export interface ModuleRow {
   source_table: string | null;
   /** Everyone on the team sees it (0140). Off, only the owner and those it is shared with. Absent before 0140: shared. */
   shared_with_team?: boolean;
+  /** The login that built it (0145); null for sections from before. */
+  created_by?: string | null;
+  /** Not a column: set for a turn by someone the owner lets build, on what they did not build (0146). */
+  read_only?: boolean;
   created_at: string;
 }
 
@@ -463,6 +467,8 @@ export interface ThreadSummary {
   answers?: number;
   /** The assistant that started it over MCP (0139), or none for the owner's own. */
   asked_by?: string | null;
+  /** Someone else on the team whose thread it is (0146); none for your own. */
+  by?: string | null;
 }
 
 /** A follow-up the owner could send next, offered once a build lands. */

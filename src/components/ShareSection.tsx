@@ -18,9 +18,11 @@ import { button, note } from "@/components/ui/controls";
 import { quietClasses } from "@/lib/tone";
 import { MEMBER_ROLE_OPTIONS, labelOf } from "@/lib/onboarding";
 import { UserPlus } from "lucide-react";
+import { sees, setSees, type Access } from "@/lib/sharing";
 
 type Seat = {
   id: string;
+  user_id: string | null;
   email: string | null;
   full_name: string | null;
   team_role: string | null;
@@ -30,13 +32,22 @@ type Seat = {
 
 export default function ShareSection({
   projectId,
+  isOwner,
   section,
   onClose,
   onChanged,
   onAddPeople,
 }: {
   projectId: string;
-  section: { id: string; nav_label: string; shared_with_team?: boolean; source_table: string | null };
+  /** Only the owner lets someone see the store; a builder shares what they built. */
+  isOwner: boolean;
+  section: {
+    id: string;
+    nav_label: string;
+    shared_with_team?: boolean;
+    source_table: string | null;
+    created_by?: string | null;
+  };
   onClose: () => void;
   /** Something was shared or unshared; the shell reads its sections again. */
   onChanged: () => void;
@@ -44,23 +55,36 @@ export default function ShareSection({
 }) {
   const [seats, setSeats] = useState<Seat[] | null>(null);
   const [shared, setShared] = useState<Set<string>>(new Set());
+  // Hidden from one person, whatever else would show it to them (0145).
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [team, setTeam] = useState(section.shared_with_team !== false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = () =>
     Promise.all([
-      supabase
-        .from("project_members")
-        .select("id, email, full_name, team_role, joined_at, can_see_store")
-        .eq("project_id", projectId)
-        .order("created_at"),
+      // The seats without their links, so someone the owner lets build can share too (0146).
+      supabase.rpc("abo_teammates", { p_project: projectId }),
       supabase.from("module_shares").select("member_id").eq("module_id", section.id),
-    ]).then(([s, m]) => {
+      supabase.from("module_hides").select("member_id").eq("module_id", section.id),
+    ]).then(([s, m, h]) => {
       if (s.error || m.error) setError("Who can see this couldn’t be read. Close this and try again.");
-      setSeats((s.data as Seat[] | null) ?? []);
+      // Someone sharing what they built is not in their own list: it is theirs whatever they switch.
+      setSeats(((s.data as Seat[] | null) ?? []).filter((x) => isOwner || x.user_id !== section.created_by));
       setShared(new Set((m.data ?? []).map((r) => r.member_id as string)));
+      // Before 0145 there is no such table: nobody is hidden from anything.
+      setHidden(new Set(h.error ? [] : (h.data ?? []).map((r) => r.member_id as string)));
     });
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, section.id]);
+
+  const accessFor = (seat: Seat): Access => ({
+    team,
+    shared: shared.has(seat.id),
+    hidden: hidden.has(seat.id),
+    builtByThem: !!seat.user_id && section.created_by === seat.user_id,
+  });
 
   async function setForTeam(next: boolean) {
     setError(null);
@@ -74,24 +98,13 @@ export default function ShareSection({
     onChanged();
   }
 
+  // One person on or off, whatever gave it to them (lib/sharing): with the
+  // whole team sharing it, switching one off hides it from just them.
   async function setForSeat(seat: Seat, next: boolean) {
     setError(null);
-    const flip = (on: boolean) =>
-      setShared((prev) => {
-        const s = new Set(prev);
-        if (on) s.add(seat.id);
-        else s.delete(seat.id);
-        return s;
-      });
-    flip(next);
-    const { error: e } = next
-      ? await supabase.from("module_shares").insert({ module_id: section.id, member_id: seat.id })
-      : await supabase.from("module_shares").delete().eq("module_id", section.id).eq("member_id", seat.id);
-    if (e) {
-      flip(!next);
-      setError("That didn’t save. Try again.");
-      return;
-    }
+    const { error: e } = await setSees(supabase, section.id, seat.id, accessFor(seat), next);
+    if (e) setError("That didn’t save. Try again.");
+    await load();
     onChanged();
   }
 
@@ -107,17 +120,18 @@ export default function ShareSection({
   }
 
   const who = (s: Seat) => s.full_name ?? s.email ?? "Link not opened yet";
-  const sees = team ? (seats?.length ?? 0) : shared.size;
+  const seeing = (seats ?? []).filter((s) => sees(accessFor(s))).length;
+  const everyone = !!seats && seats.length > 0 && seeing === seats.length;
 
   return (
     <Dialog
       title={`Who can see ${section.nav_label}`}
       description={
-        sees === 0
+        seeing === 0
           ? "Only you, for now."
-          : team
+          : team && everyone
             ? "Everyone on your team."
-            : `You and ${sees} ${sees === 1 ? "person" : "people"} on your team.`
+            : `You and ${seeing} ${seeing === 1 ? "person" : "people"} on your team.`
       }
       onClose={onClose}
       footer={
@@ -133,7 +147,9 @@ export default function ShareSection({
           <div>
             <div className="text-[13px] font-medium text-fg">Everyone on the team</div>
             <p className="mt-0.5 text-xs leading-relaxed text-fg-muted">
-              {team ? "On: everyone you add later sees it too." : "Off: only the people switched on below, and you."}
+              {team
+                ? "On: everyone you add later sees it too, except anyone you switch off below."
+                : "Off: only the people switched on below, and you."}
             </p>
           </div>
           <Switch checked={team} onChange={setForTeam} label="Share with everyone on the team" />
@@ -152,7 +168,8 @@ export default function ShareSection({
         ) : (
           <ul className="divide-y divide-line overflow-hidden rounded-card border border-line">
             {seats.map((seat) => {
-              const on = team || shared.has(seat.id);
+              const access = accessFor(seat);
+              const on = sees(access);
               const storeMissing = on && !!section.source_table && !seat.can_see_store;
               return (
                 <li key={seat.id} className="px-3 py-2.5">
@@ -171,12 +188,21 @@ export default function ShareSection({
                         )}
                       </div>
                       <div className="truncate text-[11px] text-fg-faint">
-                        {seat.joined_at ? (on ? "Can see it" : "Can’t see it") : "Sees it once they join"}
+                        {access.hidden
+                          ? "Hidden from them"
+                          : access.builtByThem
+                            ? "They built it"
+                            : seat.joined_at
+                              ? on
+                                ? "Can see it"
+                                : "Can’t see it"
+                              : on
+                                ? "Sees it once they join"
+                                : "Won’t see it when they join"}
                       </div>
                     </div>
                     <Switch
                       checked={on}
-                      disabled={team}
                       onChange={(next) => setForSeat(seat, next)}
                       label={`Share ${section.nav_label} with ${who(seat)}`}
                     />
@@ -184,11 +210,13 @@ export default function ShareSection({
                   {storeMissing && (
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-control bg-surface-subdued px-3 py-2 text-xs text-fg-muted">
                       <span>
-                        This comes from your store, which they can&rsquo;t see yet, so it will look empty to them.
+                        This comes from the store, which they can&rsquo;t see yet, so it will look empty to them.
                       </span>
-                      <button onClick={() => letSeeStore(seat)} className={button("secondary", "sm")}>
-                        Let them see the store
-                      </button>
+                      {isOwner && (
+                        <button onClick={() => letSeeStore(seat)} className={button("secondary", "sm")}>
+                          Let them see the store
+                        </button>
+                      )}
                     </div>
                   )}
                 </li>

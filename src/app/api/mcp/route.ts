@@ -465,6 +465,7 @@ async function runHere(db: SupabaseClient, project: ProjectRow, job: TurnJob, sp
       moduleId: null,
       conversationId: job.conversationId,
       before: new Date(job.askedAt).toISOString(),
+      userId: job.userId,
     });
     // The turn this door has always run: plain plans allowed, nothing looked up.
     const turn = await runTurn({
@@ -692,7 +693,7 @@ export async function POST(req: Request) {
       // room, and the model then ran on our key for somebody we never
       // managed to charge. The chat route has always thrown here; this
       // one silently agreed.
-      const { data: allowance, error: spendErr } = await db.rpc("abo_spend_turn");
+      const { data: allowance, error: spendErr } = await db.rpc("abo_spend_turn", { p_project: project.id });
       if (spendErr) throw new Error(spendErr.message);
       const turns = allowance as { ok: boolean; used: number; free: number; spend_id?: string } | null;
       if (!turns || !turns.ok) {

@@ -45,7 +45,9 @@ export async function GET(req: Request) {
   // ponytail: reads every message's type; a count kept on conversations if threads get long.
   let list = client
     .from("conversations")
-    .select("id, title, created_at, updated_at, asked_by, messages(ptype:payload->>type, pstatus:payload->>status)")
+    .select(
+      "id, title, created_at, updated_at, asked_by, created_by, messages(ptype:payload->>type, pstatus:payload->>status)"
+    )
     .eq("project_id", projectId);
   // ponytail: paged by updated_at alone; two threads moved in the same microsecond could straddle a page.
   if (before) list = list.lt("updated_at", before);
@@ -55,17 +57,27 @@ export async function GET(req: Request) {
   const { data: threadRows, error: tErr } = await list.order("updated_at", { ascending: false }).limit(THREAD_PAGE + 1);
   if (tErr) return NextResponse.json({ error: tErr.message }, { status: 500 });
   const more = (threadRows?.length ?? 0) > THREAD_PAGE;
-  const threads = (threadRows ?? []).slice(0, THREAD_PAGE).map(({ messages, ...t }) => {
+  const page = (threadRows ?? []).slice(0, THREAD_PAGE);
+  // The owner reads the threads of the people they let build (0146): each says whose it is.
+  const others = [...new Set(page.map((t) => t.created_by as string | null).filter((u) => u && u !== auth.userId))];
+  const { data: named } = others.length
+    ? await client.rpc("abo_names_for", { p_project: projectId, p_ids: others })
+    : { data: [] };
+  const nameOf = new Map(((named ?? []) as Array<{ user_id: string; name: string }>).map((n) => [n.user_id, n.name]));
+  const threads = page.map(({ messages, created_by, ...t }) => {
     const kinds = (messages ?? []) as Array<{ ptype: string | null; pstatus: string | null }>;
     return {
       ...t,
+      mine: !created_by || created_by === auth.userId,
+      by: created_by && created_by !== auth.userId ? (nameOf.get(created_by) ?? "A teammate") : null,
       // A build the server recorded, or a receipt the panel wrote before it did.
       built: kinds.filter((k) => k.ptype === "applied" || (k.ptype === "build" && k.pstatus === "built")).length,
       answers: kinds.filter((k) => k.ptype === "answer").length,
     };
   });
 
-  const wanted = id ?? (latest ? (threads[0]?.id as string | undefined) : undefined);
+  // The latest of your own: opening Luke never lands you in a teammate's thread.
+  const wanted = id ?? (latest ? (threads.find((t) => t.mine)?.id as string | undefined) : undefined);
   if (!wanted) return NextResponse.json({ threads, more, conversationId: null, messages: [] });
 
   // RLS keeps this to the caller's own project; the extra filter guards
@@ -210,17 +222,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Project not found." }, { status: 404 });
     }
     // A member can SEE this project — that is what a staff login is
-    // for — and could reach here. Two things went wrong when they
-    // did: their own included-design allowance paid for a turn on
-    // somebody else's app, which is ten more designs per person
-    // invited, and
-    // the reply could not be saved afterwards because conversations
-    // belong to the owner. We paid for a model call that nobody got.
-    //
-    // The People settings already promise this: they cannot change
-    // how the app is built.
+    // for — and could reach here. Only one the owner lets build may ask
+    // Luke (0146): their conversations are their own, and the turn is
+    // paid from the owner's included designs (abo_spend_turn below),
+    // not ten more of their own per person invited.
     if (proj.owner_id !== auth.userId) {
-      return NextResponse.json({ error: "Only the owner of this app can build with Luke." }, { status: 403 });
+      const { data: seat } = await client
+        .from("project_members")
+        .select("can_build")
+        .eq("project_id", projectId)
+        .eq("user_id", auth.userId)
+        .maybeSingle();
+      if (!seat?.can_build) {
+        return NextResponse.json(
+          { error: "The owner of this app hasn't let you build with Luke. Ask them to switch it on in People." },
+          { status: 403 }
+        );
+      }
     }
 
     // RLS scopes this count to the caller's own conversations.
@@ -258,7 +276,12 @@ export async function POST(req: Request) {
 
     // The sections, the open one's schema and the thread so far: read the
     // same way a durable leg reads them (lib/turn-run.ts).
-    const ctx = await turnContext(client, proj, { projectId, moduleId: moduleId ?? null, conversationId: convId });
+    const ctx = await turnContext(client, proj, {
+      projectId,
+      moduleId: moduleId ?? null,
+      conversationId: convId,
+      userId: auth.userId,
+    });
     const { moduleList, currentSchema, currentFeatures, history, blueprintShown } = ctx;
 
     // The store the assistant is designing on top of, if there is one.
@@ -269,13 +292,16 @@ export async function POST(req: Request) {
     // calls on our key — a design, its repairs, and the pass that
     // works out what it misses — so a loop that pays only on success
     // would not pay at all.
-    const { data: allowance, error: spendErr } = await client.rpc("abo_spend_turn");
+    const { data: allowance, error: spendErr } = await client.rpc("abo_spend_turn", { p_project: projectId });
     if (spendErr) throw new Error(spendErr.message);
     const turns = allowance as { ok: boolean; used: number; free: number; spend_id?: string } | null;
     if (turns && !turns.ok) {
       return NextResponse.json(
         {
-          error: `You have used all ${turns.free} included design${turns.free === 1 ? "" : "s"} from Warmluke.`,
+          error:
+            proj.owner_id === auth.userId
+              ? `You have used all ${turns.free} included design${turns.free === 1 ? "" : "s"} from Warmluke.`
+              : `This app has used all ${turns.free} included design${turns.free === 1 ? "" : "s"} from Warmluke. Its owner can ask us for more.`,
           out_of_turns: true,
           used: turns.used,
           free: turns.free,

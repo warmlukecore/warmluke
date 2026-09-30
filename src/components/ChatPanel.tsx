@@ -235,6 +235,7 @@ function threadLine(t: ThreadSummary, now: number): string {
   const built = t.built ?? 0;
   const answers = t.answers ?? 0;
   return [
+    t.by ? `${t.by}’s` : null,
     t.asked_by ?? null,
     ago(t.updated_at, now),
     built > 0 ? `${built} built` : null,

@@ -297,6 +297,12 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   const storeId = store?.id ?? null;
   const isOwner = !!project && !!userId && project.owner_id === userId;
   const [modules, setModules] = useState<ModuleRow[]>([]);
+  // Someone the owner lets build (0146): Luke, new sections, and the
+  // controls on the sections they built. What is not theirs stays read.
+  const [mayBuild, setMayBuild] = useState(false);
+  const canBuild = isOwner || mayBuild;
+  const mine = (m: ModuleRow | null | undefined): boolean =>
+    !!m && (isOwner || (mayBuild && modules.find((x) => x.id === (m.parent_id ?? m.id))?.created_by === userId));
   // The section on screen is the address's (?section=…), not the shell's
   // own: a section opens in a new tab, stays open on a refresh, can be
   // sent to someone, and back and forward move between sections. It was
@@ -395,6 +401,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // "people" opens it on the team, from the share dialog's "Add people".
   const [settingsOpen, setSettingsOpen] = useState<boolean | "people">(false);
   const [shareOpen, setShareOpen] = useState(false);
+  // Bumped when a member's own seat changes, so the store is read again.
+  const [seatTick, setSeatTick] = useState(0);
   // The store's own page, and a store row opened from anywhere.
   const [showOverview, setShowOverview] = useState(false);
   const [inspecting, setInspecting] = useState<{
@@ -1228,6 +1236,19 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   useEffect(() => {
     return watchRows(`project:${projectId}`, [
       { table: "modules", filter: `project_id=eq.${projectId}`, onChange: loadModules },
+      // A section shared with them, or hidden from them, the moment the
+      // owner flips it (0145): a member reads only their own of these.
+      { table: "module_shares", onChange: loadModules },
+      { table: "module_hides", onChange: loadModules },
+      // Their seat: the store let in or taken away is read again.
+      {
+        table: "project_members",
+        filter: `project_id=eq.${projectId}`,
+        onChange: () => {
+          loadModules();
+          setSeatTick((t) => t + 1);
+        },
+      },
       // Rows live under the project, so this catches a seed into any
       // section; the reload only touches the one being looked at.
       {
@@ -1445,7 +1466,20 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             : null
         )
       );
-  }, [projectId]);
+    // seatTick: read again when their seat changes (the store let in or taken away, 0145).
+  }, [projectId, seatTick]);
+
+  // Their seat's switch, read again whenever the seat changes (seatTick).
+  useEffect(() => {
+    if (!userId) return;
+    supabase
+      .from("project_members")
+      .select("can_build")
+      .eq("project_id", projectId)
+      .eq("user_id", userId)
+      .maybeSingle()
+      .then(({ data }) => setMayBuild(data?.can_build === true));
+  }, [projectId, userId, seatTick]);
 
   // A member opening the app is what the owner's "last active" reads (0140);
   // the database writes it at most once in five minutes.
@@ -2461,7 +2495,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     keep("abo_nav_rail", rail ? null : "1");
   };
   // Ask Luke floats over the page wherever Luke's panel is not on screen.
-  const askLuke = isOwner && !chatOpen && focus !== "luke";
+  const askLuke = canBuild && !chatOpen && focus !== "luke";
 
   /** A top section in the icon rail: its icon, named by its label. Lit while it or one inside it is open. */
   const railRow = (m: ModuleRow) => (
@@ -2494,7 +2528,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     return (
       <div key={m.id}>
         <div
-          draggable
+          draggable={mine(m)}
           onDragStart={() => setDragId(m.id)}
           onDragEnd={() => {
             setDragId(null);
@@ -2554,7 +2588,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             <Icon name={m.icon} />
             <span className="truncate">{m.nav_label}</span>
           </a>
-          {isOwner && (
+          {mine(m) && (
             <>
               <button
                 onClick={() => setNewSectionParent(m.id)}
@@ -2580,7 +2614,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           kids.map((k) => (
             <div
               key={k.id}
-              draggable
+              draggable={mine(k)}
               onDragStart={(e) => {
                 e.stopPropagation();
                 setDragId(k.id);
@@ -2628,14 +2662,16 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 <Icon name={k.icon} />
                 <span className="truncate">{k.nav_label}</span>
               </a>
-              <button
-                onClick={() => setModuleSettingsFor(k)}
-                aria-label={`Settings for ${k.nav_label}`}
-                title="Rename, move, delete"
-                className="rounded px-1.5 py-1 text-frame-fg-muted opacity-0 transition-opacity group-hover:opacity-100 hover:bg-frame-line hover:text-white focus:opacity-100"
-              >
-                <Ellipsis aria-hidden size={16} strokeWidth={1.75} />
-              </button>
+              {mine(k) && (
+                <button
+                  onClick={() => setModuleSettingsFor(k)}
+                  aria-label={`Settings for ${k.nav_label}`}
+                  title="Rename, move, delete"
+                  className="rounded px-1.5 py-1 text-frame-fg-muted opacity-0 transition-opacity group-hover:opacity-100 hover:bg-frame-line hover:text-white focus:opacity-100"
+                >
+                  <Ellipsis aria-hidden size={16} strokeWidth={1.75} />
+                </button>
+              )}
             </div>
           ))}
       </div>
@@ -2754,12 +2790,12 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                       {railBuilding(true)}
                     </>
                   )}
-                  {!loading && (ownTop.length > 0 || pendingSections.some((p) => !p.store) || isOwner) && (
+                  {!loading && (ownTop.length > 0 || pendingSections.some((p) => !p.store) || canBuild) && (
                     <hr className="my-1.5 w-8 border-frame-line" />
                   )}
                   {ownTop.map(railRow)}
                   {railBuilding(false)}
-                  {!loading && isOwner && (
+                  {!loading && canBuild && (
                     <button
                       onClick={() => setNewSectionParent("")}
                       aria-label="New section"
@@ -2836,9 +2872,17 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
 
                 {!loading && (!navHits || ownTop.some(navVisible)) && (
                   <NavHeading
-                    text={!isOwner ? "Shared with you" : store || storeTop.length > 0 ? "Your sections" : "Sections"}
+                    text={
+                      !canBuild
+                        ? "Shared with you"
+                        : !isOwner
+                          ? "Sections"
+                          : store || storeTop.length > 0
+                            ? "Your sections"
+                            : "Sections"
+                    }
                     action={
-                      isOwner ? (
+                      canBuild ? (
                         <button
                           onClick={() => setNewSectionParent("")}
                           aria-label="New section"
@@ -2855,9 +2899,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 {!navHits && buildingRows(false)}
                 {!loading && ownTop.length === 0 && !navHits && !pendingSections.some((p) => !p.store) && (
                   <div className="px-2 py-1 text-[13px] leading-relaxed text-frame-fg-muted">
-                    {!isOwner
+                    {!canBuild
                       ? "Nothing shared with you here yet."
-                      : store || storeTop.length > 0
+                      : !isOwner || store || storeTop.length > 0
                         ? "Nothing of your own yet. Ask Luke for the tool you wish you had."
                         : "No sections yet — describe your app to Luke to build them."}
                   </div>
@@ -2961,7 +3005,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                   </button>
                 </span>
                 {/* A section inside another is shared as its parent is (0140). */}
-                {selectedModule && isOwner && !selectedModule.parent_id && (
+                {selectedModule && mine(selectedModule) && !selectedModule.parent_id && (
                   <button
                     onClick={() => setShareOpen(true)}
                     // On a phone only the icon shows; this is its name.
@@ -2981,13 +3025,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     <span className="hidden sm:inline">Share</span>
                   </button>
                 )}
-                {isOwner && (
+                {(isOwner || mine(selectedModule)) && (
                   <button onClick={() => setRulesOpen(true)} title="Rules" className={button("secondary")}>
                     <Zap aria-hidden size={15} strokeWidth={1.75} />
                     <span className="hidden sm:inline">Rules</span>
                   </button>
                 )}
-                {selectedModule && isOwner && (
+                {selectedModule && mine(selectedModule) && (
                   <button onClick={() => setHistoryOpen(true)} title="Version history" className={button("secondary")}>
                     <History aria-hidden size={15} strokeWidth={1.75} />
                     <span className="hidden sm:inline">History</span>
@@ -3022,7 +3066,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     onInspect={(table, row) => setInspecting({ table, row })}
                   />
                 </FormatProvider>
-              ) : isEmpty && project && !isOwner ? (
+              ) : isEmpty && project && !canBuild ? (
                 // A member cannot build, so "Start building" would be a door that does not open.
                 <div className="flex h-full flex-col items-center justify-center text-center">
                   <div className="text-xl font-semibold tracking-tight text-fg">Nothing shared with you yet</div>
@@ -3129,7 +3173,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     {selectedModule?.nav_label ?? "No section selected"}
                   </div>
                   <p className="mt-2 text-sm text-fg-muted">
-                    {isOwner
+                    {canBuild
                       ? "Pick a section from the menu, or ask Luke to build one."
                       : "Pick a section from the menu."}
                   </p>
@@ -3155,7 +3199,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           </main>
 
           {/* ── Assistant + history ── */}
-          {isOwner && (
+          {canBuild && (
             <FormatProvider locale={own.locale} currency={sectionMoneyCurrency} approxRate={sectionApprox}>
               <ChatPanel
                 projectId={projectId}
@@ -3168,7 +3212,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 onModel={chooseModel}
                 inr={inr}
                 autoBuild={project?.auto_build === true}
-                onUndo={isOwner ? undoBuild : undefined}
+                onUndo={canBuild ? undoBuild : undefined}
                 onFix={fixError}
                 width={chat.width}
                 dragging={chat.dragging}
@@ -3233,7 +3277,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           {newSectionParent !== undefined && (
             <NewSection
               projectId={projectId}
-              modules={modules}
+              // Somewhere to put it: only what is theirs to build inside (0146).
+              modules={modules.filter(mine)}
               initialParentId={newSectionParent || null}
               onCreated={(m) => {
                 setModules((prev) => [...prev, m]);
@@ -3245,7 +3290,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           {moduleSettingsFor && (
             <ModuleSettings
               module={moduleSettingsFor}
-              modules={modules}
+              modules={modules.filter(mine)}
               projectId={projectId}
               onSaved={(updated) => {
                 setModules((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
@@ -3258,9 +3303,10 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               onClose={() => setModuleSettingsFor(null)}
             />
           )}
-          {shareOpen && selectedModule && isOwner && (
+          {shareOpen && selectedModule && mine(selectedModule) && (
             <ShareSection
               projectId={projectId}
+              isOwner={isOwner}
               section={selectedModule}
               onClose={() => setShareOpen(false)}
               onChanged={loadModules}

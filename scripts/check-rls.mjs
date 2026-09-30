@@ -212,6 +212,235 @@ try {
   });
   check("nor count the rows of one not shared with them", !stats.ok);
 
+  console.log("\nhidden from one person wins (0145)");
+  check(
+    "a section says who built it",
+    (await O(`modules?id=eq.${secret.id}&select=created_by`)).json[0]?.created_by === owner.id
+  );
+  const forged = (
+    await O("modules", {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: proj.id,
+        name: `forged_${stamp}`,
+        nav_label: "Forged",
+        route: `/f_${stamp}`,
+        created_by: staff.id,
+      }),
+    })
+  ).json[0];
+  check("and what was sent as the builder is not taken", forged?.created_by === owner.id);
+  check("so the one it was sent for does not see it", (await S(`modules?id=eq.${forged?.id}`)).json.length === 0);
+  const hide = () =>
+    O("module_hides", { method: "POST", body: JSON.stringify({ module_id: mod.id, member_id: seat.id }) });
+  check("the owner can hide a section shared with them by name", (await hide()).ok);
+  check("which is then gone for them", (await S(`modules?id=eq.${mod.id}`)).json.length === 0);
+  check("and the section inside it with it", (await S(`modules?id=eq.${child.id}`)).json.length === 0);
+  await share({ shared_with_team: true });
+  check("shared with the whole team, still hidden from them", (await S(`modules?id=eq.${mod.id}`)).json.length === 0);
+  check(
+    "they read their own hide, so their screen hears it",
+    (await S(`module_hides?module_id=eq.${mod.id}`)).json.length === 1
+  );
+  check("and their own share", (await S(`module_shares?module_id=eq.${mod.id}`)).json.length === 1);
+  await S(`module_hides?module_id=eq.${mod.id}`, { method: "DELETE" });
+  check(
+    "they cannot take the hide away themselves",
+    (await O(`module_hides?module_id=eq.${mod.id}`)).json.length === 1
+  );
+  check(
+    "nor hide something from someone else",
+    !(await S("module_hides", { method: "POST", body: JSON.stringify({ module_id: secret.id, member_id: seat.id }) }))
+      .ok
+  );
+  check("an outsider reads no one's hides", (await X(`module_hides?module_id=eq.${mod.id}`)).json.length === 0);
+  await O(`module_hides?module_id=eq.${mod.id}&member_id=eq.${seat.id}`, { method: "DELETE" });
+  check("the owner takes it away, and they see it again", (await S(`modules?id=eq.${mod.id}`)).json.length === 1);
+  await share({ shared_with_team: false });
+
+  console.log("\na team that builds (0146)");
+  const call = (jwt, fn, body) =>
+    fetch(`${URL_}/rest/v1/rpc/${fn}`, {
+      method: "POST",
+      headers: { apikey: ANON, Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => r.json());
+  const build = (as, op, payload, request = null) =>
+    fetch(`${URL_}/rest/v1/rpc/abo_build`, {
+      method: "POST",
+      headers: { apikey: ANON, Authorization: `Bearer ${as.jwt}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ p_project: proj.id, p_request: request, p_op: op, p_payload: payload }),
+    }).then(async (r) => ({ ok: r.ok, json: await r.json().catch(() => null) }));
+  const newSection = (name) => ({ name, nav_label: name, route: `/${name}` });
+  check("someone not let build cannot build", !(await build(staff, "module_insert", newSection(`no_${stamp}`))).ok);
+  check(
+    "nor switch it on for themselves",
+    (await S(`project_members?id=eq.${seat.id}`, { method: "PATCH", body: JSON.stringify({ can_build: true }) })).json
+      ?.length === 0
+  );
+  check(
+    "the owner switches it on",
+    (await O(`project_members?id=eq.${seat.id}`, { method: "PATCH", body: JSON.stringify({ can_build: true }) })).json
+      ?.length === 1
+  );
+  const built = await build(staff, "module_insert", newSection(`theirs_${stamp}`));
+  const theirs = built.json?.id;
+  check("then they build a section", built.ok && !!theirs);
+  check(
+    "which says they built it",
+    (await O(`modules?id=eq.${theirs}&select=created_by`)).json[0]?.created_by === staff.id
+  );
+  check("and they see it without it being shared", (await S(`modules?id=eq.${theirs}`)).json.length === 1);
+  check(
+    "they design it",
+    (await build(staff, "schema_insert", { module_id: theirs, schema_json: { columns: [] }, version: 1 })).ok
+  );
+  check(
+    "but not a section the owner built",
+    !(await build(staff, "schema_insert", { module_id: mod.id, schema_json: { columns: [] }, version: 9 })).ok
+  );
+  check(
+    "nor put one of theirs inside it",
+    !(await build(staff, "module_insert", { ...newSection(`under_${stamp}`), parent_id: secret.id })).ok
+  );
+  check(
+    "they add a rule to what they built",
+    (
+      await build(staff, "automation_insert", {
+        module_id: theirs,
+        name: "Flag it",
+        definition: { trigger: { type: "record_created" }, actions: [] },
+      })
+    ).ok
+  );
+  check(
+    "not one over the whole app",
+    !(
+      await build(staff, "automation_insert", {
+        module_id: null,
+        name: "Everywhere",
+        definition: { trigger: { type: "record_created" }, actions: [] },
+      })
+    ).ok
+  );
+  check("and read the rules they made", (await S(`automations?module_id=eq.${theirs}`)).json.length === 1);
+  const direct = (
+    await S("modules", {
+      method: "POST",
+      body: JSON.stringify({ project_id: proj.id, name: `direct_${stamp}`, nav_label: "Direct", route: `/d_${stamp}` }),
+    })
+  ).json?.[0];
+  check("the New section button works for them too", direct?.created_by === staff.id);
+  check(
+    "they share what they built with the team",
+    (await S(`modules?id=eq.${theirs}`, { method: "PATCH", body: JSON.stringify({ shared_with_team: true }) })).json
+      ?.length === 1
+  );
+  check(
+    "but cannot rename the owner's",
+    (await S(`modules?id=eq.${mod.id}`, { method: "PATCH", body: JSON.stringify({ nav_label: "Mine now" }) })).json
+      ?.length === 0
+  );
+  const other = (await O("project_members", { method: "POST", body: JSON.stringify({ project_id: proj.id }) })).json[0];
+  const mates = await call(staff.jwt, "abo_teammates", { p_project: proj.id });
+  check(
+    "they see who is on the team, without anyone's link",
+    Array.isArray(mates) && mates.length === 2 && mates.every((m) => !("token" in m))
+  );
+  check(
+    "an outsider sees nobody",
+    ((await call(outsider.jwt, "abo_teammates", { p_project: proj.id })) ?? []).length === 0
+  );
+  check(
+    "they share what they built with one person",
+    (await S("module_shares", { method: "POST", body: JSON.stringify({ module_id: theirs, member_id: other.id }) })).ok
+  );
+  check(
+    "not the owner's",
+    !(await S("module_shares", { method: "POST", body: JSON.stringify({ module_id: secret.id, member_id: other.id }) }))
+      .ok
+  );
+  check(
+    "they switch one person off what they built",
+    (await S("module_hides", { method: "POST", body: JSON.stringify({ module_id: theirs, member_id: other.id }) })).ok
+  );
+  check(
+    "but not themselves",
+    !(await S("module_hides", { method: "POST", body: JSON.stringify({ module_id: direct.id, member_id: seat.id }) }))
+      .ok
+  );
+  await O("module_hides", { method: "POST", body: JSON.stringify({ module_id: direct.id, member_id: seat.id }) });
+  check("the owner hides what they built from them", (await S(`modules?id=eq.${direct.id}`)).json.length === 0);
+  check(
+    "and then it is not theirs to change",
+    !(await build(staff, "module_update", { module_id: direct.id, nav_label: "Back" })).ok
+  );
+  await S(`module_hides?module_id=eq.${direct.id}`, { method: "DELETE" });
+  check(
+    "nor theirs to take the hide away",
+    (await O(`module_hides?module_id=eq.${direct.id}&member_id=eq.${seat.id}`)).json.length === 1
+  );
+  check("the owner sees everything they built", (await O(`modules?created_by=eq.${staff.id}`)).json.length === 2);
+
+  const ownerThread = (
+    await O("conversations", { method: "POST", body: JSON.stringify({ project_id: proj.id, title: "Margins" }) })
+  ).json[0];
+  const staffThread = (
+    await S("conversations", { method: "POST", body: JSON.stringify({ project_id: proj.id, title: "Packing" }) })
+  ).json?.[0];
+  check("they talk to Luke in a thread of their own", staffThread?.created_by === staff.id);
+  check(
+    "they write in it",
+    (
+      await S("messages", {
+        method: "POST",
+        body: JSON.stringify({ conversation_id: staffThread?.id, role: "user", content: "hi" }),
+      })
+    ).ok
+  );
+  check("the owner reads it", (await O(`conversations?id=eq.${staffThread?.id}`)).json.length === 1);
+  check("they cannot read the owner's", (await S(`conversations?id=eq.${ownerThread.id}`)).json.length === 0);
+  check(
+    "nor write in it",
+    !(
+      await S("messages", {
+        method: "POST",
+        body: JSON.stringify({ conversation_id: ownerThread.id, role: "user", content: "hi" }),
+      })
+    ).ok
+  );
+
+  const turnsOf = async (as, id) =>
+    (await api(as.jwt)(`account_settings?user_id=eq.${id}&select=turns_used`)).json?.[0]?.turns_used ?? 0;
+  const [ownerBefore, staffBefore] = [await turnsOf(owner, owner.id), await turnsOf(staff, staff.id)];
+  const spent = await call(staff.jwt, "abo_spend_turn", { p_project: proj.id });
+  check(
+    "a design they ask for is paid from the owner's",
+    spent?.ok === true && (await turnsOf(owner, owner.id)) === ownerBefore + 1
+  );
+  check("not their own", (await turnsOf(staff, staff.id)) === staffBefore);
+  await call(staff.jwt, "abo_refund_turn", { p_spend: spent?.spend_id });
+  check("and one that made nothing is given back to the owner", (await turnsOf(owner, owner.id)) === ownerBefore);
+  check(
+    "an outsider cannot spend the owner's",
+    (await call(outsider.jwt, "abo_spend_turn", { p_project: proj.id }))?.ok !== true &&
+      (await turnsOf(owner, owner.id)) === ownerBefore
+  );
+
+  await O(`project_members?id=eq.${seat.id}`, { method: "PATCH", body: JSON.stringify({ can_build: false }) });
+  check("switched off, they still see what they built", (await S(`modules?id=eq.${theirs}`)).json.length === 1);
+  check(
+    "but no longer change it",
+    !(await build(staff, "module_update", { module_id: theirs, nav_label: "Again" })).ok
+  );
+  check("nor read their threads", (await S(`conversations?id=eq.${staffThread?.id}`)).json.length === 0);
+  check(
+    "nor spend the owner's",
+    (await call(staff.jwt, "abo_spend_turn", { p_project: proj.id }))?.ok !== true &&
+      (await turnsOf(owner, owner.id)) === ownerBefore
+  );
+  check("an outsider cannot build here at all", !(await build(outsider, "module_insert", newSection(`x_${stamp}`))).ok);
+
   console.log("\nwhat Luke knows is the owner's (0140)");
   await O("merchant_notes", { method: "POST", body: JSON.stringify({ project_id: proj.id, note: "Margins are 40%" }) });
   await O("turn_traces", {

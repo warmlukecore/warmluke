@@ -85,6 +85,7 @@ async function turnLeg(job: DurableTurn, state: TurnState | null): Promise<Leg> 
     moduleId: job.moduleId,
     conversationId: job.conversationId,
     before: new Date(job.askedAt).toISOString(),
+    userId: job.userId,
   });
   // One writer for the leg: writes queue in order, and two never race for the lock.
   const writer = getWritable<unknown>().getWriter();
@@ -190,6 +191,7 @@ async function finishLeg(
       moduleId: job.moduleId,
       conversationId: job.conversationId,
       before: new Date(job.askedAt).toISOString(),
+      userId: job.userId,
     });
     // What follows the answer runs here and is waited for: a step has no after().
     const later: Array<() => Promise<unknown>> = [];

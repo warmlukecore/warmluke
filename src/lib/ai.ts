@@ -668,7 +668,7 @@ export function buildSystemPrompt(
   // Rendered as a tree so the assistant sees which sections sit inside
   // which, and can put a new one in the right place.
   const line = (m: ModuleRow, indent: string) =>
-    `${indent}- id: ${m.id} | name: ${m.name} | label: "${m.nav_label}" | icon: ${m.icon} | sort_order: ${m.sort_order}`;
+    `${indent}- id: ${m.id} | name: ${m.name} | label: "${m.nav_label}" | icon: ${m.icon} | sort_order: ${m.sort_order}${m.read_only ? " | READ ONLY" : ""}`;
   const tops = modules.filter((m) => !m.parent_id);
   const list =
     modules.length > 0
@@ -684,7 +684,11 @@ export function buildSystemPrompt(
     `PROJECT: "${projectName}"
 LOCALE: ${locale} · CURRENCY: ${currency} — demo amounts must be realistic for this currency and market, and labels should read naturally to someone there.${merchant ? `\nABOUT THE MERCHANT: ${merchant}` : ""}
 CURRENT SECTIONS (use these ids for targetModuleId; sort_order = sidebar position; indented ones sit inside the section above them):
-${list}${storeBlock(store, currency)}`,
+${list}${
+      modules.some((m) => m.read_only)
+        ? "\nThe person asking is on the owner's team and changes only the sections they built. READ ONLY ones are someone else's: read them, answer from them, but a change to one is a new section of their own instead; say so in a sentence."
+        : ""
+    }${storeBlock(store, currency)}`,
   ];
 }
 
@@ -1741,6 +1745,17 @@ export function validatePlan(
 
   if (typeof plan.explanation !== "string" || plan.explanation.trim().length < 5) {
     err(errors, "Missing a readable explanation.");
+  }
+
+  // Someone the owner lets build changes only what they built (0146).
+  const target = modules.find(
+    (m) => m.id === (plan.changeType === "NEW_MODULE" ? plan.newModule?.parent_id : plan.targetModuleId)
+  );
+  if (target?.read_only) {
+    err(
+      errors,
+      `"${target.nav_label}" is READ ONLY for the person asking: it is someone else's on their team. Build them a new section of their own instead, and say why in a sentence.`
+    );
   }
 
   const columns = plan.newSchema?.columns ?? null;

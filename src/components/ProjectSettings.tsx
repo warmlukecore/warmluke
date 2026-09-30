@@ -24,6 +24,8 @@ import ConnectShopify from "@/components/ConnectShopify";
 import { storeStanding } from "@/lib/store-standing";
 import { ago } from "@/lib/when";
 import { MEMBER_ROLE_OPTIONS, labelOf } from "@/lib/onboarding";
+import { watchRows } from "@/lib/live";
+import { sees, setSees, type Access } from "@/lib/sharing";
 
 type Tab = "general" | "store" | "ai" | "people";
 
@@ -53,6 +55,7 @@ type ShopRow = {
 /** A seat; the name and role are what the person who took it said when they joined (0118). */
 type MemberRow = {
   id: string;
+  user_id: string | null;
   email: string | null;
   token: string;
   joined_at: string | null;
@@ -62,8 +65,11 @@ type MemberRow = {
   can_see_store: boolean;
   last_seen_at: string | null;
   expires_at: string | null;
+  /** 0146: may build with Luke and their own AI; what they build is theirs. */
+  can_build: boolean;
 };
-const SEAT = "id, email, token, joined_at, full_name, team_role, can_see_store, last_seen_at, expires_at";
+const SEAT =
+  "id, user_id, email, token, joined_at, full_name, team_role, can_see_store, last_seen_at, expires_at, can_build";
 /** How long a link lasts, as the database's own default for it (0140). */
 const LINK_DAYS = 7;
 
@@ -117,9 +123,15 @@ export default function ProjectSettings({
   const [tab, setTab] = useState<Tab>(initialTab);
   // The admin at the top of the team: whoever has this open, since only the owner can.
   const [me, setMe] = useState<{ name: string | null; email: string | null } | null>(null);
-  // What each seat can open (0140): the top-level sections and who each is shared with.
-  const [sections, setSections] = useState<Array<{ id: string; team: boolean }>>([]);
+  // What each seat can open (0140, 0145): the top-level sections, who each
+  // is shared with by name, who each is hidden from, and who built it.
+  const [sections, setSections] = useState<
+    Array<{ id: string; label: string; team: boolean; createdBy: string | null }>
+  >([]);
   const [shares, setShares] = useState<Array<{ module_id: string; member_id: string }>>([]);
+  const [hides, setHides] = useState<Array<{ module_id: string; member_id: string }>>([]);
+  // The one person whose sections are open, by name, with their switches.
+  const [openSeat, setOpenSeat] = useState<string | null>(null);
   const [shop, setShop] = useState<ShopRow | null | undefined>(undefined);
   const [shopError, setShopError] = useState<string | null>(null);
   const [reconnecting, setReconnecting] = useState(false);
@@ -167,11 +179,21 @@ export default function ProjectSettings({
   }
 
   async function loadSeats() {
-    const [{ data, error: e }, mods, given] = await Promise.all([
+    const [{ data, error: e }, mods, given, hidden] = await Promise.all([
       supabase.from("project_members").select(SEAT).eq("project_id", project.id).order("created_at"),
-      supabase.from("modules").select("id, shared_with_team").eq("project_id", project.id).is("parent_id", null),
+      supabase
+        .from("modules")
+        .select("*")
+        .eq("project_id", project.id)
+        .is("parent_id", null)
+        .order("sort_order", { ascending: true }),
       supabase
         .from("module_shares")
+        .select("module_id, member_id, modules!inner(project_id)")
+        .eq("modules.project_id", project.id),
+      // Before 0145 there is no such table: nobody is hidden from anything.
+      supabase
+        .from("module_hides")
         .select("module_id, member_id, modules!inner(project_id)")
         .eq("modules.project_id", project.id),
     ]);
@@ -182,8 +204,20 @@ export default function ProjectSettings({
       return;
     }
     setSeats((data as MemberRow[] | null) ?? []);
-    setSections((mods.data ?? []).map((m) => ({ id: m.id as string, team: m.shared_with_team !== false })));
+    setSections(
+      (mods.data ?? []).map((m) => ({
+        id: m.id as string,
+        label: (m.nav_label as string) ?? "A section",
+        team: m.shared_with_team !== false,
+        createdBy: (m.created_by as string | null | undefined) ?? null,
+      }))
+    );
     setShares((given.data ?? []).map((s) => ({ module_id: s.module_id as string, member_id: s.member_id as string })));
+    setHides(
+      hidden.error
+        ? []
+        : (hidden.data ?? []).map((h) => ({ module_id: h.module_id as string, member_id: h.member_id as string }))
+    );
   }
   useEffect(() => {
     loadSeats();
@@ -200,14 +234,43 @@ export default function ProjectSettings({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
 
-  /** How many of the app's sections a seat opens: those shared with the team, and those shared with them. */
-  const seesOf = (seat: MemberRow) =>
-    sections.filter((m) => m.team || shares.some((s) => s.module_id === m.id && s.member_id === seat.id)).length;
+  // Heard as it happens (0145): a seat taken, a name given, a switch
+  // flipped here or in another tab, a section built.
+  useEffect(
+    () =>
+      watchRows(`people-${project.id}`, [
+        { table: "project_members", filter: `project_id=eq.${project.id}`, onChange: () => void loadSeats() },
+        { table: "modules", filter: `project_id=eq.${project.id}`, onChange: () => void loadSeats() },
+        { table: "module_shares", onChange: () => void loadSeats() },
+        { table: "module_hides", onChange: () => void loadSeats() },
+      ]),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [project.id]
+  );
 
-  async function setSeatStore(seat: MemberRow, on: boolean) {
+  /** What decides whether this seat sees this section, as the database decides it (lib/sharing). */
+  const accessOf = (seat: MemberRow, m: (typeof sections)[number]): Access => ({
+    team: m.team,
+    shared: shares.some((s) => s.module_id === m.id && s.member_id === seat.id),
+    hidden: hides.some((h) => h.module_id === m.id && h.member_id === seat.id),
+    builtByThem: !!seat.user_id && m.createdBy === seat.user_id,
+  });
+  const seesOf = (seat: MemberRow) => sections.filter((m) => sees(accessOf(seat, m))).length;
+
+  async function setSectionFor(seat: MemberRow, m: (typeof sections)[number], on: boolean) {
     setPeopleError(null);
-    setSeats((prev) => prev?.map((s) => (s.id === seat.id ? { ...s, can_see_store: on } : s)) ?? prev);
-    const { error: e } = await supabase.from("project_members").update({ can_see_store: on }).eq("id", seat.id);
+    const { error: e } = await setSees(supabase, m.id, seat.id, accessOf(seat, m), on);
+    if (e) setPeopleError("That didn’t save. Try again.");
+    loadSeats();
+  }
+
+  async function setSeatSwitch(seat: MemberRow, key: "can_see_store" | "can_build", on: boolean) {
+    setPeopleError(null);
+    setSeats((prev) => prev?.map((s) => (s.id === seat.id ? { ...s, [key]: on } : s)) ?? prev);
+    const { error: e } = await supabase
+      .from("project_members")
+      .update({ [key]: on })
+      .eq("id", seat.id);
     if (e) {
       setPeopleError("That didn’t save. Try again.");
       loadSeats();
@@ -656,8 +719,9 @@ export default function ProjectSettings({
           <div className="flex flex-wrap items-start justify-between gap-3">
             <p className="max-w-sm text-xs leading-relaxed text-fg-muted">
               Send a link and whoever opens it joins your team. They see the sections you share with them (Share, at the
-              top of a section), and your store only if you switch it on here. They can add and update rows, not change
-              how the app is built, read your conversations with Luke, or delete anything.
+              top of a section), and your store only if you switch it on here. They add and update rows. Switch on
+              Builds and they can also make sections of their own with Luke and their own AI, paid from your included
+              designs. You see and can hide everything they make; they never see your conversations with Luke.
             </p>
             <button onClick={addSeat} disabled={adding} className={button("primary", "sm")}>
               <UserPlus aria-hidden size={14} strokeWidth={2} />
@@ -713,7 +777,8 @@ export default function ProjectSettings({
                       <Link2 size={14} strokeWidth={1.75} />
                     </span>
                   )}
-                  <div className="min-w-0 flex-1">
+                  {/* Room for the name first: on a phone the switches go under it rather than cut it short. */}
+                  <div className="min-w-40 flex-1">
                     <div className="truncate text-[13px] text-fg">
                       {seat.full_name ?? seat.email ?? "Link not opened yet"}
                       {seat.team_role && (
@@ -722,8 +787,14 @@ export default function ProjectSettings({
                     </div>
                     {/* Where they stand first: a long address cut it off when it came before. */}
                     <div className="text-[11px] leading-snug text-fg-muted">
-                      {seatStanding(seat, Date.now())} · sees {seesOf(seat)} of {sections.length}{" "}
-                      {sections.length === 1 ? "section" : "sections"}
+                      {seatStanding(seat, Date.now())} ·{" "}
+                      <button
+                        onClick={() => setOpenSeat(openSeat === seat.id ? null : seat.id)}
+                        aria-expanded={openSeat === seat.id}
+                        className="font-medium text-link hover:underline"
+                      >
+                        sees {seesOf(seat)} of {sections.length} {sections.length === 1 ? "section" : "sections"}
+                      </button>
                     </div>
                     {seat.full_name && seat.email && (
                       <div className="truncate text-[11px] text-fg-faint">{seat.email}</div>
@@ -733,8 +804,16 @@ export default function ProjectSettings({
                     Store
                     <Switch
                       checked={seat.can_see_store}
-                      onChange={(on) => setSeatStore(seat, on)}
+                      onChange={(on) => setSeatSwitch(seat, "can_see_store", on)}
                       label={`Let ${seat.full_name ?? seat.email ?? "this person"} see the store's orders, customers and products`}
+                    />
+                  </label>
+                  <label className="flex shrink-0 items-center gap-2 text-[11px] text-fg-muted">
+                    Builds
+                    <Switch
+                      checked={seat.can_build === true}
+                      onChange={(on) => setSeatSwitch(seat, "can_build", on)}
+                      label={`Let ${seat.full_name ?? seat.email ?? "this person"} build their own sections with Luke and their own AI`}
                     />
                   </label>
                   {removing === seat.id ? (
@@ -777,6 +856,41 @@ export default function ProjectSettings({
                         <Trash2 aria-hidden size={15} strokeWidth={1.75} />
                       </button>
                     </div>
+                  )}
+                  {openSeat === seat.id && (
+                    // Every section by name, and a switch: what this one person opens.
+                    <ul className="basis-full divide-y divide-line rounded-control border border-line bg-surface-subdued">
+                      {sections.length === 0 && (
+                        <li className="px-3 py-2 text-xs text-fg-muted">No sections in this app yet.</li>
+                      )}
+                      {sections.map((m) => {
+                        const a = accessOf(seat, m);
+                        const who = seat.full_name ?? seat.email ?? "this person";
+                        return (
+                          <li key={m.id} className="flex items-center gap-3 px-3 py-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-[13px] text-fg">{m.label}</div>
+                              <div className="text-[11px] text-fg-faint">
+                                {a.hidden
+                                  ? "Hidden from them"
+                                  : a.builtByThem
+                                    ? "They built it"
+                                    : a.team
+                                      ? "Everyone on the team"
+                                      : a.shared
+                                        ? "Shared with them"
+                                        : "Only you"}
+                              </div>
+                            </div>
+                            <Switch
+                              checked={sees(a)}
+                              onChange={(on) => setSectionFor(seat, m, on)}
+                              label={`${m.label} for ${who}`}
+                            />
+                          </li>
+                        );
+                      })}
+                    </ul>
                   )}
                 </li>
               ))}

@@ -88,12 +88,15 @@ export async function turnContext(
     moduleId,
     conversationId,
     before,
+    userId,
   }: {
     projectId: string;
     moduleId: string | null;
     conversationId: string | null;
     /** Only what was said before this (the question's own time): the same thread whenever it is read. */
     before?: string;
+    /** Who asked: someone the owner lets build changes only what they built (0146). */
+    userId?: string;
   }
 ): Promise<TurnContext> {
   const convId = conversationId;
@@ -105,6 +108,10 @@ export async function turnContext(
   if (modErr) throw new Error(modErr.message);
 
   const moduleList = (modules ?? []) as ModuleRow[];
+  if (userId && proj.owner_id !== userId) {
+    const builtBy = new Map(moduleList.map((m) => [m.id, m.created_by]));
+    for (const m of moduleList) m.read_only = builtBy.get(m.parent_id ?? m.id) !== userId;
+  }
 
   let currentSchema: UiSchema | null = null;
   let currentFeatures: FeatureSchema | null = null;
@@ -303,7 +310,9 @@ export async function finishTurn(
   // What this exchange said about the business, written down for
   // next time (0131) — after the answer is out, never in its way.
   const said = turn.reply;
-  later(() => learn(client, { projectId: ctx.proj.id, message: job.message.trim(), reply: said, known: turn.known }));
+  // The notes are the owner's (0140): a builder's turn would pay for a call whose notes could not be kept.
+  if (ctx.proj.owner_id === job.userId)
+    later(() => learn(client, { projectId: ctx.proj.id, message: job.message.trim(), reply: said, known: turn.known }));
   later(() =>
     traceTurn(client, {
       projectId: ctx.proj.id,

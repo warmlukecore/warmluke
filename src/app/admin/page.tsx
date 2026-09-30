@@ -14,7 +14,7 @@
 // is debugging in the wrong direction.
 // ─────────────────────────────────────────────────────────────
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
 import { useUser } from "@/lib/auth";
@@ -96,7 +96,8 @@ export default function Admin() {
   const [typed, setTyped] = useState("");
   const [eraseError, setEraseError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [now] = useState(() => Date.now());
+  // Moved on each time the list is read again, so "2 min ago" stays true.
+  const [now, setNow] = useState(() => Date.now());
   // The account whose whole story is open, if any.
   const [open, setOpen] = useState<Account | null>(null);
   /** The account whose Luke models and costs are being set. */
@@ -112,6 +113,7 @@ export default function Admin() {
     if (!loading && !user) router.replace("/login?next=/admin");
   }, [loading, user, router]);
 
+  const rowsRef = useRef<Account[] | null>(null);
   const load = useCallback(async () => {
     const { data, error: err } = await supabase.rpc("abo_admin_accounts");
     if (err) {
@@ -121,12 +123,36 @@ export default function Admin() {
     }
     setError(null);
     const accounts = (data ?? []) as Account[];
+    // A box somebody has typed in and not saved keeps what they typed:
+    // this runs again every few seconds, and must not take it from them.
+    const before = new Map((rowsRef.current ?? []).map((r) => [r.user_id, String(r.free_turns)]));
     setRows(accounts);
-    setDrafts(Object.fromEntries(accounts.map((row) => [row.user_id, String(row.free_turns)])));
+    setNow(Date.now());
+    rowsRef.current = accounts;
+    setDrafts((prev) =>
+      Object.fromEntries(
+        accounts.map((row) => {
+          const draft = prev[row.user_id];
+          const untouched = draft === undefined || draft === before.get(row.user_id);
+          return [row.user_id, untouched ? String(row.free_turns) : draft];
+        })
+      )
+    );
   }, []);
 
   useEffect(() => {
     if (user) load();
+  }, [user, load]);
+
+  // As it happens, near enough: accounts are read through administrator
+  // functions, which do not stream, so the screen asks again every few
+  // seconds while it is on screen (someone joins, opens the app, signs up).
+  useEffect(() => {
+    if (!user) return;
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") void load();
+    }, 8000);
+    return () => clearInterval(t);
   }, [user, load]);
 
   // One switch at a time. They are independent — an account can have
