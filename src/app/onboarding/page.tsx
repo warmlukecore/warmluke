@@ -20,7 +20,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, Check, Copy, LoaderCircle, LogOut, Plug } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronRight, Copy, LoaderCircle, LogOut, Plug } from "lucide-react";
 import { apiFetch, signOut, takePendingPrompt, useUser } from "@/lib/auth";
 import { supabase } from "@/lib/supabase-client";
 import ConnectShopify from "@/components/ConnectShopify";
@@ -1100,6 +1100,52 @@ function Pick({
 // says plainly that it turns green when they allow it. It used to wait
 // under a spinner, which read as Warmluke doing the connecting.
 
+/**
+ * A step as the list writes it, "Apps → Advanced settings: turn on
+ * Developer mode.", drawn the way it is followed: the menu path in bold
+ * with a chevron between names, and what to do there on the line below.
+ */
+function StepText({ text }: { text: string }) {
+  const parts = text.split(" → ");
+  if (parts.length === 1) return <span className="text-fg">{text}</span>;
+  const last = parts.pop() ?? "";
+  const cut = last.search(/[:.](\s|$)/);
+  const path = [...parts, cut < 0 ? last : last.slice(0, cut)];
+  const rest = cut < 0 ? "" : last.slice(cut + 1).trim();
+  return (
+    <span className="block">
+      <span className="flex flex-wrap items-center gap-x-1 font-medium text-fg">
+        {path.map((p, i) => (
+          <Fragment key={i}>
+            {i > 0 && (
+              <>
+                <ChevronRight aria-hidden size={13} strokeWidth={2} className="text-fg-faint" />
+                <span className="sr-only">, then </span>
+              </>
+            )}
+            <span>{p}</span>
+          </Fragment>
+        ))}
+      </span>
+      {rest && <span className="mt-0.5 block text-fg-muted">{rest.charAt(0).toUpperCase() + rest.slice(1)}</span>}
+    </span>
+  );
+}
+
+/** One of the two parts, numbered, with a line down to the next. */
+function Part({ n, title, last, children }: { n: number; title: string; last?: boolean; children: React.ReactNode }) {
+  return (
+    <section className="relative pl-10">
+      {!last && <span aria-hidden className="absolute top-8 bottom-1 left-3 w-px bg-line" />}
+      <span className="absolute top-0 left-0 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-on-primary tabular-nums">
+        {n}
+      </span>
+      <h2 className="text-[15px] leading-6 font-semibold text-fg">{title}</h2>
+      <div className={`mt-3 ${last ? "" : "pb-8"}`}>{children}</div>
+    </section>
+  );
+}
+
 function Assistant({ connected, onBack, onDone }: { connected: string[]; onBack: () => void; onDone: () => void }) {
   const [copied, setCopied] = useState<string | null>(null);
   const [which, setWhich] = useState(ASSISTANTS[0].id);
@@ -1135,62 +1181,64 @@ function Assistant({ connected, onBack, onDone }: { connected: string[]; onBack:
       title="Use Claude or ChatGPT with your store"
       lede="Add Warmluke inside the AI you already use. It can then read your store, and anything it wants to build or change waits here for your yes."
     >
-      <div className={label}>1. Copy this address</div>
-      <div className="flex gap-2">
-        <input
-          readOnly
-          value={url}
-          onFocus={(e) => e.currentTarget.select()}
-          aria-label="Connector address"
-          className={`${fieldOf("md")} w-full min-w-0 font-mono`}
-        />
-        {copyButton(url)}
-      </div>
+      <Part n={1} title="Copy this address">
+        <div className="flex gap-2">
+          <input
+            readOnly
+            value={url}
+            onFocus={(e) => e.currentTarget.select()}
+            aria-label="Connector address"
+            className={`${fieldOf("md")} w-full min-w-0 font-mono`}
+          />
+          {copyButton(url)}
+        </div>
+      </Part>
 
-      <div className={`${label} mt-7`}>2. Add it in your AI</div>
-      <div role="group" aria-label="Your AI" className="flex flex-wrap gap-1.5">
-        {ASSISTANTS.map((a) => (
-          <button
-            key={a.id}
-            onClick={() => setWhich(a.id)}
-            aria-pressed={which === a.id}
-            className={button(which === a.id ? "secondary" : "plain", "sm")}
-          >
-            {a.logo ? (
-              // eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise
-              <img src={a.logo} alt="" width={13} height={13} className="h-3.5 w-3.5 shrink-0 object-contain" />
-            ) : (
-              <Plug aria-hidden size={13} strokeWidth={1.75} className="shrink-0" />
-            )}
-            {a.name}
-          </button>
-        ))}
-      </div>
-      <ol className="mt-4 space-y-3 text-sm text-fg-muted">
-        {chosen.steps(url).map((s, i) => (
-          <li key={`${chosen.id}-${i}`} className="flex gap-3">
-            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-line-strong text-[11px] font-semibold text-fg">
-              {i + 1}
-            </span>
-            <span className="min-w-0 flex-1 space-y-2">
-              <span className="block">{s.text}</span>
-              {s.copy && (
-                <span className="flex gap-2">
-                  <code className="min-w-0 flex-1 rounded-control bg-surface-subdued px-2.5 py-2 font-mono text-xs break-all text-fg">
-                    {s.copy}
-                  </code>
-                  {copyButton(s.copy)}
-                </span>
+      <Part n={2} title="Add it in your AI" last>
+        <div role="group" aria-label="Your AI" className="grid grid-cols-3 gap-1.5">
+          {ASSISTANTS.map((a) => (
+            <button
+              key={a.id}
+              onClick={() => setWhich(a.id)}
+              aria-pressed={which === a.id}
+              className={button(which === a.id ? "secondary" : "plain", "sm")}
+            >
+              {a.logo ? (
+                // eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise
+                <img src={a.logo} alt="" width={14} height={14} className="h-3.5 w-3.5 shrink-0 object-contain" />
+              ) : (
+                <Plug aria-hidden size={14} strokeWidth={1.75} className="shrink-0" />
               )}
-            </span>
-          </li>
-        ))}
-      </ol>
-      {chosen.plan && <p className="mt-2 pl-8 text-xs text-fg-faint">{chosen.plan}</p>}
+              {a.name}
+            </button>
+          ))}
+        </div>
+        <ol className="mt-5 space-y-4 text-sm leading-relaxed">
+          {chosen.steps(url).map((s, i) => (
+            <li key={`${chosen.id}-${i}`} className="flex gap-3">
+              <span className="w-4 shrink-0 pt-px text-right text-xs font-medium text-fg-faint tabular-nums">
+                {i + 1}
+              </span>
+              <span className="min-w-0 flex-1 space-y-2">
+                <StepText text={s.text} />
+                {s.copy && (
+                  <span className="flex gap-2">
+                    <code className="min-w-0 flex-1 rounded-control bg-surface-subdued px-2.5 py-2 font-mono text-xs break-all text-fg">
+                      {s.copy}
+                    </code>
+                    {copyButton(s.copy)}
+                  </span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ol>
+        {chosen.plan && <p className="mt-3 pl-7 text-xs text-fg-faint">{chosen.plan}</p>}
+      </Part>
 
       <div
         role="status"
-        className={`mt-7 flex items-center gap-2.5 rounded-control px-3 py-2.5 text-[13px] ${
+        className={`mt-8 flex items-center gap-2.5 rounded-control px-3 py-2.5 text-[13px] ${
           names.length ? "bg-tone-success/30 text-tone-success-fg" : "bg-surface-subdued text-fg-muted"
         }`}
       >

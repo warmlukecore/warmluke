@@ -164,9 +164,10 @@
    for the few raw colours that are not tokens (lib/tone.ts QUIET). */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-/* A black brand mark, the one logo that would vanish on a dark
-   surface: drawn white at night, wherever it appears. */
-[data-theme="dark"] img[src$="/logos/openai.svg"] {
+/* The black brand marks, the logos that would vanish on a dark
+   surface: drawn white at night, wherever they appear. */
+[data-theme="dark"] img[src$="/logos/openai.svg"],
+[data-theme="dark"] img[src$="/logos/cursor.svg"] {
   filter: invert(1);
 }
 

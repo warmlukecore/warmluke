@@ -60,6 +60,7 @@ export const ASSISTANTS: readonly Assistant[] = [
   {
     id: "cursor",
     name: "Cursor",
+    logo: "/logos/cursor.svg",
     steps: (address) => [
       {
         text: "Settings → MCP. Add to mcp.json:",
@@ -71,6 +72,7 @@ export const ASSISTANTS: readonly Assistant[] = [
   {
     id: "vscode",
     name: "VS Code",
+    logo: "/logos/vscode.svg",
     steps: () => [
       { text: "Command Palette → MCP: Add Server… → HTTP. Paste the address." },
       { text: "Name it warmluke and sign in when asked." },
