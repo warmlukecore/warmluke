@@ -270,6 +270,9 @@ export default function Onboarding() {
   if (uninvited) return <InviteOnly signedIn />;
 
   const reading = Object.values(progress).find((p) => p.label && p.status !== "done")?.label;
+  // Connected and still coming in: said wherever they are, so the
+  // import is seen going on while they set up the rest.
+  const syncing = !!connected && importing !== false;
 
   return (
     <Frame
@@ -283,6 +286,7 @@ export default function Onboarding() {
       skipped={skipped}
       assistants={assistants}
       reading={reading}
+      syncing={syncing}
       onRevisit={revisit}
     >
       <div key={shown} className={dir}>
@@ -312,8 +316,12 @@ export default function Onboarding() {
         ) : shown === "store" ? (
           <Screen
             eyebrow="Your store"
-            title="Connect your Shopify store"
-            lede="Warmluke reads your products, orders and customers, and changes nothing in your shop unless you say yes to that change."
+            title={connected ? "Almost done" : "Connect your Shopify store"}
+            lede={
+              connected
+                ? `${connected.store?.shop_domain ?? "Your store"} is connected, and already syncing in the background.`
+                : "Warmluke reads your products, orders and customers, and changes nothing in your shop unless you say yes to that change."
+            }
           >
             {connected ? (
               <div className="space-y-8">
@@ -322,7 +330,7 @@ export default function Onboarding() {
                   <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">
                     {connected.store?.shop_domain}
                   </span>
-                  <span className="text-xs text-fg-muted">Connected</span>
+                  <span className="text-xs text-fg-muted">{syncing ? "Syncing" : "Connected"}</span>
                 </div>
                 {historyOn && !connected.store?.history_set_at && !historyChosen ? (
                   // Right after Shopify said yes: how far back orders and
@@ -375,8 +383,8 @@ export default function Onboarding() {
         ) : shown === "preparing" ? (
           <Screen
             eyebrow="Your store"
-            title="Bringing in your store"
-            lede={`${connected?.store?.shop_domain ?? "Your store"} is importing. It carries on if you close this page.`}
+            title="Getting things ready for you"
+            lede={`${connected?.store?.shop_domain ?? "Your store"} is syncing in the background. It carries on if you close this page, and what is in already is ready to use.`}
           >
             <ImportList progress={progress} />
             <div className="mt-8">
@@ -393,6 +401,7 @@ export default function Onboarding() {
             name={answers.full_name}
             business={answers.business_name}
             shop={connected?.store?.shop_domain ?? null}
+            syncing={syncing}
             assistants={assistants}
             assistantOffered={assistantOffered}
             onChange={revisit}
@@ -415,7 +424,8 @@ export default function Onboarding() {
                 return null;
               }
               if (pending) sessionStorage.setItem("abo_build_prompt", pending);
-              router.replace(`/app/${where.id}${pending ? "?build=1" : ""}`);
+              // A first look round, unless they arrive with something to build.
+              router.replace(`/app/${where.id}${pending ? "?build=1" : "?tour=1"}`);
               return null;
             }}
           />
@@ -440,6 +450,7 @@ function Frame({
   skipped,
   assistants,
   reading,
+  syncing,
   onRevisit,
   children,
 }: {
@@ -453,6 +464,7 @@ function Frame({
   skipped: { store: boolean; assistant: boolean; preparing: boolean };
   assistants: string[];
   reading?: string;
+  syncing: boolean;
   onRevisit: (to: Step) => void;
   children: React.ReactNode;
 }) {
@@ -470,7 +482,7 @@ function Frame({
   /** What was answered in a step, said under it. */
   const said = (key: Step): string | null => {
     if (key === "about") return answers.business_name ? `${answers.full_name} · ${answers.business_name}` : null;
-    if (key === "store") return shop ?? (skipped.store ? "Later" : null);
+    if (key === "store") return shop ? (syncing ? `${shop} · syncing` : shop) : skipped.store ? "Later" : null;
     if (key === "assistant") return names.length ? names.join(", ") : skipped.assistant ? "Later" : null;
     return null;
   };
@@ -1331,6 +1343,7 @@ function Done({
   name,
   business,
   shop,
+  syncing,
   assistants,
   assistantOffered,
   onChange,
@@ -1339,6 +1352,7 @@ function Done({
   name: string;
   business: string;
   shop: string | null;
+  syncing: boolean;
   assistants: string[];
   assistantOffered: boolean;
   onChange: (to: Step) => void;
@@ -1351,7 +1365,12 @@ function Done({
   // What was set up, each with a way back to it.
   const summary: Array<{ to: Step; what: string; value: string; set: boolean }> = [
     { to: "about", what: "About you", value: business ? `${name} · ${business}` : name, set: true },
-    { to: "store", what: "Store", value: shop ?? "Not connected yet", set: !!shop },
+    {
+      to: "store",
+      what: "Store",
+      value: shop ? (syncing ? `${shop} · syncing` : shop) : "Not connected yet",
+      set: !!shop,
+    },
     ...(assistantOffered
       ? [
           {
@@ -1368,9 +1387,11 @@ function Done({
       eyebrow="Ready"
       title={first ? `You’re all set, ${first}` : "You’re all set"}
       lede={
-        shop
-          ? "Your store is in. Ask Luke anything about it, or describe the tool you wish you had and it builds it around how you work."
-          : "Describe the problem you’re stuck on, not the software, and Luke builds the app around how you work. You can connect your store whenever you like."
+        shop && syncing
+          ? "Your store is still syncing in the background, and what is in already is ready. Ask Luke anything about it, or describe the tool you wish you had and it builds it around how you work."
+          : shop
+            ? "Your store is in. Ask Luke anything about it, or describe the tool you wish you had and it builds it around how you work."
+            : "Describe the problem you’re stuck on, not the software, and Luke builds the app around how you work. You can connect your store whenever you like."
       }
     >
       <ul className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">

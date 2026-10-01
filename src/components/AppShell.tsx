@@ -83,6 +83,7 @@ import {
   Zap,
 } from "lucide-react";
 import { AskLuke } from "@/components/AskLuke";
+import { Tour, type TourStop } from "@/components/Tour";
 import { button, iconButton, note } from "@/components/ui/controls";
 import { Logo } from "@/components/ui/Logo";
 import { ThemeToggle } from "@/components/ThemeSync";
@@ -97,6 +98,8 @@ import { codeSpellings } from "@/lib/scan";
  * subset.
  */
 const RECORD_PAGE = 200;
+/** How often what is open is read again while the store is still coming in. */
+const GROW_MS = 6000;
 
 /**
  * The columns a section should show, for a section whose rows are the
@@ -415,6 +418,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   const [storeImporting, setStoreImporting] = useState(false);
   /** Goes up each time the store has been read again. */
   const [storeSynced, setStoreSynced] = useState(0);
+  /** Goes up every few seconds while the store is still coming in. */
+  const [storeTick, setStoreTick] = useState(0);
   const [moduleSettingsFor, setModuleSettingsFor] = useState<ModuleRow | null>(null);
   // Which parents are open. Collapsed by default would hide a section
   // the owner just built, so they start expanded.
@@ -1536,6 +1541,22 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeSynced]);
 
+  // While the store comes in, what is open grows with it: the overview's
+  // numbers and the list on screen are read again, not only at the end.
+  // Only while the tab is looked at, and only while it is importing.
+  useEffect(() => {
+    if (!storeImporting) return;
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") setStoreTick((n) => n + 1);
+    }, GROW_MS);
+    return () => clearInterval(t);
+  }, [storeImporting]);
+  useEffect(() => {
+    if (storeTick > 0 && selectedModuleId && isStoreTable(loadedSource)) loadModuleData(selectedModuleId);
+    // Only on the tick, not whenever the section changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeTick]);
+
   const onStoreStatus = useCallback((s: { importing: boolean; synced: number }) => {
     setStoreImporting(s.importing);
     setStoreSynced(s.synced);
@@ -2509,6 +2530,51 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // Ask Luke floats over the page wherever Luke's panel is not on screen.
   const askLuke = canBuild && !chatOpen && focus !== "luke";
 
+  // The first look round, once: onboarding opens the app with ?tour=1, and
+  // closing it takes that off the address, so a reload does not start it
+  // again. A stop for something this person cannot use is not shown.
+  const touring = !loading && searchParams.get("tour") === "1";
+  const endTour = useCallback(() => {
+    const at = new URLSearchParams(window.location.search);
+    at.delete("tour");
+    const qs = at.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+  }, []);
+  const tourStops: TourStop[] = [
+    {
+      title: "Welcome to Warmluke",
+      body: "A quick look round, a few stops. Escape leaves it at any time.",
+    },
+    ...(store
+      ? [
+          {
+            target: '[data-tour="store"], [aria-label="Open sections"]',
+            title: "Your store",
+            body: "Orders, products and customers from Shopify, kept up to date. Open any of them to search, sort and filter it.",
+          },
+          {
+            target: '[data-tour="sync"], [aria-label="Open sections"]',
+            title: "It keeps syncing",
+            body: "How your store stands lives here. While it is still coming in, what is open grows with it, and Check reads it again.",
+          },
+        ]
+      : []),
+    ...(canBuild
+      ? [
+          {
+            target: 'aside[aria-label="Luke"], [data-tour="ask-luke"] > *',
+            title: "Ask Luke",
+            body: "Ask anything about your store in your own words: which orders are late, who buys the most, what is running low.",
+          },
+          {
+            target: '[data-tour="build"], [aria-label="Open sections"]',
+            title: "Build what you need",
+            body: "Describe the tool you wish you had, and Luke builds it here around how you work. Nothing in your shop changes unless you say yes.",
+          },
+        ]
+      : []),
+  ];
+
   /** A top section in the icon rail: its icon, named by its label. Lit while it or one inside it is open. */
   const railRow = (m: ModuleRow) => (
     <a
@@ -2851,7 +2917,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 {/* What comes from the store, apart from what they built: the
               first is filled by Shopify, the second by them. */}
                 {!loading && (store || storeTop.length > 0) && (!navHits || storeTop.some(navVisible)) && (
-                  <>
+                  <div data-tour="store">
                     <NavHeading
                       text="Store"
                       action={
@@ -2879,45 +2945,47 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                         {addingCore ? "Adding…" : `Add ${CORE_STORE_WORDS}`}
                       </button>
                     )}
-                  </>
-                )}
-
-                {!loading && (!navHits || ownTop.some(navVisible)) && (
-                  <NavHeading
-                    text={
-                      !canBuild
-                        ? "Shared with you"
-                        : !isOwner
-                          ? "Sections"
-                          : store || storeTop.length > 0
-                            ? "Your sections"
-                            : "Sections"
-                    }
-                    action={
-                      canBuild ? (
-                        <button
-                          onClick={() => setNewSectionParent("")}
-                          aria-label="New section"
-                          title="New section"
-                          className="rounded px-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white"
-                        >
-                          <Plus aria-hidden size={14} strokeWidth={2} />
-                        </button>
-                      ) : null
-                    }
-                  />
-                )}
-                {ownTop.filter(navVisible).map(renderTop)}
-                {!navHits && buildingRows(false)}
-                {!loading && ownTop.length === 0 && !navHits && !pendingSections.some((p) => !p.store) && (
-                  <div className="px-2 py-1 text-[13px] leading-relaxed text-frame-fg-muted">
-                    {!canBuild
-                      ? "Nothing shared with you here yet."
-                      : !isOwner || store || storeTop.length > 0
-                        ? "Nothing of your own yet. Ask Luke for the tool you wish you had."
-                        : "No sections yet — describe your app to Luke to build them."}
                   </div>
                 )}
+
+                <div data-tour="build">
+                  {!loading && (!navHits || ownTop.some(navVisible)) && (
+                    <NavHeading
+                      text={
+                        !canBuild
+                          ? "Shared with you"
+                          : !isOwner
+                            ? "Sections"
+                            : store || storeTop.length > 0
+                              ? "Your sections"
+                              : "Sections"
+                      }
+                      action={
+                        canBuild ? (
+                          <button
+                            onClick={() => setNewSectionParent("")}
+                            aria-label="New section"
+                            title="New section"
+                            className="rounded px-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white"
+                          >
+                            <Plus aria-hidden size={14} strokeWidth={2} />
+                          </button>
+                        ) : null
+                      }
+                    />
+                  )}
+                  {ownTop.filter(navVisible).map(renderTop)}
+                  {!navHits && buildingRows(false)}
+                  {!loading && ownTop.length === 0 && !navHits && !pendingSections.some((p) => !p.store) && (
+                    <div className="px-2 py-1 text-[13px] leading-relaxed text-frame-fg-muted">
+                      {!canBuild
+                        ? "Nothing shared with you here yet."
+                        : !isOwner || store || storeTop.length > 0
+                          ? "Nothing of your own yet. Ask Luke for the tool you wish you had."
+                          : "No sections yet — describe your app to Luke to build them."}
+                    </div>
+                  )}
+                </div>
               </div>
             </nav>
 
@@ -2927,7 +2995,10 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               </p>
             )}
             {/* Out of sight on the rail, never unmounted: the strip tells the shell when the store has been read. */}
-            <div className={`space-y-1 border-t border-frame-line px-3 py-3 empty:hidden ${railOn ? "lg:hidden" : ""}`}>
+            <div
+              data-tour="sync"
+              className={`space-y-1 border-t border-frame-line px-3 py-3 empty:hidden ${railOn ? "lg:hidden" : ""}`}
+            >
               {/* Every store they can open, and the way to add another. */}
               <StoreSwitcher projectId={projectId} placement="sidebar" />
               {/* How the store stands, and the way to read it again. */}
@@ -3069,7 +3140,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     projectId={projectId}
                     storeId={store.id}
                     importing={storeImporting}
-                    refreshKey={storeSynced}
+                    refreshKey={storeSynced + storeTick}
                     hasSection={(t) => modules.some((m) => m.source_table === t)}
                     onOpenTable={(t) => {
                       const m = storeTop.find((x) => x.source_table === t) ?? modules.find((x) => x.source_table === t);
@@ -3194,6 +3265,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             </div>
             {askLuke && (
               <div
+                data-tour="ask-luke"
                 className={`pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center px-3 sm:bottom-5 ${lukeDocked ? "lg:hidden" : ""}`}
               >
                 <AskLuke
@@ -3328,6 +3400,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               }}
             />
           )}
+          {touring && <Tour stops={tourStops} onClose={endTour} />}
           {settingsOpen && project && userId && !isOwner && (
             <TeammateSettings
               project={project}

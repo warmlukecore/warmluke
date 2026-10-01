@@ -569,6 +569,10 @@ dialog.wl-dialog[open]::backdrop {
     opacity: 0;
   }
 }
+/* The tour draws its own dimming round what it lights (ui/Tour). */
+dialog.wl-tour::backdrop {
+  background: transparent;
+}
 html:has(dialog.wl-dialog[open]) {
   overflow: hidden;
 }
