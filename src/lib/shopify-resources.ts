@@ -651,6 +651,48 @@ export type Resource = keyof typeof SHOPIFY_RESOURCES;
  */
 export const RESOURCES = Object.keys(SHOPIFY_RESOURCES) as Resource[];
 
+/**
+ * The lists the merchant's history window applies to, and what in
+ * Shopify's search dates each one (0154 names the same five).
+ *
+ * Orders and everything read off an order go by when the order was
+ * placed. A customer is in the window when they signed up in it or
+ * ordered in it, so every order brought in has its customer, and a
+ * buyer of five years who ordered last week is there too. Products,
+ * stock and the rest are not dated by the window: they come in full.
+ */
+export const WINDOWED = {
+  customers: (from: string) => `customer_date:>='${from}' OR order_date:>='${from}'`,
+  returns: (from: string) => `processed_at:>='${from}'`,
+  orders: (from: string) => `processed_at:>='${from}'`,
+  refunds: (from: string) => `processed_at:>='${from}'`,
+  fulfillments: (from: string) => `processed_at:>='${from}'`,
+} as const satisfies Partial<Record<Resource, (from: string) => string>>;
+
+export const isWindowed = (r: Resource): r is keyof typeof WINDOWED => r in WINDOWED;
+
+/**
+ * A resource's query, asking Shopify only for what is inside the window.
+ *
+ * The filter goes on the query's top-level list — `orders(…)`,
+ * `customers(…)`, or their counts — and joins any filter already there
+ * ("refunded", "shipped") with AND, each side in brackets: in Shopify's
+ * search OR binds tighter than AND, and the brackets keep that from
+ * mattering. A query with no window, or a resource it does not apply
+ * to, is returned as written.
+ */
+export function windowed(gql: string, resource: Resource, from: string | null): string {
+  if (!from || !isWindowed(resource)) return gql;
+  const filter = WINDOWED[resource](new Date(from).toISOString());
+  return gql.replace(/\b(orders|customers|ordersCount|customersCount)\b(\s*\(([^)]*)\))?/, (_m, field, _p, args) => {
+    if (args === undefined) return `${field}(query: ${JSON.stringify(filter)})`;
+    const q = /query:\s*"((?:[^"\\]|\\.)*)"/.exec(args);
+    if (!q) return `${field}(query: ${JSON.stringify(filter)}, ${args.trim()})`;
+    const was = JSON.parse(`"${q[1]}"`) as string;
+    return `${field}(${args.replace(q[0], `query: ${JSON.stringify(`(${was}) AND (${filter})`)}`)})`;
+  });
+}
+
 export const isResource = (v: unknown): v is Resource =>
   typeof v === "string" && Object.prototype.hasOwnProperty.call(SHOPIFY_RESOURCES, v);
 
@@ -807,7 +849,9 @@ export async function importPage(
   db: SupabaseClient,
   store: StoreToken,
   resource: Resource,
-  after: string | null
+  after: string | null,
+  /** Where the merchant's history window opens; null for everything. */
+  from: string | null = null
 ): Promise<{
   imported: number;
   cursor: string | null;
@@ -821,7 +865,7 @@ export async function importPage(
   const spec = SHOPIFY_RESOURCES[resource];
   const data = await graphql<
     Record<string, { pageInfo: { hasNextPage: boolean; endCursor: string }; nodes: unknown[] }>
-  >(store.shop_domain, token, spec.page, { n: PAGE, after });
+  >(store.shop_domain, token, windowed(spec.page, resource, from), { n: PAGE, after });
   const at = pageAt(data, spec.root);
   // Null the whole way down is a real answer, not a failure: a shop
   // with no Shopify Payments has no account object to hang payouts

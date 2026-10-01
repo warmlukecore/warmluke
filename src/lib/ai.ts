@@ -447,6 +447,8 @@ HARD RULES:
 /** A few rows, read by the server before the model runs. */
 export type StoreSnapshot = {
   last_synced_at: string | null;
+  /** Where the merchant chose orders and customers to start (0154); absent for everything. */
+  history?: { from: string; days: number | null } | null;
   recent: Array<{
     number: string;
     placed: string | null;
@@ -576,6 +578,13 @@ function storeBlock(store: StoreContext | null, projectCurrency: string, road: "
     lines.push(
       `Last brought from Shopify: ${snap.last_synced_at ?? "never"}. Say this when you quote numbers, so they know how fresh it is.`
     );
+    // Only when they chose a window: a store with everything says nothing,
+    // and the line would be noise.
+    if (snap.history) {
+      lines.push(
+        `Orders and customers here start ${snap.history.from}${snap.history.days ? ` (the merchant chose the last ${snap.history.days} days)` : ""}. Asked about anything before that, say the data here does not go back that far — never that nothing happened then.`
+      );
+    }
 
     if (snap.recent.length > 0) {
       lines.push(`  Most recent ${snap.recent.length} orders (newest first):`);

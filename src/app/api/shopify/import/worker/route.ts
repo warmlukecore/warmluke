@@ -23,6 +23,10 @@ type HeldStore = {
   refresh_token: string | null;
   token_expires_at: string | null;
   refresh_token_expires_at: string | null;
+  /** The history window (0154): what it may import comes with the token. */
+  connected_at: string | null;
+  history_from: string | null;
+  history_set_at: string | null;
 };
 
 /**

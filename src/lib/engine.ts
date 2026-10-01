@@ -124,7 +124,7 @@ export async function storeContextFor(
   // a member who cannot see it — simply gets null.
   const { data: storeRow } = await client
     .from("stores")
-    .select("id, shop_domain, timezone, currency, country, last_synced_at")
+    .select("id, shop_domain, timezone, currency, country, last_synced_at, history_from, history_days")
     .eq("project_id", projectId)
     .eq("status", "connected")
     .maybeSingle();
@@ -174,6 +174,9 @@ export async function storeContextFor(
     values,
     snapshot: {
       last_synced_at: (storeRow.last_synced_at as string | null) ?? null,
+      history: storeRow.history_from
+        ? { from: storeRow.history_from as string, days: (storeRow.history_days as number | null) ?? null }
+        : null,
       top_customers: leaders.top_customers,
       best_sellers: leaders.best_sellers,
       slice: slice

@@ -176,6 +176,8 @@ export type Signals = {
   storeConnected: boolean;
   /** They chose to connect one later, this visit. */
   storeSkipped: boolean;
+  /** Connected, and not yet asked how far back its orders go (0154). */
+  historyAwaiting: boolean;
   /** Their own AI is offered to this account at all. */
   assistantOffered: boolean;
   /** It is connected, or they chose later, this visit. */
@@ -190,6 +192,9 @@ export type Signals = {
 export function currentStep(s: Signals): Step {
   if (!s.profile) return "about";
   if (!s.storeConnected && !s.storeSkipped) return "store";
+  // Asked on the store step, right after Shopify says yes: the counts
+  // are real by then, and orders wait for the answer.
+  if (s.storeConnected && s.historyAwaiting) return "store";
   if (s.assistantOffered && !s.assistantDone) return "assistant";
   if (s.storeConnected && s.importing && !s.preparingSkipped) return "preparing";
   return "done";

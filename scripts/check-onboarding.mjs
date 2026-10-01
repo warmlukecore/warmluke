@@ -129,6 +129,7 @@ const at = (o) =>
     profile: false,
     storeConnected: false,
     storeSkipped: false,
+    historyAwaiting: false,
     assistantOffered: true,
     assistantDone: false,
     importing: false,
@@ -137,6 +138,10 @@ const at = (o) =>
   });
 check("nothing saved yet: about them", at({}) === "about");
 check("answers saved, no store: the store", at({ profile: true }) === "store");
+check(
+  "connected, how far back not answered yet: still the store",
+  at({ profile: true, storeConnected: true, historyAwaiting: true, importing: true }) === "store"
+);
 check("the store left for later: their AI", at({ profile: true, storeSkipped: true }) === "assistant");
 check(
   "their AI not offered to this account: straight on",

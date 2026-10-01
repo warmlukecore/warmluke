@@ -24,6 +24,7 @@ import { ArrowLeft, ArrowRight, Check, ChevronRight, Copy, LoaderCircle, LogOut,
 import { apiFetch, signOut, takePendingPrompt, useUser } from "@/lib/auth";
 import { supabase } from "@/lib/supabase-client";
 import ConnectShopify from "@/components/ConnectShopify";
+import HistoryPicker from "@/components/HistoryPicker";
 import { LukeMark } from "@/components/ui/LukeMark";
 import { button, field, fieldOf, label, note } from "@/components/ui/controls";
 import {
@@ -50,7 +51,11 @@ import { ASSISTANTS } from "@/lib/connect-assistants";
 
 const WATCH_MS = 3000;
 
-type Owned = { id: string; name: string; store: { shop_domain: string; status: string } | null };
+type Owned = {
+  id: string;
+  name: string;
+  store: { shop_domain: string; status: string; history_set_at?: string | null } | null;
+};
 type Progress = Record<string, { imported: number; status: string; label?: string }>;
 /** Which way the last move went, so the next screen comes in from that side. */
 type Dir = "from-right" | "from-left";
@@ -89,6 +94,10 @@ export default function Onboarding() {
   const [importing, setImporting] = useState<boolean | null>(null);
   const [progress, setProgress] = useState<Progress>({});
   const [skipped, setSkipped] = useState({ store: false, assistant: false, preparing: false });
+  // Chosen on this visit: the row read at load still says not chosen.
+  const [historyChosen, setHistoryChosen] = useState(false);
+  // Whether merchants are asked at all (history_settings): off, nobody is.
+  const [historyOn, setHistoryOn] = useState(true);
   // A step opened again from the list, over the one they are up to.
   const [viewing, setViewing] = useState<Step | null>(null);
   const [dir, setDir] = useState<Dir>("from-right");
@@ -107,17 +116,19 @@ export default function Onboarding() {
 
   const load = useCallback(async () => {
     if (!user) return;
-    const [profile, projects, settings, clients, may] = await Promise.all([
+    const [profile, projects, settings, clients, may, asking] = await Promise.all([
       supabase.from("profiles").select("*").eq("user_id", user.id).maybeSingle(),
       supabase
         .from("projects")
-        .select("id, name, owner_id, created_at, stores(shop_domain, status)")
+        .select("id, name, owner_id, created_at, stores(shop_domain, status, history_set_at)")
         .eq("owner_id", user.id)
         .order("created_at", { ascending: true }),
       supabase.rpc("abo_my_settings"),
       supabase.rpc("abo_oauth_clients"),
       supabase.rpc("abo_may_start_app"),
+      supabase.from("history_settings").select("enabled").maybeSingle(),
     ]);
+    setHistoryOn(asking.data?.enabled !== false);
     // Invite only (0141): the database would refuse their app, so the
     // questions about it are not asked. Unknown (before 0141) is allowed.
     if (may.data === false) {
@@ -178,6 +189,7 @@ export default function Onboarding() {
     profile: profileSaved,
     storeConnected: !!connected,
     storeSkipped: skipped.store,
+    historyAwaiting: historyOn && !!connected && !connected.store?.history_set_at && !historyChosen,
     assistantOffered,
     assistantDone: assistants.length > 0 || skipped.assistant,
     importing: importing !== false,
@@ -312,7 +324,26 @@ export default function Onboarding() {
                   </span>
                   <span className="text-xs text-fg-muted">Connected</span>
                 </div>
-                <Actions onBack={() => revisit("about")} onNext={() => onward()} next="Continue" />
+                {historyOn && !connected.store?.history_set_at && !historyChosen ? (
+                  // Right after Shopify said yes: how far back orders and
+                  // customers go. Products are already coming in.
+                  <div>
+                    <h2 className="text-[15px] font-semibold text-fg">How far back should orders come in?</h2>
+                    <p className="mt-1 mb-4 text-sm text-fg-muted">
+                      Your products are already coming in. Choose how much order history to bring with them.
+                    </p>
+                    <HistoryPicker
+                      projectId={connected.id}
+                      onDone={async () => {
+                        await apiFetch("/api/shopify/import", { projectId: connected.id, kick: true });
+                        setHistoryChosen(true);
+                        onward();
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <Actions onBack={() => revisit("about")} onNext={() => onward()} next="Continue" />
+                )}
               </div>
             ) : target ? (
               <div className="space-y-6">

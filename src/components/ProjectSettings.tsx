@@ -21,6 +21,7 @@ import { Group } from "@/components/ui/Group";
 import { button, field, hint, iconButton, iconButtonCritical, label, note } from "@/components/ui/controls";
 import { Check, Copy, ExternalLink, Link2, Trash2, UserPlus } from "lucide-react";
 import ConnectShopify from "@/components/ConnectShopify";
+import HistoryPicker from "@/components/HistoryPicker";
 import { storeStanding } from "@/lib/store-standing";
 import { ago } from "@/lib/when";
 import { MEMBER_ROLE_OPTIONS, labelOf } from "@/lib/onboarding";
@@ -50,6 +51,10 @@ type ShopRow = {
   webhook_error: string | null;
   token_expires_at: string | null;
   refresh_token_expires_at: string | null;
+  /** How far back orders and customers go (0154): the days chosen, from when, and whether anyone chose. */
+  history_days: number | null;
+  history_from: string | null;
+  history_set_at: string | null;
 };
 
 /** A seat; the name and role are what the person who took it said when they joined (0118). */
@@ -135,6 +140,21 @@ export default function ProjectSettings({
   const [shop, setShop] = useState<ShopRow | null | undefined>(undefined);
   const [shopError, setShopError] = useState<string | null>(null);
   const [reconnecting, setReconnecting] = useState(false);
+  const [pickingHistory, setPickingHistory] = useState(false);
+  // Whether merchants may choose it at all (history_settings, 0154).
+  const [historyOn, setHistoryOn] = useState(true);
+  const [historyDefault, setHistoryDefault] = useState(60);
+  useEffect(() => {
+    if (tab !== "store") return;
+    supabase
+      .from("history_settings")
+      .select("enabled, default_days")
+      .maybeSingle()
+      .then(({ data }) => {
+        setHistoryOn(data?.enabled !== false);
+        if (data?.default_days) setHistoryDefault(data.default_days as number);
+      });
+  }, [tab]);
   const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
 
@@ -144,7 +164,7 @@ export default function ProjectSettings({
     supabase
       .from("stores")
       .select(
-        "id, shop_domain, status, connected_at, last_synced_at, currency, timezone, webhook_error, token_expires_at, refresh_token_expires_at"
+        "id, shop_domain, status, connected_at, last_synced_at, currency, timezone, webhook_error, token_expires_at, refresh_token_expires_at, history_days, history_from, history_set_at"
       )
       .eq("project_id", project.id)
       .maybeSingle()
@@ -634,6 +654,43 @@ export default function ProjectSettings({
                 {shop.webhook_error && (
                   <div className={note.attention}>
                     Shopify was not asked to send updates, so changes there are not coming in. Reconnecting asks again.
+                  </div>
+                )}
+              </Group>
+
+              <Group
+                title="Order history"
+                description="How far back orders and customers come in. Products always come in full, and new orders keep arriving."
+              >
+                {pickingHistory ? (
+                  <HistoryPicker
+                    projectId={project.id}
+                    doneLabel="Save"
+                    onCancel={() => setPickingHistory(false)}
+                    onDone={async () => {
+                      setPickingHistory(false);
+                      // Start whatever the new window needs now, and show
+                      // the store again from the top so its strip watches it.
+                      await apiFetch("/api/shopify/import", { projectId: project.id, kick: true });
+                      onStoreChanged?.();
+                    }}
+                  />
+                ) : (
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-[13px] text-fg">
+                      {!shop.history_set_at
+                        ? historyOn
+                          ? `Not chosen yet: the last ${historyDefault} days come in until you choose.`
+                          : "Everything Shopify shares."
+                        : !shop.history_from
+                          ? "Everything Shopify shares."
+                          : `The last ${shop.history_days ?? "?"} days, since ${new Date(shop.history_from).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}.`}
+                    </p>
+                    {historyOn && (
+                      <button onClick={() => setPickingHistory(true)} className={button("secondary", "sm")}>
+                        Change
+                      </button>
+                    )}
                   </div>
                 )}
               </Group>

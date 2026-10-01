@@ -34,3 +34,14 @@ export function dayGroup(iso: string, now: number): "Today" | "Yesterday" | "Las
   if (days === 1) return "Yesterday";
   return days < 7 ? "Last 7 days" : "Older";
 }
+
+/**
+ * A window as a merchant would say it. The windows are an
+ * administrator's (history_settings), so any whole number of days: a
+ * year or years when it is one, months from three months up, days below.
+ */
+export function windowName(days: number): string {
+  if (days % 365 === 0) return days === 365 ? "Last year" : `Last ${days / 365} years`;
+  if (days >= 90 && days % 30 === 0) return `Last ${days / 30} months`;
+  return days === 1 ? "Last day" : `Last ${days} days`;
+}

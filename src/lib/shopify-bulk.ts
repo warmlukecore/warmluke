@@ -21,7 +21,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ShopifyError } from "@/lib/shopify";
 import { graphql } from "@/lib/shopify-import";
-import { SHOPIFY_RESOURCES, type BulkLine as Line, type Resource } from "@/lib/shopify-resources";
+import { SHOPIFY_RESOURCES, windowed, type BulkLine as Line, type Resource } from "@/lib/shopify-resources";
 
 /**
  * Above this many rows, paging is the wrong tool. Below it, a bulk
@@ -44,9 +44,22 @@ const MAX_SLICE = 32 * 1024 * 1024;
 /** Parents held before writing. Large enough to be worth a round trip. */
 const BATCH = 250;
 
-/** Counting is one cheap query and decides which importer to use. */
-export async function countOf(shop: string, token: string, resource: Resource): Promise<number> {
-  const data = await graphql<Record<string, { count: number } | null>>(shop, token, SHOPIFY_RESOURCES[resource].count);
+/**
+ * Counting is one cheap query and decides which importer to use. Over
+ * the window the import will ask for, so a store of a million orders
+ * asked for thirty days of them pages rather than exports the lot.
+ */
+export async function countOf(
+  shop: string,
+  token: string,
+  resource: Resource,
+  from: string | null = null
+): Promise<number> {
+  const data = await graphql<Record<string, { count: number } | null>>(
+    shop,
+    token,
+    windowed(SHOPIFY_RESOURCES[resource].count, resource, from)
+  );
   const first = Object.values(data)[0];
   return first?.count ?? 0;
 }
@@ -59,8 +72,13 @@ type BulkOp = {
   url: string | null;
 };
 
-/** Starts one, and hands back its id. */
-export async function startBulk(shop: string, token: string, resource: Resource): Promise<string> {
+/** Starts one over the window, and hands back its id. */
+export async function startBulk(
+  shop: string,
+  token: string,
+  resource: Resource,
+  from: string | null = null
+): Promise<string> {
   const bulk = SHOPIFY_RESOURCES[resource].bulk;
   if (!bulk) throw new ShopifyError("bulk_refused", `${resource} has no bulk export; it is paged instead.`);
   const data = await graphql<{
@@ -90,7 +108,7 @@ export async function startBulk(shop: string, token: string, resource: Resource)
         }
       }
     `,
-    { q: bulk.query }
+    { q: windowed(bulk.query, resource, from) }
   );
   const { bulkOperation, userErrors } = data.bulkOperationRunQuery;
   if (!bulkOperation) {

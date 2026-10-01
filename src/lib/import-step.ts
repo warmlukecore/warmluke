@@ -19,6 +19,7 @@ import {
   RESOURCES,
   SHOPIFY_RESOURCES,
   importPage,
+  isWindowed,
   type Resource,
 } from "@/lib/shopify-resources";
 import { BULK_THRESHOLD, countOf, ingestSlice, pollBulk, startBulk } from "@/lib/shopify-bulk";
@@ -37,6 +38,45 @@ type Db = SupabaseClient;
  */
 export const MOST_ATTEMPTS = 5;
 const waitAfter = (attempts: number) => Math.min(2 ** (attempts - 1), 30) * 60_000;
+
+/**
+ * How long a newly connected store waits for its merchant to say how far
+ * back to bring orders and customers. 0154's tick waits the same fifteen
+ * minutes before sending the store.
+ */
+export const HISTORY_WAIT_MS = 15 * 60_000;
+
+/**
+ * Whether merchants are asked, and the window a store takes when its
+ * merchant never answers: an administrator's, in history_settings
+ * (0154). These are its defaults, for a read that did not come back.
+ */
+export type HistorySettings = { enabled: boolean; default_days: number };
+export const HISTORY_DEFAULTS: HistorySettings = { enabled: true, default_days: 60 };
+
+/**
+ * Where the store's history window opens: a moment, null for everything
+ * Shopify gives, or "wait" while its merchant is still being asked.
+ * Asking switched off waits for nobody: an unchosen store brings
+ * everything, as stores did before there was a question.
+ */
+export function historyFrom(
+  store: Pick<StoreToken, "history_from" | "history_set_at" | "connected_at">,
+  settings: HistorySettings = HISTORY_DEFAULTS,
+  now = Date.now()
+): string | null | "wait" {
+  if (store.history_set_at) return store.history_from ?? null;
+  if (!settings.enabled) return null;
+  const connected = store.connected_at ? Date.parse(store.connected_at) : now;
+  if (now - connected < HISTORY_WAIT_MS) return "wait";
+  return new Date(connected - settings.default_days * 86_400_000).toISOString();
+}
+
+/** The administrator's settings, or the defaults when they cannot be read. */
+async function historySettings(db: Db): Promise<HistorySettings> {
+  const { data } = await db.from("history_settings").select("enabled, default_days").maybeSingle();
+  return data ? { enabled: data.enabled !== false, default_days: Number(data.default_days) || 60 } : HISTORY_DEFAULTS;
+}
 
 type Run = {
   id: string;
@@ -72,6 +112,7 @@ export async function importStep(
   } = {}
 ): Promise<StepResult> {
   let { data: runs } = await db.from("import_runs").select(RUN_COLUMNS).eq("store_id", store.id).returns<Run[]>();
+  const settings = await historySettings(db);
 
   // The strip asks this on mount, to decide whether to keep going or
   // to count what is held. The answer names every resource there is,
@@ -87,6 +128,9 @@ export async function importStep(
       body: {
         done: RESOURCES.every((r) => byResource.get(r)?.status === "done"),
         progress: summarise(runs ?? []),
+        // Asked how far back to go, and not answered yet: orders and
+        // customers wait for it, the catalogue does not.
+        ...(historyFrom(store, settings) === "wait" ? { awaitingHistory: true } : {}),
         ...(stopped ? { stopped: { resource: stopped.resource, error: stopped.error } } : {}),
       },
     };
@@ -145,9 +189,21 @@ export async function importStep(
   // Resources in a fixed order. An order's customer and variant links can
   // only be made once those rows are present.
   const resource = RESOURCES.find((r) => (byResource.get(r)?.status ?? "pending") !== "done");
-  if (!resource) return finish(db, store, runs ?? []);
+  if (!resource) return finish(db, store, runs ?? [], settings);
 
   const run = byResource.get(resource);
+
+  // Orders and customers wait while the merchant chooses how far back
+  // they go; the catalogue before them has already come in. Held, so the
+  // worker stops and the tab stops asking, until the choice (or the
+  // fallback) lets it on.
+  const from = historyFrom(store, settings);
+  if (from === "wait" && isWindowed(resource)) {
+    return {
+      status: 200,
+      body: { done: false, held: true, awaitingHistory: true, resource, progress: summarise(runs ?? []) },
+    };
+  }
 
   // Nobody watching: a failure waits its turn, and one given up on
   // waits for the merchant. Everything after it waits too — its rows
@@ -163,7 +219,7 @@ export async function importStep(
   }
 
   try {
-    const step = await advance(db, store, resource, run?.cursor ?? null);
+    const step = await advance(db, store, resource, run?.cursor ?? null, from === "wait" ? null : from);
     // A bulk operation Shopify is still running has produced nothing to
     // write yet. Saying so beats reporting zero rows imported, which
     // reads as a finished import of an empty store.
@@ -276,7 +332,7 @@ export async function importStep(
 }
 
 /** Nothing left to walk: stamp when it finished, and say what drifted. */
-async function finish(db: Db, store: StoreToken, runs: Run[]): Promise<StepResult> {
+async function finish(db: Db, store: StoreToken, runs: Run[], settings: HistorySettings): Promise<StepResult> {
   // This branch used to stamp last_synced_at with now() every time
   // anybody asked — so the app said the store was fresh at the moment
   // of asking, having read nothing from Shopify at all. It is when the
@@ -322,7 +378,12 @@ async function finish(db: Db, store: StoreToken, runs: Run[]): Promise<StepResul
   // ever narrows what is compared.
   const { data: grant } = await db.from("stores").select("granted_scopes").eq("id", store.id).maybeSingle();
   const allOrders = ((grant?.granted_scopes as string[] | null) ?? []).includes(EXTENDED_ORDER_HISTORY_SCOPE);
+  // A row from before the window was never asked for, so not finding it
+  // again says nothing. Customers have no date here to hold to one.
+  const from = historyFrom(store, settings);
+  const window = from === "wait" ? null : from;
   for (const [resource, table] of Object.entries(COUNTED)) {
+    if (resource === "customers" && window) continue;
     const run = runs.find((r) => r.resource === resource);
     if (!run?.started_at) continue;
     const label = LABEL[table] ?? "id";
@@ -340,6 +401,7 @@ async function finish(db: Db, store: StoreToken, runs: Run[]): Promise<StepResul
       const edge = Date.parse(run.finished_at ?? new Date().toISOString()) - 59 * 86_400_000;
       unseen = unseen.gte("placed_at", new Date(edge).toISOString());
     }
+    if (resource === "orders" && window) unseen = unseen.gte("placed_at", window);
     const { data, count, error } = await unseen;
     if (error) {
       console.error(`could not look for ${resource} Shopify no longer has:`, error.message);
@@ -389,7 +451,9 @@ async function advance(
   db: Db,
   store: StoreToken,
   resource: Resource,
-  cursor: string | null
+  cursor: string | null,
+  /** Where the history window opens; null for everything. */
+  from: string | null
 ): Promise<
   | {
       imported: number;
@@ -450,14 +514,14 @@ async function advance(
     // Counting first costs one small query and decides the route. A
     // store with a few hundred rows finishes before a bulk operation
     // would even have been queued.
-    const count = await countOf(shop, token, resource);
+    const count = await countOf(shop, token, resource, from);
     if (count > BULK_THRESHOLD && SHOPIFY_RESOURCES[resource].bulk) {
-      const id = await startBulk(shop, token, resource);
+      const id = await startBulk(shop, token, resource, from);
       return { imported: 0, cursor: `bulk:${id}`, hasNext: true };
     }
   }
 
-  const page = await importPage(db, store, resource, cursor);
+  const page = await importPage(db, store, resource, cursor, from);
 
   // A page that hit a child limit lost rows nobody would have missed:
   // the variants past the hundredth, the order lines past the
@@ -466,7 +530,7 @@ async function advance(
   // that is already incomplete. Everything written is an upsert keyed
   // on the Shopify id, so starting over costs time and nothing else.
   if (page.cut) {
-    const id = await startBulk(shop, token, resource);
+    const id = await startBulk(shop, token, resource, from);
     // The count starts again, not just this page.
     //
     // Zeroing one page was not enough: the pages already walked stay

@@ -25,6 +25,7 @@ import { Switch } from "@/components/ui/Switch";
 import { PasswordInput } from "@/components/ui/PasswordInput";
 import { button, card, field, label, note } from "@/components/ui/controls";
 import { missingScopes, scopesFor } from "@/lib/shopify-resources";
+import { windowName } from "@/lib/when";
 
 type Shop = {
   shop: string;
@@ -262,6 +263,8 @@ export default function ShopifyAppsAdmin() {
           </div>
         )}
 
+        {!refused && <OrderHistoryCard />}
+
         {!refused && (
           <div className={`${card} mt-4 p-5`}>
             <div className="text-[13px] font-medium text-fg">What the merchant sets in their app</div>
@@ -492,5 +495,141 @@ export default function ShopifyAppsAdmin() {
         </Dialog>
       )}
     </PageFrame>
+  );
+}
+
+type HistoryOffer = { enabled: boolean; choices: number[]; default_days: number };
+
+/**
+ * How far back merchants may bring orders and customers (0154): offered
+ * here, chosen by each merchant right after Shopify says yes. Saved in
+ * one go, and checked again by the database, which refuses a default
+ * that is not one of the windows offered.
+ */
+function OrderHistoryCard() {
+  const [saved, setSaved] = useState<HistoryOffer | null>(null);
+  const [enabled, setEnabled] = useState(true);
+  const [text, setText] = useState("");
+  const [chosen, setChosen] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    supabase
+      .from("history_settings")
+      .select("enabled, choices, default_days")
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!data) return;
+        const offer = data as HistoryOffer;
+        setSaved(offer);
+        setEnabled(offer.enabled);
+        setText(offer.choices.join(", "));
+        setChosen(offer.default_days);
+      });
+  }, []);
+
+  const words = text.split(/[\s,]+/).filter(Boolean);
+  const notNumbers = words.some((w) => !/^\d+$/.test(w));
+  const days = [...new Set(words.map(Number))].filter((n) => Number.isInteger(n) && n > 0).sort((a, b) => a - b);
+  const outOfRange = days.some((d) => d > 3650) || days.length > 12;
+  const usable = !notNumbers && !outOfRange && days.length > 0 && chosen !== null && days.includes(chosen);
+  const dirty =
+    !!saved && (enabled !== saved.enabled || days.join() !== saved.choices.join() || chosen !== saved.default_days);
+
+  async function save() {
+    if (!saved) return;
+    setBusy(true);
+    setSaid(null);
+    // Off, the windows are only kept for when it is on again: what was
+    // saved goes back if what is typed would not be accepted.
+    const keep = usable
+      ? { p_choices: days, p_default: chosen }
+      : { p_choices: saved.choices, p_default: saved.default_days };
+    const { data, error } = await supabase.rpc("abo_admin_set_history_settings", { p_enabled: enabled, ...keep });
+    setBusy(false);
+    if (error) {
+      setSaid({ ok: false, text: error.message });
+      return;
+    }
+    const offer = data as HistoryOffer;
+    setSaved(offer);
+    setText(offer.choices.join(", "));
+    setChosen(offer.default_days);
+    setSaid({ ok: true, text: "Saved. New choices are offered from the next picker that opens." });
+  }
+
+  return (
+    <div className={`${card} mt-4 p-5`}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-[13px] font-medium text-fg">Order history</div>
+          <p className="mt-0.5 max-w-xl text-xs leading-relaxed text-fg-muted">
+            {enabled
+              ? "On: right after Shopify says yes, a merchant chooses how far back orders and customers come in. Products always come in full."
+              : "Off: nobody is asked, and a new store brings everything Shopify shares. Windows merchants already chose stay as they are."}
+          </p>
+        </div>
+        <Switch checked={enabled} onChange={setEnabled} label="Ask merchants how far back" />
+      </div>
+      {saved === null ? (
+        <div className="mt-4 h-16 animate-pulse rounded-control bg-surface-subdued" aria-busy />
+      ) : (
+        enabled && (
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="history-windows" className={label}>
+                Windows offered, in days
+              </label>
+              <input
+                id="history-windows"
+                className={field}
+                value={text}
+                placeholder="30, 60, 90, 180, 365"
+                aria-invalid={notNumbers || outOfRange}
+                onChange={(e) => setText(e.target.value)}
+              />
+              <p className="mt-1.5 text-xs leading-relaxed text-fg-muted">
+                {notNumbers
+                  ? "Whole numbers of days only, separated by commas."
+                  : outOfRange
+                    ? "Up to twelve windows, each up to 3,650 days."
+                    : "Past 60 days needs read_all_orders on the store\u2019s app; without it those are shown, greyed out."}
+              </p>
+            </div>
+            <div>
+              <div className={label}>Preselected, and taken when nobody chooses</div>
+              <div role="radiogroup" aria-label="Default window" className="flex flex-wrap gap-1.5">
+                {days.map((d) => (
+                  <button
+                    key={d}
+                    role="radio"
+                    aria-checked={chosen === d}
+                    onClick={() => setChosen(d)}
+                    className={button(chosen === d ? "secondary" : "plain", "sm")}
+                  >
+                    {chosen === d && <Check aria-hidden size={12} strokeWidth={2.5} />}
+                    {windowName(d)}
+                  </button>
+                ))}
+              </div>
+              {days.length > 0 && (chosen === null || !days.includes(chosen)) && (
+                <p className="mt-1.5 text-xs text-tone-critical-fg">Pick one of the windows as the default.</p>
+              )}
+            </div>
+          </div>
+        )
+      )}
+      {said && (
+        <div role="status" className={`${said.ok ? note.success : note.critical} mt-4 text-[13px]`}>
+          {said.text}
+        </div>
+      )}
+      <div className="mt-4 flex justify-end">
+        <button onClick={save} disabled={!dirty || busy || (enabled && !usable)} className={button("primary", "sm")}>
+          {busy ? "Saving\u2026" : "Save"}
+        </button>
+      </div>
+    </div>
   );
 }

@@ -20,8 +20,9 @@ import { supabase } from "@/lib/supabase-client";
 import { apiFetch } from "@/lib/auth";
 import { ago } from "@/lib/when";
 import ConnectShopify from "@/components/ConnectShopify";
+import HistoryPicker from "@/components/HistoryPicker";
 import { Dialog } from "@/components/ui/Dialog";
-import { Check, Plug, RefreshCw, TriangleAlert } from "lucide-react";
+import { CalendarRange, Check, Plug, RefreshCw, TriangleAlert } from "lucide-react";
 
 /**
  * Where each resource stands, as the import route reports it: what to
@@ -82,6 +83,10 @@ export default function StoreStrip({
   const [onServer, setOnServer] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  // Orders and customers wait for the merchant to say how far back they
+  // go (0154): asked here, where the import is, rather than left waiting.
+  const [askHistory, setAskHistory] = useState(false);
+  const [pickingHistory, setPickingHistory] = useState(false);
   /** Just finished a check the merchant asked for, to say so for a moment. */
   const [justChecked, setJustChecked] = useState(false);
   /** What the running pass is: the first import, a check for updates, or a retry. */
@@ -127,6 +132,10 @@ export default function StoreStrip({
       const { data } = await apiFetch("/api/shopify/import", { projectId, status: true });
       if (cancelled.current) return;
       if (data?.progress) setProgress(data.progress as Progress);
+      if (data?.awaitingHistory) {
+        setAskHistory(true);
+        return;
+      }
       const stopped = data?.stopped as { error?: string | null } | undefined;
       if (stopped) {
         fail(stopped.error ?? "The import stopped.");
@@ -155,6 +164,12 @@ export default function StoreStrip({
     for (let i = 0; i < MAX_PAGES && !cancelled.current; i++) {
       const { ok, data } = await apiFetch("/api/shopify/import", { projectId });
       if (data?.progress) setProgress(data.progress as Progress);
+      // Held: nothing more to do from here until something changes —
+      // the merchant choosing how far back to go, most often.
+      if (data?.held) {
+        if (data.awaitingHistory) setAskHistory(true);
+        break;
+      }
       if (data?.done) {
         setDrift((data.drift as Missing | undefined) ?? null);
         setRemoved((data.removed as Record<string, number> | undefined) ?? null);
@@ -234,6 +249,11 @@ export default function StoreStrip({
       const { data } = await apiFetch("/api/shopify/import", { projectId, status: true });
       if (cancelled.current) return;
       setProgress((data?.progress as Progress | undefined) ?? {});
+      if (data?.awaitingHistory) {
+        setAskHistory(true);
+        status.current?.({ storeId: row.id, status: row.status, importing: false, synced: synced.current });
+        return;
+      }
       // Nothing has finished yet, or something is part way through.
       // Either way the merchant is waiting on it, so start.
       if (!data?.done) pump();
@@ -486,6 +506,33 @@ export default function StoreStrip({
             </button>
           )}
         </Line>
+      )}
+      {askHistory && canManage && !running && (
+        <button
+          onClick={() => setPickingHistory(true)}
+          className="flex w-full items-center gap-2 rounded-control bg-signal-info/15 px-2 py-1.5 text-left text-[12px] text-frame-fg transition-colors hover:bg-signal-info/25"
+        >
+          <CalendarRange aria-hidden size={13} strokeWidth={2} className="shrink-0 text-signal-info" />
+          <span className="min-w-0 flex-1 truncate">Choose how far back orders go</span>
+          <span className="shrink-0 font-medium underline-offset-2">Choose</span>
+        </button>
+      )}
+      {pickingHistory && (
+        <Dialog
+          title="How far back should orders come in?"
+          description="Products are coming in now. Orders and customers wait for this."
+          onClose={() => setPickingHistory(false)}
+        >
+          <HistoryPicker
+            projectId={projectId}
+            onCancel={() => setPickingHistory(false)}
+            onDone={() => {
+              setPickingHistory(false);
+              setAskHistory(false);
+              pump("start");
+            }}
+          />
+        </Dialog>
       )}
       {connectDialog}
     </>

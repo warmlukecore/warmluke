@@ -25,6 +25,12 @@ export type StoreToken = {
   access_token: string;
   refresh_token?: string | null;
   token_expires_at?: string | null;
+  /** When it was (last) connected: the start of the wait for a history choice. */
+  connected_at?: string | null;
+  /** Where the merchant's history window opens (0154); null for everything. */
+  history_from?: string | null;
+  /** When they chose it; null while they have not. */
+  history_set_at?: string | null;
 };
 
 /**

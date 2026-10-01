@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   // here because that would be a second opinion on the same question.
   const { data: found } = await auth.client
     .from("stores")
-    .select("id, shop_domain, status, last_synced_at")
+    .select("id, shop_domain, status, last_synced_at, connected_at, history_from, history_set_at")
     .eq("project_id", projectId)
     .maybeSingle();
 

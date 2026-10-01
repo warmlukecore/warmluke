@@ -645,11 +645,17 @@ console.log("\nand a merchant Shopify sends us is only believed when Shopify sig
 // reach the worker was never meant to have.
 console.log("\nand an import ticket reaches exactly the tables the importer writes");
 {
+  // The migration that lists the tables, not any that names the ticket:
+  // 0154 hands the worker its store through abo_import_ticket_hash and
+  // grants nothing, and reading it as the list said every table was gone.
   const MARK = "_import_ticket";
   const holding = readdirSync(new URL("../supabase/migrations", import.meta.url))
     .filter((f) => f.endsWith(".sql"))
     .sort()
-    .filter((f) => readFileSync(new URL(`../supabase/migrations/${f}`, import.meta.url), "utf8").includes(MARK));
+    .filter((f) => {
+      const text = readFileSync(new URL(`../supabase/migrations/${f}`, import.meta.url), "utf8");
+      return text.includes(MARK) && /foreach t in array array\[/.test(text);
+    });
   check("a migration grants the ticket its tables", holding.length > 0);
   const sql = holding.length
     ? readFileSync(new URL(`../supabase/migrations/${holding.at(-1)}`, import.meta.url), "utf8")
@@ -685,6 +691,90 @@ console.log("\nand an import ticket reaches exactly the tables the importer writ
     .filter((f) => /\.(ts|tsx)$/.test(f))
     .map((f) => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8"));
   check("no code on the server reads a service-role key", !src.some((s) => /SERVICE_ROLE/.test(s)));
+}
+
+console.log("\nShopify is asked only for the history window (0154)");
+{
+  const { WINDOWED, windowed, SHOPIFY_RESOURCES: R } = await import("../src/lib/shopify-resources.ts");
+  const { historyFrom, HISTORY_WAIT_MS } = await import("../src/lib/import-step.ts");
+  const on = { enabled: true, default_days: 45 };
+  const off = { enabled: false, default_days: 45 };
+  const from = "2026-09-01T00:00:00.000Z";
+  for (const r of Object.keys(WINDOWED)) {
+    const f = WINDOWED[r](from);
+    const parts = { count: R[r].count, page: R[r].page, bulk: R[r].bulk?.query };
+    for (const [part, gql] of Object.entries(parts)) {
+      if (!gql) continue;
+      const w = windowed(gql, r, from);
+      const had = /^[^]*?\b(?:orders|customers|ordersCount|customersCount)\b\s*\(([^)]*)\)/.exec(gql)?.[1];
+      const before = had && /query:\s*"((?:[^"\\]|\\.)*)"/.exec(had)?.[1];
+      check(`${r} ${part}: the window is asked for, once`, w.split(f).length === 2);
+      check(
+        `${r} ${part}: ${before ? "with what it already asked, joined by AND" : "on its top-level list"}`,
+        before
+          ? w.includes(JSON.stringify(`(${before}) AND (${f})`))
+          : /\b(orders|customers|ordersCount|customersCount)\(query: "/.test(w)
+      );
+    }
+  }
+  check("orders by when they were placed", WINDOWED.orders(from) === `processed_at:>='${from}'`);
+  check(
+    "customers who signed up or ordered in it",
+    WINDOWED.customers(from) === `customer_date:>='${from}' OR order_date:>='${from}'`
+  );
+  check("products come in full", windowed(R.products.page, "products", from) === R.products.page);
+  check("and with no window nothing changes", windowed(R.orders.page, "orders", null) === R.orders.page);
+
+  const m = readFileSync(
+    new URL("../supabase/migrations/0154_a_store_brings_the_history_it_was_asked_for.sql", import.meta.url),
+    "utf8"
+  );
+  const sqlWindowed = [.../v_windowed text\[\] := array\[([^\]]*)\]/.exec(m)[1].matchAll(/'([^']+)'/g)]
+    .map((x) => x[1])
+    .sort();
+  check(
+    "the database windows the same lists",
+    JSON.stringify(sqlWindowed) === JSON.stringify(Object.keys(WINDOWED).sort())
+  );
+  check(
+    "and waits the same fifteen minutes before sending a store nobody has chosen for",
+    HISTORY_WAIT_MS === 15 * 60_000 && /connected_at > now\(\) - interval '15 minutes'/.test(m)
+  );
+
+  const now = Date.parse("2026-10-01T12:00:00Z");
+  const just = new Date(now - 60_000).toISOString();
+  const long = new Date(now - 60 * 60_000).toISOString();
+  check(
+    "a choice is the window",
+    historyFrom({ history_set_at: just, history_from: from, connected_at: just }, on, now) === from
+  );
+  check(
+    "a choice of everything is no window",
+    historyFrom({ history_set_at: just, history_from: null, connected_at: just }, on, now) === null
+  );
+  check(
+    "not chosen, just connected: wait",
+    historyFrom({ history_set_at: null, history_from: null, connected_at: just }, on, now) === "wait"
+  );
+  check(
+    "not chosen after the wait: the administrator's default, from when it was connected",
+    historyFrom({ history_set_at: null, history_from: null, connected_at: long }, on, now) ===
+      new Date(Date.parse(long) - 45 * 86_400_000).toISOString()
+  );
+  check(
+    "asking switched off waits for nobody: an unchosen store brings everything",
+    historyFrom({ history_set_at: null, history_from: null, connected_at: just }, off, now) === null
+  );
+  check(
+    "and a window already chosen stays",
+    historyFrom({ history_set_at: just, history_from: from, connected_at: just }, off, now) === from
+  );
+  const { windowName } = await import("../src/lib/when.ts");
+  check(
+    "a window is named as a merchant says it",
+    ["Last 7 days", "Last 60 days", "Last 3 months", "Last 6 months", "Last year", "Last 2 years"].join() ===
+      [7, 60, 90, 180, 365, 730].map(windowName).join()
+  );
 }
 
 console.log(fails.length === 0 ? "\nevery guard holds" : `\n${fails.length} FAILED`);
