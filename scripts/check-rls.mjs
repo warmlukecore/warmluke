@@ -361,6 +361,19 @@ try {
       .ok
   );
   check(
+    "a teammate cannot take anyone else's seat away",
+    (await S(`project_members?id=eq.${other.id}`, { method: "DELETE" })).json?.length === 0
+  );
+  // Leaving is tried by the outsider, who joins and leaves again, so the
+  // seat the rest of this check runs on stays put (0151).
+  const visit = (await O("project_members", { method: "POST", body: JSON.stringify({ project_id: proj.id }) })).json[0];
+  await call(outsider.jwt, "abo_join", { p_token: visit.token });
+  check(
+    "a teammate can leave, and is out at once",
+    (await X(`project_members?id=eq.${visit.id}`, { method: "DELETE" })).json?.length === 1 &&
+      (await X(`projects?id=eq.${proj.id}&select=id`)).json?.length === 0
+  );
+  check(
     "they switch one person off what they built",
     (await S("module_hides", { method: "POST", body: JSON.stringify({ module_id: theirs, member_id: other.id }) })).ok
   );

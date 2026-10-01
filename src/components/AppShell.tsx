@@ -24,7 +24,7 @@ import VersionHistory from "@/components/VersionHistory";
 import AutomationsPanel from "@/components/AutomationsPanel";
 import { FormatProvider } from "@/lib/format";
 import { projectFormat } from "@/lib/money";
-import ProjectSettings from "@/components/ProjectSettings";
+import ProjectSettings, { TeammateSettings } from "@/components/ProjectSettings";
 import ShareSection from "@/components/ShareSection";
 import { LinkProvider, type LinkOptions } from "@/components/LinkContext";
 import { labelForRow } from "@/lib/links";
@@ -2942,10 +2942,10 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             <div
               className={`flex items-center gap-1 border-t border-frame-line px-3 py-2 ${railOn ? "lg:flex-col lg:px-0" : ""}`}
             >
-              {project && isOwner && (
+              {project && (
                 <button
                   onClick={() => setSettingsOpen(true)}
-                  aria-label="Project settings"
+                  aria-label={isOwner ? "Project settings" : "Settings"}
                   className={`flex items-center gap-2.5 rounded-control px-2 py-1.5 text-[13px] text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white ${
                     railOn ? "lg:h-10 lg:w-10 lg:justify-center lg:px-0" : ""
                   }`}
@@ -3328,7 +3328,15 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               }}
             />
           )}
-          {settingsOpen && project && (
+          {settingsOpen && project && userId && !isOwner && (
+            <TeammateSettings
+              project={project}
+              userId={userId}
+              onLeft={() => router.replace("/dashboard")}
+              onClose={() => setSettingsOpen(false)}
+            />
+          )}
+          {settingsOpen && project && isOwner && (
             <ProjectSettings
               project={project}
               initialTab={settingsOpen === "people" ? "people" : undefined}

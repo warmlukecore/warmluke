@@ -901,3 +901,109 @@ export default function ProjectSettings({
     </Dialog>
   );
 }
+
+/**
+ * Settings for someone on the team: what the owner has let them do, and
+ * the way out. Everything in the owner's settings is the owner's to
+ * change, so this only says it, and leaving is the one thing it does (0151).
+ */
+export function TeammateSettings({
+  project,
+  userId,
+  onLeft,
+  onClose,
+}: {
+  project: ProjectRow;
+  userId: string;
+  onLeft: () => void;
+  onClose: () => void;
+}) {
+  const [seat, setSeat] = useState<{ id: string; can_see_store: boolean; can_build: boolean } | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase
+      .from("project_members")
+      .select("id, can_see_store, can_build")
+      .eq("project_id", project.id)
+      .eq("user_id", userId)
+      .maybeSingle()
+      .then(({ data }) => setSeat(data));
+  }, [project.id, userId]);
+
+  async function leave() {
+    if (!seat) return;
+    setBusy(true);
+    setError(null);
+    // A delete RLS refuses is not an error, only no rows: count them.
+    const { data, error: e } = await supabase.from("project_members").delete().eq("id", seat.id).select("id");
+    setBusy(false);
+    if (e || !data?.length) {
+      setError("Couldn’t leave. Try again, or ask the owner to remove you.");
+      return;
+    }
+    onLeft();
+  }
+
+  const row = (text: string, on: boolean | undefined) => (
+    <div className="flex items-center justify-between gap-4 text-[13px]">
+      <span className="text-fg">{text}</span>
+      <span className={on ? "text-fg" : "text-fg-muted"}>{seat === null ? "…" : on ? "Yes" : "No"}</span>
+    </div>
+  );
+
+  return (
+    <Dialog
+      title="Settings"
+      description={project.name}
+      onClose={onClose}
+      footer={
+        <button onClick={onClose} className={`${button("secondary")} ml-auto`}>
+          Done
+        </button>
+      }
+    >
+      <div className="space-y-4">
+        {error && <ErrorNote error={asError(error)} />}
+        <Group title="Your access" description={`Set by the owner of ${project.name}. Ask them to change it.`}>
+          {row("See the store’s orders, customers and products", seat?.can_see_store)}
+          {row("Build your own sections with Luke and your own AI", seat?.can_build)}
+          <p className="text-xs text-fg-muted">You also see every section the owner shares with you.</p>
+        </Group>
+
+        <Group title="Leave this project" danger>
+          {!confirming ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-fg-muted">
+                What you built stays with the owner. To come back you need a new link.
+              </p>
+              <button
+                onClick={() => setConfirming(true)}
+                disabled={!seat}
+                className={button("critical-secondary", "sm")}
+              >
+                Leave project
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              <div className={note.critical}>
+                You lose access to <b>{project.name}</b> straight away.
+              </div>
+              <div className="flex gap-2">
+                <button onClick={leave} disabled={busy} className={button("critical")}>
+                  {busy ? "Leaving…" : "Leave"}
+                </button>
+                <button onClick={() => setConfirming(false)} className={button("plain")}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </Group>
+      </div>
+    </Dialog>
+  );
+}
