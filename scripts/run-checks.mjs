@@ -82,7 +82,7 @@ const classify = (name) => {
   // of CI altogether, which is a check lost to a rule about checks.
   const needsDb =
     /createClient\(|api\.supabase\.com|owner-session|client-session/.test(src) ||
-    /env\.(ADAPTIVE_OS_SERVICE_ROLE_KEY|SUPABASE_ACCESS_TOKEN|OWNER_PASSWORD)|env\["(ADAPTIVE_OS_SERVICE_ROLE_KEY|SUPABASE_ACCESS_TOKEN)"\]/.test(
+    /env\.(ADAPTIVE_OS_SERVICE_ROLE_KEY|SUPABASE_ACCESS_TOKEN|OWNER_PASSWORD|DATABASE_URL)|env\["(ADAPTIVE_OS_SERVICE_ROLE_KEY|SUPABASE_ACCESS_TOKEN|DATABASE_URL)"\]/.test(
       src.replace(/process\.env\.\w+/g, "")
     );
   const needsServer = /APP_URL|localhost:3100/.test(src);
