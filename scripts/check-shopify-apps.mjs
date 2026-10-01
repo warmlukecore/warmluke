@@ -176,7 +176,10 @@ rollback;
 
 const r = psql(sql);
 console.log("who may set an app up");
-check("someone who is not an administrator cannot list them", (r.outsider_list ?? "").startsWith("ERR Not an administrator"));
+check(
+  "someone who is not an administrator cannot list them",
+  (r.outsider_list ?? "").startsWith("ERR Not an administrator")
+);
 check("nor add one", (r.outsider_save ?? "").startsWith("ERR Not an administrator"));
 check("nor switch internal mode", (r.outsider_internal ?? "").startsWith("ERR Not an administrator"));
 
@@ -198,7 +201,10 @@ console.log("\nwhat the app server can read");
 check("nothing without its key", r.wrong_key === "0");
 check("the store's own secret with it", r.right_key === SECRET);
 check("and every app that is on", r.all_with_key === "1");
-check("the public key cannot ask the database for a secret", (r.anon_secret_for ?? "").startsWith("ERR permission denied"));
+check(
+  "the public key cannot ask the database for a secret",
+  (r.anon_secret_for ?? "").startsWith("ERR permission denied")
+);
 check("nor read the apps at the table", (r.anon_table ?? "").startsWith("ERR permission denied"));
 
 console.log("\ndeliveries, only under the store's own app");
