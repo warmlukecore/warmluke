@@ -71,18 +71,34 @@ const good = {
   role: "founder",
   monthly_orders: "500_2000",
   platform: "shopify",
-  website: "",
+  website: "rao.in",
   team_size: "",
   heard_from: "",
   heard_from_detail: "",
 };
 check("a complete form has nothing wrong", Object.keys(problems(good)).length === 0);
-const blank = problems({ ...good, full_name: " ", business_name: "", role: "", monthly_orders: "", platform: "" });
+const blank = problems({
+  ...good,
+  full_name: " ",
+  business_name: "",
+  role: "",
+  monthly_orders: "",
+  platform: "",
+  website: " ",
+});
 check(
   "each required answer missing is named",
-  ["full_name", "business_name", "role", "monthly_orders", "platform"].every((k) => typeof blank[k] === "string")
+  ["full_name", "business_name", "role", "monthly_orders", "platform", "website"].every(
+    (k) => typeof blank[k] === "string"
+  )
 );
-check("and the optional ones are not", !blank.website && !blank.team_size && !blank.heard_from);
+check("and the optional ones are not", !blank.team_size && !blank.heard_from);
+check("a website that is not an address is refused", !!problems({ ...good, website: "my shop" }).website);
+check(
+  "one with its scheme or a path is not",
+  !problems({ ...good, website: "https://rao.in/shop" }).website &&
+    !problems({ ...good, website: "www.rao.co.in" }).website
+);
 check(
   "a name longer than the table holds is refused first",
   !!problems({ ...good, full_name: "x".repeat(121) }).full_name
@@ -95,7 +111,7 @@ const row = toRow({ ...good, website: "  rao.in ", heard_from: "twitter", heard_
 check("answers are trimmed", row.full_name === "Asha Rao" && row.website === "rao.in");
 check(
   "an optional answer left empty is null, not an empty string",
-  toRow(good).team_size === null && toRow(good).website === null
+  toRow(good).team_size === null && toRow(good).heard_from === null
 );
 check("a follow-up only survives beside the answer that asked for it", row.heard_from_detail === null);
 check(

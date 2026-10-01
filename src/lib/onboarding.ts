@@ -125,7 +125,10 @@ export function problems(a: Answers): Partial<Record<keyof Answers, string>> {
   if (!within(ROLE_OPTIONS, a.role)) out.role = "Pick the closest one.";
   if (!within(ORDER_OPTIONS, a.monthly_orders)) out.monthly_orders = "Pick a range, or prefer not to say.";
   if (!within(PLATFORM_OPTIONS, a.platform)) out.platform = "Pick where the store runs.";
-  if (a.website.trim().length > TEXT_MAX) out.website = `Up to ${TEXT_MAX} characters.`;
+  const site = a.website.trim();
+  if (!site) out.website = "Your store’s website, please.";
+  else if (site.length > TEXT_MAX) out.website = `Up to ${TEXT_MAX} characters.`;
+  else if (!/^(https?:\/\/)?[^\s/.]+(\.[^\s/.]+)+(\/\S*)?$/i.test(site)) out.website = "Something like yourstore.com.";
   if (a.team_size && !within(TEAM_OPTIONS, a.team_size)) out.team_size = "Pick one of these.";
   if (a.heard_from && !within(HEARD_OPTIONS, a.heard_from)) out.heard_from = "Pick one of these.";
   if (a.heard_from_detail.trim().length > TEXT_MAX) out.heard_from_detail = `Up to ${TEXT_MAX} characters.`;
@@ -141,7 +144,7 @@ export function toRow(a: Answers) {
     role: a.role,
     monthly_orders: a.monthly_orders,
     platform: a.platform,
-    website: opt(a.website),
+    website: a.website.trim(),
     team_size: opt(a.team_size),
     heard_from: opt(a.heard_from),
     // A follow-up only means something beside the answer that asked for it.

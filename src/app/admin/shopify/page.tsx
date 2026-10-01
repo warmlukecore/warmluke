@@ -130,6 +130,12 @@ export default function ShopifyAppsAdmin() {
 
   async function save() {
     if (!draft) return;
+    // An app nobody's account points at is never opened: Connect with
+    // Shopify finds an app by its owner's sign-in email.
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(draft.owner_email.trim())) {
+      setFormError("Whose Warmluke account is this for? Their sign-in email, please.");
+      return;
+    }
     setSaving(true);
     setFormError(null);
     const { error: err } = await supabase.rpc("abo_admin_shopify_app_save", {
@@ -138,7 +144,7 @@ export default function ShopifyAppsAdmin() {
       p_client_id: draft.client_id,
       p_secret: draft.secret || null,
       p_shops: draft.shops.split(/[\s,]+/).filter(Boolean),
-      p_owner_email: draft.owner_email || null,
+      p_owner_email: draft.owner_email.trim(),
       p_all_orders: draft.all_orders,
       p_enabled: draft.enabled,
     });
@@ -455,11 +461,12 @@ export default function ShopifyAppsAdmin() {
             </div>
             <div>
               <label htmlFor="app-owner" className={label}>
-                Warmluke account it&rsquo;s for (optional)
+                Warmluke account it&rsquo;s for
               </label>
               <input
                 id="app-owner"
                 type="email"
+                required
                 className={field}
                 value={draft.owner_email}
                 placeholder="their sign-in email"

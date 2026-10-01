@@ -188,13 +188,20 @@ export default function ConnectShopify({
     error ?? (judged && "error" in read && shop.trim() ? [read.error, read.hint].filter(Boolean).join(" ") : null);
 
   if (notSetUp) {
+    // The way out stays: without it, onboarding had nothing to press
+    // but Back, and a new account could never get past its store step.
     return (
-      <div className="rounded-control bg-surface-subdued px-3 py-2.5 text-[13px] leading-relaxed text-fg-muted">
-        Your store isn&rsquo;t set up to connect to Warmluke yet. We&rsquo;ll send you a link when it is, or write to{" "}
-        <a href="mailto:dev.warmluke@gmail.com" className="text-link hover:underline">
-          dev.warmluke@gmail.com
-        </a>
-        .
+      <div className="space-y-3">
+        <div className="rounded-control bg-surface-subdued px-3 py-2.5 text-[13px] leading-relaxed text-fg-muted">
+          Your store isn&rsquo;t set up to connect to Warmluke yet. We&rsquo;ll send you a link when it is, or write to{" "}
+          <a href="mailto:dev.warmluke@gmail.com" className="text-link hover:underline">
+            dev.warmluke@gmail.com
+          </a>
+          .
+        </div>
+        <button onClick={onCancel} className={button("plain")}>
+          {cancelLabel}
+        </button>
       </div>
     );
   }

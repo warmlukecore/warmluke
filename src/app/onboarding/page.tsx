@@ -20,7 +20,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, Check, Copy, LoaderCircle, LogOut } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Copy, LoaderCircle, LogOut, Plug } from "lucide-react";
 import { apiFetch, signOut, takePendingPrompt, useUser } from "@/lib/auth";
 import { supabase } from "@/lib/supabase-client";
 import ConnectShopify from "@/components/ConnectShopify";
@@ -46,6 +46,7 @@ import {
 } from "@/lib/onboarding";
 import { Logo } from "@/components/ui/Logo";
 import { InviteOnly } from "@/components/InviteOnly";
+import { ASSISTANTS } from "@/lib/connect-assistants";
 
 const WATCH_MS = 3000;
 
@@ -865,7 +866,6 @@ function AboutYou({
                 onChange={set("website")}
                 error={shown("website")}
                 max={TEXT_MAX}
-                optional
                 placeholder="yourstore.com"
                 autoComplete="url"
               />
@@ -1093,29 +1093,49 @@ function Pick({
 }
 
 // ── Their own AI ───────────────────────────────────────────────
+//
+// Warmluke cannot add itself to someone's Claude or ChatGPT: they add it
+// there. So this shows where the buttons are in theirs, from the same
+// list the app's "Use your own AI" draws (lib/connect-assistants), and
+// says plainly that it turns green when they allow it. It used to wait
+// under a spinner, which read as Warmluke doing the connecting.
 
 function Assistant({ connected, onBack, onDone }: { connected: string[]; onBack: () => void; onDone: () => void }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [which, setWhich] = useState(ASSISTANTS[0].id);
   const url = typeof window === "undefined" ? "" : `${window.location.origin}/api/mcp`;
   const names = [...new Set(connected)];
+  const chosen = ASSISTANTS.find((a) => a.id === which) ?? ASSISTANTS[0];
+  const where = chosen.id === "any" ? "your AI" : chosen.name;
 
-  async function copy() {
+  async function copy(text: string) {
     try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      await navigator.clipboard.writeText(text);
+      setCopied(text);
+      setTimeout(() => setCopied(null), 1500);
     } catch {
-      setCopied(false);
+      setCopied(null);
     }
   }
 
+  const copyButton = (text: string) => (
+    <button onClick={() => copy(text)} className={button("secondary")}>
+      {copied === text ? (
+        <Check aria-hidden size={15} strokeWidth={2} className="text-signal-success" />
+      ) : (
+        <Copy aria-hidden size={15} strokeWidth={1.75} />
+      )}
+      {copied === text ? "Copied" : "Copy"}
+    </button>
+  );
+
   return (
     <Screen
-      eyebrow="Your AI"
-      title="Bring your own AI"
-      lede="Use Claude or ChatGPT with your store. It can read it, and anything it wants to build or change comes back to Warmluke for your yes."
+      eyebrow="Your AI · optional"
+      title="Use Claude or ChatGPT with your store"
+      lede="Add Warmluke inside the AI you already use. It can then read your store, and anything it wants to build or change waits here for your yes."
     >
-      <div className={label}>Connector address</div>
+      <div className={label}>1. Copy this address</div>
       <div className="flex gap-2">
         <input
           readOnly
@@ -1124,29 +1144,49 @@ function Assistant({ connected, onBack, onDone }: { connected: string[]; onBack:
           aria-label="Connector address"
           className={`${fieldOf("md")} w-full min-w-0 font-mono`}
         />
-        <button onClick={copy} className={button("secondary")}>
-          {copied ? (
-            <Check aria-hidden size={15} strokeWidth={2} className="text-signal-success" />
-          ) : (
-            <Copy aria-hidden size={15} strokeWidth={1.75} />
-          )}
-          {copied ? "Copied" : "Copy"}
-        </button>
+        {copyButton(url)}
       </div>
-      <ol className="mt-6 space-y-3 text-sm text-fg-muted">
-        {[
-          "In Claude, open Settings, then Connectors, and add a custom connector. In ChatGPT it is under Settings, Connectors.",
-          "Paste the address, connect, and sign in with this Warmluke account when it asks.",
-          "Ask it about your store. What it proposes waits in Warmluke for you.",
-        ].map((t, i) => (
-          <li key={i} className="flex gap-3">
+
+      <div className={`${label} mt-7`}>2. Add it in your AI</div>
+      <div role="group" aria-label="Your AI" className="flex flex-wrap gap-1.5">
+        {ASSISTANTS.map((a) => (
+          <button
+            key={a.id}
+            onClick={() => setWhich(a.id)}
+            aria-pressed={which === a.id}
+            className={button(which === a.id ? "secondary" : "plain", "sm")}
+          >
+            {a.logo ? (
+              // eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise
+              <img src={a.logo} alt="" width={13} height={13} className="h-3.5 w-3.5 shrink-0 object-contain" />
+            ) : (
+              <Plug aria-hidden size={13} strokeWidth={1.75} className="shrink-0" />
+            )}
+            {a.name}
+          </button>
+        ))}
+      </div>
+      <ol className="mt-4 space-y-3 text-sm text-fg-muted">
+        {chosen.steps(url).map((s, i) => (
+          <li key={`${chosen.id}-${i}`} className="flex gap-3">
             <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-line-strong text-[11px] font-semibold text-fg">
               {i + 1}
             </span>
-            <span>{t}</span>
+            <span className="min-w-0 flex-1 space-y-2">
+              <span className="block">{s.text}</span>
+              {s.copy && (
+                <span className="flex gap-2">
+                  <code className="min-w-0 flex-1 rounded-control bg-surface-subdued px-2.5 py-2 font-mono text-xs break-all text-fg">
+                    {s.copy}
+                  </code>
+                  {copyButton(s.copy)}
+                </span>
+              )}
+            </span>
           </li>
         ))}
       </ol>
+      {chosen.plan && <p className="mt-2 pl-8 text-xs text-fg-faint">{chosen.plan}</p>}
 
       <div
         role="status"
@@ -1161,8 +1201,8 @@ function Assistant({ connected, onBack, onDone }: { connected: string[]; onBack:
           </>
         ) : (
           <>
-            <LoaderCircle aria-hidden size={14} strokeWidth={2} className="animate-spin motion-reduce:animate-none" />
-            Waiting for it to connect. This notices by itself.
+            <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-line-strong" />
+            Not connected yet. When you allow Warmluke in {where}, this turns green.
           </>
         )}
       </div>
