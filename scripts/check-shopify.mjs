@@ -371,6 +371,13 @@ console.log("\nand what is missing is measured against it");
 check("an unknown grant reports nothing missing", missingScopes(null).length === 0);
 check("an empty grant is treated as unknown too", missingScopes([]).length === 0);
 check("a full grant reports nothing missing", missingScopes(scopesFor({}), {}).length === 0);
+// What Shopify sends back when an app holds write too: write_orders, and no read_orders beside it.
+const writeGrant = scopesFor({}).map((s) => s.replace(/^read_(orders|products|customers|inventory)$/, "write_$1"));
+check("a write grant covers its read", missingScopes(writeGrant, {}).length === 0);
+check(
+  "and only what is truly absent is named",
+  JSON.stringify(missingScopes(writeGrant, { SHOPIFY_READ_ALL_ORDERS: "true" })) === '["read_all_orders"]'
+);
 // The case this exists for: a token from before the scopes were added.
 const older = scopesFor({}).filter((s) => !PLANNED_SCOPES.includes(s));
 check(

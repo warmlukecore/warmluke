@@ -719,8 +719,17 @@ export function scopesFor(env = process.env): string[] {
  */
 export function missingScopes(granted: readonly string[] | null | undefined, env = process.env): string[] {
   if (!granted || granted.length === 0) return [];
-  return scopesFor(env).filter((s) => !granted.includes(s));
+  return scopesFor(env).filter((s) => !hasScope(granted, s));
 }
+
+/**
+ * Whether a grant covers a scope. Shopify reports write_orders alone when
+ * both were granted, because write includes read, so read_orders is never
+ * in the list beside it; reading the list literally called a store that
+ * held every scope short of four.
+ */
+export const hasScope = (granted: readonly string[], scope: string): boolean =>
+  granted.includes(scope) || (scope.startsWith("read_") && granted.includes(`write_${scope.slice(5)}`));
 
 /** Every webhook topic any resource listens for. */
 export const WEBHOOK_TOPICS: readonly string[] = RESOURCES.flatMap((r) => SHOPIFY_RESOURCES[r].webhooks);

@@ -22,6 +22,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { graphql } from "@/lib/shopify-import";
 import { ShopifyError } from "@/lib/shopify";
+import { hasScope } from "@/lib/shopify-resources";
 import { actionSpec, MOST_TARGETS, type ActionParams, type ActionTarget } from "@/lib/store-actions";
 import { createHash } from "node:crypto";
 
@@ -119,7 +120,7 @@ export async function runAction(
           // merchant gets one refusal per target, all of them the
           // same, and none of them saying what to do about it.
           const granted = (store.granted_scopes ?? []) as string[];
-          const short = granted.length ? spec.scopes.filter((s) => !granted.includes(s)) : spec.scopes;
+          const short = granted.length ? spec.scopes.filter((s) => !hasScope(granted, s)) : spec.scopes;
           if (short.length) {
             errors.push(
               `This store has not allowed Warmluke to ${short.join(", ")}. Reconnect it to grant that, then ask again. Nothing was changed.`

@@ -29,6 +29,7 @@ import {
   type StoreActionSpec,
 } from "@/lib/store-actions";
 import type { StoreBrief } from "@/lib/store-read";
+import { hasScope } from "@/lib/shopify-resources";
 
 /**
  * Everything that can be asked for, off the registry.
@@ -181,7 +182,7 @@ export async function proposeStoreAction(
   // existed — so the executor is left to find out instead.
   const { data: grantRow } = await db.from("stores").select("granted_scopes").eq("id", store.id).maybeSingle();
   const granted = (grantRow?.granted_scopes ?? null) as string[] | null;
-  const short = granted ? spec.scopes.filter((sc) => !granted.includes(sc)) : [];
+  const short = granted ? spec.scopes.filter((sc) => !hasScope(granted, sc)) : [];
   if (short.length) {
     return {
       ok: false,
