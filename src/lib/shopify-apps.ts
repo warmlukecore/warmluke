@@ -88,12 +88,73 @@ export async function allApps(env: Env = process.env): Promise<ShopifyApp[]> {
   return [...(main ? [main] : []), ...own];
 }
 
-/** The first app whose secret the check accepts, or null. */
+/**
+ * Every app that may have signed what Shopify sent about one shop: the
+ * apps claiming it that are on (a merchant's own, an administrator's,
+ * 0156), then the main app. Shopify signs with the app it is answering
+ * for, so the signature says which one — the shop alone no longer can,
+ * since more than one account may have set an app up for it.
+ */
+export async function appsForShop(shop: string, env: Env = process.env): Promise<ShopifyApp[]> {
+  const main = mainApp(env);
+  const key = env.SHOPIFY_APPS_KEY;
+  const client = key ? db(env) : null;
+  if (!client) return main ? [main] : [];
+  const { data, error } = await client.rpc("abo_shopify_apps_for", { p_shop: shop, p_key: key });
+  if (error) throw new Error(`Couldn't read which Shopify apps ${shop} may come through: ${error.message}`);
+  const own = ((data ?? []) as Array<{ client_id: string; client_secret: string; all_orders: boolean }>).map((a) => ({
+    clientId: a.client_id,
+    clientSecret: a.client_secret,
+    own: true,
+    allOrders: a.all_orders,
+  }));
+  return [...own, ...(main ? [main] : [])];
+}
+
+/**
+ * Whether the app that signed a callback may connect the store it names:
+ * the main app, an administrator's for the shop, or the store owner's own
+ * (0156). Asked before any token is taken. A deployment with no apps of
+ * its own has only the main app, which may.
+ */
+export async function claimOk(shop: string, app: ShopifyApp, state: string, env: Env = process.env): Promise<boolean> {
+  if (!app.own) return true;
+  const key = env.SHOPIFY_APPS_KEY;
+  const client = key ? db(env) : null;
+  if (!client) return false;
+  const { data, error } = await client.rpc("abo_shopify_claim_ok", {
+    p_shop: shop,
+    p_client_id: app.clientId,
+    p_state: state,
+    p_key: key,
+  });
+  return !error && data === true;
+}
+
+/**
+ * The shop came through this app: its deliveries and token renewals use
+ * it from now on (0156). Never fatal — the store is connected either way,
+ * and the next connection says it again.
+ */
+export async function cameThrough(shop: string, app: ShopifyApp, env: Env = process.env): Promise<void> {
+  const key = env.SHOPIFY_APPS_KEY;
+  const client = key ? db(env) : null;
+  if (!client) return;
+  const { error } = await client.rpc("abo_shopify_came_through", {
+    p_shop: shop,
+    p_client_id: app.own ? app.clientId : null,
+    p_key: key,
+  });
+  if (error) console.error(`could not record which app ${shop} came through:`, error.message);
+}
+
+/** The first app whose secret the check accepts, or null. All apps unless told which to try. */
 export async function firstThatSigned(
   check: (secret: string) => void,
-  env: Env = process.env
+  env: Env = process.env,
+  apps?: ShopifyApp[]
 ): Promise<ShopifyApp | null> {
-  for (const app of await allApps(env)) {
+  for (const app of apps ?? (await allApps(env))) {
     try {
       check(app.clientSecret);
       return app;

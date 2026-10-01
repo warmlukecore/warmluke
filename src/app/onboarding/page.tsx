@@ -347,12 +347,12 @@ export default function Onboarding() {
               </div>
             ) : target ? (
               <div className="space-y-6">
+                {/* No way past it: Warmluke is built on the store, and a merchant
+                    who went in without one found nothing there to build on. */}
                 <ConnectShopify
                   projectId={target.id}
                   initialShop={target.store?.shop_domain ?? ""}
                   submitLabel={target.store ? "Reconnect" : "Connect"}
-                  cancelLabel={LATER}
-                  onCancel={() => onward({ store: true })}
                   onConnected={load}
                 />
                 <BackLink onBack={() => revisit("about")} />

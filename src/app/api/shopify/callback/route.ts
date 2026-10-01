@@ -10,7 +10,7 @@ import {
   webhookAddress,
 } from "@/lib/shopify";
 import { subscribeWebhooks } from "@/lib/shopify-webhooks";
-import { AppSwitchedOff, appForShop } from "@/lib/shopify-apps";
+import { AppSwitchedOff, appsForShop, cameThrough, claimOk, firstThatSigned } from "@/lib/shopify-apps";
 
 export const runtime = "nodejs";
 
@@ -28,15 +28,22 @@ export async function GET(req: Request) {
   const back = (why: string) => NextResponse.redirect(`${url.origin}/dashboard?shopify=failed&reason=${why}`);
 
   try {
-    // The shop is read only to know whose secret proves the request
-    // (its own app's, 0150, or the main app's); nothing in it is believed
-    // until that signature is checked, first, before anything else.
+    // The shop is read only to know which secrets could prove the request:
+    // the apps claiming it (a merchant's own or an administrator's, 0156)
+    // and the main app. Shopify signs with the app it answers for, so the
+    // one that signed is the app this is; nothing else in the query is
+    // believed until a signature checks out, first, before anything else.
     const shop = normalizeShopDomain(q.shop ?? "");
-    const app = await appForShop(shop);
-    if (!app) return back("not_configured");
+    const candidates = await appsForShop(shop);
+    if (candidates.length === 0) return back("not_configured");
+    const app = await firstThatSigned((secret) => verifyCallbackHmac(q, secret), undefined, candidates);
+    if (!app) return back("invalid_callback");
     const { clientId, clientSecret } = app;
-    verifyCallbackHmac(q, clientSecret);
     if (!q.code || !q.state) return back("incomplete");
+    // Signed is not the same as allowed: an app may claim any shop, so a
+    // store is connected only through its owner's own app, one an
+    // administrator assigned, or the main app — asked before any token.
+    if (!(await claimOk(shop, app, q.state))) return back("not_your_app");
 
     // Expiring now, so the refresh token and both lifetimes are kept
     // alongside it. Without them the token dies in an hour and the store
@@ -80,6 +87,8 @@ export async function GET(req: Request) {
     });
     if (error) return back("save_failed");
     if (!projectId) return back("expired");
+    // This is the app the shop came through: its deliveries and renewals use it.
+    await cameThrough(shop, app);
 
     // Ask Shopify to tell us when anything changes. Done here because
     // this is the one moment a token exists and nobody has to

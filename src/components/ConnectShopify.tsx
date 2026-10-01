@@ -25,6 +25,7 @@ import { readShopAddress } from "@/lib/shop-address";
 import { whatCanChange } from "@/lib/store-actions";
 import { canOneTap } from "@/lib/one-tap";
 import { button, field, fieldOf } from "@/components/ui/controls";
+import OwnAppSetup from "@/components/OwnAppSetup";
 import { ShoppingBag } from "lucide-react";
 
 /** Reasons the server can refuse, said the way the owner would ask. */
@@ -55,7 +56,8 @@ export default function ConnectShopify({
   cancelLabel = "Cancel",
 }: {
   projectId: string;
-  onCancel: () => void;
+  /** The way out, where there is one; onboarding's store step has none. */
+  onCancel?: () => void;
   initialShop?: string;
   submitLabel?: string;
   anotherBrowser?: boolean;
@@ -75,12 +77,15 @@ export default function ConnectShopify({
   // the address, so the box is open for that.
   const [oneTap, setOneTap] = useState<boolean | null>(null);
   const [typing, setTyping] = useState(!!initialShop);
-  // Internal mode (0150): a store comes through an app set up for it in
-  // Warmluke's admin. The person's own app, when they have one; and
-  // without one, a plain "not set up yet" rather than a Shopify error.
-  // Before 0150 every answer errs, and the box is as it always was.
+  // Internal mode (0150): a store comes through an app of its own. The
+  // person's own, when they have one; and without one, the guided setup
+  // that makes one (0156) — the store comes through nothing else. Before
+  // 0150 every answer errs, and the box is as it always was.
   const [ownApp, setOwnApp] = useState<string | null>(null);
-  const [notSetUp, setNotSetUp] = useState(false);
+  // Unknown until the server says: the box and the guided setup are two
+  // different ways in, and showing one then swapping to the other reads
+  // as the page changing its mind.
+  const [notSetUp, setNotSetUp] = useState<boolean | null>(null);
   useEffect(() => {
     let live = true;
     canOneTap().then((yes) => live && setOneTap(yes));
@@ -92,7 +97,10 @@ export default function ConnectShopify({
       if (!live) return;
       const app = typeof mine.data === "string" ? mine.data : null;
       setOwnApp(app);
-      setNotSetUp(!app && internal.data === true && !me.data?.[0]?.is_superadmin);
+      // Guided whether or not they have an app already: the setup knows a
+      // store that is ready and goes straight to Connect, and a second
+      // store needs its own app, or theirs reused, before it can.
+      setNotSetUp(internal.data === true && !me.data?.[0]?.is_superadmin);
     });
     return () => {
       live = false;
@@ -187,22 +195,12 @@ export default function ConnectShopify({
   const shownError =
     error ?? (judged && "error" in read && shop.trim() ? [read.error, read.hint].filter(Boolean).join(" ") : null);
 
+  if (notSetUp === null) {
+    return <div role="status" aria-label="Loading" className="skeleton h-9 w-full rounded-control" />;
+  }
   if (notSetUp) {
-    // The way out stays: without it, onboarding had nothing to press
-    // but Back, and a new account could never get past its store step.
     return (
-      <div className="space-y-3">
-        <div className="rounded-control bg-surface-subdued px-3 py-2.5 text-[13px] leading-relaxed text-fg-muted">
-          Your store isn&rsquo;t set up to connect to Warmluke yet. We&rsquo;ll send you a link when it is, or write to{" "}
-          <a href="mailto:dev.warmluke@gmail.com" className="text-link hover:underline">
-            dev.warmluke@gmail.com
-          </a>
-          .
-        </div>
-        <button onClick={onCancel} className={button("plain")}>
-          {cancelLabel}
-        </button>
-      </div>
+      <OwnAppSetup projectId={projectId} initialShop={initialShop} onCancel={onCancel} cancelLabel={cancelLabel} />
     );
   }
 
@@ -233,7 +231,7 @@ export default function ConnectShopify({
             onBlur={() => shop.trim() && setJudged(true)}
             onKeyDown={(e) => {
               if (e.key === "Enter") connect();
-              if (e.key === "Escape") onCancel();
+              if (e.key === "Escape") onCancel?.();
             }}
             placeholder="mystore, or its address"
             aria-label="Your Shopify store"
@@ -318,9 +316,11 @@ export default function ConnectShopify({
             {busy ? "Opening Shopify…" : submitLabel}
           </button>
         )}
-        <button onClick={onCancel} className={button("plain")}>
-          {cancelLabel}
-        </button>
+        {onCancel && (
+          <button onClick={onCancel} className={button("plain")}>
+            {cancelLabel}
+          </button>
+        )}
       </div>
     </div>
   );

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getUserClient } from "@/lib/supabase-server";
 import { ShopifyError, authorizeUrl, newOAuthState, normalizeShopDomain } from "@/lib/shopify";
 import { scopesFor } from "@/lib/shopify-resources";
-import { AppSwitchedOff, appForShop } from "@/lib/shopify-apps";
+import { mainApp } from "@/lib/shopify-apps";
 import { readShopAddress } from "@/lib/shop-address";
 
 export const runtime = "nodejs";
@@ -48,18 +48,23 @@ export async function POST(req: Request) {
     );
   }
 
-  // The store's own app when one is set up for it (0150), the main app otherwise.
-  let app: Awaited<ReturnType<typeof appForShop>>;
-  try {
-    app = await appForShop(domain);
-  } catch (e) {
+  // Whose app this connection goes through (0156): the merchant's own,
+  // set up for this store; else one an administrator assigned it; else
+  // the main app. Asked as the merchant, so another account's app for
+  // the same store is never the one chosen.
+  const { data: chosen, error: notChosen } = await auth.client.rpc("abo_my_shopify_app_for", { p_shop: domain });
+  if (notChosen) {
+    return NextResponse.json({ error: "Couldn't tell which Shopify app this store uses. Try again." }, { status: 503 });
+  }
+  const own = (chosen as Array<{ client_id: string; all_orders: boolean; enabled: boolean }> | null)?.[0];
+  if (own && !own.enabled) {
     return NextResponse.json(
-      {
-        error: e instanceof AppSwitchedOff ? e.message : "Couldn't tell which Shopify app this store uses. Try again.",
-      },
-      { status: e instanceof AppSwitchedOff ? 403 : 503 }
+      { error: `The Shopify app for ${domain} is switched off in Warmluke's admin.` },
+      { status: 403 }
     );
   }
+  const main = mainApp();
+  const app = own ? { clientId: own.client_id, allOrders: own.all_orders } : main;
   if (!app) {
     return NextResponse.json({ error: "Shopify is not configured on this deployment yet." }, { status: 503 });
   }

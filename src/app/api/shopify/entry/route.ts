@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { CONNECT_PROJECT_COOKIE, entryTarget } from "@/lib/shopify-entry";
 import { normalizeShopDomain } from "@/lib/shopify";
-import { AppSwitchedOff, appForShop } from "@/lib/shopify-apps";
+import { appsForShop } from "@/lib/shopify-apps";
 
 export const runtime = "nodejs";
 
@@ -18,22 +18,25 @@ export const runtime = "nodejs";
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const failed = (reason: string) => NextResponse.redirect(`${url.origin}/dashboard?shopify=failed&reason=${reason}`);
-  // Whose secret proves this: the store's own app's (0150) or the main
-  // app's. The shop is only read to find out; entryTarget checks the
-  // signature before it believes any of it.
-  let secret: string | undefined;
+  // Whose secret proves this: one of the apps claiming the store (a
+  // merchant's own or an administrator's, 0156), or the main app's. The
+  // shop is only read to find out which to try; entryTarget checks each
+  // signature before it believes any of it, and the first that holds wins.
+  let apps;
   try {
-    secret = (await appForShop(normalizeShopDomain(url.searchParams.get("shop") ?? "")))?.clientSecret;
-  } catch (e) {
-    return failed(e instanceof AppSwitchedOff ? "app_switched_off" : "invalid_callback");
+    apps = await appsForShop(normalizeShopDomain(url.searchParams.get("shop") ?? ""));
+  } catch {
+    return failed("invalid_callback");
   }
-  if (!secret) return failed("not_configured");
-  const { to } = entryTarget({
-    query: Object.fromEntries(url.searchParams.entries()),
-    secret,
-    origin: url.origin,
-    project: req.cookies.get(CONNECT_PROJECT_COOKIE)?.value ?? null,
-  });
+  if (apps.length === 0) return failed("not_configured");
+  const query = Object.fromEntries(url.searchParams.entries());
+  const project = req.cookies.get(CONNECT_PROJECT_COOKIE)?.value ?? null;
+  let target = entryTarget({ query, secret: apps[0].clientSecret, origin: url.origin, project });
+  for (const app of apps.slice(1)) {
+    if (target.ok) break;
+    target = entryTarget({ query, secret: app.clientSecret, origin: url.origin, project });
+  }
+  const { to } = target;
   const res = NextResponse.redirect(to);
   // Used once. A later visit from the Shopify admin is not the same
   // connection, and must not be steered into the project this one was.

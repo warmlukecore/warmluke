@@ -59,6 +59,9 @@ const GUARDED = {
   abo_code_next: "the code worker's ticket, for the rule's own project (abo_code_holds)",
   abo_shopify_app_for: "the app server's own key (shopify_apps_key_sha256), 256 random bits",
   abo_shopify_app_secrets: "the app server's own key (shopify_apps_key_sha256), 256 random bits",
+  abo_shopify_apps_for: "the app server's own key (shopify_apps_key_sha256), 256 random bits",
+  abo_shopify_claim_ok: "the app server's own key; answers yes or no, reads no secret out",
+  abo_shopify_came_through: "the app server's own key; marks which app a shop came through, after Shopify's signature",
   abo_shopify_internal: "nothing to guard: whether internal mode is on, the same answer for everyone",
 };
 

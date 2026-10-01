@@ -744,6 +744,26 @@ export const EXTENDED_ORDER_HISTORY_SCOPE = "read_all_orders";
  * yes on the card — both of which are checked, and neither of which
  * a reconnect can grant by accident.
  */
+/**
+ * What a store's own app is set to on its version in Shopify's Dev
+ * Dashboard, named as the Dev Dashboard names them: one list, shown to an
+ * administrator setting a store up and to a merchant setting up their own
+ * (0156), so the two can never say different things.
+ */
+export function ownAppSettings(origin: string, allOrders: boolean) {
+  return [
+    { key: "app_url", name: "App URL", value: origin, copy: true },
+    { key: "embedded", name: "Embed app in Shopify admin", value: "Off", copy: false },
+    { key: "redirect", name: "Redirect URLs", value: `${origin}/api/shopify/callback`, copy: true },
+    {
+      key: "scopes",
+      name: "Scopes",
+      value: scopesFor({ ...process.env, SHOPIFY_READ_ALL_ORDERS: allOrders ? "true" : "false" }).join(","),
+      copy: true,
+    },
+  ];
+}
+
 export function scopesFor(env = process.env): string[] {
   const asked = [...new Set([...SHOPIFY_SCOPES, ...ACTION_SCOPES])];
   return env.SHOPIFY_READ_ALL_ORDERS === "true" ? [...asked, EXTENDED_ORDER_HISTORY_SCOPE] : asked;

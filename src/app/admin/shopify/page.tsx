@@ -24,7 +24,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Switch } from "@/components/ui/Switch";
 import { PasswordInput } from "@/components/ui/PasswordInput";
 import { button, card, field, label, note } from "@/components/ui/controls";
-import { missingScopes, scopesFor } from "@/lib/shopify-resources";
+import { missingScopes, ownAppSettings } from "@/lib/shopify-resources";
 import { windowName } from "@/lib/when";
 
 type Shop = {
@@ -36,12 +36,16 @@ type Shop = {
   scopes: string[] | null;
   project: string | null;
   owner: string | null;
+  /** The store came through this app (0156): the one its deliveries and renewals use. */
+  verified: boolean;
 };
 type App = {
   id: string;
   label: string;
   client_id: string;
   owner_email: string | null;
+  /** Set up by the merchant themselves, in onboarding (0156). */
+  self_serve: boolean;
   all_orders: boolean;
   enabled: boolean;
   secret_set_at: string | null;
@@ -201,12 +205,7 @@ export default function ShopifyAppsAdmin() {
   }
 
   const refused = error === "This page is for administrators.";
-  const setup: Array<[string, string, string]> = [
-    ["app_url", "App URL", origin],
-    ["redirect", "Allowed redirection URL", `${origin}/api/shopify/callback`],
-    ["embedded", "Embed app in Shopify admin", "false"],
-    ["scopes", "Access scopes", scopesFor(scopesAsked(false)).join(",")],
-  ];
+  const setup: Array<[string, string, string]> = ownAppSettings(origin, false).map((s) => [s.key, s.name, s.value]);
 
   return (
     <PageFrame email={user.email} isSuperadmin={!refused}>
@@ -320,6 +319,11 @@ export default function ShopifyAppsAdmin() {
                         All orders
                       </span>
                     )}
+                    {app.self_serve && (
+                      <span className="rounded-full bg-tone-info px-2 py-0.5 text-[11px] font-medium text-tone-info-fg">
+                        Set up by the merchant
+                      </span>
+                    )}
                   </div>
                   <div className="mt-1 text-xs text-fg-muted">
                     Client ID <code>{app.client_id}</code> · secret set {when(app.secret_set_at)}
@@ -349,11 +353,14 @@ export default function ShopifyAppsAdmin() {
 
               <ul className="mt-4 divide-y divide-line overflow-hidden rounded-card border border-line">
                 {app.shops.map((s) => {
-                  const [word, tone] = STATUS[s.status ?? ""] ?? [
-                    "Not connected yet",
-                    "bg-surface-subdued text-fg-muted",
-                  ];
-                  const missing = s.status === "connected" ? missingScopes(s.scopes, scopesAsked(app.all_orders)) : [];
+                  // Connected, but through another app than this one: what this
+                  // app was granted says nothing about that connection.
+                  const elsewhere = s.status === "connected" && !s.verified;
+                  const [word, tone] = elsewhere
+                    ? ["Connected through another app", "bg-surface-subdued text-fg-muted"]
+                    : (STATUS[s.status ?? ""] ?? ["Not connected yet", "bg-surface-subdued text-fg-muted"]);
+                  const missing =
+                    s.status === "connected" && s.verified ? missingScopes(s.scopes, scopesAsked(app.all_orders)) : [];
                   return (
                     <li key={s.shop} className="px-3 py-2.5">
                       <div className="flex flex-wrap items-center gap-2">
