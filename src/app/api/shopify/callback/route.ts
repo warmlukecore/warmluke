@@ -10,6 +10,7 @@ import {
   webhookAddress,
 } from "@/lib/shopify";
 import { subscribeWebhooks } from "@/lib/shopify-webhooks";
+import { AppSwitchedOff, appForShop } from "@/lib/shopify-apps";
 
 export const runtime = "nodejs";
 
@@ -26,14 +27,15 @@ export async function GET(req: Request) {
   const q = Object.fromEntries(url.searchParams.entries());
   const back = (why: string) => NextResponse.redirect(`${url.origin}/dashboard?shopify=failed&reason=${why}`);
 
-  const clientId = process.env.SHOPIFY_CLIENT_ID;
-  const clientSecret = process.env.SHOPIFY_CLIENT_SECRET;
-  if (!clientId || !clientSecret) return back("not_configured");
-
   try {
-    // First, before anything here is treated as meaningful.
-    verifyCallbackHmac(q, clientSecret);
+    // The shop is read only to know whose secret proves the request
+    // (its own app's, 0150, or the main app's); nothing in it is believed
+    // until that signature is checked, first, before anything else.
     const shop = normalizeShopDomain(q.shop ?? "");
+    const app = await appForShop(shop);
+    if (!app) return back("not_configured");
+    const { clientId, clientSecret } = app;
+    verifyCallbackHmac(q, clientSecret);
     if (!q.code || !q.state) return back("incomplete");
 
     // Expiring now, so the refresh token and both lifetimes are kept
@@ -104,6 +106,7 @@ export async function GET(req: Request) {
 
     return NextResponse.redirect(`${url.origin}/app/${projectId}?shopify=connected`);
   } catch (e) {
+    if (e instanceof AppSwitchedOff) return back("app_switched_off");
     return back(e instanceof ShopifyError ? e.code : "unknown");
   }
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { verifyWebhookHmac } from "@/lib/shopify";
 import { LIFECYCLE_TOPICS } from "@/lib/shopify-webhooks";
+import { firstThatSigned } from "@/lib/shopify-apps";
 
 export const runtime = "nodejs";
 
@@ -27,16 +28,18 @@ export const runtime = "nodejs";
  */
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
-  const secret = process.env.SHOPIFY_CLIENT_SECRET;
-  if (!secret) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  if (!process.env.SHOPIFY_CLIENT_SECRET) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 
   // Text, not .json(): Shopify signs the bytes it sent, and parsing then
   // re-serialising produces different bytes and a failing signature.
   const raw = await req.text();
 
-  try {
-    verifyWebhookHmac(raw, req.headers.get("x-shopify-hmac-sha256"), secret);
-  } catch {
+  // Signed by one of the apps a store may come through (0150): which
+  // one is the store's own is the database's to hold it to, below.
+  const signedBy = await firstThatSigned((secret) =>
+    verifyWebhookHmac(raw, req.headers.get("x-shopify-hmac-sha256"), secret)
+  );
+  if (!signedBy) {
     // 401 rather than 400: this is "you are not Shopify", and Shopify
     // treats a 401 as final instead of retrying it for two days.
     return NextResponse.json({ error: "invalid_webhook" }, { status: 401 });

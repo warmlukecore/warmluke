@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Inbox, LayoutGrid, LogOut, ShieldCheck, UserPlus } from "lucide-react";
+import { Inbox, LayoutGrid, LogOut, ShieldCheck, ShoppingBag, UserPlus } from "lucide-react";
 import { signOut } from "@/lib/auth";
 import { menu, menuItem } from "@/components/ui/controls";
 import { Logo } from "@/components/ui/Logo";
@@ -44,13 +44,15 @@ export function PageFrame({
       <header className="flex h-14 shrink-0 items-center gap-2 px-3 sm:px-5">
         <Link href="/dashboard" className="mr-2 flex items-center gap-2.5">
           <Logo className="h-5" onDark priority />
-          <span className="text-sm font-semibold text-white">Warmluke</span>
+          {/* The mark alone on a phone: with every admin tab the row is wider than one. */}
+          <span className="hidden text-sm font-semibold text-white sm:inline">Warmluke</span>
         </Link>
         {tab("/dashboard", "Projects", LayoutGrid)}
         {/* The screen refuses anyone else; this only decides whether the door shows. */}
         {isSuperadmin && tab("/admin", "Accounts", ShieldCheck)}
         {isSuperadmin && tab("/admin/invites", "Invites", UserPlus)}
         {isSuperadmin && tab("/admin/demos", "Early access", Inbox)}
+        {isSuperadmin && tab("/admin/shopify", "Shopify apps", ShoppingBag)}
         <div className="ml-auto flex items-center gap-1">
           <ThemeToggle className="rounded-control p-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white" />
           <AccountMenu email={email} />

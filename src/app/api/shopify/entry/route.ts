@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { CONNECT_PROJECT_COOKIE, entryTarget } from "@/lib/shopify-entry";
+import { normalizeShopDomain } from "@/lib/shopify";
+import { AppSwitchedOff, appForShop } from "@/lib/shopify-apps";
 
 export const runtime = "nodejs";
 
@@ -13,12 +15,19 @@ export const runtime = "nodejs";
  * the project is theirs, and starts the ordinary connection — Shopify's
  * own approval included. Nothing is written here.
  */
-export function GET(req: NextRequest) {
+export async function GET(req: NextRequest) {
   const url = new URL(req.url);
-  const secret = process.env.SHOPIFY_CLIENT_SECRET;
-  if (!secret) {
-    return NextResponse.redirect(`${url.origin}/dashboard?shopify=failed&reason=not_configured`);
+  const failed = (reason: string) => NextResponse.redirect(`${url.origin}/dashboard?shopify=failed&reason=${reason}`);
+  // Whose secret proves this: the store's own app's (0150) or the main
+  // app's. The shop is only read to find out; entryTarget checks the
+  // signature before it believes any of it.
+  let secret: string | undefined;
+  try {
+    secret = (await appForShop(normalizeShopDomain(url.searchParams.get("shop") ?? "")))?.clientSecret;
+  } catch (e) {
+    return failed(e instanceof AppSwitchedOff ? "app_switched_off" : "invalid_callback");
   }
+  if (!secret) return failed("not_configured");
   const { to } = entryTarget({
     query: Object.fromEntries(url.searchParams.entries()),
     secret,

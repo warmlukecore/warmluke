@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getUserClient } from "@/lib/supabase-server";
 import { ShopifyError, authorizeUrl, newOAuthState, normalizeShopDomain } from "@/lib/shopify";
 import { scopesFor } from "@/lib/shopify-resources";
+import { AppSwitchedOff, appForShop } from "@/lib/shopify-apps";
 import { readShopAddress } from "@/lib/shop-address";
 
 export const runtime = "nodejs";
@@ -47,10 +48,22 @@ export async function POST(req: Request) {
     );
   }
 
-  const clientId = process.env.SHOPIFY_CLIENT_ID;
-  if (!clientId || !process.env.SHOPIFY_CLIENT_SECRET) {
+  // The store's own app when one is set up for it (0150), the main app otherwise.
+  let app: Awaited<ReturnType<typeof appForShop>>;
+  try {
+    app = await appForShop(domain);
+  } catch (e) {
+    return NextResponse.json(
+      {
+        error: e instanceof AppSwitchedOff ? e.message : "Couldn't tell which Shopify app this store uses. Try again.",
+      },
+      { status: e instanceof AppSwitchedOff ? 403 : 503 }
+    );
+  }
+  if (!app) {
     return NextResponse.json({ error: "Shopify is not configured on this deployment yet." }, { status: 503 });
   }
+  const clientId = app.clientId;
 
   // Two separate questions, asked separately, because one upsert cannot
   // tell them apart. A shop already claimed by a different owner is
@@ -159,7 +172,7 @@ export async function POST(req: Request) {
       clientId,
       redirectUri: `${new URL(req.url).origin}/api/shopify/callback`,
       state,
-      scopes: scopesFor(),
+      scopes: scopesFor({ ...process.env, SHOPIFY_READ_ALL_ORDERS: app.allOrders ? "true" : "false" }),
     }),
   });
 }

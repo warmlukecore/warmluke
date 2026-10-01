@@ -75,9 +75,25 @@ export default function ConnectShopify({
   // the address, so the box is open for that.
   const [oneTap, setOneTap] = useState<boolean | null>(null);
   const [typing, setTyping] = useState(!!initialShop);
+  // Internal mode (0150): a store comes through an app set up for it in
+  // Warmluke's admin. The person's own app, when they have one; and
+  // without one, a plain "not set up yet" rather than a Shopify error.
+  // Before 0150 every answer errs, and the box is as it always was.
+  const [ownApp, setOwnApp] = useState<string | null>(null);
+  const [notSetUp, setNotSetUp] = useState(false);
   useEffect(() => {
     let live = true;
     canOneTap().then((yes) => live && setOneTap(yes));
+    Promise.all([
+      supabase.rpc("abo_shopify_internal"),
+      supabase.rpc("abo_my_shopify_app"),
+      supabase.rpc("abo_my_settings"),
+    ]).then(([internal, mine, me]) => {
+      if (!live) return;
+      const app = typeof mine.data === "string" ? mine.data : null;
+      setOwnApp(app);
+      setNotSetUp(!app && internal.data === true && !me.data?.[0]?.is_superadmin);
+    });
     return () => {
       live = false;
     };
@@ -171,11 +187,23 @@ export default function ConnectShopify({
   const shownError =
     error ?? (judged && "error" in read && shop.trim() ? [read.error, read.hint].filter(Boolean).join(" ") : null);
 
+  if (notSetUp) {
+    return (
+      <div className="rounded-control bg-surface-subdued px-3 py-2.5 text-[13px] leading-relaxed text-fg-muted">
+        Your store isn&rsquo;t set up to connect to Warmluke yet. We&rsquo;ll send you a link when it is, or write to{" "}
+        <a href="mailto:dev.warmluke@gmail.com" className="text-link hover:underline">
+          dev.warmluke@gmail.com
+        </a>
+        .
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
-      {oneTap && (
+      {(oneTap || ownApp) && (
         <a
-          href={`/api/shopify/start?project=${encodeURIComponent(projectId)}`}
+          href={`/api/shopify/start?project=${encodeURIComponent(projectId)}${ownApp ? `&client=${encodeURIComponent(ownApp)}` : ""}`}
           className={`${button("primary")} w-full`}
         >
           <ShoppingBag aria-hidden size={15} strokeWidth={1.75} />

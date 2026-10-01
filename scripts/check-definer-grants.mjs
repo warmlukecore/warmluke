@@ -57,6 +57,9 @@ const GUARDED = {
   abo_code_project: "the code worker's ticket",
   abo_code_release: "the code worker's ticket",
   abo_code_next: "the code worker's ticket, for the rule's own project (abo_code_holds)",
+  abo_shopify_app_for: "the app server's own key (shopify_apps_key_sha256), 256 random bits",
+  abo_shopify_app_secrets: "the app server's own key (shopify_apps_key_sha256), 256 random bits",
+  abo_shopify_internal: "nothing to guard: whether internal mode is on, the same answer for everyone",
 };
 
 /** What a body that checks its caller says. */

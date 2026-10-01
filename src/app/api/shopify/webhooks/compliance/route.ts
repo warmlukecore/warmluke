@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { verifyWebhookHmac } from "@/lib/shopify";
+import { firstThatSigned } from "@/lib/shopify-apps";
 
 export const runtime = "nodejs";
 
@@ -25,13 +26,15 @@ export const runtime = "nodejs";
  * route refuses these topics anyway, and this one refuses every other.
  */
 export async function POST(req: Request) {
-  const secret = process.env.SHOPIFY_CLIENT_SECRET;
-  if (!secret) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  if (!process.env.SHOPIFY_CLIENT_SECRET) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 
   const raw = await req.text();
-  try {
-    verifyWebhookHmac(raw, req.headers.get("x-shopify-hmac-sha256"), secret);
-  } catch {
+  // Signed by one of the apps a store may come through (0150); the
+  // database holds it to the secret of the shop the body names.
+  const signedBy = await firstThatSigned((secret) =>
+    verifyWebhookHmac(raw, req.headers.get("x-shopify-hmac-sha256"), secret)
+  );
+  if (!signedBy) {
     return NextResponse.json({ error: "invalid_webhook" }, { status: 401 });
   }
 

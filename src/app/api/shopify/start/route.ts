@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { CONNECT_PROJECT_COOKIE, isConnectHint } from "@/lib/shopify-entry";
 import { installLink, installLinkFor } from "@/lib/shop-address";
+import { allApps } from "@/lib/shopify-apps";
 
 export const runtime = "nodejs";
 
@@ -26,9 +27,15 @@ const REMEMBER_SECONDS = 15 * 60;
  * ?check=1 only says whether one tap is possible here, so the connect
  * box knows whether to offer it; it sets nothing and sends nowhere.
  */
-export function GET(req: Request) {
+export async function GET(req: Request) {
   const url = new URL(req.url);
-  const to = installLink(process.env.NEXT_PUBLIC_SHOPIFY_INSTALL_URL) ?? installLinkFor(process.env.SHOPIFY_CLIENT_ID);
+  // A merchant whose store comes through an app of its own (0150) is
+  // sent to that app's install link; only an app Warmluke knows of.
+  const asked = url.searchParams.get("client");
+  const own = asked ? (await allApps()).find((a) => a.own && a.clientId === asked) : undefined;
+  const to = own
+    ? installLinkFor(own.clientId)
+    : (installLink(process.env.NEXT_PUBLIC_SHOPIFY_INSTALL_URL) ?? installLinkFor(process.env.SHOPIFY_CLIENT_ID));
   if (url.searchParams.has("check")) return NextResponse.json({ oneTap: !!to });
   if (!to) return NextResponse.redirect(`${url.origin}/dashboard`);
 

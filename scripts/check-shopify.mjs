@@ -298,7 +298,8 @@ const defines = migrations.filter((f) =>
   readFileSync(new URL(`../supabase/migrations/${f}`, import.meta.url), "utf8").includes(DEFINES)
 );
 const dispatcher = readFileSync(new URL(`../supabase/migrations/${defines.at(-1)}`, import.meta.url), "utf8");
-const fn = dispatcher.slice(dispatcher.indexOf(DEFINES));
+// The function alone: a migration may define others after it (0150 does).
+const fn = dispatcher.slice(dispatcher.indexOf(DEFINES), dispatcher.indexOf("end $$;", dispatcher.indexOf(DEFINES)));
 const handled = new Set([...fn.matchAll(/'([a-z_]+\/[a-z_]+)'/g)].map((m) => m[1]));
 // ORDERS_CREATE on the wire is orders/create in the header Shopify sends.
 const wire = (t) => t.toLowerCase().replace(/_([a-z]+)$/, "/$1");

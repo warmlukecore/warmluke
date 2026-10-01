@@ -15,6 +15,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isTransient } from "@/lib/retry";
+import { appForShop } from "@/lib/shopify-apps";
 import { SHOPIFY_API_VERSION, ShopifyError, grantedScopes, refreshAccessToken, tokenNeedsRefresh } from "@/lib/shopify";
 
 /** What the token functions below need off a store row. */
@@ -49,7 +50,9 @@ export async function ensureFreshToken(
   // of them is the merchant's to fix, and telling them to reconnect a
   // store whose grant is fine — because this process simply has no app
   // credentials — sends them to do work that cannot help.
-  if (!env.SHOPIFY_CLIENT_ID || !env.SHOPIFY_CLIENT_SECRET) {
+  // Renewed with the app it came through: its own (0150), or the main one.
+  const app = await appForShop(store.shop_domain, env);
+  if (!app) {
     throw new ShopifyError("not_configured", "Shopify isn't configured here, so the access token can't be renewed.");
   }
   if (!store.refresh_token) {
@@ -61,8 +64,8 @@ export async function ensureFreshToken(
 
   const grant = await refreshAccessToken({
     shop: store.shop_domain,
-    clientId: env.SHOPIFY_CLIENT_ID,
-    clientSecret: env.SHOPIFY_CLIENT_SECRET,
+    clientId: app.clientId,
+    clientSecret: app.clientSecret,
     refreshToken: store.refresh_token,
   });
 
