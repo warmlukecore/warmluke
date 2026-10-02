@@ -12,8 +12,10 @@ import type {
   Expr,
   FeatureSchema,
   ModuleRow,
+  ViewSpec,
 } from "./types";
 import { STORE_TABLES, isStoreTable, storeTableSchema } from "./store-read";
+import { openingPick, presetsOf } from "./period";
 
 /** Renders an expression tree as something a non-technical owner reads. */
 export function exprText(e: Expr | undefined): string {
@@ -240,6 +242,15 @@ export function describeFeaturesFull(f: FeatureSchema, modules: ModuleRow[]): st
   for (const fl of f.filters ?? []) {
     out.push(`Filter by ${fl.label} (${fl.options.join(" / ")})`);
   }
+  if (f.period) {
+    const p = f.period;
+    const days = presetsOf(p);
+    const by = p.label?.trim() || p.field;
+    const opens = openingPick(p);
+    out.push(
+      `Choose the dates by ${by}: the last ${days.slice(0, -1).join(", ")}${days.length > 1 ? " or " : ""}${days.at(-1)} days, their own dates, or all (opens on ${opens && "days" in opens ? `the last ${opens.days} days` : "all"})`
+    );
+  }
   for (const st of f.stats ?? []) {
     const what =
       st.op === "count"
@@ -353,6 +364,41 @@ export function storeOverlap(plan: AssistantPlan, store: StoreFacts | null): str
   ];
 }
 
+const VIEW_NAMES: Record<string, string> = {
+  table: "table",
+  board: "board",
+  calendar: "calendar",
+  cards: "cards",
+  list: "list",
+};
+const viewName = (v: ViewSpec | null | undefined) =>
+  !v ? "table" : v.type === "custom" ? `screen “${v.title}”` : (VIEW_NAMES[v.type] ?? "table");
+
+/**
+ * A section has one view, so a plan that sends one replaces whatever
+ * was there: asked for a range of days, Luke wrote a screen and Orders
+ * lost its table, and the card said only "a screen written for it".
+ * Said here, from the plan, above the detail: what goes and what stays.
+ * Known view, any change of kind; unknown (a section not open), a
+ * written screen, which replaces whatever was there.
+ */
+function viewReplaced(plan: AssistantPlan, modules: ModuleRow[], current?: ViewSpec | null): string[] {
+  if (plan.changeType !== "FEATURE_UPDATE" || !plan.targetModuleId) return [];
+  const next = plan.features?.view;
+  if (next === undefined) return [];
+  const now = next === null ? "table" : viewName(next);
+  const was = current === undefined ? null : viewName(current);
+  // The same view, or the same screen rewritten: nothing goes.
+  if (was === now) return [];
+  if (was === null && next?.type !== "custom") return [];
+  const mod = modules.find((m) => m.id === plan.targetModuleId);
+  const name = mod?.nav_label || mod?.name || "This section";
+  const shows = next?.type === "custom" ? `the ${now} written for it` : now === "cards" ? "cards" : `a ${now}`;
+  return [
+    `${name} will show ${shows} in place of its ${was ?? "current view"}. Its rows stay; Put it back, once it is built, brings the ${was ?? "view"} back.`,
+  ];
+}
+
 /**
  * A plan in the owner's card. A field add carries the section's columns
  * with the new ones after them, and describePlan names them all; the card
@@ -365,9 +411,10 @@ export function describeForOwner(
   plan: AssistantPlan,
   modules: ModuleRow[],
   currentColumns?: Array<{ field: string; label: string }>,
-  store?: StoreFacts | null
+  store?: StoreFacts | null,
+  currentView?: ViewSpec | null
 ): ReturnType<typeof describePlan> {
-  const d = describePlan(plan, modules, currentColumns, store);
+  const d = describePlan(plan, modules, currentColumns, store, currentView);
   const view = plan.features?.view;
   const screen = view?.type === "custom" ? `A screen written for it, “${view.title}”` : null;
   let lines = screen ? d.lines.map((l) => (l.startsWith(screen) ? screen : l)) : d.lines;
@@ -390,9 +437,11 @@ export function describePlan(
   /** The section's columns today, so a plan that adds some says so. */
   currentColumns?: Array<{ field: string; label: string }>,
   /** The connected store, if there is one, for the overlap warning. */
-  store?: StoreFacts | null
+  store?: StoreFacts | null,
+  /** The section's view today, when it is known, so a plan that replaces it can say what goes. */
+  currentView?: ViewSpec | null
 ): PlanSummary {
-  const warnings = storeOverlap(plan, store ?? null);
+  const warnings = [...storeOverlap(plan, store ?? null), ...viewReplaced(plan, modules, currentView)];
   const withWarnings = (s: PlanSummary): PlanSummary => (warnings.length ? { ...s, warnings } : s);
   return withWarnings(describePlanBody(plan, modules, currentColumns));
 }

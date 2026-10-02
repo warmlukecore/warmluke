@@ -24,6 +24,8 @@ export type StatRequest = {
     filters: Record<string, string>;
     computed: Array<{ field: string; expr: unknown }>;
     currency_fields: string[];
+    /** The dates picked above the section (0161), as abo_in_period reads them. */
+    period?: { field: string; from_day: string; to_day: string; from: string; to: string } | null;
   };
 };
 /** One per stat: counted, not formatted. */
@@ -53,6 +55,20 @@ import { sameCode } from "@/lib/scan";
 import { PREVIEW_ROWS } from "@/lib/change-preview";
 import { badgeLabel } from "@/lib/tone";
 import { button, fieldOf, iconButtonRound, menu, menuItem } from "@/components/ui/controls";
+import { Choices } from "@/components/AdminParts";
+import {
+  inPeriod,
+  keptPick,
+  openingPick,
+  periodRange,
+  pickLabel,
+  presetsOf,
+  shiftDay,
+  todayIn,
+  type PeriodPick,
+  type PeriodRange,
+  type PeriodSpec,
+} from "@/lib/period";
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 
 /** A table shows this many rows at a time; the rest are a page away. */
@@ -188,6 +204,74 @@ function FilterMenu({
   );
 }
 
+/**
+ * The dates a section is read over (features.period): its windows of
+ * days, every row, or their own two dates, typed into the same date
+ * fields a row's date is. The pick narrows the rows, the stat cards and
+ * the view together; said in words for a screen reader as it changes.
+ */
+function PeriodBar({
+  spec,
+  label,
+  pick,
+  today,
+  onPick,
+}: {
+  spec: PeriodSpec;
+  label: string;
+  pick: PeriodPick;
+  today: string;
+  onPick: (pick: PeriodPick) => void;
+}) {
+  const value = !pick ? "all" : "days" in pick ? String(pick.days) : "custom";
+  const options: Array<[string, string]> = [
+    ...presetsOf(spec).map((d): [string, string] => [String(d), d === 1 ? "Today" : `${d} days`]),
+    ["all", "All"],
+    ["custom", "Your dates"],
+  ];
+  const own = pick && "from" in pick ? pick : null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <span className="text-xs font-medium text-fg-muted">{label}</span>
+      <Choices
+        options={options}
+        value={value}
+        onChange={(v) =>
+          onPick(
+            v === "all"
+              ? null
+              : v === "custom"
+                ? (own ?? { from: shiftDay(today, -29), to: today })
+                : { days: Number(v) }
+          )
+        }
+      />
+      {own && (
+        <span className="flex items-center gap-1.5">
+          <input
+            type="date"
+            aria-label={`${label} from`}
+            value={own.from}
+            onChange={(e) => e.target.value && onPick({ from: e.target.value, to: own.to })}
+            className={`${fieldOf("sm")} w-auto`}
+          />
+          <span className="text-xs text-fg-faint">to</span>
+          <input
+            type="date"
+            aria-label={`${label} to`}
+            value={own.to}
+            onChange={(e) => e.target.value && onPick({ from: own.from, to: e.target.value })}
+            className={`${fieldOf("sm")} w-auto`}
+          />
+        </span>
+      )}
+      <span role="status" className="sr-only">
+        {`${label}: ${pickLabel(pick)}`}
+      </span>
+    </div>
+  );
+}
+
 const VIEW_LABELS: Record<ViewSpec["type"], string> = {
   table: "Table",
   board: "Board",
@@ -210,6 +294,9 @@ export default function GenericRenderer({
   onInspect,
   onScanGroup,
   onReadSection,
+  periodKey,
+  timeZone,
+  onPeriod,
 }: {
   schema: UiSchema;
   records: RecordRow[];
@@ -241,6 +328,12 @@ export default function GenericRenderer({
     section: string,
     match?: { field: string; code: string }
   ) => Promise<Array<{ id: string; data: Record<string, unknown> }>>;
+  /** Which section this is, so the dates picked above it are its own and remembered on this device. */
+  periodKey?: string;
+  /** Whose days "the last N days" are: the shop's zone on a section over the store; this device's otherwise. */
+  timeZone?: string;
+  /** Told the dates picked, so the page can read the rows inside them rather than only the page it holds. */
+  onPeriod?: (range: PeriodRange | null) => void;
 }) {
   const fmt = useFormat();
   const total = totalRecords ?? records.length;
@@ -271,6 +364,47 @@ export default function GenericRenderer({
   const effectiveSort = sort ?? features?.defaultSort ?? null;
   const view: ViewSpec = features?.view ?? { type: "table" };
 
+  // The dates picked above the section (features.period): one pick a
+  // section, opening on its default, then on what this device last chose.
+  const periodSpec: PeriodSpec | null = features?.period ?? null;
+  const zone = timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const memory = periodKey ? `abo_period:${periodKey}` : "";
+  const [picks, setPicks] = useState<Record<string, PeriodPick>>({});
+  useEffect(() => {
+    if (!memory || !periodSpec || memory in picks) return;
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem(memory);
+    } catch {
+      // Storage refused (a private window): the section's default it is.
+    }
+    const kept = keptPick(raw, periodSpec);
+    if (kept !== undefined) setPicks((p) => ({ ...p, [memory]: kept }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memory, periodSpec]);
+  const pick: PeriodPick = !periodSpec ? null : memory in picks ? picks[memory] : openingPick(periodSpec);
+  const pickKey = JSON.stringify(pick);
+  const range = useMemo(
+    () => (periodSpec ? periodRange(periodSpec.field, pick, zone) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [periodSpec?.field, pickKey, zone]
+  );
+  const rangeKey = range ? `${range.field}|${range.from}|${range.to}` : "";
+  const choosePick = (next: PeriodPick) => {
+    setPicks((p) => ({ ...p, [memory]: next }));
+    setPage(0);
+    if (!memory) return;
+    try {
+      localStorage.setItem(memory, JSON.stringify(next ?? "all"));
+    } catch {
+      // Not kept; it still applies until the page is left.
+    }
+  };
+  useEffect(() => {
+    onPeriod?.(range);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rangeKey]);
+
   // Computed columns are filled in once, up front, so that everything
   // below — the search box, the filters, the sort, the stats and every
   // view — reads them as ordinary fields.
@@ -284,6 +418,9 @@ export default function GenericRenderer({
 
   const filteredRecords = useMemo(() => {
     let rows = rowsWithComputed;
+    // The page already reads the rows inside the dates; these are the
+    // ones it held from before, or a preview's, which has nothing else.
+    if (range) rows = rows.filter((r) => inPeriod(r.data?.[range.field], range));
     const opens = features?.scanMode?.first?.field;
     if (opens && scanGroup) rows = rows.filter((r) => sameCode(r.data?.[opens], scanGroup));
 
@@ -318,7 +455,8 @@ export default function GenericRenderer({
     }
 
     return rows;
-  }, [rowsWithComputed, columns, features, search, filterValues, effectiveSort, scanGroup]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowsWithComputed, columns, features, search, filterValues, effectiveSort, scanGroup, rangeKey]);
 
   const rowCurrencyFields = useMemo(
     () => [
@@ -413,6 +551,9 @@ export default function GenericRenderer({
           filters: filterValues,
           computed: columns.filter((c) => c.compute).map((c) => ({ field: c.field, expr: c.compute })),
           currency_fields: rowCurrencyFields,
+          period: range
+            ? { field: range.field, from_day: range.fromDay, to_day: range.toDay, from: range.from, to: range.to }
+            : null,
         },
       })
         .then((r) => {
@@ -428,7 +569,7 @@ export default function GenericRenderer({
     };
     // records: a row added or changed is a number that moved.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onStats, statsKey, search, filterValues, columns, records, rowCurrencyFields]);
+  }, [onStats, statsKey, search, filterValues, columns, records, rowCurrencyFields, rangeKey]);
 
   const stats: StatCard[] = useMemo(() => {
     if (!features?.stats?.length) return [];
@@ -566,6 +707,18 @@ export default function GenericRenderer({
             setPage(0);
           }}
           onOpenGroup={onScanGroup}
+        />
+      )}
+
+      {periodSpec && (
+        <PeriodBar
+          spec={periodSpec}
+          label={
+            periodSpec.label?.trim() || columns.find((c) => c.field === periodSpec.field)?.label || periodSpec.field
+          }
+          pick={pick}
+          today={todayIn(zone)}
+          onPick={choosePick}
         />
       )}
 

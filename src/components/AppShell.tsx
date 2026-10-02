@@ -91,6 +91,7 @@ import { Logo } from "@/components/ui/Logo";
 import { ThemeToggle } from "@/components/ThemeSync";
 import { withComputed } from "@/lib/expr";
 import { findSection } from "@/lib/section-ref";
+import { shiftDay, type PeriodRange } from "@/lib/period";
 import { codeSpellings } from "@/lib/scan";
 
 /**
@@ -294,7 +295,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   const [userId, setUserId] = useState<string | null>(null);
   // The connected store, so a section pointed at it knows where to read
   // from. Null for a project without one, which is the common case.
-  const [store, setStore] = useState<{ id: string; currency: string; country: string | null } | null>(null);
+  const [store, setStore] = useState<{
+    id: string;
+    currency: string;
+    country: string | null;
+    /** The shop's own zone: whose days "the last 15 days" on its sections are. */
+    timezone: string | null;
+  } | null>(null);
   // A rate, only ever used to annotate. Imported amounts are rendered
   // in the currency Shopify recorded them in; this is the rough second
   // line underneath, for a merchant who thinks in their own money.
@@ -938,8 +945,31 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     setLoading(false);
   }, [projectId]);
 
+  // The dates picked above the section in view (features.period): its
+  // rows are read inside them, so the table holds every row the stat
+  // cards count rather than whichever two hundred loaded first. Whose
+  // section it is is kept with it; another section's pick is not this one's.
+  const rowPeriod = useRef<{ moduleId: string; range: PeriodRange | null } | null>(null);
+  // Each read numbered: a pick changed quickly sends two, and the older
+  // arriving last would put back the rows from before the pick.
+  const loadSeq = useRef(0);
+
   const loadModuleData = useCallback(
     async (moduleId: string, limit = RECORD_PAGE) => {
+      const seq = ++loadSeq.current;
+      const range = rowPeriod.current?.moduleId === moduleId ? rowPeriod.current.range : null;
+      const ranged = range && /^[a-z_][a-z0-9_]*$/i.test(range.field) ? range : null;
+      let ownRows = supabase
+        .from("records")
+        .select("*", { count: "exact" })
+        .eq("module_id", moduleId)
+        .is("store_row_id", null);
+      // A date of their own is a day, YYYY-MM-DD; up to the day after the
+      // last, so a value written with its time still falls on its day.
+      if (ranged)
+        ownRows = ownRows
+          .gte(`data->>${ranged.field}`, ranged.fromDay)
+          .lt(`data->>${ranged.field}`, shiftDay(ranged.toDay, 1));
       // The module is fetched rather than looked up in state: a section
       // created a moment ago is selected before the list has reloaded,
       // and a stale closure there means source_table reads as undefined
@@ -953,16 +983,11 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           .limit(1),
         // Fields kept beside a store row (0128) are never a row of their
         // own, even in a section since pointed back at its own rows.
-        supabase
-          .from("records")
-          .select("*", { count: "exact" })
-          .eq("module_id", moduleId)
-          .is("store_row_id", null)
-          .order("created_at", { ascending: true })
-          .limit(limit),
+        ownRows.order("created_at", { ascending: true }).limit(limit),
         supabase.from("ui_schemas").select("*").eq("module_id", moduleId).order("version", { ascending: false }),
         supabase.from("modules").select("source_table").eq("id", moduleId).maybeSingle(),
       ]);
+      if (seq !== loadSeq.current) return;
       // Named by the address and not there (removed since, or another
       // project's): the start instead, and the address says so.
       if (!modRes.error && !modRes.data) {
@@ -1005,9 +1030,15 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             undefined,
             // Cut the page in the section's own order, or "Customers by
             // total spent" is the top of the first two hundred names.
-            loadedSchema?.schema_json?.features?.defaultSort ?? null
+            loadedSchema?.schema_json?.features?.defaultSort ?? null,
+            // The store's lists carry their dates as days (to_char in the
+            // views), as Luke's own answers read them (slice.ts): days here
+            // too, or a text day against an instant drops the first one.
+            ranged ? { field: ranged.field, from: ranged.fromDay, to: ranged.toDay } : null
           );
-          setRecords((await withOwnFields(supabase, moduleId, rows)) as unknown as RecordRow[]);
+          const withTheirs = (await withOwnFields(supabase, moduleId, rows)) as unknown as RecordRow[];
+          if (seq !== loadSeq.current) return;
+          setRecords(withTheirs);
           setRecordTotal(total);
         } catch (e) {
           setLoadError(e instanceof Error ? e.message : "Couldn't read the store.");
@@ -1070,6 +1101,22 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     if (!selectedModuleId) return;
     await loadModuleData(selectedModuleId, records.length + RECORD_PAGE);
   }, [selectedModuleId, records.length, loadModuleData]);
+
+  // The renderer says which dates are picked; a change reads the rows inside them again.
+  const periodChanged = useCallback(
+    (range: PeriodRange | null) => {
+      if (!selectedModuleId) return;
+      const was = rowPeriod.current;
+      const ours = was?.moduleId === selectedModuleId;
+      rowPeriod.current = { moduleId: selectedModuleId, range };
+      if (ours && was.range?.field === range?.field && was.range?.from === range?.from && was.range?.to === range?.to)
+        return;
+      // A section opened with no dates picked was read whole already.
+      if (!range && !ours) return;
+      void loadModuleData(selectedModuleId);
+    },
+    [selectedModuleId, loadModuleData]
+  );
 
   /**
    * One row's change, placed in the section as loaded, instead of the
@@ -1467,7 +1514,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     // came back from Shopify has nothing to show.
     supabase
       .from("stores")
-      .select("id, currency, country")
+      .select("id, currency, country, timezone")
       .eq("project_id", projectId)
       .in("status", ["connected", "uninstalled"])
       .maybeSingle()
@@ -1478,6 +1525,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 id: data.id as string,
                 currency: data.currency as string,
                 country: (data.country as string | null) ?? null,
+                timezone: (data.timezone as string | null) ?? null,
               }
             : null
         )
@@ -3255,6 +3303,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     onStats={sectionStats}
                     onScanGroup={openScanGroup}
                     onReadSection={readSection}
+                    periodKey={selectedModuleId ?? undefined}
+                    timeZone={storeBacked ? (store?.timezone ?? undefined) : undefined}
+                    onPeriod={periodChanged}
                     {...(storeBacked
                       ? // No write handlers at all, which is how the renderer
                         // already expresses read-only. The import owns these

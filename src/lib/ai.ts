@@ -36,6 +36,7 @@ import {
 // One definition, shared with the Shopify importer rather than copied.
 import { isTransient } from "@/lib/retry";
 import { customViewProblem, customViewScriptProblem } from "@/lib/custom-view";
+import { DEFAULT_PRESETS } from "@/lib/period";
 import { codeProblem } from "@/lib/code-run";
 import { asJob, record } from "@/lib/usage";
 import {
@@ -109,6 +110,7 @@ export const PLAN_FORMAT = `Each plan must have exactly this shape:
     "filters": [ { "field": "stage", "label": "Stage", "options": ["Intake","Review"] } ],
     "stats": [ { "label": "Stock value", "op": "sum", "value": { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, "format": "currency" }, { "label": "Still open", "op": "count", "where": { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] } } ],
     "defaultSort": { "field": "created_at", "dir": "desc" },
+    "period": { "field": "dropped_off_date", "label": "Dropped off", "presets": [7, 30, 90], "default": 30 },
     "actions": [ { "label": "Mark Done", "set": { "stage": { "const": "Done" }, "finished_on": { "op": "today" } }, "when": { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }, "style": "primary" } ],
     "scanMode": { "lookupField": "barcode", "action": { "label": "Check in", "set": { "stage": { "const": "Received" }, "checked_in_on": { "op": "today" } } }, "sequenceField": "queue_position", "hint": "Scan a code to check the item in" }
   } or null,
@@ -145,7 +147,7 @@ HOW TO CHOOSE changeType:
   )}, whose rows each total many others, so there is no one row for it to sit beside. The store's own fields are read here, never written: a row action or scan mode sets a field of theirs ("Mark packed" sets packed; scanning the order number finds the order and ticks it). A rule on such a section reads the store's fields and theirs, and sets only theirs. It runs when a field of theirs changes (record_updated, from the first one set on a row), or on a schedule over every row of the list ("when" picks the rows; a row it acts on gets its fields then) — so "flag the COD orders delivered a week ago and still unpaid" is a daily rule reading gateway, fulfilment_status and financial_status. A change in Shopify reaches the rows within seconds, but it does not fire a rule: a rule over them runs when a field of theirs changes, or a schedule rule sees it on its next run. No rule adds rows to it (record_created is refused). Filters, search, stats and sort work over both.
 - MODULE_UPDATE — nav metadata only: rename label, change icon, move it inside another section (parent_id), reposition (sort_order: below the lowest existing value for top, midpoint like 1.5 for between, above max for bottom).
 - MODULE_DELETE — only when the user clearly asks to delete/remove a whole section. deleteConfirmName = exact name slug.
-- FEATURE_UPDATE — search box, dropdown filters, STAT CARDS (op: count | sum | avg | min | max over "value", an EXPRESSION evaluated per row — so a stock value is { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, not a bare column; optional "where" expression limits which rows count. Never label a stat as something the expression does not actually compute), default sort, ROW ACTION buttons (a one-click change to that row: "set" maps field -> EXPRESSION, and the optional "when" is an EXPRESSION deciding whether the button shows on that row — same operators as automations, so "only while it isn't Done" is { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }), or SCAN MODE (a scan-and-go bar: lookupField = the code column scanned into it, action.set = field -> expression applied to the matched row, sequenceField = a numeric column that must never go backwards between scans, for picking or queue order). It works with any USB or Bluetooth barcode scanner, which types the code like a keyboard — there is no camera scanning. A scan that matches nothing changes NOTHING: the person sees it on screen and that is the whole safeguard. Nothing is recorded, so never add a "scan errors" or "mistakes" count — no rule can fill it, and a stat built on it counts successful scans instead. Scanning only reaches rows currently in view, so the section needs a filter that narrows to the job in hand. Send only the parts you change: each part you send (view, stats, filters, actions, scanMode, search, defaultSort) replaces that part whole, a part you leave out stays exactly as it is, and null removes it. To add a stat, send "stats" with the old ones and the new; leave a written screen's "view" out unless you are changing the screen.
+- FEATURE_UPDATE — search box, dropdown filters, STAT CARDS (op: count | sum | avg | min | max over "value", an EXPRESSION evaluated per row — so a stock value is { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, not a bare column; optional "where" expression limits which rows count. Never label a stat as something the expression does not actually compute), default sort, a PERIOD (a choice of dates over the section: { "field": "<a date column>", "label": "Placed", "presets": [15, 30, 60], "default": 15 } draws chips for the last 15, 30 and 60 days, their own dates and All, and narrows the rows, the stats and the view together; whenever they want to see a window of days, or change it, this is how, never a written screen. With a period, no stat carries days_since of that field in its "where", and no label names the days: the period picks them), ROW ACTION buttons (a one-click change to that row: "set" maps field -> EXPRESSION, and the optional "when" is an EXPRESSION deciding whether the button shows on that row — same operators as automations, so "only while it isn't Done" is { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }), or SCAN MODE (a scan-and-go bar: lookupField = the code column scanned into it, action.set = field -> expression applied to the matched row, sequenceField = a numeric column that must never go backwards between scans, for picking or queue order). It works with any USB or Bluetooth barcode scanner, which types the code like a keyboard — there is no camera scanning. A scan that matches nothing changes NOTHING: the person sees it on screen and that is the whole safeguard. Nothing is recorded, so never add a "scan errors" or "mistakes" count — no rule can fill it, and a stat built on it counts successful scans instead. Scanning only reaches rows currently in view, so the section needs a filter that narrows to the job in hand. Send only the parts you change: each part you send (view, stats, filters, actions, scanMode, search, defaultSort, period) replaces that part whole, a part you leave out stays exactly as it is, and null removes it. To add a stat, send "stats" with the old ones and the new; leave a written screen's "view" out unless you are changing the screen. A "view" you send REPLACES the section's view: a written screen sent over Orders takes its table away. To add counters, a filter or a choice of dates to a section they already use, send stats, filters or period and leave "view" out; send a view only when they ask to see the section a different way.
 - RECORD_SEED — ADDS rows to an existing module. It only ever inserts; it cannot change or delete a row that is already there. Never use it to "correct" or "update" existing data — that produces a duplicate and tells the owner it was an edit. Changing a value is something they do themselves by opening the row.
 - RECORD_SEED — add rows to an existing module (field names must exist in its schema).
 - AUTOMATION_ADD — business logic that runs automatically. "targetModuleId" is the section whose rows trigger it. You BUILD the rule out of the operators below — there is no menu of pre-made rule types, so express exactly what the owner described.
@@ -399,7 +401,7 @@ CHOOSING THE VIEW — this is a real design decision, make it deliberately:
 - "list" — a simple queue or checklist, one line each, read top to bottom.
 - "table" — many columns that need comparing side by side, or numbers the owner scans down a column. Choose it because the data really is tabular, NEVER because it is the safe default.
 - Pick from how the owner described their day, not from what the section is called. If they said "I want to see what's at each stage", that is a board even if the section is called Orders.
-- If none of the five draws what the owner described — their own steps on one screen, a station for busy hands, big counters, a flow that moves on by itself — write a "custom" view rather than squeezing their flow into a table.
+- If none of the five draws what the owner described — their own steps on one screen, a station for busy hands, big counters, a flow that moves on by itself — write a "custom" view rather than squeezing their flow into a table. On a section they already use, that screen replaces its view, so write one there only when they ask for a different screen, never to add counters or a range of dates to it.
 
 ${CODE_RULE_GUIDE}
 
@@ -960,6 +962,15 @@ function validateView(view: unknown, columns: SchemaColumn[] | null, errors: str
  * which columns these features will live on; when it genuinely cannot,
  * that is the error, not a pass.
  */
+/** Whether an expression asks how many days ago a field was: days_since of it, anywhere inside. */
+function readsDaysSince(e: unknown, field: string): boolean {
+  if (Array.isArray(e)) return e.some((x) => readsDaysSince(x, field));
+  if (!isPlainObject(e)) return false;
+  const args = Array.isArray(e.args) ? e.args : [];
+  if (e.op === "days_since" && isPlainObject(args[0]) && args[0].field === field) return true;
+  return args.some((x) => readsDaysSince(x, field));
+}
+
 export function validateFeatures(
   features: unknown,
   columns: SchemaColumn[] | null,
@@ -967,7 +978,9 @@ export function validateFeatures(
   /** Columns earlier plans in the same batch will have added by now. */
   pendingFields?: Set<string>,
   /** On a section over the store, the store's own columns: read, never written. */
-  storeFields?: ReadonlySet<string>
+  storeFields?: ReadonlySet<string>,
+  /** The date column a period the section already has reads, when this change leaves the period as it is. */
+  periodField?: string | null
 ): void {
   if (!isPlainObject(features)) {
     err(errors, "features must be an object.");
@@ -1072,6 +1085,66 @@ export function validateFeatures(
         if (!Array.isArray(fl.options)) {
           err(errors, `Filter "${fl.field}" needs "options": the values to pick from.`);
         }
+      }
+    }
+  }
+  // A choice of dates over the section: chips that narrow its rows and
+  // its stats together. Asked for a 15 / 30 / 60 day choice, Luke wrote
+  // a screen in place of Orders' table, because nothing here could do it.
+  if (f.period !== undefined && f.period !== null) {
+    const p = f.period as unknown as Record<string, unknown>;
+    if (!isPlainObject(p) || typeof p.field !== "string") {
+      err(
+        errors,
+        'features.period is { "field": "<a date column>", "label": "Placed", "presets": [7, 30, 90], "default": 30 }.'
+      );
+    } else {
+      const col = columns.find((c) => c.field === p.field);
+      const known = !!col || !!pendingFields?.has(p.field) || !!storeFields?.has(p.field);
+      if (!known) {
+        missed = true;
+        err(errors, `The period reads "${p.field}", which is not a column here.`);
+      } else if (col && col.type !== "date") {
+        err(
+          errors,
+          `The period reads "${p.field}", a ${col.type} column: it needs a date column, the day each row happened.`
+        );
+      }
+      const presets = p.presets;
+      if (
+        presets !== undefined &&
+        !(
+          Array.isArray(presets) &&
+          presets.length >= 1 &&
+          presets.length <= 6 &&
+          presets.every((n) => Number.isInteger(n) && n >= 1 && n <= 3650) &&
+          new Set(presets).size === presets.length
+        )
+      ) {
+        err(errors, "features.period.presets is one to six different whole numbers of days, each from 1 to 3650.");
+      }
+      const offered = Array.isArray(presets) && presets.length ? presets : DEFAULT_PRESETS;
+      if (p.default !== undefined && p.default !== null && !offered.includes(p.default as number)) {
+        err(
+          errors,
+          `features.period.default is ${String(p.default)}, which is not one of its presets (${offered.join(", ")}).`
+        );
+      }
+      if (p.label !== undefined && (typeof p.label !== "string" || p.label.length > 40)) {
+        err(errors, "features.period.label is a few words, at most 40 characters.");
+      }
+    }
+  }
+  // With a period, the days are the period's: a stat that keeps its own
+  // "last 15 days" reads 15 days whichever window is picked above it.
+  const windowOn = f.period === null ? null : (f.period?.field ?? periodField ?? null);
+  if (windowOn && Array.isArray(f.stats)) {
+    for (const st of f.stats) {
+      if (st && st.where !== undefined && readsDaysSince(st.where, windowOn)) {
+        err(
+          errors,
+          `Stat "${st.label}" counts only some days of "${windowOn}", but the period above the section already picks the days: take days_since("${windowOn}") out of its "where", and the days out of its label ("Revenue collected", not "Revenue (15d)").`
+        );
       }
     }
   }
@@ -2060,7 +2133,14 @@ export function validatePlan(
       // a part accepted long ago, under older rules, must not block a new
       // change to another part (a recorded handover design was refused
       // for its section's old scan settings).
-      validateFeatures(plan.features, currentSchema?.columns ?? null, errors, pendingFields, storeFields);
+      validateFeatures(
+        plan.features,
+        currentSchema?.columns ?? null,
+        errors,
+        pendingFields,
+        storeFields,
+        currentSchema?.features?.period?.field
+      );
     }
 
     if (plan.changeType === "AUTOMATION_ADD") {

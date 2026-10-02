@@ -176,6 +176,22 @@ export interface FeatureSchema {
   }>;
   defaultSort?: { field: string; dir: "asc" | "desc" };
   /**
+   * A choice of dates over the section (0161): chips that set the window
+   * its rows, its stat cards and its view are read over. "Last N days"
+   * is today and the N - 1 before it, in the shop's zone on a section
+   * over the store. Their own dates, and every row, are always offered.
+   */
+  period?: {
+    /** A date column: the day each row happened. */
+    field: string;
+    /** What the chips are over ("Placed"); the column's own label when left out. */
+    label?: string;
+    /** The windows offered, in days. Default 7, 30 and 90. */
+    presets?: number[];
+    /** The window it opens on, one of the presets; every row when left out. */
+    default?: number | null;
+  };
+  /**
    * Row action buttons. The guard and the values written are the same
    * expression trees automations use, so "only when it isn't already
    * done" or "stamp today's date" need no new vocabulary.
@@ -213,7 +229,7 @@ export interface FeatureSchema {
 /**
  * A change to a section's features, laid over what it has: a part the
  * change names (view, stats, filters, actions, scanMode, search,
- * defaultSort) replaces that part, a part it leaves out stays, and null
+ * defaultSort, period) replaces that part, a part it leaves out stays, and null
  * takes it away. A change used to replace them all, so to add one
  * counter Luke sent every part back, and a part he missed was gone: a
  * counter on a written screen meant sending the whole screen again.

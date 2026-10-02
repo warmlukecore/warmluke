@@ -15,6 +15,7 @@ import { createClient } from "@supabase/supabase-js";
 import { signInAsCheckUser, throwawayProject } from "./owner-session.mjs";
 import { evalExpr, truthy } from "../src/lib/expr.ts";
 import { readStoreRows, STORE_TABLES } from "../src/lib/store-read.ts";
+import { inPeriod, periodRange } from "../src/lib/period.ts";
 
 const env = Object.fromEntries(
   readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
@@ -167,6 +168,48 @@ try {
     filters: { status: "Paid" },
   });
   check("and both together", both[0]?.count === paid.filter((r) => r.data.city === "Mumbai").length);
+
+  console.log("\nthe dates picked above the section (0161)");
+  const asSent = (w) => ({ field: w.field, from_day: w.fromDay, to_day: w.toDay, from: w.from, to: w.to });
+  const fifteen = periodRange("placed", { days: 15 }, "UTC");
+  const inside = withComputed.filter((r) => inPeriod(r.data.placed, fifteen));
+  const picked = await stats(mod.id, [plain[0], plain[1]], { computed, period: asSent(fifteen) });
+  check(
+    "the cards count only the days picked, as the page filters them",
+    picked[0]?.count === inside.length && inside.length > 0 && inside.length < 250
+  );
+  check("and add up only those", Number(picked[1]?.value) === inside.reduce((a, r) => a + r.data.amount, 0));
+  const pickedPaid = await stats(mod.id, [plain[0]], {
+    computed,
+    filters: { status: "Paid" },
+    period: asSent(fifteen),
+  });
+  check("with a filter as well", pickedPaid[0]?.count === inside.filter((r) => r.data.status === "Paid").length);
+  // A store's timestamps, by their instant in the shop's zone: the
+  // server and the browser give every value the same answer.
+  const mumbai = periodRange("at", { from: "2026-09-19", to: "2026-10-03" }, "Asia/Kolkata");
+  const values = [
+    "2026-09-18T18:31:00Z",
+    "2026-09-18T18:29:00Z",
+    "2026-10-03T18:29:59+00:00",
+    "2026-10-03T18:30:00Z",
+    "2026-09-19",
+    "2026-09-18",
+    "",
+    "soon",
+  ];
+  const server = [];
+  for (const v of values) {
+    const { data, error } = await client.rpc("abo_in_period", { p_value: v, p_period: asSent(mumbai) });
+    server.push(error ? `ERR ${error.message}` : data);
+  }
+  const browser = values.map((v) => inPeriod(v, mumbai));
+  check(
+    "the server and the browser agree on every value, midnights included",
+    JSON.stringify(server) === JSON.stringify(browser) &&
+      JSON.stringify(browser) === "[true,false,true,false,true,false,false,false]"
+  );
+  if (fails.length) console.log("    server", JSON.stringify(server), "browser", JSON.stringify(browser));
 
   console.log("\ngrouped: sales by city");
   const grouped = await stats(

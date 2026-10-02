@@ -315,7 +315,7 @@ ${bullets(AUTOMATION_ACTION_TYPES.map((a) => [a, AUTOMATION_ACTIONS[a]]))}
 
 STAT AGGREGATIONS:
 ${bullets(STAT_OP_LIST.map((s) => [s, STAT_OPS[s]]))}
-  A stat runs over EVERY row of the section, not the page on screen. "where" may use today / days_since, so "this month's revenue" is sum of total where days_since(placed_at) <= 30.
+  A stat runs over EVERY row of the section, not the page on screen. "where" may use today / days_since, so a fixed "last 30 days revenue" is sum of total where days_since(placed_at) <= 30. A window they want to pick or change (15, 30, 60 days, their own dates) is the section's period instead, and then no stat counts days itself.
   "by" — group the rows by a field and show the top few, as a list in the card: "Sales by city" is { "op": "sum", "value": { "field": "total" }, "by": "city", "limit": 5 }. "Orders per customer" is op count, by customer_name. Use it whenever they ask "by", "per", "which X most".
 
 NOT POSSIBLE ON THIS PLATFORM — never design around these, never describe a workaround for them:
@@ -332,7 +332,7 @@ export function capabilitySummary(): string {
   const does = AUTOMATION_ACTION_TYPES.map((a) => a.replace(/_/g, " "));
   return `WHAT LUKE CAN BUILD — say no more than this about the platform, in these words:
 - Sections of rows with typed fields (${COLUMN_TYPES.join(", ")}), shown as a ${VIEW_TYPES.join(", ")}.
-- Search, filters, stat cards, sorting, one-tap row buttons, and a barcode scan bar.
+- Search, filters, stat cards, a choice of dates (the last N days, their own dates, all), sorting, one-tap row buttons, and a barcode scan bar.
 - A screen written for their own flow when none of the views above draws it, and a rule's own code for logic the expressions cannot say.
 - Rules that run when a row is ${on.join(" or ")}, or on a schedule, and then ${does.join(" or ")}.
 - Sections over the connected store's own lists (orders, products, customers, stock and the rest), with the owner's fields kept beside each row.

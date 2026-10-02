@@ -33,6 +33,7 @@ import type {
   TurnEvent,
   TurnUsage,
   UiSchema,
+  ViewSpec,
 } from "@/lib/types";
 import { ago, dayGroup } from "@/lib/when";
 import { TITLE_MAX } from "@/lib/types";
@@ -1005,6 +1006,7 @@ function BlueprintCard({
   blueprint,
   modules,
   currentColumns,
+  currentView,
   openSectionId = null,
   storeFacts,
   done,
@@ -1019,6 +1021,8 @@ function BlueprintCard({
   modules: ModuleRow[];
   /** Columns of the section in view, so a plan that adds some says so. */
   currentColumns?: Array<{ field: string; label: string }>;
+  /** That section's view today (null: its table), so a plan replacing it says what goes. */
+  currentView?: ViewSpec | null;
   /** Which section that is: another section's plan is not described by its columns. */
   openSectionId?: string | null;
   /** The connected store, so a duplicating section is flagged here. */
@@ -1117,11 +1121,13 @@ function BlueprintCard({
   };
 
   const row = (plan: AssistantPlan, i: number) => {
+    const here = plan.targetModuleId === openSectionId;
     const summary = describeForOwner(
       plan,
       modules,
-      plan.targetModuleId === openSectionId ? currentColumns : undefined,
-      storeFacts
+      here ? currentColumns : undefined,
+      storeFacts,
+      here ? currentView : undefined
     );
     const status = statusOf(i);
     const off = status.kind === "left-out" || status.kind === "already-there" || status.kind === "section-gone";
@@ -3523,6 +3529,7 @@ export default function ChatPanel({
                             blueprint={m.blueprint}
                             modules={modules}
                             currentColumns={currentSchema?.columns}
+                            currentView={currentSchema ? (currentSchema.features?.view ?? null) : undefined}
                             openSectionId={openSectionId}
                             storeFacts={storeFacts}
                             done={!!resolvedCards[m.id] || answered}
@@ -3695,10 +3702,13 @@ export default function ChatPanel({
                         from Meena to Raman"; applying it would have left
                         the original row alone and added a duplicate. */}
                               {(() => {
+                                const here = plan.targetModuleId === openSectionId;
                                 const summary = describeForOwner(
                                   plan,
                                   modules,
-                                  plan.targetModuleId === openSectionId ? currentSchema?.columns : undefined
+                                  here ? currentSchema?.columns : undefined,
+                                  undefined,
+                                  here && currentSchema ? (currentSchema.features?.view ?? null) : undefined
                                 );
                                 return (
                                   <>

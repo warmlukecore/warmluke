@@ -10,6 +10,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { dayRangeInZone, lowStock, readStoreRows } from "@/lib/store-read";
 import { ROUTE_TABLE, type Route } from "@/lib/route";
+import { shiftDay as shift, todayIn } from "@/lib/period";
 
 export type Slice = {
   /** What was read, in words Luke can repeat: "orders placed 2026-09-01 to 2026-09-19". */
@@ -22,14 +23,6 @@ export type Slice = {
 /** The most rows a slice carries. Luke reads every one; past this it reads none well. */
 const ROWS = 50;
 
-/** Today's date in a zone, YYYY-MM-DD. */
-const todayIn = (timeZone: string, now: Date) =>
-  new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
-const shift = (day: string, days: number) => {
-  const d = new Date(`${day}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-};
 const firstOfMonth = (year: number, month: number) => `${year}-${String(month).padStart(2, "0")}-01`;
 
 /**

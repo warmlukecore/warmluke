@@ -364,10 +364,26 @@ dev port.
 
 A features change (`FEATURE_UPDATE`) is laid over what the section has
 (`mergeFeatures` in `types.ts`): each part it names (view, stats, filters, actions,
-scanMode, search, defaultSort) replaces that part, a part it leaves out stays, and null
+scanMode, search, defaultSort, period) replaces that part, a part it leaves out stays, and null
 removes one. It is checked as the section will have it, and the preview draws it so. A field
 added (`FIELD_ADD`) keeps the section's columns in their place whatever order they were
 sent in, and appends the new ones. `check-feature-merge` and `check-apply` hold both.
+
+## A section's choice of dates
+
+`features.period` (`{ field, label, presets, default }`, 0161) draws chips over a section:
+its windows of days, All, and the owner's own two dates. One rule (`lib/period.ts`, and
+`abo_in_period` on the server) narrows the rows the page reads (`AppShell`: days through
+`between` on a store list, the day text on a section of their own), what the browser
+filters, and the stat cards (`p_scope.period` in `abo_section_stats`), so the cards and
+the table always count the same rows. "The last N days" are the shop's days on a store
+section and the device's otherwise; the pick is remembered per section on the device.
+The validator refuses a period over anything but a date column, and a stat that still
+counts `days_since` of that field under it. A store list carries its dates as UTC days
+(`to_char` in its view), so a store section's day is UTC's, as everywhere else that shows
+one. A plan that sends a `view` says on the owner's card what it takes the place of
+(`viewReplaced` in `describe.ts`): a section has one view. `check-period` and
+`check-stats` hold these.
 
 ## Code with nobody watching
 
