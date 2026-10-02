@@ -263,7 +263,7 @@ export default function Admin() {
   if (loading || !user || rows === null) {
     return (
       <PageFrame email={user?.email} isSuperadmin>
-        <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-8 sm:py-8">
+        <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-8 lg:px-6 sm:py-8">
           <div className="h-6 w-32 animate-pulse rounded bg-surface-hover" />
           <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[0, 1, 2, 3].map((i) => (
@@ -278,7 +278,7 @@ export default function Admin() {
 
   return (
     <PageFrame email={user.email} isSuperadmin={!error}>
-      <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-8 sm:py-8">
+      <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-8 lg:px-6 sm:py-8">
         <h1 className="text-xl font-semibold tracking-tight text-fg">Accounts</h1>
         <p className="mt-1 text-[13px] text-fg-muted">
           Who is using Warmluke, what they told us, and which assistants are switched on for them.
@@ -382,7 +382,7 @@ export default function Admin() {
                                 <button
                                   onClick={() => setOpen(r)}
                                   title="See everything about this account"
-                                  className="max-w-[14rem] truncate text-left font-medium text-fg hover:text-link hover:underline"
+                                  className="max-w-[12rem] truncate text-left font-medium text-fg hover:text-link hover:underline"
                                 >
                                   {r.full_name || r.memberships?.find((m) => m.name)?.name || r.email}
                                 </button>
@@ -398,7 +398,9 @@ export default function Admin() {
                                 )}
                               </div>
                               {r.full_name && (
-                                <div className="max-w-[14rem] truncate text-xs text-fg-muted">{r.email}</div>
+                                <div title={r.email} className="max-w-[12rem] truncate text-xs text-fg-muted">
+                                  {r.email}
+                                </div>
                               )}
                               <div className="text-[11px] text-fg-faint">
                                 Joined{" "}
@@ -566,7 +568,7 @@ export default function Admin() {
                           );
                         })}
                         <td className="px-3 py-3 first:pl-4">
-                          <div className="min-w-60 space-y-2">
+                          <div className="min-w-44 space-y-2">
                             {/* Used against granted. Editing only changes a
                               draft: spend controls should never save just
                               because somebody clicked elsewhere. */}
@@ -621,11 +623,20 @@ export default function Admin() {
                               >
                                 Save
                               </button>
+                            </div>
+
+                            {nextAllowance === null && (
+                              <p className="text-[11px] text-tone-critical-fg">
+                                Enter a whole number from 0 to {MAX_ALLOWANCE.toLocaleString()}.
+                              </p>
+                            )}
+
+                            <div className="flex items-center gap-3 text-xs">
                               {/* The count only ever goes up, so the box is a
                                 ceiling and not a grant. Say what remains
                                 rather than making the admin do arithmetic. */}
                               <span
-                                className={`text-xs ${
+                                className={`whitespace-nowrap ${
                                   r.turns_unlimited
                                     ? "text-tone-success-fg"
                                     : r.free_turns - r.turns_used > 0
@@ -639,15 +650,6 @@ export default function Admin() {
                                     ? `${r.free_turns - r.turns_used} left`
                                     : "none left"}
                               </span>
-                            </div>
-
-                            {nextAllowance === null && (
-                              <p className="text-[11px] text-tone-critical-fg">
-                                Enter a whole number from 0 to {MAX_ALLOWANCE.toLocaleString()}.
-                              </p>
-                            )}
-
-                            <div className="flex items-center gap-3 text-xs">
                               {/* The state is said, not only coloured. A
                                 knob on a track reads as "on" to most
                                 people, and the one person who uses this
