@@ -55,7 +55,11 @@ const models = async (token) => {
 try {
   console.log("a merchant, before anyone set anything");
   const first = await models(signedIn.session.access_token);
-  check("is told every model on offer, and sees the cost", first.status === 200 && first.body.shows === "cost");
+  // Nothing under a reply until an administrator says otherwise, and not on the testing team (0158).
+  check(
+    "is told every model on offer, and sees nothing of what a reply cost",
+    first.status === 200 && first.body.shows === "nothing" && first.body.team === false
+  );
   check(
     "with a default among them",
     first.body.models?.some((m) => m.id === first.body.default)
@@ -98,7 +102,7 @@ try {
     .eq("action", "set_luke");
   check(
     "which is on the account's trail, before and after",
-    trail?.length === 1 && trail[0].old_value?.shows === "cost" && trail[0].new_value?.shows === "model"
+    trail?.length === 1 && trail[0].old_value?.shows === "nothing" && trail[0].new_value?.shows === "model"
   );
   await set(["claude-haiku-4-5"], "model");
   const { data: again } = await admin
