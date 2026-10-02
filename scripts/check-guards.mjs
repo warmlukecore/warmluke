@@ -224,10 +224,14 @@ try {
   const guard = await rule(holds, "No more held than can be sold", notMoreThanThere);
   const hold = (who, qty = 1) => ({ item: line.inventory_item_id, place: line.location_id, qty, status: "Held", who });
   const holdSql = (who, tag) =>
-    `/* ${tag} */ begin; insert into public.records (project_id, module_id, data) values ('${proj.id}', '${holds.id}', '${JSON.stringify(hold(who))}'::jsonb); select pg_sleep(3); commit;`;
+    `/* ${tag} */ begin; insert into public.records (project_id, module_id, data) values ('${proj.id}', '${holds.id}', '${JSON.stringify(hold(who))}'::jsonb); select pg_sleep(6); commit;`;
 
-  // Meera's hold, saved and kept open three seconds; Arjun's, through the
-  // app's own door, once hers is in.
+  // Meera's hold, saved and kept open six seconds; Arjun's, through the
+  // app's own door, once hers is in. Six, not three: from a runner far
+  // from the database each look for her sleeping session is a new
+  // connection of a second or two, so with three the look could land so
+  // late that Arjun waited less than the bar below, and the check failed
+  // with the guard working (two runs in three on 2026-10-02).
   const meera = held(holdSql("Meera", `hold-${stamp}-1`));
   await asleep(`hold-${stamp}-1`);
   const t0 = Date.now();
