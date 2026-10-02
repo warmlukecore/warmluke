@@ -9,10 +9,11 @@
 // abo_admin_account (0120), which refuses anyone who is not an
 // administrator. It changes nothing; the row's own controls do that.
 //
-// Callers: src/app/admin/page.tsx.
+// Callers: src/app/[gate]/page.tsx.
 
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
 import { Dialog } from "@/components/ui/Dialog";
 import { note } from "@/components/ui/controls";
@@ -147,6 +148,8 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 export function AccountDetail({ account: a, now, onClose }: { account: Account; now: number; onClose: () => void }) {
+  // The console's own address ([gate]), for links to its other screens.
+  const gate = useParams<{ gate: string }>().gate;
   const [story, setStory] = useState<Story | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -272,7 +275,7 @@ export function AccountDetail({ account: a, now, onClose }: { account: Account; 
                       {labelOf(DEMO_STAGES, d.stage)}
                     </span>
                     <Link
-                      href={`/admin/demos?find=${encodeURIComponent(a.email)}`}
+                      href={`/${gate}/demos?find=${encodeURIComponent(a.email)}`}
                       className="text-xs text-link hover:underline"
                     >
                       Open

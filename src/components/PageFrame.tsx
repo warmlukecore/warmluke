@@ -8,8 +8,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Compass, Inbox, LayoutGrid, LogOut, ShieldCheck, ShoppingBag, UserPlus } from "lucide-react";
+import { Compass, Inbox, LayoutGrid, LogOut, MessagesSquare, ShieldCheck, ShoppingBag, UserPlus } from "lucide-react";
 import { signOut } from "@/lib/auth";
+import { useConsoleBase } from "@/lib/console-base";
 import { menu, menuItem } from "@/components/ui/controls";
 import { Logo } from "@/components/ui/Logo";
 import { ThemeToggle } from "@/components/ThemeSync";
@@ -24,6 +25,8 @@ export function PageFrame({
   children: ReactNode;
 }) {
   const path = usePathname();
+  // The console's address, which only an administrator is ever told.
+  const admin = useConsoleBase(isSuperadmin);
   const tab = (href: string, text: string, Glyph: typeof LayoutGrid) => (
     <Link
       href={href}
@@ -47,14 +50,22 @@ export function PageFrame({
           {/* The mark alone on a phone: with every admin tab the row is wider than one. */}
           <span className="hidden text-sm font-semibold text-white sm:inline">Warmluke</span>
         </Link>
-        {tab("/dashboard", "Projects", LayoutGrid)}
-        {/* The screen refuses anyone else; this only decides whether the door shows. */}
-        {isSuperadmin && tab("/admin", "Accounts", ShieldCheck)}
-        {isSuperadmin && tab("/admin/invites", "Invites", UserPlus)}
-        {isSuperadmin && tab("/admin/demos", "Early access", Inbox)}
-        {isSuperadmin && tab("/admin/shopify", "Shopify apps", ShoppingBag)}
-        {isSuperadmin && tab("/admin/tour", "Tour", Compass)}
-        <div className="ml-auto flex items-center gap-1">
+        {/* Scrolls sideways on a phone, so the account menu is never pushed off the edge. */}
+        <nav className="flex min-w-0 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {tab("/dashboard", "Projects", LayoutGrid)}
+          {/* The screen refuses anyone else; this only decides whether the door shows. */}
+          {isSuperadmin && admin && (
+            <>
+              {tab(admin, "Superadmin", ShieldCheck)}
+              {tab(`${admin}/conversations`, "Conversations", MessagesSquare)}
+              {tab(`${admin}/invites`, "Invites", UserPlus)}
+              {tab(`${admin}/demos`, "Early access", Inbox)}
+              {tab(`${admin}/shopify`, "Shopify apps", ShoppingBag)}
+              {tab(`${admin}/tour`, "Tour", Compass)}
+            </>
+          )}
+        </nav>
+        <div className="ml-auto flex shrink-0 items-center gap-1">
           <ThemeToggle className="rounded-control p-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white" />
           <AccountMenu email={email} />
         </div>

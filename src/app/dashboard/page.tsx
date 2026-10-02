@@ -14,6 +14,7 @@ import ProjectSettings from "@/components/ProjectSettings";
 import ConnectShopify from "@/components/ConnectShopify";
 import { PageFrame } from "@/components/PageFrame";
 import { Dialog } from "@/components/ui/Dialog";
+import { useConsoleBase } from "@/lib/console-base";
 import { button, field, iconButton, note } from "@/components/ui/controls";
 import { accessRanOut } from "@/lib/store-standing";
 import { quietClasses } from "@/lib/tone";
@@ -201,6 +202,7 @@ function DashboardInner() {
   // refuses non-administrators; this only decides whether the door is
   // visible, so a wrong answer here is cosmetic.
   const [isSuperadmin, setIsSuperadmin] = useState(false);
+  const admin = useConsoleBase(isSuperadmin);
   const [query, setQuery] = useState("");
   // Whether this person still has onboarding ahead of them. Decided
   // before anything else happens here, so a landing-page prompt is not
@@ -445,12 +447,14 @@ function DashboardInner() {
               <>
                 <h2 className="mt-4 text-base font-semibold text-fg">No projects of your own</h2>
                 <p className="mt-1.5 max-w-md text-[13px] leading-relaxed text-fg-muted">
-                  This is your own workspace. Everyone else&rsquo;s is under Accounts.
+                  This is your own workspace. Everyone else&rsquo;s is under Superadmin.
                 </p>
                 <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-                  <Link href="/admin" className={button("primary")}>
-                    Accounts
-                  </Link>
+                  {admin && (
+                    <Link href={admin} className={button("primary")}>
+                      Superadmin
+                    </Link>
+                  )}
                   <button onClick={() => createAndBuild()} disabled={creating} className={button("secondary")}>
                     {creating ? "Creating…" : "Build one anyway"}
                   </button>

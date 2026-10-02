@@ -110,7 +110,7 @@ export default function Admin() {
   }, []);
 
   useEffect(() => {
-    if (!loading && !user) router.replace("/login?next=/admin");
+    if (!loading && !user) router.replace(`/login?next=${encodeURIComponent(window.location.pathname)}`);
   }, [loading, user, router]);
 
   const rowsRef = useRef<Account[] | null>(null);

@@ -2,8 +2,8 @@
 // a number with a line under it, a count broken down as bars, a link
 // somebody typed made safe to follow, and a row of choices.
 //
-// Callers: src/app/admin/page.tsx, src/app/admin/demos/page.tsx,
-// src/app/admin/invites/page.tsx.
+// Callers: src/app/[gate]/page.tsx, src/app/[gate]/demos/page.tsx,
+// src/app/[gate]/invites/page.tsx.
 
 import { card } from "@/components/ui/controls";
 import type { Option } from "@/lib/onboarding";

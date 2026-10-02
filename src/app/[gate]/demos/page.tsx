@@ -17,7 +17,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { Download, Search } from "lucide-react";
 import { supabase } from "@/lib/supabase-client";
 import { useUser } from "@/lib/auth";
@@ -58,8 +58,8 @@ type Lead = {
 };
 
 /** The invite form, filled in with what the request told us (0141). */
-const inviteHref = (r: Lead) =>
-  `/admin/invites?${new URLSearchParams({
+const inviteHref = (admin: string, r: Lead) =>
+  `${admin}/invites?${new URLSearchParams({
     email: (r.email ?? "").trim(),
     name: (r.name ?? "").trim(),
     business: (r.business ?? "").trim(),
@@ -96,6 +96,8 @@ const who = (r: Lead) => (r.email ?? "").trim().toLowerCase() || r.id;
 
 export default function DemoRequests() {
   const { user, loading } = useUser();
+  // The console's own address, for links to its other screens.
+  const admin = `/${useParams<{ gate: string }>().gate}`;
   const router = useRouter();
   const [rows, setRows] = useState<Lead[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -111,7 +113,7 @@ export default function DemoRequests() {
   }, []);
 
   useEffect(() => {
-    if (!loading && !user) router.replace("/login?next=/admin/demos");
+    if (!loading && !user) router.replace(`/login?next=${encodeURIComponent(window.location.pathname)}`);
   }, [loading, user, router]);
 
   const load = useCallback(async () => {
@@ -293,7 +295,7 @@ export default function DemoRequests() {
                                 </span>
                                 {r.has_account && r.email && (
                                   <Link
-                                    href={`/admin?find=${encodeURIComponent(r.email.trim())}`}
+                                    href={`${admin}?find=${encodeURIComponent(r.email.trim())}`}
                                     title="Open their account"
                                     className="rounded-full bg-tone-success px-1.5 py-px text-[10px] font-medium whitespace-nowrap text-tone-success-fg hover:underline"
                                   >
@@ -319,7 +321,7 @@ export default function DemoRequests() {
                               )}
                               {r.email && !r.has_account && (
                                 <Link
-                                  href={inviteHref(r)}
+                                  href={inviteHref(admin, r)}
                                   className="mt-1 inline-block text-xs font-medium text-link hover:underline"
                                 >
                                   {r.invited_at

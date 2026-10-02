@@ -103,7 +103,7 @@ export default function ShopifyAppsAdmin() {
   const [origin, setOrigin] = useState("");
 
   useEffect(() => {
-    if (!loading && !user) router.replace("/login?next=/admin/shopify");
+    if (!loading && !user) router.replace(`/login?next=${encodeURIComponent(window.location.pathname)}`);
   }, [loading, user, router]);
   useEffect(() => setOrigin(window.location.origin), []);
 

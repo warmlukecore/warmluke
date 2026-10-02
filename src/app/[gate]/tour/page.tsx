@@ -61,7 +61,7 @@ export default function TourAdmin() {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    if (!loading && !user) router.replace("/login?next=/admin/tour");
+    if (!loading && !user) router.replace(`/login?next=${encodeURIComponent(window.location.pathname)}`);
   }, [loading, user, router]);
 
   const load = useCallback(async () => {

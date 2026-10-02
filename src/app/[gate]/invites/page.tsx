@@ -103,7 +103,7 @@ export default function Invites() {
   const [copied, setCopied] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!loading && !user) router.replace("/login?next=/admin/invites");
+    if (!loading && !user) router.replace(`/login?next=${encodeURIComponent(window.location.pathname)}`);
   }, [loading, user, router]);
 
   const load = useCallback(async () => {

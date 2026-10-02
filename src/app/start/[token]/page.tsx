@@ -21,6 +21,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Lock } from "lucide-react";
 import { supabase } from "@/lib/supabase-client";
 import { authMessage } from "@/lib/auth";
+import { askConsoleBase } from "@/lib/console-base";
 import { CenteredCard } from "@/components/CenteredCard";
 import { PasswordInput } from "@/components/ui/PasswordInput";
 import { button, field, label, note } from "@/components/ui/controls";
@@ -81,7 +82,8 @@ export default function StartPage() {
       return;
     }
     if (row.state === "staff") {
-      router.replace("/admin/invites");
+      const admin = await askConsoleBase();
+      router.replace(admin ? `${admin}/invites` : "/dashboard");
       return;
     }
     if (row.state !== "claimed") {

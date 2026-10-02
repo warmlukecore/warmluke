@@ -30,7 +30,7 @@ const admin = createClient(URL_, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
 
 console.log("the spend controls ask before they write");
 {
-  const page = readFileSync(new URL("../src/app/admin/page.tsx", import.meta.url), "utf8");
+  const page = readFileSync(new URL("../src/app/[gate]/page.tsx", import.meta.url), "utf8");
   check("an allowance is not saved on blur", !/onBlur=/.test(page));
   check(
     "a changed number needs an explicit save and confirmation",

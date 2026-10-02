@@ -7,7 +7,7 @@
 // sheet. Such a cell is written with a ' in front, which the sheet shows
 // as the text it was. Numbers are left alone: -3 is a number.
 //
-// Callers: src/app/admin/page.tsx, src/app/admin/demos/page.tsx.
+// Callers: src/app/[gate]/page.tsx, src/app/[gate]/demos/page.tsx.
 
 type Value = string | number | boolean | null | undefined;
 export type Column<T> = [header: string, value: (row: T) => Value];

@@ -219,7 +219,8 @@ console.log("\nand no long dash reached the copy");
 // both of which had one. Every page under src/app is a page unless
 // it sits behind the login — that is the whole rule, and a page
 // added tomorrow is covered by it without anyone remembering.
-const BEHIND_THE_LOGIN = /^src\/app\/(app|admin|dashboard|api)\//;
+// [gate] is the superadmin console, at its secret address (lib/console-path).
+const BEHIND_THE_LOGIN = /^src\/app\/(app|admin|\[gate\]|dashboard|api)\//;
 const pagesUnder = (dir) =>
   readdirSync(new URL(`../${dir}`, import.meta.url), { withFileTypes: true }).flatMap((e) =>
     e.isDirectory() ? pagesUnder(`${dir}/${e.name}`) : e.name === "page.tsx" ? [`${dir}/${e.name}`] : []
