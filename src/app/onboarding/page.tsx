@@ -424,8 +424,7 @@ export default function Onboarding() {
                 return null;
               }
               if (pending) sessionStorage.setItem("abo_build_prompt", pending);
-              // A first look round, unless they arrive with something to build.
-              router.replace(`/app/${where.id}${pending ? "?build=1" : "?tour=1"}`);
+              router.replace(`/app/${where.id}${pending ? "?build=1" : ""}`);
               return null;
             }}
           />

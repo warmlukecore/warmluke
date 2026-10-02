@@ -478,8 +478,11 @@ test("the section alone or Luke alone takes the whole screen, and the three come
   // Luke alone: the section goes, Luke takes the width, and comes back to its place.
   await page.getByRole("button", { name: "Open Luke full width" }).click();
   await expect(main).toBeHidden();
-  expect((await lukePanel.boundingBox())!.width, "Luke has the width").toBeGreaterThan(width * 0.6);
+  // The panel slides to its width, so it is measured once it has settled.
+  await expect
+    .poll(async () => (await lukePanel.boundingBox())!.width, { message: "Luke has the width" })
+    .toBeGreaterThan(width * 0.6);
   await page.getByRole("button", { name: "Back to three panes" }).click();
   await expect(main).toBeVisible();
-  expect((await lukePanel.boundingBox())!.width).toBeLessThan(width * 0.5);
+  await expect.poll(async () => (await lukePanel.boundingBox())!.width).toBeLessThan(width * 0.5);
 });

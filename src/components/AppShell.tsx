@@ -79,11 +79,13 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
+  Compass,
   Users,
   Zap,
 } from "lucide-react";
 import { AskLuke } from "@/components/AskLuke";
-import { Tour, type TourStop } from "@/components/Tour";
+import { Tour, type TourEnd } from "@/components/Tour";
+import { tourStops, type TourCopy } from "@/lib/tour";
 import { button, iconButton, note } from "@/components/ui/controls";
 import { Logo } from "@/components/ui/Logo";
 import { ThemeToggle } from "@/components/ThemeSync";
@@ -385,6 +387,10 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // Finding a section by name, from the sidebar's search box.
   const [navQuery, setNavQuery] = useState("");
   const [chatOpen, setChatOpen] = useState(false);
+  // Shut on a wide screen, Luke's panel stays in the layout at no width, so
+  // it slides shut and open beside the section rather than jumping out of
+  // the page and back. Opened as a drawer (chatOpen), it is the drawer.
+  const lukeTucked = focus === null && lukeShut && !chatOpen;
   /**
    * How many things their own AI is waiting on them for.
    *
@@ -2530,50 +2536,52 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // Ask Luke floats over the page wherever Luke's panel is not on screen.
   const askLuke = canBuild && !chatOpen && focus !== "luke";
 
-  // The first look round, once: onboarding opens the app with ?tour=1, and
-  // closing it takes that off the address, so a reload does not start it
-  // again. A stop for something this person cannot use is not shown.
-  const touring = !loading && searchParams.get("tour") === "1";
-  const endTour = useCallback(() => {
-    const at = new URLSearchParams(window.location.search);
-    at.delete("tour");
-    const qs = at.toString();
-    window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+  // The first look round (0157): shown once to each person, on whichever
+  // device they open the app on first, unless an administrator switched it
+  // off; "Take the tour" at the foot of the sidebar opens it again. Not over
+  // a build they arrived with. A stop for what they cannot use is left out.
+  const [touring, setTouring] = useState(false);
+  const [tourCopy, setTourCopy] = useState<TourCopy | null>(null);
+  const tourNow = tourStops(tourCopy, { store: !!store, build: canBuild });
+  const tourCount = tourNow.length;
+  const openTour = useCallback((stops: number) => {
+    setTouring(true);
+    supabase.rpc("abo_tour_seen", { p_event: "open", p_stop: null, p_reached: 1, p_stops: stops }).then(() => {});
   }, []);
-  const tourStops: TourStop[] = [
-    {
-      title: "Welcome to Warmluke",
-      body: "A quick look round, a few stops. Escape leaves it at any time.",
+  const endTour = useCallback(
+    (end: TourEnd) => {
+      setTouring(false);
+      supabase
+        .rpc("abo_tour_seen", {
+          p_event: end.finished ? "finished" : "closed",
+          p_stop: end.stop,
+          p_reached: end.reached,
+          p_stops: tourCount,
+        })
+        .then(() => {});
     },
-    ...(store
-      ? [
-          {
-            target: '[data-tour="store"], [aria-label="Open sections"]',
-            title: "Your store",
-            body: "Orders, products and customers from Shopify, kept up to date. Open any of them to search, sort and filter it.",
-          },
-          {
-            target: '[data-tour="sync"], [aria-label="Open sections"]',
-            title: "It keeps syncing",
-            body: "How your store stands lives here. While it is still coming in, what is open grows with it, and Check reads it again.",
-          },
-        ]
-      : []),
-    ...(canBuild
-      ? [
-          {
-            target: 'aside[aria-label="Luke"], [data-tour="ask-luke"] > *',
-            title: "Ask Luke",
-            body: "Ask anything about your store in your own words: which orders are late, who buys the most, what is running low.",
-          },
-          {
-            target: '[data-tour="build"], [aria-label="Open sections"]',
-            title: "Build what you need",
-            body: "Describe the tool you wish you had, and Luke builds it here around how you work. Nothing in your shop changes unless you say yes.",
-          },
-        ]
-      : []),
-  ];
+    [tourCount]
+  );
+  useEffect(() => {
+    if (loading || !userId) return;
+    let live = true;
+    Promise.all([
+      supabase.from("tour_settings").select("enabled, copy").maybeSingle(),
+      supabase.from("tour_views").select("user_id").eq("user_id", userId).maybeSingle(),
+    ]).then(([settings, seen]) => {
+      if (!live) return;
+      setTourCopy((settings.data?.copy as TourCopy | undefined) ?? null);
+      // Before 0157 both reads err, and nothing is shown.
+      const on = !settings.error && settings.data?.enabled !== false;
+      const arrivedBuilding = new URLSearchParams(window.location.search).get("build") === "1";
+      if (on && !seen.error && !seen.data && !arrivedBuilding) openTour(tourCount);
+    });
+    return () => {
+      live = false;
+    };
+    // Once the app has loaded, not again as the stops are counted.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, userId, openTour]);
 
   /** A top section in the icon rail: its icon, named by its label. Lit while it or one inside it is open. */
   const railRow = (m: ModuleRow) => (
@@ -3025,14 +3033,28 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                   <span className={railOn ? "lg:hidden" : ""}>Settings</span>
                 </button>
               )}
-              <ThemeToggle
+              <button
+                onClick={() => openTour(tourCount)}
+                aria-label="Take the tour"
+                title="Take the tour"
                 className={`rounded-control p-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white ${
                   railOn ? "ml-auto lg:ml-0 lg:p-3" : "ml-auto"
                 }`}
+              >
+                <Compass aria-hidden size={16} strokeWidth={1.75} />
+              </button>
+              <ThemeToggle
+                className={`rounded-control p-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white ${
+                  railOn ? "lg:p-3" : ""
+                }`}
               />
             </div>
-
-            {navDocked && !railOn && (
+          </aside>
+          {/* The sidebar's edge, outside it: the sidebar clips what crosses its
+              edge, and the handle sits half in the gap beside it. No width, and
+              the gap it would add given back, so nothing moves. */}
+          {navDocked && !railOn && (
+            <div className="relative hidden w-0 shrink-0 lg:-ml-2 lg:block">
               <ResizeHandle
                 edge="left"
                 label="Resize the sidebar"
@@ -3044,8 +3066,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 onReset={nav.reset}
                 onNudge={nav.nudge}
               />
-            )}
-          </aside>
+            </div>
+          )}
           {railOn && <RailTip rail={navRef} />}
 
           {/* ── Main area ── */}
@@ -3306,7 +3328,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 resizeBounds={{ min: chat.min, max: chat.max }}
                 open={chatOpen}
                 onClose={() => setChatOpen(false)}
-                docked={lukeDocked}
+                docked={lukeDocked || lukeTucked}
+                tucked={lukeTucked}
                 wide={focus === "luke"}
                 onWide={() => focusOn(focus === "luke" ? null : "luke")}
                 onHide={focus === null ? hideLuke : undefined}
@@ -3400,7 +3423,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               }}
             />
           )}
-          {touring && <Tour stops={tourStops} onClose={endTour} />}
+          {touring && <Tour stops={tourNow} onClose={endTour} />}
           {settingsOpen && project && userId && !isOwner && (
             <TeammateSettings
               project={project}

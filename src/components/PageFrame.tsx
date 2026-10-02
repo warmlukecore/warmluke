@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Inbox, LayoutGrid, LogOut, ShieldCheck, ShoppingBag, UserPlus } from "lucide-react";
+import { Compass, Inbox, LayoutGrid, LogOut, ShieldCheck, ShoppingBag, UserPlus } from "lucide-react";
 import { signOut } from "@/lib/auth";
 import { menu, menuItem } from "@/components/ui/controls";
 import { Logo } from "@/components/ui/Logo";
@@ -53,6 +53,7 @@ export function PageFrame({
         {isSuperadmin && tab("/admin/invites", "Invites", UserPlus)}
         {isSuperadmin && tab("/admin/demos", "Early access", Inbox)}
         {isSuperadmin && tab("/admin/shopify", "Shopify apps", ShoppingBag)}
+        {isSuperadmin && tab("/admin/tour", "Tour", Compass)}
         <div className="ml-auto flex items-center gap-1">
           <ThemeToggle className="rounded-control p-1.5 text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white" />
           <AccountMenu email={email} />

@@ -19,7 +19,10 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from
 import { ArrowLeft, ArrowRight, X } from "lucide-react";
 import { button, iconButton } from "@/components/ui/controls";
 
-export type TourStop = { target?: string; title: string; body: string };
+export type TourStop = { key: string; target?: string; title: string; body: string };
+
+/** How a tour ended: gone to the end, or closed at a stop (1-based). */
+export type TourEnd = { finished: boolean; reached: number; stop: string };
 
 type Rect = { top: number; left: number; width: number; height: number };
 
@@ -39,8 +42,10 @@ function find(selector: string | undefined): HTMLElement | null {
   return null;
 }
 
-export function Tour({ stops, onClose }: { stops: TourStop[]; onClose: () => void }) {
+export function Tour({ stops, onClose }: { stops: TourStop[]; onClose: (end: TourEnd) => void }) {
   const ref = useRef<HTMLDialogElement>(null);
+  // Said once: a browser that closes the dialog itself would say it twice.
+  const ended = useRef(false);
   const card = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const [at, setAt] = useState(0);
@@ -83,7 +88,15 @@ export function Tour({ stops, onClose }: { stops: TourStop[]; onClose: () => voi
     card.current?.querySelector<HTMLElement>("[data-tour-next]")?.focus();
   }, [title]);
 
-  const next = useCallback(() => (last ? onClose() : setAt((i) => i + 1)), [last, onClose]);
+  const end = useCallback(
+    (finished: boolean) => {
+      if (ended.current) return;
+      ended.current = true;
+      onClose({ finished, reached: at + 1, stop: stops[at]?.key ?? "" });
+    },
+    [at, stops, onClose]
+  );
+  const next = useCallback(() => (last ? end(true) : setAt((i) => i + 1)), [last, end]);
   const back = useCallback(() => setAt((i) => Math.max(0, i - 1)), []);
 
   if (!stop) return null;
@@ -116,9 +129,9 @@ export function Tour({ stops, onClose }: { stops: TourStop[]; onClose: () => voi
       aria-labelledby={titleId}
       onCancel={(e) => {
         e.preventDefault();
-        onClose();
+        end(false);
       }}
-      onClose={onClose}
+      onClose={() => end(false)}
       onKeyDown={(e) => {
         if (e.key === "ArrowRight") next();
         if (e.key === "ArrowLeft") back();
@@ -147,7 +160,12 @@ export function Tour({ stops, onClose }: { stops: TourStop[]; onClose: () => voi
           <h2 id={titleId} className="min-w-0 flex-1 text-[14px] leading-snug font-semibold">
             {stop.title}
           </h2>
-          <button type="button" onClick={onClose} aria-label="Close the tour" className={`${iconButton} -mt-1 -mr-1`}>
+          <button
+            type="button"
+            onClick={() => end(false)}
+            aria-label="Close the tour"
+            className={`${iconButton} -mt-1 -mr-1`}
+          >
             <X aria-hidden size={15} strokeWidth={1.75} />
           </button>
         </div>

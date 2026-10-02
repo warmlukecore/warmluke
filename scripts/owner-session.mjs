@@ -108,6 +108,15 @@ export async function signInAsCheckUser(client, env) {
   await admin
     .from("account_settings")
     .upsert({ user_id: signed.user.id }, { onConflict: "user_id", ignoreDuplicates: true });
+  // A check walks the app, not its first-run tour (0157): marked seen, so
+  // the tour never stands over what a spec clicks. Before 0157 there is no
+  // such table, and nothing to mark.
+  await admin
+    .from("tour_views")
+    .upsert(
+      { user_id: signed.user.id, stops: 5, outcome: "finished" },
+      { onConflict: "user_id", ignoreDuplicates: true }
+    );
   // Every MCP call this account has ever made is a check's. The
   // hourly ceiling on them is per user, so three full runs inside an
   // hour — a laptop and two pushes — spent it, and the fourth run's
