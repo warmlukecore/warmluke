@@ -5,7 +5,7 @@
 // pending first prompt (if any) to the builder's empty state.
 // ─────────────────────────────────────────────────────────────
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase-client";
@@ -13,6 +13,7 @@ import { useUser, takePendingPrompt } from "@/lib/auth";
 import ProjectSettings from "@/components/ProjectSettings";
 import ConnectShopify from "@/components/ConnectShopify";
 import { PageFrame } from "@/components/PageFrame";
+import { Dialog } from "@/components/ui/Dialog";
 import { button, field, iconButton, note } from "@/components/ui/controls";
 import { accessRanOut } from "@/lib/store-standing";
 import { quietClasses } from "@/lib/tone";
@@ -167,7 +168,31 @@ function DashboardInner() {
   // One query for every store the caller can see, keyed by project.
   // Asking per card would be twenty requests to draw one screen.
   const [stores, setStores] = useState<Record<string, StoreRow>>({});
-  const [connecting, setConnecting] = useState<string | null>(null);
+  // Connecting a store, or connecting it again, opens over the dashboard
+  // at its own address (?connect=<project>): Back closes it rather than
+  // leaving the dashboard, a reload keeps it open, and it can be linked to.
+  // It was a form inside the card, and the guided setup grew the card over
+  // the whole screen, with Back taking them off the page altogether.
+  const connecting = searchParams.get("connect");
+  /** Whether this page opened it, so closing it can be Back rather than another entry. */
+  const pushed = useRef(false);
+  const openConnect = useCallback((projectId: string) => {
+    const at = new URLSearchParams(window.location.search);
+    at.set("connect", projectId);
+    pushed.current = true;
+    window.history.pushState(null, "", `${window.location.pathname}?${at}`);
+  }, []);
+  const closeConnect = useCallback(() => {
+    if (pushed.current) {
+      pushed.current = false;
+      window.history.back();
+      return;
+    }
+    const at = new URLSearchParams(window.location.search);
+    at.delete("connect");
+    const qs = at.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+  }, []);
   // The project whose store is mid-disconnect, so its two buttons go
   // inert instead of accepting a second click on the same row.
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
@@ -182,11 +207,13 @@ function DashboardInner() {
   // spent on a project before they have said who they are.
   const [gate, setGate] = useState<"checking" | "open">("checking");
   const storeOf = (projectId: string) => stores[projectId];
+  /** The project the address names for connecting, once the list has it. */
+  const connectingProject = connecting ? (projects.find((p) => p.id === connecting) ?? null) : null;
 
   /** Reconnecting is the connect form again, with the address filled in. */
   function reconnect(projectId: string) {
     setStoreError(null);
-    setConnecting(projectId);
+    openConnect(projectId);
   }
 
   /**
@@ -491,16 +518,7 @@ function DashboardInner() {
                   </button>
                 )}
                 <div className="border-t border-line px-4 py-3">
-                  {/* The form wins over the status: a reconnect starts
-                      from a store that is already there. */}
-                  {connecting === p.id ? (
-                    <ConnectShopify
-                      projectId={p.id}
-                      initialShop={storeOf(p.id)?.shop_domain ?? ""}
-                      submitLabel={storeOf(p.id) ? "Reconnect" : "Connect"}
-                      onCancel={() => setConnecting(null)}
-                    />
-                  ) : storeOf(p.id) ? (
+                  {storeOf(p.id) ? (
                     <ShopifyStatus
                       store={storeOf(p.id)!}
                       isOwner={p.owner_id === user.id}
@@ -512,7 +530,7 @@ function DashboardInner() {
                       confirming={confirmDisconnect === p.id}
                     />
                   ) : (
-                    <button onClick={() => setConnecting(p.id)} className={button("secondary", "sm")}>
+                    <button onClick={() => openConnect(p.id)} className={button("secondary", "sm")}>
                       <Plug aria-hidden size={13} strokeWidth={2} />
                       Connect Shopify
                     </button>
@@ -527,6 +545,24 @@ function DashboardInner() {
         )}
       </div>
 
+      {connectingProject && (
+        <Dialog
+          title={
+            storeOf(connectingProject.id)
+              ? `Reconnect ${storeOf(connectingProject.id)!.shop_domain}`
+              : `Connect Shopify to ${connectingProject.name}`
+          }
+          description="Warmluke reads your store, and changes nothing in it unless you say yes to that change."
+          onClose={closeConnect}
+        >
+          <ConnectShopify
+            projectId={connectingProject.id}
+            initialShop={storeOf(connectingProject.id)?.shop_domain ?? ""}
+            submitLabel={storeOf(connectingProject.id) ? "Reconnect" : "Connect"}
+            onCancel={closeConnect}
+          />
+        </Dialog>
+      )}
       {settingsFor && (
         <ProjectSettings
           project={settingsFor}
