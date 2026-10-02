@@ -78,6 +78,25 @@ export type OverviewData = {
 /** How many of the latest orders and stock rows the page lists: a layout choice, not data. */
 const LIST_ROWS = 6;
 
+/**
+ * The overview's numbers, asked again after a moment when the database
+ * was too busy to count them in time (a statement timeout, or the server
+ * stumbling): a busy second is not a reason to show the merchant an
+ * error. Anything else is said at once.
+ */
+const busy = (e: { code?: string; message?: string } | null) =>
+  !!e && (e.code === "57014" || /timeout|fetch failed|50[234]/i.test(e.message ?? ""));
+
+async function overview(projectId: string) {
+  let res = await supabase.rpc("abo_store_overview", { p_project: projectId });
+  for (const wait of [800, 2000]) {
+    if (!busy(res.error)) break;
+    await new Promise((r) => setTimeout(r, wait));
+    res = await supabase.rpc("abo_store_overview", { p_project: projectId });
+  }
+  return res;
+}
+
 export default function Overview({
   projectId,
   storeId,
@@ -106,7 +125,7 @@ export default function Overview({
   const load = useCallback(async () => {
     setError(null);
     const [o, orders] = await Promise.all([
-      supabase.rpc("abo_store_overview", { p_project: projectId }),
+      overview(projectId),
       readStoreRows(supabase, storeId, "orders", LIST_ROWS).catch(() => null),
     ]);
     if (o.error) {
