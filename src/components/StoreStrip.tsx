@@ -307,6 +307,8 @@ export default function StoreStrip({
         projectId={projectId}
         initialShop={store?.shop_domain ?? ""}
         submitLabel={store ? "Reconnect" : "Connect"}
+        known={!!store && store.status !== "pending"}
+        compact
         onCancel={() => setConnecting(false)}
       />
     </Dialog>

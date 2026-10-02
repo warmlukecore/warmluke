@@ -559,6 +559,8 @@ function DashboardInner() {
             projectId={connectingProject.id}
             initialShop={storeOf(connectingProject.id)?.shop_domain ?? ""}
             submitLabel={storeOf(connectingProject.id) ? "Reconnect" : "Connect"}
+            known={!!storeOf(connectingProject.id) && storeOf(connectingProject.id)!.status !== "pending"}
+            compact
             onCancel={closeConnect}
           />
         </Dialog>

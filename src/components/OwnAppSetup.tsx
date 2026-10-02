@@ -48,12 +48,21 @@ export default function OwnAppSetup({
   initialShop = "",
   onCancel,
   cancelLabel = "Cancel",
+  known = false,
+  compact = false,
 }: {
   projectId: string;
   initialShop?: string;
   /** A way out, where there is one: onboarding gives none. */
   onCancel?: () => void;
   cancelLabel?: string;
+  /**
+   * The store came in before (initialShop): connecting it again goes back
+   * through the app it came through, one button, and no new app is made.
+   */
+  known?: boolean;
+  /** In a dialog: the step they are on alone, under a slim line of six, not all six stacked. */
+  compact?: boolean;
 }) {
   const saveKey = `wl_own_app_${projectId}`;
   // Where they were, if they were here before: never the keys. Read once,
@@ -84,6 +93,8 @@ export default function OwnAppSetup({
   const [skipped, setSkipped] = useState(!!was?.skipped);
   const [apps, setApps] = useState<MyApp[] | null>(null);
   const [busy, setBusy] = useState(false);
+  // Chose to set the known store up with a new app after all.
+  const [fresh, setFresh] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   // Only ever drawn in the browser (ConnectShopify decides first).
@@ -146,11 +157,11 @@ export default function OwnAppSetup({
     go(LAST);
   }
 
-  async function connect() {
-    if (!domain) return go(0);
+  async function connect(target: string | null = domain) {
+    if (!target) return go(0);
     setBusy(true);
     setError(null);
-    const { ok, data } = await apiFetch("/api/shopify/install", { projectId, shop: domain });
+    const { ok, data } = await apiFetch("/api/shopify/install", { projectId, shop: target });
     if (!ok || typeof data.url !== "string") {
       setBusy(false);
       setError((data.error as string) ?? "Couldn’t start the connection. Try again.");
@@ -410,7 +421,7 @@ export default function OwnAppSetup({
         {apps && !ready && (
           <div className={note.attention}>This store has no app here yet. Go back and save its keys first.</div>
         )}
-        <button type="button" onClick={connect} disabled={busy || !ready} className={button("primary")}>
+        <button type="button" onClick={() => connect()} disabled={busy || !ready} className={button("primary")}>
           {busy ? "Opening Shopify…" : "Connect with Shopify"}
         </button>
         {step > 0 && !ready && (
@@ -421,6 +432,87 @@ export default function OwnAppSetup({
       </>
     ),
   };
+
+  const knownDomain = (() => {
+    const r = readShopAddress(initialShop);
+    return "domain" in r ? r.domain : null;
+  })();
+  const errorNote = error && (
+    <div role="alert" className={note.critical}>
+      {error}
+    </div>
+  );
+  const cancel = onCancel && (
+    <button type="button" onClick={onCancel} className={button("plain")}>
+      {cancelLabel}
+    </button>
+  );
+
+  // The store came in before: again through the app it came through.
+  if (known && knownDomain && !fresh) {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm leading-relaxed text-fg-muted">
+          <b className="font-medium text-fg">{knownDomain}</b> connects again through the app it came in through.
+          Shopify asks you to approve it, then brings you back here.
+        </p>
+        {errorNote}
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => connect(knownDomain)} disabled={busy} className={button("primary")}>
+            {busy ? "Opening Shopify…" : "Reconnect with Shopify"}
+          </button>
+          {cancel}
+        </div>
+        <button type="button" onClick={() => setFresh(true)} className="text-xs text-link hover:underline">
+          Connect it through a new app of your own instead
+        </button>
+      </div>
+    );
+  }
+
+  // In a dialog: the step they are on, under a line of six.
+  if (compact) {
+    return (
+      <div className="space-y-4">
+        <p className="text-[13px] leading-relaxed text-fg-muted">
+          Your store connects through an app you create in Shopify, in about five minutes. Keep Shopify open in another
+          tab: this keeps your place.
+        </p>
+        <div>
+          <div className="flex items-baseline justify-between gap-3">
+            <h3 aria-live="polite" className="text-sm font-semibold text-fg">
+              {STEPS[step]}
+            </h3>
+            <span className="shrink-0 text-xs text-fg-muted tabular-nums">
+              Step {step + 1} of {STEPS.length}
+            </span>
+          </div>
+          <ol aria-label="Setting up your app" className="mt-2 flex gap-1">
+            {STEPS.map((title, i) => (
+              <li key={title} className="flex-1">
+                {/* A step already done can be opened again; the rest are only marks. */}
+                <button
+                  type="button"
+                  disabled={i >= step}
+                  onClick={() => go(i)}
+                  aria-label={i < step ? `Back to ${title}` : title}
+                  aria-current={i === step ? "step" : undefined}
+                  className={`block h-1.5 w-full rounded-full transition-colors duration-300 motion-reduce:transition-none disabled:cursor-default ${
+                    i <= step ? "bg-primary" : "bg-line"
+                  } ${i < step ? "hover:opacity-70" : ""}`}
+                />
+              </li>
+            ))}
+          </ol>
+        </div>
+        <div className="space-y-3">
+          {body[step]}
+          {errorNote}
+        </div>
+        {cancel}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">

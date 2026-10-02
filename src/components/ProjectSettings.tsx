@@ -585,7 +585,7 @@ export default function ProjectSettings({
               title="Connect a store"
               description="Orders, products, customers and stock come across on their own, and keep up as they change."
             >
-              <ConnectShopify projectId={project.id} anotherBrowser onCancel={() => setTab("general")} />
+              <ConnectShopify projectId={project.id} anotherBrowser compact onCancel={() => setTab("general")} />
             </Group>
           ) : (
             <>
@@ -626,6 +626,8 @@ export default function ProjectSettings({
                     projectId={project.id}
                     initialShop={shop.shop_domain}
                     submitLabel="Reconnect"
+                    known={shop.status !== "pending"}
+                    compact
                     onCancel={() => setReconnecting(false)}
                   />
                 )}

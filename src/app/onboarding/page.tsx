@@ -361,6 +361,7 @@ export default function Onboarding() {
                   projectId={target.id}
                   initialShop={target.store?.shop_domain ?? ""}
                   submitLabel={target.store ? "Reconnect" : "Connect"}
+                  known={!!target.store && target.store.status !== "pending"}
                   onConnected={load}
                 />
                 <BackLink onBack={() => revisit("about")} />

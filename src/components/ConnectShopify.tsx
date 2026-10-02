@@ -54,6 +54,8 @@ export default function ConnectShopify({
   onConnected,
   // What the way out is called: "Cancel" on a card, "Later" in onboarding.
   cancelLabel = "Cancel",
+  known = false,
+  compact = false,
 }: {
   projectId: string;
   /** The way out, where there is one; onboarding's store step has none. */
@@ -63,6 +65,10 @@ export default function ConnectShopify({
   anotherBrowser?: boolean;
   onConnected?: () => void;
   cancelLabel?: string;
+  /** The store came in before: in internal mode it goes back through its own app, no new one made. */
+  known?: boolean;
+  /** Inside a dialog: the guided setup shows one step at a time rather than all six. */
+  compact?: boolean;
 }) {
   const [shop, setShop] = useState(initialShop);
   const [busy, setBusy] = useState(false);
@@ -200,7 +206,14 @@ export default function ConnectShopify({
   }
   if (notSetUp) {
     return (
-      <OwnAppSetup projectId={projectId} initialShop={initialShop} onCancel={onCancel} cancelLabel={cancelLabel} />
+      <OwnAppSetup
+        projectId={projectId}
+        initialShop={initialShop}
+        onCancel={onCancel}
+        cancelLabel={cancelLabel}
+        known={known}
+        compact={compact}
+      />
     );
   }
 
