@@ -50,6 +50,7 @@ const GUARDED = {
   abo_import_holds: "the import worker's ticket",
   abo_import_release: "the import worker's ticket",
   abo_import_renew: "the import worker's ticket",
+  abo_book_demo: "the server's booking key (booking_key_sha256), 256 random bits; it writes one booking",
   abo_invite_peek: "the invite link's own token, 192 random bits, and it tells only about that link",
   abo_code_holds: "the code worker's ticket",
   abo_code_holds_store: "the code worker's ticket",

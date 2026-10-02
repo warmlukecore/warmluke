@@ -242,7 +242,7 @@ export default function ShopifyAppsAdmin() {
           <div className={`${note.attention} mt-5 text-[13px] leading-relaxed`}>
             The server key isn&rsquo;t set up on this database yet, so no store can use an app of its own. Run{" "}
             <code className="rounded bg-surface-subdued px-1">
-              node scripts/set-shopify-apps-key.mjs --env .env.local
+              node scripts/set-server-key.mjs --for shopify --env .env.local
             </code>{" "}
             once, from the repository.
           </div>

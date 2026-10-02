@@ -1,19 +1,31 @@
-// The app server's key for reading Shopify apps of a store's own (0150).
+// A key the server proves itself with, to the database.
 //
-// Makes a random key, keeps only its sha256 in the database
-// (app_secrets.shopify_apps_key_sha256), and writes the key itself as
-// SHOPIFY_APPS_KEY into the env file given, and, with --vercel, into the
-// Vercel project's production settings through the CLI. The key is
-// never printed. Running it again makes a new key and retires the old.
+//   --for shopify   SHOPIFY_APPS_KEY, for reading Shopify apps of a store's own (0150)
+//   --for booking   BOOKING_KEY, for writing an early-access booking (0160)
 //
-//   node scripts/set-shopify-apps-key.mjs --env .env.check.local
-//   node scripts/set-shopify-apps-key.mjs --env .env.local --vercel
+// Makes a random key, keeps only its sha256 in the database (app_secrets),
+// and writes the key itself into the env file given, and, with --vercel,
+// into the Vercel project's production settings through the CLI. The key
+// is never printed. Running it again makes a new key and retires the old.
+//
+//   node scripts/set-server-key.mjs --for booking --env .env.check.local
+//   node scripts/set-server-key.mjs --for booking --env .env.local --vercel
 
 import { createHash, randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
 const args = process.argv.slice(2);
+const KEYS = {
+  shopify: { name: "SHOPIFY_APPS_KEY", row: "shopify_apps_key_sha256" },
+  booking: { name: "BOOKING_KEY", row: "booking_key_sha256" },
+};
+const which = KEYS[args.includes("--for") ? args[args.indexOf("--for") + 1] : ""];
+if (!which) {
+  console.error(`Say which key: --for ${Object.keys(KEYS).join(" or --for ")}`);
+  process.exit(1);
+}
+const { name, row } = which;
 const envFile = args.includes("--env") ? args[args.indexOf("--env") + 1] : null;
 if (!envFile) {
   console.error("Say which env file: --env .env.check.local or --env .env.local");
@@ -44,30 +56,29 @@ const r = await fetch(`${url}/rest/v1/app_secrets?on_conflict=name`, {
     "Content-Type": "application/json",
     Prefer: "resolution=merge-duplicates,return=minimal",
   },
-  body: JSON.stringify({ name: "shopify_apps_key_sha256", value: hash, updated_at: new Date().toISOString() }),
+  body: JSON.stringify({ name: row, value: hash, updated_at: new Date().toISOString() }),
 });
 if (!r.ok) {
   console.error(`The database refused it (${r.status}): ${(await r.text()).slice(0, 300)}`);
   process.exit(1);
 }
 
-const line = `SHOPIFY_APPS_KEY=${key}`;
-const kept = /^SHOPIFY_APPS_KEY=.*$/m.test(text)
-  ? text.replace(/^SHOPIFY_APPS_KEY=.*$/m, line)
-  : `${text.replace(/\n?$/, "\n")}${line}\n`;
+const line = `${name}=${key}`;
+const held = new RegExp(`^${name}=.*$`, "m");
+const kept = held.test(text) ? text.replace(held, line) : `${text.replace(/\n?$/, "\n")}${line}\n`;
 writeFileSync(envFile, kept);
 console.log(`ok    the database keeps its fingerprint; ${envFile} has the key`);
 
 if (args.includes("--vercel")) {
   // Replaced, not added beside: the CLI refuses a second value for the same name.
-  spawnSync("vercel", ["env", "rm", "SHOPIFY_APPS_KEY", "production", "--yes"], { stdio: "ignore" });
-  const add = spawnSync("vercel", ["env", "add", "SHOPIFY_APPS_KEY", "production"], {
+  spawnSync("vercel", ["env", "rm", name, "production", "--yes"], { stdio: "ignore" });
+  const add = spawnSync("vercel", ["env", "add", name, "production", "--sensitive"], {
     input: key,
     stdio: ["pipe", "ignore", "pipe"],
   });
   if (add.status !== 0) {
     console.error(`Vercel did not take it: ${String(add.stderr).slice(0, 300)}`);
-    console.error("Add SHOPIFY_APPS_KEY to the project's production settings by hand, from the env file.");
+    console.error(`Add ${name} to the project's production settings by hand, from the env file.`);
     process.exit(1);
   }
   console.log("ok    Vercel's production settings have it; it takes effect on the next deploy");

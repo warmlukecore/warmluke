@@ -58,26 +58,25 @@ const merchant = createClient(URL_, ANON);
 const { error: signInError } = await merchant.auth.signInWithPassword({ email, password });
 if (signInError) throw new Error(`could not sign in the admin-boundary test user: ${signInError.message}`);
 
-// A demo booking as a stranger makes one: the public key, nobody
-// signed in. Under the merchant's address, so the admin list can be
-// seen to say that this lead already has an account.
+// A demo booking, as the form writes one. Written here with the service
+// role: since 0160 only the form's server books (check-landing-cap holds
+// that). Under the merchant's address, so the admin list can be seen to
+// say that this lead already has an account.
 const bookingSession = `chk_admin_${stamp}`;
-const booked = await createClient(URL_, ANON)
-  .from("landing_events")
-  .insert({
-    session_id: bookingSession,
-    event: "demo_booked",
-    payload: {
-      name: "Check Lead",
-      email: email.toUpperCase(),
-      store: "check-lead.example",
-      note: "Stock first",
-      team_size: "2_5",
-      monthly_orders: "500_2000",
-      heard_from: "referral",
-      heard_from_detail: "a friend",
-    },
-  });
+const booked = await admin.from("landing_events").insert({
+  session_id: bookingSession,
+  event: "demo_booked",
+  payload: {
+    name: "Check Lead",
+    email: email.toUpperCase(),
+    store: "check-lead.example",
+    note: "Stock first",
+    team_size: "2_5",
+    monthly_orders: "500_2000",
+    heard_from: "referral",
+    heard_from_detail: "a friend",
+  },
+});
 if (booked.error) throw new Error(`could not book the test demo: ${booked.error.message}`);
 
 try {

@@ -13,10 +13,10 @@
 // all, and the client component uses the same one — one path, rather
 // than a real one and a fallback nobody ever exercises.
 //
-// The anon key, not the service role: this writes exactly what an
-// unauthenticated visitor is allowed to write, and the row is checked
-// by the same policy either way. The service role does not belong in a
-// deployment.
+// The anon key, not the service role, which does not belong in a
+// deployment. The booking goes through abo_book_demo with the server's
+// own BOOKING_KEY (0160): the public key alone cannot write one, so the
+// only way onto the admin's list is this form and its CAPTCHA.
 //
 // Read back by the admin screen through abo_admin_demo_requests (0115).
 //
@@ -100,7 +100,8 @@ export async function bookDemo(_prev: BookingState, form: FormData): Promise<Boo
 
   const url = process.env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY;
-  if (!url || !anon) return { ok: false, message: "Not configured." };
+  const key = process.env.BOOKING_KEY;
+  if (!url || !anon || !key) return { ok: false, message: "Not configured." };
 
   const utm: Record<string, string> = {};
   for (const k of UTM_KEYS) {
@@ -108,9 +109,9 @@ export async function bookDemo(_prev: BookingState, form: FormData): Promise<Boo
     if (v) utm[k] = v;
   }
 
-  const { error } = await createClient(url, anon)
-    .from("landing_events")
-    .insert({
+  const { error } = await createClient(url, anon).rpc("abo_book_demo", {
+    p_key: key,
+    p_booking: {
       session_id: text(form.get("session_id"), 64) || crypto.randomUUID().replace(/-/g, ""),
       variant: text(form.get("variant"), 64) || null,
       ...utm,
@@ -118,7 +119,6 @@ export async function bookDemo(_prev: BookingState, form: FormData): Promise<Boo
       // to fail the check would have failed the booking, which is the one
       // event that must not be lost over a detail nobody reads.
       landing_path: text(form.get("landing_path"), 500) || null,
-      event: "demo_booked",
       idem: text(form.get("idem"), 64) || null,
       payload: {
         name,
@@ -131,7 +131,8 @@ export async function bookDemo(_prev: BookingState, form: FormData): Promise<Boo
         heard_from,
         heard_from_detail,
       },
-    });
+    },
+  });
 
   if (error) {
     // The same submission arriving twice is the unique index doing its
