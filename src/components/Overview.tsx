@@ -411,7 +411,7 @@ export function OverviewBoard({
                           {[
                             state,
                             onHand > 0 ? `${fmt.number(onHand)} on hand` : "",
-                            incoming > 0 ? `${fmt.number(incoming)} coming` : "",
+                            incoming > 0 ? `${fmt.number(incoming)} incoming` : "",
                           ]
                             .filter(Boolean)
                             .join(" · ")}
