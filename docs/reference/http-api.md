@@ -119,6 +119,17 @@ account's trail each time. Warmluke's testing team (`account_settings.tester`, s
 turn id, and the conversation's id and running total; nobody else does, and only they can
 read `turn_traces`.
 
+Three more screens (0159). **Data & privacy** sets how long traces are kept
+(`abo_admin_retention`, `abo_admin_set_retention`): off by default, every trace is kept;
+switched on, `abo_trace_sweep` deletes traces older than the kept days (7 to 3650) each
+night at 03:17 UTC where the database has pg_cron, and `abo_admin_sweep_traces` runs it
+once on demand. It deletes traces only, never messages, records or the audit trail.
+**Access log** (`abo_admin_access_log`) reads every account's `admin_account_audit` lines,
+newest first, by kind and by either email. **Spend** (`abo_admin_spend`) adds the traces'
+dollars by UTC day, by model and by account, so it reaches back only as far as traces are
+kept. The console's word searches have trigram indexes on conversation titles, project
+names and shop domains.
+
 ## Invite links
 
 The console's `invites` screen makes a link (`abo_admin_invite_create`) for one email or for several

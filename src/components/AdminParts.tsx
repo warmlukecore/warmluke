@@ -3,7 +3,7 @@
 // somebody typed made safe to follow, and a row of choices.
 //
 // Callers: src/app/[gate]/page.tsx, src/app/[gate]/demos/page.tsx,
-// src/app/[gate]/invites/page.tsx.
+// src/app/[gate]/invites/page.tsx, and the privacy, access and spend screens.
 
 import { card } from "@/components/ui/controls";
 import type { Option } from "@/lib/onboarding";
@@ -125,4 +125,11 @@ export function Choices<T extends string | number>({
       ))}
     </div>
   );
+}
+
+/** What a console screen says when its function refused or is missing from this database. */
+export function adminError(e: { code?: string; message: string }, migration: string): string {
+  if (e.code === "42501") return "This page is for administrators.";
+  if (e.code === "PGRST202") return `This database does not have this screen yet: apply migration ${migration}.`;
+  return e.message;
 }

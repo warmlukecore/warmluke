@@ -7,7 +7,18 @@
 //
 // Callers: src/components/PageFrame.tsx.
 
-import { Compass, Inbox, MessagesSquare, ShoppingBag, UserPlus, Users, type LucideIcon } from "lucide-react";
+import {
+  Coins,
+  Compass,
+  Inbox,
+  MessagesSquare,
+  ScrollText,
+  ShieldCheck,
+  ShoppingBag,
+  UserPlus,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
 
 export type ConsoleScreen = { to: string; label: string; icon: LucideIcon; about: string };
 export type ConsoleGroup = { title: string; screens: ConsoleScreen[] };
@@ -35,6 +46,7 @@ export const CONSOLE_NAV: ConsoleGroup[] = [
         icon: MessagesSquare,
         about: "Any conversation, with every turn's trace",
       },
+      { to: "spend", label: "Spend", icon: Coins, about: "What Luke's model calls cost, by day, model and account" },
     ],
   },
   {
@@ -44,6 +56,18 @@ export const CONSOLE_NAV: ConsoleGroup[] = [
   {
     title: "Product",
     screens: [{ to: "tour", label: "Tour", icon: Compass, about: "The first look round the app, and who saw it" }],
+  },
+  {
+    title: "Trust",
+    screens: [
+      { to: "access", label: "Access log", icon: ScrollText, about: "What administrators did, on whose account" },
+      {
+        to: "privacy",
+        label: "Data & privacy",
+        icon: ShieldCheck,
+        about: "How long the record of Luke's turns is kept",
+      },
+    ],
   },
 ];
 
