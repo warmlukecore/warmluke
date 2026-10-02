@@ -23,6 +23,7 @@ import { supabase } from "@/lib/supabase-client";
 import { authMessage } from "@/lib/auth";
 import { askConsoleBase } from "@/lib/console-base";
 import { CenteredCard } from "@/components/CenteredCard";
+import { useCaptcha } from "@/components/Captcha";
 import { PasswordInput } from "@/components/ui/PasswordInput";
 import { button, field, label, note } from "@/components/ui/controls";
 
@@ -70,6 +71,7 @@ export default function StartPage() {
   const [error, setError] = useState<string | null>(null);
   const [exists, setExists] = useState(false);
   const [busy, setBusy] = useState(false);
+  const captcha = useCaptcha();
 
   /** Takes the link for whoever is signed in, and sends them on. */
   const claim = useCallback(async () => {
@@ -140,6 +142,7 @@ export default function StartPage() {
       email: email.trim(),
       password,
       options: {
+        captchaToken: await captcha.take(),
         data: {
           ...(peek?.full_name ? { full_name: peek.full_name } : {}),
           ...(peek?.business_name ? { business_name: peek.business_name } : {}),
@@ -280,6 +283,7 @@ export default function StartPage() {
             )}
           </div>
         )}
+        {captcha.box}
         <button type="submit" disabled={busy} className={`${button("primary", "lg")} w-full`}>
           {busy ? "Setting up…" : "Create my account"}
         </button>

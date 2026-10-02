@@ -13,14 +13,17 @@ import { useState } from "react";
 import Link from "next/link";
 import { Mail } from "lucide-react";
 import { CenteredCard } from "@/components/CenteredCard";
+import { useCaptcha } from "@/components/Captcha";
 import { button, field, label, note } from "@/components/ui/controls";
 import { supabase } from "@/lib/supabase-client";
+import { authMessage } from "@/lib/auth";
 
 export default function Forgot() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const captcha = useCaptcha();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -30,6 +33,7 @@ export default function Forgot() {
 
     const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: `${window.location.origin}/reset`,
+      captchaToken: await captcha.take(),
     });
     setBusy(false);
 
@@ -37,6 +41,11 @@ export default function Forgot() {
     // sits waiting for an email that was never sent.
     if (err && /rate|limit|too many/i.test(err.message)) {
       setError("Too many attempts. Wait a minute and try again.");
+      return;
+    }
+    // Refused before any email was looked up, so it gives nothing away.
+    if (err && /captcha/i.test(err.message)) {
+      setError(authMessage(err).message);
       return;
     }
     setSent(true);
@@ -87,6 +96,7 @@ export default function Forgot() {
               </div>
             )}
 
+            {captcha.box}
             <button type="submit" disabled={busy || !email.trim()} className={`${button("primary", "lg")} w-full`}>
               {busy ? "Sending\u2026" : "Send the link"}
             </button>

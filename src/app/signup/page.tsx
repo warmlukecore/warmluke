@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CenteredCard } from "@/components/CenteredCard";
+import { useCaptcha } from "@/components/Captcha";
 import { InviteOnly } from "@/components/InviteOnly";
 import { PasswordInput } from "@/components/ui/PasswordInput";
 import { button, field, label, note } from "@/components/ui/controls";
@@ -35,13 +36,15 @@ export default function Signup() {
   // The address already has an account: offer to sign in with it instead.
   const [exists, setExists] = useState(false);
   const [busy, setBusy] = useState(false);
+  const captcha = useCaptcha();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
     setExists(false);
-    const { error } = await supabase.auth.signUp({ email, password });
+    const captchaToken = await captcha.take();
+    const { error } = await supabase.auth.signUp({ email, password, options: { captchaToken } });
     setBusy(false);
     if (error) {
       const problem = authMessage(error);
@@ -114,6 +117,7 @@ export default function Signup() {
             )}
           </div>
         )}
+        {captcha.box}
         <button type="submit" disabled={busy} className={`${button("primary", "lg")} w-full`}>
           {busy ? "Creating account\u2026" : "Create account"}
         </button>

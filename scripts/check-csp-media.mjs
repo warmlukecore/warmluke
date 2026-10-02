@@ -1,4 +1,5 @@
-// Every film the page plays is one the policy lets through.
+// Every film the page plays is one the policy lets through, and the
+// CAPTCHA widget can load.
 //
 // This failure is the quiet kind, which is why it is worth a check
 // of its own. A <video> pointing at a host the Content-Security
@@ -90,6 +91,13 @@ for (const src of played.filter((u) => u.startsWith("/"))) {
   }
   check(`${src} is under 3 MB (${mb.toFixed(1)} MB)`, mb < 3);
 }
+
+// The same quiet failure, with more at stake: once Supabase Auth wants
+// a CAPTCHA, a widget the policy refuses is nobody able to sign in.
+console.log("\nand the CAPTCHA can load (src/components/Captcha.tsx)");
+const captcha = /https:\/\/challenges\.cloudflare\.com/.source;
+check("its script is allowed", new RegExp(`script-src[^\\n]*${captcha}`).test(config));
+check("its frame is allowed", new RegExp(`frame-src ${captcha}`).test(config));
 
 console.log(fails.length === 0 ? "\nthe hero can play what it points at" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

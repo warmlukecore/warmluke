@@ -50,6 +50,7 @@ export function authMessage(
     return { message: "You’re offline. Check your connection and try again." };
   if (/failed to fetch|network|load failed/.test(raw))
     return { message: "Warmluke couldn’t be reached. Check your connection and try again." };
+  if (/captcha/.test(raw)) return { message: "We couldn’t check this browser. Reload the page and try again." };
   if (/banned/.test(raw)) return { message: "This account is suspended. Write to us if you think that’s a mistake." };
   if (/already (been )?registered|user_already_exists|email_exists/.test(raw)) {
     return { message: "There’s already an account with this email.", exists: true };

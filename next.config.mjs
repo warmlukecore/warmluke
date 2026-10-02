@@ -57,7 +57,10 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""}`,
+      // Cloudflare Turnstile: its script, and the frame it runs the
+      // check in (src/components/Captcha.tsx).
+      `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""} https://challenges.cloudflare.com`,
+      "frame-src https://challenges.cloudflare.com",
       `connect-src 'self' ${supabaseOrigin} ${supabaseSocket}`.trim(),
       "img-src 'self' data: blob: https:",
       // The landing hero's film, which is served from here. Worth

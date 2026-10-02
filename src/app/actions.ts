@@ -20,6 +20,11 @@
 //
 // Read back by the admin screen through abo_admin_demo_requests (0115).
 //
+// With Turnstile set up (both keys), a booking carries the widget's
+// token and Cloudflare is asked about it before anything is written.
+// That needs JavaScript, so with it off a booking is refused there; the
+// form is what bots fill in, and they are the ones it is for.
+//
 // Callers: src/components/Landing.tsx.
 // ─────────────────────────────────────────────────────────────
 
@@ -39,6 +44,29 @@ const pick = (v: FormDataEntryValue | null, options: Option[]) => {
   const s = text(v, 40);
   return options.some((o) => o.value === s) ? s : "";
 };
+
+/**
+ * Cloudflare's word on the widget's token. Refused only when Cloudflare
+ * says no: an outage there is not a reason to lose a lead, and nobody
+ * sending the form can cause one.
+ */
+async function person(form: FormData): Promise<boolean> {
+  const secret = process.env.TURNSTILE_SECRET_KEY;
+  if (!secret || !process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY) return true;
+  const response = text(form.get("cf-turnstile-response"), 2048);
+  if (!response) return false;
+  try {
+    const r = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      body: new URLSearchParams({ secret, response }),
+      signal: AbortSignal.timeout(5000),
+    });
+    const j = (await r.json()) as { success?: boolean };
+    return r.ok ? j.success === true : true;
+  } catch {
+    return true;
+  }
+}
 
 export async function bookDemo(_prev: BookingState, form: FormData): Promise<BookingState> {
   const name = text(form.get("name"), 120);
@@ -64,6 +92,10 @@ export async function bookDemo(_prev: BookingState, form: FormData): Promise<Boo
   // booking without its picks is still somebody asking for a demo.
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return { ok: false, message: "That email address doesn't look right." };
+  }
+
+  if (!(await person(form))) {
+    return { ok: false, message: "We couldn’t check this browser. Wait a moment and send it again." };
   }
 
   const url = process.env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL;

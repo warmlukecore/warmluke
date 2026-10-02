@@ -31,6 +31,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { OrdersGlobe } from "@/components/OrdersGlobe";
+import { useCaptcha } from "@/components/Captcha";
 import { supabase } from "@/lib/supabase-client";
 import { UTM_KEYS, type Utm } from "@/lib/landing";
 import { bookDemo, type BookingState } from "@/app/actions";
@@ -315,6 +316,12 @@ export function DemoForm({ variant }: { variant: string }) {
   const [state, act, pending] = useActionState<BookingState, FormData>(bookDemo, {
     ok: false,
   });
+  // Its token is posted with the form and spent by the answer, whatever it is.
+  const captcha = useCaptcha();
+  const { renew } = captcha;
+  useEffect(() => {
+    if (state.message) renew();
+  }, [state, renew]);
   const started = useRef(false);
   const [heard, setHeard] = useState("");
   const [unpicked, setUnpicked] = useState(false);
@@ -424,6 +431,7 @@ export function DemoForm({ variant }: { variant: string }) {
         placeholder="What would you ask Luke to fix first?"
         className={`${INPUT} resize-none sm:col-span-2`}
       />
+      {captcha.box && <div className="has-[>.hidden]:hidden sm:col-span-2">{captcha.box}</div>}
       <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
         <button
           type="submit"

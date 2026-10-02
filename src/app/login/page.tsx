@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CenteredCard } from "@/components/CenteredCard";
+import { useCaptcha } from "@/components/Captcha";
 import { PasswordInput } from "@/components/ui/PasswordInput";
 import { button, field, label, note } from "@/components/ui/controls";
 import { useRouter } from "next/navigation";
@@ -36,12 +37,14 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const captcha = useCaptcha();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const captchaToken = await captcha.take();
+    const { error } = await supabase.auth.signInWithPassword({ email, password, options: { captchaToken } });
     setBusy(false);
     if (error) {
       setError(authMessage(error).message);
@@ -101,6 +104,7 @@ export default function Login() {
             {error}
           </div>
         )}
+        {captcha.box}
         <button type="submit" disabled={busy} className={`${button("primary", "lg")} w-full`}>
           {busy ? "Signing in\u2026" : "Sign in"}
         </button>
