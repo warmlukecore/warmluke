@@ -763,7 +763,12 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // them (/api/models, set per account by an administrator). The pick is
   // remembered on this device; one no longer allowed is dropped for the
   // default, and the server checks it again before any turn.
-  const [luke, setLuke] = useState<{ models: OfferedModel[]; default: string | null; shows: LukeShows } | null>(null);
+  const [luke, setLuke] = useState<{
+    models: OfferedModel[];
+    default: string | null;
+    shows: LukeShows;
+    team?: boolean;
+  } | null>(null);
   const [modelChoice, setModelChoice] = useState<string | null>(() => {
     try {
       return typeof window === "undefined" ? null : window.localStorage.getItem(MODEL_KEY);

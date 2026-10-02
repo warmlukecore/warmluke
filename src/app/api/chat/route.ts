@@ -498,7 +498,16 @@ export async function POST(req: Request) {
           })
         );
 
-        const done = await finishTurn(client, job, ctx, turn, took(), steps, (fn) => after(fn));
+        const done = await finishTurn(
+          client,
+          job,
+          ctx,
+          turn,
+          took(),
+          steps,
+          (fn) => after(fn),
+          luke.shows === "tokens" || luke.shows === "cost"
+        );
         if (done.charged) refundable = null;
         return done.last;
       } catch (e) {

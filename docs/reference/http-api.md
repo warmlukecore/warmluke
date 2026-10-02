@@ -96,14 +96,32 @@ anonymous write. Besides name, email, store and note it records team size, order
 and where the person heard of us, each kept only when it is one of onboarding's lists
 (`src/lib/onboarding.ts`). The form will not send without them; with JavaScript off it
 cannot ask them, and the booking is stored without them rather than lost. Administrators
-read bookings back through `abo_admin_demo_requests` on `/admin/demos`, set each one's
+read bookings back through `abo_admin_demo_requests` on the console's `demos` screen, set each one's
 stage and note through `abo_admin_demo_follow_up` (0120), and open one account's whole
-story on `/admin` through `abo_admin_account`. Both screens take `?find=<text>` to open
+story on its first screen through `abo_admin_account`. Both screens take `?find=<text>` to open
 with a search, and download what they show as CSV.
+
+## The superadmin console
+
+The administrators' screens answer on one secret path segment, `ADMIN_PATH` in the server's
+environment (`src/lib/console-path.ts`), and on no other: `/admin` and any guess are the
+site's ordinary 404, and the segment is in neither the repository nor the browser's code.
+An administrator's header learns it from `POST /api/console`, which answers anyone else
+with a 404. Unset, the console is at `/admin`. The screens still refuse non-administrators,
+and so does every function behind them; the address only keeps it from being found.
+
+Its Conversations screen (0158) opens any conversation by its id, a message's or a turn's:
+`abo_admin_conversations` lists them (latest, went wrong, cost most, took longest, over a
+window of days, or by owner, project, store or title words), and `abo_admin_conversation`
+returns one whole, with every turn's trace, writing a `view_conversation` row to the
+account's trail each time. Warmluke's testing team (`account_settings.tester`, set with
+`abo_admin_set_tester`) and administrators see, under each reply, its cost, tokens, time and
+turn id, and the conversation's id and running total; nobody else does, and only they can
+read `turn_traces`.
 
 ## Invite links
 
-`/admin/invites` makes a link (`abo_admin_invite_create`) for one email or for several
+The console's `invites` screen makes a link (`abo_admin_invite_create`) for one email or for several
 people, for 24 hours to 30 days, and changes when it ends or withdraws it
 (`abo_admin_invite_update`). `/start/[token]` asks `abo_invite_peek`, which anyone may
 call and which answers only for that token: its state and, while it is open, the prefill.

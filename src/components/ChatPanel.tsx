@@ -1309,6 +1309,81 @@ const JOB_WORDS: Record<ModelUse["job"], string> = {
 /** A reply's dollars in rupees, at a rate that says the day it is from. */
 export type InrRate = { rate: number; asOf: string | null };
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The team's line under Luke's header (0158): which conversation this is,
+ * to copy into a report, and what it has taken so far, added up from each
+ * turn's trace, which only the team can read. Counted again as replies
+ * arrive.
+ */
+function TeamStrip({ conversationId, replies, inr }: { conversationId: string; replies: number; inr: InrRate | null }) {
+  const [sum, setSum] = useState<{ turns: number; input: number; output: number; usd: number; ms: number } | null>(
+    null
+  );
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    // Nothing answered yet: nothing to add up.
+    if (replies === 0) return;
+    let live = true;
+    supabase
+      .from("turn_traces")
+      .select("usage, took_ms")
+      .eq("conversation_id", conversationId)
+      .then(({ data }) => {
+        if (!live || !data) return;
+        const rows = data as Array<{ usage: TurnUsage | null; took_ms: number | null }>;
+        setSum(
+          rows.reduce(
+            (s, r) => ({
+              turns: s.turns + 1,
+              input: s.input + (r.usage?.uses ?? []).reduce((n, u) => n + u.input, 0),
+              output: s.output + (r.usage?.uses ?? []).reduce((n, u) => n + u.output, 0),
+              usd: s.usd + (r.usage?.usd ?? 0),
+              ms: s.ms + (r.took_ms ?? 0),
+            }),
+            { turns: 0, input: 0, output: 0, usd: 0, ms: 0 }
+          )
+        );
+      });
+    return () => {
+      live = false;
+    };
+  }, [conversationId, replies]);
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-surface-subdued px-4 py-1.5 text-[11px] text-fg-muted">
+      <button
+        type="button"
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(conversationId);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          } catch {
+            setCopied(false);
+          }
+        }}
+        title={`Conversation ${conversationId}: copy`}
+        className="inline-flex items-center gap-1 rounded px-1 py-0.5 font-mono transition-colors hover:bg-surface-hover hover:text-fg"
+      >
+        {copied ? (
+          <Check aria-hidden size={11} strokeWidth={2.5} className="text-signal-success" />
+        ) : (
+          <Copy aria-hidden size={11} strokeWidth={2} />
+        )}
+        {copied ? "Copied" : conversationId.slice(0, 8)}
+      </button>
+      {sum && (
+        <span className="ml-auto tabular-nums">
+          {sum.turns} {sum.turns === 1 ? "turn" : "turns"} · {tokensShort(sum.input)} in · {tokensShort(sum.output)} out
+          · {dollars(sum.usd)}
+          {inr ? ` · ${rupees(sum.usd, inr)}` : ""} · {seconds(sum.ms)}
+        </span>
+      )}
+    </div>
+  );
+}
+
 const rupees = (usd: number, inr: InrRate) => {
   const n = usd * inr.rate;
   return `≈₹${n < 1 ? n.toFixed(2) : n.toFixed(n < 100 ? 1 : 0)}`;
@@ -1319,7 +1394,47 @@ const rupees = (usd: number, inr: InrRate) => {
  * the account is shown (an administrator decides, per account). Folded
  * to one line; opened, each model and job apart, cache included.
  */
-function UsageLine({ usage, shows, inr }: { usage: TurnUsage; shows: LukeShows; inr: InrRate | null }) {
+/** What the team is told about a reply, to hand to whoever fixes it (0158). */
+type TurnDebug = { turnId: string; conversationId: string | null; projectId: string; ms: number | null };
+
+const seconds = (ms: number) => `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`;
+
+/** One block that says which turn, in which conversation, what it took: pasted into a report as it is. */
+function debugText(usage: TurnUsage, d: TurnDebug, inr: InrRate | null): string {
+  const t = usage.uses.reduce(
+    (s, u) => ({ input: s.input + u.input, cacheRead: s.cacheRead + u.cacheRead, output: s.output + u.output }),
+    { input: 0, cacheRead: 0, output: 0 }
+  );
+  return [
+    "Warmluke turn",
+    `Conversation: ${d.conversationId ?? "unknown"}`,
+    `Turn: ${d.turnId}`,
+    `Project: ${d.projectId}`,
+    `Model: ${usage.model ? `${modelName(usage.model)} (${usage.model})` : "none"}`,
+    `Tokens: ${t.input} in, ${t.cacheRead} from cache, ${t.output} out`,
+    `Cost: ${dollars(usage.usd)}${inr ? ` (${rupees(usage.usd, inr)})` : ""}${usage.partial ? ", some calls unpriced" : ""}`,
+    ...usage.uses.map(
+      (u) =>
+        `  ${JOB_WORDS[u.job]}: ${u.model}, ${u.input} in, ${u.output} out${u.usd === null ? "" : `, ${dollars(u.usd)}`}`
+    ),
+    `Took: ${d.ms === null ? "unknown" : seconds(d.ms)}`,
+    `Copied: ${new Date().toISOString()}`,
+  ].join("\n");
+}
+
+function UsageLine({
+  usage,
+  shows,
+  inr,
+  debug = null,
+}: {
+  usage: TurnUsage;
+  shows: LukeShows;
+  inr: InrRate | null;
+  /** The team's: which turn this is, and how long it took (0158). */
+  debug?: TurnDebug | null;
+}) {
+  const [copied, setCopied] = useState(false);
   if (shows === "nothing" || !usage.model) return null;
   const name = modelName(usage.model);
   if (shows === "model") {
@@ -1348,6 +1463,12 @@ function UsageLine({ usage, shows, inr }: { usage: TurnUsage; shows: LukeShows; 
             <span className="tabular-nums">{cost}</span>
           </>
         )}
+        {debug?.ms != null && (
+          <>
+            <span aria-hidden>·</span>
+            <span className="tabular-nums">{seconds(debug.ms)}</span>
+          </>
+        )}
         <ChevronRight
           aria-hidden
           size={11}
@@ -1372,6 +1493,31 @@ function UsageLine({ usage, shows, inr }: { usage: TurnUsage; shows: LukeShows; 
           <li>
             $1 = ₹{inr.rate.toFixed(2)}
             {inr.asOf ? `, the ECB rate of ${inr.asOf}` : ""}
+          </li>
+        )}
+        {debug && (
+          <li className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1">
+            <span className="font-mono select-all">Turn {debug.turnId}</span>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(debugText(usage, debug, inr));
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                } catch {
+                  setCopied(false);
+                }
+              }}
+              className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+            >
+              {copied ? (
+                <Check aria-hidden size={10} strokeWidth={2.5} className="text-signal-success" />
+              ) : (
+                <Copy aria-hidden size={10} strokeWidth={2} />
+              )}
+              {copied ? "Copied" : "Copy debug info"}
+            </button>
           </li>
         )}
       </ul>
@@ -1669,7 +1815,7 @@ export default function ChatPanel({
   /** Luke is answering in another thread than the one on screen; this goes back to it. */
   turnElsewhere?: (() => void) | null;
   /** What this account's Luke may answer on, and what each reply shows them (/api/models). */
-  luke?: { models: OfferedModel[]; default: string | null; shows: LukeShows } | null;
+  luke?: { models: OfferedModel[]; default: string | null; shows: LukeShows; team?: boolean } | null;
   /** The model picked for the next turn. */
   model?: string | null;
   onModel?: (id: string) => void;
@@ -2117,6 +2263,10 @@ export default function ChatPanel({
     return { input: sum("input"), cacheRead: sum("cacheRead"), cacheWrite: sum("cacheWrite"), output: sum("output") };
   }, [messages]);
   const shows: LukeShows = luke?.shows ?? "nothing";
+  // Warmluke's own team (0158): each reply's turn and time, and the thread's id and total.
+  const team = luke?.team === true;
+  const debugOf = (m: ChatMessage): TurnDebug | null =>
+    team && UUID.test(m.id) ? { turnId: m.id, conversationId, projectId, ms: m.trace?.ms ?? null } : null;
   /** When the list of past conversations was opened: what "3 h ago" and "Today" are counted from. */
   const [threadsAt, setThreadsAt] = useState(0);
   /** Pages of past conversations below the first, as "Show older" brings them. */
@@ -3186,6 +3336,14 @@ export default function ChatPanel({
               </div>
             </div>
 
+            {team && conversationId && (
+              <TeamStrip
+                conversationId={conversationId}
+                replies={messages.filter((m) => m.role === "assistant").length}
+                inr={inr}
+              />
+            )}
+
             {/* Luke alone on a wide screen: what is below the header reads as a
           column, not a line the width of the screen. */}
             <div className={wide ? "mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col" : "contents"}>
@@ -3351,7 +3509,7 @@ export default function ChatPanel({
                             reply={messages[i + 1]?.role === "user" ? messages[i + 1].text : undefined}
                             onSubmit={(composed) => resolveCard(m.id, composed)}
                           />
-                          {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} />}
+                          {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} debug={debugOf(m)} />}
                         </div>
                       );
                     }
@@ -3386,7 +3544,7 @@ export default function ChatPanel({
                             peek={onPeekSection}
                             onReadSection={onReadSection}
                           />
-                          {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} />}
+                          {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} debug={debugOf(m)} />}
                         </div>
                       );
                     }
@@ -3413,7 +3571,7 @@ export default function ChatPanel({
                           {(m.text || m.usage) && (
                             <div className="flex flex-wrap items-center gap-x-2">
                               {m.text && <CopyReply text={m.text} />}
-                              {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} />}
+                              {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} debug={debugOf(m)} />}
                             </div>
                           )}
                           {/* Under the build, which is where they find out it
@@ -3717,7 +3875,7 @@ export default function ChatPanel({
                             </div>
                           )}
                         </div>
-                        {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} />}
+                        {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} debug={debugOf(m)} />}
                       </div>
                     );
                   })}

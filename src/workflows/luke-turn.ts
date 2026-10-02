@@ -195,7 +195,18 @@ async function finishLeg(
     });
     // What follows the answer runs here and is waited for: a step has no after().
     const later: Array<() => Promise<unknown>> = [];
-    const done = await finishTurn(client, job, ctx, turn, combine(usages), steps, (fn) => later.push(fn));
+    // Read again here: a step is replayed on its own, with only what it was handed.
+    const luke = await lukeSettings(client, job.userId);
+    const done = await finishTurn(
+      client,
+      job,
+      ctx,
+      turn,
+      combine(usages),
+      steps,
+      (fn) => later.push(fn),
+      luke.shows === "tokens" || luke.shows === "cost"
+    );
     charged = done.charged;
     await writer.write(done.last);
     await Promise.all(later.map((fn) => fn().catch(() => {})));

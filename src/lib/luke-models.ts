@@ -30,6 +30,8 @@ export type LukeSettings = {
   /** The server's own model, which a turn uses when nothing else is asked for. */
   server: string | null;
   shows: LukeShows;
+  /** Warmluke's testing team or an administrator (0158): sees what each turn cost and its ids. */
+  team: boolean;
 };
 
 const SHOWS: readonly LukeShows[] = ["nothing", "model", "tokens", "cost"];
@@ -116,18 +118,35 @@ const offered = (id: string): OfferedModel => ({ id, name: modelName(id), price:
 export async function lukeSettings(client: SupabaseClient, userId: string): Promise<LukeSettings> {
   const [{ ids, fallback }, { data, error }] = await Promise.all([
     modelsOnOffer(),
-    client.from("account_settings").select("luke_models, luke_shows").eq("user_id", userId).maybeSingle(),
+    client
+      .from("account_settings")
+      .select("luke_models, luke_shows, tester, is_superadmin")
+      .eq("user_id", userId)
+      .maybeSingle(),
   ]);
   if (error)
-    return { models: fallback ? [offered(fallback)] : [], default: fallback, server: fallback, shows: "model" };
+    return {
+      models: fallback ? [offered(fallback)] : [],
+      default: fallback,
+      server: fallback,
+      shows: "nothing",
+      team: false,
+    };
   const list = Array.isArray(data?.luke_models) ? (data.luke_models as string[]) : null;
-  const shows = SHOWS.includes(data?.luke_shows as LukeShows) ? (data!.luke_shows as LukeShows) : "cost";
+  // The team sees everything a turn took; anyone else what an
+  // administrator chose for them, and nothing unless they did (0158).
+  const team = data?.tester === true || data?.is_superadmin === true;
+  const shows: LukeShows = team
+    ? "cost"
+    : SHOWS.includes(data?.luke_shows as LukeShows)
+      ? (data!.luke_shows as LukeShows)
+      : "nothing";
   const allowed = list ? ids.filter((id) => list.includes(id)) : ids;
   // Everything they were allowed has gone from the offer: the server's
   // model rather than none, so Luke still answers.
   const models = (allowed.length ? allowed : fallback ? [fallback] : []).map(offered);
   const byDefault = fallback && models.some((m) => m.id === fallback) ? fallback : (models[0]?.id ?? null);
-  return { models, default: byDefault, server: fallback, shows };
+  return { models, default: byDefault, server: fallback, shows, team };
 }
 
 /** The model a turn is made on: the one asked for when it is allowed, the default otherwise. */

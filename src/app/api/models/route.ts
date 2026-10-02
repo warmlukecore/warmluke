@@ -29,7 +29,13 @@ export async function GET(req: Request) {
       ? (await modelsOnOffer()).ids.map((id) => ({ id, name: modelName(id), price: priceOf(id) }))
       : undefined;
   return NextResponse.json(
-    { models: settings.models, default: settings.default, shows: settings.shows, ...(offered ? { offered } : {}) },
+    {
+      models: settings.models,
+      default: settings.default,
+      shows: settings.shows,
+      team: settings.team,
+      ...(offered ? { offered } : {}),
+    },
     { headers: { "cache-control": "private, no-store" } }
   );
 }

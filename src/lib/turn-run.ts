@@ -205,7 +205,9 @@ export async function finishTurn(
   turn: TurnResult,
   usage: TurnUsage | null,
   steps: TurnEvent[],
-  later: (fn: () => Promise<unknown>) => void
+  later: (fn: () => Promise<unknown>) => void,
+  /** Whether the asker may see what the turn cost (0158); the trace keeps it either way. */
+  showUsage = true
 ): Promise<{ last: Record<string, unknown>; charged: boolean }> {
   // Asked by their own AI: ended as a request, in its own thread.
   // ponytail: no trace, learning or rename for these; each writes at a table a client's token may not write.
@@ -249,7 +251,7 @@ export async function finishTurn(
   // the thing being checked is not a check. Only an answer about
   // the store gets one: a greeting read no rows.
   // What the calls took, kept with the reply so a reload says the same.
-  if (usage) turn.reply.usage = usage;
+  if (usage && showUsage) turn.reply.usage = usage;
   // And what it did: the same steps the panel was told, so a
   // thread reopened after a refresh still shows them.
   turn.reply.trace = { steps, ms: Date.now() - job.askedAt };

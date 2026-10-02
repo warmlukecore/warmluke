@@ -11,7 +11,7 @@
 // because somebody clicked elsewhere. The chat route enforces the list
 // whatever the panel shows, and the account's trail records each change.
 //
-// Callers: src/app/admin/page.tsx.
+// Callers: src/app/[gate]/page.tsx.
 // ─────────────────────────────────────────────────────────────
 
 import { useEffect, useState } from "react";
@@ -33,13 +33,15 @@ export const SHOWS_WORDS: Array<[LukeShows, string]> = [
   ["cost", "Model, tokens and cost"],
 ];
 
-type Held = { models: string[] | null; shows: LukeShows };
+type Held = { models: string[] | null; shows: LukeShows; tester: boolean };
 
 export function LukeAccess({ userId, email, onClose }: { userId: string; email: string; onClose: () => void }) {
   const [offered, setOffered] = useState<OfferedModel[] | null>(null);
   const [held, setHeld] = useState<Held | null>(null);
   const [models, setModels] = useState<string[] | null>(null);
-  const [shows, setShows] = useState<LukeShows>("cost");
+  const [shows, setShows] = useState<LukeShows>("nothing");
+  // Warmluke's own testing team (0158): every reply's cost and ids, whatever "shows" says.
+  const [tester, setTester] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -57,10 +59,11 @@ export function LukeAccess({ userId, email, onClose }: { userId: string; email: 
           );
           return;
         }
-        const h = data as Held;
+        const h = { ...(data as Held), tester: (data as Partial<Held>).tester === true };
         setHeld(h);
         setModels(h.models);
         setShows(h.shows);
+        setTester(h.tester);
         setOffered((list.data.offered as OfferedModel[] | undefined) ?? []);
       }
     );
@@ -79,7 +82,10 @@ export function LukeAccess({ userId, email, onClose }: { userId: string; email: 
   ];
   const every = models === null;
   const changed =
-    !!held && (held.shows !== shows || JSON.stringify(held.models ?? null) !== JSON.stringify(models ?? null));
+    !!held &&
+    (held.shows !== shows ||
+      held.tester !== tester ||
+      JSON.stringify(held.models ?? null) !== JSON.stringify(models ?? null));
   const empty = !every && (models?.length ?? 0) === 0;
 
   async function save() {
@@ -90,12 +96,17 @@ export function LukeAccess({ userId, email, onClose }: { userId: string; email: 
       p_models: models,
       p_shows: shows,
     });
+    // Its own function and its own line in the account's trail.
+    const team =
+      !err && held && held.tester !== tester
+        ? await supabase.rpc("abo_admin_set_tester", { p_user: userId, p_on: tester })
+        : { error: null };
     setSaving(false);
-    if (err) {
-      setError(err.message);
+    if (err || team.error) {
+      setError((err ?? team.error)!.message);
       return;
     }
-    setHeld({ models, shows });
+    setHeld({ models, shows, tester });
     setSaved(true);
   }
 
@@ -174,7 +185,21 @@ export function LukeAccess({ userId, email, onClose }: { userId: string; email: 
           </section>
           <section>
             <h3 className="mb-2 text-xs font-medium text-fg-muted">Under each reply they see</h3>
-            <Choices options={SHOWS_WORDS} value={shows} onChange={setShows} />
+            {tester ? (
+              <p className="text-[13px] text-fg-muted">Everything: they are on the testing team.</p>
+            ) : (
+              <Choices options={SHOWS_WORDS} value={shows} onChange={setShows} />
+            )}
+          </section>
+          <section className="flex items-start justify-between gap-4 border-t border-line pt-4">
+            <div>
+              <h3 className="text-[13px] font-medium text-fg">Testing team</h3>
+              <p className="mt-0.5 text-xs leading-relaxed text-fg-muted">
+                Under every reply: its cost, tokens, time and turn id, with a way to copy them for a report. Above the
+                conversation: its id and running total. Administrators are on it already.
+              </p>
+            </div>
+            <Switch checked={tester} onChange={setTester} label={`${email} is on the testing team`} />
           </section>
         </div>
       )}

@@ -114,7 +114,10 @@ const client = (row, error = null) => ({
   from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: row, error }) }) }) }),
 });
 const all = await lukeSettings(client(null), "u");
-check("an account nobody set sees everything on offer", all.shows === "cost" && all.models.length >= 3);
+check(
+  "an account nobody set sees every model on offer, and nothing under a reply (0158)",
+  all.shows === "nothing" && all.models.length >= 3 && all.team === false
+);
 check("with the server's model the default", all.default === "claude-opus-5-5" && all.server === "claude-opus-5-5");
 check("a model on offer is used when asked for", modelFor(all, "claude-sonnet-5") === "claude-sonnet-5");
 check("one not on offer is not", modelFor(all, "claude-opus-4-1") === "claude-opus-5-5");
@@ -131,10 +134,14 @@ check("a list with nothing left on offer answers on the server's model", gone.de
 const unread = await lukeSettings(client(null, { message: "down" }), "u");
 check(
   "settings that cannot be read give the server's model alone",
-  unread.models.map((m) => m.id).join() === "claude-opus-5-5" && unread.shows === "model"
+  unread.models.map((m) => m.id).join() === "claude-opus-5-5" && unread.shows === "nothing" && unread.team === false
 );
 const odd = await lukeSettings(client({ luke_models: null, luke_shows: "everything" }), "u");
-check("a word it does not know shows the cost, the default", odd.shows === "cost");
+check("a word it does not know shows nothing, the default", odd.shows === "nothing");
+const tester = await lukeSettings(client({ luke_models: null, luke_shows: "nothing", tester: true }), "u");
+check("the testing team sees the cost, whatever it was set to", tester.shows === "cost" && tester.team === true);
+const boss = await lukeSettings(client({ luke_models: null, luke_shows: "model", is_superadmin: true }), "u");
+check("and so does an administrator", boss.shows === "cost" && boss.team === true);
 
 console.log(fails.length === 0 ? "\npriced from the table, counted by the turn" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);
