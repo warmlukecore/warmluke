@@ -55,7 +55,19 @@ const usage = (usd) =>
     model: MODEL,
     usd,
     partial: false,
-    uses: [{ provider: "x", model: MODEL, job: "reply", calls: 1, input: 1000, cacheRead: 0, cacheWrite: 0, output: 100, usd }],
+    uses: [
+      {
+        provider: "x",
+        model: MODEL,
+        job: "reply",
+        calls: 1,
+        input: 1000,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 100,
+        usd,
+      },
+    ],
   });
 const tried = (q) => `pg_temp.try($q$${q}$q$)`;
 
