@@ -267,7 +267,9 @@ const ASKS: Ask[] = [
  * support come from accounts the team sets up, and say so, the same as
  * everywhere else on the page.
  */
-const WATCHES: Array<{ area: string; what: string; icon: LucideIcon; when: string; team?: boolean }> = [
+// Inventory, operations and returns are watched today (0163); conversion
+// and ads wait for the store's visits and an ads account to be read.
+const WATCHES: Array<{ area: string; what: string; icon: LucideIcon; when: string; team?: boolean; soon?: boolean }> = [
   { area: "Inventory", what: "A fast-moving product is approaching low stock.", icon: Package, when: "just now" },
   {
     area: "Operations",
@@ -276,13 +278,20 @@ const WATCHES: Array<{ area: string; what: string; icon: LucideIcon; when: strin
     when: "12 min ago",
   },
   { area: "Returns", what: "Returns suddenly increase for a particular product.", icon: RotateCcw, when: "1 h ago" },
-  { area: "Performance", what: "Conversion rate changes significantly.", icon: TrendingUp, when: "3 h ago" },
+  {
+    area: "Performance",
+    what: "Conversion rate changes significantly.",
+    icon: TrendingUp,
+    when: "3 h ago",
+    soon: true,
+  },
   {
     area: "Marketing",
     what: "A campaign suddenly starts spending without converting.",
     icon: Megaphone,
     when: "yesterday",
     team: true,
+    soon: true,
   },
   {
     area: "Support",
@@ -847,7 +856,7 @@ export default async function Landing({
                 What Luke noticed
               </span>
               <span className="rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-white">
-                {WATCHES.length} new
+                {WATCHES.filter((w) => !w.soon).length} new
               </span>
             </div>
             <ul className="divide-y divide-hair">
@@ -862,6 +871,11 @@ export default async function Landing({
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium text-ink">
                         {w.area}
                         {w.team && <span className="font-normal text-neutral-400">· with our team</span>}
+                        {w.soon && (
+                          <span className="rounded-full bg-neutral-100 px-1.5 py-px text-[10px] font-medium text-neutral-500">
+                            Coming soon
+                          </span>
+                        )}
                       </div>
                       <p className="mt-0.5 text-sm text-neutral-700">{w.what}</p>
                     </div>

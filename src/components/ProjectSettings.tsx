@@ -28,8 +28,9 @@ import { MEMBER_ROLE_OPTIONS, labelOf } from "@/lib/onboarding";
 import { watchRows } from "@/lib/live";
 import { sees, setSees, type Access } from "@/lib/sharing";
 import { Tabs } from "@/components/ui/Tabs";
+import { AlertSettings } from "@/components/Alerts";
 
-type Tab = "general" | "store" | "ai" | "people";
+type Tab = "general" | "store" | "alerts" | "ai" | "people";
 
 /** Common choices; any valid code can still be typed in. */
 const LOCALES = [
@@ -405,6 +406,7 @@ export default function ProjectSettings({
   const tabs: Array<{ id: Tab; text: string; count?: number }> = [
     { id: "general", text: "General" },
     { id: "store", text: "Store" },
+    { id: "alerts", text: "Alerts" },
     { id: "ai", text: "Your own AI" },
     { id: "people", text: "People", count: seats?.length },
   ];
@@ -418,7 +420,7 @@ export default function ProjectSettings({
       footer={
         // The store and people act at once; only the name, currency and
         // AI setting wait for Save.
-        tab === "store" || tab === "people" ? (
+        tab === "store" || tab === "alerts" || tab === "people" ? (
           <>
             <span className="text-xs text-fg-muted">{dirty ? "Unsaved changes on General or Your own AI" : ""}</span>
             <button onClick={onClose} className={`${button("secondary")} ml-auto`}>
@@ -717,6 +719,8 @@ export default function ProjectSettings({
           )}
         </div>
       )}
+
+      {tab === "alerts" && <AlertSettings projectId={project.id} />}
 
       {tab === "ai" && (
         <Group

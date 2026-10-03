@@ -157,6 +157,26 @@ inventory, product sales, order items, refunds, variants, fulfillments, and tran
 registry and view mapping in `store-read.ts` are authoritative for names exposed to the
 application.
 
+## Alert tables
+
+What Luke noticed in a store (0163), worked out in the database from the canonical rows; no
+model is called to find one.
+
+- `alert_kinds`: what can be noticed, the imports each needs (`needs`), the function that
+  finds it (`check_fn`, returning `subject`, `severity`, `facts`), and its default settings.
+  A kind raises nothing until every import it needs is `done`; a new source is a row and a
+  function.
+- `alert_settings`: a project's own switch and numbers per kind, over the defaults, changed
+  by a builder through `abo_set_alert_setting`.
+- `alerts`: one row per `(store, kind, subject)`. It opens, its facts move without ringing
+  again, `changed_at` moves when it opens again or turns critical, it resolves when its check
+  no longer finds it, and opens fresh (with no thread) if it comes back. `conversation_id` is
+  Luke's thread about it. Readable where the store is (`abo_can_open_store`); written only
+  by the definer functions.
+- `alert_reads`: each person's read and put-away, against `changed_at`.
+- `alert_dirty`: stores whose rows changed, looked at again within a minute by
+  `abo_alerts_run_dirty`; every store is looked at every fifteen minutes (`abo_alerts_run`).
+
 ## Supporting tables
 
 - `fx_rates`: project-scoped currency conversion cache.

@@ -87,6 +87,9 @@ import { button, fieldOf, iconButton, menu, menuItem } from "@/components/ui/con
 import { costOf, dollars, modelName, tokensShort, type Tokens } from "@/lib/model-prices";
 import type { OfferedModel } from "@/lib/luke-models";
 import { LukeMark } from "@/components/ui/LukeMark";
+import { Tabs } from "@/components/ui/Tabs";
+import { AlertList } from "@/components/Alerts";
+import type { Alert } from "@/lib/alerts";
 import { Markdown } from "@/components/ui/Markdown";
 import { IdNames, useIdNames, withoutIds } from "@/lib/no-ids";
 import { LUKE_COPY } from "@/lib/luke-copy";
@@ -1764,6 +1767,10 @@ export default function ChatPanel({
   onFix,
   autoBuild,
   onWaiting,
+  alerts,
+  alertsAt,
+  onAskAlert,
+  onSeeAlerts,
 }: {
   /** Another section of this app, read only: what a written screen in a preview reads beyond its own rows. */
   onReadSection?: (
@@ -1808,6 +1815,13 @@ export default function ChatPanel({
    * behind a drawer nobody has a reason to open.
    */
   onWaiting?: (count: number) => void;
+  /** What Luke noticed in the store (0163), the worst first. */
+  alerts: Alert[];
+  /** When they were read, for "since 2 h ago". */
+  alertsAt: number;
+  onAskAlert: (a: Alert) => void;
+  /** Seen, or put away until it gets worse. */
+  onSeeAlerts: (ids: string[], putAway?: boolean) => void;
   modules: ModuleRow[];
   currentSchema: UiSchema | null;
   messages: ChatMessage[];
@@ -2336,6 +2350,9 @@ export default function ChatPanel({
   /** The request whose redesign is running, so it cannot be started twice. */
   const [opening, setOpening] = useState<string | null>(null);
   const [bellOpen, setBellOpen] = useState(false);
+  // The bell holds two things: what Luke noticed in the store, and what
+  // their own AI asked for.
+  const [bellTab, setBellTab] = useState<"noticed" | "asked">("noticed");
   // Which row is asking "are you sure". A browser confirm box is
   // another application's chrome interrupting ours, and it cannot be
   // styled, placed, or dismissed the way anything else here can.
@@ -2557,6 +2574,18 @@ export default function ChatPanel({
   useEffect(() => {
     onWaiting?.(pendingCount);
   }, [pendingCount, onWaiting]);
+  const unseen = alerts.filter((a) => !a.read);
+  const bellCount = pendingCount + unseen.length;
+  // Seen once the bell shuts on them: marked while open, the dot that
+  // says which are new would go the moment they were looked at.
+  const lookedAt = useRef<string[]>([]);
+  useEffect(() => {
+    if (bellOpen && bellTab === "noticed") lookedAt.current = unseen.map((a) => a.id);
+    if (!bellOpen && lookedAt.current.length) {
+      onSeeAlerts(lookedAt.current);
+      lookedAt.current = [];
+    }
+  }, [bellOpen, bellTab, unseen, onSeeAlerts]);
 
   // Arrived from a link their assistant gave them. It names the
   // request, and the only promise the link makes is that the thing
@@ -2682,14 +2711,16 @@ export default function ChatPanel({
             rather than squeezing it. */}
         <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden lg:rounded-pane">
           <div className={`flex min-h-0 flex-1 flex-col ${docked && !wide ? "lg:w-[var(--chat-w)] lg:shrink-0" : ""}`}>
-            <div className="border-b border-line px-4 py-3">
+            {/* The header holds the bell's and History's popovers, so they open
+                inside the panel's edges, however narrow it is dragged. */}
+            <div className="relative border-b border-line px-4 py-3">
               <div className="flex items-center gap-2">
                 <LukeMark state={busy ? "thinking" : "idle"} />
                 <div className="min-w-0">
                   <div className="text-sm font-semibold text-fg">Luke</div>
                   <div className="truncate text-[11px] text-fg-faint">{LUKE_COPY.tagline}</div>
                 </div>
-                <div ref={menus} className="relative ml-auto flex items-center gap-1">
+                <div ref={menus} className="ml-auto flex items-center gap-1">
                   {/* What their own AI asked for is a notification, not a
                 turn in the conversation. It lived in the stream and
                 sat there through every reload, taller than the chat
@@ -2699,18 +2730,20 @@ export default function ChatPanel({
                 not anything is waiting; an empty bell says so when opened. */}
                   <button
                     onClick={() => {
+                      // What waits on their yes first: a noticed thing only informs.
+                      if (!bellOpen) setBellTab(pendingCount > 0 ? "asked" : "noticed");
                       setBellOpen((o) => !o);
                       setThreadsOpen(false);
                     }}
-                    title="What your AI asked for"
+                    title="What needs you"
                     aria-expanded={bellOpen}
-                    aria-label={pendingCount > 0 ? `${pendingCount} want your attention` : "Nothing waiting on you"}
+                    aria-label={bellCount > 0 ? `${bellCount} want your attention` : "Nothing waiting on you"}
                     className={`relative inline-flex h-8 min-w-8 items-center justify-center gap-1 rounded-control px-1.5 transition-colors hover:bg-surface-hover hover:text-fg ${bellOpen ? "bg-surface-hover text-fg" : "text-fg-muted"}`}
                   >
                     <Bell aria-hidden size={16} strokeWidth={1.75} />
-                    {pendingCount > 0 && (
+                    {bellCount > 0 && (
                       <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-signal-critical px-1 text-[9px] font-semibold text-white ring-2 ring-surface">
-                        {pendingCount}
+                        {bellCount}
                       </span>
                     )}
                   </button>
@@ -2747,8 +2780,43 @@ export default function ChatPanel({
                     </button>
                   )}
                   {bellOpen && (
-                    <div className="pop thin-scroll absolute top-full right-0 z-50 mt-1.5 max-h-96 w-80 space-y-2 overflow-y-auto rounded-card bg-surface p-2 shadow-popover">
-                      {requests.length === 0 && shopChanges.length === 0 && (
+                    <div className="pop thin-scroll absolute top-full right-3 z-50 mt-1.5 max-h-96 w-[min(20rem,calc(100%-1.5rem))] space-y-2 overflow-y-auto rounded-card bg-surface p-2 shadow-popover">
+                      <Tabs
+                        label="What needs you"
+                        value={bellTab}
+                        onChange={setBellTab}
+                        className="px-1"
+                        tabs={[
+                          { id: "noticed", text: "Noticed", count: alerts.length },
+                          { id: "asked", text: "Asked for", count: pendingCount },
+                        ]}
+                      />
+                      {bellTab === "noticed" &&
+                        (alerts.length === 0 ? (
+                          <div className="flex flex-col items-center px-4 py-6 text-center">
+                            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-canvas text-fg-faint">
+                              <Bell aria-hidden size={16} strokeWidth={1.75} />
+                            </span>
+                            <div className="mt-2.5 text-[13px] font-medium text-fg">Nothing needs you</div>
+                            <p className="mt-1 text-xs leading-relaxed text-fg-muted">
+                              Luke keeps looking at your stock, shipping and returns, and says so here when something
+                              needs you.
+                            </p>
+                          </div>
+                        ) : (
+                          <AlertList
+                            dense
+                            alerts={alerts}
+                            now={alertsAt}
+                            busy={busy}
+                            onAsk={(a) => {
+                              setBellOpen(false);
+                              onAskAlert(a);
+                            }}
+                            onDismiss={(a) => onSeeAlerts([a.id], true)}
+                          />
+                        ))}
+                      {bellTab === "asked" && requests.length === 0 && shopChanges.length === 0 && (
                         <div className="flex flex-col items-center px-4 py-6 text-center">
                           <span className="flex h-9 w-9 items-center justify-center rounded-full bg-canvas text-fg-faint">
                             <Bell aria-hidden size={16} strokeWidth={1.75} />
@@ -2763,7 +2831,7 @@ export default function ChatPanel({
             colour — a different first line. The words are what say
             this one leaves the building, and a second palette would
             only be one more thing to learn. */}
-                      {shopChanges.map((a) => {
+                      {(bellTab === "asked" ? shopChanges : []).map((a) => {
                         const spec = actionSpec(a.action);
                         const waiting = a.status === "pending";
                         const going = a.status === "approved" || a.status === "running";
@@ -2843,7 +2911,7 @@ export default function ChatPanel({
                           </div>
                         );
                       })}
-                      {requests.map((r) => {
+                      {(bellTab === "asked" ? requests : []).map((r) => {
                         const done = r.status === "built";
                         const half = r.status === "partly_built";
                         // A finished thing does not belong in the live area at full
@@ -3129,7 +3197,7 @@ export default function ChatPanel({
                     </div>
                   )}
                   {threadsOpen && (
-                    <div className="pop thin-scroll absolute top-full right-0 z-50 mt-1.5 max-h-96 w-72 overflow-y-auto rounded-card bg-surface p-1 shadow-popover">
+                    <div className="pop thin-scroll absolute top-full right-3 z-50 mt-1.5 max-h-96 w-[min(18rem,calc(100%-1.5rem))] overflow-y-auto rounded-card bg-surface p-1 shadow-popover">
                       {/* Found by name once there are more than a screenful; the
                     names are the model's own summaries of each thread, or
                     what the owner renamed it. Every thread is searched, not

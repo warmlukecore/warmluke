@@ -313,7 +313,7 @@ test("a change to the shop waits for a yes", async ({ signedIn: page, shop }) =>
       .eq("project_id", shop.projectId);
     expect(asked?.map((a) => a.action)).toEqual(["add_tags"]);
     expect(asked?.[0]?.status).toBe("pending");
-    const bell = page.locator('button[title="What your AI asked for"]:visible').first();
+    const bell = page.locator('button[title="What needs you"]:visible').first();
     await expect(bell).toHaveAttribute("aria-label", /want your attention/);
     await bell.click();
     await expect(page.getByText(asked?.[0]?.summary ?? "#1003").first()).toBeVisible();
@@ -1047,7 +1047,7 @@ test("every design's parts open to a preview: Luke's, and one their own AI asked
     ).toBeVisible();
 
     // One their own AI asked for: its part folds out to the same preview.
-    await page.locator('button[title="What your AI asked for"]:visible').first().click();
+    await page.locator('button[title="What needs you"]:visible').first().click();
     const card = page
       .locator("div")
       .filter({ hasText: /^Asked for by your AI/ })

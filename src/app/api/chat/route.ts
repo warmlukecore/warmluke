@@ -151,7 +151,7 @@ const MAX_TURNS_PER_HOUR = 60;
 const WORDS_EVERY_MS = 80;
 
 /**
- * POST /api/chat — body: { message, projectId, moduleId?, conversationId? }
+ * POST /api/chat — body: { message, projectId, moduleId?, conversationId?, alertId? }
  * Runs under the caller's RLS: they can only ever touch their own project's
  * data. Persists the thread so the assistant can ask, then design, then
  * build. Never applies.
@@ -173,6 +173,7 @@ export async function POST(req: Request) {
       moduleId,
       conversationId,
       model: askedModel,
+      alertId,
     } = ((await req.json().catch(() => ({}))) ?? {}) as {
       message?: string;
       projectId?: string;
@@ -180,6 +181,8 @@ export async function POST(req: Request) {
       conversationId?: string | null;
       /** The model picked in the panel; used only when this account may use it. */
       model?: unknown;
+      /** Asked about something Luke noticed (0163): the new thread is kept on it. */
+      alertId?: unknown;
     };
     const auth = await getUserClient(req);
     if (!auth) {
@@ -352,6 +355,11 @@ export async function POST(req: Request) {
         throw new Error(convErr?.message ?? "could not start the conversation");
       }
       convId = created.id as string;
+      // Not linked is not a failed question: the answer still comes, and
+      // the next tap on the alert asks again.
+      if (typeof alertId === "string") {
+        await client.rpc("abo_alert_link", { p_alert: alertId, p_conversation: convId });
+      }
     }
     const askedAt = Date.now();
     const { data: opened, error: openErr } = await client

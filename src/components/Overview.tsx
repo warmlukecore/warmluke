@@ -105,6 +105,7 @@ export default function Overview({
   onOpenTable,
   onInspect,
   refreshKey,
+  noticed,
 }: {
   projectId: string;
   storeId: string;
@@ -115,6 +116,8 @@ export default function Overview({
   onInspect: (table: StoreTable, row: DetailRow) => void;
   /** Changes when the store has been read again, to count afresh. */
   refreshKey: number;
+  /** What Luke noticed (0163), above the numbers: a problem comes before a count. */
+  noticed?: React.ReactNode;
 }) {
   const [data, setData] = useState<OverviewData | null>(null);
   const [latest, setLatest] = useState<DetailRow[] | null>(null);
@@ -183,6 +186,7 @@ export default function Overview({
       hasSection={hasSection}
       onOpenTable={onOpenTable}
       onInspect={onInspect}
+      noticed={noticed}
     />
   );
 }
@@ -201,6 +205,7 @@ export function OverviewBoard({
   hasSection,
   onOpenTable,
   onInspect,
+  noticed,
 }: {
   data: OverviewData;
   /** The newest orders, or null while they are still being read. */
@@ -211,6 +216,7 @@ export function OverviewBoard({
   hasSection: (table: StoreTable) => boolean;
   onOpenTable: (table: StoreTable) => void;
   onInspect: (table: StoreTable, row: DetailRow) => void;
+  noticed?: React.ReactNode;
 }) {
   const fmt = useFormat();
   if (!data.store) return null;
@@ -271,6 +277,8 @@ export function OverviewBoard({
           Your store is still coming in. These numbers grow as it does.
         </div>
       )}
+
+      {noticed}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi
@@ -606,7 +614,7 @@ function Chart({ daily }: { daily: Array<{ day: string; orders: number }> }) {
   );
 }
 
-function Panel({
+export function Panel({
   title,
   icon,
   action,

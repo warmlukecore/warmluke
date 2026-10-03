@@ -34,8 +34,9 @@ routes exist where server-side validation, orchestration, or secrets are require
 | `POST /api/apply`                   | Validate and apply approved plans             | Full, partial, already-claimed, or validation result                             |
 | `POST /api/undo`                    | Conservatively reverse a recorded build       | Reads undo steps from the authorized message; reports completed/refused steps    |
 
-`POST /api/chat` accepts `message`, `projectId`, optional `moduleId`, and optional
-`conversationId`. It enforces the account feature switch, project ownership, hourly
+`POST /api/chat` accepts `message`, `projectId`, optional `moduleId`, optional
+`conversationId`, and optional `alertId` (an alert asked about from the bell or the Overview;
+the new thread is kept on it through `abo_alert_link`, 0163). It enforces the account feature switch, project ownership, hourly
 ceiling, and included-turn ledger. It never applies plans. Lines with `step` are progress
 (including `lookup` when a store tool ran), lines with `words` are drafts of the reply's
 message, and the last line is the result.

@@ -192,6 +192,26 @@ Compliance topics use a separate static route because Shopify requires one globa
 The shop identity is taken from the signed body. Ordinary topics use a per-store URL so
 an unsigned shop header is never treated as identity.
 
+## What Luke noticed
+
+```mermaid
+flowchart LR
+    W[Webhook or import writes rows] -->|statement trigger| D[alert_dirty]
+    C[pg_cron: each minute, each quarter hour] --> R[abo_alerts_run]
+    D --> R
+    R -->|each kind whose imports are done| K[abo_alert_* check]
+    K -->|upsert, resolve what is gone| A[alerts]
+    A -->|Realtime| B[Bell and Overview]
+    B -->|Ask Luke| T[POST /api/chat with alertId]
+    T -->|abo_alert_link| A
+```
+
+A check that fails leaves its own alerts as they were; a kind whose data is being walked
+again (a recheck) is left alone until it is done. The words are the app's
+(`src/lib/alerts.ts`); a kind the app has no words for yet still shows, with no question
+for Luke. The check database has no pg_cron, so its checks and specs call
+`abo_alerts_run` themselves.
+
 ## Store question routing
 
 Before the built-in model sees a merchant's question, Jev may classify its list, time

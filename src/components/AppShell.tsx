@@ -33,6 +33,8 @@ import NewSection from "@/components/NewSection";
 import StoreStrip from "@/components/StoreStrip";
 import StoreSwitcher from "@/components/StoreSwitcher";
 import Overview from "@/components/Overview";
+import { AlertsPanel } from "@/components/Alerts";
+import { describeAlert, type Alert } from "@/lib/alerts";
 import StoreRecordDetail, { type DetailRow } from "@/components/StoreRecordDetail";
 import StorePicker, { addStoreSections } from "@/components/StorePicker";
 import {
@@ -1541,6 +1543,37 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     setTodayZone(store?.timezone);
   }, [store?.timezone]);
 
+  // What Luke noticed (0163): read once there is a store, and again
+  // whenever one opens, gets worse or closes.
+  const [alerts, setAlerts] = useState<Alert[] | null>(null);
+  const [alertsAt, setAlertsAt] = useState(0);
+  const loadAlerts = useCallback(async () => {
+    const { data, error } = await supabase.rpc("abo_alerts", { p_project: projectId });
+    if (error) return;
+    setAlerts((data as Alert[] | null) ?? []);
+    setAlertsAt(Date.now());
+  }, [projectId]);
+  useEffect(() => {
+    if (!store?.id) return;
+    void loadAlerts();
+    return watchRows(`alerts:${projectId}`, [
+      { table: "alerts", filter: `project_id=eq.${projectId}`, onChange: () => void loadAlerts() },
+    ]);
+  }, [store?.id, projectId, loadAlerts]);
+  /** Seen takes them off the bell's count; put away takes them off the list until they get worse. */
+  const seeAlerts = useCallback((ids: string[], putAway = false) => {
+    if (ids.length === 0) return;
+    setAlerts(
+      (prev) =>
+        prev &&
+        (putAway
+          ? prev.filter((a) => !ids.includes(a.id))
+          : prev.map((a) => (ids.includes(a.id) ? { ...a, read: true } : a)))
+    );
+    // A query is only sent once something waits on it.
+    supabase.rpc("abo_alerts_seen", { p_alerts: ids, p_dismiss: putAway }).then(() => {});
+  }, []);
+
   // Their seat's switch, read again whenever the seat changes (seatTick).
   useEffect(() => {
     if (!userId) return;
@@ -1686,7 +1719,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // blueprint to approve, or with plans to apply. Only the last one
   // ever touches data.
   const runPrompt = useCallback(
-    async (text: string, opts?: { silent?: boolean }) => {
+    async (text: string, opts?: { silent?: boolean; alertId?: string }) => {
       if (!text.trim() || chatBusy || building) return;
       if (!opts?.silent) {
         setChatMessages((prev) => [...prev, { id: nextChatId(), role: "user", text }]);
@@ -1721,6 +1754,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             moduleId: selectedModuleId,
             conversationId: openThread,
             ...(pickedModel ? { model: pickedModel } : {}),
+            ...(opts?.alertId ? { alertId: opts.alertId } : {}),
           },
           controller.signal,
           (step) => {
@@ -2586,6 +2620,20 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     if (lukeShut && focus === null && window.matchMedia("(min-width: 1024px)").matches) shutLuke(false);
     else setChatOpen(true);
   };
+  // Asked about something Luke noticed: the thread it has already, or a
+  // new one with the question in it, which the server keeps on the alert.
+  const askAboutAlert = (a: Alert) => {
+    openLuke();
+    seeAlerts([a.id]);
+    if (a.conversation_id) {
+      void loadThread(a.conversation_id);
+      return;
+    }
+    const { ask } = describeAlert(a);
+    if (!ask || chatBusy || building) return;
+    startNewThread();
+    void runPrompt(ask, { alertId: a.id });
+  };
   const hideLuke = () => {
     setChatOpen(false);
     shutLuke(true);
@@ -3230,6 +3278,15 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                       if (m) setSelectedModuleId(m.id);
                     }}
                     onInspect={(table, row) => setInspecting({ table, row })}
+                    noticed={
+                      <AlertsPanel
+                        alerts={alerts}
+                        now={alertsAt}
+                        onAsk={canBuild ? askAboutAlert : undefined}
+                        onDismiss={(a) => seeAlerts([a.id], true)}
+                        busy={chatBusy || building}
+                      />
+                    }
                   />
                 </FormatProvider>
               ) : isEmpty && project && !canBuild ? (
@@ -3399,6 +3456,10 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 onWide={() => focusOn(focus === "luke" ? null : "luke")}
                 onHide={focus === null ? hideLuke : undefined}
                 onWaiting={setWaiting}
+                alerts={alerts ?? []}
+                alertsAt={alertsAt}
+                onAskAlert={askAboutAlert}
+                onSeeAlerts={seeAlerts}
                 modules={modules}
                 currentSchema={schema?.schema_json ?? null}
                 messages={chatMessages}
