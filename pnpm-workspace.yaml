@@ -14,3 +14,9 @@ overrides:
   # Workflow's core brings a devalue with two high advisories (GHSA-j22f-vq7h-c4qm,
   # quadratic uneval); 5.9.3 patches both within the same major. Drop when it moves.
   "devalue@>=5.1.0 <5.9.3": "^5.9.3"
+  # Workflow's NestJS side (workflow/nest) brings @swc/cli, whose binary
+  # downloader's got → cacheable-request → http-cache-semantics has a high
+  # advisory with no fixed version (GHSA-ch52-4w7c-c8xp, 2026-10-03). The app
+  # imports workflow, workflow/api and workflow/next only; nothing else
+  # requires @workflow/nest, so it is not installed. Drop when that moves.
+  "@workflow/nest": "-"
