@@ -379,9 +379,13 @@ filters, and the stat cards (`p_scope.period` in `abo_section_stats`), so the ca
 the table always count the same rows. "The last N days" are the shop's days on a store
 section and the device's otherwise; the pick is remembered per section on the device.
 The validator refuses a period over anything but a date column, and a stat that still
-counts `days_since` of that field under it. A store list carries its dates as UTC days
-(`to_char` in its view), so a store section's day is UTC's, as everywhere else that shows
-one. A plan that sends a `view` says on the owner's card what it takes the place of
+counts `days_since` of that field under it. A store list carries its dates as the shop's days
+(each view writes them in `stores.timezone`, 0162), and "today" and `days_since` are the
+shop's too: on the server through `abo.today` (`abo_shop_today`, set once by the stat cards,
+a record's rules and guards, and the scheduled rules), in the browser through
+`setTodayZone` (`lib/expr.ts`, set by `AppShell` from the store). A project with no shop
+keeps UTC; a zone the database cannot read is kept as UTC (`trg_stores_zone`).
+`check-store-days` holds this. A plan that sends a `view` says on the owner's card what it takes the place of
 (`viewReplaced` in `describe.ts`): a section has one view. `check-period` and
 `check-stats` hold these.
 

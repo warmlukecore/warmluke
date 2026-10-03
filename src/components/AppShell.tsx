@@ -89,7 +89,7 @@ import { tourStops, type TourCopy } from "@/lib/tour";
 import { button, iconButton, note } from "@/components/ui/controls";
 import { Logo } from "@/components/ui/Logo";
 import { ThemeToggle } from "@/components/ThemeSync";
-import { withComputed } from "@/lib/expr";
+import { setTodayZone, withComputed } from "@/lib/expr";
 import { findSection } from "@/lib/section-ref";
 import { shiftDay, type PeriodRange } from "@/lib/period";
 import { codeSpellings } from "@/lib/scan";
@@ -1532,6 +1532,11 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       );
     // seatTick: read again when their seat changes (the store let in or taken away, 0145).
   }, [projectId, seatTick]);
+
+  // "Today" in the browser is the shop's, as it is on the server (0162).
+  useEffect(() => {
+    setTodayZone(store?.timezone);
+  }, [store?.timezone]);
 
   // Their seat's switch, read again whenever the seat changes (seatTick).
   useEffect(() => {
@@ -3304,7 +3309,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     onScanGroup={openScanGroup}
                     onReadSection={readSection}
                     periodKey={selectedModuleId ?? undefined}
-                    timeZone={storeBacked ? (store?.timezone ?? undefined) : undefined}
+                    // The shop's days on every section of a project with a shop, as the server's are (0162).
+                    timeZone={store?.timezone ?? undefined}
                     onPeriod={periodChanged}
                     {...(storeBacked
                       ? // No write handlers at all, which is how the renderer

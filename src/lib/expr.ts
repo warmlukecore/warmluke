@@ -44,8 +44,31 @@ function cmp(a: unknown, b: unknown): number {
   return ta < tb ? -1 : ta > tb ? 1 : 0;
 }
 
+/**
+ * Whose day "today" is: UTC's, as the database's when nothing is said,
+ * or the shop's once the app knows it (AppShell, setTodayZone), as the
+ * server's is since 0162. A rule saying "placed today" was a day behind
+ * every night in Mumbai until half past five.
+ * ponytail: one zone for the page, which shows one project at a time; a
+ * server process leaves it at UTC, as code rules and checks expect.
+ */
+let todayZone = "UTC";
+export function setTodayZone(zone: string | null | undefined): void {
+  try {
+    // Throws on a zone this browser cannot read, which keeps UTC.
+    todayZone = zone ? new Intl.DateTimeFormat("en-CA", { timeZone: zone }).resolvedOptions().timeZone : "UTC";
+  } catch {
+    todayZone = "UTC";
+  }
+}
+
 function isoToday(): string {
-  return new Date().toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: todayZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 }
 
 /**
