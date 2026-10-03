@@ -32,3 +32,23 @@ export function findSection<T extends Named>(sections: readonly T[], ref: string
     sections.find((s) => sectionKey(s.nav_label ?? "") === key)
   );
 }
+
+/**
+ * Whether a rule reads a section: a rule of code that lists it in "reads"
+ * or names it in its code ("#shipments", sections['shipments']). A section
+ * deleted from under one goes on reading nothing, with no error anywhere:
+ * a repeat-order rule lost its "still in transit" check that way (3 Oct).
+ */
+export function readsSection(definition: unknown, section: { id: string; name: string }): boolean {
+  const actions =
+    (definition as { actions?: Array<{ type?: string; reads?: unknown; code?: unknown }> })?.actions ?? [];
+  const name = section.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const named = new RegExp(`["'\`]#?${name}["'\`]`);
+  return actions.some(
+    (a) =>
+      a?.type === "run_code" &&
+      ((Array.isArray(a.reads) &&
+        a.reads.some((r) => r === section.id || r === `#${section.name}` || r === section.name)) ||
+        (typeof a.code === "string" && named.test(a.code)))
+  );
+}

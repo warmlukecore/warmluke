@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getUserClient } from "@/lib/supabase-server";
 import { ALLOWED_ICONS, COLUMN_TYPES } from "@/lib/types";
 import { isStoreTable, storeTableSchema, type StoreTable } from "@/lib/store-read";
+import { readsSection } from "@/lib/section-ref";
 import type { AutomationRow, ColumnType, ModuleRow, SchemaColumn } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -369,14 +370,20 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "projectId and id are required" }, { status: 400 });
   }
 
-  const [{ count: records }, { data: children }] = await Promise.all([
+  const [{ count: records }, { data: children }, { data: self }, { data: rules }] = await Promise.all([
     auth.client.from("records").select("id", { count: "exact", head: true }).eq("module_id", id),
     auth.client.from("modules").select("id, nav_label").eq("parent_id", id),
+    auth.client.from("modules").select("id, name").eq("id", id).maybeSingle(),
+    auth.client.from("automations").select("name, module_id, definition").eq("project_id", projectId),
   ]);
 
   return NextResponse.json({
     records: records ?? 0,
     children: (children ?? []) as Array<{ id: string; nav_label: string }>,
     blockedBy: await rulesPointingAt(auth.client, projectId, id),
+    // Rules of other sections that read this one: they keep running, reading nothing.
+    readBy: self
+      ? (rules ?? []).filter((r) => r.module_id !== id && readsSection(r.definition, self)).map((r) => r.name as string)
+      : [],
   });
 }

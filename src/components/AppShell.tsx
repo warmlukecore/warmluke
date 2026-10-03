@@ -1018,7 +1018,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           q = q.gte(`data->>${ranged.field}`, ranged.fromDay).lt(`data->>${ranged.field}`, shiftDay(ranged.toDay, 1));
         // Fields kept beside a store row (0128) are never a row of their
         // own, even in a section since pointed back at its own rows.
-        return q.order("created_at", { ascending: true }).range(from, to);
+        // Newest first, as every list opens (Tanish, 3 Oct); Load more brings the older.
+        return q.order("created_at", { ascending: false }).range(from, to);
       };
       // The server answers at most 1,000 rows a read, so more is read on in
       // pieces: Load more past a thousand stood still on the same thousand.
@@ -3447,7 +3448,10 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     ))}
                   </div>
                 </div>
-              ) : schema ? (
+              ) : schema && (!selectedModuleId || loadedFor === selectedModuleId) ? (
+                // Only once its own rows are here: the schema is set before a
+                // store's page arrives, and the empty table between read
+                // "Nothing here yet" (Tanish, 3 Oct). The skeleton below till then.
                 // Shopify money stays in the currency Shopify recorded.
                 // The provider supplies the normal shop currency; an order
                 // whose own currency differs overrides it at the cell.

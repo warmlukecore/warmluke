@@ -186,6 +186,17 @@ console.log("\nand a question says how it is answered");
   );
 }
 
+// A long label shortened at a word, never through one (3 Oct: "…section g").
+{
+  const [long] =
+    asNextSteps([{ label: "Why did the Order Items Lookup section get removed from the app", prompt: "Why?" }], []) ??
+    [];
+  check(
+    "a long label is cut at a word, with an ellipsis",
+    long?.label === "Why did the Order Items Lookup section get…"
+  );
+}
+
 console.log(
   fails.length === 0 ? "\nwhat comes next is the model's, and only where it is whole" : `\n${fails.length} FAILED`
 );

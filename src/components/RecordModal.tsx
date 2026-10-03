@@ -13,6 +13,10 @@ import { useLinkOptions } from "@/components/LinkContext";
 import type { FeatureSchema, RecordRow, SchemaColumn, UiSchema } from "@/lib/types";
 import { Check } from "lucide-react";
 import { Dialog } from "@/components/ui/Dialog";
+import { Select } from "@/components/ui/Select";
+import { DateField } from "@/components/ui/DateField";
+import { badgeLabel } from "@/lib/tone";
+import { useFormat } from "@/lib/format";
 import { button, field, label } from "@/components/ui/controls";
 
 export type RecordDraft = Record<string, unknown>;
@@ -48,6 +52,7 @@ export function Field({
   onChange: (v: string) => void;
 }) {
   const linkOptions = useLinkOptions();
+  const fmt = useFormat();
   const base = field;
   const str = value === null || value === undefined ? "" : String(value);
 
@@ -56,15 +61,15 @@ export function Field({
   if (col.type === "link") {
     const rows = (col.linkTo && linkOptions[col.linkTo]) || [];
     return (
-      <select value={str} onChange={(e) => onChange(e.target.value)} className={base}>
-        <option value="">—</option>
-        {rows.map((r) => (
-          <option key={r.id} value={r.id}>
-            {r.label}
-          </option>
-        ))}
-        {str && !rows.some((r) => r.id === str) && <option value={str}>(deleted)</option>}
-      </select>
+      <Select
+        label={col.label}
+        value={str}
+        onChange={onChange}
+        options={[
+          ...rows.map((r) => ({ value: r.id, label: r.label })),
+          ...(str && !rows.some((r) => r.id === str) ? [{ value: str, label: "(deleted)" }] : []),
+        ]}
+      />
     );
   }
 
@@ -99,33 +104,36 @@ export function Field({
 
   if ((col.type === "badge" || col.type === "dropdown") && options.length > 0) {
     return (
-      <select value={str} onChange={(e) => onChange(e.target.value)} className={base}>
-        <option value="">—</option>
-        {options.map((o) => (
-          <option key={o} value={o}>
-            {o}
-          </option>
-        ))}
-        {str && !options.includes(str) && <option value={str}>{str}</option>}
-      </select>
+      <Select
+        label={col.label}
+        value={str}
+        onChange={onChange}
+        options={[...options, ...(str && !options.includes(str) ? [str] : [])].map((o) => ({
+          value: o,
+          label: col.type === "badge" ? badgeLabel(o) : o,
+        }))}
+      />
     );
+  }
+
+  // A day, picked from the app's own month rather than the browser's box.
+  if (col.type === "date") {
+    return <DateField label={col.label} value={str} onChange={onChange} locale={fmt.locale} />;
   }
 
   // Native input types give phones the right keyboard and picker.
   const inputType =
     col.type === "number" || col.type === "currency" || col.type === "percent"
       ? "number"
-      : col.type === "date"
-        ? "date"
-        : col.type === "time"
-          ? "time"
-          : col.type === "phone"
-            ? "tel"
-            : col.type === "email"
-              ? "email"
-              : col.type === "url"
-                ? "url"
-                : "text";
+      : col.type === "time"
+        ? "time"
+        : col.type === "phone"
+          ? "tel"
+          : col.type === "email"
+            ? "email"
+            : col.type === "url"
+              ? "url"
+              : "text";
 
   const placeholder =
     col.type === "barcode"

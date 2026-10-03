@@ -317,6 +317,8 @@ type TableSpec = {
    * window of days would hide the rows it is for.
    */
   dated?: string;
+  /** How a section over this list opens, when not as `order` (newest first, 0174). */
+  opens?: { field: string; ascending: boolean };
   label: string;
   /**
    * The SQL view that holds this list in the shape the app shows
@@ -417,6 +419,8 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     // A change to the shop is aimed with Shopify's own id (0121).
     gives: { Customer: "shopify_id" },
     order: { field: "name", ascending: true },
+    // A section over it opens newest first (0174); lookups keep the order above.
+    opens: { field: "created_at", ascending: false },
     select: "id, name, email, phone, city, orders_count, total_spent",
     columns: [
       { field: "name", label: "Name", type: "text" },
@@ -739,6 +743,8 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     // A change to the shop is aimed with Shopify's own id (0121).
     gives: { Product: "shopify_id" },
     order: { field: "title", ascending: true },
+    // A section over it opens newest first (0174); lookups keep the order above.
+    opens: { field: "created_at", ascending: false },
     select: "id, title, product_type, vendor, handle, status, tags, collections, last_sold",
     columns: [
       { field: "title", label: "Product", type: "text" },
@@ -1171,7 +1177,10 @@ export async function readStorePage(
         sort && !computed.has(sort.field)
           ? { ...sort, kind: type === "number" || type === "currency" ? "number" : "text" }
           : null,
-      order: { field: spec.order.field, dir: spec.order.ascending ? "asc" : "desc" },
+      order: {
+        field: (spec.opens ?? spec.order).field,
+        dir: (spec.opens ?? spec.order).ascending ? "asc" : "desc",
+      },
       period,
       facets: facets.filter((f) => !computed.has(f) && !ticks.has(f)),
     },

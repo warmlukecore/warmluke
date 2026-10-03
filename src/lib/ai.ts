@@ -38,7 +38,7 @@ import { isTransient } from "@/lib/retry";
 import { customViewProblem, customViewScriptProblem } from "@/lib/custom-view";
 import { DEFAULT_PRESETS } from "@/lib/period";
 import { YES_NO } from "@/lib/filters";
-import { findSection } from "@/lib/section-ref";
+import { findSection, readsSection } from "@/lib/section-ref";
 import { MAX_TABS, tabName, type TabView } from "@/lib/tabs";
 import { codeProblem } from "@/lib/code-run";
 import { asJob, record } from "@/lib/usage";
@@ -295,7 +295,7 @@ const ANSWER_SHAPE = `(0) ANSWER — they asked you something, or said something
   "kind": "store" | "product_help" | "conversation",
   "title": "a few words naming this conversation",
   "message": "your reply — see HOW AN ANSWER READS",
-  "next": [ { "label": "a few words, as they would say it", "prompt": "the exact message they would send you" } ]
+  "next": [ { "label": "a few words, as they would say it", "prompt": "the exact message they would send you" } ] — each a step forward for their business from this answer, never a question about how this app was built or its history
 }
 "store" — a question about their shop's data. Answer ONLY from what is printed under WHAT YOU MAY ANSWER FROM. Quote the rows you used and say when the data was last brought from Shopify. If the answer is not in those rows, say so and say what you would need — do not estimate, do not average, do not describe a trend from a handful of latest rows.
 "product_help" — a question about you or this app: what you can build for them, how a section or rule of theirs works, what a button does. Answer from the capability block and from CONTEXT — what actually exists here — and nothing else. Never quote store rows here, never promise anything in the NOT POSSIBLE list, never describe the platform beyond what the capability block says.
@@ -2315,7 +2315,10 @@ export function asNextSteps(v: unknown, unmet: string[], limit = 2): NextStep[] 
   const seen = new Set<string>();
   for (const item of v) {
     if (!isPlainObject(item)) continue;
-    const label = typeof item.label === "string" ? item.label.trim().slice(0, 40) : "";
+    // Shortened at a word, never through one: "…the Order Items Lookup
+    // section g" read as broken (3 Oct).
+    const said = typeof item.label === "string" ? item.label.trim() : "";
+    const label = said.length <= 48 ? said : `${said.slice(0, 48).replace(/\s+\S*$/, "")}…`;
     const prompt = typeof item.prompt === "string" ? item.prompt.trim() : "";
     if (!label || !prompt || prompt.length > 400) continue;
     const key = prompt.toLowerCase();
@@ -2675,6 +2678,27 @@ function parsePlans(
           `"${field}" is still read by ${users.join(", ")}. Change or remove ${users.length === 1 ? "it" : "those"} in this same design, or keep the column with "hidden": true (off the table, still in the row and its data).`
         );
     }
+  }
+
+  // A section deleted while a rule of another section still reads it: the
+  // rule would go on reading nothing. Changed or removed in the same
+  // design, or the section stays.
+  for (const p of raw as AssistantPlan[]) {
+    if (p?.changeType !== "MODULE_DELETE" || typeof p.targetModuleId !== "string") continue;
+    const gone = modules.find((m) => m.id === p.targetModuleId);
+    if (!gone) continue;
+    const removed = new Set(
+      (raw as AssistantPlan[]).filter((o) => o?.changeType === "AUTOMATION_REMOVE").map((o) => o.automationRemoveName)
+    );
+    const readers = modules
+      .filter((m) => m.id !== gone.id)
+      .flatMap((m) => rulesOf?.(m.id) ?? [])
+      .filter((r) => !removed.has(r.name) && readsSection(r.definition, gone))
+      .map((r) => `"${r.name}"`);
+    if (readers.length > 0)
+      errors.push(
+        `${readers.join(", ")} ${readers.length === 1 ? "reads" : "read"} #${gone.name}, and would go on reading nothing. Change or remove ${readers.length === 1 ? "it" : "them"} in this same design, or keep the section.`
+      );
   }
 
   // All or nothing. A batch is one coordinated build: quietly keeping the

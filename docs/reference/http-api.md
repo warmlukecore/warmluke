@@ -131,7 +131,13 @@ dollars by UTC day, by model and by account, so it reaches back only as far as t
 kept. Its Road choice card (`abo_admin_routing`, 0169) counts the turns that took the
 wrong road: questions answered on the design road, with what they cost, and builds the
 talk road handed back; past one turn in ten it says a small model should read the
-messages the rules are unsure of. The console's word searches have trigram indexes on conversation titles, project
+messages the rules are unsure of. **Needs a look** (`abo_admin_trouble(p_days)`, 0175)
+lists where something went wrong, newest first, up to 100, each with its project and
+thread: a turn that failed (`unanswered`), needed two or more repairs or was sent back by
+the critic; an owner's words that say it went wrong (a word list, English and Hinglish);
+a section changed four or more times in a day; a rule whose runs or code jobs failed; a
+schedule setting fields on every row with no `when`; three or more yes/no or status
+fields sharing a word. The console's word searches have trigram indexes on conversation titles, project
 names and shop domains. Every console screen asks `abo_admin_luke_health` (0165) whether
 Luke's newest answers are failing because the model was not there (`payload.failed`), and
 says so in red, with how many turns and apps since when and what to do, until an answer

@@ -10,6 +10,7 @@
 import {
   Coins,
   Compass,
+  Eye,
   Inbox,
   MessagesSquare,
   ScrollText,
@@ -47,6 +48,12 @@ export const CONSOLE_NAV: ConsoleGroup[] = [
         about: "Any conversation, with every turn's trace",
       },
       { to: "spend", label: "Spend", icon: Coins, about: "What Luke's model calls cost, by day, model and account" },
+      {
+        to: "trouble",
+        label: "Needs a look",
+        icon: Eye,
+        about: "Where something went wrong: failed turns, unhappy owners, churn, failing rules, workarounds",
+      },
     ],
   },
   {

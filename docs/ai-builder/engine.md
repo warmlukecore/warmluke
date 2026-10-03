@@ -52,7 +52,10 @@ store column, which the app keeps in its own order), or leaves out a field of th
 Leaving one out loses no values (they stay on the rows, and a version back brings it back),
 so it is refused only while something still reads it: a filter, counter, button, scan bar,
 choice of dates, sort, search, view, written screen, worked-out column or rule, counted over
-the whole design with what it removes and adds (`fieldUsers`, `check-remove-field`).
+the whole design with what it removes and adds (`fieldUsers`, `check-remove-field`). A
+`MODULE_DELETE` is refused the same way while a rule of another section still reads it (its
+`reads`, or its code naming the section, `readsSection`); the app's own delete names those
+rules before the owner confirms.
 
 The plan carries all data required for that change. In a multi-plan blueprint, temporary
 references such as `#orders` connect later plans to sections created earlier in the same

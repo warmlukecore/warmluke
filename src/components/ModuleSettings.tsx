@@ -23,6 +23,8 @@ interface Impact {
   records: number;
   children: Array<{ id: string; nav_label: string }>;
   blockedBy: string[];
+  /** Rules of other sections that read this one: they keep running, reading nothing. */
+  readBy?: string[];
 }
 
 export default function ModuleSettings({
@@ -221,6 +223,13 @@ export default function ModuleSettings({
                 <div className={note.attention}>
                   These rules write to this section and would stop working: {impact!.blockedBy.join(", ")}. Turn them
                   off in Rules first.
+                </div>
+              )}
+              {!!impact?.readBy?.length && (
+                <div className={note.attention}>
+                  {impact.readBy.length === 1 ? "This rule reads" : "These rules read"} this section:{" "}
+                  {impact.readBy.join(", ")}. After it is gone they keep running with nothing to read, so change them in
+                  Rules or ask Luke.
                 </div>
               )}
               <input

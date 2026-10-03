@@ -150,5 +150,62 @@ check(
 );
 check("while the rest are shown", kept.filter((c) => c.hidden).length === 1);
 
+console.log("\na section deleted while a rule of another reads it");
+{
+  const FLAGS = "88888888-1111-4888-8888-888888888888";
+  const mods = [
+    { id: SHIP, project_id: "p", name: "shipments", nav_label: "Shipments", icon: "table", source_table: null },
+    {
+      id: FLAGS,
+      project_id: "p",
+      name: "flagged-orders",
+      nav_label: "Flagged Orders",
+      icon: "table",
+      source_table: null,
+    },
+  ];
+  const flagRule = {
+    module_id: FLAGS,
+    name: "Flag repeat orders",
+    definition: {
+      trigger: { type: "store_row_added" },
+      actions: [{ type: "run_code", reads: [SHIP], code: "sections['#shipments']" }],
+    },
+  };
+  const del = (extra = []) =>
+    parseReply(
+      JSON.stringify({
+        type: "plans",
+        message: "Gone.",
+        plans: [
+          ...extra,
+          {
+            changeType: "MODULE_DELETE",
+            targetModuleId: SHIP,
+            deleteConfirmName: "shipments",
+            explanation: "Not needed any more.",
+          },
+        ],
+      }),
+      mods,
+      null,
+      null,
+      undefined,
+      (mid) => [flagRule].filter((r) => r.module_id === mid)
+    );
+  check("is refused, naming the rule that reads it", errorsOf(del()).includes('"Flag repeat orders" reads #shipments'));
+  check(
+    "unless the same design removes that rule",
+    del([
+      {
+        changeType: "AUTOMATION_REMOVE",
+        targetModuleId: FLAGS,
+        automationRemoveName: "Flag repeat orders",
+        explanation: "It read the shipments.",
+      },
+    ]).ok
+  );
+}
+
 console.log(fails.length ? `\n${fails.length} FAILED` : "\na column comes off, and nothing that reads it breaks");
 process.exit(fails.length ? 1 : 0);

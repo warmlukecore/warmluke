@@ -488,7 +488,8 @@ function FollowUps({ next, onPick }: { next: NextStep[]; onPick: (prompt: string
         <button
           key={n.prompt}
           onClick={() => onPick(n.prompt)}
-          title={n.prompt}
+          // No hover text: the words on the line are the offer, and the
+          // message behind it read as a stray note (3 Oct).
           aria-label={`Ask: ${n.prompt}`}
           className="group flex w-full items-center gap-2 rounded-control border border-line bg-surface px-2.5 py-1.5 text-left text-[12px] text-fg-muted transition-colors hover:border-line-strong hover:text-fg"
         >
