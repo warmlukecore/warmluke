@@ -10,7 +10,7 @@
 // src/components/ProjectSettings.tsx.
 
 import type { LucideIcon } from "lucide-react";
-import { Bell, MessageSquareWarning, PackageMinus, TrendingUp, Truck } from "lucide-react";
+import { Bell, BellRing, MessageSquareWarning, PackageMinus, TrendingUp, Truck } from "lucide-react";
 
 export type Alert = {
   id: string;
@@ -21,6 +21,8 @@ export type Alert = {
   opened_at: string;
   changed_at: string;
   conversation_id: string | null;
+  /** The rule that raised it (0164), for one of their own. */
+  rule_id?: string | null;
   read: boolean;
 };
 
@@ -33,12 +35,15 @@ export type AlertSetting = {
   settings: Record<string, number>;
   /** Every import it needs is done. */
   ready: boolean;
+  /** The project has said whether it wants this one (0164): the picker is not asked again. */
+  chosen?: boolean;
 };
 
 type Facts = {
   str: (k: string) => string;
   num: (k: string) => number;
   list: (k: string) => string[];
+  raw: (k: string) => unknown;
 };
 
 type Words = {
@@ -59,6 +64,7 @@ const factsOf = (raw: Record<string, unknown>): Facts => ({
   str: (k) => (typeof raw[k] === "string" ? (raw[k] as string).trim() : ""),
   num: (k) => Number(raw[k]) || 0,
   list: (k) => (Array.isArray(raw[k]) ? (raw[k] as unknown[]).filter((x): x is string => typeof x === "string") : []),
+  raw: (k) => raw[k],
 });
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -150,15 +156,44 @@ export const ALERT_WORDS: Record<string, Words> = {
   },
 };
 
+/**
+ * One of their own (0164): a rule Luke wrote from their words. Its
+ * title is theirs; the fields it shows say which row.
+ */
+const RULE: Words = {
+  icon: BellRing,
+  name: "Your alerts",
+  about: "What you asked Luke to tell you about.",
+  title: (f) => f.str("title") || "Your alert",
+  detail: (f) => ruleValues(f).join(" · "),
+  ask: (f) => {
+    const which = ruleValues(f).join(", ");
+    return `My alert “${f.str("title") || "Your alert"}” went off${which ? ` (${which})` : ""}. What should I do about it?`;
+  },
+  settings: [],
+};
+const ruleValues = (f: Facts) =>
+  ((f.raw("values") as Array<{ value?: unknown }> | undefined) ?? [])
+    .map((v) => (typeof v?.value === "string" ? v.value.trim() : ""))
+    .filter(Boolean);
+
+/** What Luke will watch once the data for it is read; shown, never ticked. */
+export const ALERTS_COMING: Array<{ name: string; about: string; icon: LucideIcon }> = [
+  { name: "Conversion changes", about: "Once Warmluke reads your store's visits.", icon: TrendingUp },
+  { name: "Ads spending without sales", about: "Once your ads account is connected.", icon: Bell },
+];
+
 export const wordsOf = (kind: string): Words =>
-  ALERT_WORDS[kind] ?? {
-    icon: Bell,
-    name: titled(kind),
-    about: "",
-    title: () => titled(kind),
-    detail: () => "",
-    settings: [],
-  };
+  kind === "rule"
+    ? RULE
+    : (ALERT_WORDS[kind] ?? {
+        icon: Bell,
+        name: titled(kind),
+        about: "",
+        title: () => titled(kind),
+        detail: () => "",
+        settings: [],
+      });
 
 /** What one alert says: its mark, its two lines, and its question for Luke if it has one. */
 export function describeAlert(a: Pick<Alert, "kind" | "facts">) {

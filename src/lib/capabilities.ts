@@ -196,7 +196,7 @@ export const TRIGGERS = {
   record_updated: "a row is changed",
   schedule: `nobody touched anything — re-checks every row on its own. This is the only way to catch things that go quiet: an unpaid invoice, a job nobody moved, a follow-up never made. Needs "every": hourly, daily, weekly or monthly, and its "when" picks which rows to act on. ${SCHEDULE_TIMING}`,
   store_row_added:
-    "a new row came in from the store — a new order, a new customer. Only on a section over the store, and only for a rule's own code (run_code)",
+    "a new row came in from the store — a new order, a new customer — the moment it arrives. Only on a section over the store, for a rule's own code (run_code) or an alert",
   before_save:
     "a row is ABOUT to be saved, and its rule may stop it: a \"when\" that is true refuses the save with the rule's own sentence (action refuse), and nothing is written. The database judges it in the same moment as the save, one save at a time for that rule, so two people saving at once can never both get the last unit, the same slot or the same claim; it holds for every way a row is written — the app, a screen, a rule, their own AI. Its only action is refuse. It does not stop Shopify, a till or another app changing the store's own figures",
 } as const;
@@ -214,6 +214,8 @@ export const AUTOMATION_ACTIONS = {
     "run a function you write, for logic the expressions cannot say — a slab rate, a table to look up, a sum across sections, a calendar. It is handed the row and the rows it reads, and returns the fields to set (see CODE RULE)",
   refuse:
     'stop the save and show { "message": "…" }, one sentence in the owner\'s language saying what to do instead ("Only what is left can be held — release a hold first"). Only on a before_save rule, and alone',
+  alert:
+    'tell the owner, in the app\'s bell and on the Overview: { "title": "Big COD order", "show": ["order_number", "total"], "severity": "attention" or "critical" }. The title is a few words in the owner\'s language; "show" is up to four fields of the row, as they read on it. One alert a row: a row added or changed tells once and stays until put away; store_row_added tells the moment the store brings the row in; a schedule keeps it open while the row matches and closes it once it does not. In the app only — never email, SMS or WhatsApp',
 } as const;
 
 export type AutomationActionType = keyof typeof AUTOMATION_ACTIONS;

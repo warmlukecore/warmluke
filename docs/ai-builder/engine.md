@@ -94,6 +94,17 @@ writes the part itself instead of refusing or squeezing the owner's flow into a 
   its list. The database queues those runs and a worker takes them on a ticket for one
   project (see [Code with nobody watching](#code-with-nobody-watching)). Measured locally: about 2 s to make the machine, 2 s to hand it the files,
   1.3 s to run, 7.5 s from a write to its result on screen.
+- **A rule that tells** (rule action `alert`, 0164): "tell me when a COD order over ₹5,000
+  comes in" is a rule whose action is `{ type: "alert", title, show, severity }`. It raises
+  an alert in the bell and on the Overview, beside what Luke watches on its own (0163): the
+  title in the owner's words, up to four of the row's fields. On `record_created` or
+  `record_updated` it tells once a row and stays until put away; on `store_row_added` the
+  database judges the new store row the moment it is written (never during the first
+  import); on a `schedule` it stays open while the row matches and closes once it does not
+  (`raised_at`). At most 50 open a rule. Its alerts are seen by whoever sees its section
+  (`abo_can_see_alert`), hidden while the rule is off, and deleted with it. Merchants are
+  asked once what to watch (the Overview's picker); "Anything else?" is sent to Luke as
+  "Alert me: …" in their own words.
 - **A scan that opens a group first** (`scanMode.first`, `alsoMatch`, `done`): the order's
   label, then the items in it, in one input, and on to the next order by itself.
 - **A rule that keeps the owner's field on a store row** (0133): "when every line is
@@ -221,7 +232,7 @@ scan mode may set only the merchant's fields. A rule on it reads the store's fie
 merchant's — 0130 lays the store's row under the record when a rule is judged, the store's
 value winning a shared name — and writes only the merchant's. It runs on `record_updated`
 (from the first field set on a row), on a `schedule` over every row of the store's list, or,
-for a code rule only, on `store_row_added`
+for a code rule or an alert only, on `store_row_added`
 (`run_scheduled_automations` walks the list, and a row the rule acts on gets its record
 then); `record_created` is refused, since no row is added here. A change in Shopify is not
 seen the moment it happens; a schedule rule sees it on its next run. No rule elsewhere may

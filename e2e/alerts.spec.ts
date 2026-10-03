@@ -20,6 +20,25 @@ test("an order not sent is noticed, told in the bell and the overview, put away,
   await page.goto(`/app/${shop.projectId}`);
   const wide = (page.viewportSize()?.width ?? 0) >= 1024;
 
+  // Asked once what to watch: all of it ticked, what is coming shown and not offered.
+  const picker = page.getByRole("region", { name: "What should Luke keep an eye on?" });
+  await expect(picker.getByRole("checkbox", { name: /Running low/ })).toHaveAttribute("aria-checked", "true");
+  await expect(picker.getByRole("checkbox", { name: /Conversion changes/ })).toBeDisabled();
+  await picker.getByRole("checkbox", { name: /Returns rising/ }).click();
+  await picker.getByRole("button", { name: "Watch these" }).click();
+  await expect(picker).toHaveCount(0);
+  const { data: chosen } = await shop.admin
+    .from("alert_settings")
+    .select("kind, enabled")
+    .eq("project_id", shop.projectId)
+    .order("kind");
+  expect(chosen?.map((c) => `${c.kind}:${c.enabled}`)).toEqual([
+    "dispatch_late:true",
+    "low_stock:true",
+    "return_reason:true",
+    "returns_spike:false",
+  ]);
+
   const card = page.locator("section").filter({ hasText: "What Luke noticed" });
   await expect(card.getByText("1 order not sent after 2 days")).toBeVisible({ timeout: 30_000 });
   await expect(card.getByText(/#1008/)).toBeVisible();
@@ -41,6 +60,8 @@ test("an order not sent is noticed, told in the bell and the overview, put away,
   await expect(page.getByText("Nothing needs you right now.")).toBeVisible();
   await page.reload();
   await expect(page.getByText("Nothing needs you right now.")).toBeVisible({ timeout: 30_000 });
+  // Answered, it is not asked again.
+  await expect(picker).toHaveCount(0);
 
   // What is watched, in settings: switched off, kept.
   if (!wide) await page.getByRole("button", { name: "Open sections" }).click();
@@ -58,4 +79,26 @@ test("an order not sent is noticed, told in the bell and the overview, put away,
     .eq("kind", "dispatch_late")
     .single();
   expect(kept?.enabled).toBe(false);
+});
+
+test("anything else to watch goes to Luke in the merchant's own words", async ({ signedIn: page, shop }) => {
+  // Answered here: what is asked is the point, and no model need hear it.
+  let asked: Record<string, unknown> | null = null;
+  await page.route("**/api/chat", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    asked = route.request().postDataJSON() as Record<string, unknown>;
+    return route.fulfill({ status: 402, json: { error: "No turns left in this test." } });
+  });
+  await page.goto(`/app/${shop.projectId}`);
+  const picker = page.getByRole("region", { name: "What should Luke keep an eye on?" });
+  await picker.getByRole("textbox", { name: "Anything else?" }).fill("jab COD order 5000 se upar aaye");
+  await picker.getByRole("button", { name: "Ask Luke to watch for it" }).click();
+  await expect.poll(() => asked?.message).toBe("Alert me: jab COD order 5000 se upar aaye");
+  // What was ticked is kept as well, so the question is not asked again.
+  await expect(picker).toHaveCount(0);
+  const { count } = await shop.admin
+    .from("alert_settings")
+    .select("kind", { count: "exact", head: true })
+    .eq("project_id", shop.projectId);
+  expect(count).toBe(4);
 });

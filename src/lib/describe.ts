@@ -181,6 +181,8 @@ export function describeAutomation(
   } else if (t?.type === "before_save") {
     // A rule that says no (0143): what it refuses, before anything is written.
     out.push(cond ? `Before a row is saved, refuse it if ${cond}` : "Before a row is saved");
+  } else if (t?.type === "store_row_added") {
+    out.push(cond ? `When the store brings in a row where ${cond}` : "When the store brings in a row");
   } else if (t?.type === "schedule") {
     const every = t.every ?? "daily";
     const when = scheduleWords(t) ?? `${every[0].toUpperCase()}${every.slice(1)}`;
@@ -208,6 +210,9 @@ export function describeAutomation(
       out.push(`→ add a row to ${nameFor(a.module_id)}`);
     } else if (a.type === "refuse") {
       out.push(`→ refuse, saying “${a.message}”`);
+    } else if (a.type === "alert") {
+      // Said as the owner will meet it: in the bell, with what it shows.
+      out.push(`→ tell you in the bell: “${a.title}”${a.show?.length ? `, with ${a.show.join(", ")}` : ""}`);
     } else if (a.type === "webhook") {
       out.push("→ call an external service");
     }

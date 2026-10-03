@@ -178,7 +178,11 @@ HOW TO CHOOSE changeType:
     { "type": "set_fields", "target": { "module_id": "<uuid or #slug>", "match": { "field": "sku", "to": { "field": "sku" } } }, "set": { "on_hand": { "op": "-", "args": [ { "target": "on_hand" }, { "field": "qty" } ] } } }
         finds rows in another section whose match.field equals the "to" expression, and updates each one. Use { "target": "x" } to read that row's own current value.
     { "type": "create_record", "module_id": "<uuid or #slug>", "data": { "field_name": <expression> } }
-  There is no action for calling an external service or sending a message — if the owner asks for that, put it in blueprint.limitations and build the rest.
+    { "type": "alert", "title": "Big COD order", "show": ["order_number", "total"], "severity": "attention" }
+        tells the owner in the app's bell and on the Overview, in a few words of theirs, with up to four of the row's fields. "critical" only for what cannot wait.
+  There is no action for calling an external service or sending an email, SMS or WhatsApp — if the owner asks for that, put it in blueprint.limitations and build the rest; to tell them in the app, use alert.
+
+  "TELL ME WHEN …" IS AN ALERT RULE. When the owner wants to be told — tell me, let me know, notify me, alert me, "mujhe batao", "bata dena", "pata chal jaye" — build a rule whose action is alert, on the section the thing lives in: orders are told from a section over the store's orders, and if there is none, make it in the same design. A row the store brings in (a new order, a new customer) is "store_row_added" with a "when" picking which ones; a row of theirs added or changed is record_created or record_updated; something that goes quiet or builds up (not sold in 10 days, a third return, stock below a level) is a schedule, hourly or daily, whose "when" does the counting, and its alert closes by itself once the row stops matching. The title says what happened, in their words; "show" names the fields that say which one. For what the store's data cannot say yet — visits, conversion, ad spend — say so plainly instead of building something that only looks like it.
 
   NEVER STORE A VALUE THAT DEPENDS ON TODAY'S DATE. A rule runs when a row is written, so a field holding "days old" is correct for one day and then rots — the row sits untouched and still says 3 while three months pass, which is exactly the blindness the owner asked you to fix. Put today-dependent maths where it is READ, not where it is stored: a stat's "value" or "where", or a row action's guard, all evaluate fresh every time the page opens. Storing is right only for values derived from OTHER ROWS (a clash flag), because those genuinely change only on a write.
 
@@ -190,7 +194,7 @@ HOW TO CHOOSE changeType:
         "actions": [ { "type": "set_fields", "target": { "self": true }, "set": { "status": { "const": "Overdue" } } } ] } }
   Note where days_since sits. In "when" it is re-evaluated every day and stays true; moved into "set" it freezes the day it ran and the row lies from then on.
 
-  "I ONLY FIND OUT LATER" IS ALWAYS A SCHEDULE RULE. Whenever the owner describes noticing something too late — they forget to follow up, they realise months afterwards, they only spot it when someone complains, or they simply cannot keep track ("yaad nahi rehta", "bhool jata hoon", "pata hi nahi chalta", "baad me pata chalta hai") — a view does not fix that, because a view still has to be looked at. The same holds for any date the owner has to act by: a due date, a pay-by or return-by date, an expiry, the next service. If the design stores one, it also needs the daily rule that marks the rows past it, unless the owner said they need no reminding; a date nobody is told about is a date that gets missed. The answer is a rule on a schedule whose "when" does the date maths and whose action writes a plain status word. Ask yourself, for every problem: does this need to be NOTICED without anyone looking? If yes, it is a schedule rule, and leaving it out means the design does not solve what they told you.
+  "I ONLY FIND OUT LATER" IS ALWAYS A SCHEDULE RULE. Whenever the owner describes noticing something too late — they forget to follow up, they realise months afterwards, they only spot it when someone complains, or they simply cannot keep track ("yaad nahi rehta", "bhool jata hoon", "pata hi nahi chalta", "baad me pata chalta hai") — a view does not fix that, because a view still has to be looked at. The same holds for any date the owner has to act by: a due date, a pay-by or return-by date, an expiry, the next service. If the design stores one, it also needs the daily rule that marks the rows past it, unless the owner said they need no reminding; a date nobody is told about is a date that gets missed. The answer is a rule on a schedule whose "when" does the date maths and whose action writes a plain status word — and, when they want to be told rather than see it marked, raises an alert. Ask yourself, for every problem: does this need to be NOTICED without anyone looking? If yes, it is a schedule rule, and leaving it out means the design does not solve what they told you.
 
   A RULE ONLY TOUCHES THE ROWS ITS ACTIONS NAME. set_fields on self writes to the row being saved and nothing else, so a clash rule flags the row just entered — NOT the earlier booking it collides with. Never write "marks both", "flags both bookings" or similar in summary or workflow: it does not happen, and the owner will trust it.
 
@@ -259,7 +263,7 @@ export const WORKED_EXAMPLE = {
 // the design road cannot drift apart on them.
 /** How a rule's own code is written, for Luke and for an assistant writing its own design (design_format). */
 export const CODE_RULE_GUIDE = `CODE RULE — when a rule needs logic the expressions cannot say (a slab rate by weight, a table to look up, a total across sections, working days), write it: an automation whose action is { "type": "run_code", "reads": ["#courier-rates"], "code": "export default function run({ row, previous, sections, today, now }) { … return { set: [{ id: row.id, fields: { courier_charge: 65 } }] }; }" }.
-- When it runs: record_created or record_updated, after the owner's own write in the app; "schedule" with "every" (hourly, daily, weekly, monthly) and "at", "on" or "date" as for any schedule, with nobody watching; or "store_row_added" on a section over the store, when the store brings a row in (a new order, a new customer). A "when" filters the rows as usual. A scheduled or store_row_added rule carries run_code actions only. It runs sealed off: no network, nothing outside what it is handed.
+- When it runs: record_created or record_updated, after the owner's own write in the app; "schedule" with "every" (hourly, daily, weekly, monthly) and "at", "on" or "date" as for any schedule, with nobody watching; or "store_row_added" on a section over the store, when the store brings a row in (a new order, a new customer). A "when" filters the rows as usual. A scheduled or store_row_added rule with code carries run_code actions only. It runs sealed off: no network, nothing outside what it is handed.
 - It is handed row ({ id, ...fields } — store fields too on a section over the store; on a schedule there is no row, and rows holds the section's rows instead), previous (the fields before, on an update), sections (the rows of each section in "reads", by the name you listed, each { id, ...fields }), and the store's own clock: today ("YYYY-MM-DD") and now ("YYYY-MM-DDTHH:MM"), as they read where the store is.
 - It returns { set: [{ id, fields, section? }], add: [{ fields }] }: set writes fields on rows it was handed (section is the "reads" name, left out for this section); add makes rows in this section, when it is the owner's own. Only the owner's fields are written, never the store's. Keep it short and plain JavaScript.
 - A scheduled rule's code decides when it runs: it may also return next, "YYYY-MM-DDTHH:MM" on the same clock, and runs then. Every "when" the owner means is this code: a time of day, only some days, not on a holiday, the first Monday, twice in shop hours. Give such a rule a plain "every" (the fallback, used when it returns no next) and none of "at", "on" or "date". It first runs within ten minutes of being made, doing its work if now is a moment it should and returning its next either way; say when it will next run. The clock looks every ten minutes, and a next under five minutes away waits five.
@@ -1619,9 +1623,14 @@ function validateAutomation(
         'A "store_row_added" rule sits on a section over the store: it wakes when the store brings a row in.'
       );
     }
+    // The database tells (0164); the app runs the code: one or the other.
     const acts = (def as AutomationDefinition).actions;
-    if (Array.isArray(acts) && acts.some((x) => !isPlainObject(x) || x.type !== "run_code")) {
-      err(errors, 'A "store_row_added" rule runs its own code: its actions are run_code only.');
+    const all = (t: string) => Array.isArray(acts) && acts.every((x) => isPlainObject(x) && x.type === t);
+    if (Array.isArray(acts) && !all("run_code") && !all("alert")) {
+      err(
+        errors,
+        'A "store_row_added" rule runs its own code or tells the owner: its actions are all run_code, or all alert.'
+      );
     }
   }
   // Nor has it a runner for a scheduled rule's code: such a rule is the
@@ -1793,6 +1802,30 @@ function validateAutomation(
       continue;
     }
 
+    if (a.type === "alert") {
+      if (typeof a.title !== "string" || !a.title.trim() || a.title.length > 120) {
+        err(
+          errors,
+          'An alert says what happened in a few words of the owner\'s language: "title", up to 120 characters.'
+        );
+      }
+      const show = (a as { show?: unknown }).show;
+      if (
+        show !== undefined &&
+        (!Array.isArray(show) || show.length > 4 || !show.every((f) => typeof f === "string" && ownHas(f)))
+      ) {
+        err(
+          errors,
+          `An alert's "show" lists up to four fields of this section${storeFields ? " or of the store's row" : ""}, by name.`
+        );
+      }
+      const severity = (a as { severity?: unknown }).severity;
+      if (severity !== undefined && severity !== "attention" && severity !== "critical") {
+        err(errors, 'An alert\'s "severity" is "attention" or "critical".');
+      }
+      continue;
+    }
+
     if (a.type === "refuse") {
       if (trigger.type !== "before_save") {
         err(errors, 'Only a before_save rule can refuse a save: { "trigger": { "type": "before_save", "when": … } }.');
@@ -1808,7 +1841,7 @@ function validateAutomation(
 
     err(
       errors,
-      `Action type "${String((a as { type?: unknown }).type)}" must be set_fields, create_record, run_code or refuse.`
+      `Action type "${String((a as { type?: unknown }).type)}" must be set_fields, create_record, run_code, alert or refuse.`
     );
   }
 }

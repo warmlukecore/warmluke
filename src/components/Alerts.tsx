@@ -10,11 +10,11 @@
 // (what is watched, and from when).
 
 import { useCallback, useEffect, useState } from "react";
-import { BellOff, X } from "lucide-react";
-import { describeAlert, NEEDS_NAMES, wordsOf, type Alert, type AlertSetting } from "@/lib/alerts";
+import { ArrowUp, BellOff, Check, X, type LucideIcon } from "lucide-react";
+import { ALERTS_COMING, describeAlert, NEEDS_NAMES, wordsOf, type Alert, type AlertSetting } from "@/lib/alerts";
 import { supabase } from "@/lib/supabase-client";
 import { ago } from "@/lib/when";
-import { button, card, fieldOf, hint, iconButton, note } from "@/components/ui/controls";
+import { button, card, field, fieldOf, hint, iconButton, label, note, sendButton } from "@/components/ui/controls";
 import { LukeMark } from "@/components/ui/LukeMark";
 import { Group } from "@/components/ui/Group";
 import { Switch } from "@/components/ui/Switch";
@@ -90,30 +90,234 @@ export function AlertList({
   );
 }
 
-/** The Overview's card: what needs them, or a line saying nothing does. */
-export function AlertsPanel({ alerts, ...rest }: Handlers & { alerts: Alert[] | null }) {
-  if (alerts === null) return null;
+/**
+ * The Overview's card: what needs them, or a line saying nothing does.
+ * Given `choose`, a builder is first asked what to watch (AlertPicker).
+ */
+export function AlertsPanel({
+  alerts,
+  choose,
+  ...rest
+}: Handlers & { alerts: Alert[] | null; choose?: { projectId: string; onAskLuke: (text: string) => void } }) {
+  const [picking, setPicking] = useState(false);
+  const picker = choose && (
+    <AlertPicker projectId={choose.projectId} onAskLuke={choose.onAskLuke} busy={rest.busy} onOpen={setPicking} />
+  );
+  if (alerts === null) return picker ?? null;
   if (alerts.length === 0) {
+    // The picker stays mounted to say whether it is open; while it is, it says enough.
     return (
-      <div className={`${card} flex items-center gap-3 px-4 py-3`}>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-canvas text-fg-faint">
-          <BellOff aria-hidden size={15} strokeWidth={1.75} />
-        </span>
-        <p className="text-[13px] text-fg-muted">
-          <span className="font-medium text-fg">Nothing needs you right now.</span> Luke keeps looking at your stock,
-          shipping and returns.
-        </p>
-      </div>
+      <>
+        {picker}
+        {!picking && (
+          <div className={`${card} flex items-center gap-3 px-4 py-3`}>
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-canvas text-fg-faint">
+              <BellOff aria-hidden size={15} strokeWidth={1.75} />
+            </span>
+            <p className="text-[13px] text-fg-muted">
+              <span className="font-medium text-fg">Nothing needs you right now.</span> Luke keeps looking at your
+              stock, shipping and returns.
+            </p>
+          </div>
+        )}
+      </>
     );
   }
   return (
-    <Panel
-      title="What Luke noticed"
-      icon={<LukeMark size="xs" />}
-      aside={alerts.length > 1 ? `${alerts.length}` : undefined}
+    <>
+      {picker}
+      <Panel
+        title="What Luke noticed"
+        icon={<LukeMark size="xs" />}
+        aside={alerts.length > 1 ? `${alerts.length}` : undefined}
+      >
+        <AlertList alerts={alerts} {...rest} />
+      </Panel>
+    </>
+  );
+}
+
+/**
+ * What should Luke keep an eye on: asked once, of whoever builds here,
+ * while the store comes in or the first time they open its Overview.
+ * Everything starts ticked; what is not here yet is shown as coming, not
+ * offered; anything else is said in their words and Luke makes it a rule.
+ */
+function AlertPicker({
+  projectId,
+  onAskLuke,
+  busy,
+  onOpen,
+}: {
+  projectId: string;
+  onAskLuke: (text: string) => void;
+  busy?: boolean;
+  onOpen: (open: boolean) => void;
+}) {
+  const [kinds, setKinds] = useState<AlertSetting[] | null>(null);
+  const [on, setOn] = useState<Record<string, boolean>>({});
+  const [own, setOwn] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.rpc("abo_alert_settings", { p_project: projectId }).then(({ data }) => {
+      const list = (data as AlertSetting[] | null) ?? [];
+      setKinds(list);
+      setOn(Object.fromEntries(list.map((k) => [k.kind, k.enabled])));
+    });
+  }, [projectId]);
+  const open = !!kinds && kinds.length > 0 && !kinds.some((k) => k.chosen);
+  useEffect(() => onOpen(open), [open, onOpen]);
+  if (!open) return null;
+
+  // Each kept as chosen, so the question is not asked again; then what
+  // they wrote goes to Luke.
+  const keep = async (ask?: string) => {
+    setSaving(true);
+    setError(null);
+    let kept: AlertSetting[] | null = null;
+    for (const k of kinds) {
+      const { data, error: e } = await supabase.rpc("abo_set_alert_setting", {
+        p_project: projectId,
+        p_kind: k.kind,
+        p_enabled: on[k.kind] ?? true,
+        p_settings: k.settings,
+      });
+      if (e) {
+        setSaving(false);
+        setError(e.message);
+        return;
+      }
+      kept = data as AlertSetting[];
+    }
+    setSaving(false);
+    if (ask) onAskLuke(ask);
+    setKinds(kept);
+  };
+
+  return (
+    <section className={`${card} overflow-hidden`} aria-labelledby="alert-picker-title">
+      <header className="flex items-start gap-3 border-b border-line px-4 py-3">
+        <LukeMark size="sm" />
+        <div className="min-w-0">
+          <h3 id="alert-picker-title" className="text-[13px] font-semibold text-fg">
+            What should Luke keep an eye on?
+          </h3>
+          <p className="mt-0.5 text-xs leading-relaxed text-fg-muted">
+            Luke looks at your store all day and tells you here. You can change this any time in Settings → Alerts.
+          </p>
+        </div>
+      </header>
+      <div className="grid gap-2 p-4 sm:grid-cols-2">
+        {kinds.map((k) => {
+          const w = wordsOf(k.kind);
+          return (
+            <Choice
+              key={k.kind}
+              icon={w.icon}
+              name={w.name}
+              about={w.about}
+              checked={on[k.kind] ?? true}
+              onChange={(v) => setOn((p) => ({ ...p, [k.kind]: v }))}
+            />
+          );
+        })}
+        {ALERTS_COMING.map((c) => (
+          <Choice key={c.name} icon={c.icon} name={c.name} about={c.about} checked={false} soon />
+        ))}
+      </div>
+      <form
+        className="border-t border-line px-4 py-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (own.trim()) void keep(`Alert me: ${own.trim()}`);
+        }}
+      >
+        <label htmlFor="alert-own" className={label}>
+          Anything else?
+        </label>
+        <div className="flex items-center gap-2">
+          <input
+            id="alert-own"
+            value={own}
+            onChange={(e) => setOwn(e.target.value)}
+            maxLength={300}
+            placeholder="Tell me when a COD order over ₹5,000 comes in"
+            className={field}
+          />
+          <button
+            type="submit"
+            disabled={!own.trim() || saving || busy}
+            aria-label="Ask Luke to watch for it"
+            className={sendButton}
+          >
+            <ArrowUp aria-hidden size={16} strokeWidth={2} />
+          </button>
+        </div>
+        <p className={hint}>In your own words. Luke turns it into an alert and shows you before it starts.</p>
+      </form>
+      <footer className="flex items-center justify-end gap-3 border-t border-line px-4 py-3">
+        {error && <span className="mr-auto text-xs text-tone-critical-fg">{error}</span>}
+        <button onClick={() => void keep()} disabled={saving} className={button("primary", "sm")}>
+          {saving ? "Saving…" : "Watch these"}
+        </button>
+      </footer>
+    </section>
+  );
+}
+
+/** One thing to watch, ticked or not; what is coming is shown, and cannot be ticked. */
+function Choice({
+  icon: Glyph,
+  name,
+  about,
+  checked,
+  onChange,
+  soon,
+}: {
+  icon: LucideIcon;
+  name: string;
+  about: string;
+  checked: boolean;
+  onChange?: (v: boolean) => void;
+  soon?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      disabled={soon}
+      onClick={() => onChange?.(!checked)}
+      className={`flex items-start gap-3 rounded-control border px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed ${
+        checked ? "border-line-strong bg-surface-subdued" : "border-line hover:bg-surface-hover"
+      }`}
     >
-      <AlertList alerts={alerts} {...rest} />
-    </Panel>
+      <span
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-canvas ${soon ? "text-fg-faint" : "text-fg-muted"}`}
+      >
+        <Glyph aria-hidden size={14} strokeWidth={1.75} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className={`block text-[13px] font-medium ${soon ? "text-fg-muted" : "text-fg"}`}>{name}</span>
+        <span className="block text-[11px] leading-relaxed text-fg-muted">{about}</span>
+      </span>
+      {soon ? (
+        <span className="shrink-0 rounded-full bg-surface-hover px-1.5 py-px text-[10px] font-medium text-fg-muted">
+          Coming soon
+        </span>
+      ) : (
+        <span
+          aria-hidden
+          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border ${
+            checked ? "border-primary bg-primary text-on-primary" : "border-line-strong bg-surface"
+          }`}
+        >
+          {checked && <Check size={12} strokeWidth={2.5} />}
+        </span>
+      )}
+    </button>
   );
 }
 
@@ -216,8 +420,22 @@ export function AlertSettings({ projectId }: { projectId: string }) {
           );
         })}
       </Group>
+      <Group title="Coming soon" description="Luke starts on these once the data for them is read.">
+        {ALERTS_COMING.map((c) => (
+          <div key={c.name} className="flex items-start gap-3">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-canvas text-fg-faint">
+              <c.icon aria-hidden size={15} strokeWidth={1.75} />
+            </span>
+            <div className="min-w-0">
+              <div className="text-[13px] font-medium text-fg-muted">{c.name}</div>
+              <p className="mt-0.5 text-xs leading-relaxed text-fg-muted">{c.about}</p>
+            </div>
+          </div>
+        ))}
+      </Group>
       <p className={hint}>
-        Conversion and marketing alerts join these once Warmluke reads your store&rsquo;s visits and your ads.
+        Want to be told about something else? Ask Luke in your own words (&ldquo;tell me when a COD order over ₹5,000
+        comes in&rdquo;). Each one is a rule, under Rules, where it can be turned off.
       </p>
     </div>
   );

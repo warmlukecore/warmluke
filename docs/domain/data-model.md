@@ -173,6 +173,10 @@ model is called to find one.
   no longer finds it, and opens fresh (with no thread) if it comes back. `conversation_id` is
   Luke's thread about it. Readable where the store is (`abo_can_open_store`); written only
   by the definer functions.
+- Kind `rule` (0164) has no check: a rule's `alert` action raises it, with `automation_id`
+  (deleted with the rule), `raised_at` (a schedule closes what it did not raise again) and
+  no `store_id` needed; unique per `(automation_id, subject)`. Seen by whoever sees the
+  rule's section (`abo_can_see_alert`).
 - `alert_reads`: each person's read and put-away, against `changed_at`.
 - `alert_dirty`: stores whose rows changed, looked at again within a minute by
   `abo_alerts_run_dirty`; every store is looked at every fifteen minutes (`abo_alerts_run`).

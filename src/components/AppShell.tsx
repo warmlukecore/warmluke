@@ -1553,13 +1553,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     setAlerts((data as Alert[] | null) ?? []);
     setAlertsAt(Date.now());
   }, [projectId]);
+  // Not only with a store: a rule of their own tells about their own sections too (0164).
   useEffect(() => {
-    if (!store?.id) return;
     void loadAlerts();
     return watchRows(`alerts:${projectId}`, [
       { table: "alerts", filter: `project_id=eq.${projectId}`, onChange: () => void loadAlerts() },
     ]);
-  }, [store?.id, projectId, loadAlerts]);
+  }, [projectId, loadAlerts]);
   /** Seen takes them off the bell's count; put away takes them off the list until they get worse. */
   const seeAlerts = useCallback((ids: string[], putAway = false) => {
     if (ids.length === 0) return;
@@ -2634,6 +2634,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     startNewThread();
     void runPrompt(ask, { alertId: a.id });
   };
+  // "Anything else?" from the picker: a new thread, so the rule Luke designs has its own.
+  const askLukeToWatch = (text: string) => {
+    openLuke();
+    if (chatBusy || building) return;
+    startNewThread();
+    void runPrompt(text);
+  };
   const hideLuke = () => {
     setChatOpen(false);
     shutLuke(true);
@@ -3285,6 +3292,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                         onAsk={canBuild ? askAboutAlert : undefined}
                         onDismiss={(a) => seeAlerts([a.id], true)}
                         busy={chatBusy || building}
+                        choose={canBuild ? { projectId, onAskLuke: askLukeToWatch } : undefined}
                       />
                     }
                   />

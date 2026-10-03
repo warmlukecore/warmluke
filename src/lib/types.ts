@@ -89,6 +89,8 @@ export type AutomationAction =
   | { type: "run_code"; code: string; reads?: string[] }
   /** Stop the save, in the owner's words: only on a before_save rule (0143). Nothing is written. */
   | { type: "refuse"; message: string }
+  /** Tell the owner, in the bell and on the Overview (0164): a title, and up to four of the row's fields. */
+  | { type: "alert"; title: string; show?: string[]; severity?: "attention" | "critical" }
   | { type: "webhook"; url: string };
 
 export interface AutomationDefinition {
