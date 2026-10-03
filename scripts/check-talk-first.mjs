@@ -71,6 +71,16 @@ const DESIGN = JSON.stringify({
   },
 });
 
+// The same design drawn as plain plans: what a model often sends once told to build what was agreed.
+const AS_PLANS = JSON.stringify({
+  type: "plans",
+  title: "Returns",
+  message: "A returns list with a tick for RTO.",
+  plans: JSON.parse(DESIGN).blueprint.plans,
+  next: [],
+});
+let designAs = "blueprint";
+
 // The stand-in answers each job by what its instructions say it is.
 let calls = [];
 let sent = [];
@@ -90,7 +100,15 @@ globalThis.fetch = async (input, init) => {
   calls.push(job);
   sent.push({ job, text: JSON.stringify(body.messages ?? []) });
   const text =
-    job === "plan" ? PLAN : job === "critic" ? '{"unmet": [], "redo": null}' : job === "gap" ? '{"unmet": []}' : DESIGN;
+    job === "plan"
+      ? PLAN
+      : job === "critic"
+        ? '{"unmet": [], "redo": null}'
+        : job === "gap"
+          ? '{"unmet": []}'
+          : designAs === "plans"
+            ? AS_PLANS
+            : DESIGN;
   return new Response(
     JSON.stringify({
       id: "msg_stand_in",
@@ -150,6 +168,16 @@ try {
     !!sent.find((s) => s.job === "design")?.text.includes("WHAT THE OWNER AGREED TO")
   );
   check("and it is marked agreed, so the chat builds it", yes.ok && yes.reply.approved === true);
+  designAs = "plans";
+  const asPlans = await turn("haan bana do", thread);
+  designAs = "blueprint";
+  check(
+    "drawn as plain plans with a new section, it is built, not sent back for a blueprint",
+    asPlans.ok &&
+      asPlans.reply.type === "plans" &&
+      asPlans.reply.approved === true &&
+      calls.filter((c) => c === "design").length === 1
+  );
 
   console.log("\nanything else they say plans again");
   const more = await turn("unmarked means not RTO, and keep a note for each", thread);

@@ -915,10 +915,15 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     }
 
     // Structural gate, enforced here rather than trusted to the prompt.
+    // A yes to the plan said in words is the showing (talk first): on it
+    // the design builds at once. Without this the agreed design was
+    // refused for new sections, sent back for a blueprint, and the turn
+    // ended "could not get this right" after the owner's yes (eval, 3 Oct).
     if (
       parsed.ok &&
       parsed.reply.type === "plans" &&
       !plansAllowed &&
+      !approved &&
       parsed.reply.plans.some((pl) => pl.changeType === "NEW_MODULE")
     ) {
       parsed = {

@@ -21,7 +21,8 @@ export const SCORE_NAMES: Record<ScoreKey, string> = {
   simplest: "Simplest design",
 };
 
-export type Criterion = { text: string; met: boolean; evidence: string };
+/** said: the grader's own yes, before its quote was checked (runs before 4 Oct read it off the evidence's "not counted" note). */
+export type Criterion = { text: string; met: boolean; said?: boolean; evidence: string };
 export type MustNot = { text: string; hit: boolean; evidence: string };
 
 /** What code saw, without a model: the 0175 workaround signs, jargon the owner read, and the order of things. */
@@ -53,6 +54,8 @@ export type CaseResult = {
 
 export type RunSummary = {
   pass_rate: number;
+  /** Of every success criterion in the run, the share the grader said yes to: one measure across runs. */
+  said_rate?: number;
   avg_scores: Scores;
   signs_total: number;
   cost: number;
@@ -85,6 +88,9 @@ export const casePassed = (c: Pick<CaseResult, "criteria" | "must_not">): boolea
 export const signCount = (c: Pick<CaseResult, "signs" | "built">): number =>
   c.signs.workarounds.length + c.signs.jargon.length + (c.built && !c.signs.proposed_first ? 1 : 0);
 
+/** The grader's yes: kept as "said" from 4 Oct, read off the "not counted" note before. */
+export const saidYes = (x: Criterion): boolean => x.said ?? (x.met || x.evidence.startsWith("(not counted:"));
+
 const mean = (ns: number[]) => (ns.length ? ns.reduce((a, b) => a + b, 0) / ns.length : 0);
 const round = (n: number, places: number) => Math.round(n * 10 ** places) / 10 ** places;
 
@@ -92,6 +98,7 @@ const round = (n: number, places: number) => Math.round(n * 10 ** places) / 10 *
 export function summarise(cases: CaseResult[]): RunSummary {
   return {
     pass_rate: round(cases.length ? cases.filter(casePassed).length / cases.length : 0, 3),
+    said_rate: round(mean(cases.flatMap((c) => c.criteria.map((x) => (saidYes(x) ? 1 : 0)))), 3),
     avg_scores: Object.fromEntries(SCORE_KEYS.map((k) => [k, round(mean(cases.map((c) => c.scores[k])), 2)])) as Scores,
     signs_total: cases.reduce((n, c) => n + signCount(c), 0),
     cost: round(

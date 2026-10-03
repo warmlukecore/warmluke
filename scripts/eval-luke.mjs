@@ -372,7 +372,7 @@ export function parseSim(raw) {
 
 export const GRADE_SYSTEM = `You are a strict reviewer grading one conversation between a shop owner and Luke, the assistant that designs their business app, and what is in the app at the end.
 
-You default to "not met". A criterion is met only when the conversation or the app shows it, and every yes needs evidence: an exact quote of a few words, copied character for character from THE APP BEFORE, THE CONVERSATION or WHAT IS IN THE APP NOW. No quote, no yes; a paraphrase is not evidence. A must-not item is hit when the material shows it; quote that too. When you cannot tell, it is not met, and a must-not you cannot rule out is hit.
+You default to "not met". A criterion is met only when the conversation or the app shows it, and every yes needs evidence: an exact quote of a few words, copied character for character from THE APP BEFORE, THE CONVERSATION or WHAT IS IN THE APP NOW, written in double quotes, with no speaker's name and no remark around it. No quote, no yes; a paraphrase is not evidence. A must-not item is hit when the material shows it; quote that too. When you cannot tell, it is not met, and a must-not you cannot rule out is hit.
 
 A perfect score is suspicious. Before giving any 5, look again for what could be simpler or clearer; give 5 only when nothing could.
 
@@ -406,14 +406,28 @@ const norm = (s) =>
     .trim();
 const unquote = (s) => s.replace(/^["'\s]+|["'\s.]+$/g, "");
 
-/** Whether a quote is in the material: each piece between ellipses, word for word. */
+/**
+ * Whether the evidence quotes the material. A grader writes evidence as
+ * Luke: 'a few words…' or with a remark around the quote, so the quoted
+ * pieces are taken out and one of eight characters or more must be in the
+ * material word for word (each piece split at ellipses). With nothing in
+ * quotes, the evidence itself is the quote, less a speaker's name. The
+ * whole evidence string held to that read every real quote as made up
+ * (3 Oct: a pass rate of none, on yeses the transcript bore out).
+ */
 export function quoteFound(quote, material) {
   const seen = norm(material);
-  const parts = norm(unquote(quote))
-    .split(/\s*(?:\.\.\.|…)\s*/)
-    .map(unquote)
-    .filter(Boolean);
-  return parts.join("").length >= 3 && parts.every((p) => seen.includes(p));
+  const text = norm(String(quote ?? "")).replace(/^\s*(?:luke|owner|the owner|app)\s*:\s*/, "");
+  const quoted = [...text.matchAll(/"([^"]{3,})"|'([^']{3,})'/g)].map((m) => m[1] ?? m[2]);
+  const pieces = (quoted.length ? quoted : [unquote(text)])
+    .flatMap((q) => q.split(/\s*(?:\.\.\.|…)\s*/))
+    .map((p) => unquote(p).trim())
+    .filter((p) => p.length >= 8);
+  if (pieces.length === 0) {
+    const whole = unquote(text);
+    return whole.length >= 3 && seen.includes(whole);
+  }
+  return pieces.some((p) => seen.includes(p));
 }
 
 const score = (v) => {
@@ -440,7 +454,8 @@ export function parseGrade(raw, success, mustNot, material) {
           ? "(not counted: the quote is not in the material) "
           : "(not counted: no quote) "
         : "";
-    return { text, met, evidence: `${why}${evidence}` };
+    // What the grader said, before its quote was checked: the same measure on every run, kept beside "met".
+    return { text, met, said: a?.met === true, evidence: `${why}${evidence}` };
   });
   const must_not = mustNot.map((text, i) => {
     const a = at(j?.must_not, i + 1);

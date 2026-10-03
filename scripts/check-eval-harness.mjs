@@ -186,6 +186,20 @@ check(
   "a quote is matched whatever its case, quotes or spacing",
   quoteFound("“KEEP rto as   one tick”", material) && !quoteFound("ab", material)
 );
+// As a grader really writes it (3 Oct): a speaker, single quotes with quotes
+// inside, a remark after. The quoted words are what must be found.
+const said = "Luke: 'har COD order jo abhi PENDING hai, usko ek 'to call' list mein daal denge'";
+const chat =
+  "luke: Samajh gaya — har COD order jo abhi PENDING hai, usko ek 'to call' list mein daal denge. Aapki team";
+check("a quote with the speaker's name and quotes inside is found", quoteFound(said, chat));
+check(
+  "a quote beside a remark is found by its quoted words",
+  quoteFound("Luke asked 'Want me to build it?' twice (turns 2 and 4)", "...ya alag list? Want me to build it?")
+);
+check(
+  "and words never said are still not",
+  !quoteFound("Luke: 'every COD order goes to a call list automatically'", chat)
+);
 
 console.log("\nthe simulated owner's answer");
 check("fenced JSON", parseSim('```json\n{"agree": true, "pushback": false, "say": "haan"}\n```').agree === true);

@@ -1,1 +1,20 @@
-[]
+[
+  {
+    "file": "20261003-1953-before.json",
+    "label": "before",
+    "started": "2026-10-03T19:53:21.511Z",
+    "summary": {
+      "pass_rate": 0,
+      "said_rate": 0.714,
+      "avg_scores": {
+        "discussed": 4.8,
+        "plain": 5,
+        "better_idea": 3.8,
+        "simplest": 2.6
+      },
+      "signs_total": 1,
+      "cost": 1.3475,
+      "avg_ms": 96380
+    }
+  }
+]
