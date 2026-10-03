@@ -50,23 +50,38 @@ console.log("\nthe validator");
 check("a screen beside the store's list is taken", errorsOf({ tabs: [screen("Packing station")] }, store).length === 0);
 check(
   "a screen in place of the store's list is refused, and told where it goes",
-  errorsOf({ view: screen("Packing station") }, store).join(" ").includes('send it in "tabs"')
+  errorsOf({ view: screen("Packing station") }, store)
+    .join(" ")
+    .includes('send it in "tabs"')
 );
 check("a section of their own may be a screen", errorsOf({ view: screen("Packing station") }).length === 0);
 check(
   "each tab is checked as a view",
-  errorsOf({ tabs: [{ type: "board", cardTitle: "order_number" }] }).join(" ").includes("groupBy") &&
-    errorsOf({ tabs: [{ type: "custom", html: "<div></div>" }] }).join(" ").includes('"title"')
+  errorsOf({ tabs: [{ type: "board", cardTitle: "order_number" }] })
+    .join(" ")
+    .includes("groupBy") &&
+    errorsOf({ tabs: [{ type: "custom", html: "<div></div>" }] })
+      .join(" ")
+      .includes('"title"')
 );
 check(
   "two tabs with one name are refused",
-  errorsOf({ tabs: [screen("Packing"), screen("packing")] }).join(" ").includes("Two tabs are called")
+  errorsOf({ tabs: [screen("Packing"), screen("packing")] })
+    .join(" ")
+    .includes("Two tabs are called")
 );
 check(
   "at most four",
-  errorsOf({ tabs: [1, 2, 3, 4, 5].map((n) => screen(`Screen ${n}`)) }).join(" ").includes("At most 4")
+  errorsOf({ tabs: [1, 2, 3, 4, 5].map((n) => screen(`Screen ${n}`)) })
+    .join(" ")
+    .includes("At most 4")
 );
-check("a list, not one view", errorsOf({ tabs: screen("Packing") }).join(" ").includes("list of views"));
+check(
+  "a list, not one view",
+  errorsOf({ tabs: screen("Packing") })
+    .join(" ")
+    .includes("list of views")
+);
 
 console.log("\nlaid over what the section has");
 const had = { view: { type: "table" }, tabs: [screen("Packing station")] };
