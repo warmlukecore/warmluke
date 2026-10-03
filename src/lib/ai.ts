@@ -2817,6 +2817,14 @@ const MODEL_ERROR_WORDS: Record<ModelErrorKind, string> = {
   unset: "Luke's model is not set up on this server. Nothing was changed.",
 };
 
+/**
+ * The kind behind one of these sentences. A turn that ran as a durable
+ * workflow has its error handed across a step as words alone, the class
+ * lost on the way; the sentence is still enough to say what happened.
+ */
+export const modelErrorKindOf = (said: string): ModelErrorKind | null =>
+  (Object.entries(MODEL_ERROR_WORDS).find(([, w]) => w === said)?.[0] as ModelErrorKind | undefined) ?? null;
+
 export class ModelError extends Error {
   readonly kind: ModelErrorKind;
   readonly provider: Provider;

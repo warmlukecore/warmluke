@@ -129,7 +129,10 @@ once on demand. It deletes traces only, never messages, records or the audit tra
 newest first, by kind and by either email. **Spend** (`abo_admin_spend`) adds the traces'
 dollars by UTC day, by model and by account, so it reaches back only as far as traces are
 kept. The console's word searches have trigram indexes on conversation titles, project
-names and shop domains.
+names and shop domains. Every console screen asks `abo_admin_luke_health` (0165) whether
+Luke's newest answers are failing because the model was not there (`payload.failed`), and
+says so in red, with how many turns and apps since when and what to do, until an answer
+comes through again.
 
 ## Invite links
 

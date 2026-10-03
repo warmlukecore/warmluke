@@ -490,15 +490,29 @@ function columnLines(modules: ModuleRow[], schemas: Map<string, UiSchema>): stri
 /** What stands in a thread where an answer never came: still coming, stopped, or failed. */
 const UNANSWERED = new Set(["answering", "unanswered", "stopped"]);
 
+/** Said to the model where an answer never came, so "try again" has something to point at. */
+export const NOT_ANSWERED =
+  "(Not answered: this turn failed or was stopped, and nothing was changed. If what they say next points back to it, in whatever words or language, this is what they mean.)";
+
 /**
- * A thread's rows as the model is told them: a question whose answer
- * never came is left out, with the line that stood in for its answer, so
- * the model is given only what was said and answered.
+ * A thread's rows as the model is told them. A question whose answer
+ * never came is kept while it is the latest thing asked: after it, the
+ * owner's "try again" means it, and with it left out Luke guessed and
+ * asked about something from the day before. Its stand-in line is kept
+ * for the caller to say as NOT_ANSWERED. Once an answer has come after
+ * it, it is history and left out, and one still being answered
+ * elsewhere is not this turn's to read.
  */
 export function answeredTurns<T extends { role: string; ptype: string | null }>(rows: T[]): T[] {
-  return rows.filter(
-    (m, i) => !UNANSWERED.has(m.ptype ?? "") && !(m.role === "user" && UNANSWERED.has(rows[i + 1]?.ptype ?? ""))
-  );
+  const lastAnswer = rows.findLastIndex((m) => m.role === "assistant" && !UNANSWERED.has(m.ptype ?? ""));
+  return rows.filter((m, i) => {
+    const pair = UNANSWERED.has(m.ptype ?? "")
+      ? m.ptype
+      : m.role === "user" && UNANSWERED.has(rows[i + 1]?.ptype ?? "")
+        ? rows[i + 1].ptype
+        : null;
+    return pair === null || (pair !== "answering" && i > lastAnswer);
+  });
 }
 
 export async function runTurn(input: TurnInput): Promise<TurnResult> {

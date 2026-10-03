@@ -14,7 +14,7 @@
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-model-errors.mjs
 
-import { callAnthropicChat, callModel, draftMessage, draftPhase, ModelError } from "../src/lib/ai.ts";
+import { callAnthropicChat, callModel, draftMessage, draftPhase, ModelError, modelErrorKindOf } from "../src/lib/ai.ts";
 import { jsonSchema, tool } from "ai";
 import { isTransient } from "../src/lib/retry.ts";
 
@@ -634,6 +634,14 @@ try {
     "and is heard as it grows",
     draftMessage(geminiHeard.at(-2) ?? "") === "Pa" && draftMessage(geminiHeard.at(-1)) === "Paid."
   );
+
+  // A durable turn hands its error across a step as words: the words
+  // still say which, so an empty account is told as itself (3 October).
+  console.log("\nthe sentence still says which, once only the words are left");
+  const outOfCredit = new ModelError("billing", "anthropic", 400, "credit balance is too low");
+  check("an empty account, from its sentence alone", modelErrorKindOf(outOfCredit.message) === "billing");
+  check("a refused key too", modelErrorKindOf(new ModelError("auth", "anthropic", 401, "x").message) === "auth");
+  check("and anything else is not one", modelErrorKindOf("The project is not there.") === null);
 
   console.log("\nthe importer's own errors still read as they did");
   check("a Shopify 429 in plain words is transient", isTransient(new Error("Shopify said 429 Too Many Requests")));

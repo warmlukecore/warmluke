@@ -4,6 +4,7 @@ import { lukeSettings, modelFor } from "@/lib/luke-models";
 import { metered } from "@/lib/usage";
 import { tapeHeaders } from "@/lib/model-tape";
 import { runTurn } from "@/lib/engine";
+import { modelErrorKindOf } from "@/lib/ai";
 import { TOKEN_LEFT_MS, finishTurn, lapsesAt, settleAnswer, turnContext, type TurnJob } from "@/lib/turn-run";
 import { start } from "workflow/api";
 import { lukeTurn } from "@/workflows/luke-turn";
@@ -520,7 +521,9 @@ export async function POST(req: Request) {
         return done.last;
       } catch (e) {
         const why = e instanceof Error ? e.message : "Unknown error";
-        if (!halt.signal.aborted) await settle({ type: "unanswered", message: why });
+        // Kept as what it was when the model was not there, for the console (0165).
+        const failed = modelErrorKindOf(why);
+        if (!halt.signal.aborted) await settle({ type: "unanswered", message: why, ...(failed ? { failed } : {}) });
         return { error: why, conversationId: thread };
       } finally {
         clearInterval(stopWatch);

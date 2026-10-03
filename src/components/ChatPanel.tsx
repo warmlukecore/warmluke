@@ -95,6 +95,9 @@ import { IdNames, useIdNames, withoutIds } from "@/lib/no-ids";
 import { LUKE_COPY } from "@/lib/luke-copy";
 import { ASSISTANTS } from "@/lib/connect-assistants";
 
+/** The time an owner acted, for a row it settles: taken in the handler, never during a render. */
+const stamp = () => new Date().toISOString();
+
 /** A message arrives with a short rise; turned off when motion is asked to be reduced (globals.css). */
 const RISE = { ["--rise-from" as string]: "6px", ["--rise-for" as string]: "0.28s" } as React.CSSProperties;
 
@@ -2156,7 +2159,7 @@ export default function ChatPanel({
 
     const { error } = await supabase
       .from("build_requests")
-      .update({ status: "opened", resolved_at: new Date().toISOString() })
+      .update({ status: "opened", resolved_at: stamp() })
       .eq("id", r.id);
     // It stays in the queue if that did not save. A card that is still
     // there is a nuisance; one that is gone with nothing to replace it
@@ -2219,7 +2222,7 @@ export default function ChatPanel({
   async function dismissRequest(id: string) {
     const { error } = await supabase
       .from("build_requests")
-      .update({ status: "dismissed", resolved_at: new Date().toISOString() })
+      .update({ status: "dismissed", resolved_at: stamp() })
       .eq("id", id);
     // Removed after the write, not before it. Dropping the card first
     // meant a failed dismissal looked done here and stayed waiting

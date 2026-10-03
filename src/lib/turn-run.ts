@@ -8,8 +8,8 @@
 // does not: all a turn needs travels as a TurnJob, plain data.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ChatTurn } from "@/lib/ai";
-import { MAX_REPAIR_ATTEMPTS, answeredTurns, type TurnResult } from "@/lib/engine";
+import { modelErrorKindOf, type ChatTurn } from "@/lib/ai";
+import { MAX_REPAIR_ATTEMPTS, NOT_ANSWERED, answeredTurns, type TurnResult } from "@/lib/engine";
 import { noteJudgement } from "@/lib/judge";
 import { learn } from "@/lib/memory";
 import { traceTurn } from "@/lib/trace";
@@ -159,12 +159,16 @@ export async function turnContext(
   // sent at the time: that block is a snapshot of the schema as it was,
   // and a thread of stale snapshots both costs tokens and contradicts
   // the fresh one on the newest turn.
-  // A question whose answer never came (still being answered, stopped,
-  // or failed) is not replayed, and neither is the line that stood in
-  // for it: the model is told only what was said and answered.
+  // A question whose answer never came is replayed only while it is the
+  // latest thing asked, its stand-in said as NOT_ANSWERED (answeredTurns).
   const history = answeredTurns(rows).map((m): ChatTurn => ({
     role: m.role,
-    content: m.role === "user" ? (m.said ?? m.content) : m.content,
+    content:
+      m.role === "user"
+        ? (m.said ?? m.content)
+        : m.ptype === "unanswered" || m.ptype === "stopped"
+          ? NOT_ANSWERED
+          : m.content,
   }));
 
   // Has the owner already seen a design for this thread? New sections may
@@ -216,9 +220,18 @@ export async function finishTurn(
   if (!turn.ok) {
     // Our engine could not produce something it trusts. Charging
     // for that is charging for our own failure.
+    // A model that was not there (an empty account, a refused key) is said
+    // as itself, and kept as what it was for the console (0165): "ask
+    // again, in other words" told merchants their wording was wrong on
+    // 3 October, when the account was empty. The durable turn hands the
+    // error over as words alone, which still say which.
+    const failed = modelErrorKindOf(turn.errors[0] ?? "");
     await settleAnswer(client, job, {
       type: "unanswered",
-      message: "Luke could not get this right, so nothing was changed. Ask again, in other words.",
+      message: failed
+        ? turn.errors[0]
+        : "Luke could not get this right, so nothing was changed. Ask again, in other words.",
+      ...(failed ? { failed } : {}),
     });
     later(() =>
       traceTurn(client, {

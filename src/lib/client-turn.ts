@@ -11,6 +11,7 @@
 // Callers: src/lib/turn-run.ts (finishTurn, settleAnswer), src/app/api/mcp/route.ts.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { modelErrorKindOf } from "@/lib/ai";
 import { blueprintAsText, type TurnResult } from "@/lib/engine";
 import { openAt, settleDesign, text, type Json } from "@/lib/client-design";
 import { undoableFrom } from "@/lib/undo";
@@ -95,9 +96,14 @@ export async function finishClientTurn(
       note: "Say it again with more about how they actually work, and what should happen when.",
       ...thread,
     });
+    // A model that was not there is said as itself (turn-run.ts, finishTurn).
+    const failed = modelErrorKindOf(turn.errors[0] ?? "");
     await settleClientLine(client, job.answerId, {
       type: "unanswered",
-      message: "Luke could not get this right, so nothing was changed. Ask again, in other words.",
+      message: failed
+        ? turn.errors[0]
+        : "Luke could not get this right, so nothing was changed. Ask again, in other words.",
+      ...(failed ? { failed } : {}),
       mcp: answer,
     });
     return { last: answer, charged: false };

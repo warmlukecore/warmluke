@@ -55,8 +55,12 @@ test("an order not sent is noticed, told in the bell and the overview, put away,
     await expect(bell).toHaveAttribute("aria-label", "Nothing waiting on you");
   }
 
-  // Put away, it stays away.
-  await card.getByRole("button", { name: /^Put away:/ }).click();
+  // Put away, it stays away. Kept before the reload: a reload the same
+  // instant cancelled the request once, and the alert came back.
+  await Promise.all([
+    page.waitForResponse((r) => r.url().includes("/rpc/abo_alerts_seen") && r.ok()),
+    card.getByRole("button", { name: /^Put away:/ }).click(),
+  ]);
   await expect(page.getByText("Nothing needs you right now.")).toBeVisible();
   await page.reload();
   await expect(page.getByText("Nothing needs you right now.")).toBeVisible({ timeout: 30_000 });

@@ -172,7 +172,12 @@ For each turn, the engine reads:
 - current module context, when present;
 - up to 40 existing automation rules;
 - recent external-assistant build requests;
-- conversation history supplied by the caller;
+- conversation history supplied by the caller. A question whose answer never came (failed or
+  stopped) is kept while it is the latest thing asked, its stand-in said as `NOT_ANSWERED`, so
+  "try again" means it (`answeredTurns`); once an answer has come after it, it is left out. A
+  turn that fails because the model was not there (`ModelError`: an empty account, a refused
+  key) tells the owner that sentence, not "ask again, in other words", and keeps its kind as
+  `payload.failed` for the console;
 - connected-store facts and bounded data snapshots.
 
 For store-backed modules, effective schemas combine canonical store columns with saved

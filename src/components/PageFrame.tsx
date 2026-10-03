@@ -24,12 +24,15 @@ import {
   PanelLeftOpen,
   Search,
   ShieldCheck,
+  TriangleAlert,
   X,
 } from "lucide-react";
 import { signOut } from "@/lib/auth";
 import { useConsoleBase } from "@/lib/console-base";
 import { CONSOLE_NAV, SEARCH_FROM } from "@/lib/console-nav";
-import { menu, menuItem } from "@/components/ui/controls";
+import { menu, menuItem, note } from "@/components/ui/controls";
+import { supabase } from "@/lib/supabase-client";
+import { ago } from "@/lib/when";
 import { Logo } from "@/components/ui/Logo";
 import { ThemeToggle } from "@/components/ThemeSync";
 
@@ -283,6 +286,7 @@ function ConsoleFrame({ email, children }: { email: string | null | undefined; c
           <span className="truncate text-sm font-medium text-white">{current?.label ?? "Superadmin"}</span>
         </header>
         <main className="min-w-0 flex-1 bg-canvas sm:mx-2 sm:mb-2 sm:rounded-card sm:shadow-card lg:mt-2 lg:ml-0 lg:rounded-pane">
+          <LukeHealth />
           {children}
         </main>
       </div>
@@ -357,6 +361,48 @@ function AccountMenu({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** What each failure means for whoever reads the console, and what to do about it. */
+const PAUSED: Record<string, string> = {
+  billing: "The model account is out of credit. Top it up at console.anthropic.com → Billing, and turn on auto-reload.",
+  auth: "The model key was refused. Check ANTHROPIC_API_KEY in Vercel.",
+  busy: "The model is overloaded. It usually passes in minutes.",
+  down: "The model cannot be reached.",
+};
+
+/**
+ * Whether Luke is failing for merchants right now (0165), on every console
+ * screen: on 3 October the account ran out for an hour, and a merchant
+ * found out first. Read once a screen; gone once an answer comes through.
+ */
+function LukeHealth() {
+  const [h, setH] = useState<{
+    failing: boolean;
+    kind: string | null;
+    since: string | null;
+    turns: number;
+    projects: number;
+    at: number;
+  } | null>(null);
+  useEffect(() => {
+    supabase
+      .rpc("abo_admin_luke_health")
+      .then(({ data }) => setH(data ? { ...(data as NonNullable<typeof h>), at: Date.now() } : null));
+  }, []);
+  if (!h?.failing) return null;
+  return (
+    <div role="alert" className={`${note.critical} m-4 mb-0 flex items-start gap-2 text-[13px] sm:m-6 sm:mb-0`}>
+      <TriangleAlert aria-hidden size={15} strokeWidth={2} className="mt-0.5 shrink-0" />
+      <div>
+        <span className="font-medium">
+          Luke is failing for merchants: {h.turns} {h.turns === 1 ? "turn" : "turns"} in {h.projects}{" "}
+          {h.projects === 1 ? "app" : "apps"} since {ago(h.since, h.at)}.
+        </span>{" "}
+        {PAUSED[h.kind ?? ""] ?? "The model did not answer."}
+      </div>
     </div>
   );
 }

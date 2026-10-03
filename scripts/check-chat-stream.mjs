@@ -250,17 +250,24 @@ try {
   check("and what is not a turn is refused", (await stopIt("not-a-turn")).status === 400);
 
   console.log("\nwhat the model is told of a thread");
+  // "try again" after a failed turn means that turn: on 3 October it was
+  // left out, and Luke asked about the day before instead.
   const told = answeredTurns([
     { role: "user", ptype: null, n: 1 },
-    { role: "assistant", ptype: "answer", n: 2 },
+    { role: "assistant", ptype: "unanswered", n: 2 },
     { role: "user", ptype: null, n: 3 },
-    { role: "assistant", ptype: "stopped", n: 4 },
+    { role: "assistant", ptype: "answer", n: 4 },
     { role: "user", ptype: null, n: 5 },
-    { role: "assistant", ptype: "unanswered", n: 6 },
+    { role: "assistant", ptype: "stopped", n: 6 },
     { role: "user", ptype: null, n: 7 },
-    { role: "assistant", ptype: "answering", n: 8 },
+    { role: "assistant", ptype: "unanswered", n: 8 },
+    { role: "user", ptype: null, n: 9 },
+    { role: "assistant", ptype: "answering", n: 10 },
   ]).map((r) => r.n);
-  check("only what was asked and answered", told.join() === "1,2");
+  check(
+    "what was answered, and what was asked since and never answered, for try again to mean",
+    told.join() === "3,4,5,6,7,8"
+  );
 
   console.log("\nout of turns is still a refusal with a status");
   await admin.from("account_settings").update({ turns_used: 5 }).eq("user_id", me.user.id);
