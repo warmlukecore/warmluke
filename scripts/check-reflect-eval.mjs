@@ -20,7 +20,6 @@ import { reflectModel } from "../src/lib/ai.ts";
 import { describeSkills, isCorrection, reflect, skillsFor } from "../src/lib/learning.ts";
 import { keyFor } from "../src/lib/model-tape.ts";
 import { dollars } from "../src/lib/model-prices.ts";
-import { metered } from "../src/lib/usage.ts";
 
 const model = reflectModel();
 if (!model || !keyFor(process.env.ANTHROPIC_API_KEY)) {
@@ -59,24 +58,32 @@ const project = await throwawayProject(admin, me.user.id, "reflect eval");
 const quiet = { correction: false, repairs: 0, criticRedo: false, built: 0 };
 let spent = 0;
 
-/** One exchange through reflect, as turn-run sends it, metered: what it wrote and how many calls it took. */
+/**
+ * One exchange through reflect, as turn-run sends it: what it wrote, and
+ * how many calls it took and what they cost, read from the "reflected"
+ * lines it left (a run meters itself, so an outer meter sees nothing).
+ */
 async function turn(t, skills) {
   const { used } = describeSkills(skills, t.message);
-  const [got, usage] = await metered(() =>
-    reflect(owner, {
-      projectId: project.id,
-      conversationId: null,
-      turnId: null,
-      message: t.message,
-      reply: t.reply,
-      signals: { ...quiet, correction: isCorrection(t.message), ...t.signals },
-      used,
-      skills,
-    })
-  );
-  const u = usage();
-  spent += u?.usd ?? 0;
-  return { got, used, calls: u?.uses.reduce((n, x) => n + x.calls, 0) ?? 0 };
+  const since = new Date().toISOString();
+  const got = await reflect(owner, {
+    projectId: project.id,
+    conversationId: null,
+    turnId: null,
+    message: t.message,
+    reply: t.reply,
+    signals: { ...quiet, correction: isCorrection(t.message), ...t.signals },
+    used,
+    skills,
+  });
+  const { data: runs } = await owner
+    .from("luke_learning_events")
+    .select("detail")
+    .eq("project_id", project.id)
+    .eq("event", "reflected")
+    .gte("at", since);
+  for (const r of runs ?? []) spent += Number(r.detail?.usd ?? 0);
+  return { got, used, calls: (runs ?? []).length };
 }
 
 const turns = [
