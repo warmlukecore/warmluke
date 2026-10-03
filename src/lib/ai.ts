@@ -3113,6 +3113,8 @@ const MODEL_JOBS = {
   critic: "ANTHROPIC_CRITIC_MODEL",
   /** What a turn taught about the business, written down after it (unset: nothing is learned). */
   memory: "ANTHROPIC_MEMORY_MODEL",
+  /** What a turn worth learning from taught about working for this store (unset: nothing is reflected; what was learned is still read). */
+  reflect: "ANTHROPIC_REFLECT_MODEL",
   /** Reading two short texts and naming what is missing. */
   gap: "ANTHROPIC_GAP_MODEL",
   /** Where a design goes when Gemini stays busy. */
@@ -3158,6 +3160,15 @@ export function criticModel(): string | null {
 /** The model that writes down what a turn taught, or null: the setting is the switch. */
 export function memoryModel(): string | null {
   return optionalModel("memory");
+}
+
+/**
+ * The model that reflects on a turn worth learning from (learning.ts), or
+ * null: the setting is the switch for learning only. What was already
+ * learned is read on every turn whether or not it is set.
+ */
+export function reflectModel(): string | null {
+  return optionalModel("reflect");
 }
 
 /** A job's model when its setting is there, else null — without the log line an unset required one earns. */

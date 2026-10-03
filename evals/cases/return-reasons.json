@@ -1,0 +1,26 @@
+{
+  "id": "return-reasons",
+  "title": "Why things come back, and how many each week",
+  "language": "english",
+  "persona": "Runs support for a small fashion store. Thinks in weeks, reads a chart faster than a table, and gets annoyed when the same reason is typed five different ways.",
+  "before": [],
+  "opening": "track why customers return things and how many each week",
+  "facts": {
+    "the reasons": "wrong size, damaged, not as pictured, changed mind, other",
+    "who records it": "the support team, when the return comes in",
+    "where returns come from": "some through Shopify returns, some by message to support",
+    "when a week starts": "Monday"
+  },
+  "success": [
+    "the reason is one choice from a list with sensible options",
+    "there is a weekly count or chart of returns, by reason or in total",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "the reason kept as free text only",
+    "a field written into every row on a schedule",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 4
+}

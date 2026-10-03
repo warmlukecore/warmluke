@@ -1,0 +1,32 @@
+{
+  "id": "rto-new",
+  "title": "Track returned shipments (RTO) from nothing",
+  "language": "hinglish",
+  "persona": "Sends 40 to 50 cash-on-delivery parcels a day. Types short Hinglish lines from a phone, decides quickly, and wants the warehouse boy to mark a returned parcel with one tap. First thinks a separate RTO status would be neat, and drops the idea as soon as a single tick is explained.",
+  "before": [],
+  "opening": "shipments me RTO track karna hai",
+  "facts": {
+    "what RTO means here": "courier ne parcel wapas bhej diya kyunki customer ne liya nahi",
+    "what a shipment with nothing marked means": "khali matlab RTO nahi hua, delivery normal hai ya abhi raste me hai",
+    "who marks it": "warehouse wala ladka, jab parcel wapas aata hai",
+    "what to see": "is mahine kitne RTO hue, aur ek filter jisse sirf RTO wale dikhe",
+    "the reason for an RTO": "abhi reason nahi chahiye",
+    "a status with more steps": "nahi, bas RTO hua ya nahi"
+  },
+  "success": [
+    "Luke talks first and asks what a shipment with nothing marked means, or says plainly what he will take it to mean",
+    "RTO is one yes/no tick that is either ticked or left blank, never filled in as No",
+    "there is a filter that shows only the RTO shipments",
+    "there is a count of RTO shipments",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "a separate RTO status field beside the tick",
+    "a rule that writes a default value into every row",
+    "two fields for the same fact",
+    "a written screen when the table does it",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 4
+}

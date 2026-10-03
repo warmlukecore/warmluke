@@ -8,9 +8,12 @@
 // Callers: src/components/PageFrame.tsx.
 
 import {
+  Bot,
   Coins,
   Compass,
   Eye,
+  FlaskConical,
+  GraduationCap,
   Inbox,
   MessagesSquare,
   ScrollText,
@@ -53,6 +56,24 @@ export const CONSOLE_NAV: ConsoleGroup[] = [
         label: "Needs a look",
         icon: Eye,
         about: "Where something went wrong: failed turns, unhappy owners, churn, failing rules, workarounds",
+      },
+      {
+        to: "learning",
+        label: "Learning",
+        icon: GraduationCap,
+        about: "What Luke learned for each store, how it changed, and whether it helped",
+      },
+      {
+        to: "agents",
+        label: "Agents",
+        icon: Bot,
+        about: "How each of Luke's agents did: runs, verdicts, cost and time",
+      },
+      {
+        to: "evals",
+        label: "Evals",
+        icon: FlaskConical,
+        about: "Luke in whole conversations with a simulated owner, graded, run by run",
       },
     ],
   },

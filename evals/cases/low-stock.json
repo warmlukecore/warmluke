@@ -1,0 +1,25 @@
+{
+  "id": "low-stock",
+  "title": "Tell me when stock runs low",
+  "language": "english",
+  "persona": "Sells a few dozen products and has run out of a best seller twice this month. Writes one-line English messages, does not want to open the app to check, and is happy with whatever way of being told the app has.",
+  "before": [],
+  "opening": "tell me when any product's stock goes below 5",
+  "facts": {
+    "per variant or per product": "per variant, each size counts on its own",
+    "how to be told": "the app's alerts are fine",
+    "how often": "as soon as it happens, once a day is fine too",
+    "several locations": "add up all the locations"
+  },
+  "success": [
+    "there is an alert rule on stock with 5 as the threshold",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "a field written into every product every hour",
+    "a promise to send an email or a message the app cannot send",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 4
+}

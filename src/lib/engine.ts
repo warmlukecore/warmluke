@@ -37,6 +37,7 @@ import {
 } from "@/lib/ai";
 import { isQuestion, lastReplyTypeOf, roadFor, type Road } from "@/lib/intent";
 import { describeKnown, notesFor } from "@/lib/memory";
+import { describeSkills, skillsFor, type Skill } from "@/lib/learning";
 import {
   agreedBlock,
   intentBlock,
@@ -346,6 +347,10 @@ export type TurnResult =
       road: Road;
       /** What was known about the business when this turn was made, newest first. */
       known: string[];
+      /** What was learned for this store when the turn began, and the ids read in full (learning.ts). */
+      learned: { skills: Skill[]; used: string[] };
+      /** Whether the critic sent the design back once this turn: a sign the turn is worth learning from. */
+      criticRedo: boolean;
     }
   | {
       ok: false;
@@ -565,7 +570,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // system prompt because that prompt is cached across projects.
   // Beside it, what the owner's own connected assistant asked for
   // lately: the one piece of intent that lives outside this thread.
-  const [{ data: ruleRows }, requests, { data: changeOn }, { data: profile }, notesRows] = await Promise.all([
+  const [{ data: ruleRows }, requests, { data: changeOn }, { data: profile }, notesRows, skills] = await Promise.all([
     client
       .from("automations")
       .select("id, name, enabled, module_id, definition")
@@ -583,10 +588,20 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     // What earlier conversations taught about the business (0131), read
     // only when something writes it: the setting is the switch.
     memoryModel() ? notesFor(client, project.id) : Promise.resolve([] as string[]),
+    // What Luke learned for this store (0176): read whenever it exists,
+    // switch or no switch, since only learning costs a model call. [] on
+    // a database without the table.
+    skillsFor(client, project.id),
   ]);
   const known = notesRows;
+  // After what is known, so the plan, talk and design prompts all read it.
+  // Only a project that has learned something has a block, and no
+  // recorded turn's project has, so the tapes replay unchanged.
+  const { block: learnedBlock, used } = describeSkills(skills, message);
+  const learned = { skills, used };
   const merchant =
-    [describeMerchant(profile as ProfileRow | null), describeKnown(known)].filter(Boolean).join("\n") || null;
+    [describeMerchant(profile as ProfileRow | null), describeKnown(known), learnedBlock].filter(Boolean).join("\n") ||
+    null;
   const rules = describeRules((ruleRows ?? []) as RuleRow[], modules);
 
   // Every section's columns, so a design that touches one the caller
@@ -779,6 +794,8 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       lookedUp,
       road,
       known,
+      learned,
+      criticRedo: false,
     };
   }
 
@@ -1093,7 +1110,21 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // Agreed in words first: the chat builds it without asking again.
   if (approved && (parsed.reply.type === "plans" || parsed.reply.type === "blueprint")) parsed.reply.approved = true;
 
-  return { ok: true, reply: parsed.reply, raw, userTurn, repairs, repairErrors, store, unmet, lookedUp, road, known };
+  return {
+    ok: true,
+    reply: parsed.reply,
+    raw,
+    userTurn,
+    repairs,
+    repairErrors,
+    store,
+    unmet,
+    lookedUp,
+    road,
+    known,
+    learned,
+    criticRedo: sentBack,
+  };
 }
 
 /**

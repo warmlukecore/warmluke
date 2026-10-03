@@ -1,0 +1,28 @@
+{
+  "id": "repeat-orders",
+  "title": "Flag orders from customers who ordered before",
+  "language": "english",
+  "persona": "Runs a small clothing store and writes short, practical English. Wants the packing staff to notice a returning customer and add a thank-you note. Does not care how it is done as long as the flag is right.",
+  "before": [],
+  "opening": "flag orders from customers who ordered before",
+  "facts": {
+    "what counts as the same customer": "the same phone number or the same email, either one is enough",
+    "the time window": "they ordered before within the last 90 days",
+    "where the flag shows": "on the order, in my orders list",
+    "what happens to a flagged order": "nothing automatic, the staff just see it",
+    "older orders": "past orders too if that is easy, otherwise only new ones"
+  },
+  "success": [
+    "a rule or a worked-out flag over the store's orders marks the repeat ones",
+    "it matches a customer by phone or by email, either one",
+    "it asks about the time window or states it as 90 days",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "matching customers by name alone",
+    "a rule that writes a value into every order on a schedule",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 4
+}

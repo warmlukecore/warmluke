@@ -10,9 +10,10 @@ next-env.d.ts
 # Claude Code local permissions — personal, not the project
 .claude/settings.local.json
 
-# Eval history is a record of runs, not source. It grows every run and
-# merging two people's copies means nothing.
-evals/
+# check-scenarios' history is a record of runs, not source. It grows every
+# run and merging two people's copies means nothing. The rest of evals/ is
+# kept: the cases, and the runs the console's Evals page reads.
+evals/history.jsonl
 .vercel
 .env*
 

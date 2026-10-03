@@ -1,0 +1,28 @@
+{
+  "id": "cod-confirm",
+  "title": "Confirm cash-on-delivery orders by phone",
+  "language": "hinglish",
+  "persona": "Loses money on fake cash-on-delivery orders and has two people calling customers before dispatch. Talks in quick Hinglish, answers one question at a time, and wants the callers to see only who is left to call.",
+  "before": [],
+  "opening": "COD orders confirm karne ka process chahiye, call karke confirm ya cancel",
+  "facts": {
+    "the statuses": "To call, Confirmed, Cancelled",
+    "which orders": "sirf naye COD orders",
+    "who calls": "do log calling karte hain",
+    "cancel in Shopify too": "nahi, abhi sirf app me mark karna hai, Shopify me main khud cancel karta hoon",
+    "call attempts": "count nahi chahiye"
+  },
+  "success": [
+    "there is a status with To call, Confirmed and Cancelled",
+    "a new cash-on-delivery order starts at To call",
+    "a filter, tab or view shows only the orders still to call",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "cancelling an order in Shopify without the owner's yes",
+    "a rule that writes a status into every row on a schedule",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 4
+}

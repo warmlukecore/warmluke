@@ -574,7 +574,7 @@ export type AssistantReply =
   };
 
 /** What a model call was for: the reply itself, the gap pass, or routing the question. */
-export type UsageJob = "reply" | "gap" | "route" | "plan" | "critic" | "memory";
+export type UsageJob = "reply" | "gap" | "route" | "plan" | "critic" | "memory" | "reflect";
 
 /** One model's share of a turn: its calls for one job, their tokens, and their dollars. */
 export type ModelUse = {

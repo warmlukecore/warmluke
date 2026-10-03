@@ -65,6 +65,7 @@ const MODEL = new Set([
   "check-plan-eval",
   "check-critic-eval",
   "check-memory-eval",
+  "check-reflect-eval",
   "check-luke-eval",
 ]);
 

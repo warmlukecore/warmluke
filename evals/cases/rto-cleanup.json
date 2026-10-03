@@ -1,0 +1,81 @@
+{
+  "id": "rto-cleanup",
+  "title": "Clean up a Shipments section with RTO kept three ways",
+  "language": "hinglish",
+  "persona": "Already has a Shipments section where RTO ended up in three fields after a few rounds of changes, and is tired of it. Terse, a little impatient, says exactly what is wrong and wants it fixed in one go without new surprises.",
+  "before": [
+    {
+      "changeType": "NEW_MODULE",
+      "targetModuleId": null,
+      "newModule": { "name": "shipments", "nav_label": "Shipments", "icon": "truck" },
+      "newSchema": {
+        "columns": [
+          { "field": "order_no", "label": "Order", "type": "text" },
+          { "field": "awb", "label": "AWB", "type": "text" },
+          { "field": "courier", "label": "Courier", "type": "dropdown", "options": ["Courier A", "Courier B"] },
+          { "field": "rto", "label": "RTO", "type": "boolean" },
+          { "field": "rto_status", "label": "RTO status", "type": "badge" },
+          { "field": "is_rto", "label": "Is RTO", "type": "boolean" },
+          { "field": "rto_note", "label": "RTO note", "type": "longtext" }
+        ]
+      },
+      "moduleUpdate": null,
+      "deleteConfirmName": null,
+      "features": null,
+      "automation": null,
+      "automationRemoveName": null,
+      "newRecords": [
+        {
+          "order_no": "A-101",
+          "awb": "AWB0001",
+          "courier": "Courier A",
+          "rto": false,
+          "rto_status": "No",
+          "is_rto": false,
+          "rto_note": ""
+        },
+        {
+          "order_no": "A-102",
+          "awb": "AWB0002",
+          "courier": "Courier B",
+          "rto": true,
+          "rto_status": "Yes",
+          "is_rto": true,
+          "rto_note": "Customer phone switched off, came back after three tries"
+        },
+        {
+          "order_no": "A-103",
+          "awb": "AWB0003",
+          "courier": "Courier A",
+          "rto": false,
+          "rto_status": "No",
+          "is_rto": false,
+          "rto_note": ""
+        }
+      ],
+      "explanation": "The section as the owner has it before the conversation: RTO kept three ways, and a note."
+    }
+  ],
+  "opening": "RTO true ya blank hona chahiye false nahi, extra RTO fields hata do, aur note sirf row kholne pe dikhe",
+  "facts": {
+    "which RTO field to keep": "jo tick wala RTO hai wahi rakho, RTO status aur Is RTO dono hata do",
+    "remove or hide the extra fields": "hata do, unme kuch kaam ka nahi",
+    "what to do with the No values already there": "No ko khali kar do, RTO tabhi tick ho jab wapas aaya",
+    "the note": "note rakhna hai, bas table me nahi dikhna chahiye, row kholne pe dikhe"
+  },
+  "success": [
+    "the extra RTO fields (RTO status and Is RTO) are removed or hidden",
+    "the RTO note is kept in the row and hidden from the table",
+    "no new RTO field is added",
+    "RTO stays one tick that is set or left blank, not written as No",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "a new field for RTO",
+    "the RTO note removed instead of hidden",
+    "a rule that writes a value into every row",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 4
+}

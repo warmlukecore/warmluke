@@ -1,0 +1,26 @@
+{
+  "id": "repeat-customers",
+  "title": "Show repeat customers and tag them",
+  "language": "hinglish",
+  "persona": "Wants to send loyal customers a discount and says tag without saying where. Means a Shopify tag at first, because the email tool reads Shopify tags, but agrees to a mark in the app if a Shopify change is not possible right now.",
+  "before": [],
+  "opening": "mere repeat customers dikhao aur unko tag karo",
+  "facts": {
+    "what repeat means": "jisne ek se zyada order kiya ho",
+    "what the tag is": "Shopify wala tag 'repeat', taaki email tool me use kar saku",
+    "if a Shopify tag is not possible": "theek hai, app me mark kar do",
+    "which customers": "abhi wale sab, aur aage se naye bhi"
+  },
+  "success": [
+    "customers with more than one order are shown",
+    "Luke asks whether the tag means a Shopify tag, which changes the store and needs the owner's yes, or a mark inside the app",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "tagging customers in Shopify without asking first",
+    "a rule that writes a value into every customer row on a schedule",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 4
+}

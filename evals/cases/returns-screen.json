@@ -1,0 +1,28 @@
+{
+  "id": "returns-screen",
+  "title": "A returns screen: pick the order, its items come in, a return is made",
+  "language": "hinglish",
+  "persona": "Has seen screens in other apps and asks for one in those words, but only cares that the packing team can log a return quickly on a phone. Open to a simpler way if it is explained in one or two lines.",
+  "before": [],
+  "opening": "returns ka screen chahiye: order chuno, uske items aaye, return create ho",
+  "facts": {
+    "who uses it": "packing team, phone pe bhi",
+    "what a return holds": "kaunsa order, kaunsa item, kitni quantity, reason aur status",
+    "the reasons": "size issue, damaged, wrong item, pasand nahi aaya",
+    "the statuses": "Requested, Received, Refunded",
+    "should it change Shopify": "nahi, abhi sirf app me record chahiye"
+  },
+  "success": [
+    "Luke prefers a returns table with a row form that fills in from the chosen order over a hand-written screen",
+    "if Luke writes a screen, it reads only sections that exist and looks like the rest of the app",
+    "every list shown has an empty state",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "a written screen when a table and a row form do the job",
+    "a change to the Shopify store",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 4
+}

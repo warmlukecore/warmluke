@@ -25,6 +25,7 @@ database decides who may do what.
 | The plan step | `plan()` in `runTurn` (`src/lib/engine.ts`), `buildPlanPrompt` in `src/lib/ai.ts`, `parseIntent`/`intentBlock` in `src/lib/plan.ts` | Before a design: what was understood, as words in one shape, on the talk road's context; rides in the design call's user turn; `ANTHROPIC_PLAN_MODEL` is the switch and the model (unset: no plan); skipped when answering a drawn design; `check-plan` |
 | The critic | `critique`/`parseCritique` in `src/lib/ai.ts`, called in `runTurn`'s loop | Under the plan switch: reads ask + plan + `describeBuild`, answers `{unmet, redo}` on `ANTHROPIC_CRITIC_MODEL` (unset: the plan model); one redo a turn, inside the repair loop; replaces the gap pass when it answers; `check-critic` |
 | What Luke knows | `learn`/`notesFor`/`describeKnown` in `src/lib/memory.ts`; `merchant_notes` (0131); `/api/luke-notes` | After a settled turn (chat route, `after()`), the memory model writes up to three business facts; the next turn reads the newest twelve into every road's merchant line; the owner strikes lines in the panel; `ANTHROPIC_MEMORY_MODEL` is the switch; `check-memory` |
+| What Luke learned | `skillsFor`/`describeSkills`/`reflect`/`curate`/`recordUse`/`reflectOnFeedback` in `src/lib/learning.ts`; `luke_skills` and `luke_learning_events` (0176) | Every turn reads the active ones (thirty at most) into every road's merchant line, bodies only for those that bear on the message; after an owner's turn (`later`), the reads are counted and, only when a signal says so (`hasSignal`), the reflect model proposes small changes that `curate` cuts (no ids, no customer's details, no instruction about approving or asking) before they are written; the owner's thumbs reflect too; `ANTHROPIC_REFLECT_MODEL` is the switch for learning, never for reading; `check-learning`, `check-reflect-eval` |
 | Every turn's trace | `traceTurn` in `src/lib/trace.ts`, `turn_traces` (0132) | Written by the chat route after a turn settles: steps, road, model, usage, repairs, unmet, plan goal, critic; `check-chat-stream` asks for one |
 | Which road a turn takes | `roadFor` in `src/lib/intent.ts`; `buildTalkPrompt` and `buildSystemPrompt` in `src/lib/ai.ts` | Talk (answer only, ~1.7k tokens) or design (the whole contract); decided in code, handed back by the model when wrong; `check-intent`, `check-answer` |
 | Luke's loop | `runTurn` in `src/lib/engine.ts` with `lookups: true`, `callModel` in `src/lib/ai.ts` | Up to three lookups before the JSON reply (`LOOKUP_STEPS`), on the first attempt only; each told as a `lookup` step and kept for the receipt |
@@ -107,6 +108,10 @@ database decides who may do what.
   the plan step), `check-critic-eval` (four fixture designs, two weakened — fits / sent back),
   `check-memory-eval` (three exchanges — facts kept, a store answer not). Run them when a
   role's prompt or model changes; the log is the record.
+- `scripts/eval-luke.mjs` (model tier, by hand, never CI): whole conversations with a simulated
+  owner over the eight cases in `evals/cases/`, graded, under `--max-usd`; runs land in
+  `evals/runs/` and on the console's Evals screen. Compare runs only on the same design model
+  (`evals/README.md`). `check-reflect-eval` judges the reflector's prompt the same way.
 - `check-model-tape` (pure): the recorder. `check-route-eval` (pure, played back): the
   router on forty real questions, held to its baseline.
 - `e2e/luke.spec.ts` (Playwright, played back): Luke in the panel at desktop and phone

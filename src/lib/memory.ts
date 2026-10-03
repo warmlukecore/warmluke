@@ -13,6 +13,7 @@
 // and unset nothing is learned or read.
 //
 // Callers: src/lib/engine.ts (reads), src/app/api/chat/route.ts (learns),
+// src/lib/learning.ts (saidBack),
 // src/app/api/luke-notes/route.ts (the owner's list), scripts/check-memory.mjs.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -79,8 +80,8 @@ export function parseNotes(raw: string): string[] {
   return out;
 }
 
-/** What the assistant said, as words: enough to learn from, not the whole design. */
-function saidBack(reply: AssistantReply): string {
+/** What the assistant said, as words: enough to learn from, not the whole design. Learning (learning.ts) reads it the same way. */
+export function saidBack(reply: AssistantReply): string {
   const title = "title" in reply && typeof reply.title === "string" ? reply.title : "";
   const message = "message" in reply && typeof reply.message === "string" ? reply.message : "";
   const questions = reply.type === "clarify" ? reply.questions.map((q) => q.question).join(" ") : "";

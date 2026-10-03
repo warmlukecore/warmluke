@@ -70,6 +70,8 @@ import {
   SquarePen,
   Store,
   Table,
+  ThumbsDown,
+  ThumbsUp,
   Trash2,
   TriangleAlert,
   Undo2,
@@ -464,6 +466,110 @@ function CopyReply({ text }: { text: string }) {
       {copied ? <Check aria-hidden size={13} strokeWidth={2} /> : <Copy aria-hidden size={13} strokeWidth={2} />}
       {copied && <span>Copied</span>}
     </button>
+  );
+}
+
+type Verdict = "up" | "down";
+
+/** A thumb under a reply: as quiet as copy at rest, a full 32px to touch, filled once chosen. */
+const THUMB =
+  "inline-flex h-8 w-8 items-center justify-center rounded-control text-fg-faint transition-colors hover:bg-surface-hover hover:text-fg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
+
+/**
+ * Whether a reply helped (0176), the thing Luke learns from: two quiet
+ * thumbs, kept the moment one is tapped, and taken back by tapping it
+ * again. Not helpful also opens one line asking what was wrong, which
+ * may be left empty. Each save waits for the one before it, so a thumb
+ * and the note sent straight after it land in the order they were made.
+ */
+function ReplyFeedback({
+  messageId,
+  verdict,
+  onChange,
+}: {
+  messageId: string;
+  verdict: Verdict | undefined;
+  onChange: (v: Verdict | undefined) => void;
+}) {
+  const [asking, setAsking] = useState(false);
+  const [note, setNote] = useState("");
+  const [failed, setFailed] = useState(false);
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const save = (next: Verdict | undefined, why?: string) => {
+    const was = verdict;
+    onChange(next);
+    setFailed(false);
+    queue.current = queue.current.then(async () => {
+      const { ok } = await (
+        next
+          ? apiFetch("/api/feedback", { messageId, verdict: next, ...(why ? { note: why } : {}) })
+          : apiFetch("/api/feedback", { messageId }, "DELETE")
+      ).catch(() => ({ ok: false }));
+      if (!ok) {
+        onChange(was);
+        setFailed(true);
+      }
+    });
+  };
+  const pick = (v: Verdict) => {
+    setNote("");
+    setAsking(verdict !== v && v === "down");
+    save(verdict === v ? undefined : v);
+  };
+  const send = () => {
+    setAsking(false);
+    if (note.trim()) save("down", note.trim());
+  };
+  const thumb = (v: Verdict, name: string, Mark: LucideIcon) => (
+    <button type="button" onClick={() => pick(v)} aria-label={name} aria-pressed={verdict === v} className={THUMB}>
+      <Mark
+        aria-hidden
+        size={14}
+        strokeWidth={2}
+        fill={verdict === v ? "currentColor" : "none"}
+        className={verdict === v ? "text-fg-muted" : undefined}
+      />
+    </button>
+  );
+  return (
+    <>
+      <span className="-mx-1.5 inline-flex">
+        {thumb("up", "Helpful", ThumbsUp)}
+        {thumb("down", "Not helpful", ThumbsDown)}
+      </span>
+      {failed && (
+        <span role="alert" className="text-[11px] text-tone-critical-fg">
+          That did not save. Try again.
+        </span>
+      )}
+      {asking && (
+        // Its own line under the reply, whatever else sits beside the thumbs.
+        <div className="order-last flex w-full items-center gap-1.5 pt-1">
+          <input
+            autoFocus
+            value={note}
+            maxLength={500}
+            onChange={(e) => setNote(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                send();
+              }
+              if (e.key === "Escape") setAsking(false);
+            }}
+            placeholder="What was wrong? (optional)"
+            aria-label="What was wrong? (optional)"
+            className={`${fieldOf("md")} min-w-0 flex-1`}
+          />
+          <button type="button" onClick={send} disabled={!note.trim()} className={button("secondary", "md")}>
+            Send
+          </button>
+          <button type="button" onClick={() => setAsking(false)} className={button("plain", "md")}>
+            Skip
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -1319,6 +1425,7 @@ const JOB_WORDS: Record<ModelUse["job"], string> = {
   plan: "Plan",
   critic: "Critic",
   memory: "Memory",
+  reflect: "Learning",
 };
 
 /** A reply's dollars in rupees, at a rate that says the day it is from. */
@@ -1718,6 +1825,116 @@ function KnownNotes({ projectId }: { projectId: string }) {
           </li>
         ))}
       </ul>
+    </details>
+  );
+}
+
+type LearnedSkill = {
+  id: string;
+  kind: "lesson" | "skill";
+  title: string;
+  when_to_use: string;
+  body: string;
+  uses: number;
+  created_at: string;
+};
+
+/**
+ * What Luke learned working for them (0176): the lessons and ways of
+ * working it wrote from what they corrected and what worked, best first,
+ * each theirs to strike as a note is. One learned since they last looked
+ * has a dot; when they last looked is kept in this browser only, so
+ * without storage there are simply no dots. Not shown at all until the
+ * list can be read.
+ */
+function LearnedSkills({ projectId }: { projectId: string }) {
+  const [skills, setSkills] = useState<LearnedSkill[] | null>(null);
+  const [open, setOpen] = useState(false);
+  /** When they last opened it before this time: what counts as new. */
+  const [seenAt, setSeenAt] = useState(Infinity);
+  const [unfolded, setUnfolded] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    let live = true;
+    apiFetch(`/api/luke-skills?projectId=${encodeURIComponent(projectId)}`, null, "GET")
+      .then(({ ok, data }) => {
+        if (live && ok && Array.isArray(data.skills)) setSkills(data.skills as LearnedSkill[]);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [projectId, open]);
+  if (!skills) return null;
+  const seen = (opened: boolean) => {
+    setOpen(opened);
+    if (!opened) return;
+    const key = `abo_learned_seen:${projectId}`;
+    try {
+      setSeenAt(Number(localStorage.getItem(key)) || 0);
+      localStorage.setItem(key, String(Date.now()));
+    } catch {
+      setSeenAt(Infinity);
+    }
+  };
+  const strike = async (id: string) => {
+    setSkills((all) => all?.filter((s) => s.id !== id) ?? null);
+    await apiFetch("/api/luke-skills", { id }, "DELETE");
+  };
+  return (
+    <details className="group" onToggle={(e) => seen(e.currentTarget.open)}>
+      <summary className="cursor-pointer list-none select-none hover:text-fg-muted">
+        What Luke learned
+        <ChevronRight
+          aria-hidden
+          size={11}
+          strokeWidth={2}
+          className="ml-0.5 inline align-[-1px] transition-transform duration-150 group-open:rotate-90"
+        />
+      </summary>
+      {skills.length === 0 ? (
+        <p className="mt-1 pl-3">Nothing yet. Luke learns from what you correct and what works.</p>
+      ) : (
+        <ul className="mt-1 space-y-1.5 pl-3">
+          {skills.map((s) => (
+            <li key={s.id} className="flex items-start gap-1.5">
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <div className="text-fg-muted">
+                  {Date.parse(s.created_at) > seenAt && (
+                    <span
+                      role="img"
+                      aria-label="New"
+                      className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-signal-info align-middle"
+                    />
+                  )}
+                  <span className="font-medium">{s.kind === "skill" ? "Way of working" : "Lesson"}</span> · {s.title}
+                </div>
+                {s.when_to_use && <div>{s.when_to_use}</div>}
+                {unfolded[s.id] && <div className="whitespace-pre-wrap text-fg-muted">{s.body}</div>}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    aria-expanded={!!unfolded[s.id]}
+                    onClick={() => setUnfolded((all) => ({ ...all, [s.id]: !all[s.id] }))}
+                    className="hover:text-fg-muted"
+                  >
+                    {unfolded[s.id] ? "Hide" : "Show"}
+                  </button>
+                  {s.uses > 0 && <span>Used {s.uses === 1 ? "once" : `${s.uses} times`}</span>}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => strike(s.id)}
+                aria-label={`Forget: ${s.title}`}
+                title="Forget this"
+                className="shrink-0 text-fg-faint hover:text-fg"
+              >
+                <X aria-hidden size={11} strokeWidth={2} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </details>
   );
 }
@@ -2293,6 +2510,61 @@ export default function ChatPanel({
   const team = luke?.team === true;
   const debugOf = (m: ChatMessage): TurnDebug | null =>
     team && UUID.test(m.id) ? { turnId: m.id, conversationId, projectId, ms: m.trace?.ms ?? null } : null;
+  // The thumbs this person gave the replies in this thread, read once as
+  // it opens; each tap after that is kept here as it is made.
+  const [feedback, setFeedback] = useState<Record<string, Verdict>>({});
+  // Replies tapped before the stored thumbs came back: the tap wins, a
+  // thumb taken back included (a quick tap was wiped by the read, 4 Oct).
+  const tapped = useRef(new Set<string>());
+  useEffect(() => {
+    tapped.current = new Set();
+    setFeedback({});
+    if (!conversationId) return;
+    let live = true;
+    apiFetch(`/api/feedback?conversationId=${encodeURIComponent(conversationId)}`, null, "GET")
+      .then(({ ok, data }) => {
+        if (live && ok && data.feedback && typeof data.feedback === "object") {
+          const stored = Object.entries(data.feedback as Record<string, Verdict>).filter(
+            ([id]) => !tapped.current.has(id)
+          );
+          setFeedback((mine) => ({ ...Object.fromEntries(stored), ...mine }));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [conversationId]);
+  /**
+   * Under a settled reply of Luke's: copy (an answer's), whether it
+   * helped, and what it took. Only a reply the thread has kept can be
+   * rated; one still arriving is a working line that never gets here, and
+   * a stopped one is a line of history, not Luke's.
+   */
+  const replyFoot = (m: ChatMessage, copy = false) => {
+    const rated = UUID.test(m.id);
+    const withCopy = copy && !!m.text;
+    if (!withCopy && !rated && !m.usage) return null;
+    return (
+      <div className="flex flex-wrap items-center gap-x-2">
+        {withCopy && <CopyReply text={m.text!} />}
+        {rated && (
+          <ReplyFeedback
+            messageId={m.id}
+            verdict={feedback[m.id]}
+            onChange={(v) => {
+              tapped.current.add(m.id);
+              setFeedback((all) => {
+                const { [m.id]: _was, ...rest } = all;
+                return v ? { ...rest, [m.id]: v } : rest;
+              });
+            }}
+          />
+        )}
+        {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} debug={debugOf(m)} />}
+      </div>
+    );
+  };
   /** When the list of past conversations was opened: what "3 h ago" and "Today" are counted from. */
   const [threadsAt, setThreadsAt] = useState(0);
   /** Pages of past conversations below the first, as "Show older" brings them. */
@@ -3589,7 +3861,7 @@ export default function ChatPanel({
                             reply={messages[i + 1]?.role === "user" ? messages[i + 1].text : undefined}
                             onSubmit={(composed) => resolveCard(m.id, composed)}
                           />
-                          {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} debug={debugOf(m)} />}
+                          {replyFoot(m)}
                         </div>
                       );
                     }
@@ -3625,7 +3897,7 @@ export default function ChatPanel({
                             peek={onPeekSection}
                             onReadSection={onReadSection}
                           />
-                          {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} debug={debugOf(m)} />}
+                          {replyFoot(m)}
                         </div>
                       );
                     }
@@ -3649,12 +3921,7 @@ export default function ChatPanel({
                         <div key={m.id} className="space-y-1">
                           {m.trace && <TraceLine trace={m.trace} />}
                           <Markdown>{m.text ?? ""}</Markdown>
-                          {(m.text || m.usage) && (
-                            <div className="flex flex-wrap items-center gap-x-2">
-                              {m.text && <CopyReply text={m.text} />}
-                              {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} debug={debugOf(m)} />}
-                            </div>
-                          )}
+                          {replyFoot(m, true)}
                           {/* Under the build, which is where they find out it
                     happened — a change made with nobody watching is
                     read here first, and this is the moment they want
@@ -3959,7 +4226,7 @@ export default function ChatPanel({
                             </div>
                           )}
                         </div>
-                        {m.usage && <UsageLine usage={m.usage} shows={shows} inr={inr} debug={debugOf(m)} />}
+                        {replyFoot(m)}
                       </div>
                     );
                   })}
@@ -4516,6 +4783,7 @@ export default function ChatPanel({
                       </ul>
                     </details>
                     <KnownNotes projectId={projectId} />
+                    <LearnedSkills projectId={projectId} />
                   </div>
                 </div>
               )}

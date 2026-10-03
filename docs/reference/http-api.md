@@ -137,7 +137,20 @@ thread: a turn that failed (`unanswered`), needed two or more repairs or was sen
 the critic; an owner's words that say it went wrong (a word list, English and Hinglish);
 a section changed four or more times in a day; a rule whose runs or code jobs failed; a
 schedule setting fields on every row with no `when`; three or more yes/no or status
-fields sharing a word. The console's word searches have trigram indexes on conversation titles, project
+fields sharing a word. **Learning** (0176) reads what Luke learned for each store:
+`abo_admin_learning(p_days)` gives the window's totals (lessons and skills active today; created,
+patched, retired, struck, used, helped, hurt and broken again; the owners' thumbs; the reflector's
+runs and their dollars, `reflections` and `learning_usd`) and the repeat rate, mistakes made again
+over the distinct lessons used in the window; each store's counts,
+newest first, up to 200; and the 20 active lessons most used across stores by their shared name.
+`abo_admin_learning_project(p_project, p_days)` opens one store (`?project=`): every lesson and
+skill in any status, its timeline (newest 300, a patch with its version counted) and its owner's
+verdicts on replies (newest 100). **Agents** (`abo_admin_agents(p_days)`, 0176) says how each of
+Luke's agents did, from the traces and the learning timeline: plan, design, validator, critic,
+gap, memory, reflect and the shadow judge, each with its runs, how they came out, its metered
+calls, tokens and dollars (null where nothing was metered), and each road's turns with their p50
+and p90 times. The reflector runs after a turn is priced, so its runs, what they kept and their
+dollars are read from its own `reflected` rows, not the traces. The console's word searches have trigram indexes on conversation titles, project
 names and shop domains. Every console screen asks `abo_admin_luke_health` (0165) whether
 Luke's newest answers are failing because the model was not there (`payload.failed`), and
 says so in red, with how many turns and apps since when and what to do, until an answer
