@@ -486,3 +486,63 @@ test("the section alone or Luke alone takes the whole screen, and the three come
   await expect(main).toBeVisible();
   await expect.poll(async () => (await lukePanel.boundingBox())!.width).toBeLessThan(width * 0.5);
 });
+
+// A section had one view: a screen asked for over Orders took the table
+// away. A screen beside the store's list is a tab now, and one in place of
+// it is refused before it is built.
+test("a screen beside the store's orders is a tab, and the orders stay", async ({ signedIn: page, shop }) => {
+  const headers = { Authorization: `Bearer ${(shop.session as { access_token: string }).access_token}` };
+  const html = `<p id=count>…</p><script>wl.onRows((rows) => (count.textContent = rows.length + " to pack"));</script>`;
+  const build = (name: string, features: Record<string, unknown>) =>
+    page.request.post("/api/apply", {
+      headers,
+      data: {
+        projectId: shop.projectId,
+        plans: [
+          {
+            changeType: "NEW_MODULE",
+            targetModuleId: null,
+            newModule: { name, nav_label: "Packing desk", icon: "table", source_table: "orders" },
+            newSchema: { columns: [{ field: "packed", label: "Packed", type: "boolean" }] },
+            features,
+            explanation: "The store's orders, with a packing screen.",
+          },
+        ],
+      },
+    });
+
+  const refused = await build("e2e-desk-instead", { view: { type: "custom", title: "Packing", html } });
+  expect(refused.status(), "a screen in place of the store's list is refused").toBe(422);
+  expect(JSON.stringify(await refused.json())).toContain('send it in \\"tabs\\"');
+
+  const made = await build("e2e-desk", { tabs: [{ type: "custom", title: "Packing", html }] });
+  expect(made.ok(), "a screen beside it is built").toBe(true);
+  const { data: row } = await shop.admin
+    .from("modules")
+    .select("id")
+    .eq("project_id", shop.projectId)
+    .eq("name", "e2e-desk")
+    .single();
+  const id = row!.id as string;
+  try {
+    await page.goto(`/app/${shop.projectId}?section=${id}`);
+    const tabs = page.getByRole("tablist", { name: "Views of this section" });
+    // The store's list first, as it always was.
+    await expect(tabs.getByRole("tab", { name: "Table" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("table")).toBeVisible();
+
+    await tabs.getByRole("tab", { name: "Packing" }).click();
+    await expect(page.frameLocator('iframe[title="Packing"]').locator("#count")).toHaveText(/^\d+ to pack$/);
+    await expect(page.getByRole("table")).toHaveCount(0);
+
+    // Opened again, on the tab last open here; the arrows move along the row.
+    await page.reload();
+    await expect(tabs.getByRole("tab", { name: "Packing" })).toHaveAttribute("aria-selected", "true");
+    await tabs.getByRole("tab", { name: "Packing" }).press("ArrowLeft");
+    await expect(tabs.getByRole("tab", { name: "Table" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("table")).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+  } finally {
+    await shop.admin.from("modules").delete().eq("id", id);
+  }
+});

@@ -16,6 +16,7 @@ import type {
 } from "./types";
 import { STORE_TABLES, isStoreTable, storeTableSchema } from "./store-read";
 import { openingPick, presetsOf } from "./period";
+import { tabName } from "./tabs";
 
 /** Renders an expression tree as something a non-technical owner reads. */
 export function exprText(e: Expr | undefined): string {
@@ -217,23 +218,32 @@ export function describeAutomation(
 // ── Plans ────────────────────────────────────────────────────
 
 /** Every feature a plan configures, stated from the config itself. */
+// A written screen, told by what it says on it: its words, not its code.
+const said = (html: string) =>
+  html
+    .replace(/<(style|script)[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 300);
+const detailOf = (v: ViewSpec) =>
+  v.type === "board" ? ` grouped by ${v.groupBy}` : v.type === "calendar" ? ` by ${v.dateField}` : "";
+
 export function describeFeaturesFull(f: FeatureSchema, modules: ModuleRow[]): string[] {
   const out: string[] = [];
   if (f.view) {
     const v = f.view;
-    const detail = v.type === "board" ? ` grouped by ${v.groupBy}` : v.type === "calendar" ? ` by ${v.dateField}` : "";
-    // A written screen, told by what it says on it: its words, not its code.
-    const said = (html: string) =>
-      html
-        .replace(/<(style|script)[\s\S]*?<\/\1>/gi, " ")
-        .replace(/<[^>]+>/g, " ")
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 300);
     out.push(
       v.type === "custom"
         ? `A screen written for it, “${v.title}”${said(v.html) ? `: ${said(v.html)}` : ""}`
-        : `Shown as a ${v.type}${detail}`
+        : `Shown as a ${v.type}${detailOf(v)}`
+    );
+  }
+  for (const t of f.tabs ?? []) {
+    out.push(
+      t.type === "custom"
+        ? `A tab written for it, “${t.title}”${said(t.html) ? `: ${said(t.html)}` : ""}`
+        : `A tab “${tabName(t)}”, shown as ${t.type === "cards" ? "cards" : `a ${t.type}`}${detailOf(t)}`
     );
   }
   if (f.search?.enabled) {
@@ -375,28 +385,44 @@ const viewName = (v: ViewSpec | null | undefined) =>
   !v ? "table" : v.type === "custom" ? `screen “${v.title}”` : (VIEW_NAMES[v.type] ?? "table");
 
 /**
- * A section has one view, so a plan that sends one replaces whatever
- * was there: asked for a range of days, Luke wrote a screen and Orders
- * lost its table, and the card said only "a screen written for it".
- * Said here, from the plan, above the detail: what goes and what stays.
- * Known view, any change of kind; unknown (a section not open), a
- * written screen, which replaces whatever was there.
+ * A section's first view is one, so a plan that sends one replaces
+ * whatever was there: asked for a range of days, Luke wrote a screen and
+ * Orders lost its table, and the card said only "a screen written for
+ * it". Said here, from the plan, above the detail: what goes and what
+ * stays. Known view, any change of kind; unknown (a section not open), a
+ * written screen, which replaces whatever was there. Tabs are laid
+ * beside it and take nothing away, but a change to them replaces the
+ * whole row of them: a tab it leaves out goes, and the card says which.
  */
-function viewReplaced(plan: AssistantPlan, modules: ModuleRow[], current?: ViewSpec | null): string[] {
+function viewReplaced(plan: AssistantPlan, modules: ModuleRow[], current?: FeatureSchema | null): string[] {
   if (plan.changeType !== "FEATURE_UPDATE" || !plan.targetModuleId) return [];
-  const next = plan.features?.view;
-  if (next === undefined) return [];
-  const now = next === null ? "table" : viewName(next);
-  const was = current === undefined ? null : viewName(current);
-  // The same view, or the same screen rewritten: nothing goes.
-  if (was === now) return [];
-  if (was === null && next?.type !== "custom") return [];
   const mod = modules.find((m) => m.id === plan.targetModuleId);
   const name = mod?.nav_label || mod?.name || "This section";
-  const shows = next?.type === "custom" ? `the ${now} written for it` : now === "cards" ? "cards" : `a ${now}`;
-  return [
-    `${name} will show ${shows} in place of its ${was ?? "current view"}. Its rows stay; Put it back, once it is built, brings the ${was ?? "view"} back.`,
-  ];
+  const out: string[] = [];
+  const next = plan.features?.view;
+  if (next !== undefined) {
+    const now = next === null ? "table" : viewName(next);
+    const was = current === undefined ? null : viewName(current?.view);
+    // The same view, or the same screen rewritten: nothing goes.
+    if (was !== now && (was !== null || next?.type === "custom")) {
+      const shows = next?.type === "custom" ? `the ${now} written for it` : now === "cards" ? "cards" : `a ${now}`;
+      out.push(
+        `${name} will show ${shows} in place of its ${was ?? "current view"}. Its rows stay; Put it back, once it is built, brings the ${was ?? "view"} back.`
+      );
+    }
+  }
+  const tabs = plan.features?.tabs;
+  if (tabs !== undefined && current !== undefined) {
+    const kept = new Set((tabs ?? []).map((t) => tabName(t).toLowerCase()));
+    for (const t of current?.tabs ?? []) {
+      if (!kept.has(tabName(t).toLowerCase())) {
+        out.push(
+          `${name} will lose its tab “${tabName(t)}”. Its rows stay; Put it back, once it is built, brings the tab back.`
+        );
+      }
+    }
+  }
+  return out;
 }
 
 /**
@@ -412,12 +438,18 @@ export function describeForOwner(
   modules: ModuleRow[],
   currentColumns?: Array<{ field: string; label: string }>,
   store?: StoreFacts | null,
-  currentView?: ViewSpec | null
+  currentFeatures?: FeatureSchema | null
 ): ReturnType<typeof describePlan> {
-  const d = describePlan(plan, modules, currentColumns, store, currentView);
+  const d = describePlan(plan, modules, currentColumns, store, currentFeatures);
   const view = plan.features?.view;
-  const screen = view?.type === "custom" ? `A screen written for it, “${view.title}”` : null;
-  let lines = screen ? d.lines.map((l) => (l.startsWith(screen) ? screen : l)) : d.lines;
+  // A written screen is in the preview: its title here, not its words again.
+  const screens = [
+    ...(view?.type === "custom" ? [`A screen written for it, “${view.title}”`] : []),
+    ...(plan.features?.tabs ?? [])
+      .filter((t) => t.type === "custom")
+      .map((t) => `A tab written for it, “${tabName(t)}”`),
+  ];
+  let lines = d.lines.map((l) => screens.find((sc) => l.startsWith(sc)) ?? l);
   if (plan.changeType === "FIELD_ADD" && currentColumns) {
     const had = new Set(currentColumns.map((c) => c.field));
     const added = (plan.newSchema?.columns ?? []).filter((c) => !had.has(c.field));
@@ -438,10 +470,10 @@ export function describePlan(
   currentColumns?: Array<{ field: string; label: string }>,
   /** The connected store, if there is one, for the overlap warning. */
   store?: StoreFacts | null,
-  /** The section's view today, when it is known, so a plan that replaces it can say what goes. */
-  currentView?: ViewSpec | null
+  /** The section's features today (null: none, so its table), when known, so a plan that replaces a view or a tab says what goes. */
+  currentFeatures?: FeatureSchema | null
 ): PlanSummary {
-  const warnings = [...storeOverlap(plan, store ?? null), ...viewReplaced(plan, modules, currentView)];
+  const warnings = [...storeOverlap(plan, store ?? null), ...viewReplaced(plan, modules, currentFeatures)];
   const withWarnings = (s: PlanSummary): PlanSummary => (warnings.length ? { ...s, warnings } : s);
   return withWarnings(describePlanBody(plan, modules, currentColumns));
 }

@@ -27,6 +27,7 @@ import { ago } from "@/lib/when";
 import { MEMBER_ROLE_OPTIONS, labelOf } from "@/lib/onboarding";
 import { watchRows } from "@/lib/live";
 import { sees, setSees, type Access } from "@/lib/sharing";
+import { Tabs } from "@/components/ui/Tabs";
 
 type Tab = "general" | "store" | "ai" | "people";
 
@@ -437,28 +438,13 @@ export default function ProjectSettings({
         )
       }
     >
-      <div
-        role="tablist"
-        aria-label="Settings"
-        className="sticky -top-4 z-10 -mx-5 -mt-4 mb-4 flex gap-4 border-b border-line bg-surface px-5"
-      >
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            role="tab"
-            aria-selected={tab === t.id}
-            onClick={() => setTab(t.id)}
-            className={`-mb-px border-b-2 py-2.5 text-[13px] font-medium transition-colors ${
-              tab === t.id ? "border-fg text-fg" : "border-transparent text-fg-muted hover:text-fg"
-            }`}
-          >
-            {t.text}
-            {t.count ? (
-              <span className="ml-1.5 rounded-full bg-surface-hover px-1.5 text-[11px] text-fg-muted">{t.count}</span>
-            ) : null}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        tabs={tabs}
+        value={tab}
+        onChange={setTab}
+        label="Settings"
+        className="sticky -top-4 z-10 -mx-5 -mt-4 mb-4 bg-surface px-5"
+      />
 
       {error && (
         <div className="mb-4">

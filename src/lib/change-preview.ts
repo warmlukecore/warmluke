@@ -5,6 +5,7 @@
 // there, and on another section drew that one's columns under the change.
 
 import type { AssistantPlan, FeatureSchema, UiSchema } from "@/lib/types";
+import { tabName } from "@/lib/tabs";
 
 /** Rows a preview's list shows: enough to read a column by, not a page. */
 export const PREVIEW_ROWS = 3;
@@ -35,10 +36,15 @@ export function changeShown(plan: AssistantPlan, section: UiSchema | null): UiSc
         Object.entries(plan.features ?? {}).filter(([, v]) => v !== null && v !== undefined)
       ) as FeatureSchema;
       if (Object.keys(named).length === 0) return null;
-      // A written screen is the change whole: the section's other parts are not drawn around it.
+      // A written screen is the change whole: the section's other parts are
+      // not drawn around it. A screen added as a tab is shown the same way:
+      // the newest one, the tab this change brings.
+      const had = new Set((section?.features?.tabs ?? []).map((t) => tabName(t)));
+      const written = (named.tabs ?? []).filter((t) => t.type === "custom");
+      const newTab = written.find((t) => !had.has(tabName(t))) ?? written.at(-1);
       return {
         columns: section?.columns ?? [],
-        features: named.view?.type === "custom" ? { view: named.view } : named,
+        features: named.view?.type === "custom" ? { view: named.view } : newTab ? { view: newTab } : named,
       };
     }
     default:

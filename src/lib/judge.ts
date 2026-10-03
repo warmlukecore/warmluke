@@ -25,7 +25,7 @@ import { askJev } from "@/lib/jev";
 import { keyFor } from "@/lib/model-tape";
 import { AUTOMATION_ACTIONS, COLUMNS, NOT_SUPPORTED, STAT_OPS, TRIGGERS, VIEWS } from "@/lib/capabilities";
 import { describePlan, type StoreFacts } from "@/lib/describe";
-import type { AssistantPlan, ModuleRow } from "@/lib/types";
+import type { AssistantPlan, ModuleRow, ViewSpec } from "@/lib/types";
 
 const TIMEOUT_MS = 4000;
 /** findGaps caps unmet at 6; one question each is the whole list. */
@@ -63,16 +63,19 @@ export function describeBuild(
   return plans
     .map((pl) => {
       const d = describePlan(pl, modules, columns, store);
-      const view = pl.features?.view;
-      const code =
-        opts.screens && view?.type === "custom" && typeof view.html === "string"
-          ? [
-              `Its screen's own code, which is what the screen does when used:\n${view.html
+      // Its own view's screen first, then each written tab's, by name.
+      const screens = [pl.features?.view, ...(pl.features?.tabs ?? [])].filter(
+        (v): v is Extract<ViewSpec, { type: "custom" }> => v?.type === "custom" && typeof v.html === "string"
+      );
+      const code = opts.screens
+        ? screens.map(
+            (v, i) =>
+              `${i === 0 && pl.features?.view === v ? "Its screen's" : `The tab “${v.title}”'s`} own code, which is what the screen does when used:\n${v.html
                 .replace(/<style[\s\S]*?<\/style>/gi, "")
                 .trim()
-                .slice(0, SCREEN_CODE_MAX)}`,
-            ]
-          : [];
+                .slice(0, SCREEN_CODE_MAX)}`
+          )
+        : [];
       return [d.title, ...d.lines, ...code].join("\n  ");
     })
     .join("\n");

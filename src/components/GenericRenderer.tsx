@@ -56,6 +56,8 @@ import { PREVIEW_ROWS } from "@/lib/change-preview";
 import { badgeLabel } from "@/lib/tone";
 import { button, fieldOf, iconButtonRound, menu, menuItem } from "@/components/ui/controls";
 import { Choices } from "@/components/AdminParts";
+import { Tabs } from "@/components/ui/Tabs";
+import { VIEW_NAMES, sectionTabs, tabName } from "@/lib/tabs";
 import {
   inPeriod,
   keptPick,
@@ -272,15 +274,6 @@ function PeriodBar({
   );
 }
 
-const VIEW_LABELS: Record<ViewSpec["type"], string> = {
-  table: "Table",
-  board: "Board",
-  calendar: "Calendar",
-  cards: "Cards",
-  list: "List",
-  custom: "Custom",
-};
-
 export default function GenericRenderer({
   schema,
   records,
@@ -362,7 +355,36 @@ export default function GenericRenderer({
   const [page, setPage] = useState(0);
 
   const effectiveSort = sort ?? features?.defaultSort ?? null;
-  const view: ViewSpec = features?.view ?? { type: "table" };
+
+  // Its views as tabs (features.tabs), its own first: the one open is
+  // remembered per section on this device, and a tab since taken away
+  // opens the first. One section's open tab is not another's.
+  const views = sectionTabs(features);
+  const tabMemory = periodKey ? `abo_tab:${periodKey}` : "";
+  const [tabBy, setTabBy] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!tabMemory || tabMemory in tabBy) return;
+    let kept: number | null = null;
+    try {
+      kept = Number(localStorage.getItem(tabMemory));
+    } catch {
+      // Storage refused: the first tab.
+    }
+    if (kept && Number.isInteger(kept)) setTabBy((t) => ({ ...t, [tabMemory]: kept }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabMemory]);
+  const openTab = Math.min(Math.max(tabBy[tabMemory] ?? 0, 0), views.length - 1);
+  const view: ViewSpec = views[openTab];
+  const chooseTab = (i: number) => {
+    setTabBy((t) => ({ ...t, [tabMemory]: i }));
+    setPage(0);
+    if (!tabMemory) return;
+    try {
+      localStorage.setItem(tabMemory, String(i));
+    } catch {
+      // Not kept; it stays open until the page is left.
+    }
+  };
 
   // The dates picked above the section (features.period): one pick a
   // section, opening on its default, then on what this device last chose.
@@ -648,6 +670,8 @@ export default function GenericRenderer({
       case "custom":
         return (
           <CustomView
+            // Two written tabs are two screens, not one rewritten.
+            key={openTab}
             view={view}
             columns={columns}
             records={filteredRecords}
@@ -759,6 +783,16 @@ export default function GenericRenderer({
         </div>
       )}
 
+      {views.length > 1 && (
+        <Tabs
+          tabs={views.map((v, i) => ({ id: String(i), text: tabName(v) }))}
+          value={String(openTab)}
+          onChange={(id) => chooseTab(Number(id))}
+          label="Views of this section"
+          className="-mb-1 overflow-x-auto"
+        />
+      )}
+
       {/* A written screen is the section: it carries its own search and steps, so the list's are not drawn around it. */}
       <div
         className={
@@ -796,11 +830,16 @@ export default function GenericRenderer({
                 }}
               />
             ))}
-            <span className="ml-auto hidden rounded-full bg-tone-neutral px-2 py-0.5 text-xs text-tone-neutral-fg sm:inline">
-              {VIEW_LABELS[view.type]}
-            </span>
+            {views.length === 1 && (
+              <span className="ml-auto hidden rounded-full bg-tone-neutral px-2 py-0.5 text-xs text-tone-neutral-fg sm:inline">
+                {VIEW_NAMES[view.type]}
+              </span>
+            )}
             {editable && (
-              <button onClick={() => setAdding(true)} className={button("primary", "sm")}>
+              <button
+                onClick={() => setAdding(true)}
+                className={`${button("primary", "sm")} ${views.length > 1 ? "ml-auto" : ""}`}
+              >
                 <Plus aria-hidden size={14} strokeWidth={2} />
                 Add
               </button>

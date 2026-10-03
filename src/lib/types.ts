@@ -151,8 +151,17 @@ export type ViewSpec =
 // ── Module-level features (all AI-editable via prompt) ───────
 
 export interface FeatureSchema {
-  /** How this section is rendered. Defaults to a plain table if absent. */
+  /** How this section is rendered. Defaults to a plain table if absent. The first tab when there are tabs. */
   view?: ViewSpec;
+  /**
+   * More views of the same rows, as tabs after the first (`view`): a
+   * written packing screen beside Orders' table, a board by stage beside
+   * a list. A section had one view, so a screen asked for over Orders
+   * took its table away. On a section over the store a written screen is
+   * only ever a tab here, never `view`. A tab's name is its "label", or a
+   * written screen's title. At most four.
+   */
+  tabs?: Array<ViewSpec & { label?: string }>;
   search?: { enabled: boolean; fields?: string[]; placeholder?: string };
   filters?: Array<{ field: string; label: string; options: string[] }>;
   /**
@@ -228,7 +237,7 @@ export interface FeatureSchema {
 
 /**
  * A change to a section's features, laid over what it has: a part the
- * change names (view, stats, filters, actions, scanMode, search,
+ * change names (view, tabs, stats, filters, actions, scanMode, search,
  * defaultSort, period) replaces that part, a part it leaves out stays, and null
  * takes it away. A change used to replace them all, so to add one
  * counter Luke sent every part back, and a part he missed was gone: a

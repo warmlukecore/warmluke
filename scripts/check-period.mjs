@@ -144,7 +144,15 @@ check(
 const screen = { type: "custom", title: "Orders dashboard", html: "<div></div>" };
 const board = { type: "board", groupBy: "status", cardTitle: "order_number" };
 const plan = (view) => ({ changeType: "FEATURE_UPDATE", targetModuleId: "m1", features: { view } });
-const warn = (view, current) => describeForOwner(plan(view), modules, undefined, null, current).warnings ?? [];
+// The section's features today: undefined when not in view, null for none (its table).
+const warn = (view, current) =>
+  describeForOwner(
+    plan(view),
+    modules,
+    undefined,
+    null,
+    current === undefined ? undefined : current && { view: current }
+  ).warnings ?? [];
 check(
   "a written screen over the table says the table goes, and how it comes back",
   warn(screen, null)[0] ===

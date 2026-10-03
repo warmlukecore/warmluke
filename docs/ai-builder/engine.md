@@ -389,6 +389,18 @@ keeps UTC; a zone the database cannot read is kept as UTC (`trg_stores_zone`).
 (`viewReplaced` in `describe.ts`): a section has one view. `check-period` and
 `check-stats` hold these.
 
+## A section's views as tabs
+
+A section shows its own view (`features.view`, a table when there is none) and, in
+`features.tabs`, up to four more views of the same rows, each a tab after it: a written
+packing screen beside Orders' table, a board by stage beside a list. A tab is named by a
+written screen's `title` or another view's `label` (`lib/tabs.ts`). The period, the stat
+cards and the scan bar sit above the tabs and apply to every one; the tab open is
+remembered per section on the device. On a section over the store a written screen is only
+ever a tab: the validator refuses one sent as its `view`, which is how Orders lost its
+table. `tabs` is one part, so a change that sends it replaces the row, and the owner's card
+says which tab a change would take away. `check-tabs` and `e2e/sections.spec.ts` hold this.
+
 ## Code with nobody watching
 
 A code rule on a schedule, or on a row the store brings in, has no owner's write to follow,
