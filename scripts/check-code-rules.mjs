@@ -166,6 +166,16 @@ for (const k of ways) {
   else process.env[k] = kept[k];
 }
 
+// One run, then gone: a sandbox the SDK keeps is saved as a snapshot each
+// time it stops, and those filled the plan's storage until Vercel refused
+// every code rule (402, 3 Oct). Read off the source: the call is not made here.
+const { readFileSync } = await import("node:fs");
+const runSource = readFileSync(new URL("../src/lib/code-run.ts", import.meta.url), "utf8");
+check(
+  "a rule's sandbox is made not to persist, so it leaves no snapshot",
+  /Sandbox\.create\(\{[\s\S]*?persistent:\s*false[\s\S]*?\}\)/.test(runSource)
+);
+
 console.log(
   fails.length === 0
     ? "\na rule's own code is taken when it can run, and hands back only writes"

@@ -150,6 +150,11 @@ export async function runCodeEach(code: string, inputs: unknown[]): Promise<Ran[
       timeout: Math.min(45_000 + inputs.length * 200, 240_000),
       resources: { vcpus: 1 },
       networkPolicy: "deny-all",
+      // One run, then gone. The SDK keeps a sandbox by default, saving it
+      // as a snapshot each time it stops: every rule's run left 250 MB the
+      // next run never reads, until the plan's storage was full and Vercel
+      // refused every code rule (402, 3 Oct, 16:21 UTC on).
+      persistent: false,
     });
     await sandbox.writeFiles([
       { path: "rule.mjs", content: Buffer.from(code) },
