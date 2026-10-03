@@ -3,7 +3,9 @@
 
 import type { EvalRun } from "@/lib/eval-report";
 import r0 from "./20261003-1953-before.json";
+import r1 from "./20261003-2146-after.json";
 
 export const RUN_FILES: Record<string, EvalRun> = {
   "20261003-1953-before.json": r0 as unknown as EvalRun,
+  "20261003-2146-after.json": r1 as unknown as EvalRun,
 };

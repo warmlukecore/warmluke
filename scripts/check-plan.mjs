@@ -6,7 +6,7 @@
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-plan.mjs
 
-import { intentBlock, parseIntent } from "../src/lib/plan.ts";
+import { intentBlock, parseIntent, plainSay } from "../src/lib/plan.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -49,6 +49,22 @@ check("lists the work, one line each", /Work:\n- scan the order number\n- the or
 check("skips an empty list", !/Rules:/.test(block));
 check("carries what is unsure, for a question", /Unsure:\n- should a second scan/.test(block));
 check("a thin plan is a short block", intentBlock(thin).split("\n").length === 4);
+
+// The plan as the owner reads it: no column's key left in it (4 Oct eval).
+const labels = new Map([
+  ["orders_count", "Orders"],
+  ["total_spent", "Spent"],
+]);
+check(
+  "a column's key in the plan becomes its label",
+  plainSay("jiska orders_count 2 ya zyada, total_spent ke hisaab se", labels) ===
+    "jiska Orders 2 ya zyada, Spent ke hisaab se"
+);
+check("any other key becomes plain words", plainSay("ek is_rto tick", labels) === "ek is rto tick");
+check(
+  "words and numbers are left as they are",
+  plainSay("Ek behtar idea: 3 baar call", labels) === "Ek behtar idea: 3 baar call"
+);
 
 console.log(fails.length === 0 ? "\nthe plan step reads back what was understood" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

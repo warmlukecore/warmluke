@@ -16,5 +16,23 @@
       "cost": 1.3475,
       "avg_ms": 96380
     }
+  },
+  {
+    "file": "20261003-2146-after.json",
+    "label": "after",
+    "started": "2026-10-03T21:46:02.086Z",
+    "summary": {
+      "pass_rate": 0.2,
+      "said_rate": 0.762,
+      "avg_scores": {
+        "discussed": 3.8,
+        "plain": 2.4,
+        "better_idea": 4.2,
+        "simplest": 3
+      },
+      "signs_total": 2,
+      "cost": 1.3171,
+      "avg_ms": 92688
+    }
   }
 ]

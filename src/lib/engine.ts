@@ -13,7 +13,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isStoreTable, storeSectionColumns, storeTableSchema } from "@/lib/store-read";
+import { isStoreTable, STORE_TABLES, storeSectionColumns, storeTableSchema } from "@/lib/store-read";
 import {
   asNextSteps,
   buildSystemPrompt,
@@ -48,6 +48,7 @@ import {
   intentBlock,
   isGoAhead,
   parseIntent,
+  plainSay,
   proposalOf,
   wantsItBuilt,
   type DesignIntent,
@@ -495,6 +496,15 @@ export async function recentRequests(
  * was built as a second section beside it. Written from what is saved,
  * so it is always what is there.
  */
+/** Every column's key and the label the owner sees it by: theirs first, then every store list's. */
+function columnLabels(modules: ModuleRow[], schemas: Map<string, UiSchema>): Map<string, string> {
+  const labels = new Map<string, string>();
+  for (const m of modules) for (const c of schemas.get(m.id)?.columns ?? []) if (c.label) labels.set(c.field, c.label);
+  for (const t of Object.values(STORE_TABLES))
+    for (const c of t.columns) if (!labels.has(c.field)) labels.set(c.field, c.label);
+  return labels;
+}
+
 function columnLines(modules: ModuleRow[], schemas: Map<string, UiSchema>): string[] {
   return modules.map((m) => {
     const schema = schemas.get(m.id);
@@ -808,7 +818,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       type: "answer" as const,
       kind: "proposal" as const,
       title: said.goal.slice(0, 80),
-      message: said.say,
+      message: plainSay(said.say, columnLabels(modules, schemas)),
       next: [{ label: "Build it", prompt: "Build it" }],
       understood: said,
     };

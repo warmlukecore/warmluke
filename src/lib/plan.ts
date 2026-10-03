@@ -138,3 +138,15 @@ export function agreedBlock(intent: DesignIntent): string {
     '\n\nWHAT THE OWNER AGREED TO — they read this plan in Luke\'s words and said yes. Build exactly this, in one design, and do not ask again: where it was unsure, take the likelier answer and say it in "message".'
   );
 }
+
+/**
+ * The plan in words, with no field's name left in it. The planner reads
+ * the app's columns by their keys and now and then says one back
+ * ("orders_count 2 ya zyada"), which the owner never sees anywhere; with
+ * the operator's ideas in the plan it did so in three of five eval cases
+ * (4 Oct). Each key that names a column becomes that column's label, and
+ * any other snake_case word its plain words.
+ */
+export function plainSay(say: string, labels: Map<string, string>): string {
+  return say.replace(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/g, (key) => labels.get(key) ?? key.replace(/_/g, " "));
+}
