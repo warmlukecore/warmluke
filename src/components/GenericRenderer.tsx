@@ -72,6 +72,7 @@ import {
   type PeriodSpec,
 } from "@/lib/period";
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { PAGE_SIZES, keptPageSize, pageSizeKey, type TableState } from "@/lib/store-read";
 
 /** A table shows this many rows at a time; the rest are a page away. */
 const PAGE = 50;
@@ -290,6 +291,7 @@ export default function GenericRenderer({
   periodKey,
   timeZone,
   onPeriod,
+  serverRows,
 }: {
   schema: UiSchema;
   records: RecordRow[];
@@ -297,6 +299,20 @@ export default function GenericRenderer({
   totalRecords?: number;
   /** Absent once everything is loaded. */
   onLoadMore?: () => Promise<void>;
+  /**
+   * A section over the store reads a page at a time from the whole list
+   * (0167). Given, the search, the filters, the sort and the page are
+   * the server's: this says what the table shows, and `records` is that
+   * page, `totalRecords` everything that matches.
+   */
+  serverRows?: {
+    onChange: (state: TableState) => void;
+    /** What each filter can offer, from the whole list. */
+    facets: Record<string, string[]>;
+    /** Where the search looks when the section names no fields. */
+    searchFields: string[];
+    moduleId: string;
+  };
   preview?: boolean;
   /** Omitted in previews, which are read-only by design. */
   onCreate?: (data: Record<string, unknown>) => Promise<void>;
@@ -353,8 +369,35 @@ export default function GenericRenderer({
   const [sort, setSort] = useState<{ field: string; dir: "asc" | "desc" } | null>(null);
   // The table's page, over the rows loaded; back to the first whenever what is shown changes.
   const [page, setPage] = useState(0);
+  // Over the store, the page is the server's (0167): how many a page,
+  // kept on this device per section, and the search asked once typing pauses.
+  const server = !!serverRows && !preview;
+  const sizeFor = serverRows?.moduleId ?? "";
+  const [sizes, setSizes] = useState<Record<string, number>>({});
+  const size = sizeFor ? (sizes[sizeFor] ?? keptPageSize(sizeFor)) : PAGE;
+  const chooseSize = (n: number) => {
+    setSizes((p) => ({ ...p, [sizeFor]: n }));
+    setPage(0);
+    try {
+      localStorage.setItem(pageSizeKey(sizeFor), String(n));
+    } catch {
+      // Not kept; it holds until the page is left.
+    }
+  };
+  const [asked, setAsked] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setAsked(search.trim()), 250);
+    return () => clearTimeout(t);
+  }, [search]);
 
   const effectiveSort = sort ?? features?.defaultSort ?? null;
+
+  // Over the store, what the table shows goes to the server whenever it changes.
+  const tableKey = server ? JSON.stringify([page, size, asked, filterValues, sort]) : "";
+  useEffect(() => {
+    if (server) serverRows!.onChange({ page, size, search: asked, filters: filterValues, sort });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tableKey]);
 
   // Its views as tabs (features.tabs), its own first: the one open is
   // remembered per section on this device, and a tab since taken away
@@ -446,20 +489,25 @@ export default function GenericRenderer({
     const opens = features?.scanMode?.first?.field;
     if (opens && scanGroup) rows = rows.filter((r) => sameCode(r.data?.[opens], scanGroup));
 
-    if (features?.search?.enabled && search.trim()) {
+    // Over the store the server searched, filtered and sorted the whole
+    // list (0167); a computed column, worked out here, is the page's own.
+    const computedOnly = (f: string) => !server || columns.some((c) => c.field === f && c.compute);
+    if (!server && features?.search?.enabled && search.trim()) {
       const q = search.trim().toLowerCase();
       const fields =
         features.search.fields?.filter((f) => columns.some((c) => c.field === f)) ?? columns.map((c) => c.field);
+      // A phone typed any way finds it: "98765 43210" and "+91 98765-43210" are one number.
+      const digits = q.replace(/\D/g, "");
       rows = rows.filter((r) =>
-        fields.some((f) =>
-          String(r.data?.[f] ?? "")
-            .toLowerCase()
-            .includes(q)
-        )
+        fields.some((f) => {
+          const v = String(r.data?.[f] ?? "");
+          return v.toLowerCase().includes(q) || (digits.length >= 6 && v.replace(/\D/g, "").includes(digits));
+        })
       );
     }
 
     for (const fl of features?.filters ?? []) {
+      if (!computedOnly(fl.field)) continue;
       const v = filterValues[fl.field];
       // Compared the way the search box beside it compares: a
       // dropdown that matched byte for byte offered "active" against
@@ -467,7 +515,7 @@ export default function GenericRenderer({
       if (v) rows = rows.filter((r) => matchesFilter(r, fl.field, v));
     }
 
-    if (effectiveSort && columns.some((c) => c.field === effectiveSort.field)) {
+    if (effectiveSort && columns.some((c) => c.field === effectiveSort.field) && computedOnly(effectiveSort.field)) {
       const col = columns.find((c) => c.field === effectiveSort.field)!;
       rows = [...rows].sort((a, b) =>
         effectiveSort.dir === "asc"
@@ -478,7 +526,7 @@ export default function GenericRenderer({
 
     return rows;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowsWithComputed, columns, features, search, filterValues, effectiveSort, scanGroup, rangeKey]);
+  }, [rowsWithComputed, columns, features, search, filterValues, effectiveSort, scanGroup, rangeKey, server]);
 
   const rowCurrencyFields = useMemo(
     () => [
@@ -634,9 +682,15 @@ export default function GenericRenderer({
   // A section's table fills the page below its counters and scrolls within
   // it, so its head and its foot (the pages, the count) stay in view.
   const fill = table && !preview;
-  const pages = fill ? Math.max(1, Math.ceil(filteredRecords.length / PAGE)) : 1;
+  const pages = server
+    ? Math.max(1, Math.ceil(total / size))
+    : fill
+      ? Math.max(1, Math.ceil(filteredRecords.length / PAGE))
+      : 1;
   const at = Math.min(page, pages - 1);
   const filtered = !!search.trim() || Object.values(filterValues).some(Boolean);
+  // A list of the store's is searched always: 2,487 orders with no box to find one in is a list nobody can use.
+  const searchable = server || !!features?.search?.enabled;
   const clearFilters = () => {
     setSearch("");
     setFilterValues({});
@@ -690,7 +744,9 @@ export default function GenericRenderer({
             {...viewProps}
             // A new page, or another section's table, starts at its top left.
             key={`${at}:${columns.map((c) => c.field).join()}`}
-            records={fill ? filteredRecords.slice(at * PAGE, (at + 1) * PAGE) : viewProps.records}
+            records={
+              server ? filteredRecords : fill ? filteredRecords.slice(at * PAGE, (at + 1) * PAGE) : viewProps.records
+            }
             sort={effectiveSort}
             onSort={(field) => {
               setPage(0);
@@ -802,9 +858,9 @@ export default function GenericRenderer({
         }
       >
         {/* Only with something in it to use: a bar holding a lone "Table" said nothing. */}
-        {!custom && (features?.search?.enabled || (features?.filters?.length ?? 0) > 0 || editable) && (
+        {!custom && (searchable || (features?.filters?.length ?? 0) > 0 || editable) && (
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-2.5">
-            {features?.search?.enabled && (
+            {searchable && (
               <input
                 type="search"
                 value={search}
@@ -812,8 +868,8 @@ export default function GenericRenderer({
                   setSearch(e.target.value);
                   setPage(0);
                 }}
-                placeholder={features.search.placeholder ?? "Search…"}
-                aria-label={features.search.placeholder ?? "Search"}
+                placeholder={features?.search?.placeholder ?? "Search…"}
+                aria-label={features?.search?.placeholder ?? "Search"}
                 className={`${fieldOf("md")} w-full min-w-0 sm:w-60`}
               />
             )}
@@ -822,7 +878,18 @@ export default function GenericRenderer({
                 key={fl.field}
                 label={fl.label}
                 value={filterValues[fl.field] ?? ""}
-                options={filterOptions(fl.options ?? [], rowsWithComputed, fl.field)}
+                options={filterOptions(
+                  fl.options ?? [],
+                  server
+                    ? [
+                        ...rowsWithComputed,
+                        ...(serverRows!.facets[fl.field] ?? []).map(
+                          (v) => ({ id: "", data: { [fl.field]: v } }) as RecordRow
+                        ),
+                      ]
+                    : rowsWithComputed,
+                  fl.field
+                )}
                 badges={columns.find((c) => c.field === fl.field)?.type === "badge"}
                 onChange={(v) => {
                   setFilterValues((prev) => ({ ...prev, [fl.field]: v }));
@@ -854,7 +921,13 @@ export default function GenericRenderer({
         )}
 
         {records.length === 0 && !custom ? (
-          <EmptyState total={0} onAdd={editable ? () => setAdding(true) : undefined} />
+          // Over the store an empty page with a search or filter on is
+          // nothing matching, with the way back, not an empty list.
+          <EmptyState
+            total={server && filtered ? 1 : 0}
+            onClear={server && filtered ? clearFilters : undefined}
+            onAdd={editable ? () => setAdding(true) : undefined}
+          />
         ) : (
           renderView()
         )}
@@ -873,7 +946,9 @@ export default function GenericRenderer({
                   <ChevronLeft aria-hidden size={16} strokeWidth={1.75} />
                 </button>
                 <span className="px-1 font-medium text-fg tabular-nums">
-                  {fmt.number(at * PAGE + 1)}–{fmt.number(Math.min((at + 1) * PAGE, filteredRecords.length))}
+                  {server
+                    ? `${fmt.number(at * size + 1)}–${fmt.number(Math.min((at + 1) * size, total))}`
+                    : `${fmt.number(at * PAGE + 1)}–${fmt.number(Math.min((at + 1) * PAGE, filteredRecords.length))}`}
                 </span>
                 <button
                   onClick={() => setPage(at + 1)}
@@ -885,11 +960,42 @@ export default function GenericRenderer({
                 </button>
               </div>
             )}
-            <span className="tabular-nums">
-              {preview ? Math.min(PREVIEW_ROWS, filteredRecords.length) : filteredRecords.length} of {records.length}{" "}
-              record{records.length === 1 ? "" : "s"}
-              {total > records.length && ` shown · ${total} in total`}
-            </span>
+            {server ? (
+              <>
+                <span className="tabular-nums">
+                  {/* With pages, the pill says where: this says of how many. */}
+                  {total === 0
+                    ? "None"
+                    : pages > 1
+                      ? `of ${fmt.number(total)}`
+                      : `${fmt.number(at * size + 1)}–${fmt.number(Math.min((at + 1) * size, total))} of ${fmt.number(total)}`}
+                </span>
+                {/* How many a page: the browser holds a page, never the store. */}
+                <div role="group" aria-label="Rows a page" className="ml-auto flex items-center gap-0.5">
+                  {[...PAGE_SIZES]
+                    .sort((a, b) => a - b)
+                    .map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => chooseSize(n)}
+                        aria-pressed={size === n}
+                        className={`rounded-control px-1.5 py-0.5 tabular-nums transition-colors ${
+                          size === n ? "bg-surface-hover font-medium text-fg" : "hover:text-fg"
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  <span className="ml-1 hidden sm:inline">a page</span>
+                </div>
+              </>
+            ) : (
+              <span className="tabular-nums">
+                {preview ? Math.min(PREVIEW_ROWS, filteredRecords.length) : filteredRecords.length} of {records.length}{" "}
+                record{records.length === 1 ? "" : "s"}
+                {total > records.length && ` shown · ${total} in total`}
+              </span>
+            )}
             {onLoadMore && (
               <button
                 onClick={async () => {
@@ -908,7 +1014,7 @@ export default function GenericRenderer({
             )}
           </div>
         )}
-        {total > records.length && !custom && (
+        {total > records.length && !custom && !server && (
           <div className="shrink-0 border-t border-tone-attention/70 bg-tone-attention/25 px-3 py-1.5 text-[11px] text-tone-attention-fg">
             {onStats
               ? `The totals above cover all ${fmt.number(total)} rows; the list below is the ${records.length} loaded so far.`

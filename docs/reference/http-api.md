@@ -134,6 +134,8 @@ Luke's newest answers are failing because the model was not there (`payload.fail
 says so in red, with how many turns and apps since when and what to do, until an answer
 comes through again.
 
+A section over the store reads its table through `abo_store_page(p_module, p_query)` (0167): one page of the whole list (`offset`, `limit` up to 200), searched, filtered and sorted in SQL by the counters' rules, the merchant's own fields joined only when asked about, an order's dates as a range on `placed_ts`, the exact total, and on request each filter's values from the whole list. Readable where the counters are: the section shared with them and its store open to them.
+
 ## Invite links
 
 The console's `invites` screen makes a link (`abo_admin_invite_create`) for one email or for several

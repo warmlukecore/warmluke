@@ -1859,11 +1859,16 @@ export async function POST(req: Request) {
     // whichever the database returned first — so a question about one
     // shop could be answered from the other, silently and with a
     // straight face. Ambiguity is now a question rather than a guess.
+    // A project named is a store named: one project has one store, so an
+    // assistant that says which app it means is not asked which shop.
+    const ofProject = typeof args.project_id === "string" ? stores.filter((s) => s.project_id === args.project_id) : [];
     const store = wanted
       ? stores.find((s) => s.shop_domain.toLowerCase() === wanted)
-      : stores.length === 1
-        ? stores[0]
-        : null;
+      : ofProject.length === 1
+        ? ofProject[0]
+        : stores.length === 1
+          ? stores[0]
+          : null;
     if (!store && !wanted && stores.length > 1) {
       return ok(
         id,

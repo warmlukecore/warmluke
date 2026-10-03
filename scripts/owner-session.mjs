@@ -168,7 +168,10 @@ export async function throwawayProject(admin, ownerId, label) {
     id: data.id,
     auto_build: data.auto_build,
     async remove() {
-      await admin.from("projects").delete().eq("id", data.id);
+      // Said, not swallowed: a project left behind gives the check user a
+      // second store, and every store tool after it asks "which one".
+      const { error: gone } = await admin.from("projects").delete().eq("id", data.id);
+      if (gone) console.error(`could not remove the check's project ${data.id}: ${gone.message}`);
     },
   };
 }

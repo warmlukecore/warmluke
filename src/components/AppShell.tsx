@@ -43,10 +43,14 @@ import {
   canCarryOwnFields,
   isStoreTable,
   ownColumns,
+  keptPageSize,
+  readStorePage,
   readStoreRows,
+  searchFieldsOf,
   storeSectionColumns,
   withOwnFields,
   type StoreTable,
+  type TableState,
 } from "@/lib/store-read";
 import { useResizable } from "@/lib/useResizable";
 import type {
@@ -952,6 +956,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // cards count rather than whichever two hundred loaded first. Whose
   // section it is is kept with it; another section's pick is not this one's.
   const rowPeriod = useRef<{ moduleId: string; range: PeriodRange | null } | null>(null);
+  // What a section over the store's table asks for (0167), as it last
+  // said, and what was read for it: the same ask twice is read once.
+  const rowTable = useRef<{ moduleId: string; state: TableState } | null>(null);
+  const rowAsked = useRef<{ moduleId: string; key: string } | null>(null);
+  // The values each filter can offer, from the whole list: read once a section is opened.
+  const [facets, setFacets] = useState<Record<string, string[]>>({});
+  const facetsFor = useRef<string | null>(null);
   // Each section's reads numbered: a pick changed quickly sends two, and
   // the older arriving last would put back the rows from before the pick.
   // Per section, not one count for all: a read of the section just left,
@@ -1026,25 +1037,41 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       // loaded, not whatever the module list happens to hold.
       setLoadedSource(sourceTable ?? null);
       if (isStoreTable(sourceTable) && storeId) {
+        // One page of the whole list, from the server (0167): the page,
+        // the search, the filters and the sort the table holds now.
+        const state =
+          rowTable.current?.moduleId === moduleId
+            ? rowTable.current.state
+            : { page: 0, size: keptPageSize(moduleId), search: "", filters: {}, sort: null };
+        const features = loadedSchema?.schema_json?.features ?? null;
+        const askFacets = facetsFor.current !== moduleId;
+        rowAsked.current = { moduleId, key: JSON.stringify([state, ranged?.from, ranged?.to]) };
         try {
-          const { rows, total } = await readStoreRows(
+          const page = await readStorePage(
             supabase,
-            storeId,
+            moduleId,
             sourceTable as StoreTable,
-            limit,
-            undefined,
-            // Cut the page in the section's own order, or "Customers by
-            // total spent" is the top of the first two hundred names.
-            loadedSchema?.schema_json?.features?.defaultSort ?? null,
-            // The store's lists carry their dates as days (to_char in the
-            // views), as Luke's own answers read them (slice.ts): days here
-            // too, or a text day against an instant drops the first one.
-            ranged ? { field: ranged.field, from: ranged.fromDay, to: ranged.toDay } : null
+            state,
+            features,
+            loadedSchema ? withStoreColumns(loadedSchema, sourceTable).schema_json.columns : [],
+            ranged
+              ? {
+                  field: ranged.field,
+                  from_day: ranged.fromDay,
+                  to_day: ranged.toDay,
+                  from: ranged.from,
+                  to: ranged.to,
+                }
+              : null,
+            askFacets ? (features?.filters ?? []).map((f) => f.field) : []
           );
-          const withTheirs = (await withOwnFields(supabase, moduleId, rows)) as unknown as RecordRow[];
           if (seq !== loadSeq.current[moduleId]) return;
-          setRecords(withTheirs);
-          setRecordTotal(total);
+          setRecords(page.rows as unknown as RecordRow[]);
+          setRecordTotal(page.total);
+          if (askFacets) {
+            facetsFor.current = moduleId;
+            setFacets(page.facets);
+          }
         } catch (e) {
           setLoadError(e instanceof Error ? e.message : "Couldn't read the store.");
         }
@@ -1106,6 +1133,21 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     if (!selectedModuleId) return;
     await loadModuleData(selectedModuleId, records.length + RECORD_PAGE);
   }, [selectedModuleId, records.length, loadModuleData]);
+
+  // The table says what it shows; a change reads that page of the whole
+  // list, and the same ask again (its first, as the shell already read
+  // it) is not read twice.
+  const tableChanged = useCallback(
+    (state: TableState) => {
+      if (!selectedModuleId) return;
+      rowTable.current = { moduleId: selectedModuleId, state };
+      const range = rowPeriod.current?.moduleId === selectedModuleId ? rowPeriod.current.range : null;
+      const key = JSON.stringify([state, range?.from, range?.to]);
+      if (rowAsked.current?.moduleId === selectedModuleId && rowAsked.current.key === key) return;
+      void loadModuleData(selectedModuleId);
+    },
+    [selectedModuleId, loadModuleData]
+  );
 
   // The renderer says which dates are picked; a change reads the rows inside them again.
   const periodChanged = useCallback(
@@ -3372,7 +3414,19 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     schema={schema.schema_json}
                     records={records}
                     totalRecords={recordTotal}
-                    onLoadMore={records.length < recordTotal ? loadMoreRecords : undefined}
+                    onLoadMore={
+                      !isStoreTable(loadedSource) && records.length < recordTotal ? loadMoreRecords : undefined
+                    }
+                    serverRows={
+                      isStoreTable(loadedSource)
+                        ? {
+                            onChange: tableChanged,
+                            facets,
+                            searchFields: searchFieldsOf(loadedSource as StoreTable),
+                            moduleId: selectedModuleId ?? "",
+                          }
+                        : undefined
+                    }
                     onStats={sectionStats}
                     onScanGroup={openScanGroup}
                     onReadSection={readSection}

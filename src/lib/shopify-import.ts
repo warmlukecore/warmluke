@@ -557,7 +557,9 @@ query($n: Int!, $after: String) {
       customer { id }
       paymentGatewayNames
       discountCodes
-      shippingAddress { city provinceCode countryCode }
+      phone
+      shippingAddress { city provinceCode countryCode phone }
+      billingAddress { phone }
       lineItems(first: 100) {
         nodes {
           id title variantTitle quantity sku
@@ -613,7 +615,16 @@ export type GqlOrder = {
   /** What paid: "Cash on Delivery (COD)", or the provider. The first is the one that did. */
   paymentGatewayNames?: string[] | null;
   discountCodes?: string[] | null;
-  shippingAddress?: { city: string | null; provinceCode: string | null; countryCode: string | null } | null;
+  shippingAddress?: {
+    city: string | null;
+    provinceCode: string | null;
+    countryCode: string | null;
+    /** Where a COD buyer gives their number (0166). Protected data: null where Shopify withholds it. */
+    phone?: string | null;
+  } | null;
+  /** The order's own phone, typed at checkout. */
+  phone?: string | null;
+  billingAddress?: { phone?: string | null } | null;
   lineItems: {
     nodes: Array<{
       id: string;
@@ -697,6 +708,10 @@ export async function saveOrders(db: SupabaseClient, storeId: string, nodes: Gql
         ship_city: o.shippingAddress?.city ?? null,
         ship_state: o.shippingAddress?.provinceCode ?? null,
         ship_country: o.shippingAddress?.countryCode ?? null,
+        // The list shows the first of these there is, then the customer's (0166).
+        phone: o.phone?.trim() || null,
+        ship_phone: o.shippingAddress?.phone?.trim() || null,
+        bill_phone: o.billingAddress?.phone?.trim() || null,
       })),
       { onConflict: "store_id,external_id" }
     )

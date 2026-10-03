@@ -472,7 +472,9 @@ export const SHOPIFY_RESOURCES = {
     customer { id }
     paymentGatewayNames
     discountCodes
-    shippingAddress { city provinceCode countryCode }
+    phone
+    shippingAddress { city provinceCode countryCode phone }
+    billingAddress { phone }
     lineItems { edges { node {
       id title variantTitle quantity sku
       variant { id }

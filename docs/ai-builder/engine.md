@@ -180,6 +180,12 @@ For each turn, the engine reads:
   `payload.failed` for the console;
 - connected-store facts and bounded data snapshots.
 
+A store-backed section's table is read a page at a time from the whole list
+(`abo_store_page`, 0167), so search, filters and sorting cover every row, not the rows
+loaded; computed columns, worked out in the browser, filter and sort the page alone. The
+orders list runs newest first by the moment (`placed_ts`, 0166) and shows the order's
+delivery phone before the customer's.
+
 For store-backed modules, effective schemas combine canonical store columns with saved
 computed columns and features. This prevents prompt/validation context from describing a
 different shape than the renderer uses.

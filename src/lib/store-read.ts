@@ -14,7 +14,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { SchemaColumn } from "@/lib/types";
+import type { FeatureSchema, SchemaColumn } from "@/lib/types";
 import type { Resource } from "@/lib/shopify-resources";
 
 export type StoreBrief = {
@@ -371,7 +371,9 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     view: "store_orders",
     // A change to the shop is aimed with Shopify's own id (0121).
     gives: { Order: "shopify_id" },
-    order: { field: "placed_at", ascending: false },
+    // The moment, not the day the list shows (0166): newest first within
+    // a day too, and on the orders index rather than a sort of them all.
+    order: { field: "placed_ts", ascending: false },
     select:
       "id, order_number, placed_at, customer_name, customer_phone, total, total_original, currency, status, fulfilment_status, financial_status, cancelled_at, tags, gateway, discount_codes, ship_city, ship_state, ship_country, subtotal, tax, shipping, discount",
     columns: [
@@ -785,10 +787,14 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
  * as it being worth searching, and matching a postcode against a
  * product title helps nobody.
  */
+/** Lists with a phone's digits to search by (0166). */
+const PHONE_DIGITS = new Set<StoreTable>(["orders", "customers"]);
+
 const SEARCHABLE: Record<StoreTable, string[]> = {
   orders: [
     "order_number",
     "customer_name",
+    "customer_phone",
     "financial_status",
     "fulfilment_status",
     "gateway",
@@ -1034,7 +1040,17 @@ export async function readStoreRows(
     .slice(0, 20);
   if (terms.length) {
     const fields = SEARCHABLE[table];
-    query = query.or(terms.flatMap((t) => fields.map((f) => `${f}.ilike.%${t}%`)).join(","));
+    query = query.or(
+      terms
+        .flatMap((t) => [
+          ...fields.map((f) => `${f}.ilike.%${t}%`),
+          // A phone typed any way: "98765 43210" finds "+91 98765-43210" (0166).
+          ...(PHONE_DIGITS.has(table) && t.replace(/\D/g, "").length >= 6
+            ? [`phone_digits.ilike.%${t.replace(/\D/g, "")}%`]
+            : []),
+        ])
+        .join(",")
+    );
   }
   if (between && sortable(spec, between.field)) {
     query = query.gte(between.field, between.from).lte(between.field, between.to);
@@ -1058,6 +1074,88 @@ export async function readStoreRows(
     }),
     total: count ?? 0,
   };
+}
+
+/**
+ * What the table shows of a section over the store (0167): which page,
+ * how many a page, and what the merchant searched, filtered and sorted
+ * by. The table keeps it; the shell turns it into one ask of the server.
+ */
+export type TableState = {
+  page: number;
+  size: number;
+  search: string;
+  filters: Record<string, string>;
+  sort: { field: string; dir: "asc" | "desc" } | null;
+};
+
+/** The sizes of a page the table offers, the first its default. */
+export const PAGE_SIZES = [50, 25, 100, 200] as const;
+
+/** A section's page size on this device, as the table last set it. */
+export const pageSizeKey = (moduleId: string) => `abo_size:${moduleId}`;
+export function keptPageSize(moduleId: string): number {
+  try {
+    const n = Number(localStorage.getItem(pageSizeKey(moduleId)));
+    return (PAGE_SIZES as readonly number[]).includes(n) ? n : PAGE_SIZES[0];
+  } catch {
+    return PAGE_SIZES[0];
+  }
+}
+
+/** The fields a store list's search looks in when the section names none. */
+export const searchFieldsOf = (table: StoreTable): string[] => SEARCHABLE[table];
+
+/**
+ * One page of a section over the store, from the whole list (0167):
+ * the rows with the merchant's fields under them, how many match in all,
+ * and, when asked, the values each filter can offer. Computed columns
+ * are worked out in the browser, so a filter or sort on one stays the
+ * page's own (the caller leaves them out here).
+ */
+export async function readStorePage(
+  db: SupabaseClient,
+  moduleId: string,
+  table: StoreTable,
+  state: TableState,
+  features: FeatureSchema | null,
+  columns: SchemaColumn[],
+  period: { field: string; from_day: string; to_day: string; from: string; to: string } | null,
+  facets: string[]
+): Promise<{
+  rows: Array<{ id: string; data: Record<string, unknown> }>;
+  total: number;
+  facets: Record<string, string[]>;
+}> {
+  const spec = STORE_TABLES[table];
+  const computed = new Set(columns.filter((c) => c.compute).map((c) => c.field));
+  const sort = state.sort ?? features?.defaultSort ?? null;
+  const type = sort ? columns.find((c) => c.field === sort.field)?.type : undefined;
+  const fields = features?.search?.fields?.length ? features.search.fields : searchFieldsOf(table);
+  const { data, error } = await db.rpc("abo_store_page", {
+    p_module: moduleId,
+    p_query: {
+      offset: state.page * state.size,
+      limit: state.size,
+      search: state.search.trim(),
+      search_fields: fields.filter((f) => !computed.has(f)),
+      filters: Object.fromEntries(Object.entries(state.filters).filter(([f, v]) => v && !computed.has(f))),
+      sort:
+        sort && !computed.has(sort.field)
+          ? { ...sort, kind: type === "number" || type === "currency" ? "number" : "text" }
+          : null,
+      order: { field: spec.order.field, dir: spec.order.ascending ? "asc" : "desc" },
+      period,
+      facets: facets.filter((f) => !computed.has(f)),
+    },
+  });
+  if (error) throw new Error(error.message);
+  const out = (data ?? {}) as {
+    rows?: Array<{ id: string; data: Record<string, unknown> }>;
+    total?: number;
+    facets?: Record<string, string[]>;
+  };
+  return { rows: out.rows ?? [], total: out.total ?? 0, facets: out.facets ?? {} };
 }
 
 /**
