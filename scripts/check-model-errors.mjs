@@ -228,6 +228,24 @@ try {
   );
   check("Opus 5.5 too, so production is asked as it was", (await effortOf("claude-opus-5-5")) === "medium");
   check("and Haiku 4.5, which takes none, is sent none", (await effortOf("claude-haiku-4-5-20251001")) === null);
+  // The screen check's turn (ux-review.ts): its pictures go first, as images, then its words.
+  sent.length = 0;
+  queue.push(reply('{"verdict":"pass"}'));
+  await callModel({
+    system: "rubric",
+    turns: [{ role: "user", content: "the screen", images: [{ data: "iVBORw0KGgo=", mediaType: "image/png" }] }],
+    model: "claude-test",
+  });
+  const shown = sent[0]?.body?.messages?.[0]?.content ?? [];
+  check(
+    "a turn with pictures sends them as images before its words",
+    shown[0]?.type === "image" &&
+      shown[0].source?.type === "base64" &&
+      shown[0].source.media_type === "image/png" &&
+      shown[0].source.data === "iVBORw0KGgo=" &&
+      shown[1]?.type === "text" &&
+      shown[1].text === "the screen"
+  );
 
   // All of the cap spent thinking, not a word written (2026-09-30).
   const thoughtOut = () => ({

@@ -117,8 +117,8 @@ export async function designForView(
   return { ...view, parts };
 }
 
-/** The app's colours, light and dark, by the names a written screen uses (lib/custom-view). */
-const TOKENS = {
+/** The app's colours, light and dark, by the names a written screen uses (lib/custom-view); the screen check (lib/ux-review) draws in the light ones. */
+export const TOKENS = {
   light: {
     fg: "hsl(0 0% 19%)",
     "fg-muted": "hsl(0 0% 38%)",

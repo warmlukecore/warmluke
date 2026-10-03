@@ -102,7 +102,8 @@ for (const raw of inputs) {
 }
 process.stdout.write(JSON.stringify(out));`;
 
-function credentials() {
+/** How a sandbox is reached outside Vercel; on Vercel nothing, and the function's own identity is used (lib/screen-shot too). */
+export function credentials() {
   const token = process.env.VERCEL_SANDBOX_TOKEN;
   const teamId = process.env.VERCEL_TEAM_ID;
   const projectId = process.env.VERCEL_PROJECT_ID;

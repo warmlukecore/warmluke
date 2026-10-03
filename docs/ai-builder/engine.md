@@ -408,6 +408,68 @@ the switch off, or the critic failing to answer, everything below runs as it alw
 The plan step itself may look the store up (`PLAN_TOOLS`: search_store, store_metrics,
 store_overview; two lookups, then the plan), heard as `lookup` steps like the design's own.
 
+### Reviewers after the critic
+
+Two more readers sit around a design, each on its own setting, each off until an eval
+says it helps (`check-ops-eval`, `check-simplicity-eval`, model tier, by hand). A setting
+is the switch and the model: no fallback to another, and the owner's pick in the panel does
+not move it, so it runs on the model the eval measured.
+
+**The operator's view** (`opsView` in `src/lib/reviewers.ts`, `ANTHROPIC_OPS_MODEL`). Before
+the plan call, a seasoned operator of Indian D2C stores (its prompt carries `DOMAIN_PACK`:
+COD confirmation and fake orders, NDR and RTO by pincode and courier, prepaid nudges,
+returns and QC, reorder points, repeat buyers by phone, tagging, festival peaks, packers
+and callers) reads what the plan step reads (the project, the store and the merchant line,
+the sections with their fields, the request, the last few turns folded into words) and
+answers `{ideas, watch_out}`: at most two ideas, usually none, each under 200 characters in
+the owner's language, only when better than the literal ask or a complement it needs. Its
+words ride into the plan call's user turn alone (`opsBlock`), never the design call: the
+plan may say the idea in `say` ("A better idea: …", "Ek behtar idea: …") and ask; nothing
+is built unasked. Only in Luke's own chat, not on a resumed leg, and not once the owner has
+agreed (a yes to a plan, or "just build it"): there an idea has nowhere to be said. Told as
+`ops` (null when it starts, the count when back). A failure is no view (`[ops]` in the log).
+
+**The review gate** (`reviewDesign` in `src/lib/review-gate.ts`). After the critic, on a
+design that parsed (plans or blueprint) and that the critic did not just send back, four
+reviewers run at once, each told as it lands and only when it said something:
+
+- the simplicity reviewer (`simplicityReview` in `reviewers.ts`, `ANTHROPIC_REVIEW_MODEL`):
+  defaults to `redo` when a simpler build does the same job, treats many parts as suspect,
+  names the simpler way and never asks for more. It is handed the signs code finds first
+  (`workaroundSigns`), as facts: a schedule that sets fields with no condition; three or
+  more yes/no or status fields sharing a word, counting the section's own; a written screen
+  that only shows rows; a new field meaning one already there (`rto` / `is_rto` /
+  `rto_flag`); a table tab beside the section's own table. The same signs the console's
+  "Needs a look" reads afterwards (0175), caught before the owner sees the design;
+- the data check (`checkAgainstData`, `lib/data-check.ts`): values and fields the design
+  leans on, against the store's own rows;
+- the rule dry-run (`dryRunRules`, `lib/dry-run.ts`): each rule over the rows it would meet;
+- the screen review (`reviewScreens`, `lib/ux-review.ts`, `ANTHROPIC_UX_MODEL`): a written
+  screen looked at on a phone and a laptop, or its code read.
+
+What goes back is one line to the designer (`redoFrom`), each part under a short header,
+cut to 1,200 characters: the simpler way; the data findings that are problems ("Checked
+against their own rows"); a schedule writing one value into every row it met ("would
+rewrite all N rows every run"); the screen's fix. Notes and passes are never sent back.
+Only in Luke's own chat: an outside assistant's design waits as a request the owner
+approves, and is not made to wait. A reviewer that fails, or is off, is no reviewer; the
+gate never throws.
+
+**One redo a turn.** The gate sends a design back exactly as the critic does, inside the
+repair loop, and only while nothing has gone back yet (`sentBack`): critic and gate share
+one redo. The design it sent back is kept (`sentBackDesign`, marked `by: "gate"` so the
+turn's `criticRedo` stays the critic's), and stands if the redo never passes the gates.
+
+**The checks on the card.** What the gate said of the design that is the answer is kept on
+the reply as `checks` (`DesignChecks` in `src/lib/review-types.ts`), so it is in
+`messages.payload` and a reloaded thread draws it: under a plans or blueprint card, a
+quiet "Checked" line, closed, opening to the rules tried on the rows ("Fill RTO status ·
+would change 2,353 of 2,353 shipments" in the attention tone), the data notes and
+problems, the screen's verdict and the simplicity verdict. The last checks are carried in
+`TurnState`, so a turn in legs returns the checks of the design it returns. With every
+switch off and nothing found, the reply carries no `checks`, and nothing the model is sent
+changes: the tapes replay as they were (`check-reviewers` holds both).
+
 
 After structural validation, `findGaps` compares the owner's original request with a
 deterministic description of what the plans actually build. Missing requested outcomes
@@ -416,6 +478,84 @@ removed.
 
 The optional Jev design judge records observations asynchronously after the response.
 It does not block, approve, or rewrite the design. Its role is evaluation, not authority.
+
+### The data check and the dry-run
+
+Two of the reviewers after the critic read the store's own rows instead of asking a model, so
+they cost nothing. Both read on the caller's own client (RLS decides), at most the newest 2,000
+rows of a section: a section over the store through `abo_store_page`, 200 a page, with the
+owner's own fields under the store's and, for the data check, each leaned-on field's values over
+the whole list (its facets); a section of the owner's from `records`. A section the same design
+makes has no rows yet and is said so, not checked. Each keeps to about five seconds and stops
+with the turn; a refused read or a failure says nothing rather than stopping the design.
+
+`checkAgainstData` (`src/lib/data-check.ts`) reads the values a rule's conditions compare a field
+to (`=` and `!=`), a filter's choices and a stat's counting, and the field a rule matches rows in
+another section by. A value the rows spell another way (case, spaces, a plural, a tick written as
+Yes) is a problem, in their own spelling: "'in transit' is never a status here; the rows say 'In
+Transit'". A filter ignores case, so case alone is not one there. A value no row has yet is a note,
+unless its field is new in this design; so is a field blank on every row read; a rule's match
+whose two sides never share a value is a problem. `dryRunRules` (`src/lib/dry-run.ts`) runs each
+added or changed rule's `when` over the rows with `lib/expr`, the runtime's own twin, so a blank
+reads as the runtime reads it, and counts what it would do: the rows a `set_fields` on the row
+itself would really change (a value already there is no change), the rows it would write to in
+another section, or the rows that would alert or add one. Up to three are named by their own label
+(an order number, a title), never a phone, an email, an address or a customer. It says "every
+row" when a rule touches all of twenty or more. A rule of code, one that counts other rows as it
+runs, and one that fires on a change have no count, and say why.
+
+### The screen check
+
+Merchants said Luke's written screens looked rough: PENDING and 2026-10-02 printed as
+stored, an order number broken over two lines, an empty table with nothing said, a bar over
+the last row. The critic reads a design as words and cannot see any of that, so a design
+with a written screen (a view of type `custom`, new or added as a tab) is looked at as its
+owner would see it (`reviewScreens` in `src/lib/ux-review.ts`), after the critic, by the
+review gate. `ANTHROPIC_UX_MODEL` is the switch and the model (it must take images); unset,
+nothing runs and nothing is spent.
+
+At most two screens a design. Each is built exactly as the app builds it
+(`customViewPage`, in a frame sealed as `CustomView` seals it, fed its rows through
+`window.wl`), over the section's own rows, or the store's with the owner's fields (read with
+the caller's client, at most 30, emails, phones and addresses swapped for look-alikes of the
+same shape), or, for a section the design makes, its demo rows or a few made up from its
+fields. Rows read from another section are not drawn; the model is told so.
+
+- **Screenshot** (`src/lib/screen-shot.ts`): the page photographed by headless Chromium at
+  1440×900 and 390×844 (the phone's picture runs on below its first screen, up to 1568
+  pixels), inside a Vercel Sandbox started from `SCREEN_SNAPSHOT_ID`
+  (`scripts/make-screen-snapshot.mjs`: Chromium, its libraries and the app's two faces).
+  The sandbox has outbound network denied, keeps nothing (`persistent: false`), and is
+  stopped as soon as the pictures are read back. This browser is a renderer of ours, called
+  by our code on a page our code built: never a tool a model can call or steer, which is why
+  the owner approved it as the one exception to "no browser-run tools".
+- **Text**, when there is no snapshot, the sandbox cannot be reached, or the pictures take
+  longer than 30 seconds: the screen's HTML, CSS and script read on the same model and
+  rules, for what the code makes certain.
+
+The rules come from the written-screen guide (`CUSTOM_VIEW_GUIDE` in `src/lib/ai.ts`), the
+kit (`docs/design/design-system.md`, "Screens Luke writes") and what merchants said: raw codes
+and ISO dates, codes and dates wrapping, an empty list with no words, an empty column, an
+overlay over content, text too small or running off a phone, a form with no shape, the
+browser's own controls, nothing big on a one-job screen, colour as the only signal. The
+stance is an evidence collector's: only what the pictures show (or the code makes certain),
+never a guessed issue or a new feature. It answers `{verdict, issues, fix}`; "redo" only when
+an owner would plainly be hindered. Two screens make one verdict: back if either goes back,
+issues together (six at most, each named by its screen), one line to the designer (300
+characters at most). It never throws: anything unexpected, or the whole past 75 seconds, is
+`skipped`, logged under `[ux]`. Its calls are counted as the `ux` job ("Screen check").
+
+What it costs, estimated, not yet measured (`check-ux-eval` prints the real figure): a
+1440×900 picture is about 1,500 image tokens and a phone's 450–800, so a look is about
+3,000 tokens in and a few hundred out, roughly $0.01–0.02 a screen on Sonnet 5's prices
+($2/$10 per million) and about twice that on Opus 5.5; reading the code instead is about the
+same. The sandbox is 2 vCPUs for 10–15 seconds, about a tenth of a cent at Vercel's published
+Sandbox rates. Latency: about 3 seconds to draw both widths (measured with the same
+Chromium on a laptop), plus the sandbox's start from its snapshot and a 5–10 second look,
+screens in parallel: about 10–20 seconds added to a design with a written screen, none to
+any other. `check-ux-review` (pure) holds the logic with stand-ins for the sandbox and the
+model; `check-ux-eval` (model tier, by hand) runs three kept screens, rough, clean and too
+wide for a phone.
 
 ## Provider behavior
 

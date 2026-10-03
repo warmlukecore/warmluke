@@ -3,9 +3,11 @@
 // ─────────────────────────────────────────────────────────────
 // Agents: how each of Luke's agents did (0176), read from what the turns
 // left (0132) and the learning timeline. The planner, the design call,
-// the validator, the critic, the gap pass, memory, the reflector and the
-// shadow judge: how often each ran, how its runs came out, and what its
-// calls cost; and how long a turn takes on each road.
+// the validator, the critic, the reviewers after it (0177: the operator's
+// view, simplicity, the data check, the dry-run and the screen check),
+// the gap pass, memory, the reflector and the shadow judge: how often
+// each ran, how its runs came out, and what its calls cost; and how long
+// a turn takes on each road.
 //
 // Dollars are the meter's, priced when the turn ended, as Spend reads
 // them; the reflector, which runs after that, writes its own down. What
@@ -53,6 +55,11 @@ const NAME: Record<string, string> = {
   design: "Design",
   validator: "Validator",
   critic: "Critic",
+  ops: "Operator's view",
+  simplicity: "Simplicity",
+  "data check": "Data check",
+  "dry-run": "Rule dry-run",
+  "screen check": "Screen check",
   gap: "Gap pass",
   memory: "Memory",
   reflect: "Reflect",
@@ -60,9 +67,20 @@ const NAME: Record<string, string> = {
 };
 const ROAD: Record<string, string> = { talk: "Talk", design: "Design" };
 // What each outcome means, by its tone; the numbers beside them say how many.
-const GOOD = new Set(["understood", "designed", "passed", "fits", "nothing missing", "created", "addresses"]);
+const GOOD = new Set([
+  "understood",
+  "designed",
+  "passed",
+  "fits",
+  "nothing missing",
+  "created",
+  "addresses",
+  "simple",
+  "clean",
+  "pass",
+]);
 const BAD = new Set(["failed", "redo", "misses", "repeats"]);
-const WARN = new Set(["repaired", "found missing", "asked back"]);
+const WARN = new Set(["repaired", "found missing", "asked back", "problems found"]);
 const toneOf = (k: string) =>
   GOOD.has(k)
     ? "bg-tone-success-fg"
@@ -168,7 +186,8 @@ export default function AgentsPage() {
             </ul>
             <p className="mt-2 text-xs text-fg-faint">
               Dollars and tokens are what the turn&rsquo;s meter counted; the reflector writes its own dollars down. The
-              validator is code; memory and the judge run after the reply, outside the meter.
+              validator, the data check and the dry-run are code; memory and the judge run after the reply, outside the
+              meter.
             </p>
 
             <div className={`${card} mt-4 overflow-hidden`}>

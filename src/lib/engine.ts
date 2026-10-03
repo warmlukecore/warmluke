@@ -34,7 +34,12 @@ import {
   critique,
   criticModel,
   memoryModel,
+  opsModel,
+  uxModel,
 } from "@/lib/ai";
+import { opsBlock, opsView } from "@/lib/reviewers";
+import { hasChecks, reviewDesign } from "@/lib/review-gate";
+import type { DesignChecks } from "@/lib/review-types";
 import { isQuestion, lastReplyTypeOf, roadFor, type Road } from "@/lib/intent";
 import { describeKnown, notesFor } from "@/lib/memory";
 import { describeSkills, skillsFor, type Skill } from "@/lib/learning";
@@ -296,7 +301,15 @@ export type TurnState = {
   onlyAsking: boolean;
   critiqued: { unmet: string[] } | null;
   sentBack: boolean;
-  sentBackDesign: { parsed: ReturnType<typeof parseReply>; raw: string; unmet: string[] } | null;
+  sentBackDesign: {
+    parsed: ReturnType<typeof parseReply>;
+    raw: string;
+    unmet: string[];
+    /** Who sent it back: the critic, or ('gate') the reviewers after it. Absent: the critic. */
+    by?: "gate";
+  } | null;
+  /** What the review gate last said, of the design it last read. Absent in a state from before the gate. */
+  checks?: DesignChecks | null;
   lookedUp: string[];
   /** What the lookups returned, cut to size: a repair reads it again. Absent in a state from before it was kept. */
   found?: Array<{ about: string; result: unknown }>;
@@ -349,7 +362,7 @@ export type TurnResult =
       known: string[];
       /** What was learned for this store when the turn began, and the ids read in full (learning.ts). */
       learned: { skills: Skill[]; used: string[] };
-      /** Whether the critic sent the design back once this turn: a sign the turn is worth learning from. */
+      /** Whether the critic (not the review gate) sent the design back once this turn: a sign the turn is worth learning from. */
       criticRedo: boolean;
     }
   | {
@@ -705,13 +718,15 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     road === "talk"
       ? buildTalkPrompt(modules, project.name, money.locale, money.currency, store, merchant)
       : designSystem();
+  // Every section as the designer is told it: the simplicity reviewer reads the same lines.
+  const sectionLines = columnLines(modules, schemas);
   const userTurn = buildUserMessage(
     message,
     moduleId,
     currentSchema ?? (moduleId ? (schemas.get(moduleId) ?? null) : null),
     currentFeatures,
     rules,
-    columnLines(modules, schemas),
+    sectionLines,
     requests
   );
 
@@ -730,6 +745,21 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     if (planned) return;
     planned = true;
     if (!planOn || lastReplyTypeOf(history) === "blueprint") return;
+    const planPrompt = buildPlanPrompt(modules, project.name, money.locale, money.currency, store, merchant);
+    // An operator's view first, read by the plan call alone: in Luke's own
+    // chat, where an idea can still be said and asked about. Not on a
+    // resumed turn, and not once they agreed (a yes to a plan, or "just
+    // build it"): that is built as agreed, and an idea would have nowhere
+    // to be said. The setting is the switch; unset, the plan call is sent
+    // exactly what it was before.
+    const opsOn = lookups && !resume && !approved ? opsModel() : null;
+    let operator = "";
+    if (opsOn) {
+      tell({ step: "ops", ideas: null });
+      const view = await opsView({ context: planPrompt[1], request: userTurn, history, model: opsOn, signal });
+      operator = opsBlock(view);
+      tell({ step: "ops", ideas: view?.ideas.length ?? 0 });
+    }
     // Said at once, before the model is asked: the plan is the longest
     // silence of a turn, and a step told only at its end reads as none.
     tell({ step: "plan", goal: null });
@@ -741,8 +771,8 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       const planTools = toolStore ? aiStoreTools(toolStore, { only: PLAN_TOOLS, observe: hear }) : null;
       const raw = await asJob("plan", () =>
         callModel({
-          system: buildPlanPrompt(modules, project.name, money.locale, money.currency, store, merchant),
-          turns: [...history, { role: "user", content: userTurn }],
+          system: planPrompt,
+          turns: [...history, { role: "user", content: userTurn + operator }],
           signal,
           model: model ?? planOn,
           lookups: planTools ? { tools: planTools, steps: PLAN_STEPS } : undefined,
@@ -822,8 +852,11 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   let sentBack = resume?.sentBack ?? false;
   // The design the critic sent back, which stood: kept, so a redo that
   // fails does not cost the design it was redoing.
-  let sentBackDesign: { parsed: ReturnType<typeof parseReply>; raw: string; unmet: string[] } | null =
-    resume?.sentBackDesign ?? null;
+  let sentBackDesign: TurnState["sentBackDesign"] = resume?.sentBackDesign ?? null;
+  // What the review gate said of the last design it read. Kept across its
+  // redo: a redo that never passes leaves the design it sent back as the
+  // answer, and these are that design's checks.
+  let checks: DesignChecks | null = resume?.checks ?? null;
 
   const firstAttempt = resume?.attempt ?? 0;
   for (let attempt = firstAttempt; attempt <= MAX_REPAIR_ATTEMPTS; attempt++) {
@@ -852,6 +885,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           critiqued,
           sentBack,
           sentBackDesign,
+          checks,
           lookedUp,
           found,
         },
@@ -1029,6 +1063,51 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         tell({ step: "critic", verdict: "fits", missing: verdict.unmet.length });
       }
     }
+
+    // The reviewers after the critic (review-gate.ts): a simpler build,
+    // the store's own rows, the rules tried on them, the screens looked
+    // at. In Luke's own chat only: an outside assistant's design waits as
+    // a request the owner approves, and is not made to wait for these.
+    // It may send the design back too, but a turn sends one back once in
+    // all, critic and gate together. With every switch off and nothing
+    // found, nothing here changes what the model is sent.
+    if (parsed.ok && lookups && (parsed.reply.type === "plans" || parsed.reply.type === "blueprint")) {
+      const plans = parsed.reply.type === "blueprint" ? parsed.reply.blueprint.plans : parsed.reply.plans;
+      const reviewed = await reviewDesign(
+        {
+          db: client,
+          projectId: project.id,
+          store,
+          modules,
+          schemas,
+          ownerWords: message.trim(),
+          understood: planBlock,
+          locale: money.locale,
+          currency: money.currency,
+          uxModel: uxModel(),
+          signal,
+        },
+        plans,
+        {
+          tell,
+          describe: describeBuild(plans, modules, currentSchema?.columns, store, { screens: true }),
+          columnLines: sectionLines,
+        }
+      );
+      checks = reviewed.checks;
+      if (reviewed.redo && !sentBack && attempt < MAX_REPAIR_ATTEMPTS) {
+        sentBack = true;
+        sentBackDesign = { parsed, raw, unmet: critiqued?.unmet ?? [], by: "gate" };
+        attemptTurns.push(
+          { role: "assistant", content: raw },
+          {
+            role: "user",
+            content: `The design was reviewed before the owner sees it, and sent back:\n\n${reviewed.redo}\n\nRedesign so it does the same job for them, changing what this says and nothing else, and reply with the corrected JSON only. Do not apologise or explain.`,
+          }
+        );
+        continue;
+      }
+    }
     if (parsed.ok) break;
 
     repairs = attempt + 1;
@@ -1061,7 +1140,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   if ((!parsed || !parsed.ok) && sentBackDesign) {
     parsed = sentBackDesign.parsed;
     raw = sentBackDesign.raw;
-    critiqued = { unmet: sentBackDesign.unmet };
+    // The critic's word on it, when the critic read it. Sent back by the
+    // gate with the critic off, nothing read it, and the gap pass below does.
+    if (critiqued) critiqued = { unmet: sentBackDesign.unmet };
   }
 
   // Told to ask and out of attempts: the question is still asked.
@@ -1114,6 +1195,12 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
 
   // Agreed in words first: the chat builds it without asking again.
   if (approved && (parsed.reply.type === "plans" || parsed.reply.type === "blueprint")) parsed.reply.approved = true;
+  // What the reviewers said of the design that is the answer, kept on the
+  // reply for its card. Nothing when they said nothing: the reply is then
+  // exactly what it was before the gate.
+  if (hasChecks(checks) && (parsed.reply.type === "plans" || parsed.reply.type === "blueprint")) {
+    parsed.reply.checks = checks;
+  }
 
   return {
     ok: true,
@@ -1128,7 +1215,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     road,
     known,
     learned,
-    criticRedo: sentBack,
+    criticRedo: sentBack && sentBackDesign?.by !== "gate",
   };
 }
 

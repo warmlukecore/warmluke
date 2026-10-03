@@ -765,6 +765,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         if (last && retired) last.superseded = true;
         if (last && p.usage) last.usage = p.usage;
         if (last && p.trace) last.trace = p.trace;
+        if (last && "checks" in p && p.checks) last.checks = p.checks;
         // An ask from their AI that waits as a request (0139): the line
         // says so, and what became of it is read off the request itself.
         const waitsAs = (p as { request_id?: unknown }).request_id;
@@ -1928,7 +1929,11 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         // The saved row's id, when it was saved: the thread reloads as
         // the turn ends, and that is how it knows this reply, trace and all.
         const id = typeof data.replyId === "string" ? data.replyId : nextChatId();
-        const took = reply.usage ? { usage: reply.usage } : {};
+        // What it took, and what the reviewers said of a design, for its card.
+        const took = {
+          ...(reply.usage ? { usage: reply.usage } : {}),
+          ...("checks" in reply && reply.checks ? { checks: reply.checks } : {}),
+        };
 
         if (reply.type === "clarify") {
           setChatMessages((prev) => [

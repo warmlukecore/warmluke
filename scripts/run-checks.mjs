@@ -67,6 +67,9 @@ const MODEL = new Set([
   "check-memory-eval",
   "check-reflect-eval",
   "check-luke-eval",
+  "check-ops-eval",
+  "check-simplicity-eval",
+  "check-ux-eval",
 ]);
 
 const classify = (name) => {

@@ -150,7 +150,10 @@ Luke's agents did, from the traces and the learning timeline: plan, design, vali
 gap, memory, reflect and the shadow judge, each with its runs, how they came out, its metered
 calls, tokens and dollars (null where nothing was metered), and each road's turns with their p50
 and p90 times. The reflector runs after a turn is priced, so its runs, what they kept and their
-dollars are read from its own `reflected` rows, not the traces. The console's word searches have trigram indexes on conversation titles, project
+dollars are read from its own `reflected` rows, not the traces. Since 0177 it also counts the
+reviewers after the critic from their trace steps: the operator's view, simplicity and the screen
+check on their own metered jobs (`ops`, `review`, `ux`), and the data check and the rule dry-run,
+which are code and have no dollars. The console's word searches have trigram indexes on conversation titles, project
 names and shop domains. Every console screen asks `abo_admin_luke_health` (0165) whether
 Luke's newest answers are failing because the model was not there (`payload.failed`), and
 says so in red, with how many turns and apps since when and what to do, until an answer

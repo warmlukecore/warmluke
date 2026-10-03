@@ -36,6 +36,7 @@ import type {
   FeatureSchema,
 } from "@/lib/types";
 import { ago, dayGroup } from "@/lib/when";
+import type { DesignChecks, DryRun } from "@/lib/review-types";
 import { TITLE_MAX } from "@/lib/types";
 import { changeShown } from "@/lib/change-preview";
 import { Icon } from "@/components/ui/Icon";
@@ -84,6 +85,11 @@ import {
   ClipboardCheck,
   Compass,
   Signpost,
+  Database,
+  FlaskConical,
+  Lightbulb,
+  MonitorSmartphone,
+  Shrink,
 } from "lucide-react";
 import { button, fieldOf, iconButton, menu, menuItem } from "@/components/ui/controls";
 import { costOf, dollars, modelName, tokensShort, type Tokens } from "@/lib/model-prices";
@@ -170,6 +176,8 @@ export interface ChatMessage {
   built?: BuildRecord;
   /** What the turn's model calls took, as the server priced it. */
   usage?: TurnUsage;
+  /** On a design card: what the reviewers after the critic said of it, as the reply keeps it (lib/review-gate). */
+  checks?: DesignChecks;
 }
 
 /**
@@ -201,6 +209,7 @@ function TraceLine({ trace }: { trace: { steps: TurnEvent[]; ms: number } }) {
   else if (tries > 1) parts.push(`took ${tries} tries`);
   if (trace.steps.some((s) => s.step === "gaps")) parts.push("checked for gaps");
   if (trace.steps.some((s) => s.step === "critic")) parts.push("checked against what you asked");
+  if (trace.steps.some((s) => ["simplicity", "data", "dryrun", "ux"].includes(s.step))) parts.push("reviewed it");
   if (parts.length === 0) return null;
   const secs = Math.max(1, Math.round(trace.ms / 1000));
   return (
@@ -329,6 +338,11 @@ const STEP_MARK: Record<TurnEvent["step"], LucideIcon> = {
   checked: ShieldCheck,
   gaps: ListChecks,
   critic: ClipboardCheck,
+  ops: Lightbulb,
+  simplicity: Shrink,
+  data: Database,
+  dryrun: FlaskConical,
+  ux: MonitorSmartphone,
 };
 
 /** A step already taken: its mark and its words, in the margin's voice. */
@@ -386,6 +400,22 @@ function stepWords(step: TurnEvent): string | null {
         : step.missing === 0
           ? "Checked it does what you asked"
           : `Checked it: ${n(step.missing, "thing")} it cannot do, listed below`;
+    case "ops":
+      if (step.ideas === null) return "Thinking it through like an operator…";
+      return step.ideas === 0 ? "No better idea" : step.ideas === 1 ? "Found an idea" : `Found ${step.ideas} ideas`;
+    case "simplicity":
+      return step.verdict === "simple" ? "Checked it is the simplest build" : "Simplifying…";
+    case "data":
+      return step.problems > 0
+        ? `Checked against your store’s data: ${n(step.problems, "problem")}`
+        : "Checked against your store’s data";
+    case "dryrun":
+      return step.matched === null
+        ? "Tried the rules on your rows"
+        : `Tried the rules on your rows: ${step.matched.toLocaleString()} match`;
+    case "ux":
+      if (step.how === "none" || step.verdict === "skipped") return null;
+      return `${step.how === "screenshot" ? "Looked at the screen on a phone and a laptop" : "Read the screen’s code"}${step.verdict === "redo" ? " — fixing it" : ""}`;
   }
 }
 
@@ -1116,6 +1146,94 @@ function PreviewFold(props: ComponentProps<typeof ChangePreview>) {
   );
 }
 
+/** A one-word section name said in a sentence ("2,353 of 2,353 shipments"); any other name as it is. */
+const rowsWord = (section: string) => (/^[A-Z][a-z]+$/.test(section) ? section.toLowerCase() : section);
+
+/** A rule tried on the rows, in words: "would change 2,353 of 2,353 shipments", "23 of 412 orders match". */
+function dryRunWords(d: DryRun): string {
+  if (d.matched === null) return d.note ?? "could not be told without running it";
+  const m = d.matched.toLocaleString();
+  if (d.of === null) return `${m} match`;
+  return d.everyRow
+    ? `would change ${m} of ${d.of.toLocaleString()} ${rowsWord(d.section)}`
+    : `${m} of ${d.of.toLocaleString()} ${rowsWord(d.section)} match`;
+}
+
+/**
+ * What the reviewers after the critic said of a design, under its card:
+ * one quiet line, closed until opened, with a mark when something needs a
+ * look. Read from the reply as kept, so a reloaded thread shows it too.
+ * The rules tried on the rows come first, being what an owner checks
+ * against what they know of their shop.
+ */
+function ChecksLine({ checks }: { checks: DesignChecks }) {
+  const look =
+    checks.dryRuns.some((d) => d.everyRow) ||
+    checks.data.some((f) => f.severity === "problem") ||
+    checks.ux?.verdict === "redo" ||
+    checks.simplicity?.verdict === "redo";
+  return (
+    <details className="group text-[11px] text-fg-faint">
+      <summary className="cursor-pointer list-none select-none hover:text-fg-muted">
+        <ChevronRight
+          aria-hidden
+          size={14}
+          strokeWidth={2}
+          className="inline shrink-0 align-[-2px] transition-transform duration-150 group-open:rotate-90"
+        />
+        Checked
+        {look && (
+          <TriangleAlert
+            aria-label="Something needs a look"
+            size={12}
+            strokeWidth={2}
+            className="ml-1 inline align-[-2px] text-tone-attention-fg"
+          />
+        )}
+      </summary>
+      <ul className="mt-1 space-y-1 border-l border-line pl-2.5 leading-relaxed break-words">
+        {checks.dryRuns.map((d, i) => (
+          <li key={`r${i}`} className={d.everyRow ? "text-tone-attention-fg" : "text-fg-muted"}>
+            {withoutIds(`${d.rule} · ${dryRunWords(d)}`)}
+            {d.matched !== null && d.note && <span className="block text-fg-faint">{withoutIds(d.note)}</span>}
+            {d.sample.length > 0 && (
+              <span className="block text-[10px] text-fg-faint">{withoutIds(d.sample.join(", "))}</span>
+            )}
+          </li>
+        ))}
+        {checks.data.map((f, i) => (
+          <li key={`d${i}`} className={f.severity === "problem" ? "text-tone-attention-fg" : "text-fg-muted"}>
+            {withoutIds(f.text)}
+          </li>
+        ))}
+        {checks.ux && (
+          <li className={checks.ux.verdict === "redo" ? "text-tone-attention-fg" : "text-fg-muted"}>
+            {checks.ux.how === "screenshot"
+              ? "The screen, looked at on a phone and a laptop"
+              : "The screen’s code, read"}
+            {checks.ux.verdict === "pass" ? ": it holds up" : ": it needs work"}
+            {checks.ux.issues.map((issue, i) => (
+              <span key={i} className="block text-[10px] text-fg-faint">
+                {withoutIds(issue)}
+              </span>
+            ))}
+          </li>
+        )}
+        {checks.simplicity && (
+          <li className={checks.simplicity.verdict === "redo" ? "text-tone-attention-fg" : "text-fg-muted"}>
+            {checks.simplicity.verdict === "simple"
+              ? "The simplest build for this"
+              : "A simpler build would do the same job"}
+            {checks.simplicity.why && (
+              <span className="block text-[10px] text-fg-faint">{withoutIds(checks.simplicity.why)}</span>
+            )}
+          </li>
+        )}
+      </ul>
+    </details>
+  );
+}
+
 function BlueprintCard({
   message,
   blueprint,
@@ -1130,10 +1248,13 @@ function BlueprintCard({
   onAmend,
   peek,
   onReadSection,
+  checks,
 }: {
   message: string;
   blueprint: Blueprint;
   modules: ModuleRow[];
+  /** What the reviewers after the critic said of this design, when they said anything. */
+  checks?: DesignChecks;
   /** Columns of the section in view, so a plan that adds some says so. */
   currentColumns?: Array<{ field: string; label: string }>;
   /** That section's features today (null: none, so its table), so a plan replacing a view or a tab says what goes. */
@@ -1400,6 +1521,8 @@ function BlueprintCard({
         </div>
       )}
 
+      {checks && <ChecksLine checks={checks} />}
+
       {!done && nothingLeft && (
         <div className="text-[11px] text-fg-faint">Nothing left to build: all of this is already in your app.</div>
       )}
@@ -1426,6 +1549,9 @@ const JOB_WORDS: Record<ModelUse["job"], string> = {
   critic: "Critic",
   memory: "Memory",
   reflect: "Learning",
+  ops: "Operator's view",
+  review: "Simplicity check",
+  ux: "Screen check",
 };
 
 /** A reply's dollars in rupees, at a rate that says the day it is from. */
@@ -3896,6 +4022,7 @@ export default function ChatPanel({
                             }}
                             peek={onPeekSection}
                             onReadSection={onReadSection}
+                            checks={m.checks}
                           />
                           {replyFoot(m)}
                         </div>
@@ -4165,6 +4292,8 @@ export default function ChatPanel({
                           )}
 
                           {!built && <ChangePreview plan={plan} peek={onPeekSection} onReadSection={onReadSection} />}
+
+                          {m.checks && <ChecksLine checks={m.checks} />}
 
                           {/* Actions */}
                           {plan.changeType === "MODULE_DELETE" && targetModule ? (

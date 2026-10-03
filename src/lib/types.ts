@@ -7,6 +7,7 @@
 
 export { COLUMN_TYPES, type ColumnType } from "./capabilities";
 import type { ColumnType, ExprOp } from "./capabilities";
+import type { DesignChecks } from "./review-types";
 
 export interface SchemaColumn {
   field: string;
@@ -552,8 +553,21 @@ export type AssistantReply =
         /** Two questions whose answers do not depend on each other, asked at once; otherwise one at a time. */
         together?: boolean;
       }
-    | { type: "blueprint"; message: string; blueprint: Blueprint }
-    | { type: "plans"; message?: string; plans: AssistantPlan[]; next?: NextStep[] }
+    | {
+        type: "blueprint";
+        message: string;
+        blueprint: Blueprint;
+        /** What the reviewers after the critic said of this design (lib/review-gate.ts), set by the server; kept for its card. */
+        checks?: DesignChecks;
+      }
+    | {
+        type: "plans";
+        message?: string;
+        plans: AssistantPlan[];
+        next?: NextStep[];
+        /** What the reviewers after the critic said of this design (lib/review-gate.ts), set by the server; kept for its card. */
+        checks?: DesignChecks;
+      }
   ) & {
     /**
      * Set by the server, never the model: the owner said yes to this design
@@ -574,7 +588,7 @@ export type AssistantReply =
   };
 
 /** What a model call was for: the reply itself, the gap pass, or routing the question. */
-export type UsageJob = "reply" | "gap" | "route" | "plan" | "critic" | "memory" | "reflect";
+export type UsageJob = "reply" | "gap" | "route" | "plan" | "critic" | "memory" | "reflect" | "ops" | "review" | "ux";
 
 /** One model's share of a turn: its calls for one job, their tokens, and their dollars. */
 export type ModelUse = {
@@ -648,7 +662,17 @@ export type TurnEvent =
   /** A design came out; the pass that finds what it misses is running. */
   | { step: "gaps"; parts?: string[] }
   /** The critic read the design against what was asked: it fits, or it went back once. `missing` counts what it still lacks. */
-  | { step: "critic"; verdict: "fits" | "redo"; missing: number };
+  | { step: "critic"; verdict: "fits" | "redo"; missing: number }
+  /** The operator's view before the plan: told with null when it starts, and with how many ideas it had once back. */
+  | { step: "ops"; ideas: number | null }
+  /** The simplicity reviewer read the design: as simple as it can be, or a simpler build would do the same job. */
+  | { step: "simplicity"; verdict: "simple" | "redo" }
+  /** The design was checked against the store's own rows: how many findings are problems, how many only notes. */
+  | { step: "data"; problems: number; notes: number }
+  /** The design's rules were tried on the rows they would meet: how many, and the rows they match in all (null when it cannot be told). */
+  | { step: "dryrun"; rules: number; matched: number | null }
+  /** The screen review looked at the design's screens: how it saw them, and whether they pass. */
+  | { step: "ux"; verdict: "pass" | "redo" | "skipped"; how: "screenshot" | "text" | "none" };
 
 // ── Conversation persistence ─────────────────────────────────
 

@@ -773,6 +773,7 @@ You reply with ONLY a single valid JSON object, no code fences, no commentary ou
   "say": "what you tell the owner now, before anything is built, as one person to another"
 }
 Every field but "say" is short lines for the designer. "say" is the one the owner reads, and it is how they agree to the design, so it must be enough to agree to: in a few plain sentences, how it will work for them (what they will see, what they do, what happens by itself), then the questions from "unsure" that matter, asked plainly, then end with "Want me to build it?" in their language. Never a field name, a type, a list of buttons or a rule's wording: "a tick for RTO on each shipment, and a count of them above the list", not "boolean field rto". When something they asked for is not possible, say so here and what you would do instead. Leave "say" empty only for a small exact change with nothing to discuss (rename, reorder, relabel), or when they said to just build it. Under 120 words.
+When an operator's idea is given after their request and it is genuinely better than what they asked for, say it in "say" as one plain sentence before the questions ("A better idea: …", in Hinglish "Ek behtar idea: …") and ask whether they want it; never put it in the other fields unasked.
 
 When the store's tools are offered, you may look twice at most — to settle which list holds this, or what a column really says (a status, a gateway, a tag) — then write the plan. Never look for a greeting, and never to browse.
 
@@ -2992,6 +2993,12 @@ function parseShape(
 export interface ChatTurn {
   role: "user" | "assistant";
   content: string;
+  /**
+   * Pictures a user turn carries before its words, as base64: the screen
+   * check's shots of a written screen (ux-review.ts). Every other turn is
+   * words alone, as every recording was made.
+   */
+  images?: Array<{ data: string; mediaType: string }>;
 }
 
 /**
@@ -3115,6 +3122,12 @@ const MODEL_JOBS = {
   memory: "ANTHROPIC_MEMORY_MODEL",
   /** What a turn worth learning from taught about working for this store (unset: nothing is reflected; what was learned is still read). */
   reflect: "ANTHROPIC_REFLECT_MODEL",
+  /** An operator's view of the ask before the plan, ideas the owner may want instead (unset: no view). */
+  ops: "ANTHROPIC_OPS_MODEL",
+  /** The simplicity reviewer after the critic: is there a simpler build that does the same job (unset: no review). */
+  review: "ANTHROPIC_REVIEW_MODEL",
+  /** The screen review after the critic: a design's screens looked at, or read (unset: no review). */
+  ux: "ANTHROPIC_UX_MODEL",
   /** Reading two short texts and naming what is missing. */
   gap: "ANTHROPIC_GAP_MODEL",
   /** Where a design goes when Gemini stays busy. */
@@ -3169,6 +3182,22 @@ export function memoryModel(): string | null {
  */
 export function reflectModel(): string | null {
   return optionalModel("reflect");
+}
+
+/**
+ * The reviewers' models (lib/reviewers.ts, lib/ux-review.ts), or null:
+ * each setting is its own switch, with no fallback to another model. Each
+ * is turned on only once an eval shows it helps, and on the model the
+ * eval measured, so the owner's pick in the panel does not move them.
+ */
+export function opsModel(): string | null {
+  return optionalModel("ops");
+}
+export function reviewModel(): string | null {
+  return optionalModel("review");
+}
+export function uxModel(): string | null {
+  return optionalModel("ux");
 }
 
 /** A job's model when its setting is there, else null — without the log line an unset required one earns. */
@@ -3299,7 +3328,18 @@ const FOLD_CHARS = 60_000;
 
 const asMessages = (turns: ChatTurn[]) =>
   turns.map((t): ModelMessage =>
-    t.role === "user" ? { role: "user", content: t.content } : { role: "assistant", content: t.content }
+    t.role === "assistant"
+      ? { role: "assistant", content: t.content }
+      : t.images?.length
+        ? {
+            role: "user",
+            // v7: a picture is a file part with an image media type (the old image part is deprecated).
+            content: [
+              ...t.images.map((i) => ({ type: "file" as const, mediaType: i.mediaType, data: i.data })),
+              { type: "text" as const, text: t.content },
+            ],
+          }
+        : { role: "user", content: t.content }
   );
 
 /**

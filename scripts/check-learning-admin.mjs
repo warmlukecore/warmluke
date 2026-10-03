@@ -4,7 +4,9 @@
 // A store is planted with thirty lessons and skills, a month of what
 // happened to them (and an older stretch that must not count), and its
 // owner's thumbs on two replies; one run of the reflector, with its
-// dollars; and five designs the critic read. The
+// dollars; five designs the critic read; and three that the reviewers
+// after it read (0177): the operator's view, simplicity, the data check,
+// the dry-run and the screen check, one of them skipped. The
 // administrator gets the counts and the repeat-mistake rate right, the
 // store's own page lists all of it, the thirty-first lesson retires the
 // weakest and says so, and nobody else reads any of it.
@@ -115,6 +117,33 @@ insert into public.turn_traces (project_id, conversation_id, road, repairs, crit
          '{"usd": 0.001, "partial": false, "uses": [{"provider": "anthropic", "model": "claude-haiku-4-5", "job": "critic", "calls": 1, "input": 100, "cacheRead": 0, "cacheWrite": 0, "output": 10, "usd": 0.001}]}'::jsonb,
          1000 * n
     from generate_series(1, 5) n;
+
+-- Three designs the reviewers after the critic read (0177): one with
+-- ideas, a clean simplicity read, a problem in the data, two rules tried
+-- and a screenshot that passed; one with none of those; and one that
+-- asked for no ideas and skipped the screen check. The first two carry
+-- the reviewers' calls on the meter.
+insert into public.turn_traces (project_id, conversation_id, road, steps, usage, took_ms) values
+  ('${P}', '${C}', 'design',
+   '[{"step": "ops", "ideas": 2}, {"step": "simplicity", "verdict": "simple"}, {"step": "data", "problems": 1, "notes": 2},
+     {"step": "dryrun", "rules": 2, "matched": 30}, {"step": "ux", "verdict": "pass", "how": "screenshot"}]'::jsonb,
+   '{"usd": 0.009, "partial": false, "uses": [
+      {"provider": "anthropic", "model": "claude-haiku-4-5", "job": "ops", "calls": 1, "input": 200, "cacheRead": 0, "cacheWrite": 0, "output": 20, "usd": 0.002},
+      {"provider": "anthropic", "model": "claude-haiku-4-5", "job": "review", "calls": 1, "input": 300, "cacheRead": 0, "cacheWrite": 0, "output": 30, "usd": 0.003},
+      {"provider": "anthropic", "model": "claude-sonnet-5", "job": "ux", "calls": 1, "input": 400, "cacheRead": 0, "cacheWrite": 0, "output": 40, "usd": 0.004}]}'::jsonb,
+   4000),
+  ('${P}', '${C}', 'design',
+   '[{"step": "ops", "ideas": 0}, {"step": "simplicity", "verdict": "redo"}, {"step": "data", "problems": 0, "notes": 0},
+     {"step": "dryrun", "rules": 0, "matched": 0}, {"step": "ux", "verdict": "redo", "how": "text"}]'::jsonb,
+   '{"usd": 0.009, "partial": false, "uses": [
+      {"provider": "anthropic", "model": "claude-haiku-4-5", "job": "ops", "calls": 1, "input": 200, "cacheRead": 0, "cacheWrite": 0, "output": 20, "usd": 0.002},
+      {"provider": "anthropic", "model": "claude-haiku-4-5", "job": "review", "calls": 1, "input": 300, "cacheRead": 0, "cacheWrite": 0, "output": 30, "usd": 0.003},
+      {"provider": "anthropic", "model": "claude-sonnet-5", "job": "ux", "calls": 1, "input": 400, "cacheRead": 0, "cacheWrite": 0, "output": 40, "usd": 0.004}]}'::jsonb,
+   5000),
+  ('${P}', '${C}', 'design',
+   '[{"step": "ops", "ideas": null}, {"step": "ux", "verdict": "skipped", "how": "none"}]'::jsonb,
+   '{"usd": 0, "partial": false, "uses": []}'::jsonb,
+   3000);
 
 -- The owner's thumbs, on their own client.
 select pg_temp.as('${OWNER}');
@@ -289,9 +318,24 @@ console.log("\nthe agents");
 const [ab, aa] = [json("agents_before"), json("agents")];
 const agent = (x, n) => x?.agents?.find((g) => g.name === n);
 const moved = (n, k) => Number(agent(aa, n)?.outcomes?.[k]) - Number(agent(ab, n)?.outcomes?.[k]);
+const AGENTS = [
+  "plan",
+  "design",
+  "validator",
+  "critic",
+  "ops",
+  "simplicity",
+  "data check",
+  "dry-run",
+  "screen check",
+  "gap",
+  "memory",
+  "reflect",
+  "judge",
+];
 check(
-  "every agent is there",
-  ["plan", "design", "validator", "critic", "gap", "memory", "reflect", "judge"].every((n) => agent(aa, n))
+  "every agent is there, the reviewers after the critic",
+  (aa?.agents ?? []).map((g) => g.name).join() === AGENTS.join()
 );
 check("the critic: three fit, two went back", moved("critic", "fits") === 3 && moved("critic", "redo") === 2);
 check(
@@ -308,6 +352,52 @@ check(
     moved("reflect", "retired") === 0 &&
     moved("reflect", "repeats") === 1 &&
     Math.abs(Number(agent(aa, "reflect")?.usd) - Number(agent(ab, "reflect")?.usd) - 0.0123) < 1e-9
+);
+const ran = (n) => Number(agent(aa, n)?.runs) - Number(agent(ab, n)?.runs);
+const spent = (n) => Number(agent(aa, n)?.usd) - Number(agent(ab, n)?.usd);
+const called = (n) => Number(agent(aa, n)?.calls) - Number(agent(ab, n)?.calls);
+check(
+  "the operator's view: two asked, one idea and one none, on its own job's dollars",
+  ran("ops") === 2 &&
+    moved("ops", "idea") === 1 &&
+    moved("ops", "none") === 1 &&
+    called("ops") === 2 &&
+    Math.abs(spent("ops") - 0.004) < 1e-9
+);
+check(
+  "simplicity: one simple, one sent back, on the meter's 'review' job",
+  ran("simplicity") === 2 &&
+    moved("simplicity", "simple") === 1 &&
+    moved("simplicity", "redo") === 1 &&
+    called("simplicity") === 2 &&
+    Math.abs(spent("simplicity") - 0.006) < 1e-9
+);
+check(
+  "the data check: one with a problem, one clean, and no dollars: it is code",
+  ran("data check") === 2 &&
+    moved("data check", "problems found") === 1 &&
+    moved("data check", "clean") === 1 &&
+    agent(aa, "data check")?.usd === null &&
+    agent(aa, "data check")?.calls === 0 &&
+    agent(aa, "data check")?.note === "code, no model"
+);
+const rulesTried = (x) => Number(/^(\d+) rules tried/.exec(agent(x, "dry-run")?.note ?? "")?.[1]);
+check(
+  "the dry-run: two ran, one had rules, two rules tried in all, no dollars",
+  ran("dry-run") === 2 &&
+    moved("dry-run", "tried") === 1 &&
+    rulesTried(aa) - rulesTried(ab) === 2 &&
+    agent(aa, "dry-run")?.usd === null &&
+    agent(aa, "dry-run")?.calls === 0
+);
+check(
+  "the screen check: the skipped one not counted, one pass, one redo, on the meter's 'ux' job",
+  ran("screen check") === 2 &&
+    moved("screen check", "pass") === 1 &&
+    moved("screen check", "redo") === 1 &&
+    called("screen check") === 2 &&
+    Math.abs(spent("screen check") - 0.008) < 1e-9 &&
+    /^\d+% by screenshot, \d+% by text$/.test(agent(aa, "screen check")?.note ?? "")
 );
 check(
   "a road's turns and times",
