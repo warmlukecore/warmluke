@@ -49,16 +49,26 @@ export default function SpendPage() {
   // Data & privacy's clean-up: kept days shorter than the window empty its first days.
   const [kept, setKept] = useState<number | null>(null);
   const [days, setDays] = useState(30);
+  // How often the rules sent a turn down the wrong road (0169).
+  const [routing, setRouting] = useState<{
+    turns: number;
+    answered_on_design: number;
+    handed_back: number;
+    wrong_road_usd: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!loading && !user) router.replace(`/login?next=${encodeURIComponent(window.location.pathname)}`);
   }, [loading, user, router]);
 
   const load = useCallback(async () => {
-    const [{ data, error: err }, r] = await Promise.all([
+    const [{ data, error: err }, r, road] = await Promise.all([
       supabase.rpc("abo_admin_spend", { p_days: days }),
       supabase.rpc("abo_admin_retention"),
+      supabase.rpc("abo_admin_routing", { p_days: days }),
     ]);
+    // Not there yet (0169 not run) is no reason to hide what is.
+    setRouting((road.data as typeof routing) ?? null);
     if (err) {
       setError(adminError(err, "0159"));
       return;
@@ -127,6 +137,38 @@ export default function SpendPage() {
                 </div>
               ))}
             </div>
+
+            {routing && routing.turns > 0 && (
+              // A wrong road is never a wrong answer, only a dearer one: past
+              // one turn in ten, the rules need a small model's help.
+              <div className={`${card} mt-3 p-4`}>
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div className="text-xs text-fg-muted">Road choice</div>
+                  <div className="text-xs text-fg-faint">how often a turn took the dearer road for nothing</div>
+                </div>
+                {(() => {
+                  const wrong = routing.answered_on_design + routing.handed_back;
+                  const share = wrong / routing.turns;
+                  return (
+                    <>
+                      <div className="mt-1 text-xl font-semibold tracking-tight text-fg tabular-nums">
+                        {wrong.toLocaleString()} of {routing.turns.toLocaleString()} turns · {Math.round(share * 100)}%
+                      </div>
+                      <div className="mt-0.5 text-xs text-fg-faint">
+                        {routing.answered_on_design} answered on the design road (
+                        {money(Number(routing.wrong_road_usd))}), {routing.handed_back} handed back from the talk road
+                      </div>
+                      {share >= 0.1 && (
+                        <p className={`${note.attention} mt-3`}>
+                          More than one turn in ten took the wrong road: time for a small model to read the messages the
+                          rules are unsure of.
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
 
             {(short || s.total.partial > 0) && (
               <div className={`${note.attention} mt-4 space-y-1`}>

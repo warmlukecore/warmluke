@@ -374,7 +374,7 @@ export default function GenericRenderer({
   const server = !!serverRows && !preview;
   const sizeFor = serverRows?.moduleId ?? "";
   const [sizes, setSizes] = useState<Record<string, number>>({});
-  const size = sizeFor ? (sizes[sizeFor] ?? keptPageSize(sizeFor)) : PAGE;
+  const chosenSize = sizeFor ? (sizes[sizeFor] ?? keptPageSize(sizeFor)) : PAGE;
   const chooseSize = (n: number) => {
     setSizes((p) => ({ ...p, [sizeFor]: n }));
     setPage(0);
@@ -391,13 +391,6 @@ export default function GenericRenderer({
   }, [search]);
 
   const effectiveSort = sort ?? features?.defaultSort ?? null;
-
-  // Over the store, what the table shows goes to the server whenever it changes.
-  const tableKey = server ? JSON.stringify([page, size, asked, filterValues, sort]) : "";
-  useEffect(() => {
-    if (server) serverRows!.onChange({ page, size, search: asked, filters: filterValues, sort });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tableKey]);
 
   // Its views as tabs (features.tabs), its own first: the one open is
   // remembered per section on this device, and a tab since taken away
@@ -418,6 +411,16 @@ export default function GenericRenderer({
   }, [tabMemory]);
   const openTab = Math.min(Math.max(tabBy[tabMemory] ?? 0, 0), views.length - 1);
   const view: ViewSpec = views[openTab];
+  // A screen Luke wrote reads the rows it is handed (wl.onRows): the
+  // largest page there is, not the table's fifty.
+  const size = view.type === "custom" ? PAGE_SIZES[PAGE_SIZES.length - 1] : chosenSize;
+
+  // Over the store, what the table shows goes to the server whenever it changes.
+  const tableKey = server ? JSON.stringify([page, size, asked, filterValues, sort]) : "";
+  useEffect(() => {
+    if (server) serverRows!.onChange({ page, size, search: asked, filters: filterValues, sort });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tableKey]);
   const chooseTab = (i: number) => {
     setTabBy((t) => ({ ...t, [tabMemory]: i }));
     setPage(0);

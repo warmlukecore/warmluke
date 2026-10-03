@@ -97,6 +97,28 @@ select pg_temp.as('${OWNER}');
 select pg_temp.say('owner', pg_temp.try('select public.abo_admin_luke_health()::text'));
 reset role;
 
+-- Which road each turn took (0169): a question answered on the design
+-- road, one on the talk road, and a build the talk road handed back.
+-- Counted before and after: the check database has turns of its own today.
+select pg_temp.as('${ADMIN}');
+select pg_temp.say('routing_before', (select public.abo_admin_routing(1))::text);
+reset role;
+create temp table roads (n int, road text, steps jsonb, usage jsonb, ended text);
+insert into roads values
+  (1, 'design', '[{"road": "design", "step": "road"}]', '{"usd": 0.25}', 'answer'),
+  (2, 'talk',   '[{"road": "talk", "step": "road"}]',   '{"usd": 0.04}', 'answer'),
+  (3, 'design', '[{"road": "talk", "step": "road"}, {"road": "design", "step": "road"}]', '{"usd": 0.30}', 'blueprint');
+insert into public.messages (conversation_id, role, content, payload, created_at)
+  select '${C1}', 'assistant', '', jsonb_build_object('type', ended, 'n', n), now() + interval '1 hour' from roads;
+insert into public.turn_traces (project_id, conversation_id, turn_id, road, steps, usage, created_at)
+  select '${P1}', '${C1}', m.id, x.road, x.steps, x.usage, now() + interval '1 hour'
+    from roads x join public.messages m on m.conversation_id = '${C1}' and (m.payload->>'n')::int = x.n;
+select pg_temp.as('${ADMIN}');
+select pg_temp.say('routing', (select public.abo_admin_routing(1))::text);
+select pg_temp.as('${OWNER}');
+select pg_temp.say('routing_owner', pg_temp.try('select public.abo_admin_routing(1)::text'));
+reset role;
+
 -- An answer comes through: Luke is answering again, and the console stops saying so.
 ${turn(C2, 110, { type: "plans", message: "Shipments will get an RTO mark." })}
 select pg_temp.as('${ADMIN}');
@@ -113,6 +135,17 @@ check("what it was, how many turns, in how many apps", r.what === "billing|3|2")
 check("since the first of them", r.since === "true");
 check("only an administrator may ask", r.owner?.startsWith("ERR"));
 check("an answer that comes through ends it", r.back === "false");
+
+console.log("\nwhich road Luke took");
+const [was, now] = [JSON.parse(r.routing_before ?? "{}"), JSON.parse(r.routing ?? "{}")];
+check(
+  "a question answered on the design road, its cost, and a build handed back",
+  now.turns - was.turns === 3 &&
+    now.answered_on_design - was.answered_on_design === 1 &&
+    now.handed_back - was.handed_back === 1 &&
+    Math.abs(now.wrong_road_usd - was.wrong_road_usd - 0.25) < 1e-6
+);
+check("only an administrator may ask", r.routing_owner?.startsWith("ERR"));
 
 console.log(
   fails.length ? `\n${fails.length} FAILED` : "\nthe console says when Luke is failing, and stops once it answers"

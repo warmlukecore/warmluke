@@ -126,7 +126,12 @@ it is about a seventh of the design contract. A wrong turn onto the design road 
 tokens and nothing else; a wrong turn onto the talk road is handed back by the model (a
 `build` reply, or any shape but `answer`), and the design road starts over with its tools.
 Both roads say the same paragraphs about Luke and about answers, held once. The road is
-told as a `road` step. `check-intent` holds the routing; `check-answer` the talk contract.
+told as a `road` step. A question reads as one however it is typed ("hows", "whats",
+"batao", "kaisa chal raha hai", "give me last weeks pnl"); a word that asks for
+something built or watched ("alert", "notify", "tell me when") sends it to design; a
+message that is neither, after an answer, is a follow-up and stays on talk.
+`check-intent` holds the routing; `check-answer` the talk contract. How often each wrong
+turn happens, and what the design-road ones cost, is on the console's Spend screen (0169).
 
 ### The plan step
 
@@ -270,7 +275,9 @@ recorded on the production model.
 
 When validation fails, the rejected model output and exact errors are sent back to the
 model. The engine permits the initial attempt plus two repair attempts. Rejected output
-is not persisted as conversation history.
+is not persisted as conversation history. One reply is not sent back: a question answered
+in prose rather than JSON is that answer, taken as it is (`isQuestion`), since a resend
+would pay for the whole contract again to say the same words (`check-prose-answer`).
 
 ## Human-in-the-loop gates
 

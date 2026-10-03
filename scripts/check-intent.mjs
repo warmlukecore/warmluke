@@ -27,9 +27,21 @@ for (const m of [
   "how are sales this month",
   "Is order #1003 paid? How much was it?",
   "kya mere top customers Delhi se hain",
+  // As people type them (2 Oct: "hows" went to the design road, $0.25).
+  "hows my store doing since the past 15 days",
+  "whats my best seller this month",
+  "give me last weeks pnl",
+  "batao is hafte kitni sale hui",
+  "store kaisa chal raha hai",
 ]) {
   check(`"${m}"`, road(m) === "talk");
 }
+check("a follow-up to an answer", road("and last month", { lastReplyType: "answer" }) === "talk");
+check("same for another city", road("same for Delhi", { lastReplyType: "answer" }) === "talk");
+check(
+  "but a change asked after an answer is a design",
+  road("ok add that as a section", { lastReplyType: "answer" }) === "design"
+);
 check(
   "a question the router already read as one about a list",
   road("top 3 cities by sales", { routed: true }) === "talk"
@@ -49,6 +61,10 @@ for (const m of [
   "what if I could scan the courier handover too, like packing?",
   "would it be possible to track returns as well?",
   "kya isme reminder add ho sakta hai?",
+  // Asked to be told: an alert rule, not a question.
+  "tell me when a COD order over 5000 comes in",
+  "notify me when stock goes below 5",
+  "show me orders as a board",
 ]) {
   check(`"${m}"`, road(m) === "design");
 }

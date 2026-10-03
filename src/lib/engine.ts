@@ -35,7 +35,7 @@ import {
   criticModel,
   memoryModel,
 } from "@/lib/ai";
-import { lastReplyTypeOf, roadFor, type Road } from "@/lib/intent";
+import { isQuestion, lastReplyTypeOf, roadFor, type Road } from "@/lib/intent";
 import { describeKnown, notesFor } from "@/lib/memory";
 import { intentBlock, parseIntent } from "@/lib/plan";
 import { asJob } from "@/lib/usage";
@@ -815,6 +815,19 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       }
     }
     parsed = parseReply(raw, modules, currentSchema, currentFeatures, (mid) => schemas.get(mid) ?? null);
+    // A question answered in prose instead of JSON: the prose is the
+    // answer. Sending the whole turn back for its braces paid for it
+    // twice (2 Oct: a 15-day summary, $0.19 of its $0.25 on the resend).
+    const prose = stripFences(raw).trim();
+    if (!parsed.ok && prose && !/^[[{]/.test(prose) && isQuestion(message)) {
+      parsed = parseReply(
+        JSON.stringify({ type: "answer", message: prose }),
+        modules,
+        currentSchema,
+        currentFeatures,
+        (mid) => schemas.get(mid) ?? null
+      );
+    }
 
     // Structural gate, enforced here rather than trusted to the prompt.
     if (
