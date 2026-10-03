@@ -950,13 +950,16 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // cards count rather than whichever two hundred loaded first. Whose
   // section it is is kept with it; another section's pick is not this one's.
   const rowPeriod = useRef<{ moduleId: string; range: PeriodRange | null } | null>(null);
-  // Each read numbered: a pick changed quickly sends two, and the older
-  // arriving last would put back the rows from before the pick.
-  const loadSeq = useRef(0);
+  // Each section's reads numbered: a pick changed quickly sends two, and
+  // the older arriving last would put back the rows from before the pick.
+  // Per section, not one count for all: a read of the section just left,
+  // asked a moment after leaving it, made the one now open look old, and
+  // its answer was dropped with nothing left to say it had loaded.
+  const loadSeq = useRef<Record<string, number>>({});
 
   const loadModuleData = useCallback(
     async (moduleId: string, limit = RECORD_PAGE) => {
-      const seq = ++loadSeq.current;
+      const seq = (loadSeq.current[moduleId] = (loadSeq.current[moduleId] ?? 0) + 1);
       const range = rowPeriod.current?.moduleId === moduleId ? rowPeriod.current.range : null;
       const ranged = range && /^[a-z_][a-z0-9_]*$/i.test(range.field) ? range : null;
       let ownRows = supabase
@@ -987,7 +990,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         supabase.from("ui_schemas").select("*").eq("module_id", moduleId).order("version", { ascending: false }),
         supabase.from("modules").select("source_table").eq("id", moduleId).maybeSingle(),
       ]);
-      if (seq !== loadSeq.current) return;
+      if (seq !== loadSeq.current[moduleId]) return;
       // Named by the address and not there (removed since, or another
       // project's): the start instead, and the address says so.
       if (!modRes.error && !modRes.data) {
@@ -1037,7 +1040,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             ranged ? { field: ranged.field, from: ranged.fromDay, to: ranged.toDay } : null
           );
           const withTheirs = (await withOwnFields(supabase, moduleId, rows)) as unknown as RecordRow[];
-          if (seq !== loadSeq.current) return;
+          if (seq !== loadSeq.current[moduleId]) return;
           setRecords(withTheirs);
           setRecordTotal(total);
         } catch (e) {

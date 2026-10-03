@@ -21,8 +21,11 @@ const TURN_MS = TAPE === "record" ? 600_000 : 30_000;
 /** Luke's panel, opened: below the wide layout (lg, 1024px) it is a drawer behind a button. */
 async function luke(page: Page) {
   // Ready once the shop's figures are in: before that the page may still
-  // be hydrating, and React replaces whatever was typed.
-  await expect(page.getByRole("img", { name: /Orders per day/ })).toBeVisible();
+  // be hydrating, and React replaces whatever was typed. Thirty seconds:
+  // from a runner far from the database the figures took past fifteen
+  // twice on 2026-10-02/03, the chart on screen by the failure's own
+  // screenshot, with the function itself answering in a tenth of a second.
+  await expect(page.getByRole("img", { name: /Orders per day/ })).toBeVisible({ timeout: 30_000 });
   const panel = page.getByRole("complementary", { name: "Luke" });
   const box = panel.getByPlaceholder(LUKE_COPY.placeholder);
   if ((page.viewportSize()?.width ?? 0) < 1024) await page.getByRole("button", { name: /^Luke/ }).first().click();
