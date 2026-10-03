@@ -1419,12 +1419,18 @@ export async function POST(req: Request) {
       // anybody else's — that is the whole reason this is safe to
       // offer. No model runs on our side, so no turn is spent.
       const schemas = await schemasFor(db, moduleList);
+      // Its rules too, so a field one still reads is not taken away.
+      const { data: ruleRows } = await db
+        .from("automations")
+        .select("module_id, name, definition")
+        .eq("project_id", project.id);
       const checked = parseReply(
         JSON.stringify({ plans: given }),
         moduleList,
         null,
         null,
-        (moduleId) => schemas.get(moduleId) ?? null
+        (moduleId) => schemas.get(moduleId) ?? null,
+        (moduleId) => (ruleRows ?? []).filter((r) => r.module_id === moduleId)
       );
       if (!checked.ok || checked.reply.type === "clarify") {
         return ok(

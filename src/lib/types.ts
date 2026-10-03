@@ -35,6 +35,13 @@ export interface SchemaColumn {
    * checked.
    */
   compute?: Expr;
+  /**
+   * Off the table, board and cards, and still in the row when it is
+   * opened, and in its data. How a column comes off the table: a store
+   * column can only be hidden, never removed, and "RTO marked on, only
+   * when I open the row" is a hidden column (Tanish, 3 Oct).
+   */
+  hidden?: boolean;
 }
 
 // ── Automations: business logic as expression trees ──────────
@@ -528,6 +535,8 @@ export type AssistantReply =
         message: string;
         /** What they might ask next, as the model offers it: tapped, each is sent as written. */
         next?: NextStep[];
+        /** On a proposal, what was understood, so their yes builds exactly that (lib/plan DesignIntent). */
+        understood?: unknown;
         grounding?: {
           kind: "store_snapshot";
           last_synced_at: string | null;
@@ -546,6 +555,12 @@ export type AssistantReply =
     | { type: "blueprint"; message: string; blueprint: Blueprint }
     | { type: "plans"; message?: string; plans: AssistantPlan[]; next?: NextStep[] }
   ) & {
+    /**
+     * Set by the server, never the model: the owner said yes to this design
+     * in words before it was drawn (a proposal, then "build it"), so the
+     * chat builds it without asking again.
+     */
+    approved?: boolean;
     /**
      * What the conversation is about so far, in a few of the owner's own
      * words: the thread's name in the list, in place of whatever was typed
@@ -591,7 +606,8 @@ export type TurnUsage = {
 /** What each reply says under it about the model: set per account by an administrator (0127). */
 export type LukeShows = "nothing" | "model" | "tokens" | "cost";
 
-export type AnswerKind = "store" | "product_help" | "conversation";
+/** "proposal": a design said in words before it is built, ending "Want me to build it?" (lib/plan). */
+export type AnswerKind = "store" | "product_help" | "conversation" | "proposal";
 
 export type ReplyType = AssistantReply["type"];
 

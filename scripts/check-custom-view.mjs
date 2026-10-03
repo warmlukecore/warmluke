@@ -18,6 +18,7 @@ import {
   customViewProblem,
   customViewScriptProblem,
 } from "../src/lib/custom-view.ts";
+import { parseReply, sectionsRead } from "../src/lib/ai.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -170,6 +171,76 @@ async function open(n) { const rows = await wl.find("order_number", \`#\${n}\`);
 </script><script>wl.onRows((rows) => { for (const r of rows) void r; });</script>`;
 check("a screen in today's syntax parses, and is not refused", customViewScriptProblem(modern) === null);
 check("and parsing runs nothing", customViewScriptProblem("<script>throw new Error('ran')</script>") === null);
+
+console.log("\nthe sections a screen reads are there (Returns, 3 Oct)");
+{
+  const ORD = "88888888-8888-4888-8888-888888888888";
+  const RET = "99999999-9999-4999-8999-999999999999";
+  const modules = [
+    { id: ORD, project_id: "p", name: "orders", nav_label: "Orders", icon: "table", source_table: "orders" },
+    { id: RET, project_id: "p", name: "returns-dashboard", nav_label: "Returns", icon: "table", source_table: null },
+  ];
+  const html = (read) =>
+    `<div id=app></div><script>async function go(q){ const o = await wl.find("order_number", q, "#orders"); const l = await wl.find("order_number", q, "${read}"); app.textContent = o.length + l.length; }</script>`;
+  check(
+    "the reads are found, literal words only",
+    sectionsRead(html("#order_lines")).join() === "#orders,#order_lines" &&
+      sectionsRead('<script>wl.find("sku", code)</script>').length === 0
+  );
+  const design = (read, extra = []) =>
+    parseReply(
+      JSON.stringify({
+        type: "plans",
+        message: "A returns screen.",
+        plans: [
+          ...extra,
+          {
+            changeType: "FEATURE_UPDATE",
+            targetModuleId: RET,
+            features: { view: { type: "custom", title: "Returns", html: html(read) } },
+            explanation: "A screen to log returns.",
+          },
+        ],
+      }),
+      modules,
+      { columns: [{ field: "order_number", label: "Order", type: "text" }] },
+      null
+    );
+  const missing = design("#return-order-items");
+  check(
+    "a section that is not there is refused, naming the ones that are",
+    !missing.ok &&
+      missing.errors.join(" ").includes('"#return-order-items"') &&
+      missing.errors.join(" ").includes("#orders")
+  );
+  const here = design("Orders");
+  check("one that is there, however it is spelled, is taken", here.ok);
+  if (!here.ok) console.log("     →", here.errors);
+  const made = design("#return-items", [
+    {
+      changeType: "NEW_MODULE",
+      targetModuleId: null,
+      newModule: { name: "return-items", nav_label: "Return items", icon: "table" },
+      newSchema: { columns: [{ field: "order_number", label: "Order", type: "text" }] },
+      explanation: "The items of each return.",
+    },
+  ]);
+  check("and so is one the same design creates", made.ok);
+  if (!made.ok) console.log("     →", made.errors);
+}
+
+console.log("\nthe kit draws what screens were hand-styling");
+{
+  const page = customViewPage("<select id=t><option>Refund</option></select>", [], {});
+  for (const part of ["wl-form", "wl-field", "wl-table", "wl-empty", "wl-select", "wl-menu", "wl-head"])
+    check(`the kit has ${part}`, CUSTOM_VIEW_KIT.includes(`.${part}`));
+  check(
+    "and wl.date, wl.label and the app's list for a select are in the page",
+    ["date,", "label,", "upgradeAll"].every((w) => page.includes(w))
+  );
+  check("with the app's own words for a store status", page.includes('"PENDING":"Payment pending"'));
+  check("and its date pattern intact (no lost backslash)", page.includes("/^\\d{4}-\\d{2}-\\d{2}$/"));
+}
 
 console.log(
   fails.length === 0 ? "\na written screen runs sealed, and only with what it is for" : `\n${fails.length} FAILED`

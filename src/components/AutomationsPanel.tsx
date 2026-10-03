@@ -9,14 +9,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase-client";
 import { describeAutomation } from "@/lib/describe";
+import { useFormat } from "@/lib/format";
 import { asError, engineError, fixPrompt, type FixAction } from "@/lib/errors";
 import ErrorNote from "@/components/ErrorNote";
-import type { AutomationRow, AutomationRunRow, ModuleRow } from "@/lib/types";
+import type { AutomationRow, ModuleRow } from "@/lib/types";
 import { Check, TriangleAlert, Zap } from "lucide-react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Switch } from "@/components/ui/Switch";
 
-type RunSummary = { ok: boolean; at: string; detail: Record<string, unknown> | null };
+/** What a rule has done (abo_rule_log, 0172): its runs of either kind, counted in the database. */
+type RunSummary = { runs: number; failed: number; last: { at: string; ok: boolean; error: string | null } | null };
 
 export default function AutomationsPanel({
   projectId,
@@ -30,6 +32,7 @@ export default function AutomationsPanel({
   onFix?: (action: FixAction) => void | Promise<void>;
   onClose: () => void;
 }) {
+  const fmt = useFormat();
   const [rules, setRules] = useState<AutomationRow[]>([]);
   const [runs, setRuns] = useState<Record<string, RunSummary>>({});
   const [loading, setLoading] = useState(true);
@@ -51,23 +54,11 @@ export default function AutomationsPanel({
     setRules(list);
 
     if (list.length > 0) {
-      const { data: runRows } = await supabase
-        .from("automation_runs")
-        .select("*")
-        .in(
-          "automation_id",
-          list.map((r) => r.id)
-        )
-        .order("created_at", { ascending: false })
-        .limit(200);
-      const latest: Record<string, RunSummary> = {};
-      for (const r of (runRows ?? []) as AutomationRunRow[]) {
-        // Ordered newest first, so the first one seen per rule is its last run.
-        if (!latest[r.automation_id]) {
-          latest[r.automation_id] = { ok: r.ok, at: r.created_at, detail: r.detail };
-        }
-      }
-      setRuns(latest);
+      // A rule of code keeps its runs apart from the rest, and one busy
+      // rule's thousands of rows hid every other rule's newest 200: so
+      // each rule's own count, of both kinds, from the database.
+      const { data: log } = await supabase.rpc("abo_rule_log", { p_project: projectId });
+      setRuns((log ?? {}) as Record<string, RunSummary>);
     }
     setLoading(false);
   }, [projectId]);
@@ -151,31 +142,32 @@ export default function AutomationsPanel({
               </ul>
 
               <div className="mt-2 text-[11px] text-fg-faint">
-                {run ? (
+                {run?.last ? (
                   <>
-                    {run.ok ? (
-                      <>
-                        <Check
-                          aria-hidden
-                          size={12}
-                          strokeWidth={2.25}
-                          className="mr-1 inline align-[-1px] text-signal-success"
-                        />
-                        Last ran
-                      </>
+                    {run.last.ok ? (
+                      <Check
+                        aria-hidden
+                        size={12}
+                        strokeWidth={2.25}
+                        className="mr-1 inline align-[-1px] text-signal-success"
+                      />
                     ) : (
-                      <>
-                        <TriangleAlert
-                          aria-hidden
-                          size={12}
-                          strokeWidth={2}
-                          className="mr-1 inline align-[-1px] text-signal-attention"
-                        />
-                        Last attempt failed
-                      </>
-                    )}{" "}
-                    {new Date(run.at).toLocaleString()}
-                    {run.detail && typeof run.detail.rows === "number" && <> · {run.detail.rows} row(s) changed</>}
+                      <TriangleAlert
+                        aria-hidden
+                        size={12}
+                        strokeWidth={2}
+                        className="mr-1 inline align-[-1px] text-signal-attention"
+                      />
+                    )}
+                    Ran {run.runs.toLocaleString()} {run.runs === 1 ? "time" : "times"} · last{" "}
+                    {new Date(run.last.at).toLocaleString(fmt.locale, {
+                      day: "numeric",
+                      month: "short",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}{" "}
+                    · {run.failed === 0 ? "no errors" : `${run.failed.toLocaleString()} failed`}
+                    {!run.last.ok && " · the last one failed"}
                   </>
                 ) : (
                   "Hasn't run yet"
@@ -187,18 +179,18 @@ export default function AutomationsPanel({
                   replaces this one in place and keeps its history,
                   and it waits for a yes like anything else Luke
                   proposes. */}
-              {run && !run.ok && typeof run.detail?.error === "string" && (
+              {run?.last && !run.last.ok && run.last.error && (
                 <div className="mt-1.5">
                   <ErrorNote
                     compact
                     onFix={onFix}
                     error={engineError(
                       `“${rule.name}” stopped on its last run.`,
-                      [run.detail.error],
+                      [run.last.error],
                       fixPrompt({
                         what: `the rule “${rule.name}”`,
                         tried: rule.definition,
-                        errors: [run.detail.error],
+                        errors: [run.last.error],
                         ask: `Correct this rule so it does the same job. Use the same name, “${rule.name}”, so it replaces the rule in place.`,
                       }),
                       "No rows were changed by it."

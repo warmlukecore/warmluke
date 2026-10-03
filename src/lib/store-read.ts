@@ -16,6 +16,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { FeatureSchema, SchemaColumn } from "@/lib/types";
 import type { Resource } from "@/lib/shopify-resources";
+import { isYes } from "@/lib/filters";
 
 export type StoreBrief = {
   id: string;
@@ -309,6 +310,13 @@ export type StoreTable =
 type TableSpec = {
   /** What a stat over this table should be — for whoever designs one. */
   advice?: string;
+  /**
+   * When a row of this list happened, for a list of events: a section
+   * over it opens on its last 30 days with a choice of dates (Tanish,
+   * 3 Oct). A list of things (products, stock, customers) has none: a
+   * window of days would hide the rows it is for.
+   */
+  dated?: string;
   label: string;
   /**
    * The SQL view that holds this list in the shape the app shows
@@ -369,6 +377,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     advice:
       'Money: `total` is what the order comes to today, after refunds; `total_original` is what it came to when placed. Do not sum `total` over every row and call it revenue — most of it may be unpaid. Revenue collected = sum(total) where financial_status = "PAID". Awaiting payment (COD) = sum(total) where financial_status = "PENDING". Cancelled = count where cancelled_at is not empty, kept out of both. Average order value = avg(total_original). When a merchant asks for one revenue number, show these apart and say which is which. COD vs prepaid: `gateway` is what paid — "Cash on Delivery (COD)" for COD, otherwise the payment provider. Orders by place = group by ship_city or ship_state. What the total is made of: total = subtotal + shipping + tax, with discount already taken off subtotal. `tax` is owed to a tax authority and is NEVER the merchant\'s income; `shipping` is what the customer was charged for delivery, usually paid straight out again; `subtotal` is the goods. So "what did we actually earn on goods" is sum(subtotal), not sum(total). Any of these can be empty on an order imported before they were read — that means unknown, not zero, so leave those rows out of a total and say how many.',
     view: "store_orders",
+    dated: "placed_at",
     // A change to the shop is aimed with Shopify's own id (0121).
     gives: { Order: "shopify_id" },
     // The moment, not the day the list shows (0166): newest first within
@@ -452,6 +461,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     // The lines come in with the orders.
     section: { label: "Order items", icon: "receipt", importedWith: "orders" },
     view: "store_order_items",
+    dated: "placed_at",
     order: { field: "placed_at", ascending: false },
     select:
       "id, order_id, order_number, placed_at, customer_name, title, variant_title, sku, quantity, price, line_total, currency, status",
@@ -475,6 +485,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     what: 'one row per refund — order number, day, customer, amount, quantity; what "refunds", "returns" and "money given back" mean',
     section: { label: "Refunds", icon: "undo-2", importedWith: "orders" },
     view: "store_refunds",
+    dated: "refunded_at",
     order: { field: "refunded_at", ascending: false },
     select: "id, order_id, order_number, refunded_at, customer_name, amount, quantity, currency",
     columns: [
@@ -497,6 +508,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     what: 'one row per payment or refund on an order — when, how much, which gateway, and whether it succeeded; what "money collected", "how much actually came in", "COD collected", "settled", "failed payments" and "what matches my payout" mean',
     section: { label: "Payments", icon: "banknote", importedWith: "orders" },
     view: "store_transactions",
+    dated: "processed_at",
     order: { field: "processed_at", ascending: false },
     select: "id, order_id, order_number, processed_at, customer_name, kind, status, gateway, amount, currency, test",
     columns: [
@@ -516,6 +528,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     what: 'one row per shipment — order number, customer, courier, tracking number, shipment status, shipped and delivered day; what "shipments", "tracking numbers", "delivery partner", "courier" and "where is the order" mean',
     section: { label: "Shipments", icon: "truck", importedWith: "fulfillments" },
     view: "store_fulfillments",
+    dated: "shipped_at",
     order: { field: "shipped_at", ascending: false },
     select:
       "id, order_id, order_number, customer_name, carrier, tracking_number, tracking_url, shipment_status, status, shipped_at, delivered_at",
@@ -560,6 +573,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     what: 'one row per basket left at the checkout — who, what was in it, how much, and a link back to it; what "abandoned carts", "lost sales", "who nearly bought" and "recover" mean',
     section: { label: "Abandoned carts", icon: "shopping-cart", importedWith: "carts" },
     view: "store_abandoned_checkouts",
+    dated: "started_at",
     order: { field: "started_at", ascending: false },
     select: "id, started_at, customer_name, email, total, currency, item_count, items, recovery_url",
     columns: [
@@ -581,6 +595,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     what: 'one row per payout to the bank — when, how much actually arrived, and what Shopify kept; what "payouts", "what did I get paid", "Shopify fees", "settlement" and "reconcile my bank" mean',
     section: { label: "Payouts", icon: "banknote", importedWith: "payouts" },
     view: "store_payouts",
+    dated: "issued_at",
     order: { field: "issued_at", ascending: false },
     select: "id, issued_at, state, kind, net, currency, charges_gross, refunds_gross, fees, adjustments_gross",
     columns: [
@@ -602,6 +617,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     what: 'one row per return — which order, who, what is coming back, why, and how long it has been open; what "returns", "RMA", "what is coming back", "why do people return" and "open returns" mean',
     section: { label: "Returns", icon: "rotate-ccw", importedWith: "returns" },
     view: "store_returns",
+    dated: "requested_at",
     order: { field: "requested_at", ascending: false },
     select:
       "id, name, order_number, customer_name, state, quantity, refunded_quantity, reasons, items, requested_at, days_open, closed_at",
@@ -665,6 +681,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     what: 'one row per draft order — the quotes and by-hand orders: who for, how much, open or already an order, and the link to pay; what "quotes", "draft orders", "pipeline", "phone orders", "wholesale" and "unpaid invoices" mean',
     section: { label: "Draft orders", icon: "file-text", importedWith: "drafts" },
     view: "store_draft_orders",
+    dated: "drafted_at",
     order: { field: "drafted_at", ascending: false },
     select:
       "id, name, drafted_at, state, customer_name, email, total, subtotal, tax, shipping, currency, tags, became_order, invoice_url, items, completed_at",
@@ -892,7 +909,10 @@ export function ownColumns(table: StoreTable, columns: SchemaColumn[]): SchemaCo
  * columns", for the screen, for Luke and for the validator alike.
  */
 export function storeSectionColumns(table: StoreTable, saved: SchemaColumn[] | null | undefined): SchemaColumn[] {
-  const theirs = STORE_TABLES[table].columns;
+  // The store's own columns are always ours, in our order: one taken off
+  // the table is hidden, never gone, and that is kept from what was saved.
+  const hidden = new Set((saved ?? []).filter((c) => c?.hidden).map((c) => c.field));
+  const theirs = STORE_TABLES[table].columns.map((t) => (hidden.has(t.field) ? { ...t, hidden: true } : t));
   const own = canCarryOwnFields(table);
   const added = (saved ?? []).filter(
     (c) => c && typeof c.field === "string" && !theirs.some((t) => t.field === c.field) && (c.compute || own)
@@ -1135,6 +1155,9 @@ export async function readStorePage(
   const sort = state.sort ?? features?.defaultSort ?? null;
   const type = sort ? columns.find((c) => c.field === sort.field)?.type : undefined;
   const fields = features?.search?.fields?.length ? features.search.fields : searchFieldsOf(table);
+  // A yes/no field is asked as a tick (0171): ticked, or every row not.
+  const ticks = new Set(columns.filter((c) => c.type === "boolean").map((c) => c.field));
+  const chosen = Object.entries(state.filters).filter(([f, v]) => v && !computed.has(f));
   const { data, error } = await db.rpc("abo_store_page", {
     p_module: moduleId,
     p_query: {
@@ -1142,14 +1165,15 @@ export async function readStorePage(
       limit: state.size,
       search: state.search.trim(),
       search_fields: fields.filter((f) => !computed.has(f)),
-      filters: Object.fromEntries(Object.entries(state.filters).filter(([f, v]) => v && !computed.has(f))),
+      filters: Object.fromEntries(chosen.filter(([f]) => !ticks.has(f))),
+      flags: Object.fromEntries(chosen.filter(([f]) => ticks.has(f)).map(([f, v]) => [f, isYes(v)])),
       sort:
         sort && !computed.has(sort.field)
           ? { ...sort, kind: type === "number" || type === "currency" ? "number" : "text" }
           : null,
       order: { field: spec.order.field, dir: spec.order.ascending ? "asc" : "desc" },
       period,
-      facets: facets.filter((f) => !computed.has(f)),
+      facets: facets.filter((f) => !computed.has(f) && !ticks.has(f)),
     },
   });
   if (error) throw new Error(error.message);
@@ -1512,4 +1536,16 @@ export async function storeValues(db: SupabaseClient, storeId: string): Promise<
       .filter((k) => k in out)
       .map((k) => [k, out[k]])
   );
+}
+
+/**
+ * The choice of dates a section over a list of events opens with when its
+ * design names none: its last 30 days, or 7 or 90, of when each happened.
+ */
+export function defaultPeriod(table: string | null | undefined): NonNullable<FeatureSchema["period"]> | null {
+  if (!isStoreTable(table)) return null;
+  const field = STORE_TABLES[table].dated;
+  if (!field) return null;
+  const label = STORE_TABLES[table].columns.find((c) => c.field === field)?.label ?? "Date";
+  return { field, label, presets: [7, 30, 90], default: 30 };
 }

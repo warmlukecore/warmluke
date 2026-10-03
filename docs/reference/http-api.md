@@ -137,7 +137,14 @@ Luke's newest answers are failing because the model was not there (`payload.fail
 says so in red, with how many turns and apps since when and what to do, until an answer
 comes through again.
 
-A section over the store reads its table through `abo_store_page(p_module, p_query)` (0167): one page of the whole list (`offset`, `limit` up to 200), searched, filtered and sorted in SQL by the counters' rules, the merchant's own fields joined only when asked about, an order's dates as a range on `placed_ts`, the exact total, and on request each filter's values from the whole list. Readable where the counters are: the section shared with them and its store open to them. A section of the owner's own rows reads `records` directly, 200 more a Load more, in reads of up to 1,000 (the server's most a request), so it goes on past a thousand.
+A section over the store reads its table through `abo_store_page(p_module, p_query)` (0167): one page of the whole list (`offset`, `limit` up to 200), searched, filtered and sorted in SQL by the counters' rules, the merchant's own fields joined only when asked about, an order's dates as a range on `placed_ts`, the exact total, and on request each filter's values from the whole list. Readable where the counters are: the section shared with them and its store open to them. A yes/no field is filtered as a tick (`p_query.flags`, 0171): ticked, or every row not, blank and false alike. A list of events (orders, shipments, refunds and the like, `dated` in `store-read`) opens on its last 30 days when its design names no dates. A section of the owner's own rows reads `records` directly, 200 more a Load more, in reads of up to 1,000 (the server's most a request), so it goes on past a thousand.
+
+## Rule logs
+
+The Rules dialog asks `abo_rule_log(p_project)` (0172) what each rule has done: how many
+times it ran, how many failed, and its last run (when, whether it worked, its error), over
+both kinds of run, `automation_runs` for a rule of expressions and `code_jobs` for a rule of
+code. It runs as the caller, so it counts only what their policies let them see.
 
 ## Invite links
 

@@ -38,6 +38,17 @@ const key = (v: unknown) =>
 const parts = (v: unknown): string[] =>
   (Array.isArray(v) ? v.map((x) => String(x ?? "")) : String(v ?? "").split(",")).map((s) => s.trim()).filter(Boolean);
 
+/** A tick, however it was stored: true, "true", "yes" or 1. */
+export const isYes = (v: unknown) => v === true || v === 1 || ["true", "yes"].includes(key(v));
+
+/**
+ * A yes/no field is a tick: on, or not. Its choices are always these two,
+ * and "No" is every row not ticked, blank or false alike. Offered the
+ * values in the data, an RTO filter read Yes, No, true, false, and "No"
+ * found none of the rows nobody had marked (Tanish, 3 Oct).
+ */
+export const YES_NO = ["Yes", "No"];
+
 /**
  * Does this row belong under this choice?
  *
@@ -45,9 +56,10 @@ const parts = (v: unknown): string[] =>
  * The search box beside these filters has always matched this way;
  * only the filters were comparing byte for byte.
  */
-export function matchesFilter(row: RecordRow, field: string, chosen: string): boolean {
+export function matchesFilter(row: RecordRow, field: string, chosen: string, yesNo = false): boolean {
   const value = row.data?.[field];
   const want = key(chosen);
+  if (yesNo) return isYes(value) === (want === "yes");
   // The whole cell first, for a choice that is itself a list — an
   // option designed before this, or a value with a comma in its name.
   return key(value) === want || parts(value).some((p) => key(p) === want);
@@ -65,7 +77,8 @@ export function matchesFilter(row: RecordRow, field: string, chosen: string): bo
  * where the two forms differ the one in the data wins — that is the
  * one the merchant can see in the column beside it.
  */
-export function filterOptions(declared: string[], rows: RecordRow[], field: string): string[] {
+export function filterOptions(declared: string[], rows: RecordRow[], field: string, yesNo = false): string[] {
+  if (yesNo) return YES_NO;
   const out: string[] = [];
   const seen = new Map<string, number>();
 

@@ -88,6 +88,11 @@ const KNOWN: Record<string, Known> = {
  */
 const SHOPIFY_FORM = /^[A-Z]+(?:_[A-Z]+)*$/;
 
+/** Each known store status in words, for a written screen's wl.label (custom-view.ts). */
+export const STATUS_LABELS: Record<string, string> = Object.fromEntries(
+  Object.entries(KNOWN).map(([k, v]) => [k, v.label])
+);
+
 /** A store status we know the meaning of, or null. */
 export function knownStatus(value: string): Known | null {
   const v = value.trim();

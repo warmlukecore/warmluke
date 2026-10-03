@@ -59,6 +59,13 @@ test("a store list pages through all of it: its count, its pages, its search and
 
   try {
     await page.goto(`/app/${shop.projectId}?section=${id}`);
+    // A list of orders opens on its last 30 days, in one button (ui/DateRange);
+    // these orders run to tomorrow and back weeks, so: every one.
+    const dates = page.getByRole("button", { name: /^Placed: / });
+    await expect(dates).toContainText(/–/, { timeout: 30_000 });
+    await dates.click();
+    await page.getByRole("button", { name: "All time" }).click();
+    await expect(dates).toHaveAccessibleName("Placed: All time");
     // With pages, the pill says where and the foot of how many.
     const pages = page.getByRole("group", { name: "Pages" });
     const of = page.getByText(new RegExp(`^of ${all}$`));

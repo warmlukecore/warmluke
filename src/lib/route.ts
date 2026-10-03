@@ -164,8 +164,10 @@ const QUESTIONS = {
 };
 
 // Words that are never the thing being looked up, in either language.
+// A request's own words too: "Can you find a recent repeat order" was
+// searched for "Can", read as a name for its capital (3 Oct).
 const STOP = new Set(
-  "a an the of in on at to for from by with is are was were be do does did has have had how what which who when where why kya kaun kaunsa kitna kitne ka ke ki ko me mein se ne hai hain tha the thi kar do dikhao batao and or not no this that these those my our your i we you it its over under about last next month week today yesterday all show me tell give list paid pending cancelled unpaid order orders customer customers product products stock sales revenue total totals phone number email price cod".split(
+  "can could would will should shall may might must please find search look looks like see get any some recent latest been being just also so there their them they a an the of in on at to for from by with is are was were be do does did has have had how what which who when where why kya kaun kaunsa kitna kitne ka ke ki ko me mein se ne hai hain tha the thi kar do dikhao batao and or not no this that these those my our your i we you it its over under about last next month week today yesterday all show me tell give list paid pending cancelled unpaid order orders customer customers product products stock sales revenue total totals phone number email price cod".split(
     " "
   )
 );

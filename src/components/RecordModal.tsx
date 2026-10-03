@@ -160,7 +160,7 @@ type RowEvent = {
 };
 
 const shown = (v: unknown) =>
-  v === null || v === undefined || v === "" ? "blank" : typeof v === "boolean" ? (v ? "Yes" : "No") : String(v);
+  v === null || v === undefined || v === "" ? "blank" : typeof v === "boolean" ? (v ? "Yes" : "blank") : String(v);
 
 /**
  * Who added the row, who changed it, and what each change was, from the

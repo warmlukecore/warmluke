@@ -30,6 +30,12 @@ console.log("the words worth looking up");
   check("a two-word product, lower case and all", candidates("stock of ski wax").includes("ski wax"));
   check("never more than twenty", candidates(Array.from({ length: 60 }, (_, i) => `word${i}`).join(" ")).length <= 20);
   check("nothing from nothing", candidates("hi").length === 0);
+  // A request's first word is capitalised for the sentence, not a name (3 Oct).
+  const asked = candidates("Can you find a recent repeat order that has been flagged so I can see how it looks?");
+  check(
+    "a request's own words are not looked up",
+    ["Can", "find", "recent", "been", "looks"].every((w) => !asked.includes(w)) && asked.includes("repeat")
+  );
 }
 
 console.log("\na span, as days in the shop's zone");

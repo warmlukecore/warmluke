@@ -255,7 +255,6 @@ export const NOT_SUPPORTED: Array<{ id: string; label: string }> = [
   // The assistant builds the app; the owner owns the data in it. Asked
   // to change a value it produced a plan that inserted a duplicate row
   // and called it an update.
-  { id: "remove_field", label: "removing a field once a section has it — you can rename or reorder, not delete" },
   { id: "edit_data", label: "changing what's in a row — open the row and edit it yourself, it's quicker" },
   { id: "custom_colours", label: "choosing the colour of a status — colours are picked automatically" },
 ];

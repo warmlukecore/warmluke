@@ -106,6 +106,8 @@ export interface ChatMessage {
   role: "user" | "assistant" | "system";
   text?: string;
   plan?: AssistantPlan;
+  /** Agreed to in words before it was drawn: built as it arrived, never offered again. */
+  approved?: boolean;
   /** Discovery questions — answered inline, sent back as one message. */
   questions?: ClarifyQuestion[];
   /** Two questions that do not lean on each other, asked at once. */
@@ -3603,7 +3605,7 @@ export default function ChatPanel({
                             currentFeatures={currentSchema ? (currentSchema.features ?? null) : undefined}
                             openSectionId={openSectionId}
                             storeFacts={storeFacts}
-                            done={!!resolvedCards[m.id] || answered}
+                            done={!!resolvedCards[m.id] || answered || !!m.approved}
                             recorded={m.built}
                             onApprove={async (chosen, sent) => {
                               setResolvedCards((prev) => ({ ...prev, [m.id]: true }));
@@ -3714,13 +3716,13 @@ export default function ChatPanel({
                     // meant a reloaded thread offered Apply Change on a plan
                     // that had already been applied, and applying a RECORD_SEED
                     // twice writes its rows twice.
-                    const isPending = applyingPlanId === m.id || answered;
+                    const isPending = applyingPlanId === m.id || answered || !!m.approved;
                     const targetModule = modules.find((mod) => mod.id === plan.targetModuleId);
                     // Where its build stands: from this session while it runs, then
                     // from the record the server wrote into the thread.
                     const record = m.built;
                     const status: PlanStatus | null =
-                      applyingPlanId === m.id || record?.status === "building"
+                      applyingPlanId === m.id || record?.status === "building" || (m.approved && !record)
                         ? { kind: "building" }
                         : record?.status === "built"
                           ? { kind: "built" }

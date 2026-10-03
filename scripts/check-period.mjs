@@ -11,7 +11,7 @@
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-period.mjs
 
-import { inPeriod, keptPick, openingPick, periodRange, pickLabel } from "../src/lib/period.ts";
+import { inPeriod, keptPick, openingPick, periodRange, pickLabel, weekStartOf } from "../src/lib/period.ts";
 import { validateFeatures } from "../src/lib/ai.ts";
 import { describeFeaturesFull, describeForOwner } from "../src/lib/describe.ts";
 
@@ -184,6 +184,29 @@ check(
   ).length === 0
 );
 check("a board over a section not in view says nothing it cannot know", warn(board, undefined).length === 0);
+
+console.log("\nnamed spans, worked out from today each time (3 Oct 2026, a Saturday, in Mumbai)");
+{
+  const span = (named, weekStart = 1) => {
+    const r = periodRange("placed_at", { named }, "Asia/Kolkata", now, weekStart);
+    return r && `${r.fromDay}..${r.toDay}`;
+  };
+  check("yesterday", span("yesterday") === "2026-10-02..2026-10-02");
+  check("this week, from Monday", span("this_week") === "2026-09-28..2026-10-03");
+  check("this week, where weeks start on Sunday", span("this_week", 0) === "2026-09-27..2026-10-03");
+  check("last week", span("last_week") === "2026-09-21..2026-09-27");
+  check("this month", span("this_month") === "2026-10-01..2026-10-03");
+  check("last month", span("last_month") === "2026-09-01..2026-09-30");
+  check("this year", span("this_year") === "2026-01-01..2026-10-03");
+  check("a name it does not know is no window", periodRange("placed_at", { named: "fortnight" }, "UTC", now) === null);
+  check("said in words", pickLabel({ named: "last_month" }) === "Last month");
+  check("kept, by name, so it rolls over", keptPick('{"named":"this_month"}', spec)?.named === "this_month");
+  check("and Today is kept whatever the presets", keptPick('{"days":1}', spec)?.days === 1);
+  check(
+    "an Indian week starts on Sunday, a British one on Monday",
+    weekStartOf("en-IN") === 0 && weekStartOf("en-GB") === 1
+  );
+}
 
 console.log(
   fails.length ? `\n${fails.length} FAILED` : "\na section's dates are one rule, and a replaced view says so"

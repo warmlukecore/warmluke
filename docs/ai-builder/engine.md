@@ -46,6 +46,14 @@ Each `AssistantPlan` has one change type:
 - `AUTOMATION_ADD`
 - `AUTOMATION_REMOVE`
 
+A `UI_CHANGE` reorders, relabels and retypes columns, hides one (`"hidden": true`: off the
+table, board and cards, still in the row's pop-up and its data, and the only way for a
+store column, which the app keeps in its own order), or leaves out a field of the owner's.
+Leaving one out loses no values (they stay on the rows, and a version back brings it back),
+so it is refused only while something still reads it: a filter, counter, button, scan bar,
+choice of dates, sort, search, view, written screen, worked-out column or rule, counted over
+the whole design with what it removes and adds (`fieldUsers`, `check-remove-field`).
+
 The plan carries all data required for that change. In a multi-plan blueprint, temporary
 references such as `#orders` connect later plans to sections created earlier in the same
 batch. `applyPlans` resolves them to actual UUIDs in order.
@@ -277,7 +285,26 @@ When validation fails, the rejected model output and exact errors are sent back 
 model. The engine permits the initial attempt plus two repair attempts. Rejected output
 is not persisted as conversation history. One reply is not sent back: a question answered
 in prose rather than JSON is that answer, taken as it is (`isQuestion`), since a resend
-would pay for the whole contract again to say the same words (`check-prose-answer`).
+would pay for the whole contract again to say the same words (`check-prose-answer`). Nor is one whose only fault is a quote
+inside its words left unescaped: a quote that ends a string is followed by `,` `}` `]` or
+`:`, so any other is escaped and the reply read (`readJson`, `check-reply-json`).
+
+### Talk first, then build
+
+In the app's own chat (`lookups: true`), a request to build is first said in words: the
+plan step's `say` (plain sentences on how it will work, the questions that matter, ending
+"Want me to build it?") is the reply, an answer of `kind: "proposal"` carrying what was
+understood, and no design is drawn or charged. The owner's plain yes (`isGoAhead` in
+`src/lib/plan.ts`: "yes", "build it", "haan bana do") builds exactly that: the design call
+reads it as `WHAT THE OWNER AGREED TO` and the reply is marked `approved`, set by the
+server from the thread as kept, never by the model, so the chat builds it at once with its
+undo. Anything else they say about it plans again; a question about it is answered. "Just
+build it" in the request skips the talk; a small exact change has an empty `say` and goes
+straight to its card; an outside assistant never gets a plan in words, as its own approval
+stands. The critic also sends back a design that works around the app (a rule that only
+writes a default into every row, a second field standing in for one there is, a screen for
+a table or pop-up the section draws, an old field left on the table). `check-talk-first`
+holds it, with the model stood in for.
 
 ## Human-in-the-loop gates
 

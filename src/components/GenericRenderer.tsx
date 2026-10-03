@@ -55,7 +55,7 @@ import { sameCode } from "@/lib/scan";
 import { PREVIEW_ROWS } from "@/lib/change-preview";
 import { badgeLabel } from "@/lib/tone";
 import { button, fieldOf, iconButtonRound, menu, menuItem } from "@/components/ui/controls";
-import { Choices } from "@/components/AdminParts";
+import { DateRange } from "@/components/ui/DateRange";
 import { Tabs } from "@/components/ui/Tabs";
 import { VIEW_NAMES, sectionTabs, tabName } from "@/lib/tabs";
 import {
@@ -65,8 +65,8 @@ import {
   periodRange,
   pickLabel,
   presetsOf,
-  shiftDay,
   todayIn,
+  weekStartOf,
   type PeriodPick,
   type PeriodRange,
   type PeriodSpec,
@@ -208,66 +208,40 @@ function FilterMenu({
 }
 
 /**
- * The dates a section is read over (features.period): its windows of
- * days, every row, or their own two dates, typed into the same date
- * fields a row's date is. The pick narrows the rows, the stat cards and
- * the view together; said in words for a screen reader as it changes.
+ * The dates a section is read over (features.period): one button saying
+ * which, opening shortcuts and a calendar (ui/DateRange). The pick
+ * narrows the rows, the stat cards and the view together; said in words
+ * for a screen reader as it changes.
  */
 function PeriodBar({
   spec,
   label,
   pick,
+  shown,
   today,
+  locale,
   onPick,
 }: {
   spec: PeriodSpec;
   label: string;
   pick: PeriodPick;
+  shown: PeriodRange | null;
   today: string;
+  locale: string;
   onPick: (pick: PeriodPick) => void;
 }) {
-  const value = !pick ? "all" : "days" in pick ? String(pick.days) : "custom";
-  const options: Array<[string, string]> = [
-    ...presetsOf(spec).map((d): [string, string] => [String(d), d === 1 ? "Today" : `${d} days`]),
-    ["all", "All"],
-    ["custom", "Your dates"],
-  ];
-  const own = pick && "from" in pick ? pick : null;
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-      <span className="text-xs font-medium text-fg-muted">{label}</span>
-      <Choices
-        options={options}
-        value={value}
-        onChange={(v) =>
-          onPick(
-            v === "all"
-              ? null
-              : v === "custom"
-                ? (own ?? { from: shiftDay(today, -29), to: today })
-                : { days: Number(v) }
-          )
-        }
+    <div className="flex flex-wrap items-center gap-2">
+      <DateRange
+        label={label}
+        pick={pick}
+        shown={shown}
+        today={today}
+        presets={presetsOf(spec)}
+        locale={locale}
+        weekStart={weekStartOf(locale)}
+        onPick={onPick}
       />
-      {own && (
-        <span className="flex items-center gap-1.5">
-          <input
-            type="date"
-            aria-label={`${label} from`}
-            value={own.from}
-            onChange={(e) => e.target.value && onPick({ from: e.target.value, to: own.to })}
-            className={`${fieldOf("sm")} w-auto`}
-          />
-          <span className="text-xs text-fg-faint">to</span>
-          <input
-            type="date"
-            aria-label={`${label} to`}
-            value={own.to}
-            onChange={(e) => e.target.value && onPick({ from: own.from, to: e.target.value })}
-            className={`${fieldOf("sm")} w-auto`}
-          />
-        </span>
-      )}
       <span role="status" className="sr-only">
         {`${label}: ${pickLabel(pick)}`}
       </span>
@@ -359,6 +333,8 @@ export default function GenericRenderer({
   const [busyRecordId, setBusyRecordId] = useState<string | null>(null);
   const [writeError, setWriteError] = useState<string | null>(null);
   const columns = useMemo(() => schema?.columns ?? [], [schema]);
+  // A yes/no column filters as a tick: Yes, or every row not ticked.
+  const yesNo = (f: string) => columns.some((c) => c.field === f && c.type === "boolean");
   const features: FeatureSchema | null = (schema as UiSchema & { features?: FeatureSchema | null })?.features ?? null;
 
   const [search, setSearch] = useState("");
@@ -453,7 +429,7 @@ export default function GenericRenderer({
   const pick: PeriodPick = !periodSpec ? null : memory in picks ? picks[memory] : openingPick(periodSpec);
   const pickKey = JSON.stringify(pick);
   const range = useMemo(
-    () => (periodSpec ? periodRange(periodSpec.field, pick, zone) : null),
+    () => (periodSpec ? periodRange(periodSpec.field, pick, zone, new Date(), weekStartOf(fmt.locale)) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [periodSpec?.field, pickKey, zone]
   );
@@ -515,7 +491,7 @@ export default function GenericRenderer({
       // Compared the way the search box beside it compares: a
       // dropdown that matched byte for byte offered "active" against
       // Shopify's "ACTIVE" and found nothing, twenty-one times.
-      if (v) rows = rows.filter((r) => matchesFilter(r, fl.field, v));
+      if (v) rows = rows.filter((r) => matchesFilter(r, fl.field, v, yesNo(fl.field)));
     }
 
     if (effectiveSort && columns.some((c) => c.field === effectiveSort.field) && computedOnly(effectiveSort.field)) {
@@ -700,8 +676,10 @@ export default function GenericRenderer({
     setPage(0);
   };
 
+  // A hidden column is the row's, when it is opened, not the view's.
+  const shown = columns.filter((c) => !c.hidden);
   const viewProps = {
-    columns,
+    columns: shown,
     // A preview's list is a glimpse; its totals above still count every row.
     records: preview ? filteredRecords.slice(0, PREVIEW_ROWS) : filteredRecords,
     onClearFilters: filtered ? clearFilters : undefined,
@@ -746,7 +724,7 @@ export default function GenericRenderer({
           <TableView
             {...viewProps}
             // A new page, or another section's table, starts at its top left.
-            key={`${at}:${columns.map((c) => c.field).join()}`}
+            key={`${at}:${shown.map((c) => c.field).join()}`}
             records={
               server ? filteredRecords : fill ? filteredRecords.slice(at * PAGE, (at + 1) * PAGE) : viewProps.records
             }
@@ -800,7 +778,9 @@ export default function GenericRenderer({
             periodSpec.label?.trim() || columns.find((c) => c.field === periodSpec.field)?.label || periodSpec.field
           }
           pick={pick}
+          shown={range}
           today={todayIn(zone)}
+          locale={fmt.locale}
           onPick={choosePick}
         />
       )}
@@ -848,7 +828,7 @@ export default function GenericRenderer({
           value={String(openTab)}
           onChange={(id) => chooseTab(Number(id))}
           label="Views of this section"
-          className="-mb-1 overflow-x-auto"
+          className="-mb-1 shrink-0 overflow-x-auto"
         />
       )}
 
@@ -891,7 +871,8 @@ export default function GenericRenderer({
                         ),
                       ]
                     : rowsWithComputed,
-                  fl.field
+                  fl.field,
+                  yesNo(fl.field)
                 )}
                 badges={columns.find((c) => c.field === fl.field)?.type === "badge"}
                 onChange={(v) => {

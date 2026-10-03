@@ -46,5 +46,20 @@ check(
 const outside = readJson('{\n  "type": "answer",\n  "message": "Hi"\n}');
 check("line breaks between keys are left as they are", outside.ok && outside.value.type === "answer");
 
+// A quote inside the words, sent bare: Luke's own reply on 3 Oct, which
+// paid for the whole answer twice. A closing quote is followed by , } ]
+// or :; this one by a word, so it is the words' own.
+const badges = readJson(
+  '{"type":"answer","kind":"product_help","message":"It fills in **repeat_reason** — one of three badges: "Same day" (both placed today), "Previous unfulfilled" or "Previous in transit"."}'
+);
+check(
+  "a quote inside the words, sent unescaped, is read as the words'",
+  badges.ok && badges.value.message.includes('badges: "Same day" (both placed today), "Previous unfulfilled"')
+);
+const keyed = readJson('{"type":"answer","message":"Say "hi" to them","next":[]}');
+check("and the quotes that end strings and keys still end them", keyed.ok && Array.isArray(keyed.value.next));
+const unsure = readJson('{"message":"he said "yes", then left"}');
+check("a stray quote before a comma cannot be told apart, so it is sent back, not guessed", !unsure.ok);
+
 console.log(fails.length === 0 ? "\na reply is read, or told exactly why not" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

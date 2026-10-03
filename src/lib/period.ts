@@ -16,8 +16,22 @@ import type { FeatureSchema } from "@/lib/types";
 
 export type PeriodSpec = NonNullable<FeatureSchema["period"]>;
 
-/** The last N days, their own two dates, or every row (null). */
-export type PeriodPick = { days: number } | { from: string; to: string } | null;
+/**
+ * A calendar span by its name, worked out from today each time it is read:
+ * "This month" kept as two dates would still show October in November.
+ */
+export const NAMED = {
+  yesterday: "Yesterday",
+  this_week: "This week",
+  last_week: "Last week",
+  this_month: "This month",
+  last_month: "Last month",
+  this_year: "This year",
+} as const;
+export type Named = keyof typeof NAMED;
+
+/** The last N days, a named span, their own two dates, or every row (null). */
+export type PeriodPick = { days: number } | { named: Named } | { from: string; to: string } | null;
 
 /** A pick worked out: inclusive days in the zone, and the instants they start and stop at. */
 export type PeriodRange = { field: string; fromDay: string; toDay: string; from: string; to: string };
@@ -38,6 +52,43 @@ export const shiftDay = (day: string, days: number) => {
 
 export const presetsOf = (spec: PeriodSpec) => (spec.presets?.length ? spec.presets : DEFAULT_PRESETS);
 
+/** The first day of the week a day is in; weekStart 0 is Sunday, as Date counts. */
+export const weekOf = (day: string, weekStart = 1) =>
+  shiftDay(day, -((new Date(`${day}T00:00:00Z`).getUTCDay() - weekStart + 7) % 7));
+
+/** The day a week starts in a locale (0 Sunday … 6 Saturday), Monday where the browser cannot say. */
+export function weekStartOf(locale: string): number {
+  try {
+    const l = new Intl.Locale(locale) as Intl.Locale & {
+      getWeekInfo?: () => { firstDay: number };
+      weekInfo?: { firstDay: number };
+    };
+    const first = (l.getWeekInfo?.() ?? l.weekInfo)?.firstDay;
+    return typeof first === "number" ? first % 7 : 1;
+  } catch {
+    return 1;
+  }
+}
+
+/** A named span's two days, from today. */
+function namedDays(name: Named, today: string, weekStart: number): [string, string] {
+  const month = `${today.slice(0, 8)}01`;
+  switch (name) {
+    case "yesterday":
+      return [shiftDay(today, -1), shiftDay(today, -1)];
+    case "this_week":
+      return [weekOf(today, weekStart), today];
+    case "last_week":
+      return [shiftDay(weekOf(today, weekStart), -7), shiftDay(weekOf(today, weekStart), -1)];
+    case "this_month":
+      return [month, today];
+    case "last_month":
+      return [`${shiftDay(month, -1).slice(0, 8)}01`, shiftDay(month, -1)];
+    case "this_year":
+      return [`${today.slice(0, 4)}-01-01`, today];
+  }
+}
+
 /** What the section opens on: its default, when that is one of its presets. */
 export const openingPick = (spec: PeriodSpec): PeriodPick =>
   typeof spec.default === "number" && presetsOf(spec).includes(spec.default) ? { days: spec.default } : null;
@@ -46,13 +97,17 @@ export function periodRange(
   field: string,
   pick: PeriodPick,
   timeZone: string,
-  now: Date = new Date()
+  now: Date = new Date(),
+  weekStart = 1
 ): PeriodRange | null {
   if (!pick) return null;
   let fromDay: string, toDay: string;
   if ("days" in pick) {
     toDay = todayIn(timeZone, now);
     fromDay = shiftDay(toDay, -(Math.max(1, Math.floor(pick.days)) - 1));
+  } else if ("named" in pick) {
+    if (!(pick.named in NAMED)) return null;
+    [fromDay, toDay] = namedDays(pick.named, todayIn(timeZone, now), weekStart);
   } else {
     if (!DAY.test(pick.from) || !DAY.test(pick.to)) return null;
     // Typed the wrong way round is still the days between them.
@@ -83,6 +138,7 @@ const shortDay = (d: string) =>
 export function pickLabel(pick: PeriodPick): string {
   if (!pick) return "All";
   if ("days" in pick) return pick.days === 1 ? "Today" : `Last ${pick.days} days`;
+  if ("named" in pick) return NAMED[pick.named] ?? "All";
   const day = shortDay;
   return pick.from === pick.to ? day(pick.from) : `${day(pick.from)} – ${day(pick.to)}`;
 }
@@ -97,7 +153,8 @@ export function keptPick(raw: string | null, spec: PeriodSpec): PeriodPick | und
   try {
     const v = JSON.parse(raw);
     if (v === "all") return null;
-    if (v && typeof v.days === "number" && presetsOf(spec).includes(v.days)) return { days: v.days };
+    if (v && typeof v.days === "number" && (v.days === 1 || presetsOf(spec).includes(v.days))) return { days: v.days };
+    if (v && typeof v.named === "string" && v.named in NAMED) return { named: v.named as Named };
     if (v && DAY.test(String(v.from)) && DAY.test(String(v.to))) return { from: v.from, to: v.to };
   } catch {
     // Not ours, or from an older shape: the section's own default.

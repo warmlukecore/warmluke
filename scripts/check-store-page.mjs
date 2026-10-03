@@ -104,6 +104,10 @@ insert into public.orders (store_id, external_id, order_number, placed_at, total
 insert into public.records (project_id, module_id, store_row_id, data)
   select '${P}', '${ORD}', o.id, '{"rto": true, "note": "came back"}'::jsonb
     from public.orders o where o.store_id = '${S}' and o.order_number in ('#SP100', '#SP200', '#SP300');
+-- One ticked and then unticked: false, which reads as not ticked, as blank does.
+insert into public.records (project_id, module_id, store_row_id, data)
+  select '${P}', '${ORD}', o.id, '{"rto": false}'::jsonb
+    from public.orders o where o.store_id = '${S}' and o.order_number = '#SP400';
 -- 2,000 products; every order a line of one of the first 1,990, so the
 -- last ten never sold. #SP20000, the newest, is cancelled: its line is no sale.
 insert into public.products (store_id, external_id, title, status)
@@ -123,6 +127,8 @@ select pg_temp.say('search', ${page({ limit: 5, search: "#SP1999", search_fields
 select pg_temp.say('phone', ${numbers({ limit: 5, search: "98765 43210", search_fields: ["order_number"], ...order })});
 select pg_temp.say('unpaid', ${page({ limit: 1, filters: { financial_status: "pending" }, ...order })}->>'total');
 select pg_temp.say('own_filter', (select (${page({ limit: 5, filters: { rto: "true" }, ...order })}->>'total') || '|' || ${numbers({ limit: 5, filters: { rto: "true" }, ...order })}));
+select pg_temp.say('ticked', ${page({ limit: 1, flags: { rto: true }, ...order })}->>'total');
+select pg_temp.say('not_ticked', ${page({ limit: 1, flags: { rto: false }, ...order })}->>'total');
 select pg_temp.say('own_data', (${page({ limit: 1, filters: { rto: "true" }, ...order })}->'rows'->0->'data'->>'note'));
 select pg_temp.say('sorted', ${numbers({ limit: 2, sort: { field: "total", dir: "asc", kind: "number" }, ...order })});
 select pg_temp.say('own_sorted', ${numbers({ limit: 1, sort: { field: "rto", dir: "desc" }, ...order })});
@@ -182,12 +188,14 @@ check("a phone however it is typed", r.phone === "#SP1");
 check("filtered over the whole list, by the counters' rule", r.unpaid === String(BIG / 5));
 check("by a field of the merchant's beside the store's", r.own_filter === "3|#SP300,#SP200,#SP100");
 check("and their fields come with the row", r.own_data === "came back");
+check("a tick of theirs, ticked: only those", r.ticked === "3");
+check("and not ticked: every other row, blank and false alike", r.not_ticked === String(BIG - 3));
 check("sorted by a store column over every row", r.sorted === "#SP1,#SP2");
 check("and by a field of theirs", r.own_sorted === "#SP300");
 check("the dates picked, on the moment", r.period === "49");
 check(
   "what each filter can offer, from the whole list",
-  r.facets?.includes('"financial_status": ["PAID", "PENDING"]') && r.facets?.includes('"rto": ["true"]')
+  r.facets?.includes('"financial_status": ["PAID", "PENDING"]') && r.facets?.includes('"rto": ["true", "false"]')
 );
 
 console.log("\nwhen a product last sold");

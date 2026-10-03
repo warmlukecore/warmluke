@@ -37,7 +37,15 @@ import {
 } from "@/lib/ai";
 import { isQuestion, lastReplyTypeOf, roadFor, type Road } from "@/lib/intent";
 import { describeKnown, notesFor } from "@/lib/memory";
-import { intentBlock, parseIntent } from "@/lib/plan";
+import {
+  agreedBlock,
+  intentBlock,
+  isGoAhead,
+  parseIntent,
+  proposalOf,
+  wantsItBuilt,
+  type DesignIntent,
+} from "@/lib/plan";
 import { asJob } from "@/lib/usage";
 import { describeMerchant, type ProfileRow } from "@/lib/onboarding";
 import {
@@ -275,6 +283,8 @@ export type TurnState = {
   road: Road;
   planned: boolean;
   planBlock: string;
+  /** The owner agreed to this design in words before it was drawn. */
+  approved?: boolean;
   attemptTurns: ChatTurn[];
   attempt: number;
   raw: string;
@@ -658,8 +668,20 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // Which road: only how to answer, or the whole design contract. The
   // talk road hands a build back (below), so a wrong turn onto it costs
   // one small call; a wrong turn onto the design road costs tokens.
+  // Talk first, in the app's own chat (Tanish, 3 Oct): a design is said
+  // in words before it is drawn, and built on a yes. The plan Luke said
+  // last, and whether this is the plain yes to it: decided here, from the
+  // thread as kept, never by a model.
+  const agreed = lookups && !resume ? proposalOf(history) : null;
+  const goAhead = !!agreed && isGoAhead(message);
+  const approved = resume?.approved ?? (goAhead || (!!lookups && wantsItBuilt(message)));
   let road: Road =
-    resume?.road ?? roadFor({ message, lastReplyType: lastReplyTypeOf(history), routed: !!store?.snapshot?.slice });
+    resume?.road ??
+    // After a plan in words, an answer to its questions is more of the
+    // design, not a follow-up question: it plans again.
+    (agreed && (goAhead || !isQuestion(message))
+      ? "design"
+      : roadFor({ message, lastReplyType: lastReplyTypeOf(history), routed: !!store?.snapshot?.slice }));
   if (!resume) tell({ step: "road", road });
   // Money as the owner chose it, else as their shop keeps it: Luke writes the same currency the app shows.
   const money = projectFormat(project, store);
@@ -685,6 +707,8 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // to parse is no plan, and the design goes on as it always did.
   let planBlock = resume?.planBlock ?? "";
   let planned = resume?.planned ?? false;
+  // Held in a box: the plan step sets it from inside its closure.
+  const understood: { intent: DesignIntent | null } = { intent: null };
   // The setting is the switch: no plan model, no plan step — and no critic.
   const planOn = planModel();
   const plan = async () => {
@@ -713,6 +737,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       if (intent) {
         planBlock = intentBlock(intent);
         goal = intent.goal;
+        understood.intent = intent;
       }
     } catch (e) {
       if (signal?.aborted) throw e;
@@ -720,7 +745,42 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     }
     if (goal) tell({ step: "plan", goal });
   };
+  // Their yes: what they agreed to is the plan, built as said.
+  if (goAhead && agreed) {
+    planned = true;
+    planBlock = agreedBlock(agreed);
+    tell({ step: "plan", goal: agreed.goal });
+  }
   if (road === "design") await plan();
+
+  // The plan, said in words, and nothing drawn or built until they say
+  // yes. Not for a design already on screen (a tweak to it), not when
+  // they asked to just build it, and not through an outside assistant,
+  // which has its own approval. One small call: the design waits.
+  const said = understood.intent;
+  if (lookups && !resume && road === "design" && !approved && said?.say && lastReplyTypeOf(history) !== "blueprint") {
+    const reply = {
+      type: "answer" as const,
+      kind: "proposal" as const,
+      title: said.goal.slice(0, 80),
+      message: said.say,
+      next: [{ label: "Build it", prompt: "Build it" }],
+      understood: said,
+    };
+    return {
+      ok: true,
+      reply,
+      raw: JSON.stringify(reply),
+      userTurn,
+      repairs: 0,
+      repairErrors: [],
+      store,
+      unmet: [],
+      lookedUp,
+      road,
+      known,
+    };
+  }
 
   // The rejected attempt and its errors stay in the turns sent to the
   // model but are never persisted — replaying a malformed reply from
@@ -763,6 +823,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           road,
           planned,
           planBlock,
+          approved,
           attemptTurns,
           attempt,
           raw,
@@ -814,7 +875,14 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         continue;
       }
     }
-    parsed = parseReply(raw, modules, currentSchema, currentFeatures, (mid) => schemas.get(mid) ?? null);
+    parsed = parseReply(
+      raw,
+      modules,
+      currentSchema,
+      currentFeatures,
+      (mid) => schemas.get(mid) ?? null,
+      (mid) => ((ruleRows ?? []) as RuleRow[]).filter((r) => r.module_id === mid)
+    );
     // A question answered in prose instead of JSON: the prose is the
     // answer. Sending the whole turn back for its braces paid for it
     // twice (2 Oct: a 15-day summary, $0.19 of its $0.25 on the resend).
@@ -1021,6 +1089,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       parsed.reply.next = asNextSteps(parsed.reply.next, unmet);
     }
   }
+
+  // Agreed in words first: the chat builds it without asking again.
+  if (approved && (parsed.reply.type === "plans" || parsed.reply.type === "blueprint")) parsed.reply.approved = true;
 
   return { ok: true, reply: parsed.reply, raw, userTurn, repairs, repairErrors, store, unmet, lookedUp, road, known };
 }

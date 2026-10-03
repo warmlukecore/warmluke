@@ -37,6 +37,8 @@ import {
 import { isTransient } from "@/lib/retry";
 import { customViewProblem, customViewScriptProblem } from "@/lib/custom-view";
 import { DEFAULT_PRESETS } from "@/lib/period";
+import { YES_NO } from "@/lib/filters";
+import { findSection } from "@/lib/section-ref";
 import { MAX_TABS, tabName, type TabView } from "@/lib/tabs";
 import { codeProblem } from "@/lib/code-run";
 import { asJob, record } from "@/lib/usage";
@@ -130,7 +132,7 @@ A COMPUTED COLUMN — "compute" — is worked out every time the row is read, an
   Prefer a stored field only when somebody genuinely types the value, or when it depends on OTHER ROWS (a clash flag), which a compute cannot see.
 
 HOW TO CHOOSE changeType:
-- UI_CHANGE — reorder/relabel/retype existing columns only. All existing fields kept.
+- UI_CHANGE — reorder, relabel or retype columns; take one off the table with "hidden": true (still in the row when it is opened, and in its data: the only way for a store column); or leave out a field of theirs that nothing else reads (its values stay on the rows). When simplifying, hide or remove the old field: never stack a new one beside it.
 - FIELD_ADD — keep all existing columns, append new one(s).
 - NEW_MODULE — a new app section. Choose its "view" from how the owner works. Put its "features" (filters, stats, row actions, search, sort) in THIS SAME plan — a separate FEATURE_UPDATE cannot target a module that does not exist yet. 3-8 columns matched to what the user described; ALWAYS include 4-6 realistic demo rows in newRecords, using THEIR vocabulary and plausible values for THEIR trade (field names must match the schema exactly; money as numbers, dates "YYYY-MM-DD").
 - NEW_MODULE with "source_table" — the section SHOWS the store's own rows rather than rows they type. Use it whenever they mean the data already synced from Shopify ("our products", "the orders that came in"), AND whenever the work they describe happens to those rows ("scan and pack the orders", "restock what runs low", "follow up customers who have not come back"): the section is the store's list with what that work needs beside each row, never a second list of the same orders, products or customers typed in by hand, which never matches the real ones. The store's lists, and what each one means: ${Object.entries(
@@ -149,7 +151,7 @@ HOW TO CHOOSE changeType:
   )}, whose rows each total many others, so there is no one row for it to sit beside. The store's own fields are read here, never written: a row action or scan mode sets a field of theirs ("Mark packed" sets packed; scanning the order number finds the order and ticks it). A rule on such a section reads the store's fields and theirs, and sets only theirs. It runs when a field of theirs changes (record_updated, from the first one set on a row), or on a schedule over every row of the list ("when" picks the rows; a row it acts on gets its fields then) — so "flag the COD orders delivered a week ago and still unpaid" is a daily rule reading gateway, fulfilment_status and financial_status. A change in Shopify reaches the rows within seconds, but it does not fire a rule: a rule over them runs when a field of theirs changes, or a schedule rule sees it on its next run. No rule adds rows to it (record_created is refused). Filters, search, stats and sort work over both.
 - MODULE_UPDATE — nav metadata only: rename label, change icon, move it inside another section (parent_id), reposition (sort_order: below the lowest existing value for top, midpoint like 1.5 for between, above max for bottom).
 - MODULE_DELETE — only when the user clearly asks to delete/remove a whole section. deleteConfirmName = exact name slug.
-- FEATURE_UPDATE — search box, dropdown filters, STAT CARDS (op: count | sum | avg | min | max over "value", an EXPRESSION evaluated per row — so a stock value is { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, not a bare column; optional "where" expression limits which rows count. Never label a stat as something the expression does not actually compute), default sort, a PERIOD (a choice of dates over the section: { "field": "<a date column>", "label": "Placed", "presets": [15, 30, 60], "default": 15 } draws chips for the last 15, 30 and 60 days, their own dates and All, and narrows the rows, the stats and the view together; whenever they want to see a window of days, or change it, this is how, never a written screen. With a period, no stat carries days_since of that field in its "where", and no label names the days: the period picks them), ROW ACTION buttons (a one-click change to that row: "set" maps field -> EXPRESSION, and the optional "when" is an EXPRESSION deciding whether the button shows on that row — same operators as automations, so "only while it isn't Done" is { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }), or SCAN MODE (a scan-and-go bar: lookupField = the code column scanned into it, action.set = field -> expression applied to the matched row, sequenceField = a numeric column that must never go backwards between scans, for picking or queue order). It works with any USB or Bluetooth barcode scanner, which types the code like a keyboard — there is no camera scanning. A scan that matches nothing changes NOTHING: the person sees it on screen and that is the whole safeguard. Nothing is recorded, so never add a "scan errors" or "mistakes" count — no rule can fill it, and a stat built on it counts successful scans instead. Scanning only reaches rows currently in view, so the section needs a filter that narrows to the job in hand. Send only the parts you change: each part you send (view, tabs, stats, filters, actions, scanMode, search, defaultSort, period) replaces that part whole, a part you leave out stays exactly as it is, and null removes it. To add a stat, send "stats" with the old ones and the new; leave a written screen's "view" out unless you are changing the screen. A "view" you send REPLACES the section's view: a written screen sent over Orders takes its table away. To add counters, a filter or a choice of dates to a section they already use, send stats, filters or period and leave "view" out; send a view only when they ask to see the section a different way instead. To show it another way as well (a written screen beside Orders' table, a board by stage beside a list), send "tabs": the old tabs and the new, each a view, named by a written screen's "title" or another view's "label". On a section over the store a written screen only ever goes in tabs.
+- FEATURE_UPDATE — search box, dropdown filters (a filter on a yes/no field is Yes / No by itself, and No is every row not ticked, blank or false alike: never fill rows with false or "No", or add a second field, to make a filter work), STAT CARDS (op: count | sum | avg | min | max over "value", an EXPRESSION evaluated per row — so a stock value is { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, not a bare column; optional "where" expression limits which rows count. Never label a stat as something the expression does not actually compute), default sort, a PERIOD (a choice of dates over the section: { "field": "<a date column>", "label": "Placed", "presets": [15, 30, 60], "default": 15 } draws chips for the last 15, 30 and 60 days, their own dates and All, and narrows the rows, the stats and the view together; whenever they want to see a window of days, or change it, this is how, never a written screen. With a period, no stat carries days_since of that field in its "where", and no label names the days: the period picks them), ROW ACTION buttons (a one-click change to that row: "set" maps field -> EXPRESSION, and the optional "when" is an EXPRESSION deciding whether the button shows on that row — same operators as automations, so "only while it isn't Done" is { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }), or SCAN MODE (a scan-and-go bar: lookupField = the code column scanned into it, action.set = field -> expression applied to the matched row, sequenceField = a numeric column that must never go backwards between scans, for picking or queue order). It works with any USB or Bluetooth barcode scanner, which types the code like a keyboard — there is no camera scanning. A scan that matches nothing changes NOTHING: the person sees it on screen and that is the whole safeguard. Nothing is recorded, so never add a "scan errors" or "mistakes" count — no rule can fill it, and a stat built on it counts successful scans instead. Scanning only reaches rows currently in view, so the section needs a filter that narrows to the job in hand. Send only the parts you change: each part you send (view, tabs, stats, filters, actions, scanMode, search, defaultSort, period) replaces that part whole, a part you leave out stays exactly as it is, and null removes it. To add a stat, send "stats" with the old ones and the new; leave a written screen's "view" out unless you are changing the screen. A "view" you send REPLACES the section's view: a written screen sent over Orders takes its table away. To add counters, a filter or a choice of dates to a section they already use, send stats, filters or period and leave "view" out; send a view only when they ask to see the section a different way instead. To show it another way as well (a written screen beside Orders' table, a board by stage beside a list), send "tabs": the old tabs and the new, each a view, named by a written screen's "title" or another view's "label". On a section over the store a written screen only ever goes in tabs.
 - RECORD_SEED — ADDS rows to an existing module. It only ever inserts; it cannot change or delete a row that is already there. Never use it to "correct" or "update" existing data — that produces a duplicate and tells the owner it was an edit. Changing a value is something they do themselves by opening the row.
 - RECORD_SEED — add rows to an existing module (field names must exist in its schema).
 - AUTOMATION_ADD — business logic that runs automatically. "targetModuleId" is the section whose rows trigger it. You BUILD the rule out of the operators below — there is no menu of pre-made rule types, so express exactly what the owner described.
@@ -274,10 +276,12 @@ export const CUSTOM_VIEW_GUIDE = `CUSTOM VIEW — { "type": "custom", "title": "
 - It is HTML with its own <style> and <script>, run sealed off: no web addresses, no network, nothing loaded from elsewhere, no forms. Keep it under 150 lines.
 - It reaches the app only through window.wl: wl.columns (the fields); wl.onRows(fn), called with the rows ([{ id, data }]) now and whenever they change; wl.find(field, value), a promise of the rows whose field is that value, read from the whole section (an order's lines by its number); wl.read("#customers"), a promise of another section's rows (the newest 500, worked out, read only), and wl.find(field, value, "#customers") to find in it: any section in CONTEXT, by its name with "#". So a screen over orders can show the customers who have not come back beside them: when the owner asks for one screen, build one; wl.set(id, { field: value }), a promise, keeps fields on a row (on a store section only the owner's own fields, never the store's); wl.add({ … }), a new row, on a section of their own; await wl.ask("Reset this line?", "Reset", "Keep") shows the app's dialog and answers true or false (alert shows one with OK; confirm and prompt do nothing here). Where hands are full, ask rarely.
 - The section's columns still hold the data: add the fields the screen writes (scanned_qty, packed_on) to the plan as usual. Computed columns arrive worked out in data.
-- Money is wl.money(amount, currency), written as the app writes it: pass a store row's own data.currency, or leave it out for the app's currency. Never write a currency symbol or format a number as money yourself.
-- Its look is the app's, already on the page: the app's fonts, colours, corners and a kit of classes. Build from the kit and write your own CSS for layout alone (grid, widths, order, spacing); never set a font, a colour outside the variables, or text larger than the kit's. The kit: wl-page (the screen's frame), wl-stack / wl-inline / wl-grid (spacing), wl-card (a panel; add "now" to ring the one in hand, "bad" for a problem), wl-title, wl-big (the thing to act on), wl-count (a number, at the size the app's counters are; add "big" only for one read from a step away at a station), wl-label, wl-muted, wl-scan (the input a scanner types into), wl-banner with ok / bad / warn / info (what just happened, in words; "big" at a station), wl-list of wl-row (add "done" or "bad"), wl-button with primary / critical / big, wl-badge with ok / bad / warn / info. Plain headings, inputs, buttons and tables are already styled. Variables for layout: var(--fg), var(--fg-muted), var(--surface), var(--surface-subdued), var(--line), var(--primary), var(--radius-card), var(--radius-control).
+- Money is wl.money(amount, currency), written as the app writes it: pass a store row's own data.currency, or leave it out for the app's currency. Never write a currency symbol or format a number as money yourself. A date is wl.date(value) ("3 Oct 2026") and a store status wl.label(value) ("Payment pending" for PENDING): never print a raw 2026-10-02 or PENDING.
+- Every section it reads (wl.read, wl.find's third word) is one in CONTEXT by its "#name", or one this same design creates. A section that is not there is an error, not an empty list.
+- Its look is the app's, already on the page: the app's fonts, colours, corners and a kit of classes. Build from the kit and write your own CSS for layout alone (grid, widths, order, spacing); never set a font, a colour outside the variables, or text larger than the kit's. The kit: wl-page (the screen's frame), wl-stack / wl-inline / wl-grid (spacing), wl-card (a panel; add "now" to ring the one in hand, "bad" for a problem), wl-title, wl-big (the thing to act on), wl-count (a number, at the size the app's counters are; add "big" only for one read from a step away at a station), wl-label, wl-muted, wl-scan (the input a scanner types into), wl-banner with ok / bad / warn / info (what just happened, in words; "big" at a station), wl-list of wl-row (add "done" or "bad"), wl-button with primary / critical / big, wl-badge with ok / bad / warn / info, wl-head (a heading with its buttons on one line), wl-form of wl-field (a form: each wl-field is a <label> holding its words in a <span> and then its input, select or textarea; add "wide" to a field that takes the whole row), wl-table around a <table> (it scrolls sideways on a phone; td class "num" or "date" keeps a number or date on one line), wl-empty (the words where a list has nothing yet: every list says what to do when empty). Plain headings, inputs, buttons, selects and tables are already styled, and a <select> opens the app's own list. Variables for layout: var(--fg), var(--fg-muted), var(--surface), var(--surface-subdued), var(--line), var(--primary), var(--radius-card), var(--radius-control).
 - One thing is big (the count, or what to scan next), and nothing on screen says the same thing twice: the section's own stats already sit above the screen, so never draw those counts again inside it. Say every outcome in words, not colour alone. Put focus where their scanner types. Where their hands are full, no step needs a tap: the next scan moves on, and a mistake clears when the right thing is scanned. Show what a scan did at once and save after, without waiting on wl.set; if a save fails, say so on screen. It must read well on a phone 390px wide as on a desk screen.
-- Every field a view references (groupBy, dateField, titleField, …) must exist in that same plan's columns, with the right type.`;
+- Every field a view references (groupBy, dateField, titleField, …) must exist in that same plan's columns, with the right type.
+- Never a screen for what the section already draws: a simpler table is the same table with columns hidden or reordered, and a row's details are its own pop-up. A written screen is for work the views cannot do.`;
 
 const WHO_LUKE_IS = `You are Luke, the AI inside "Warmluke" — a platform where a business owner describes a problem in their own words and you turn it into a working internal app: sections, fields, layouts, features, navigation, automations, demo data.
 
@@ -765,9 +769,10 @@ You reply with ONLY a single valid JSON object, no code fences, no commentary ou
   "facts": ["what has to be recorded on a row, in words (a tick, a time, who, a count), never field types — at most six"],
   "rules": ["when this, then that — only what they asked for or plainly need — at most four"],
   "screens": ["what they see or do, and where (a list, a scan bar, a board, a button on a row) — at most four"],
-  "unsure": ["what their words do not settle and matters to the design — a short question each, at most three; empty when nothing does"]
+  "unsure": ["what their words do not settle and matters to the design — a short question each, at most three; empty when nothing does"],
+  "say": "what you tell the owner now, before anything is built, as one person to another"
 }
-Short lines: this is read by the designer, not by the owner.
+Every field but "say" is short lines for the designer. "say" is the one the owner reads, and it is how they agree to the design, so it must be enough to agree to: in a few plain sentences, how it will work for them (what they will see, what they do, what happens by itself), then the questions from "unsure" that matter, asked plainly, then end with "Want me to build it?" in their language. Never a field name, a type, a list of buttons or a rule's wording: "a tick for RTO on each shipment, and a count of them above the list", not "boolean field rto". When something they asked for is not possible, say so here and what you would do instead. Leave "say" empty only for a small exact change with nothing to discuss (rename, reorder, relabel), or when they said to just build it. Under 120 words.
 
 When the store's tools are offered, you may look twice at most — to settle which list holds this, or what a column really says (a status, a gateway, a tag) — then write the plan. Never look for a greeting, and never to browse.
 
@@ -1059,6 +1064,12 @@ export function validateFeatures(
     if (!Array.isArray(f.filters)) {
       err(errors, "features.filters must be an array or null.");
     } else {
+      // A filter on a yes/no field is Yes / No by itself (filters.ts),
+      // here as well as over a whole design: a build checks its plans one
+      // at a time, and refused a tick's filter sent with no choices.
+      for (const fl of f.filters)
+        if (fl && typeof fl.field === "string" && columns.some((c) => c.field === fl.field && c.type === "boolean"))
+          fl.options = [...YES_NO];
       // A filter with one option or none is no filter, and one with
       // more than fifteen is a list: cosmetic, so shaped rather than
       // refused — a whole attempt was spent on a filter over a column
@@ -2109,11 +2120,17 @@ export function validatePlan(
         // separately floods the repair loop with near-identical lines
         // and still never says what to do instead — the assistant
         // repeated the same plan three times and gave up.
-        const dropped = [...existing].filter((f) => !incoming.has(f));
-        if (dropped.length > 0) {
+        // A field of theirs may go (its values stay on the rows, and a
+        // version back brings it back), once nothing else reads it: that
+        // is checked over the whole design, in parseReply. The store's own
+        // columns are ours, and only ever hidden. Refused outright since
+        // the first day, every change stacked a field on the last: an RTO
+        // section ended with four (Tanish, 3 Oct).
+        const theStores = [...existing].filter((f) => !incoming.has(f) && storeFields?.has(f));
+        if (theStores.length > 0) {
           err(
             errors,
-            `UI_CHANGE keeps every column that already exists — it only reorders, relabels or retypes them. This one leaves out: ${dropped.join(", ")}. If you meant to ADD columns, use FIELD_ADD, which keeps the existing ones and appends yours. If this is really a different thing, make it a NEW_MODULE. Removing a column is not something this platform can do — say so in "unmet".`
+            `The store's own columns are never removed, only hidden: keep ${theStores.join(", ")} with "hidden": true, which takes it off the table and keeps it in the row when it is opened.`
           );
         }
         // Same columns, same order, same labels and types = nothing to
@@ -2124,7 +2141,9 @@ export function validatePlan(
           columns.length === currentSchema.columns.length &&
           columns.every((c, i) => {
             const cur = currentSchema.columns[i];
-            return cur && cur.field === c.field && cur.label === c.label && cur.type === c.type;
+            return (
+              cur && cur.field === c.field && cur.label === c.label && cur.type === c.type && !cur.hidden === !c.hidden
+            );
           });
         if (same) {
           err(
@@ -2359,7 +2378,8 @@ function parseBlueprint(
   modules: ModuleRow[],
   currentSchema: UiSchema | null,
   currentFeatures: FeatureSchema | null,
-  schemas?: SchemaLookup
+  schemas?: SchemaLookup,
+  rulesOf?: (moduleId: string) => RuleRef[]
 ): ParsedReply {
   const bp = obj.blueprint;
   if (!isPlainObject(bp)) {
@@ -2371,7 +2391,7 @@ function parseBlueprint(
 
   // The blueprint's plans are the real thing, so they get the real
   // checks. A design that could not be built cannot be shown.
-  const planResult = parsePlans({ plans: bp.plans }, modules, currentSchema, currentFeatures, schemas);
+  const planResult = parsePlans({ plans: bp.plans }, modules, currentSchema, currentFeatures, schemas, rulesOf);
   if (!planResult.ok) return planResult;
   const plans = (planResult.reply as { type: "plans"; plans: AssistantPlan[] }).plans;
 
@@ -2478,7 +2498,8 @@ function parsePlans(
   modules: ModuleRow[],
   currentSchema: UiSchema | null,
   currentFeatures: FeatureSchema | null,
-  schemas?: SchemaLookup
+  schemas?: SchemaLookup,
+  rulesOf?: (moduleId: string) => RuleRef[]
 ): ParsedReply {
   const raw = Array.isArray(obj.plans) ? obj.plans.slice(0, 6) : [];
   if (raw.length === 0) {
@@ -2510,14 +2531,19 @@ function parsePlans(
   // Columns each plan in this batch will add, keyed by the module it
   // targets, so a later plan may reference them before they exist.
   const batchFields = new Map<string, Set<string>>();
+  // And which of them are ticks, for the filters below.
+  const batchTicks = new Map<string, Set<string>>();
   for (const p of raw as AssistantPlan[]) {
     const key = p?.newModule?.name?.trim().toLowerCase() ?? p?.targetModuleId;
     if (!key) continue;
     const set = batchFields.get(key) ?? new Set<string>();
+    const ticks = batchTicks.get(key) ?? new Set<string>();
     for (const c of p?.newSchema?.columns ?? []) {
       if (typeof c?.field === "string") set.add(c.field);
+      if (typeof c?.field === "string" && c.type === "boolean") ticks.add(c.field);
     }
     batchFields.set(key, set);
+    batchTicks.set(key, ticks);
   }
   const fieldsFor = (p: AssistantPlan): Set<string> | undefined => {
     const ref = p.targetModuleId ?? "";
@@ -2570,6 +2596,19 @@ function parsePlans(
     return maker?.newModule?.source_table ?? null;
   };
 
+  // A filter on a yes/no field is Yes / No, whatever was sent (filters.ts):
+  // a tick is ticked or it is not. Sent with no choices it was refused, and
+  // the shaping in validateFeatures drops a filter with fewer than two.
+  for (const p of raw as AssistantPlan[]) {
+    if (!Array.isArray(p?.features?.filters)) continue;
+    const ref = p.newModule?.name?.trim().toLowerCase() ?? p.targetModuleId ?? "";
+    const ticks = new Set([
+      ...(batchTicks.get(ref.startsWith("#") ? ref.slice(1).toLowerCase() : ref) ?? []),
+      ...(schemaFor(p)?.columns ?? []).filter((c) => c?.type === "boolean").map((c) => c.field),
+    ]);
+    for (const fl of p.features.filters) if (fl && ticks.has(fl.field)) fl.options = [...YES_NO];
+  }
+
   const plans: AssistantPlan[] = [];
   const errors: string[] = [];
   for (const p of raw) {
@@ -2586,6 +2625,56 @@ function parsePlans(
     );
     if (res.ok && res.plan) plans.push(res.plan);
     else errors.push(...res.errors);
+  }
+
+  // Every section a written screen reads by name (wl.find's third word,
+  // wl.read's only one) is one of this app's, or one this design makes.
+  // The Returns screen read "#return-order-items", which never was: every
+  // order loaded with no items, and no return could ever be made (3 Oct).
+  const known = [...modules, ...[...pendingSlugs].map((n) => ({ id: `#${n}`, name: n, nav_label: n }))];
+  for (const p of raw as AssistantPlan[]) {
+    const f = p?.features;
+    const screens = [f?.view, ...(Array.isArray(f?.tabs) ? f.tabs : [])]
+      .map((v) => (v?.type === "custom" ? (v as { html?: unknown }).html : null))
+      .filter((h): h is string => typeof h === "string");
+    for (const html of screens)
+      for (const ref of sectionsRead(html))
+        if (!findSection(known, ref))
+          errors.push(
+            `The screen reads "${ref}", which is not a section in this app. The sections are: ${modules.map((m) => `#${m.name}`).join(", ") || "none yet"}. Read one of them, or create it in this same design.`
+          );
+  }
+
+  // A field of theirs taken off a section, once nothing reads it: not its
+  // filters, counters, buttons, views or rules, as they will be after this
+  // whole design, with what it removes and adds in the same breath.
+  for (const p of raw as AssistantPlan[]) {
+    if (p?.changeType !== "UI_CHANGE" || typeof p.targetModuleId !== "string" || !p.newSchema) continue;
+    const target = p.targetModuleId;
+    const before = schemaFor(p);
+    const after = p.newSchema.columns ?? [];
+    const gone = (before?.columns ?? []).map((c) => c.field).filter((f) => !after.some((c) => c?.field === f));
+    if (gone.length === 0) continue;
+    const same = (raw as AssistantPlan[]).filter((o) => o?.targetModuleId === target);
+    let features = (before === currentSchema ? currentFeatures : before?.features) ?? null;
+    for (const o of same)
+      if (o.changeType === "FEATURE_UPDATE" && o.features) features = { ...features, ...o.features };
+    const dropped = new Set(
+      same.filter((o) => o.changeType === "AUTOMATION_REMOVE").map((o) => o.automationRemoveName)
+    );
+    const rules: RuleRef[] = [
+      ...(rulesOf?.(target) ?? []).filter((r) => !dropped.has(r.name)),
+      ...same
+        .filter((o) => o.changeType === "AUTOMATION_ADD" && o.automation)
+        .map((o) => ({ module_id: target, name: o.automation!.name, definition: o.automation!.definition })),
+    ];
+    for (const field of gone) {
+      const users = fieldUsers(field, features, after, rules);
+      if (users.length > 0)
+        errors.push(
+          `"${field}" is still read by ${users.join(", ")}. Change or remove ${users.length === 1 ? "it" : "those"} in this same design, or keep the column with "hidden": true (off the table, still in the row and its data).`
+        );
+    }
   }
 
   // All or nothing. A batch is one coordinated build: quietly keeping the
@@ -2659,12 +2748,25 @@ export function readJson(text: string): { ok: true; value: unknown } | { ok: fal
   let inString = false;
   let escaped = false;
   let depth = 0;
-  for (const ch of text) {
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
     if (inString) {
       if (escaped) escaped = false;
       else if (ch === "\\") escaped = true;
-      else if (ch === '"') inString = false;
-      else if (ch === "\n" || ch === "\r" || ch === "\t") {
+      else if (ch === '"') {
+        // A quote that ends a string is followed by , } ] or : (or the
+        // end). One that is not is a quote inside the words, sent
+        // unescaped: "one of three badges: "Same day" (both placed
+        // today)" cost a whole reply again (3 Oct). Escaped here, it is
+        // what was meant.
+        let j = i + 1;
+        while (j < text.length && /\s/.test(text[j])) j++;
+        if (j < text.length && !",}]:".includes(text[j])) {
+          out += '\\"';
+          continue;
+        }
+        inString = false;
+      } else if (ch === "\n" || ch === "\r" || ch === "\t") {
         out += ch === "\n" ? "\\n" : ch === "\r" ? "\\r" : "\\t";
         continue;
       }
@@ -2692,6 +2794,75 @@ export function readJson(text: string): { ok: true; value: unknown } | { ok: fal
   }
 }
 
+/** The sections a written screen names in its reads: literal words only, as a script cannot be run to learn the rest. */
+export function sectionsRead(html: string): string[] {
+  const out = new Set<string>();
+  for (const m of html.matchAll(/wl\.find\(\s*[^,()]+,\s*[^,()]+,\s*(["'`])([^"'`]+)\1\s*\)/g)) out.add(m[2]);
+  for (const m of html.matchAll(/wl\.read\(\s*(["'`])([^"'`]+)\1\s*\)/g)) out.add(m[2]);
+  return [...out];
+}
+
+/** A rule as the design checks see it: which section, its name, what it does. */
+export type RuleRef = { module_id: string | null; name: string; definition: unknown };
+
+/**
+ * Whether a part of a section reads this field: a value naming it, a key
+ * setting it, or a written screen's or rule's code mentioning it. Labels,
+ * titles and messages are words for people, not references.
+ */
+function reads(node: unknown, field: string): boolean {
+  if (typeof node === "string") return node === field;
+  if (Array.isArray(node)) return node.some((n) => reads(n, field));
+  if (!isPlainObject(node)) return false;
+  return Object.entries(node).some(
+    ([k, v]) =>
+      k === field ||
+      ((k === "html" || k === "code") && typeof v === "string" && new RegExp(`\\b${field}\\b`).test(v)) ||
+      (!["label", "title", "message", "explanation", "placeholder"].includes(k) && reads(v, field))
+  );
+}
+
+/**
+ * What in a section still uses a field, in words: its filters, counters,
+ * buttons, scan, dates, sort, search, views and written screens, the
+ * columns worked out from it, and its rules. Taking a field away loses no
+ * data; what breaks, silently, is whatever still reads it.
+ */
+export function fieldUsers(
+  field: string,
+  features: FeatureSchema | null,
+  columns: SchemaColumn[],
+  rules: RuleRef[]
+): string[] {
+  const out: string[] = [];
+  const f = (features ?? {}) as Record<string, unknown>;
+  const named = (list: unknown, what: string) => {
+    if (!Array.isArray(list)) return;
+    for (const x of list)
+      if (reads(x, field))
+        out.push(
+          `the ${what} "${(x as { label?: string; title?: string })?.label ?? (x as { title?: string })?.title ?? field}"`
+        );
+  };
+  named(f.filters, "filter");
+  named(f.stats, "counter");
+  named(f.actions, "button");
+  named(f.tabs, "tab");
+  for (const [k, what] of [
+    ["scanMode", "scan bar"],
+    ["period", "choice of dates"],
+    ["defaultSort", "default order"],
+    ["search", "search box"],
+    ["view", "view"],
+  ] as const)
+    if (reads(f[k], field)) out.push(`the ${what}`);
+  for (const c of columns)
+    if (c.field !== field && reads({ compute: c.compute, currencyField: c.currencyField }, field))
+      out.push(`the column "${c.label}"`);
+  for (const r of rules) if (reads(r.definition, field)) out.push(`the rule "${r.name}"`);
+  return out;
+}
+
 /**
  * Parses the assistant's reply envelope: clarify (questions), blueprint
  * (design for approval), or plans (validated changes). Anything that
@@ -2703,7 +2874,9 @@ export function parseReply(
   currentSchema: UiSchema | null,
   currentFeatures: FeatureSchema | null,
   /** Per-section schemas, for a design that touches more than one. */
-  schemas?: SchemaLookup
+  schemas?: SchemaLookup,
+  /** A section's rules, so a field still read by one is not taken away. */
+  rulesOf?: (moduleId: string) => RuleRef[]
 ): ParsedReply {
   const json = readJson(stripFences(raw));
   if (!json.ok) return { ok: false, errors: [json.error] };
@@ -2711,7 +2884,7 @@ export function parseReply(
   if (!isPlainObject(parsed)) {
     return { ok: false, errors: ["Luke's reply wasn't a JSON object."] };
   }
-  const read = parseShape(parsed, modules, currentSchema, currentFeatures, schemas);
+  const read = parseShape(parsed, modules, currentSchema, currentFeatures, schemas, rulesOf);
   // The thread's name, on whichever shape carried it.
   const title = asTitle(parsed.title);
   return read.ok && title ? { ...read, reply: { ...read.reply, title } } : read;
@@ -2732,7 +2905,8 @@ function parseShape(
   modules: ModuleRow[],
   currentSchema: UiSchema | null,
   currentFeatures: FeatureSchema | null,
-  schemas?: SchemaLookup
+  schemas?: SchemaLookup,
+  rulesOf?: (moduleId: string) => RuleRef[]
 ): ParsedReply {
   // Tolerate a bare { plans: [...] } reply with no envelope type.
   const type = typeof parsed.type === "string" ? parsed.type : Array.isArray(parsed.plans) ? "plans" : null;
@@ -2781,8 +2955,8 @@ function parseShape(
         parsed.blueprint = { ...bp, summary: kept };
       }
       return type === "blueprint"
-        ? parseBlueprint(parsed, modules, currentSchema, currentFeatures, schemas)
-        : parsePlans(parsed, modules, currentSchema, currentFeatures, schemas);
+        ? parseBlueprint(parsed, modules, currentSchema, currentFeatures, schemas, rulesOf)
+        : parsePlans(parsed, modules, currentSchema, currentFeatures, schemas, rulesOf);
     }
     default:
       return { ok: false, errors: ['The assistant\'s reply had no recognised "type".'] };
@@ -3381,6 +3555,7 @@ Reply with JSON only, no prose:
 
 - "unmet": what THE OWNER asked for that the build does not do, each in the OWNER'S OWN WORDS (a quote, not your explanation). The plan is there to help you read the ask, not a checklist: a line the plan added on its own (a nice-to-have, a "who", a stat) is never missing. Equipment they own (a scanner, a printer) that nothing uses IS missing. A problem they stated that nothing detects IS missing. At most 4, most important first; [] when nothing is.
 - "redo": one line to the designer naming what to change, ONLY when something in "unmet" is the point of the request in the owner's own words (the goal itself, or a step of the work without which the rest is useless) AND it can plainly be built here. Otherwise null. Never for extras, never for what only the plan said, never for wording.
+- "redo" also, whatever "unmet" says, when the build works around the app instead of using it, and name the simpler way: a rule whose only job is to write the same value into every row (a blank already reads as not set); a second field standing in for one the section has (a Yes/No text beside a tick, a copy of a column); a written screen that draws a table, a form or a row's pop-up the section already draws; an old field it replaces left on the table rather than hidden or removed.
 - Do not list what they never asked for. Do not suggest improvements. Do not repeat what the build already covers — read the build closely before saying a thing is missing; a field, a filter, a stat or a rule in the build that answers it counts.
 - A screen written for a section comes with its code, and what the screen does when used is what that code does: read it (what it takes a scan as, what it writes, what it shows next) before saying a step is missing.
 - Keep the owner's language in the quotes.`;

@@ -14,9 +14,21 @@ import { badgeClasses, badgeLabel, isSettled, knownStatus, type Progress } from 
 import { evalExpr, truthy } from "@/lib/expr";
 import { useFormat, type Formatting } from "@/lib/format";
 import { isId, looksLikeCode } from "@/lib/no-ids";
+import { isYes } from "@/lib/filters";
 import { useLinkLabel } from "@/components/LinkContext";
 import { button, type ButtonTone } from "@/components/ui/controls";
 import { ArrowDown, ArrowUp, ArrowUpDown, Check, Copy, Inbox, Plus, SearchX } from "lucide-react";
+
+/**
+ * The first column stays put while the rest scroll under it: a line at its
+ * edge and a short fade, so what slides under it reads as sliding, not as
+ * a stray mark beside the order number (a half letter read as an icon,
+ * 3 Oct). The fade stays inside the next cell's padding.
+ */
+// Written out whole: the stylesheet is made from class names found in the source.
+// Only once the table is scrolled sideways: unscrolled, there is nothing under it.
+const STICKY_EDGE =
+  "group-data-[scrolled=true]/table:shadow-[inset_-1px_0_0_var(--color-line)] group-data-[scrolled=true]/table:after:pointer-events-none group-data-[scrolled=true]/table:after:absolute group-data-[scrolled=true]/table:after:inset-y-0 group-data-[scrolled=true]/table:after:left-full group-data-[scrolled=true]/table:after:w-3 group-data-[scrolled=true]/table:after:bg-gradient-to-r group-data-[scrolled=true]/table:after:to-transparent";
 
 export function compare(a: unknown, b: unknown, type: SchemaColumn["type"]): number {
   if (type === "number" || type === "currency" || type === "percent") {
@@ -24,8 +36,7 @@ export function compare(a: unknown, b: unknown, type: SchemaColumn["type"]): num
   }
   if (type === "date") return new Date(String(a) || 0).getTime() - new Date(String(b) || 0).getTime();
   if (type === "boolean") {
-    const truthyOf = (v: unknown) => (v === true || v === "true" || v === "yes" || v === 1 ? 1 : 0);
-    return truthyOf(a) - truthyOf(b);
+    return Number(isYes(a)) - Number(isYes(b));
   }
   // Times are zero-padded HH:MM, so text order is chronological order.
   return String(a ?? "").localeCompare(String(b ?? ""));
@@ -113,15 +124,18 @@ export function Cell({ col, value, currency }: { col: SchemaColumn; value: unkno
       return <span className="tabular-nums">{fmt.date(String(value))}</span>;
     case "time":
       return <span className="tabular-nums">{fmt.time(String(value))}</span>;
-    case "boolean": {
-      const yes = value === true || value === "true" || value === "yes" || value === 1;
-      return (
-        <span className={`inline-flex items-center gap-1 ${yes ? "text-tone-success-fg" : "text-fg-faint"}`}>
-          {yes && <Check aria-hidden size={13} strokeWidth={2.25} />}
-          {yes ? "Yes" : "No"}
+    // A tick, or nothing: a row not ticked reads as blank, as one never
+    // touched does. "No" down a whole column said nothing and looked
+    // like something had been decided (an RTO column, 3 Oct).
+    case "boolean":
+      return isYes(value) ? (
+        <span className="inline-flex items-center gap-1 text-tone-success-fg">
+          <Check aria-hidden size={13} strokeWidth={2.25} />
+          Yes
         </span>
+      ) : (
+        <span className="text-fg-faint">—</span>
       );
-    }
     case "badge":
       return <Badge value={String(value)} />;
     // Links stop the row click so tapping the number calls rather than
@@ -253,9 +267,7 @@ export function fieldText(
     const n = Number(v);
     return Number.isNaN(n) ? String(v) : fmt.percent(n);
   }
-  if (col.type === "boolean") {
-    return v === true || v === "true" || v === "yes" || v === 1 ? "Yes" : "No";
-  }
+  if (col.type === "boolean") return isYes(v) ? "Yes" : "";
   return String(v);
 }
 
@@ -365,7 +377,14 @@ export function TableView({
   // itself (-1.5), or the rows would show through that strip as they scroll.
   const cellBg = `bg-surface transition-colors ${onOpen ? "group-hover:bg-surface-hover" : ""}`;
   return (
-    <div className="min-h-0 overflow-auto p-1.5 thin-scroll">
+    <div
+      className="group/table min-h-0 overflow-auto p-1.5 thin-scroll"
+      onScroll={(e) => {
+        const el = e.currentTarget;
+        const scrolled = String(el.scrollLeft > 0);
+        if (el.dataset.scrolled !== scrolled) el.dataset.scrolled = scrolled;
+      }}
+    >
       <table className="w-full border-separate border-spacing-0 text-left text-[13px]">
         <thead>
           <tr>
@@ -377,7 +396,9 @@ export function TableView({
                   scope="col"
                   aria-sort={dir ? (dir === "asc" ? "ascending" : "descending") : undefined}
                   className={`sticky -top-1.5 bg-surface-subdued p-0 text-xs font-medium whitespace-nowrap text-fg-muted first:rounded-l-lg last:rounded-r-lg ${
-                    i === 0 ? "-left-1.5 z-20" : "z-10"
+                    i === 0
+                      ? `-left-1.5 z-20 ${STICKY_EDGE} group-data-[scrolled=true]/table:after:from-surface-subdued`
+                      : "z-10"
                   }`}
                 >
                   <button
@@ -431,7 +452,7 @@ export function TableView({
                     key={col.field}
                     className={`h-11 border-b border-line px-3 align-middle whitespace-nowrap ${cellBg} ${
                       NUMERIC.has(col.type) ? "text-right" : ""
-                    } ${i === 0 ? "sticky -left-1.5 z-[1] font-semibold" : ""}`}
+                    } ${i === 0 ? `sticky -left-1.5 z-[1] font-semibold ${STICKY_EDGE} group-data-[scrolled=true]/table:after:from-surface ${onOpen ? "group-hover:after:from-surface-hover" : ""}` : ""}`}
                   >
                     <Cell col={col} value={rec.data?.[col.field]} currency={amountCurrency(col, rec)} />
                   </td>

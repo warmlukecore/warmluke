@@ -12,6 +12,7 @@
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-filters.mjs
 
 import { filterOptions, matchesFilter } from "../src/lib/filters.ts";
+import { parseReply } from "../src/lib/ai.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -96,6 +97,68 @@ console.log("\nand the ones it would have hit next");
   const raw = [{ data: { tags: ["Snow", "Winter"] } }];
   check("an array value works the same", matchesFilter(raw[0], "tags", "snow"));
   check("and lists its items", filterOptions([], raw, "tags").length === 2);
+}
+
+console.log("\na yes/no field is a tick: ticked, or not (an RTO column, 3 Oct)");
+{
+  const ticks = [true, "true", "yes", 1, false, "false", null, "", undefined].map((rto) => ({ data: { rto } }));
+  check(
+    "its choices are Yes and No, whatever was declared or stored",
+    filterOptions(["Yes", "No", "true"], ticks, "rto", true).join() === "Yes,No"
+  );
+  check("Yes finds every tick, however stored", ticks.filter((r) => matchesFilter(r, "rto", "Yes", true)).length === 4);
+  check(
+    "No finds every row not ticked, blank and false alike",
+    ticks.filter((r) => matchesFilter(r, "rto", "No", true)).length === 5
+  );
+
+  const SHIP = "55555555-5555-4555-8555-555555555555";
+  const modules = [
+    { id: SHIP, project_id: "p", name: "shipments", nav_label: "Shipments", icon: "table", source_table: null },
+  ];
+  const order = { field: "order_number", label: "Order", type: "text" };
+  const rto = { field: "rto", label: "RTO", type: "boolean" };
+  const reply = (plans) =>
+    parseReply(JSON.stringify({ type: "plans", message: "RTO.", plans }), modules, { columns: [order] }, null);
+  const filterOf = (r) => r.ok && r.reply.plans.at(-1).features.filters.find((f) => f.field === "rto");
+  const asked = reply([
+    {
+      changeType: "FIELD_ADD",
+      targetModuleId: SHIP,
+      newSchema: { columns: [order, rto] },
+      explanation: "A tick for RTO.",
+    },
+    {
+      changeType: "FEATURE_UPDATE",
+      targetModuleId: SHIP,
+      features: { filters: [{ field: "rto", label: "RTO", options: ["true", "false"] }] },
+      explanation: "Filter by it.",
+    },
+  ]);
+  check(
+    "a field and its filter in one design: the filter reads Yes / No",
+    filterOf(asked)?.options?.join() === "Yes,No"
+  );
+  if (!asked.ok) console.log("     →", asked.errors);
+  const bare = parseReply(
+    JSON.stringify({
+      type: "plans",
+      message: "RTO.",
+      plans: [
+        {
+          changeType: "FEATURE_UPDATE",
+          targetModuleId: SHIP,
+          features: { filters: [{ field: "rto", label: "RTO" }] },
+          explanation: "Filter by it.",
+        },
+      ],
+    }),
+    modules,
+    { columns: [order, rto] },
+    null
+  );
+  check("sent with no choices, it is kept, not refused or dropped", filterOf(bare)?.options?.join() === "Yes,No");
+  if (!bare.ok) console.log("     →", bare.errors);
 }
 
 console.log(fails.length === 0 ? "\nthe dropdown points at the rows" : `\n${fails.length} FAILED`);

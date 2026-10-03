@@ -13,6 +13,8 @@
 // Checked twice: by the validator before a design is shown, and by the
 // frame before it renders one.
 
+import { STATUS_LABELS } from "@/lib/tone";
+
 /** Past this a screen is not small, and a design that long is cut off mid-string anyway. */
 export const CUSTOM_VIEW_MAX = 60_000;
 
@@ -149,6 +151,18 @@ table{width:100%;border-collapse:collapse}th{text-align:left;font-size:12px;font
 .wl-row.done{color:var(--fg-muted)}.wl-row.bad{background:color-mix(in srgb,var(--critical) 45%,transparent)}
 .wl-dialog{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:16px;background:color-mix(in srgb,var(--fg) 35%,transparent)}.wl-dialog>.wl-card{width:min(440px,100%);box-shadow:var(--shadow-dialog)}
 .wl-badge{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;font-size:12px;font-weight:500;background:var(--neutral);color:var(--neutral-fg)}
+.wl-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+.wl-form{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}.wl-form>.wide{grid-column:1/-1}
+.wl-field{display:grid;gap:4px;align-content:start;font-size:12px;font-weight:500;color:var(--fg-muted)}.wl-field>:is(input,select,textarea,.wl-select){width:100%;font-size:14px;font-weight:400}
+textarea{min-height:72px;resize:vertical}
+.wl-table{overflow-x:auto;margin:0 -4px}.wl-table table{min-width:100%}td{vertical-align:top}.wl-nowrap,td.num,td.date{white-space:nowrap}td.num{text-align:right;font-variant-numeric:tabular-nums}
+.wl-empty{padding:20px 12px;text-align:center;color:var(--fg-muted);font-size:13px}
+select,.wl-select{appearance:none;-webkit-appearance:none;padding-right:30px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a8a8a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+.wl-select{font:inherit;text-align:left;height:auto;min-height:35px;justify-content:flex-start;padding:6px 30px 6px 10px;border:1px solid var(--line);border-radius:var(--radius-control);background-color:var(--surface);box-shadow:none;color:var(--fg);overflow:hidden;text-overflow:ellipsis}
+.wl-select:hover{background-color:var(--surface-hover)}.wl-select[aria-expanded=true]{border-color:var(--focus)}
+.wl-menu{position:absolute;z-index:60;max-height:240px;overflow:auto;padding:4px;background:var(--surface);border-radius:var(--radius-control);box-shadow:var(--shadow-dialog)}
+.wl-option{padding:6px 10px;border-radius:6px;font-size:13px;cursor:pointer;white-space:nowrap}.wl-option:is(:hover,:focus){background:var(--surface-hover);outline:none}.wl-option[aria-selected=true]{font-weight:600}
+body::after{content:"";display:block;height:80px}
 @media (max-width:480px){.wl-page{padding:12px}.wl-card{padding:14px}}
 `.replace(/\n/g, "");
 
@@ -268,6 +282,113 @@ const RUNTIME = `(() => {
     }
     return f.format(n);
   };
+  // A date and a status as the app writes them: "3 Oct 2026", "Payment
+  // pending". A screen that printed 2026-10-02 and PENDING beside a table
+  // saying otherwise read as two apps (Returns, 3 Oct).
+  const LABELS = __LABELS__;
+  const dayFormat = new Intl.DateTimeFormat(FORMAT.locale, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  const date = (v) => {
+    if (v === null || v === undefined || v === "") return "—";
+    const s = String(v);
+    const d = /^\\d{4}-\\d{2}-\\d{2}$/.test(s) ? new Date(s + "T00:00:00Z") : new Date(s);
+    if (Number.isNaN(d.getTime())) return s;
+    return /^\\d{4}-\\d{2}-\\d{2}$/.test(s) ? dayFormat.format(d) : d.toLocaleDateString(FORMAT.locale, { day: "numeric", month: "short", year: "numeric" });
+  };
+  const label = (v) => (v === null || v === undefined || v === "" ? "—" : LABELS[String(v).trim()] || String(v));
+  // A choice drawn as the app draws one, never the computer's own menu:
+  // each <select> is shown as a button and a list, and the select stays,
+  // hidden, holding the value, so a script reads and sets it as before.
+  const nativeValue = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value");
+  const nativeIndex = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "selectedIndex");
+  for (const [name, d] of [["value", nativeValue], ["selectedIndex", nativeIndex]])
+    Object.defineProperty(HTMLSelectElement.prototype, name, {
+      configurable: true,
+      get() { return d.get.call(this); },
+      set(v) { d.set.call(this, v); if (this._wlSync) this._wlSync(); },
+    });
+  let openMenu = null;
+  const shut = () => { if (openMenu) { openMenu.close(); openMenu = null; } };
+  addEventListener("mousedown", (e) => { if (openMenu && !openMenu.list.contains(e.target) && e.target !== openMenu.button) shut(); }, true);
+  addEventListener("scroll", shut, true);
+  // A click outside the frame never reaches it: the frame losing focus is that click.
+  addEventListener("blur", shut);
+  const upgrade = (sel) => {
+    if (sel._wlSync || sel.multiple || sel.size > 1 || sel.dataset.native !== undefined) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "wl-select";
+    button.setAttribute("aria-haspopup", "listbox");
+    button.setAttribute("aria-expanded", "false");
+    // Its name is the field's words (a label wrapping it names the hidden
+    // select, not this), and then what is chosen.
+    const wrap = sel.closest("label");
+    const named = (
+      sel.getAttribute("aria-label") ||
+      (sel.id && document.querySelector('label[for="' + CSS.escape(sel.id) + '"]')?.textContent) ||
+      (wrap ? [...wrap.childNodes].filter((n) => n !== sel && n !== button).map((n) => n.textContent).join(" ") : "") ||
+      ""
+    ).trim();
+    sel._wlSync = () => {
+      const o = sel.options[sel.selectedIndex];
+      button.textContent = o ? o.text : "";
+      button.disabled = sel.disabled;
+      if (named) button.setAttribute("aria-label", named + ": " + (o ? o.text : ""));
+    };
+    sel._wlSync();
+    sel.addEventListener("change", sel._wlSync);
+    sel.style.display = "none";
+    sel.after(button);
+    const choose = (i) => {
+      sel.selectedIndex = i;
+      sel.dispatchEvent(new Event("input", { bubbles: true }));
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+      shut();
+      button.focus();
+    };
+    const open = () => {
+      shut();
+      const list = document.createElement("div");
+      list.className = "wl-menu";
+      list.setAttribute("role", "listbox");
+      const items = [...sel.options].map((o, i) => {
+        const it = document.createElement("div");
+        it.className = "wl-option";
+        it.setAttribute("role", "option");
+        it.tabIndex = -1;
+        it.textContent = o.text;
+        it.setAttribute("aria-selected", String(i === sel.selectedIndex));
+        if (o.disabled) it.setAttribute("aria-disabled", "true");
+        else it.onclick = () => choose(i);
+        list.append(it);
+        return it;
+      });
+      list.addEventListener("keydown", (e) => {
+        const at = items.indexOf(document.activeElement);
+        const go = (n) => { e.preventDefault(); items[Math.max(0, Math.min(items.length - 1, n))]?.focus(); };
+        if (e.key === "ArrowDown") go(at + 1);
+        else if (e.key === "ArrowUp") go(at - 1);
+        else if (e.key === "Home") go(0);
+        else if (e.key === "End") go(items.length - 1);
+        else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (at >= 0 && !sel.options[at].disabled) choose(at); }
+        else if (e.key === "Escape" || e.key === "Tab") { e.preventDefault(); shut(); button.focus(); }
+      });
+      const r = button.getBoundingClientRect();
+      list.style.minWidth = r.width + "px";
+      list.style.left = r.left + scrollX + "px";
+      document.body.append(list);
+      // Below when it fits, else above: never cut off by the frame's foot.
+      const below = r.bottom + list.offsetHeight + 8 <= innerHeight || r.top < list.offsetHeight + 8;
+      list.style.top = (below ? r.bottom + 4 : r.top - list.offsetHeight - 4) + scrollY + "px";
+      button.setAttribute("aria-expanded", "true");
+      openMenu = { list, button, close: () => { list.remove(); button.setAttribute("aria-expanded", "false"); } };
+      (items[sel.selectedIndex] || items[0])?.focus();
+    };
+    button.addEventListener("click", () => (openMenu?.button === button ? shut() : open()));
+    button.addEventListener("keydown", (e) => { if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); open(); } });
+  };
+  const upgradeAll = () => document.querySelectorAll("select").forEach(upgrade);
+  new MutationObserver(upgradeAll).observe(document.documentElement, { childList: true, subtree: true });
+  addEventListener("DOMContentLoaded", upgradeAll);
   window.wl = Object.freeze({
     columns: __COLUMNS__,
     ask,
@@ -277,6 +398,8 @@ const RUNTIME = `(() => {
       call("find", section === undefined ? [String(field), String(value)] : [String(field), String(value), String(section)]),
     read: (section) => call("read", [String(section)]),
     money,
+    date,
+    label,
     currency: FORMAT.currency,
     set: (id, fields) => call("set", [String(id), fields]),
     add: (fields) => call("add", [fields]),
@@ -314,7 +437,11 @@ export function customViewPage(
   return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CUSTOM_VIEW_CSP}"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${fonts.replace(/<\/?style/gi, "")}:root{${vars}color-scheme:${scheme === "dark" ? "dark" : "light"}}${CUSTOM_VIEW_KIT}</style><script>${RUNTIME.replace(
     "__COLUMNS__",
     () => cols
-  ).replace("__FORMAT__", () =>
-    JSON.stringify({ locale: String(format.locale), currency: String(format.currency) }).replace(/</g, "\\u003c")
-  )}</script></head><body>${html}</body></html>`;
+  )
+    .replace("__FORMAT__", () =>
+      JSON.stringify({ locale: String(format.locale), currency: String(format.currency) }).replace(/</g, "\\u003c")
+    )
+    .replace("__LABELS__", () =>
+      JSON.stringify(STATUS_LABELS).replace(/</g, "\\u003c")
+    )}</script></head><body>${html}</body></html>`;
 }

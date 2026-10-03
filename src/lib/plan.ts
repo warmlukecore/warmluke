@@ -30,6 +30,12 @@ export type DesignIntent = {
   screens: string[];
   /** What Luke could not settle from the words: each a candidate question. */
   unsure: string[];
+  /**
+   * The plan as the owner reads it, before anything is built: how it
+   * will work, what is unclear, and "Want me to build it?". Empty for a
+   * small exact change, or when they said to just build it.
+   */
+  say: string;
 };
 
 const words = (v: unknown, max: number): string[] =>
@@ -61,6 +67,7 @@ export function parseIntent(raw: string): DesignIntent | null {
     rules: words(r.rules, 8),
     screens: words(r.screens, 6),
     unsure: words(r.unsure, 4),
+    say: typeof r.say === "string" ? r.say.trim().slice(0, 1500) : "",
   };
 }
 
@@ -81,4 +88,53 @@ export function intentBlock(intent: DesignIntent): string {
   ];
   // A blank line first: it follows the owner's own words in the same turn.
   return `\n\n${lines.filter((l) => l !== "").join("\n")}`;
+}
+
+/**
+ * Said before it is built (Tanish, 3 Oct: "propose a plan in plain
+ * English, then ask: do you want me to build it?"). In the app's own
+ * chat a design is first Luke's plan in words, from the plan step, and
+ * the owner's yes builds it. What was agreed is kept on that reply, so
+ * the yes builds exactly that.
+ */
+export type Proposal = { kind: "proposal"; understood: DesignIntent };
+
+/** The plan Luke said in the last reply, when that reply was one, read off the raw reply a thread keeps. */
+export function proposalOf(history: Array<{ role: string; content: string }>): DesignIntent | null {
+  const last = [...history].reverse().find((t) => t.role === "assistant")?.content ?? "";
+  if (!last.includes('"proposal"')) return null;
+  try {
+    const r = JSON.parse(last) as { kind?: unknown; understood?: unknown };
+    return r.kind === "proposal" ? parseIntent(JSON.stringify(r.understood)) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A plain yes to a plan, in either language: nothing added that would change it. */
+export function isGoAhead(message: string): boolean {
+  const m = message
+    .trim()
+    .toLowerCase()
+    .replace(/[.!🙂👍]+$/u, "");
+  return (
+    m.length <= 40 &&
+    /^(yes|yeah|yep|yup|sure|ok|okay|go|go ahead|do it|build it|build|haan|han|ha|haa|haanji|ji|ji haan|theek hai|thik hai|sahi hai|chalo|karo|kar do|bana do|banao|haan karo|haan bana do|haan build karo|yes build it|yes please|ok build it|ok go ahead)( please| now| karo| kar do| bana do| ji)?$/.test(
+      m
+    )
+  );
+}
+
+/** Asked to build without being asked anything first. */
+export const wantsItBuilt = (message: string) =>
+  /\b(just build( it)?|build it now|no questions|without asking|seedha bana|bas bana do|directly build|build directly)\b/i.test(
+    message
+  );
+
+/** What the owner agreed to, as the design call reads it: built as said, not asked again. */
+export function agreedBlock(intent: DesignIntent): string {
+  return intentBlock(intent).replace(
+    /^\n\nWHAT LUKE UNDERSTOOD — [^\n]*/,
+    '\n\nWHAT THE OWNER AGREED TO — they read this plan in Luke\'s words and said yes. Build exactly this, in one design, and do not ask again: where it was unsure, take the likelier answer and say it in "message".'
+  );
 }

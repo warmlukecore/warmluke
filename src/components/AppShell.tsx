@@ -41,6 +41,7 @@ import {
   CORE_STORE_TABLES,
   CORE_STORE_WORDS,
   canCarryOwnFields,
+  defaultPeriod,
   isStoreTable,
   ownColumns,
   keptPageSize,
@@ -56,6 +57,7 @@ import { useResizable } from "@/lib/useResizable";
 import type {
   AssistantPlan,
   AssistantReply,
+  FeatureSchema,
   NextStep,
   ProjectRow,
   ModuleRow,
@@ -351,6 +353,14 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   >([]);
   const [records, setRecords] = useState<RecordRow[]>([]);
   const [loadedSource, setLoadedSource] = useState<string | null>(null);
+  // A section over a list of events, with no choice of dates of its own,
+  // opens on its last 30 days (store-read defaultPeriod); the design is
+  // left as it was saved.
+  const shownSchema = useMemo(() => {
+    const sj = schema?.schema_json as (UiSchema & { features?: FeatureSchema }) | undefined;
+    const period = sj && !sj.features?.period ? defaultPeriod(loadedSource) : null;
+    return sj && period ? { ...sj, features: { ...sj.features, period } } : sj;
+  }, [schema, loadedSource]);
   const [recordTotal, setRecordTotal] = useState(0);
   const [linkOptions, setLinkOptions] = useState<LinkOptions>({});
   const [schemaHistory, setSchemaHistory] = useState<UiSchemaRow[]>([]);
@@ -707,14 +717,27 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             ...(p.together ? { together: true } : {}),
           });
         } else if (p.type === "blueprint" && Array.isArray(p.blueprint?.plans)) {
-          rebuilt.push({ id: m.id, role: "assistant", text: p.message, blueprint: p.blueprint });
+          rebuilt.push({
+            id: m.id,
+            role: "assistant",
+            text: p.message,
+            blueprint: p.blueprint,
+            ...(p.approved ? { approved: true } : {}),
+          });
         } else if (p.type === "plans" && Array.isArray(p.plans)) {
           // The same card the turn showed. Whether it was dealt with
           // comes from what follows it in the thread, as for every card.
+          const agreed = p.approved ? { approved: true } : {};
           rebuilt.push(
             p.plans.length === 1
-              ? { id: m.id, role: "assistant", plan: p.plans[0], ...(p.next?.length ? { next: p.next } : {}) }
-              : { id: m.id, role: "assistant", ...batchCard(p) }
+              ? {
+                  id: m.id,
+                  role: "assistant",
+                  plan: p.plans[0],
+                  ...(p.next?.length ? { next: p.next } : {}),
+                  ...agreed,
+                }
+              : { id: m.id, role: "assistant", ...batchCard(p), ...agreed }
           );
         } else {
           // A build that recorded what it changed can offer to put it
@@ -969,6 +992,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // asked a moment after leaving it, made the one now open look old, and
   // its answer was dropped with nothing left to say it had loaded.
   const loadSeq = useRef<Record<string, number>>({});
+  // A design they agreed to in words before it was drawn is built as it
+  // arrives (buildApproved, below, kept here by an effect).
+  const buildNow = useRef<((plans: AssistantPlan[], next: NextStep[] | undefined, id: string) => void) | null>(null);
   // How far Load more has gone in the section open: a read again (a row
   // someone else added, the tab shown again) keeps those rows, not 200.
   const ownShown = useRef<{ moduleId: string; limit: number } | null>(null);
@@ -1927,10 +1953,14 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               role: "assistant",
               text: reply.message,
               blueprint: reply.blueprint,
+              ...(reply.approved ? { approved: true } : {}),
               trace: trace(),
               ...took,
             },
           ]);
+          // Agreed in words before it was drawn (a plan, then their yes):
+          // built now, as the card's own button would, with its undo.
+          if (reply.approved) buildNow.current?.(reply.blueprint.plans, reply.blueprint.next, id);
           return;
         }
 
@@ -1969,7 +1999,18 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         // button that approves them, so there is nothing to build here
         // beyond handing these plans to it.
         if (plans.length > 1) {
-          setChatMessages((prev) => [...prev, { id, role: "assistant", ...batchCard(reply), trace: trace(), ...took }]);
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              id,
+              role: "assistant",
+              ...batchCard(reply),
+              ...(reply.approved ? { approved: true } : {}),
+              trace: trace(),
+              ...took,
+            },
+          ]);
+          if (reply.approved) buildNow.current?.(plans, reply.next, id);
           return;
         }
 
@@ -1980,10 +2021,12 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             role: "assistant",
             plan: plans[0],
             ...(reply.next?.length ? { next: reply.next } : {}),
+            ...(reply.approved ? { approved: true } : {}),
             trace: trace(),
             ...took,
           },
         ]);
+        if (reply.approved) buildNow.current?.(plans, reply.next, id);
       } catch (e) {
         const aborted = (e as Error)?.name === "AbortError";
         setChatMessages((prev) => [
@@ -2514,6 +2557,10 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       planTitle,
     ]
   );
+  useEffect(() => {
+    buildNow.current = (plans, next, id) =>
+      void buildApproved(plans, undefined, undefined, next, { id, sent: plans.map((_, i) => i) });
+  }, [buildApproved]);
 
   /**
    * Runs a way out of an error. Only the ones that need the shell —
@@ -3432,7 +3479,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                       </div>
                     )}
                   <GenericRenderer
-                    schema={schema.schema_json}
+                    schema={shownSchema ?? schema.schema_json}
                     records={records}
                     totalRecords={recordTotal}
                     onLoadMore={
