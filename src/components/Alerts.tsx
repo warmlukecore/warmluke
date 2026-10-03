@@ -5,7 +5,7 @@
 // answer. One list for the bell and the Overview, so it reads the same
 // in both.
 //
-// Callers: src/components/AppShell.tsx (the Overview's card),
+// Callers: src/components/AppShell.tsx (the foot of the Overview),
 // src/components/ChatPanel.tsx (the bell), src/components/ProjectSettings.tsx
 // (what is watched, and from when).
 
@@ -14,10 +14,11 @@ import { ArrowUp, BellOff, Check, X, type LucideIcon } from "lucide-react";
 import { ALERTS_COMING, describeAlert, NEEDS_NAMES, wordsOf, type Alert, type AlertSetting } from "@/lib/alerts";
 import { supabase } from "@/lib/supabase-client";
 import { ago } from "@/lib/when";
-import { button, card, field, fieldOf, hint, iconButton, label, note, sendButton } from "@/components/ui/controls";
+import { button, field, fieldOf, hint, iconButton, label, note, sendButton } from "@/components/ui/controls";
 import { LukeMark } from "@/components/ui/LukeMark";
 import { Group } from "@/components/ui/Group";
 import { Switch } from "@/components/ui/Switch";
+import { Dialog } from "@/components/ui/Dialog";
 import { Panel } from "@/components/Overview";
 
 type Handlers = {
@@ -91,7 +92,8 @@ export function AlertList({
 }
 
 /**
- * The Overview's card: what needs them, or a line saying nothing does.
+ * The foot of the Overview: what needs them, or a small line saying
+ * nothing does. The bell says it first; the page is the store's.
  * Given `choose`, a builder is first asked what to watch (AlertPicker).
  */
 export function AlertsPanel({
@@ -104,44 +106,39 @@ export function AlertsPanel({
     <AlertPicker projectId={choose.projectId} onAskLuke={choose.onAskLuke} busy={rest.busy} onOpen={setPicking} />
   );
   if (alerts === null) return picker ?? null;
-  if (alerts.length === 0) {
-    // The picker stays mounted to say whether it is open; while it is, it says enough.
-    return (
-      <>
-        {picker}
-        {!picking && (
-          <div className={`${card} flex items-center gap-3 px-4 py-3`}>
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-canvas text-fg-faint">
-              <BellOff aria-hidden size={15} strokeWidth={1.75} />
-            </span>
-            <p className="text-[13px] text-fg-muted">
-              <span className="font-medium text-fg">Nothing needs you right now.</span> Luke keeps looking at your
-              stock, shipping and returns.
-            </p>
-          </div>
-        )}
-      </>
-    );
-  }
   return (
-    <>
+    <div className="space-y-2">
+      {alerts.length > 0 && (
+        <Panel
+          title="What Luke noticed"
+          icon={<LukeMark size="xs" />}
+          aside={alerts.length > 1 ? `${alerts.length}` : undefined}
+        >
+          <AlertList alerts={alerts} {...rest} />
+        </Panel>
+      )}
       {picker}
-      <Panel
-        title="What Luke noticed"
-        icon={<LukeMark size="xs" />}
-        aside={alerts.length > 1 ? `${alerts.length}` : undefined}
-      >
-        <AlertList alerts={alerts} {...rest} />
-      </Panel>
-    </>
+      {/* While the picker's line shows, it says enough. */}
+      {alerts.length === 0 && !picking && (
+        <p className="flex items-center gap-2 px-1 text-xs text-fg-muted">
+          <BellOff aria-hidden size={13} strokeWidth={1.75} className="shrink-0 text-fg-faint" />
+          <span>
+            <span className="font-medium text-fg">Nothing needs you right now.</span> Luke keeps looking at your stock,
+            shipping and returns.
+          </span>
+        </p>
+      )}
+    </div>
   );
 }
 
 /**
  * What should Luke keep an eye on: asked once, of whoever builds here,
- * while the store comes in or the first time they open its Overview.
- * Everything starts ticked; what is not here yet is shown as coming, not
- * offered; anything else is said in their words and Luke makes it a rule.
+ * as one line at the foot of the Overview. Choose opens it in the
+ * dialog; the cross keeps it as it is, everything ticked, and it is not
+ * asked again (Settings → Alerts changes it after). What is not here yet
+ * is shown as coming, not offered; anything else is said in their words
+ * and Luke makes it a rule.
  */
 function AlertPicker({
   projectId,
@@ -159,6 +156,7 @@ function AlertPicker({
   const [own, setOwn] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [choosing, setChoosing] = useState(false);
 
   useEffect(() => {
     supabase.rpc("abo_alert_settings", { p_project: projectId }).then(({ data }) => {
@@ -197,73 +195,91 @@ function AlertPicker({
   };
 
   return (
-    <section className={`${card} overflow-hidden`} aria-labelledby="alert-picker-title">
-      <header className="flex items-start gap-3 border-b border-line px-4 py-3">
-        <LukeMark size="sm" />
-        <div className="min-w-0">
-          <h3 id="alert-picker-title" className="text-[13px] font-semibold text-fg">
-            What should Luke keep an eye on?
-          </h3>
-          <p className="mt-0.5 text-xs leading-relaxed text-fg-muted">
-            Luke looks at your store all day and tells you here. You can change this any time in Settings → Alerts.
-          </p>
-        </div>
-      </header>
-      <div className="grid gap-2 p-4 sm:grid-cols-2">
-        {kinds.map((k) => {
-          const w = wordsOf(k.kind);
-          return (
-            <Choice
-              key={k.kind}
-              icon={w.icon}
-              name={w.name}
-              about={w.about}
-              checked={on[k.kind] ?? true}
-              onChange={(v) => setOn((p) => ({ ...p, [k.kind]: v }))}
-            />
-          );
-        })}
-        {ALERTS_COMING.map((c) => (
-          <Choice key={c.name} icon={c.icon} name={c.name} about={c.about} checked={false} soon />
-        ))}
-      </div>
-      <form
-        className="border-t border-line px-4 py-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (own.trim()) void keep(`Alert me: ${own.trim()}`);
-        }}
-      >
-        <label htmlFor="alert-own" className={label}>
-          Anything else?
-        </label>
-        <div className="flex items-center gap-2">
-          <input
-            id="alert-own"
-            value={own}
-            onChange={(e) => setOwn(e.target.value)}
-            maxLength={300}
-            placeholder="Tell me when a COD order over ₹5,000 comes in"
-            className={field}
-          />
-          <button
-            type="submit"
-            disabled={!own.trim() || saving || busy}
-            aria-label="Ask Luke to watch for it"
-            className={sendButton}
-          >
-            <ArrowUp aria-hidden size={16} strokeWidth={2} />
-          </button>
-        </div>
-        <p className={hint}>In your own words. Luke turns it into an alert and shows you before it starts.</p>
-      </form>
-      <footer className="flex items-center justify-end gap-3 border-t border-line px-4 py-3">
-        {error && <span className="mr-auto text-xs text-tone-critical-fg">{error}</span>}
-        <button onClick={() => void keep()} disabled={saving} className={button("primary", "sm")}>
-          {saving ? "Saving…" : "Watch these"}
+    <>
+      <div className="flex items-center gap-2 px-1 text-xs text-fg-muted">
+        <LukeMark size="xs" />
+        <p className="min-w-0 flex-1">
+          Luke watches your stock, shipping and returns.
+          {error && !choosing && <span className="ml-1 text-tone-critical-fg">{error}</span>}
+        </p>
+        <button onClick={() => setChoosing(true)} className={button("plain", "sm")}>
+          Choose what
         </button>
-      </footer>
-    </section>
+        <button
+          onClick={() => void keep()}
+          disabled={saving}
+          aria-label="Keep these and hide"
+          title="Keep these. Change them any time in Settings → Alerts."
+          className={`${iconButton} h-7 w-7`}
+        >
+          <X aria-hidden size={14} strokeWidth={2} />
+        </button>
+      </div>
+      {choosing && (
+        <Dialog
+          title="What should Luke keep an eye on?"
+          description="Luke looks at your store all day and tells you in the bell. You can change this any time in Settings → Alerts."
+          onClose={() => setChoosing(false)}
+          footer={
+            <>
+              {error && <span className="mr-auto text-xs text-tone-critical-fg">{error}</span>}
+              <button onClick={() => void keep()} disabled={saving} className={`${button("primary", "sm")} ml-auto`}>
+                {saving ? "Saving…" : "Watch these"}
+              </button>
+            </>
+          }
+        >
+          <div className="grid gap-2 sm:grid-cols-2">
+            {kinds.map((k) => {
+              const w = wordsOf(k.kind);
+              return (
+                <Choice
+                  key={k.kind}
+                  icon={w.icon}
+                  name={w.name}
+                  about={w.about}
+                  checked={on[k.kind] ?? true}
+                  onChange={(v) => setOn((p) => ({ ...p, [k.kind]: v }))}
+                />
+              );
+            })}
+            {ALERTS_COMING.map((c) => (
+              <Choice key={c.name} icon={c.icon} name={c.name} about={c.about} checked={false} soon />
+            ))}
+          </div>
+          <form
+            className="mt-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (own.trim()) void keep(`Alert me: ${own.trim()}`);
+            }}
+          >
+            <label htmlFor="alert-own" className={label}>
+              Anything else?
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                id="alert-own"
+                value={own}
+                onChange={(e) => setOwn(e.target.value)}
+                maxLength={300}
+                placeholder="Tell me when a COD order over ₹5,000 comes in"
+                className={field}
+              />
+              <button
+                type="submit"
+                disabled={!own.trim() || saving || busy}
+                aria-label="Ask Luke to watch for it"
+                className={sendButton}
+              >
+                <ArrowUp aria-hidden size={16} strokeWidth={2} />
+              </button>
+            </div>
+            <p className={hint}>In your own words. Luke turns it into an alert and shows you before it starts.</p>
+          </form>
+        </Dialog>
+      )}
+    </>
   );
 }
 

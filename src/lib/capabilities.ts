@@ -215,7 +215,7 @@ export const AUTOMATION_ACTIONS = {
   refuse:
     'stop the save and show { "message": "…" }, one sentence in the owner\'s language saying what to do instead ("Only what is left can be held — release a hold first"). Only on a before_save rule, and alone',
   alert:
-    'tell the owner, in the app\'s bell and on the Overview: { "title": "Big COD order", "show": ["order_number", "total"], "severity": "attention" or "critical" }. The title is a few words in the owner\'s language; "show" is up to four fields of the row, as they read on it. One alert a row: a row added or changed tells once and stays until put away; store_row_added tells the moment the store brings the row in; a schedule keeps it open while the row matches and closes it once it does not. In the app only — never email, SMS or WhatsApp',
+    'tell the owner, in the app\'s bell and on the Overview: { "title": "Big COD order", "show": ["order_number", "total"], "severity": "attention" or "critical" }. The title is a few words in the owner\'s language; "show" is up to four fields of the row, as they read on it. One alert a row: a row added or changed tells once and stays until put away; store_row_added tells the moment the store brings the row in; a schedule keeps it open while the row matches and closes it once it does not. One rule a condition: a schedule already finds the rows that arrived since its last run, so a store_row_added rule beside it over the same condition tells the same row twice; when the rows change in place (stock, the state of an order), the schedule alone is the answer. In the app only — never email, SMS or WhatsApp',
 } as const;
 
 export type AutomationActionType = keyof typeof AUTOMATION_ACTIONS;

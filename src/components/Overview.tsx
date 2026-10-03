@@ -116,7 +116,7 @@ export default function Overview({
   onInspect: (table: StoreTable, row: DetailRow) => void;
   /** Changes when the store has been read again, to count afresh. */
   refreshKey: number;
-  /** What Luke noticed (0163), above the numbers: a problem comes before a count. */
+  /** What Luke noticed (0163), below the numbers, small: the bell says it first. */
   noticed?: React.ReactNode;
 }) {
   const [data, setData] = useState<OverviewData | null>(null);
@@ -277,8 +277,6 @@ export function OverviewBoard({
           Your store is still coming in. These numbers grow as it does.
         </div>
       )}
-
-      {noticed}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi
@@ -452,6 +450,9 @@ export function OverviewBoard({
           )}
         </Panel>
       </div>
+
+      {/* Below the numbers: the bell says it first, and the page is the store's. */}
+      {noticed}
 
       <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-faint">
         <span>

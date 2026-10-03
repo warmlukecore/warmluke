@@ -82,6 +82,24 @@ check(
     [{ type: "alert", title: "Still not paid", show: ["order_number"] }]
   ).ok
 );
+const atNine = rule(
+  ORDERS,
+  {
+    type: "schedule",
+    every: "daily",
+    at: "09:00",
+    when: { op: "=", args: [{ field: "financial_status" }, { const: "PENDING" }] },
+  },
+  [{ type: "alert", title: "Still not paid", show: ["order_number"] }]
+);
+check("and at a time of day", atNine.ok);
+if (!atNine.ok) console.log("     →", atNine.errors);
+check(
+  "a time of day on a rule that is not a schedule is refused",
+  errorsOf(rule(ORDERS, { ...bigCod, at: "09:00" }, [tell])).includes(
+    "belong to a schedule trigger, not store_row_added"
+  )
+);
 check(
   "a field it cannot show is refused",
   errorsOf(rule(ORDERS, bigCod, [{ ...tell, show: ["colour"] }])).includes('"show"')

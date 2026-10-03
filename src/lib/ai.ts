@@ -1566,7 +1566,13 @@ function validateAutomation(
         'A before_save rule does one thing: [{ "type": "refuse", "message": "…" }]. Anything else it should do goes in a rule of its own.'
       );
     }
-  } else if (trigger.at !== undefined || trigger.on !== undefined || trigger.date !== undefined) {
+  } else if (
+    // Hung off the before_save test above, so a schedule must be let by
+    // here: "daily at 09:00" was refused as "not schedule", and every
+    // alert at a time of day paid for a second reply.
+    trigger.type !== "schedule" &&
+    (trigger.at !== undefined || trigger.on !== undefined || trigger.date !== undefined)
+  ) {
     err(errors, `"at", "on" and "date" belong to a schedule trigger, not ${trigger.type}.`);
   }
 

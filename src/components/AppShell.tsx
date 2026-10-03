@@ -969,23 +969,46 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // asked a moment after leaving it, made the one now open look old, and
   // its answer was dropped with nothing left to say it had loaded.
   const loadSeq = useRef<Record<string, number>>({});
+  // How far Load more has gone in the section open: a read again (a row
+  // someone else added, the tab shown again) keeps those rows, not 200.
+  const ownShown = useRef<{ moduleId: string; limit: number } | null>(null);
 
   const loadModuleData = useCallback(
-    async (moduleId: string, limit = RECORD_PAGE) => {
+    async (moduleId: string, asked?: number) => {
+      const limit = asked ?? (ownShown.current?.moduleId === moduleId ? ownShown.current.limit : RECORD_PAGE);
+      ownShown.current = { moduleId, limit };
       const seq = (loadSeq.current[moduleId] = (loadSeq.current[moduleId] ?? 0) + 1);
       const range = rowPeriod.current?.moduleId === moduleId ? rowPeriod.current.range : null;
       const ranged = range && /^[a-z_][a-z0-9_]*$/i.test(range.field) ? range : null;
-      let ownRows = supabase
-        .from("records")
-        .select("*", { count: "exact" })
-        .eq("module_id", moduleId)
-        .is("store_row_id", null);
-      // A date of their own is a day, YYYY-MM-DD; up to the day after the
-      // last, so a value written with its time still falls on its day.
-      if (ranged)
-        ownRows = ownRows
-          .gte(`data->>${ranged.field}`, ranged.fromDay)
-          .lt(`data->>${ranged.field}`, shiftDay(ranged.toDay, 1));
+      const ownRows = (from: number, to: number) => {
+        let q = supabase
+          .from("records")
+          .select("*", { count: "exact" })
+          .eq("module_id", moduleId)
+          .is("store_row_id", null);
+        // A date of their own is a day, YYYY-MM-DD; up to the day after the
+        // last, so a value written with its time still falls on its day.
+        if (ranged)
+          q = q.gte(`data->>${ranged.field}`, ranged.fromDay).lt(`data->>${ranged.field}`, shiftDay(ranged.toDay, 1));
+        // Fields kept beside a store row (0128) are never a row of their
+        // own, even in a section since pointed back at its own rows.
+        return q.order("created_at", { ascending: true }).range(from, to);
+      };
+      // The server answers at most 1,000 rows a read, so more is read on in
+      // pieces: Load more past a thousand stood still on the same thousand.
+      // ponytail: every row to the browser; a section of their own past a
+      // few thousand pages from the server as the store's do (0167).
+      const readOwn = async () => {
+        const first = await ownRows(0, Math.min(limit, 1000) - 1);
+        const rows = [...(first.data ?? [])];
+        while (!first.error && rows.length < limit && rows.length % 1000 === 0 && rows.length < (first.count ?? 0)) {
+          const next = await ownRows(rows.length, Math.min(limit, rows.length + 1000) - 1);
+          if (next.error) return next;
+          if (!next.data?.length) break;
+          rows.push(...next.data);
+        }
+        return { ...first, data: rows };
+      };
       // The module is fetched rather than looked up in state: a section
       // created a moment ago is selected before the list has reloaded,
       // and a stale closure there means source_table reads as undefined
@@ -997,9 +1020,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           .eq("module_id", moduleId)
           .order("version", { ascending: false })
           .limit(1),
-        // Fields kept beside a store row (0128) are never a row of their
-        // own, even in a section since pointed back at its own rows.
-        ownRows.order("created_at", { ascending: true }).limit(limit),
+        readOwn(),
         supabase.from("ui_schemas").select("*").eq("module_id", moduleId).order("version", { ascending: false }),
         supabase.from("modules").select("source_table").eq("id", moduleId).maybeSingle(),
       ]);

@@ -46,9 +46,19 @@ const psql = (sql) => {
 
 const tag = randomBytes(4).toString("hex");
 const id = (n) => `7a444444-0000-0000-0000-${String(n).padStart(12, "0")}`;
-const [OWNER, MEMBER, STRANGER, P, S, ORD, CUST, SEAT] = [id(1), id(2), id(3), id(10), id(20), id(30), id(40), id(50)];
+const [OWNER, MEMBER, STRANGER, P, S, ORD, CUST, SEAT, PROD] = [
+  id(1),
+  id(2),
+  id(3),
+  id(10),
+  id(20),
+  id(30),
+  id(40),
+  id(50),
+  id(60),
+];
 const BIG = 20000;
-const page = (q) => `public.abo_store_page('${ORD}', '${JSON.stringify(q)}'::jsonb)`;
+const page = (q, m = ORD) => `public.abo_store_page('${m}', '${JSON.stringify(q)}'::jsonb)`;
 const order = { order: { field: "placed_ts", dir: "desc" } };
 const numbers = (q) =>
   `(select string_agg(r->'data'->>'order_number', ',') from jsonb_array_elements(${page(q)}->'rows') r)`;
@@ -79,8 +89,9 @@ insert into public.project_members (id, project_id, user_id, email, joined_at, c
 insert into public.stores (id, project_id, shop_domain, status, timezone, currency, last_synced_at)
   values ('${S}', '${P}', 'sp-${tag}.myshopify.com', 'connected', 'Asia/Kolkata', 'INR', now());
 insert into public.modules (id, project_id, name, nav_label, route, source_table, created_by, shared_with_team) values
-  ('${ORD}', '${P}', 'orders-${tag}', 'Orders', '/modules/orders-${tag}', 'orders', '${OWNER}', true);
-insert into public.ui_schemas (module_id, schema_json, version) values ('${ORD}', '{"columns":[]}', 1);
+  ('${ORD}', '${P}', 'orders-${tag}', 'Orders', '/modules/orders-${tag}', 'orders', '${OWNER}', true),
+  ('${PROD}', '${P}', 'products-${tag}', 'Products', '/modules/products-${tag}', 'products', '${OWNER}', true);
+insert into public.ui_schemas (module_id, schema_json, version) values ('${ORD}', '{"columns":[]}', 1), ('${PROD}', '{"columns":[]}', 1);
 insert into public.customers (id, store_id, external_id, name, email, phone)
   values ('${CUST}', '${S}', 'sp-c-${tag}', 'Priya Sharma', 'priya@example.com', '+91 98765 43210');
 
@@ -93,7 +104,17 @@ insert into public.orders (store_id, external_id, order_number, placed_at, total
 insert into public.records (project_id, module_id, store_row_id, data)
   select '${P}', '${ORD}', o.id, '{"rto": true, "note": "came back"}'::jsonb
     from public.orders o where o.store_id = '${S}' and o.order_number in ('#SP100', '#SP200', '#SP300');
-analyze public.orders;
+-- 2,000 products; every order a line of one of the first 1,990, so the
+-- last ten never sold. #SP20000, the newest, is cancelled: its line is no sale.
+insert into public.products (store_id, external_id, title, status)
+  select '${S}', 'sp-p-${tag}-' || g, 'Product ' || lpad(g::text, 4, '0'), 'ACTIVE' from generate_series(1, 2000) g;
+update public.orders set cancelled_at = now() where store_id = '${S}' and order_number = '#SP20000';
+insert into public.order_line_items (store_id, order_id, product_id, title, quantity, price)
+  select '${S}', o.id, p.id, p.title, 1, 10
+    from public.orders o
+    join public.products p on p.store_id = '${S}' and p.external_id = 'sp-p-${tag}-' || (1 + (substr(o.order_number, 4)::int % 1990))
+   where o.store_id = '${S}';
+analyze public.orders; analyze public.products; analyze public.order_line_items;
 
 select pg_temp.as('${OWNER}');
 select pg_temp.say('first', (select (${page({ limit: 3, ...order })}->>'total') || '|' || ${numbers({ limit: 3, ...order })}));
@@ -114,6 +135,12 @@ select pg_temp.say('period', ${page({
   },
   ...order,
 })}->>'total');
+-- When each product last sold: the newest order not cancelled, empty if never.
+select pg_temp.say('last_sold', (
+  select string_agg(title || '=' || coalesce(round(extract(epoch from now() - last_sold) / 3600)::text, 'never'), ',' order by title)
+    from public.store_products where store_id = '${S}' and title in ('Product 0001', 'Product 0101', 'Product 1991')));
+select pg_temp.say('unsold', (select count(*)::text from public.store_products
+  where store_id = '${S}' and (last_sold is null or last_sold < now() - interval '30 days')));
 select pg_temp.say('facets', (${page({ limit: 1, facets: ["financial_status", "rto"], ...order })}->'facets')::text);
 
 -- Fast on twenty thousand: the first page, a later one, and a filtered one.
@@ -128,6 +155,11 @@ begin
   insert into took values ('deep', extract(epoch from clock_timestamp() - t) * 1000);
   t := clock_timestamp(); perform ${page({ limit: 50, filters: { financial_status: "PENDING" }, ...order })};
   insert into took values ('filtered', extract(epoch from clock_timestamp() - t) * 1000);
+  t := clock_timestamp(); perform ${page({ limit: 50, order: { field: "title", dir: "asc" } }, PROD)};
+  insert into took values ('products', extract(epoch from clock_timestamp() - t) * 1000);
+  t := clock_timestamp(); perform count(*) from public.store_products
+    where store_id = '${S}' and (last_sold is null or last_sold < now() - interval '10 days');
+  insert into took values ('unsold', extract(epoch from clock_timestamp() - t) * 1000);
 end $$;
 select pg_temp.say('took', (select string_agg(k || '=' || round(ms)::text, ' ' order by k) from took));
 select pg_temp.say('took_max', (select max(ms)::text from took));
@@ -158,9 +190,20 @@ check(
   r.facets?.includes('"financial_status": ["PAID", "PENDING"]') && r.facets?.includes('"rto": ["true"]')
 );
 
-console.log("\nfast on twenty thousand orders");
+console.log("\nwhen a product last sold");
+// Order g is a line of product 1 + g % 1990, placed 20000 - g hours ago.
+// Product 0001's newest is #SP19900 (100 h); 0101's is #SP20000, cancelled,
+// so its last sale is #SP18010 (1,990 h); 1991 to 2000 never sold. Not sold
+// in 30 days: the 1,269 whose newest is #SP18011 to #SP19279, 0101 and the ten.
+check(
+  "the newest order not cancelled, empty if it never sold",
+  r.last_sold === "Product 0001=100,Product 0101=1990,Product 1991=never"
+);
+check("so what has stopped selling is one question over the products", r.unsold === "1280");
+
+console.log("\nfast on twenty thousand orders and two thousand products");
 console.log(`        ${r.took} (ms)`);
-check("the first page, a deep one and a filtered one, each under 200 ms", Number(r.took_max) < 200);
+check("every page and the stopped-selling count, each under 200 ms", Number(r.took_max) < 200);
 
 console.log("\nwho may read it");
 check("a teammate the store is not open to may not", r.member?.startsWith("ERR"));

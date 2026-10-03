@@ -20,13 +20,17 @@ test("an order not sent is noticed, told in the bell and the overview, put away,
   await page.goto(`/app/${shop.projectId}`);
   const wide = (page.viewportSize()?.width ?? 0) >= 1024;
 
-  // Asked once what to watch: all of it ticked, what is coming shown and not offered.
-  const picker = page.getByRole("region", { name: "What should Luke keep an eye on?" });
+  // Asked once what to watch, in a line at the foot: all of it ticked,
+  // what is coming shown and not offered.
+  const choose = page.getByRole("button", { name: "Choose what" });
+  await choose.click();
+  const picker = page.getByRole("dialog", { name: "What should Luke keep an eye on?" });
   await expect(picker.getByRole("checkbox", { name: /Running low/ })).toHaveAttribute("aria-checked", "true");
   await expect(picker.getByRole("checkbox", { name: /Conversion changes/ })).toBeDisabled();
   await picker.getByRole("checkbox", { name: /Returns rising/ }).click();
   await picker.getByRole("button", { name: "Watch these" }).click();
   await expect(picker).toHaveCount(0);
+  await expect(choose).toHaveCount(0);
   const { data: chosen } = await shop.admin
     .from("alert_settings")
     .select("kind, enabled")
@@ -65,7 +69,7 @@ test("an order not sent is noticed, told in the bell and the overview, put away,
   await page.reload();
   await expect(page.getByText("Nothing needs you right now.")).toBeVisible({ timeout: 30_000 });
   // Answered, it is not asked again.
-  await expect(picker).toHaveCount(0);
+  await expect(choose).toHaveCount(0);
 
   // What is watched, in settings: switched off, kept.
   if (!wide) await page.getByRole("button", { name: "Open sections" }).click();
@@ -94,7 +98,8 @@ test("anything else to watch goes to Luke in the merchant's own words", async ({
     return route.fulfill({ status: 402, json: { error: "No turns left in this test." } });
   });
   await page.goto(`/app/${shop.projectId}`);
-  const picker = page.getByRole("region", { name: "What should Luke keep an eye on?" });
+  await page.getByRole("button", { name: "Choose what" }).click();
+  const picker = page.getByRole("dialog", { name: "What should Luke keep an eye on?" });
   await picker.getByRole("textbox", { name: "Anything else?" }).fill("jab COD order 5000 se upar aaye");
   await picker.getByRole("button", { name: "Ask Luke to watch for it" }).click();
   await expect.poll(() => asked?.message).toBe("Alert me: jab COD order 5000 se upar aaye");
@@ -105,4 +110,29 @@ test("anything else to watch goes to Luke in the merchant's own words", async ({
     .select("kind", { count: "exact", head: true })
     .eq("project_id", shop.projectId);
   expect(count).toBe(4);
+});
+
+test("the cross keeps what Luke watches as it is, and the question is not asked again", async ({
+  signedIn: page,
+  shop,
+}) => {
+  await page.goto(`/app/${shop.projectId}`);
+  const choose = page.getByRole("button", { name: "Choose what" });
+  await expect(choose).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Keep these and hide" }).click();
+  await expect(choose).toHaveCount(0);
+  const { data: chosen } = await shop.admin
+    .from("alert_settings")
+    .select("kind, enabled")
+    .eq("project_id", shop.projectId)
+    .order("kind");
+  expect(chosen?.map((c) => `${c.kind}:${c.enabled}`)).toEqual([
+    "dispatch_late:true",
+    "low_stock:true",
+    "return_reason:true",
+    "returns_spike:true",
+  ]);
+  await page.reload();
+  await expect(page.getByText("Orders today")).toBeVisible({ timeout: 30_000 });
+  await expect(choose).toHaveCount(0);
 });

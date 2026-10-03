@@ -93,3 +93,55 @@ test("a store list pages through all of it: its count, its pages, its search and
     await shop.admin.from("modules").delete().eq("id", id);
   }
 });
+
+// A section of their own past a thousand rows: the server answers at most
+// a thousand a read, and Load more stood still there. Now it reads on.
+test("a section of their own loads past a thousand rows", async ({ signedIn: page, shop }) => {
+  const made = await page.request.post("/api/apply", {
+    headers: { Authorization: `Bearer ${(shop.session as { access_token: string }).access_token}` },
+    data: {
+      projectId: shop.projectId,
+      plans: [
+        {
+          changeType: "NEW_MODULE",
+          targetModuleId: null,
+          newModule: { name: "e2e-many", nav_label: "Many", icon: "table" },
+          newSchema: { columns: [{ field: "note", label: "Note", type: "text" }], view: { type: "table" } },
+          explanation: "A long list of their own.",
+        },
+      ],
+    },
+  });
+  expect(made.ok(), "the section is built").toBe(true);
+  const { data: row } = await shop.admin
+    .from("modules")
+    .select("id")
+    .eq("project_id", shop.projectId)
+    .eq("name", "e2e-many")
+    .single();
+  const id = row!.id as string;
+  try {
+    for (let i = 0; i < 1100; i += 550) {
+      const { error } = await shop.admin.from("records").insert(
+        Array.from({ length: 550 }, (_, k) => ({
+          project_id: shop.projectId,
+          module_id: id,
+          data: { note: `row ${i + k + 1}` },
+        }))
+      );
+      expect(error).toBeNull();
+    }
+    await page.goto(`/app/${shop.projectId}?section=${id}`);
+    await expect(page.getByText(/200 of 200 records shown · 1100 in total/)).toBeVisible({ timeout: 30_000 });
+    const more = page.getByRole("button", { name: "Load more" });
+    for (let n = 400; n <= 1000; n += 200) {
+      await more.click();
+      await expect(page.getByText(new RegExp(`${n} of ${n} records shown`))).toBeVisible();
+    }
+    await more.click();
+    await expect(page.getByText(/^1100 of 1100 records$/)).toBeVisible();
+    await expect(more).toHaveCount(0);
+  } finally {
+    await shop.admin.from("modules").delete().eq("id", id);
+  }
+});

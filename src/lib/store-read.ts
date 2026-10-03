@@ -713,14 +713,16 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     ],
   },
   products: {
+    advice:
+      'last_sold is when the product was last in an order that was not cancelled, empty if it never has been. "Not sold in N days" (dead stock) is one rule over this list: last_sold is empty or days_since(last_sold) > N — no sales section, no code.',
     label: "Shopify products",
-    what: 'one row per product in the catalogue — title, category, vendor, status, tags, and the collections it belongs to; what "our products", "the catalogue" and "what is in the sale" mean',
+    what: 'one row per product in the catalogue — title, category, vendor, status, tags, the collections it belongs to and when it last sold; what "our products", "the catalogue", "what is in the sale" and "what has stopped selling" mean',
     section: { label: "Products", icon: "package", importedWith: "products" },
     view: "store_products",
     // A change to the shop is aimed with Shopify's own id (0121).
     gives: { Product: "shopify_id" },
     order: { field: "title", ascending: true },
-    select: "id, title, product_type, vendor, handle, status, tags, collections",
+    select: "id, title, product_type, vendor, handle, status, tags, collections, last_sold",
     columns: [
       { field: "title", label: "Product", type: "text" },
       { field: "product_type", label: "Category", type: "badge" },
@@ -729,6 +731,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "handle", label: "Handle", type: "text" },
       { field: "tags", label: "Tags", type: "text" },
       { field: "collections", label: "Collections", type: "text" },
+      { field: "last_sold", label: "Last sold", type: "date" },
     ],
   },
   locations: {

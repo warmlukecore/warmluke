@@ -136,7 +136,7 @@ both columns and allowed states.
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `stores`                | One provider account per project, OAuth token lifecycle, shop context, sync state                                                            |
 | `import_runs`           | Cursor/bulk-operation progress for each resource                                                                                             |
-| `products`              | Shopify products                                                                                                                             |
+| `products`              | Shopify products; `store_products` adds the collections and when each last sold, empty if never (0170), so "not sold in N days" is one rule |
 | `collections`           | Merchant-made groupings, with Shopify's own count of what is in each                                                                         |
 | `collection_products`   | Which products belong to which collection                                                                                                    |
 | `variants`              | Product variants, SKU/barcode/price, unit cost and whether Shopify tracks their stock                                                        |
