@@ -63,7 +63,9 @@ globalThis.fetch = async (input, init) => {
             : "design";
   calls.push(job);
   sent.push({ job, messages: body.messages ?? [] });
-  const a = answers[job];
+  // A list answers call by call, its last answer once it runs out.
+  const all = answers[job];
+  const a = Array.isArray(all) ? all[Math.min(calls.filter((c) => c === job).length - 1, all.length - 1)] : all;
   if (a instanceof Error) throw a;
   if (a && typeof a === "object" && "status" in a) return new Response(a.body, { status: a.status });
   return new Response(
@@ -514,6 +516,24 @@ check(
   gateOnly.r.ok && gateOnly.r.reply.checks?.simplicity?.verdict === "redo"
 );
 check("a gate's redo is not called the critic's", gateOnly.r.ok && gateOnly.r.criticRedo === false);
+
+// Two repairs used to leave no attempt for it: the reviewers read a
+// written screen and could not send it back (returns eval, 4 Oct).
+const REFUSED = '{"type":"plans","plans":[{"changeType":"NEW_MODULE","targetModuleId":null}]}';
+fresh(
+  {
+    design: [REFUSED, REFUSED, DESIGN],
+    gap: '{"unmet": []}',
+    review: '{"verdict":"redo","redo":"Use the store\'s own returns","why":"same rows"}',
+  },
+  { ANTHROPIC_REVIEW_MODEL: "claude-review-stand-in" }
+);
+const late = await turn();
+check("after two repairs the gate can still send it back, once", designs() === 4 && late.r.ok);
+check(
+  "and the redo is told why",
+  /reviewed before the owner sees it/.test(lastUser(sent.filter((s) => s.job === "design")[3]))
+);
 
 fresh(
   {

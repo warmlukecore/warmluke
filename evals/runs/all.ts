@@ -8,6 +8,7 @@ import r2 from "./20261004-0535-after2.json";
 import r3 from "./20261004-0635-after3.json";
 import r4 from "./20261004-1758-after4.json";
 import r5 from "./20261004-1811-after5.json";
+import r6 from "./20261004-1822-after6.json";
 
 export const RUN_FILES: Record<string, EvalRun> = {
   "20261003-1953-before.json": r0 as unknown as EvalRun,
@@ -16,4 +17,5 @@ export const RUN_FILES: Record<string, EvalRun> = {
   "20261004-0635-after3.json": r3 as unknown as EvalRun,
   "20261004-1758-after4.json": r4 as unknown as EvalRun,
   "20261004-1811-after5.json": r5 as unknown as EvalRun,
+  "20261004-1822-after6.json": r6 as unknown as EvalRun,
 };

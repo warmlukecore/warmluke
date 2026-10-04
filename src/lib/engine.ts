@@ -878,7 +878,12 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   let checks: DesignChecks | null = resume?.checks ?? null;
 
   const firstAttempt = resume?.attempt ?? 0;
-  for (let attempt = firstAttempt; attempt <= MAX_REPAIR_ATTEMPTS; attempt++) {
+  // The repairs have their attempts, and a send-back its own: once it
+  // shared them, a design that took two repairs could no longer be sent
+  // back, and the reviewers read a written screen they could do nothing
+  // about (returns eval, 4 Oct).
+  const lastAttempt = () => MAX_REPAIR_ATTEMPTS + (sentBack ? 1 : 0);
+  for (let attempt = firstAttempt; attempt <= lastAttempt(); attempt++) {
     // Out of this invocation's time, with an attempt made in it: the
     // turn so far, handed on whole, to go on in a fresh one.
     if (deadline && attempt > firstAttempt && Date.now() + ATTEMPT_MS > deadline) {
@@ -910,7 +915,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         },
       };
     }
-    tell({ step: "model", attempt: attempt + 1, of: MAX_REPAIR_ATTEMPTS + 1 });
+    tell({ step: "model", attempt: attempt + 1, of: lastAttempt() + 1 });
     // Tools on the first attempt only: a repair fixes the reply's shape,
     // and what was looked up is already written into the reply it fixes.
     raw = await tapeRoad.run(road, () =>
@@ -1062,7 +1067,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       });
       if (verdict) {
         critiqued = { unmet: verdict.unmet };
-        if (verdict.redo && !sentBack && attempt < MAX_REPAIR_ATTEMPTS) {
+        if (verdict.redo && !sentBack) {
           sentBack = true;
           sentBackDesign = { parsed, raw, unmet: verdict.unmet };
           tell({ step: "critic", verdict: "redo", missing: verdict.unmet.length });
@@ -1114,7 +1119,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         }
       );
       checks = reviewed.checks;
-      if (reviewed.redo && !sentBack && attempt < MAX_REPAIR_ATTEMPTS) {
+      if (reviewed.redo && !sentBack) {
         sentBack = true;
         sentBackDesign = { parsed, raw, unmet: critiqued?.unmet ?? [], by: "gate" };
         attemptTurns.push(
@@ -1138,7 +1143,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       console.warn(`[validator] attempt ${attempt + 1} rejected: ${parsed.errors.join(" | ")}`);
     }
     onlyAsking = false;
-    if (attempt === MAX_REPAIR_ATTEMPTS) break;
+    if (attempt >= lastAttempt()) break;
     attemptTurns.push(
       { role: "assistant", content: raw },
       {

@@ -1,0 +1,121 @@
+{
+  "label": "after6",
+  "started": "2026-10-04T18:22:27.933Z",
+  "design_model": "claude-sonnet-5",
+  "sim_model": "claude-haiku-4-5",
+  "grade_model": "claude-haiku-4-5",
+  "cap": 0.7,
+  "spent": 0.458,
+  "partial": false,
+  "cases": [
+    {
+      "id": "returns-screen",
+      "title": "A returns screen: pick the order, its items come in, a return is made",
+      "turns": 2,
+      "built": true,
+      "signs": {
+        "workarounds": [
+          "Returns has a written screen over rows a table shows"
+        ],
+        "jargon": [],
+        "proposed_first": true
+      },
+      "criteria": [
+        {
+          "text": "Luke prefers a returns table with a row form that fills in from the chosen order over a hand-written screen",
+          "met": false,
+          "said": false,
+          "evidence": "Luke said \"Return ka apna screen bana dunga: order search karo, uske items niche aa jaayenge, phir item, quantity aur reason chunke return request bana sakte ho\" and the owner replied \"theek hai order search aur items niche aana — bas ek baat: mujhe sirf return log karna hai phone pe\" but Luke then "
+        },
+        {
+          "text": "if Luke writes a screen, it reads only sections that exist and looks like the rest of the app",
+          "met": true,
+          "said": true,
+          "evidence": "The written screen uses only sections that exist: \"Order Item [item] (link)\" from Returns, and reads from 'order_line_items' which matches the app structure. The screen layout \"<div class=\"wl-page\">\" with \"<div class=\"wl-card\">\" and \"<div class=\"wl-form\">\" matches the app's style"
+        },
+        {
+          "text": "every list shown has an empty state",
+          "met": true,
+          "said": true,
+          "evidence": "The screen shows \"<div class=\"wl-empty\">No items found for that order number.</div>\" and renders an empty state when no order is found"
+        },
+        {
+          "text": "the plan is said in plain words before anything is built, with no field names or types",
+          "met": false,
+          "said": false,
+          "evidence": "Luke used plain words: \"order search karo, uske items niche aa jaayenge, phir item, quantity aur reason chunke return request bana sakte ho\" but then the design shows technical field names: \"Order Item [item] (link) · Quantity [quantity] (number) · Reason [reason] (longtext)\" and the written screen "
+        },
+        {
+          "text": "ends by asking whether to build",
+          "met": false,
+          "said": false,
+          "evidence": "Luke did not ask whether to build after the owner said \"bas: order chuno, item chuno, quantity aur reason likho, request ban jao. Bas itna chahiye.\" Instead Luke said \"Ek simple return-logging screen banaunga\" and presented the design with a Build button, then the owner tapped Build without Luke ask"
+        }
+      ],
+      "must_not": [
+        {
+          "text": "a written screen when a table and a row form do the job",
+          "hit": true,
+          "evidence": "A written screen was built (\"<div class=\"wl-page\" id=\"app\"><div class=\"wl-stack\">\" with JavaScript form logic) when a table with a row form would have done the job for the simple logging the owner asked for: \"order chuno, item chuno, quantity aur reason likho, request ban jao\""
+        },
+        {
+          "text": "a change to the Shopify store",
+          "hit": false,
+          "evidence": "Luke said \"Ye naya tracking Shopify ke return se alag rahega kyunki waha se sirf copy aati hai, yahan se naya return Shopify me nahi jaata\" and the Returns section fields do not write back to Shopify; the app reads from Shopify's order_line_items but does not sync Returns back"
+        },
+        {
+          "text": "jargon such as \"boolean\" or \"set_fields\" in what the owner reads",
+          "hit": false,
+          "evidence": "The conversation uses plain Hindi words (\"order chuno\", \"items\", \"quantity\", \"reason\") and the owner saw no jargon in what was explained to them, though the written screen code itself contains technical terms"
+        }
+      ],
+      "scores": {
+        "discussed": 2,
+        "plain": 3,
+        "better_idea": 3,
+        "simplest": 1
+      },
+      "cost": 0.458,
+      "ms": 160762,
+      "transcript": [
+        {
+          "who": "owner",
+          "text": "returns ka screen chahiye: order chuno, uske items aaye, return create ho"
+        },
+        {
+          "who": "luke",
+          "text": "Return ka apna screen bana dunga: order search karo, uske items niche aa jaayenge, phir item, quantity aur reason chunke return request bana sakte ho. Ye naya tracking Shopify ke return se alag rahega kyunki waha se sirf copy aati hai, yahan se naya return Shopify me nahi jaata — par aapke operations ke liye pura kaam yahi karega: QC pass/fail ke baad hi refund ya exchange decide hoga. Ek behtar idea: reason fixed list se chunwaayein (size/fit, damaged, wrong item, etc.) aur refund se pehle exchange ka option dikhayein — isse sales bhi bachegi aur pata chalega kaunsa product sabse zyada wapas aa raha hai. Chahiye ye? Aur COD return me refund se pehle bank/UPI detail bhi lena hai kya? Banau?"
+        },
+        {
+          "who": "owner",
+          "text": "Luke, theek hai order search aur items niche aana — bas ek baat: mujhe sirf return log karna hai phone pe, baaki sab complicated mat karo. Exchange ka option, QC pass/fail, refund decide karna — ye sab baad me dekh lunga. Aur COD wala bank detail abhi mat add karo, pehle return tracking ko simple rakho. Bas: order chuno, item chuno, quantity aur reason likho, request ban jao. Bas itna chahiye."
+        },
+        {
+          "who": "luke",
+          "text": "Ek simple return-logging screen banaunga: order number daalo, uske items aa jaayenge, item chun ke quantity aur reason likho, request ban jayegi.\nStaff order number type karenge, uske items niche aa jaayenge, ek item chunke quantity aur reason likh ke return log ho jayega — exchange, QC pass/fail aur refund decide karna abhi shaamil nahi, sirf simple logging.\n[A design, with a Build button:]\n- NEW_MODULE \"Order Items\": Lets the return screen look up any order's items straight from Shopify's own order data, so nothing has to be retyped.\n  fields: Order [order_number] (text) · Placed [placed_at] (date) · Customer [customer_name] (text) · Product [title] (text) · Variant [variant_title] (text) · SKU [sku] (text) · Qty [quantity] (number) · Price [price] (currency) · Line total [line_total] (currency) · Status [status] (badge)\n- NEW_MODULE \"Returns\": Gives a single simple screen: type the order number, pick the item that's coming back, enter quantity and reason, and the return is logged — nothing else.\n  fields: Order Item [item] (link) · Quantity [quantity] (number) · Reason [reason] (longtext)"
+        },
+        {
+          "who": "owner",
+          "text": "(taps Build)"
+        },
+        {
+          "who": "app",
+          "text": "Built."
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "pass_rate": 0,
+    "said_rate": 0.4,
+    "avg_scores": {
+      "discussed": 2,
+      "plain": 3,
+      "better_idea": 3,
+      "simplest": 1
+    },
+    "signs_total": 1,
+    "cost": 0.458,
+    "avg_ms": 160762
+  }
+}

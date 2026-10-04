@@ -394,8 +394,9 @@ critic (`critique` in `src/lib/ai.ts`, beside `findGaps`), inside the same loop 
 use: it is given the owner's words, what Luke understood (the plan block) and what will
 actually be built (`describeBuild`), and answers `{unmet, redo}` — what is missing in the
 owner's own words, and one line to the designer when what is missing is the point of the
-request and can be built. A `redo` sends the design back once a turn (it spends one of the
-repair attempts); a second verdict stands. The design it sent back is kept: if the redo
+request and can be built. A `redo` sends the design back once a turn, critic and review
+gate together, on an attempt of its own beside the two repairs: when it shared them, a
+design that took two repairs could not be sent back at all (4 Oct). A second verdict stands. The design it sent back is kept: if the redo
 never passes the gates, that design is the answer, with what the critic found missing as
 its unmet. It was once thrown away, and a turn with a good design ended in "Luke could not
 get this right" (the packing eval, 2026-09-28). Told as a `critic` step ("Sent the design back…" /
