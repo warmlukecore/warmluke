@@ -289,6 +289,13 @@ function NavHeading({ text, action }: { text: string; action?: React.ReactNode }
   );
 }
 
+/** How long one read of a section serves everyone who asks for it again. */
+const SECTION_READ_KEPT_MS = 5_000;
+/** How many sections are read at once, however many ask. */
+const SECTION_READS_AT_ONCE = 4;
+/** What a design card's preview reads of the section it changes: it draws three. */
+const PEEK_ROWS = 10;
+
 export default function AppShell({ projectId, ownerEmail }: { projectId: string; ownerEmail: string }) {
   const router = useRouter();
   // Three states, not two. `undefined` is "not asked yet"; `null` is
@@ -1276,7 +1283,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // this app; the store's rows with the owner's fields beside them, or
   // their own rows; worked out by that section's own computed columns.
   const loadSection = useCallback(
-    async (ref: string, match?: { field: string; code: string }) => {
+    async (ref: string, match?: { field: string; code: string }, limit = 500) => {
       // Read from the database, not the sidebar's list: a screen reads
       // the moment it opens, and opened straight from a link the list
       // was still loading, so every section was "not there".
@@ -1323,7 +1330,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           supabase,
           store,
           table,
-          500,
+          limit,
           undefined,
           null,
           null,
@@ -1333,7 +1340,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       } else {
         let q = supabase.from("records").select("id, data").eq("module_id", mod.id).is("store_row_id", null);
         if (match) q = q.in(`data->>${match.field}`, codeSpellings(match.code));
-        const { data, error } = await q.order("created_at", { ascending: false }).limit(500);
+        const { data, error } = await q.order("created_at", { ascending: false }).limit(limit);
         if (error) throw new Error(error.message);
         rows = (data ?? []).map((r) => ({ id: r.id as string, data: (r.data ?? {}) as Record<string, unknown> }));
       }
@@ -1342,16 +1349,52 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     },
     [projectId, storeId]
   );
-  const readSection = useCallback(
-    async (ref: string, match?: { field: string; code: string }) => {
-      const { schema, rows } = await loadSection(ref, match);
-      return rows.map((r) => ({ id: r.id, data: withComputed(schema.columns, r.data) }));
+  // One read of a section shared by everyone who asks for it at once, kept
+  // a few seconds, and at most four sections read at a time. A thread of
+  // design cards each drew its preview over the same store list: fifteen
+  // cards asked for 500 orders thirty-two times at once, and Tanish's
+  // longer threads ran the browser out of connections
+  // (ERR_INSUFFICIENT_RESOURCES, 4 Oct).
+  const sectionReads = useRef(new Map<string, { at: number; read: ReturnType<typeof loadSection> }>());
+  const readsRunning = useRef({ now: 0, waiting: [] as Array<() => void> });
+  const loadShared = useCallback(
+    (ref: string, match?: { field: string; code: string }, limit?: number) => {
+      const key = JSON.stringify([ref, match ?? null, limit ?? null]);
+      const kept = sectionReads.current.get(key);
+      if (kept && Date.now() - kept.at < SECTION_READ_KEPT_MS) return kept.read;
+      const gate = readsRunning.current;
+      const read = (async () => {
+        if (gate.now >= SECTION_READS_AT_ONCE) await new Promise<void>((go) => gate.waiting.push(go));
+        gate.now++;
+        try {
+          return await loadSection(ref, match, limit);
+        } finally {
+          gate.now--;
+          gate.waiting.shift()?.();
+        }
+      })();
+      // A read that failed is not kept: the next ask tries again.
+      read.catch(() => sectionReads.current.delete(key));
+      sectionReads.current.set(key, { at: Date.now(), read });
+      return read;
     },
     [loadSection]
   );
+  // Another project or store reads afresh.
+  useEffect(() => {
+    sectionReads.current.clear();
+  }, [loadSection]);
+  const readSection = useCallback(
+    async (ref: string, match?: { field: string; code: string }) => {
+      const { schema, rows } = await loadShared(ref, match);
+      return rows.map((r) => ({ id: r.id, data: withComputed(schema.columns, r.data) }));
+    },
+    [loadShared]
+  );
   // The section a proposal changes, as it is: its preview is drawn over
   // it, read once, rather than over whichever section happens to be open.
-  const peekSection = useCallback((id: string) => loadSection(id), [loadSection]);
+  // A preview draws a few rows (PREVIEW_ROWS), so it reads a few, not 500.
+  const peekSection = useCallback((id: string) => loadShared(id, undefined, PEEK_ROWS), [loadShared]);
 
   const patchRow = useCallback((row: Record<string, unknown> | undefined, moduleId: string | null): boolean => {
     const id = row && typeof row.id === "string" ? row.id : null;
