@@ -164,14 +164,21 @@ const short = (v, n = 300) => {
   const s = typeof v === "string" ? v : JSON.stringify(v ?? null);
   return s.length > n ? `${s.slice(0, n)}…` : s;
 };
-const columnLine = (c) =>
-  `${c?.label ?? c?.field} [${c?.field}] (${c?.type}${Array.isArray(c?.options) ? `: ${c.options.join(" / ")}` : ""}${c?.hidden ? ", hidden from the table" : ""}${c?.compute ? ", worked out when read" : ""})`;
+const columnLine = (c, keys = true) =>
+  `${c?.label ?? c?.field}${keys ? ` [${c?.field}]` : ""} (${c?.type}${Array.isArray(c?.options) ? `: ${c.options.join(" / ")}` : ""}${c?.hidden ? ", hidden from the table" : ""}${c?.compute ? ", worked out when read" : ""})`;
 
-/** A design as lines: what the simulated owner sees on a card, and the transcript keeps. */
+/**
+ * A design as lines: what the simulated owner sees on a card, and the
+ * transcript keeps. Labels only, as the card shows them: with each key
+ * beside its label, the grader marked Luke down for words the owner
+ * never reads (4 Oct). The kind in brackets is for the reader.
+ */
 export function planLines(plans) {
   return plans.flatMap((p) => [
     `- ${p?.changeType}${p?.newModule?.nav_label ? ` "${p.newModule.nav_label}"` : ""}: ${p?.explanation ?? ""}`,
-    ...(p?.newSchema?.columns?.length ? [`  fields: ${p.newSchema.columns.map(columnLine).join(" · ")}`] : []),
+    ...(p?.newSchema?.columns?.length
+      ? [`  fields: ${p.newSchema.columns.map((c) => columnLine(c, false)).join(" · ")}`]
+      : []),
     ...(p?.automation?.name ? [`  rule: ${p.automation.name}`] : []),
   ]);
 }
@@ -211,7 +218,7 @@ export function describeBuild(sections, rules) {
   const names = new Map(sections.map((s) => [s.id, s.nav_label]));
   for (const s of sections) {
     out.push(`Section "${s.nav_label}"${s.source ? ` (rows from the store's ${s.source})` : ""}`);
-    if (s.columns?.length) out.push(`  Fields: ${s.columns.map(columnLine).join(" · ")}`);
+    if (s.columns?.length) out.push(`  Fields: ${s.columns.map((c) => columnLine(c)).join(" · ")}`);
     const f = s.features ?? {};
     const views = [f.view, ...(Array.isArray(f.tabs) ? f.tabs : [])].filter(Boolean);
     if (views.length) {
@@ -378,7 +385,7 @@ A perfect score is suspicious. Before giving any 5, look again for what could be
 
 Scores, 1 to 5:
 - discussed: did Luke say the plan and get the owner's yes before building? 1 built straight away; 5 said the plan, asked only what was unclear, built on the yes.
-- plain: were Luke's words plain for an owner, with no field names, types or technical terms?
+- plain: were Luke's words plain for an owner, with no field names, types or technical terms? The lines under "[A design…]" are the card the app draws, not Luke's words: the owner sees each field's label there, and the kind in brackets is only for you.
 - better_idea: did Luke offer a simpler or better way than what was literally asked, where there was one? 3 when there was nothing better to offer.
 - simplest: is what was built the simplest design that does the job: fewest fields, no fact kept twice, no rule where a setting does, no written screen where a table does?
 

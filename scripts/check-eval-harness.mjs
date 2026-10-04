@@ -321,6 +321,24 @@ check(
   )
 );
 
+{
+  const card = replyText({
+    type: "plans",
+    plans: [
+      {
+        changeType: "NEW_MODULE",
+        newModule: { nav_label: "Shipments" },
+        newSchema: { columns: [{ field: "is_rto", label: "RTO", type: "boolean" }] },
+        explanation: "x",
+      },
+    ],
+  });
+  check(
+    "the card shows a field by its label, as the app does (4 Oct)",
+    card.includes("RTO (boolean)") && !card.includes("[is_rto]")
+  );
+}
+
 console.log("\nthe cap");
 const m = capMeter(1);
 let refused = null;
