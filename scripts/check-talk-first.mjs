@@ -80,6 +80,8 @@ const AS_PLANS = JSON.stringify({
   next: [],
 });
 let designAs = "blueprint";
+// The planner with nothing left to talk over: its "say" empty.
+let planSilent = false;
 
 // The stand-in answers each job by what its instructions say it is.
 let calls = [];
@@ -101,7 +103,9 @@ globalThis.fetch = async (input, init) => {
   sent.push({ job, text: JSON.stringify(body.messages ?? []) });
   const text =
     job === "plan"
-      ? PLAN
+      ? planSilent
+        ? JSON.stringify({ ...JSON.parse(PLAN), unsure: [], say: "" })
+        : PLAN
       : job === "critic"
         ? '{"unmet": [], "redo": null}'
         : job === "gap"
@@ -177,6 +181,21 @@ try {
       asPlans.reply.type === "plans" &&
       asPlans.reply.approved === true &&
       calls.filter((c) => c === "design").length === 1
+  );
+
+  // Their changes and a "bana do" in one long line, which no short yes
+  // matches: with the planner having nothing more to say, it is the yes.
+  planSilent = true;
+  designAs = "plans";
+  const withChanges = await turn(
+    "Bas itna chahiye: har return pe RTO tick, aur note sirf row kholne pe. Baaki baad mein. Bas iska screen bana do",
+    thread
+  );
+  planSilent = false;
+  designAs = "blueprint";
+  check(
+    "a long answer with their changes, and nothing left to talk over, is built as their yes",
+    withChanges.ok && withChanges.reply.type === "plans" && withChanges.reply.approved === true
   );
 
   console.log("\nanything else they say plans again");

@@ -712,7 +712,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // thread as kept, never by a model.
   const agreed = lookups && !resume ? proposalOf(history) : null;
   const goAhead = !!agreed && isGoAhead(message);
-  const approved = resume?.approved ?? (goAhead || (!!lookups && wantsItBuilt(message)));
+  let approved = resume?.approved ?? (goAhead || (!!lookups && wantsItBuilt(message)));
   let road: Road =
     resume?.road ??
     // After a plan in words, an answer to its questions is more of the
@@ -807,6 +807,14 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     tell({ step: "plan", goal: agreed.goal });
   }
   if (road === "design") await plan();
+  // An answer to the plan said in words that leaves nothing more to talk
+  // over is their go-ahead, changes and all ("Bas iska screen bana do",
+  // eval 4 Oct): the planner said nothing back, so what it now understood
+  // is built. Before, it went to the design unagreed, a new section was
+  // refused for want of a blueprint, and the turn ended in "could not".
+  if (!approved && !!agreed && !resume && road === "design" && understood.intent && !understood.intent.say.trim()) {
+    approved = true;
+  }
 
   // The plan, said in words, and nothing drawn or built until they say
   // yes. Not for a design already on screen (a tweak to it), not when

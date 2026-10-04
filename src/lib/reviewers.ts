@@ -136,7 +136,7 @@ export function parseOps(raw: string): OpsView | null {
 export function opsBlock(view: OpsView | null): string {
   if (!view || (view.ideas.length === 0 && view.watch_out.length === 0)) return "";
   const lines = [
-    `AN OPERATOR WHO KNOWS STORES LIKE THIS SUGGESTS — weigh it. If an idea is better than what they asked for, say it in "say" as one plain sentence and ask whether they want it; never build it unasked.`,
+    `AN OPERATOR WHO KNOWS STORES LIKE THIS SUGGESTS — weigh it. If an idea is better than what they asked for, say it in "say" as one plain sentence and ask whether they want it; never build it unasked. The plan itself stays what they asked for: no idea and no watch-out goes into it until they say yes to it, and at most one idea is offered ("Luke, bahut kuch bol diya", eval 4 Oct).`,
     ...view.ideas.map(
       (i) => `- ${i.idea}${i.why ? ` — ${i.why}` : ""}${i.from_data ? ` (their data: ${i.from_data})` : ""}`
     ),
