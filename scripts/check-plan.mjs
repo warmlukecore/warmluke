@@ -65,6 +65,16 @@ check(
   "words and numbers are left as they are",
   plainSay("Ek behtar idea: 3 baar call", labels) === "Ek behtar idea: 3 baar call"
 );
+check(
+  "an email, a domain and a path are left whole",
+  plainSay("mail john_doe@gmail.com about my_shop.myshopify.com and /api/luke_skills", labels) ===
+    "mail john_doe@gmail.com about my_shop.myshopify.com and /api/luke_skills"
+);
+check(
+  "a key ending a sentence still becomes words",
+  plainSay("A Stock section over your inventory_levels, checked daily.", labels) ===
+    "A Stock section over your inventory levels, checked daily."
+);
 
 console.log(fails.length === 0 ? "\nthe plan step reads back what was understood" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

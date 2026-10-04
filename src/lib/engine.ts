@@ -1205,6 +1205,12 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
 
   // Agreed in words first: the chat builds it without asking again.
   if (approved && (parsed.reply.type === "plans" || parsed.reply.type === "blueprint")) parsed.reply.approved = true;
+  // No column's key in what the owner reads, the design's and an answer's
+  // words as much as the plan's ("a Stock section over your
+  // inventory_levels", eval 4 Oct). The raw reply the thread replays keeps them.
+  if ("message" in parsed.reply && typeof parsed.reply.message === "string") {
+    parsed.reply.message = plainSay(parsed.reply.message, columnLabels(modules, schemas));
+  }
   // What the reviewers said of the design that is the answer, kept on the
   // reply for its card. Nothing when they said nothing: the reply is then
   // exactly what it was before the gate.

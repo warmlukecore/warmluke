@@ -1,0 +1,203 @@
+{
+  "label": "after2",
+  "started": "2026-10-04T05:35:08.294Z",
+  "design_model": "claude-sonnet-5",
+  "sim_model": "claude-haiku-4-5",
+  "grade_model": "claude-haiku-4-5",
+  "cap": 1.1,
+  "spent": 0.7944,
+  "partial": true,
+  "cases": [
+    {
+      "id": "cod-confirm",
+      "title": "Confirm cash-on-delivery orders by phone",
+      "turns": 3,
+      "built": true,
+      "signs": {
+        "workarounds": [],
+        "jargon": [],
+        "proposed_first": true
+      },
+      "criteria": [
+        {
+          "text": "there is a status with To call, Confirmed and Cancelled",
+          "met": true,
+          "said": true,
+          "evidence": "Call status [call_status] (dropdown: To call / Confirmed / Cancelled)"
+        },
+        {
+          "text": "a new cash-on-delivery order starts at To call",
+          "met": true,
+          "said": true,
+          "evidence": "Jaise hi koi naya COD order Shopify se aata hai, woh khud-ba-khud 'To call' mein daal diya jaata hai"
+        },
+        {
+          "text": "a filter, tab or view shows only the orders still to call",
+          "met": true,
+          "said": true,
+          "evidence": "Filters: Call status (To call / Confirmed / Cancelled)"
+        },
+        {
+          "text": "the plan is said in plain words before anything is built, with no field names or types",
+          "met": true,
+          "said": true,
+          "evidence": "Main ek COD confirmation queue bana sakta hoon jahan har COD order 'to call' mein aayega, aap call karke Confirm, Cancel ya Unreachable mark karenge"
+        },
+        {
+          "text": "ends by asking whether to build",
+          "met": true,
+          "said": true,
+          "evidence": "Build kar doon?"
+        }
+      ],
+      "must_not": [
+        {
+          "text": "cancelling an order in Shopify without the owner's yes",
+          "hit": false,
+          "evidence": ""
+        },
+        {
+          "text": "a rule that writes a status into every row on a schedule",
+          "hit": false,
+          "evidence": ""
+        },
+        {
+          "text": "jargon such as \"boolean\" or \"set_fields\" in what the owner reads",
+          "hit": false,
+          "evidence": ""
+        }
+      ],
+      "scores": {
+        "discussed": 5,
+        "plain": 4,
+        "better_idea": 4,
+        "simplest": 3
+      },
+      "cost": 0.401,
+      "ms": 117579,
+      "transcript": [
+        {
+          "who": "owner",
+          "text": "COD orders confirm karne ka process chahiye, call karke confirm ya cancel"
+        },
+        {
+          "who": "luke",
+          "text": "Main ek COD confirmation queue bana sakta hoon jahan har COD order 'to call' mein aayega, aap call karke Confirm, Cancel ya Unreachable mark karenge, aur attempts + timing track hoga taaki koi order bina decision ke pending na rahe. Ek behtar idea: repeat buyers jinka COD delivery history already achha hai (jaise aapke top customers mein Aarav Sharma, Priya Nair) unko auto-confirm rakhein, sirf first-time ya high-value COD orders pe hi call karein — isse calling time bachega. Chahiye ye? Agar haan, to batayein: unreachable order kitni der hold ho phir flag/cancel ho, retries ke beech kitna gap ho, aur high-value ka threshold kya rahe. Build kar doon?"
+        },
+        {
+          "who": "owner",
+          "text": "Luke, auto-confirm mat karo. Maine kaha na—call karke confirm chahiye, sirf naye COD orders. Aap decide mat karo ki kaunsa order call nahi chahiye. Mujhe bas queue chahiye jahan 'To call' likha ho, mera do log dekhen aur mark karen—Confirmed ya Cancelled. Bas itna hi. Baaki sab mujhe decide karne do."
+        },
+        {
+          "who": "luke",
+          "text": "Samajh gaya — bas itna: naya COD order aate hi 'To call' mein aa jaayega, aapke do log usse dekh kar Confirmed ya Cancelled mark karenge, koi auto-confirm ya retry logic nahi, koi risk-based decision nahi. Ek cheez batani thi: agar kisi order ko mark karna bhool gaye to woh queue mein hi pending dikhता rahega, bina kisi timeout ke — theek hai? Operator ka ek suggestion hai: high-value ya bina phone/pincode wale orders ko queue mein highlight kar dein taaki risky order easily dikh jaaye — chahenge ye? Build kar doon?"
+        },
+        {
+          "who": "owner",
+          "text": "haan bana do"
+        },
+        {
+          "who": "luke",
+          "text": "Who tapped Confirmed or Cancelled is already recorded on the row itself — every row keeps who last changed it — so this needs no typed field, and I cannot set one from a button since a rule or action has no way to read who is saving. I'm keeping the queue as designed: a 'To call' list with one-tap Confirmed/Cancelled, and who did it is visible on the row's own history.\n[The design, built on the owner's yes:]\n- NEW_MODULE \"COD Calls\": Orders ka live store-copy ek COD-calling queue ban jaata hai, jisme Confirmed/Cancelled mark karne ke one-tap button hain; kisne mark kiya yeh row ki apni history mein already dikhta hai, isliye alag se field nahi chahiye.\n  fields: Order [order_number] (text) · Placed [placed_at] (date) · Customer [customer_name] (text) · Phone [customer_phone] (phone) · Total [total] (currency) · Before refunds [total_original] (currency) · Goods [subtotal] (currency) · Shipping [shipping] (currency) · Tax [tax] (currency) · Discount [discount] (currency) · Currency [currency] (text) · Status [status] (badge) · Fulfilment [fulfilment_status] (badge) · Payment [gateway] (badge) · City [ship_city] (text) · State [ship_state] (text) · Discounts [discount_codes] (text) · Call status [call_status] (dropdown: To call / Confirmed / Cancelled) · Marked on [marked_on] (date)\n- AUTOMATION_ADD: Jaise hi koi naya COD order Shopify se aata hai, woh khud-ba-khud 'To call' mein daal diya jaata hai.\n  rule: Queue new COD orders for calling"
+        },
+        {
+          "who": "app",
+          "text": "Built."
+        }
+      ]
+    },
+    {
+      "id": "low-stock",
+      "title": "Tell me when stock runs low",
+      "turns": 2,
+      "built": true,
+      "signs": {
+        "workarounds": [],
+        "jargon": [
+          "inventory_levels"
+        ],
+        "proposed_first": true
+      },
+      "criteria": [
+        {
+          "text": "there is an alert rule on stock with 5 as the threshold",
+          "met": true,
+          "said": true,
+          "evidence": "Alert on low stock"
+        },
+        {
+          "text": "the plan is said in plain words before anything is built, with no field names or types",
+          "met": false,
+          "said": false,
+          "evidence": "Luke said \"a low-stock view on your Stock list, showing each product+variant+location under 5 units\" and \"inventory_levels\" and \"daily check\" but then asked \"want that instead, or just the flat under-5 alert?\" before the owner said yes. However, Luke then offered \"days-of-cover\" which uses field nam"
+        },
+        {
+          "text": "ends by asking whether to build",
+          "met": true,
+          "said": true,
+          "evidence": "Luke offered \"instead of a flat number, alert on days-of-cover (stock ÷ recent daily sales) so fast movers like Brass Diya Set or Jute Tote Bag flag before they actually run out, while slow stock sitting at 4-5 doesn't spam you\""
+        }
+      ],
+      "must_not": [
+        {
+          "text": "a field written into every product every hour",
+          "hit": false,
+          "evidence": ""
+        },
+        {
+          "text": "a promise to send an email or a message the app cannot send",
+          "hit": false,
+          "evidence": ""
+        },
+        {
+          "text": "jargon such as \"boolean\" or \"set_fields\" in what the owner reads",
+          "hit": true,
+          "evidence": "Luke said \"every morning at 7am, checks all stock\" and the rule shows \"every daily at 07:00\". Luke also used field names and technical terms in the design: \"inventory_levels\", \"tracked variant\", \"stock_state\", \"available\" in the conversation before the app was built. However, in the app itself shown"
+        }
+      ],
+      "scores": {
+        "discussed": 3,
+        "plain": 2,
+        "better_idea": 4,
+        "simplest": 4
+      },
+      "cost": 0.1555,
+      "ms": 56373,
+      "transcript": [
+        {
+          "who": "owner",
+          "text": "tell me when any product's stock goes below 5"
+        },
+        {
+          "who": "luke",
+          "text": "Main plan: a low-stock view on your Stock list, showing each product+variant+location under 5 units (location kept separate, so Silk Saree at 0 in Main warehouse shows even if Mumbai store still has 2), with untracked variants left out so they don't show false zeroes. Ek behtar idea: instead of a flat number, alert on days-of-cover (stock ÷ recent daily sales) so fast movers like Brass Diya Set or Jute Tote Bag flag before they actually run out, while slow stock sitting at 4-5 doesn't spam you — want that instead, or just the flat under-5 alert? Also, should it alert fresh each sync while still low, or just once? Want me to build it?"
+        },
+        {
+          "who": "owner",
+          "text": "No, keep it simple — just tell me when stock drops below 5. Don't overthink it with the days-of-cover thing. And yeah, alert me each time it happens or once a day, whatever's easier. Just build the under-5 view."
+        },
+        {
+          "who": "luke",
+          "text": "I'll build a Stock section over your inventory_levels, showing every variant/location under 5 available, with a daily check that alerts you while it stays low.\n[The design, built on the owner's yes:]\n- NEW_MODULE \"Stock\": Creates a Stock section showing your live Shopify inventory, with a counter for how many variants are currently under 5 units.\n  fields: Product [product] (text) · Variant [variant] (text) · SKU [sku] (text) · Location [location_name] (text) · Committed [committed] (number) · Available [available] (number) · On hand [on_hand] (number) · Incoming [incoming] (number) · State [stock_state] (badge)\n- AUTOMATION_ADD: Every morning at 7am, checks all stock and alerts you on any tracked variant with fewer than 5 available at a location, until it's restocked above that.\n  rule: Alert on low stock"
+        },
+        {
+          "who": "app",
+          "text": "Built."
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "pass_rate": 0.5,
+    "said_rate": 0.875,
+    "avg_scores": {
+      "discussed": 4,
+      "plain": 3,
+      "better_idea": 4,
+      "simplest": 3.5
+    },
+    "signs_total": 1,
+    "cost": 0.5565,
+    "avg_ms": 86976
+  }
+}

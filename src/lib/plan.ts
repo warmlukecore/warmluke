@@ -148,5 +148,9 @@ export function agreedBlock(intent: DesignIntent): string {
  * any other snake_case word its plain words.
  */
 export function plainSay(say: string, labels: Map<string, string>): string {
-  return say.replace(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/g, (key) => labels.get(key) ?? key.replace(/_/g, " "));
+  // Not inside an email, an address or a file name: john_doe@… and my_shop.myshopify.com stay.
+  return say.replace(
+    /(?<![\w@./-])[a-z][a-z0-9]*(?:_[a-z0-9]+)+(?![\w@./-])/g,
+    (key) => labels.get(key) ?? key.replace(/_/g, " ")
+  );
 }
