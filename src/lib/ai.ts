@@ -2039,7 +2039,7 @@ export function validatePlan(
     const src = plan.newModule?.source_table ?? null;
     if (src != null) {
       if (!isStoreTable(src)) {
-        err(errors, `"${src}" is not one of the store's tables.`);
+        err(errors, `"${src}" is not one of the store's tables. One of: ${Object.keys(STORE_TABLES).join(", ")}.`);
       } else {
         const allowed = storeTableSchema(src).columns.map((c) => c.field);
         // Two things may be added to the store's columns. A computed
@@ -2635,6 +2635,8 @@ function parsePlans(
   // wl.read's only one) is one of this app's, or one this design makes.
   // The Returns screen read "#return-order-items", which never was: every
   // order loaded with no items, and no return could ever be made (3 Oct).
+  // A screen naming one of the store's lists is told how to reach it: a
+  // design read "#order_line_items" three times over and was never built (4 Oct).
   const known = [...modules, ...[...pendingSlugs].map((n) => ({ id: `#${n}`, name: n, nav_label: n }))];
   for (const p of raw as AssistantPlan[]) {
     const f = p?.features;
@@ -2643,10 +2645,14 @@ function parsePlans(
       .filter((h): h is string => typeof h === "string");
     for (const html of screens)
       for (const ref of sectionsRead(html))
-        if (!findSection(known, ref))
+        if (!findSection(known, ref)) {
+          const list = ref.replace(/^#/, "");
           errors.push(
-            `The screen reads "${ref}", which is not a section in this app. The sections are: ${modules.map((m) => `#${m.name}`).join(", ") || "none yet"}. Read one of them, or create it in this same design.`
+            isStoreTable(list)
+              ? `The screen reads "${ref}", the store's own ${list} list, which no section shows. Create a section over it in this same design (a NEW_MODULE with "source_table": "${list}") and read that section by its #name.`
+              : `The screen reads "${ref}", which is not a section in this app. The sections are: ${modules.map((m) => `#${m.name}`).join(", ") || "none yet"}. Read one of them, or create it in this same design.`
           );
+        }
   }
 
   // A field of theirs taken off a section, once nothing reads it: not its

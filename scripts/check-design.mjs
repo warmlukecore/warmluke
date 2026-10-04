@@ -795,5 +795,22 @@ console.log("\na design that claims to have happened already");
   check("and a sentence about their rows, not our work", one("Shows every order that has been paid.").ok);
 }
 
+console.log("\na list the store does not have is refused, naming the ones it does (4 Oct)");
+{
+  const got = run([
+    {
+      changeType: "NEW_MODULE",
+      targetModuleId: null,
+      newModule: { name: "return-items", nav_label: "Return items", icon: "table", source_table: "return_line_items" },
+      newSchema: null,
+      newRecords: null,
+      explanation: "The items of each return.",
+    },
+  ]);
+  const said = (got.errors ?? []).join(" ");
+  check("refused", !got.ok && said.includes('"return_line_items" is not one of'));
+  check("and the store's lists are named", said.includes("order_line_items") && said.includes("refunds"));
+}
+
 console.log(fails.length === 0 ? "\na design says what it means" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

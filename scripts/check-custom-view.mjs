@@ -213,6 +213,11 @@ console.log("\nthe sections a screen reads are there (Returns, 3 Oct)");
       missing.errors.join(" ").includes('"#return-order-items"') &&
       missing.errors.join(" ").includes("#orders")
   );
+  const store = design("#order_line_items").errors.join(" ");
+  check(
+    "one of the store's lists is named as such, with the section over it to make (4 Oct)",
+    store.includes(`"source_table": "order_line_items"`)
+  );
   const here = design("Orders");
   check("one that is there, however it is spelled, is taken", here.ok);
   if (!here.ok) console.log("     →", here.errors);
