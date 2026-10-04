@@ -1,0 +1,24 @@
+{
+  "label": "after4",
+  "started": "2026-10-04T17:58:01.768Z",
+  "design_model": "claude-sonnet-5",
+  "sim_model": "claude-haiku-4-5",
+  "grade_model": "claude-haiku-4-5",
+  "cap": 0.5,
+  "spent": 0.4891,
+  "partial": true,
+  "cases": [],
+  "summary": {
+    "pass_rate": 0,
+    "said_rate": 0,
+    "avg_scores": {
+      "discussed": 0,
+      "plain": 0,
+      "better_idea": 0,
+      "simplest": 0
+    },
+    "signs_total": 0,
+    "cost": 0,
+    "avg_ms": 0
+  }
+}

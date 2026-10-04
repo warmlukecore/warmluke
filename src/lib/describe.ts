@@ -900,7 +900,9 @@ export function reuseQuestion(
  * with rows nobody typed is not — a connected assistant seeded four
  * "example" order lines it had invented, and they sat beside the real
  * orders looking like data. So the section may stand; the made-up
- * rows may not. Said back with the list to build over instead.
+ * rows may not. Said back with that first: told "build it over the
+ * store's list instead" first, a design for logging returns moved onto
+ * the store's returns, which no one can add a return to (4 Oct).
  */
 /** Whether a new section keeps any of the fields of the store list its name points at. */
 function keepsStoreFields(p: AssistantPlan): boolean {
@@ -936,7 +938,7 @@ export function seededCopies(plans: AssistantPlan[], store: StoreFacts | null): 
       );
     if (!seededHere) continue;
     out.push(
-      `"${p.newModule.nav_label}" would be filled with rows you made up, beside the store's own. ${overlap[0]} Build it over the store's list instead — set "source_table" and send newRecords as null — or leave it empty for the owner to fill.`
+      `"${p.newModule.nav_label}" would be filled with rows you made up, beside the store's own. ${overlap[0]} Send newRecords as null and keep the section for the owner to fill. Only if they want to see the store's own rows rather than add their own, build it over that list instead (set "source_table").`
     );
   }
   return out;

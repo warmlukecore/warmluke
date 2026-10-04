@@ -6,7 +6,7 @@
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-plan.mjs
 
-import { intentBlock, parseIntent, plainSay } from "../src/lib/plan.ts";
+import { intentBlock, parseIntent, plainReply, plainSay } from "../src/lib/plan.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -75,6 +75,39 @@ check(
   plainSay("A Stock section over your inventory_levels, checked daily.", labels) ===
     "A Stock section over your inventory levels, checked daily."
 );
+
+// The rest of a card as the owner reads it ("an 'internal_status' field", 4 Oct).
+{
+  const card = {
+    type: "blueprint",
+    message: "Returns par nazar.",
+    blueprint: {
+      summary: "Har return ke saath ek 'internal_status' field.",
+      plans: [{ newSchema: { columns: [{ field: "internal_status", label: "Return status", type: "dropdown" }] } }],
+      workflow: [{ step: "staff badle internal_status", who: "packing team" }],
+      next: [{ label: "total_spent bhi dikhao", prompt: "show total_spent too" }],
+    },
+  };
+  plainReply(card, labels);
+  check("a card's summary names its own new column by label", card.blueprint.summary.includes("'Return status'"));
+  check(
+    "and so do its steps and next steps",
+    /Return status/.test(card.blueprint.workflow[0].step) && card.blueprint.next[0].label === "Spent bhi dikhao"
+  );
+  check("what a next step sends keeps its key", card.blueprint.next[0].prompt === "show total_spent too");
+  const ask = {
+    type: "clarify",
+    message: "x",
+    questions: [{ id: "q", question: "orders_count kitna?", why: "is_rto ke liye", suggestions: ["total_spent"] }],
+  };
+  plainReply(ask, labels);
+  check(
+    "a question, its why and its suggestions too",
+    ask.questions[0].question === "Orders kitna?" &&
+      ask.questions[0].why === "is rto ke liye" &&
+      ask.questions[0].suggestions[0] === "Spent"
+  );
+}
 
 console.log(fails.length === 0 ? "\nthe plan step reads back what was understood" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

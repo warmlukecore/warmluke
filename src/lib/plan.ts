@@ -14,6 +14,7 @@
 // Callers: src/lib/engine.ts (runTurn), scripts/check-plan.mjs.
 
 import { stripFences } from "@/lib/ai";
+import type { AssistantReply } from "@/lib/types";
 
 export type DesignIntent = {
   /** One line: the outcome the owner wants, in their words. */
@@ -153,4 +154,31 @@ export function plainSay(say: string, labels: Map<string, string>): string {
     /(?<![\w@./-])[a-z][a-z0-9]*(?:_[a-z0-9]+)+(?![\w@./-])/g,
     (key) => labels.get(key) ?? key.replace(/_/g, " ")
   );
+}
+
+/**
+ * plainSay over everything of a reply the owner reads, in place: its
+ * message, and a card's summary, steps, questions and next steps (an
+ * "'internal_status' field" reached the owner in a blueprint's summary,
+ * 4 Oct). Its own new columns name themselves too. What a next step
+ * sends, and the plans, keep their keys.
+ */
+export function plainReply(r: AssistantReply, labels: Map<string, string>): void {
+  const known = new Map(labels);
+  for (const p of r.type === "blueprint" ? r.blueprint.plans : r.type === "plans" ? r.plans : [])
+    for (const c of p.newSchema?.columns ?? []) if (c.label && !known.has(c.field)) known.set(c.field, c.label);
+  const plain = (s: string) => plainSay(s, known);
+  if (typeof r.message === "string") r.message = plain(r.message);
+  if (r.type === "blueprint") {
+    r.blueprint.summary = plain(r.blueprint.summary);
+    for (const w of r.blueprint.workflow ?? []) w.step = plain(w.step);
+  }
+  if (r.type === "clarify")
+    for (const q of r.questions) {
+      q.question = plain(q.question);
+      if (q.why) q.why = plain(q.why);
+      if (q.suggestions) q.suggestions = q.suggestions.map(plain);
+    }
+  const next = r.type === "blueprint" ? r.blueprint.next : r.type === "clarify" ? undefined : r.next;
+  for (const n of next ?? []) n.label = plain(n.label);
 }

@@ -44,6 +44,10 @@ console.log("what is refused");
   const [why] = seededCopies([{ ...section("Order SKU Log"), newRecords: rows }], store);
   check("a copy of a store list seeded with made-up rows", !!why && /rows you made up/.test(why));
   check("says which list it copies and what to do instead", /order/i.test(why) && /source_table/.test(why));
+  check(
+    "dropping the rows comes first, the store's list only if that is what they want (4 Oct)",
+    why.indexOf("newRecords as null") < why.indexOf("source_table")
+  );
 
   const seededLater = seededCopies(
     [section("Order SKU Log"), { changeType: "RECORD_SEED", targetModuleId: "#order-sku-log", newRecords: rows }],

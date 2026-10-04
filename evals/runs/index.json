@@ -70,5 +70,41 @@
       "cost": 0.4707,
       "avg_ms": 176390
     }
+  },
+  {
+    "file": "20261004-1758-after4.json",
+    "label": "after4",
+    "started": "2026-10-04T17:58:01.768Z",
+    "summary": {
+      "pass_rate": 0,
+      "said_rate": 0,
+      "avg_scores": {
+        "discussed": 0,
+        "plain": 0,
+        "better_idea": 0,
+        "simplest": 0
+      },
+      "signs_total": 0,
+      "cost": 0,
+      "avg_ms": 0
+    }
+  },
+  {
+    "file": "20261004-1811-after5.json",
+    "label": "after5",
+    "started": "2026-10-04T18:11:53.424Z",
+    "summary": {
+      "pass_rate": 0,
+      "said_rate": 0.6,
+      "avg_scores": {
+        "discussed": 4,
+        "plain": 2,
+        "better_idea": 4,
+        "simplest": 4
+      },
+      "signs_total": 1,
+      "cost": 0.4675,
+      "avg_ms": 196298
+    }
   }
 ]
