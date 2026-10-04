@@ -960,6 +960,49 @@ export async function withOwnFields(
 }
 
 /**
+ * The rows of a section over the store whose `field` is one of `values`,
+ * with the owner's own fields beside them: what a scan opens and a written
+ * screen's wl.find reads. A store column is matched in the list itself; a
+ * field of the owner's lives beside the row in `records` (0128), so it is
+ * matched there and its rows read from the list by id. Before, a match on
+ * an own field was dropped without a word and the first 500 rows came back
+ * as if every one held it (wl.find("repeat_flag", true), 4 Oct).
+ */
+export async function storeRowsMatching(
+  db: SupabaseClient,
+  storeId: string,
+  table: StoreTable,
+  moduleId: string,
+  equals: { field: string; values: string[] },
+  limit = 500
+): Promise<Array<{ id: string; data: Record<string, unknown> }>> {
+  const spec = STORE_TABLES[table];
+  if (sortable(spec, equals.field) || equals.field === "id") {
+    const found = await readStoreRows(db, storeId, table, limit, undefined, null, null, equals);
+    return withOwnFields(db, moduleId, found.rows);
+  }
+  if (!/^[a-z_][a-z0-9_]*$/i.test(equals.field) || equals.values.length === 0) return [];
+  const { data: kept, error } = await db
+    .from("records")
+    .select("store_row_id")
+    .eq("module_id", moduleId)
+    .not("store_row_id", "is", null)
+    .in(`data->>${equals.field}`, equals.values)
+    .limit(Math.min(Math.max(limit, 1), 500));
+  if (error) throw new Error(error.message);
+  const ids = [...new Set((kept ?? []).map((r) => r.store_row_id as string))];
+  const rows: Array<{ id: string; data: Record<string, unknown> }> = [];
+  for (let i = 0; i < ids.length; i += IDS_PER_READ) {
+    const part = ids.slice(i, i + IDS_PER_READ);
+    rows.push(
+      ...(await readStoreRows(db, storeId, table, part.length, undefined, null, null, { field: "id", values: part }))
+        .rows
+    );
+  }
+  return withOwnFields(db, moduleId, rows);
+}
+
+/**
  * What the merchant keeps beside some of the store's rows, from every
  * section over `table` in the project: row id → section → fields, as
  * { "Packing": { packed: true } }. A row nobody has set a field on is
@@ -1087,7 +1130,8 @@ export async function readStoreRows(
   // ponytail: orders has no (store_id, order_number) index, so a scan's
   // look-up reads the store's orders in full; add it when a store's
   // order count makes the first scan slow.
-  if (equals && sortable(spec, equals.field) && equals.values.length) query = query.in(equals.field, equals.values);
+  if (equals && (sortable(spec, equals.field) || equals.field === "id") && equals.values.length)
+    query = query.in(equals.field, equals.values);
 
   const { data, count, error } = await query;
   if (error) throw new Error(error.message);

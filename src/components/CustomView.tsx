@@ -13,7 +13,7 @@
 
 import { Maximize2, Minimize2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { button } from "@/components/ui/controls";
+import { button, note } from "@/components/ui/controls";
 import { useFormat } from "@/lib/format";
 import { CUSTOM_VIEW_TOKENS, customViewPage, customViewProblem } from "@/lib/custom-view";
 import { withComputed } from "@/lib/expr";
@@ -106,6 +106,8 @@ export default function CustomView({
   onFind,
   onRead,
   preview = false,
+  onBroke,
+  onAskLuke,
 }: {
   view: { title: string; html: string };
   columns: SchemaColumn[];
@@ -123,10 +125,16 @@ export default function CustomView({
   ) => Promise<Array<{ id: string; data: Record<string, unknown> }>>;
   /** A proposal's preview, in Luke's panel: a card of its own size, and it leaves the owner's focus where it is. */
   preview?: boolean;
+  /** Something in the screen broke (its own error, or a call the app refused): told once per message, to be kept. */
+  onBroke?: (message: string) => void;
+  /** Hands what broke to Luke, to fix the screen. */
+  onAskLuke?: (messages: string[]) => void;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const [page, setPage] = useState<string | null>(null);
+  // What broke while it ran, newest last: shown under the screen, a few at most.
+  const [broken, setBroken] = useState<string[]>([]);
   const [height, setHeight] = useState<number | null>(null);
   const [full, setFull] = useState(false);
   const problem = customViewProblem(view.html);
@@ -188,19 +196,32 @@ export default function CustomView({
   }, []);
 
   // The handlers as they are now, read by the listener when a call arrives.
-  const handlers = useRef({ onSet, onAdd, onFind, onRead, columns });
+  const handlers = useRef({ onSet, onAdd, onFind, onRead, columns, onBroke });
   useEffect(() => {
-    handlers.current = { onSet, onAdd, onFind, onRead, columns };
-  }, [onSet, onAdd, onFind, onRead, columns]);
+    handlers.current = { onSet, onAdd, onFind, onRead, columns, onBroke };
+  }, [onSet, onAdd, onFind, onRead, columns, onBroke]);
 
   useEffect(() => {
     const listen = async (e: MessageEvent) => {
       // Only this frame, and only calls shaped like window.wl's.
       if (e.source !== frame.current?.contentWindow) return;
+      const h = handlers.current;
+      // The screen's own error (the kit tells it), or a call the app refused below.
+      const broke = (message: string) => {
+        setBroken((was) => (was.includes(message) ? was : [...was, message].slice(-3)));
+        h.onBroke?.(message);
+      };
+      const told = e.data as { wl?: unknown; type?: unknown; message?: unknown } | null;
+      if (told && told.wl === 1 && told.type === "error" && typeof told.message === "string") {
+        broke(told.message.slice(0, 300));
+        return;
+      }
       const m = e.data as Call;
       if (!m || m.wl !== 1 || typeof m.id !== "number" || !Array.isArray(m.args)) return;
-      const answer = (ok: boolean, value?: unknown, error?: string) => send({ wl: 1, id: m.id, ok, value, error });
-      const h = handlers.current;
+      const answer = (ok: boolean, value?: unknown, error?: string) => {
+        if (!ok) broke(`wl.${m.call} did not work: ${error ?? "no reason given"}`.slice(0, 300));
+        send({ wl: 1, id: m.id, ok, value, error });
+      };
       const fields = (v: unknown) =>
         v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
       try {
@@ -299,6 +320,17 @@ export default function CustomView({
           {full ? "Leave full screen" : "Full screen"}
         </button>
       </div>
+      {/* Above the screen, where it is seen: a tall screen pushed it out of sight below. */}
+      {broken.length > 0 && (
+        <div role="status" className={`${note.attention} flex flex-wrap items-center justify-between gap-2`}>
+          <span className="min-w-0">This screen ran into a problem: {broken[broken.length - 1]}</span>
+          {onAskLuke && (
+            <button type="button" onClick={() => onAskLuke(broken)} className={button("secondary", "sm")}>
+              Ask Luke to fix it
+            </button>
+          )}
+        </div>
+      )}
       {drawn}
     </div>
   );

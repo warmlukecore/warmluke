@@ -25,6 +25,8 @@ import { Sandbox } from "@vercel/sandbox";
 import { canRunCode, credentials } from "@/lib/code-run";
 
 export type Shot = {
+  /** What the screen broke on while it ran (its own errors, calls refused), heard by the page around it. */
+  broke?: string[];
   w: number;
   /** The height shot, which on a phone may run past the first screen. */
   h: number;
@@ -87,7 +89,9 @@ try {
     if (Math.min(png.length, jpeg.length) > ${MAX_BYTES}) jpeg = await page.screenshot({ clip, fullPage: true, type: "jpeg", quality: 45 });
     const usePng = png.length <= jpeg.length;
     writeFileSync("out-" + i + ".bin", usePng ? png : jpeg);
-    out.push({ w, h: height, file: "out-" + i + ".bin", mediaType: usePng ? "image/png" : "image/jpeg" });
+    // What broke while it ran, as the page around the screen heard it.
+    const broke = await page.evaluate(() => window.__broke || []).catch(() => []);
+    out.push({ w, h: height, file: "out-" + i + ".bin", mediaType: usePng ? "image/png" : "image/jpeg", broke });
     await page.close();
   }
 } finally {
@@ -164,7 +168,10 @@ export async function shootScreen(
       for (const m of made) {
         const picture = await sandbox.readFileToBuffer({ path: `${SHOT_DIR}/${m.file}` }, { signal });
         if (!picture) throw new Error(`the ${m.w}px picture is missing`);
-        shots.push({ w: m.w, h: m.h, png: picture.toString("base64"), mediaType: m.mediaType });
+        const broke = Array.isArray(m.broke)
+          ? m.broke.filter((x): x is string => typeof x === "string").slice(0, 5)
+          : [];
+        shots.push({ w: m.w, h: m.h, png: picture.toString("base64"), mediaType: m.mediaType, broke });
       }
       return shots;
     } finally {

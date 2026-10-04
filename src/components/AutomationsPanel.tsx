@@ -16,6 +16,8 @@ import type { AutomationRow, ModuleRow } from "@/lib/types";
 import { Check, TriangleAlert, Zap } from "lucide-react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Switch } from "@/components/ui/Switch";
+import { Select } from "@/components/ui/Select";
+import { readsSection } from "@/lib/section-ref";
 
 /** What a rule has done (abo_rule_log, 0172): its runs of either kind, counted in the database. */
 type RunSummary = { runs: number; failed: number; last: { at: string; ok: boolean; error: string | null } | null };
@@ -23,11 +25,14 @@ type RunSummary = { runs: number; failed: number; last: { at: string; ok: boolea
 export default function AutomationsPanel({
   projectId,
   modules,
+  sectionId = null,
   onClose,
   onFix,
 }: {
   projectId: string;
   modules: ModuleRow[];
+  /** The section open behind the dialog: its rules first, all of them a pick away (Tanish, 4 Oct). */
+  sectionId?: string | null;
   /** Hands a rule that stopped to Luke. Absent, the failure is only shown. */
   onFix?: (action: FixAction) => void | Promise<void>;
   onClose: () => void;
@@ -38,6 +43,13 @@ export default function AutomationsPanel({
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [scope, setScope] = useState<"section" | "all">(sectionId ? "section" : "all");
+  const section = sectionId ? (modules.find((m) => m.id === sectionId) ?? null) : null;
+  // A section's rules: those on it, and those that read it from elsewhere.
+  const onSection = (rule: AutomationRow) =>
+    !!section &&
+    (rule.module_id === section.id || readsSection(rule.definition, { id: section.id, name: section.name }));
+  const shown = scope === "section" && section ? rules.filter(onSection) : rules;
 
   const load = useCallback(async () => {
     const { data, error: e } = await supabase
@@ -108,7 +120,31 @@ export default function AutomationsPanel({
           </div>
         )}
 
-        {rules.map((rule) => {
+        {!loading && section && rules.length > 0 && (
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs text-fg-muted">Showing</span>
+            <div className="w-56">
+              <Select
+                label="Which rules"
+                clearable={false}
+                value={scope}
+                onChange={(v) => setScope(v === "all" ? "all" : "section")}
+                options={[
+                  { value: "section", label: `${section.nav_label} (${rules.filter(onSection).length})` },
+                  { value: "all", label: `All sections (${rules.length})` },
+                ]}
+              />
+            </div>
+          </div>
+        )}
+        {!loading && section && scope === "section" && rules.length > 0 && shown.length === 0 && (
+          <p className="rounded-card border border-dashed border-line-strong px-4 py-6 text-center text-xs text-fg-muted">
+            No rule works on {section.nav_label}. {rules.length} {rules.length === 1 ? "works" : "work"} on other
+            sections: pick All sections to see {rules.length === 1 ? "it" : "them"}.
+          </p>
+        )}
+
+        {shown.map((rule) => {
           const run = runs[rule.id];
           return (
             <div

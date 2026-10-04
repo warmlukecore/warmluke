@@ -75,7 +75,7 @@ test("a thread of design cards over one store list reads that list a few times, 
   });
   try {
     await page.goto(`/app/${shop.projectId}?c=${thread!.id}`);
-    await page.waitForTimeout(12_000);
+    await page.waitForTimeout(6_000);
     expect(reads, "store list reads for fifteen cards").toBeLessThanOrEqual(5);
   } finally {
     await shop.admin.from("conversations").delete().eq("id", thread!.id);

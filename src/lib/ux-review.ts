@@ -182,11 +182,19 @@ export function screenDocument(screen: Screen, format: { locale: string; currenc
 const frame = document.querySelector("iframe");
 const rows = ${inScript(screen.rows)};
 const send = (m) => frame.contentWindow.postMessage(m, "*");
+// What broke while it ran, as the app would hear it: read by the shooter (window.__broke).
+window.__broke = [];
+const broke = (msg) => { if (!window.__broke.includes(msg)) window.__broke.push(String(msg).slice(0, 300)); };
 addEventListener("message", (e) => {
   if (e.source !== frame.contentWindow) return;
   const m = e.data;
+  if (m && m.wl === 1 && m.type === "error" && typeof m.message === "string") return broke(m.message);
   if (!m || m.wl !== 1 || typeof m.id !== "number" || !Array.isArray(m.args)) return;
-  const answer = (ok, value, error) => send({ wl: 1, id: m.id, ok, value, error });
+  const answer = (ok, value, error) => {
+    // A write here is refused by design (a picture saves nothing): only a read that fails is a break.
+    if (!ok && (m.call === "find" || m.call === "read")) broke("wl." + m.call + " did not work: " + (error || "no reason given"));
+    send({ wl: 1, id: m.id, ok, value, error });
+  };
   if (m.call === "read" || (m.call === "find" && m.args.length === 3)) return answer(true, []);
   if (m.call === "find") {
     const field = String(m.args[0]), code = String(m.args[1]).toLowerCase();
@@ -369,15 +377,31 @@ export async function reviewScreens(
           images: shots.map((x) => ({ data: x.png, mediaType: x.mediaType })),
         }
       : { role: "user", content: codeWords(s) };
+    // What broke while it ran is a fault whatever the picture shows: it goes
+    // back with the screen's own words, so the designer fixes it before the
+    // owner ever sees the red line (Tanish, 4 Oct).
+    const brokeHere = [...new Set((shots ?? []).flatMap((x) => x.broke ?? []))].slice(0, 3);
+    const withBreaks = <T extends { verdict: "pass" | "redo" | "skipped"; issues: string[]; fix: string | null }>(
+      v: T | null
+    ) =>
+      brokeHere.length === 0
+        ? v
+        : {
+            ...v,
+            verdict: "redo" as const,
+            issues: [...brokeHere.map((b) => `It broke when it ran: ${b}`), ...(v?.issues ?? [])].slice(0, 6),
+            fix: `Make it run without breaking (${brokeHere[0]})${v?.fix ? `; also ${v.fix}` : ""}`.slice(0, MAX_FIX),
+          };
     try {
       const raw = await asJob("ux", () => look(model, shots ? UX_RUBRIC_SHOTS : UX_RUBRIC_CODE, turn, signal));
-      const v = parseUxVerdict(raw);
+      const v = withBreaks(parseUxVerdict(raw));
       if (!v) console.error(`[ux] "${s.title}": not a verdict: ${raw.slice(0, 200)}`);
       return v ? { ...v, how: shots ? ("screenshot" as const) : ("text" as const), title: s.title } : null;
     } catch (e) {
       if (signal.aborted) throw e;
       console.error(`[ux] "${s.title}": ${e instanceof Error ? e.message : String(e)}`);
-      return null;
+      const v = withBreaks(null);
+      return v ? { ...v, how: "screenshot" as const, title: s.title } : null;
     }
   };
 

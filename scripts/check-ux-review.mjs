@@ -335,6 +335,20 @@ check(
   seen.verdict === "pass" && seen.how === "screenshot" && typeof seen.ms === "number"
 );
 
+// It broke while it ran (a read refused, its own error): back, whatever the model saw (4 Oct).
+reset();
+const brokeRun = await reviewScreens(ctx(), [returns], {
+  shoot: async (html, opts) =>
+    opts.widths.map((x) => ({ ...shot(x.w, x.h), broke: ["wl.find did not work: Failed to fetch"] })),
+  look: looker(['{"verdict":"pass","issues":[],"fix":null}']),
+});
+check(
+  "a screen that broke while it ran goes back, saying what broke",
+  brokeRun.verdict === "redo" &&
+    brokeRun.issues[0] === "It broke when it ran: wl.find did not work: Failed to fetch" &&
+    /Make it run without breaking/.test(brokeRun.fix ?? "")
+);
+
 reset();
 const blind = await reviewScreens(ctx(), [returns], {
   shoot: async () => {

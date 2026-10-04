@@ -111,6 +111,13 @@ insert into public.automation_runs (automation_id, ok, detail, created_at) value
   ('${FILL}', false, '{"error": "No field rto_status"}', now() - interval '1 minute'),
   ('${WATCH}', true, null, now() - interval '1 minute');
 
+-- A written screen that broke twice, told by the owner who had it open (0178).
+select pg_temp.as('${MERCHANT}');
+insert into public.screen_errors (project_id, module_id, screen, message) values
+  ('${P}', '${M}', 'Queue', 'wl.find did not work: Failed to fetch'),
+  ('${P}', '${M}', 'Queue', 'wl.find did not work: Failed to fetch');
+reset role;
+
 select pg_temp.as('${ADMIN}');
 select 'admin', public.abo_admin_trouble(7)::text;
 select pg_temp.as('${MERCHANT}');
@@ -156,6 +163,13 @@ check(
   of("workaround").some((s) => s.detail === 'Shipments has 3 fields for "rto"' && s.sample.includes("is_rto"))
 );
 check("a word like status, shared by any fields, is not", !has("workaround", 'for "status"'));
+
+check(
+  "a written screen that broke, counted, with its message",
+  of("screen").some(
+    (s) => s.detail === 'The screen "Queue" on Shipments broke 2 times' && s.sample.includes("Failed to fetch")
+  )
+);
 
 console.log("\nwhere to look");
 check(

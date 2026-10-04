@@ -557,6 +557,18 @@ any other. `check-ux-review` (pure) holds the logic with stand-ins for the sandb
 model; `check-ux-eval` (model tier, by hand) runs three kept screens, rough, clean and too
 wide for a phone.
 
+**What breaks while it runs.** The kit inside every screen tells the app of an error the
+screen did not catch and a promise that failed (`postMessage {wl: 1, type: "error"}`), and
+the app hears a call it refused (`wl.find`, `wl.read`, a write it may not make). In the
+sandbox, the page around the screen keeps them (`window.__broke`), the shooter hands them
+back with the pictures, and a screen that broke goes back to the designer whatever the
+picture shows, with its own words ("It broke when it ran: …"); a write there is refused by
+design and is not a break. In the app (`CustomView`), the newest of them is said under the
+screen with "Ask Luke to fix it", which hands Luke the screen, its section and what broke,
+and each is kept once a visit in `screen_errors` (0178) for the console's Needs a look. A
+written screen that fails a read and says so in its own red line was what Tanish saw on 4
+Oct, and nobody else heard of it.
+
 ## Provider behavior
 
 The main call selects provider by model name:

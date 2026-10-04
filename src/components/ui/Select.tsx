@@ -6,7 +6,7 @@
 // closes, a letter jumps to the next option starting with it. Opens up
 // when there is no room below, as in a dialog's last field.
 //
-// Callers: src/components/RecordModal.tsx (and placeBy: ui/DateField.tsx).
+// Callers: src/components/RecordModal.tsx, src/components/AutomationsPanel.tsx (and placeBy: ui/DateField.tsx).
 
 import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { Check, ChevronDown } from "lucide-react";
@@ -55,6 +55,7 @@ export function Select({
   onChange,
   label,
   empty = "—",
+  clearable = true,
 }: {
   value: string;
   options: SelectOption[];
@@ -63,8 +64,10 @@ export function Select({
   label: string;
   /** Shown when nothing is chosen, and offered first to clear it. */
   empty?: string;
+  /** False for a choice that always has an answer (which rules to show): no empty first option. */
+  clearable?: boolean;
 }) {
-  const all = [{ value: "", label: empty }, ...options];
+  const all = clearable ? [{ value: "", label: empty }, ...options] : options;
   const [open, setOpen] = useState(false);
   const [place, setPlace] = useState<CSSProperties>({});
   const [active, setActive] = useState(0);

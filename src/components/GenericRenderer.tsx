@@ -261,6 +261,8 @@ export default function GenericRenderer({
   onStats,
   onInspect,
   onScanGroup,
+  onScreenBroke,
+  onScreenFix,
   onReadSection,
   periodKey,
   timeZone,
@@ -306,6 +308,10 @@ export default function GenericRenderer({
   onInspect?: (rec: RecordRow) => void;
   /** Reads the rows whose field holds a code into the section, wherever they are, and hands them back (a scan's group, a written screen's wl.find). */
   onScanGroup?: (field: string, code: string) => Promise<RecordRow[]>;
+  /** A written screen broke while it ran: kept, so it is seen (Needs a look). */
+  onScreenBroke?: (screen: string, message: string) => void;
+  /** Hands what broke in a written screen to Luke, to fix it. */
+  onScreenFix?: (screen: string, messages: string[]) => void;
   /** Another section of this app, read only: what a written screen reads beyond its own rows. */
   onReadSection?: (
     section: string,
@@ -716,6 +722,8 @@ export default function GenericRenderer({
             onFind={preview ? undefined : onScanGroup}
             onRead={onReadSection}
             preview={preview}
+            onBroke={preview || !onScreenBroke ? undefined : (message) => onScreenBroke(view.title, message)}
+            onAskLuke={preview || !onScreenFix ? undefined : (messages) => onScreenFix(view.title, messages)}
           />
         );
       case "table":

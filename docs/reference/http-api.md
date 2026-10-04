@@ -137,7 +137,8 @@ thread: a turn that failed (`unanswered`), needed two or more repairs or was sen
 the critic; an owner's words that say it went wrong (a word list, English and Hinglish);
 a section changed four or more times in a day; a rule whose runs or code jobs failed; a
 schedule setting fields on every row with no `when`; three or more yes/no or status
-fields sharing a word. **Learning** (0176) reads what Luke learned for each store:
+fields sharing a word; a written screen that broke while it ran (`screen_errors`, 0178: kept
+by the app once a message a visit, insert only, read by this function alone). **Learning** (0176) reads what Luke learned for each store:
 `abo_admin_learning(p_days)` gives the window's totals (lessons and skills active today; created,
 patched, retired, struck, used, helped, hurt and broken again; the owners' thumbs; the reflector's
 runs and their dollars, `reflections` and `learning_usd`) and the repeat rate, mistakes made again

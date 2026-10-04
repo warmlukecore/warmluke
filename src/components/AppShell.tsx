@@ -47,6 +47,7 @@ import {
   keptPageSize,
   readStorePage,
   readStoreRows,
+  storeRowsMatching,
   searchFieldsOf,
   storeSectionColumns,
   withOwnFields,
@@ -1251,11 +1252,10 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       const values = codeSpellings(code);
       let rows: RecordRow[];
       if (isStoreTable(loadedSource) && storeId) {
-        const found = await readStoreRows(supabase, storeId, loadedSource, 500, undefined, null, null, {
+        rows = (await storeRowsMatching(supabase, storeId, loadedSource, selectedModuleId, {
           field,
           values,
-        });
-        rows = (await withOwnFields(supabase, selectedModuleId, found.rows)) as unknown as RecordRow[];
+        })) as unknown as RecordRow[];
       } else {
         const { data, error } = await supabase
           .from("records")
@@ -1326,17 +1326,16 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             } as UiSchema,
             rows: [],
           };
-        const found = await readStoreRows(
-          supabase,
-          store,
-          table,
-          limit,
-          undefined,
-          null,
-          null,
-          match ? { field: match.field, values: codeSpellings(match.code) } : null
-        );
-        rows = await withOwnFields(supabase, mod.id, found.rows);
+        rows = match
+          ? await storeRowsMatching(
+              supabase,
+              store,
+              table,
+              mod.id,
+              { field: match.field, values: codeSpellings(match.code) },
+              limit
+            )
+          : await withOwnFields(supabase, mod.id, (await readStoreRows(supabase, store, table, limit)).rows);
       } else {
         let q = supabase.from("records").select("id, data").eq("module_id", mod.id).is("store_row_id", null);
         if (match) q = q.in(`data->>${match.field}`, codeSpellings(match.code));
@@ -2632,6 +2631,41 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     [loadModules, runPrompt, selectedModuleId, loadModuleData]
   );
 
+  // A written screen that broke while it ran: kept once a message a visit,
+  // so the console's Needs a look shows it (0178), and handed to Luke when
+  // the owner asks (Tanish, 4 Oct: "a feedback loop as to what is causing
+  // these errors and what needs to be fixed by the AI itself").
+  const screenBrokeSeen = useRef(new Set<string>());
+  const screenBroke = useCallback(
+    (screen: string, message: string) => {
+      if (!selectedModuleId) return;
+      const key = `${selectedModuleId}|${screen}|${message}`;
+      if (screenBrokeSeen.current.has(key) || screenBrokeSeen.current.size > 50) return;
+      screenBrokeSeen.current.add(key);
+      void supabase
+        .from("screen_errors")
+        .insert({ project_id: projectId, module_id: selectedModuleId, screen, message })
+        .then(({ error }) => {
+          if (error) console.warn(`[screen] not kept: ${error.message}`);
+        });
+    },
+    [projectId, selectedModuleId]
+  );
+  const screenFix = useCallback(
+    (screen: string, messages: string[]) => {
+      const section = modules.find((m) => m.id === selectedModuleId)?.nav_label ?? "this section";
+      void fixError({
+        type: "ask_luke",
+        prompt: [
+          `The written screen "${screen}" on ${section} ran into these problems when it ran:`,
+          ...messages.map((m) => `- ${m}`),
+          "Fix the screen so it works on this app's own sections and fields. Change only what has to change.",
+        ].join("\n"),
+      });
+    },
+    [modules, selectedModuleId, fixError]
+  );
+
   /**
    * Puts one build's changes back and shows the result in the thread.
    *
@@ -3550,6 +3584,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     onStats={sectionStats}
                     onScanGroup={openScanGroup}
                     onReadSection={readSection}
+                    onScreenBroke={screenBroke}
+                    onScreenFix={screenFix}
                     periodKey={selectedModuleId ?? undefined}
                     // The shop's days on every section of a project with a shop, as the server's are (0162).
                     timeZone={store?.timezone ?? undefined}
@@ -3755,6 +3791,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             <AutomationsPanel
               projectId={projectId}
               modules={modules}
+              sectionId={selectedModuleId}
               onFix={fixError}
               onClose={() => {
                 setRulesOpen(false);

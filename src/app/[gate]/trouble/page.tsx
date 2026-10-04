@@ -4,8 +4,9 @@
 // Needs a look: where something went wrong, found in what the app keeps
 // (0175), so it is seen the day it happens and not when an owner writes
 // in. Luke's turns that failed or were sent back, an owner saying it went
-// wrong, a section changed again and again, a rule failing, and designs
-// that look like a way round the app. Each says where to look.
+// wrong, a section changed again and again, a rule failing, a written
+// screen breaking (0178), and designs that look like a way round the
+// app. Each says where to look.
 //
 // Everything goes through a function that refuses anyone who is not an
 // administrator; the page itself decides nothing.
@@ -22,7 +23,7 @@ import { Choices, adminError } from "@/components/AdminParts";
 import { card, note } from "@/components/ui/controls";
 
 type Sign = {
-  kind: "turn" | "frustrated" | "churn" | "rule" | "workaround";
+  kind: "turn" | "frustrated" | "churn" | "rule" | "workaround" | "screen";
   at: string;
   detail: string;
   sample: string | null;
@@ -42,6 +43,7 @@ const KIND: Record<Sign["kind"], [string, string]> = {
   churn: ["Section", "bg-tone-info text-tone-info-fg"],
   rule: ["Rule", "bg-tone-critical text-tone-critical-fg"],
   workaround: ["Design", "bg-tone-warning text-tone-warning-fg"],
+  screen: ["Screen", "bg-tone-attention text-tone-attention-fg"],
 };
 
 export default function TroublePage() {

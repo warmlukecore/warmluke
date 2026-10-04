@@ -19,7 +19,13 @@ import { createClient } from "@supabase/supabase-js";
 import { signInAsCheckUser, throwawayProject } from "./owner-session.mjs";
 import { seedNodes, seedShop } from "./fixtures/seed-shop.ts";
 import { SHOPIFY_RESOURCES } from "../src/lib/shopify-resources.ts";
-import { STORE_TABLES, canCarryOwnFields, ownColumns, withOwnFields } from "../src/lib/store-read.ts";
+import {
+  STORE_TABLES,
+  canCarryOwnFields,
+  ownColumns,
+  storeRowsMatching,
+  withOwnFields,
+} from "../src/lib/store-read.ts";
 import { storeTool } from "../src/lib/store-tools.ts";
 
 const envFile = process.env.ENV_FILE ?? ".env.local";
@@ -152,6 +158,14 @@ try {
   check("the next one merges into it", !!recordId && second.json?.record?.id === recordId);
   const kept = second.json?.record?.data ?? {};
   check("both fields are kept", kept.packed === true && kept.packed_at === "shelf 2");
+  // A written screen's wl.find on a field of theirs: only the rows that hold it, not the list's first 500 (4 Oct).
+  const held = await storeRowsMatching(owner, store.id, "orders", orders, { field: "packed", values: ["true"] });
+  check(
+    "a find on a field of theirs reads only the rows that hold it",
+    held.length === 1 && held[0].id === row.id && held[0].data.packed === true
+  );
+  const byStore = await storeRowsMatching(owner, store.id, "orders", orders, { field: "id", values: [row2.id] });
+  check("and a find on the store's own column reads that row", byStore.length === 1 && byStore[0].id === row2.id);
   check("a store column is not written", !(storeCol.field in kept));
   check("nor a worked-out one, nor one the section lacks", !("double" in kept) && !("stray" in kept));
   const { count } = await admin

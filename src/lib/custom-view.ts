@@ -206,7 +206,11 @@ const RUNTIME = `(() => {
     const w = waiting.get(m.id);
     if (!w) return;
     waiting.delete(m.id);
-    m.ok ? w.resolve(m.value) : w.reject(new Error(m.error || "That did not work."));
+    if (m.ok) return w.resolve(m.value);
+    // Marked: the app refused it and has said so already, so it is not told twice when the screen leaves it uncaught.
+    const refused = new Error(m.error || "That did not work.");
+    refused.toldByApp = true;
+    w.reject(refused);
   });
   const call = (name, args) => new Promise((resolve, reject) => {
     const id = ++next;
@@ -389,6 +393,19 @@ const RUNTIME = `(() => {
   const upgradeAll = () => document.querySelectorAll("select").forEach(upgrade);
   new MutationObserver(upgradeAll).observe(document.documentElement, { childList: true, subtree: true });
   addEventListener("DOMContentLoaded", upgradeAll);
+  // What breaks in the screen is told to the app, which says so under it
+  // and can hand it to Luke; before, a screen that failed a read showed
+  // its own red line and nobody heard of it (4 Oct). A picture or a font
+  // that did not load is not the screen breaking.
+  const broke = (m) => {
+    if (!m) return;
+    try { parent.postMessage({ wl: 1, type: "error", message: String(m).slice(0, 300) }, "*"); } catch {}
+  };
+  addEventListener("error", (e) => broke(e.message || (e.error && e.error.message)));
+  addEventListener("unhandledrejection", (e) => {
+    if (e.reason && e.reason.toldByApp) return;
+    broke((e.reason && e.reason.message) || e.reason || "A promise failed");
+  });
   window.wl = Object.freeze({
     columns: __COLUMNS__,
     ask,
