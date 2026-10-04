@@ -1,0 +1,125 @@
+{
+  "label": "after7a",
+  "started": "2026-10-04T18:44:55.008Z",
+  "design_model": "claude-sonnet-5",
+  "sim_model": "claude-haiku-4-5",
+  "grade_model": "claude-haiku-4-5",
+  "cap": 0.7,
+  "spent": 0.5336,
+  "partial": false,
+  "cases": [
+    {
+      "id": "returns-screen",
+      "title": "A returns screen: pick the order, its items come in, a return is made",
+      "turns": 3,
+      "built": true,
+      "signs": {
+        "workarounds": [
+          "Return Log has a written screen over rows a table shows"
+        ],
+        "jargon": [],
+        "proposed_first": true
+      },
+      "criteria": [
+        {
+          "text": "Luke prefers a returns table with a row form that fills in from the chosen order over a hand-written screen",
+          "met": false,
+          "said": false,
+          "evidence": "Luke built a hand-written screen with HTML/JavaScript instead of a returns table with a row form. The owner said 'order chuno, items dikhao, return likho — bas itna chahiye' and Luke agreed 'Ye banega bilkul jaisa bola: order chuno, uske items apne aap aa jaayein, quantity aur reason bharo, return s"
+        },
+        {
+          "text": "if Luke writes a screen, it reads only sections that exist and looks like the rest of the app",
+          "met": false,
+          "said": false,
+          "evidence": "The written screen 'Log a return' reads from sections that do not exist in the app design: it calls 'wl.find' on '#orders' and '#order_line_items', but the app lists these as 'Section \"Orders\"' and 'Section \"Order Items\"' with no ID shown. The section references in code do not match app structure, a"
+        },
+        {
+          "text": "every list shown has an empty state",
+          "met": false,
+          "said": false,
+          "evidence": "The 'Return Log' list has no empty state shown. The written screen shows 'No items found on this order' within the form after a search, but the Return Log section itself—the table that stores logged returns—has no empty-state message defined for when no returns have been logged yet."
+        },
+        {
+          "text": "the plan is said in plain words before anything is built, with no field names or types",
+          "met": false,
+          "said": false,
+          "evidence": "Luke introduced 'logged_at' and 'logged by' fields in step 6 without asking the owner first: 'Return Log me ab 'logged at' aur 'logged by' fields add honge'. The owner had said only 'order chuno, items dikhao, return likho — bas itna chahiye' and 'packing team ko 30 second mein entry khatam ho jaaye"
+        },
+        {
+          "text": "ends by asking whether to build",
+          "met": false,
+          "said": false,
+          "evidence": "Luke did not ask whether to build before building. In step 6, Luke said 'Return Log me ab...' and described the fields, then in step 7 'App: Built.' There was no 'Banau?' (Shall I build?) or equivalent question seeking the owner's explicit go-ahead after presenting the final plan with logged_at and "
+        }
+      ],
+      "must_not": [
+        {
+          "text": "a written screen when a table and a row form do the job",
+          "hit": true,
+          "evidence": "A written screen 'Log a return' with HTML, CSS, and JavaScript was built when a table (Return Log) and a row form should have done the job. The owner asked for a simple 30-second entry, and Luke agreed 'Ye banega bilkul jaisa bola' but delivered '<div class=\"wl-page\">...<script>...' instead of a row"
+        },
+        {
+          "text": "a change to the Shopify store",
+          "hit": false,
+          "evidence": "The app does not change Shopify. Luke said 'Shopify me kuch nahi badlega' and the modules 'Orders' and 'Order Items' are read-only copies. No POST, PUT, or write action to Shopify is present in the app code."
+        },
+        {
+          "text": "jargon such as \"boolean\" or \"set_fields\" in what the owner reads",
+          "hit": false,
+          "evidence": "No jargon such as 'boolean' or 'set_fields' appears in the owner-facing conversation. Luke's words to the owner used plain Hindi and simple English: 'order chuno', 'items apne aap aa jaayein', 'quantity aur reason bharo', 'dropdown', 'newest-first'. Field names and types appear only in the app desig"
+        }
+      ],
+      "scores": {
+        "discussed": 2,
+        "plain": 4,
+        "better_idea": 2,
+        "simplest": 1
+      },
+      "cost": 0.5336,
+      "ms": 249541,
+      "transcript": [
+        {
+          "who": "owner",
+          "text": "returns ka screen chahiye: order chuno, uske items aaye, return create ho"
+        },
+        {
+          "who": "luke",
+          "text": "Ye banega: ek return request ka screen jahan order chuno, uske items apne aap aa jaayenge, aur wahi se return record banega — status pickup se QC tak track hoga, refund/exchange QC ke baad hi tay hoga, turant nahi. Ek behtar idea: refund se pehle exchange ka option dikhaya jaaye taaki sale bachi rahe — chahiye? Saath hi COD return pe bina bank/UPI detail ke refund aage na badhe, aur QC fail hone par full refund automatically na maana jaaye — theek hai na? Exchange, COD detail field, aur QC rule pe tumhara jawab chahiye. Banau?"
+        },
+        {
+          "who": "owner",
+          "text": "Luke, suno: order chuno, items dikhao, return likho — bas itna chahiye. Baaki sab (exchange, QC, refund rule) tumhare system mein ho, mujhe phone pe sirf return log karna hai. Aur Shopify change mat karo. Banao simple — packing team ko 30 second mein entry khatam ho jaaye."
+        },
+        {
+          "who": "luke",
+          "text": "Ye banega bilkul jaisa bola: order chuno, uske items apne aap aa jaayein, quantity aur reason bharo, return save — 30 second ka kaam, Shopify me kuch nahi badlega. Exchange, QC aur refund abhi isme nahi daal raha, jaisa tumne kaha. Sirf ek cheez: reason free type na ho balki ek fixed list me se chuna jaaye, taaki baad me 'returns kyun hote hain' report sahi bane — list tumhara hoga. Ek chhoti si baat yaad rakhna: refund/exchange ka faisla yahan nahi hota, wo alag se dekhna padega jab zaroorat ho. Reason list bata do, banau?"
+        },
+        {
+          "who": "owner",
+          "text": "haan bana do"
+        },
+        {
+          "who": "luke",
+          "text": "Return Log me ab 'logged at' aur 'logged by' fields add honge, aur list newest-first dikhegi. 'Logged at' save hote hi khud bhar jaata hai. 'Logged by' kaun likh raha hai — login khud track karta hai (row kholo to dikh jaata hai), isliye ye field packer khud bharega agar record pe naam chahiye.\n[The design, built on the owner's yes:]\n- NEW_MODULE \"Orders\": Keeps a read-only, searchable copy of Shopify orders so the return screen can find an order by its number.\n  fields: Order (text) · Placed (date) · Customer (text) · Phone (phone) · Total (currency) · Before refunds (currency) · Goods (currency) · Shipping (currency) · Tax (currency) · Discount (currency) · Currency (text) · Status (badge) · Fulfilment (badge) · Payment (badge) · City (text) · State (text) · Discounts (text)\n- NEW_MODULE \"Order Items\": Keeps a read-only copy of each order's items so the return screen can pull up what was in an order the moment it's picked.\n  fields: Order (text) · Placed (date) · Customer (text) · Product (text) · Variant (text) · SKU (text) · Qty (number) · Price (currency) · Line total (currency) · Status (badge)\n- NEW_MODULE \"Return Log\": A phone-friendly screen where packing types or scans an order number, its items appear automatically, and logging a return takes one tap, newest entries on top with the date stamped automatically.\n  fields: Order (text) · Customer (text) · Product (text) · SKU (text) · Qty (number) · Reason (dropdown: Size issue / Damaged / Wrong item / Not as described / Not needed / Other) · Logged at (date) · Logged by (text)"
+        },
+        {
+          "who": "app",
+          "text": "Built."
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "pass_rate": 0,
+    "said_rate": 0,
+    "avg_scores": {
+      "discussed": 2,
+      "plain": 4,
+      "better_idea": 2,
+      "simplest": 1
+    },
+    "signs_total": 1,
+    "cost": 0.5336,
+    "avg_ms": 249541
+  }
+}

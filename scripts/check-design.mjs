@@ -812,5 +812,28 @@ console.log("\na list the store does not have is refused, naming the ones it doe
   check("and the store's lists are named", said.includes("order_line_items") && said.includes("refunds"));
 }
 
+console.log("\nnewest first is how rows already come (4 Oct)");
+{
+  const sorted = (dir) =>
+    run([
+      {
+        changeType: "NEW_MODULE",
+        targetModuleId: null,
+        newModule: { name: "return-log", nav_label: "Return log", icon: "table", source_table: null },
+        newSchema: { columns: [{ field: "reason", label: "Reason", type: "text" }] },
+        features: { view: { type: "table" }, defaultSort: { field: "created_at", dir } },
+        newRecords: null,
+        explanation: "Each return, as it is logged.",
+      },
+    ]);
+  const newest = sorted("desc");
+  check(
+    "a sort on the row's own time, newest first, is dropped, not refused",
+    newest.ok && newest.reply.plans[0].features.defaultSort === undefined
+  );
+  if (!newest.ok) console.log(`     errors were: ${newest.errors.join(" | ")}`);
+  check("oldest first is still refused, as no column holds it", !sorted("asc").ok);
+}
+
 console.log(fails.length === 0 ? "\na design says what it means" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

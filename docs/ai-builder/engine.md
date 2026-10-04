@@ -376,7 +376,8 @@ holds it, with the model stood in for.
 ## Human-in-the-loop gates
 
 - A new module cannot arrive as plain plans in built-in chat before a blueprint has been
-  shown.
+  shown: plain plans with a new section are shown as a blueprint card to approve, not sent
+  back to be rewrapped (a resend cost a whole design call).
 - Chat always requires the owner; project staff cannot spend the owner's design quota or
   redesign the application.
 - MCP proposals persist exact plans for later approval.

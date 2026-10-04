@@ -491,6 +491,22 @@ check(
   !plain.steps.some((s) => ["ops", "simplicity", "data", "dryrun", "ux"].includes(s.step))
 );
 
+console.log("\nnew sections drawn as bare plans are shown as the card to approve");
+const PLANS = JSON.stringify({ type: "plans", message: "A returns list.", plans: JSON.parse(DESIGN).blueprint.plans });
+fresh({ design: PLANS, gap: '{"unmet": []}' });
+const wrapped = await turn();
+check(
+  "not sent back to be wrapped: one design call, and a card (4 Oct)",
+  designs() === 1 && wrapped.r.ok && wrapped.r.reply.type === "blueprint"
+);
+check(
+  "the card holds the same plans and says what the design said",
+  wrapped.r.ok &&
+    wrapped.r.reply.blueprint.plans[0]?.newModule?.name === "returns" &&
+    wrapped.r.reply.message === "A returns list."
+);
+check("and it is not marked agreed", wrapped.r.ok && !wrapped.r.reply.approved);
+
 console.log("\none redo a turn, critic and gate together");
 fresh(
   {
@@ -533,6 +549,10 @@ check("after two repairs the gate can still send it back, once", designs() === 4
 check(
   "and the redo is told why",
   /reviewed before the owner sees it/.test(lastUser(sent.filter((s) => s.job === "design")[3]))
+);
+check(
+  "and to send the whole design, not the part that changes (4 Oct)",
+  /every plan, as if sent for the first time/.test(lastUser(sent.filter((s) => s.job === "design")[3]))
 );
 
 fresh(

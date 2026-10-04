@@ -1235,6 +1235,16 @@ export function validateFeatures(
     }
   }
 
+  // Newest first is the order a section's rows already come in: a sort
+  // on the row's own time asks for nothing more. Refused, it cost a
+  // whole design call in three returns runs of four (4 Oct); dropped now.
+  if (
+    f.defaultSort?.field === "created_at" &&
+    f.defaultSort.dir !== "asc" &&
+    !columns.some((c) => c.field === "created_at")
+  ) {
+    delete f.defaultSort;
+  }
   if (f.defaultSort && !hasField(f.defaultSort.field)) {
     err(errors, `defaultSort field "${f.defaultSort.field}" doesn't exist in the module schema.`);
   }

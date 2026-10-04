@@ -977,6 +977,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     // the design builds at once. Without this the agreed design was
     // refused for new sections, sent back for a blueprint, and the turn
     // ended "could not get this right" after the owner's yes (eval, 3 Oct).
+    // Otherwise the same plans are shown as the card to approve, not sent
+    // back to be wrapped as one: the resend cost a whole design call, and
+    // the attempt a reviewer's send-back needed (three returns runs, 4 Oct).
     if (
       parsed.ok &&
       parsed.reply.type === "plans" &&
@@ -984,11 +987,10 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       !approved &&
       parsed.reply.plans.some((pl) => pl.changeType === "NEW_MODULE")
     ) {
+      const { message: said = "", plans, next } = parsed.reply;
       parsed = {
-        ok: false,
-        errors: [
-          'You tried to create new sections before showing the owner a design. Reply with a "blueprint" instead so they can approve it first.',
-        ],
+        ok: true,
+        reply: { type: "blueprint", message: said, blueprint: { summary: said, plans, workflow: [], unmet: [], next } },
       };
     }
 
@@ -1079,7 +1081,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
                 .map((u) => `- ${u}`)
                 .join(
                   "\n"
-                )}\n\nRedesign so it does this too, and reply with the corrected JSON only. Do not apologise or explain.`,
+                )}\n\nRedesign so it does this too, and reply with the whole corrected design as JSON only: every plan, as if sent for the first time, not just the ones that change. Do not apologise or explain.`,
             }
           );
           continue;
@@ -1126,7 +1128,10 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           { role: "assistant", content: raw },
           {
             role: "user",
-            content: `The design was reviewed before the owner sees it, and sent back:\n\n${reviewed.redo}\n\nRedesign so it does the same job for them, changing what this says and nothing else, and reply with the corrected JSON only. Do not apologise or explain.`,
+            // The whole design: told only "the corrected JSON", a redo sent the one
+            // changed section, which the validator refused, and the design it
+            // sent back stood as the answer (returns eval, 4 Oct).
+            content: `The design was reviewed before the owner sees it, and sent back:\n\n${reviewed.redo}\n\nRedesign so it does the same job for them, changing what this says and nothing else, and reply with the whole corrected design as JSON only: every plan, as if sent for the first time, not just the ones that change. Do not apologise or explain.`,
           }
         );
         continue;
