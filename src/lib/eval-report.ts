@@ -50,7 +50,15 @@ export type CaseResult = {
   /** Milliseconds Luke took, all turns together. */
   ms: number;
   transcript?: Line[];
+  /** Each of Luke's turns as its trace had it (gone with the case's project once the case ends). */
+  trace?: TurnTrace[];
 };
+
+/** A turn's trace, kept: its steps as short lines, its repairs and what the validator refused. */
+export type TurnTrace = { turn: number; repairs: number; refused: string[]; steps: string[] };
+
+/** A case the cap or a failure stopped part way: what was said and traced, never graded. */
+export type UnfinishedCase = { id: string; title: string; stopped: string; transcript: Line[]; trace: TurnTrace[] };
 
 export type RunSummary = {
   pass_rate: number;
@@ -74,6 +82,8 @@ export type EvalRun = {
   /** Stopped before every case was run: the cap, or a failure. */
   partial: boolean;
   cases: CaseResult[];
+  /** Out of the summary, as never graded. */
+  unfinished?: UnfinishedCase[];
   summary: RunSummary;
 };
 

@@ -183,6 +183,24 @@ export function planLines(plans) {
   ]);
 }
 
+/**
+ * A step of Luke's turn as one short line, as the run file keeps the
+ * trace: "model 3/4", "critic redo 2 missing", "ux redo screenshot".
+ * The turn's trace is gone with the case's project; this is what is left.
+ */
+export const stepLine = (s) =>
+  [
+    s?.step,
+    s?.road,
+    s?.verdict,
+    s?.how,
+    s?.attempt != null ? `${s.attempt}/${s.of}` : null,
+    s?.missing ? `${s.missing} missing` : null,
+    s?.problems ? `${s.problems} problems` : null,
+  ]
+    .filter((x) => x != null && x !== "")
+    .join(" ");
+
 /** A reply as the owner meets it, for the transcript and the simulated owner. */
 export function replyText(r) {
   if (!r || typeof r !== "object") return "(no reply)";
@@ -680,6 +698,8 @@ async function main() {
     return { raw, spent };
   };
 
+  // The case being run, so a run the cap stops keeps what it said and traced (4 Oct: one did not).
+  let inFlight = null;
   async function runCase(c) {
     const me = await signIn();
     const token = me.session.access_token;
@@ -735,6 +755,8 @@ async function main() {
       }
 
       const lines = [];
+      const trace = [];
+      inFlight = { id: c.id, title: c.title, transcript: lines, trace };
       const lukeCosts = [];
       const turnMs = [];
       const jargon = new Set();
@@ -756,12 +778,16 @@ async function main() {
         }
         throw new Error(`${c.id}: Luke's turn did not settle in ${SETTLE_MS / 60_000} minutes`);
       };
-      // The reply carries its usage only for the team; the trace keeps it for everyone, a moment later.
-      const usageOf = async (reply, id) => {
-        if (reply.usage) return reply.usage;
+      // The turn's trace, a moment later: its usage (the reply carries it
+      // only for the team), its steps, and what the validator refused.
+      const traceOf = async (id) => {
         for (let i = 0; i < 20; i++) {
-          const { data } = await admin.from("turn_traces").select("usage").eq("turn_id", id).maybeSingle();
-          if (data) return data.usage ?? null;
+          const { data } = await admin
+            .from("turn_traces")
+            .select("usage, steps, repairs, repair_errors")
+            .eq("turn_id", id)
+            .maybeSingle();
+          if (data) return data;
           await pause(500);
         }
         return null;
@@ -797,7 +823,14 @@ async function main() {
         if (!answerId) throw new Error(`${c.id}: the turn named no line for its answer`);
         const reply = await settle(answerId);
         turnMs.push(Date.now() - t0);
-        const usage = await usageOf(reply, answerId);
+        const t = await traceOf(answerId);
+        trace.push({
+          turn,
+          repairs: t?.repairs ?? 0,
+          refused: (Array.isArray(t?.repair_errors) ? t.repair_errors : []).map((e) => String(e).slice(0, 300)),
+          steps: (Array.isArray(t?.steps) ? t.steps : []).map(stepLine),
+        });
+        const usage = reply.usage ?? t?.usage ?? null;
         if (!usage) console.log(`  (turn ${turn} of ${c.id} left no usage; counted at its estimate)`);
         else if (usage.partial)
           console.log(`  (turn ${turn} of ${c.id} used a model with no price; its cost is short)`);
@@ -902,6 +935,7 @@ async function main() {
         cost: Math.round((lukeCosts.reduce((a, b) => a + b, 0) + simSpent + graded.spent) * 1e4) / 1e4,
         ms: turnMs.reduce((a, b) => a + b, 0),
         transcript: lines,
+        trace,
       };
     } finally {
       await project.remove();
@@ -912,10 +946,12 @@ async function main() {
   const done = [];
   let stopped = null;
   let failed = null;
+  const unfinished = [];
   try {
     for (const c of cases) {
       const r = await runCase(c);
       done.push(r);
+      inFlight = null;
       console.log(
         `${casePassed(r) ? "pass" : "FAIL"}  ${c.id.padEnd(18)} ${r.turns} turn${r.turns === 1 ? "" : "s"}, ${r.built ? "built" : "not built"}, ${usd(r.cost)}, ${Math.round(r.ms / 1000)}s   spent ${usd(meter.spent)} of $${args.maxUsd}`
       );
@@ -926,6 +962,9 @@ async function main() {
     if (e instanceof CapReached) stopped = e.message;
     else failed = e;
   } finally {
+    // Out of the pass rate, as it was never graded: kept to be read.
+    if (inFlight)
+      unfinished.push({ ...inFlight, stopped: stopped ?? (failed instanceof Error ? failed.message : String(failed)) });
     await admin
       .from("account_settings")
       .update({ turns_unlimited: was?.turns_unlimited ?? false })
@@ -942,10 +981,13 @@ async function main() {
     spent: Math.round(meter.spent * 1e4) / 1e4,
     partial: done.length < cases.length,
     cases: done,
+    ...(unfinished.length ? { unfinished } : {}),
     summary: summarise(done),
   };
   if (stopped) console.log(`\n${stopped}`);
   if (failed) console.log(`\nthe run failed: ${failed instanceof Error ? failed.message : failed}`);
+  for (const u of unfinished)
+    console.log(`kept unfinished: ${u.id}, ${u.trace.length} turn${u.trace.length === 1 ? "" : "s"} said and traced`);
   if (done.length || meter.spent > 0) {
     const file = writeRun(run);
     const s = run.summary;

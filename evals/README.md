@@ -125,7 +125,10 @@ and stops when what is spent plus that would pass `--max-usd`:
 
 What it measures afterwards replaces the count. A turn dearer than its count can pass the
 cap by the difference, which the $0.30 is set high to make rare. A run that stops writes the
-cases that finished, marked partial, with everything spent. With the cap at 1.5 a run stops
+cases that finished, marked partial, with everything spent; the case it stopped in is kept
+under `unfinished`, what was said and traced so far, never graded. Every case keeps each
+turn's trace (`trace`: its steps, repairs and what the validator refused), since the turn's
+own trace goes with the case's project. With the cap at 1.5 a run stops
 after three or four cases: give a full run about 3, or run it in halves with `--cases`.
 
 ## Reading the page

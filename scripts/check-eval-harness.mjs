@@ -30,6 +30,7 @@ import {
   replyText,
   runFileName,
   runModule,
+  stepLine,
   workaroundSigns,
 } from "./eval-luke.mjs";
 import { casePassed, signCount, summarise } from "../src/lib/eval-report.ts";
@@ -338,6 +339,19 @@ check(
     card.includes("RTO (boolean)") && !card.includes("[is_rto]")
   );
 }
+
+check(
+  "a turn's steps are kept as short lines (4 Oct)",
+  [
+    { step: "road", road: "design" },
+    { step: "model", attempt: 3, of: 4 },
+    { step: "critic", verdict: "redo", missing: 2 },
+    { step: "ux", verdict: "redo", how: "screenshot" },
+    { step: "data", problems: 1, notes: 0 },
+  ]
+    .map(stepLine)
+    .join(" | ") === "road design | model 3/4 | critic redo 2 missing | ux redo screenshot | data 1 problems"
+);
 
 console.log("\nthe cap");
 const m = capMeter(1);
