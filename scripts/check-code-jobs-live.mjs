@@ -182,6 +182,24 @@ try {
   check("and no other project's records", (theirs ?? []).length === 0);
   const { data: tok, error: tokErr } = await t.from("stores").select("access_token").eq("project_id", project.id);
   check("nor the store's token", !!tokErr || (tok ?? []).every((s) => !s.access_token));
+  // A rule that changes a row already there saves through abo_record_patch:
+  // refused to the ticket, a daily rule failed every day in production (0179).
+  const { data: mine, error: mineErr } = await admin
+    .from("records")
+    .insert({ project_id: project.id, module_id: idOf("day-notes"), data: { note: "a" } })
+    .select("id")
+    .single();
+  if (mineErr) throw new Error(`could not make a row to change: ${mineErr.message}`);
+  const { data: patched, error: patchErr } = await t.rpc("abo_record_patch", {
+    p_record: mine.id,
+    p_patch: { note: "b" },
+  });
+  check("it may change a row of the project's already there", !patchErr && patched?.status === "applied");
+  if (patchErr) console.log("     →", patchErr.message);
+  const { data: theirRow } = await admin.from("records").select("id").eq("project_id", other.id).limit(1).single();
+  const { data: refused } = await t.rpc("abo_record_patch", { p_record: theirRow.id, p_patch: { secret: "ours" } });
+  check("and none of another project's", refused?.status === "missing");
+  await admin.from("records").delete().eq("id", mine.id);
   const bad = await fetch(`${APP}/api/code-rules/worker`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
