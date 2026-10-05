@@ -689,7 +689,9 @@ export function buildSystemPrompt(
   currency = "INR",
   store: StoreContext | null = null,
   /** Who the merchant is, in one line (describeMerchant); nothing when unknown. */
-  merchant: string | null = null
+  merchant: string | null = null,
+  /** Designs that worked for a similar ask (lib/examples.ts describeExamples); "" when none bears on it. */
+  examples = ""
   // Two blocks, not one string. The contract is ~6,500 tokens and never
   // varies; the project name and section list do. Joined together the
   // whole thing is a different prefix for every project, so a cache
@@ -719,7 +721,7 @@ ${list}${
       modules.some((m) => m.read_only)
         ? "\nThe person asking is on the owner's team and changes only the sections they built. READ ONLY ones are someone else's: read them, answer from them, but a change to one is a new section of their own instead; say so in a sentence."
         : ""
-    }${storeBlock(store, currency)}`,
+    }${storeBlock(store, currency)}${examples}`,
   ];
 }
 

@@ -580,6 +580,8 @@ export type AssistantReply =
         checks?: DesignChecks;
       }
   ) & {
+    /** Set by the server, never the model: the designs that worked it was shown (lib/examples.ts), so what stuck is counted by them. */
+    examples?: string[];
     /** Set by the server, never the model: what the checks caught before the owner saw it (lib/engine.ts), for the superadmin's eyes. */
     caught?: { sentBack?: string; refused?: string[] };
     /**

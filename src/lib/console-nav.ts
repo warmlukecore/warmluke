@@ -17,6 +17,7 @@ import {
   GraduationCap,
   Inbox,
   MessagesSquare,
+  Pin,
   ScrollText,
   ShieldCheck,
   ShoppingBag,
@@ -75,6 +76,12 @@ export const CONSOLE_NAV: ConsoleGroup[] = [
         label: "Their AI",
         icon: Cable,
         about: "What a merchant's own ChatGPT or Claude is told, and how its asks come out",
+      },
+      {
+        to: "what-stuck",
+        label: "What stuck",
+        icon: Pin,
+        about: "Which builds merchants kept and used, and the examples Luke designs from",
       },
       {
         to: "evals",

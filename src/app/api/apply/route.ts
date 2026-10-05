@@ -108,9 +108,19 @@ export async function POST(req: Request) {
         const shown = titles.slice(0, 3).join(" · ");
         const rest = titles.length - 3;
         const undo = undoableFrom(applied);
+        // The sections it made, so a week on it can be told whether they stuck (0181).
+        const made = applied
+          .map((a) => a as { changeType?: string; moduleId?: string })
+          .filter((a) => a.changeType === "NEW_MODULE" && typeof a.moduleId === "string")
+          .map((a) => a.moduleId as string);
         await book.close(
           `${shown}${rest > 0 ? ` · and ${rest} more` : ""}.${offer.length ? "" : " Tell me what to change next."}`,
-          { status: "built", ...(undo.length ? { undo } : {}), ...(offer.length ? { next: offer } : {}) }
+          {
+            status: "built",
+            ...(undo.length ? { undo } : {}),
+            ...(offer.length ? { next: offer } : {}),
+            ...(made.length ? { made } : {}),
+          }
         );
         // Then each section built walked in a browser, after the answer has gone (lib/walk.ts).
         if (errors.length === 0) after(() => walkAfterBuild(client, projectId, applied, book.id));

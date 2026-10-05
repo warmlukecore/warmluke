@@ -268,6 +268,42 @@ do not hold. `check-learning` (pure) holds the reader, the words, the signals, t
 the writes against a stand-in database and model; `check-reflect-eval` (model tier, by hand)
 runs five exchanges on the real model and prints what it spent.
 
+### Designs that worked (example library)
+
+The plan step and the design call read the one or two designs nearest the owner's ask
+(`examplesFor` and `describeExamples` in `src/lib/examples.ts`). Each is what an owner
+said, what was built in words (which rows, what is recorded, what they press, what runs
+by itself), and why that shape and not a bigger one. Luke learns the shape and fits it
+to this owner. It is never a gallery, and never a field to copy.
+
+- **Seeds:** ours, in `src/lib/example-seeds.ts`, on problems none of the evals ask about,
+  so an eval still measures designing.
+- **Kept designs:** added once an administrator approves them (`abo_design_examples`,
+  0181).
+- **Matching:** word overlap, the way `describeSkills` matches. Words nearly every store's
+  ask has (order, customer, product) do not count. Two words must match, or there is no
+  block, and the prompt is exactly what it was.
+- **Not read by:** the operator reviewer, which forms its own view first.
+- **Recorded:** the reply keeps the ids it was shown (`examples`), so what stuck can be
+  counted by them.
+
+`check-examples` holds the seeds, the matching, the block and the curator, and lists
+what each eval's ask would be handed.
+
+### What stuck (activation and the curator)
+
+A build says which sections it made (`made`, `/api/apply`). It is kept when, a week on,
+each of them is still there and in use: a row put in since (on a store list, a field
+filled beside one of its rows), or a rule on it that ran (`abo_built_and_kept`, 0181).
+The console's What stuck screen counts this by week and by the example the design was
+shown.
+
+Opening that screen is the curator's week. Kept builds not yet proposed are put in words
+(`src/lib/curator.ts`): their shape, and the owner's words with numbers, phones, emails,
+links and orders taken out. They wait there to be read and edited. Only an approved one
+is read by Luke, and only its words: never where it came from. `check-what-stuck` (live)
+holds the count, the curator's once-only proposal and the approval.
+
 ## Context construction
 
 For each turn, the engine reads:

@@ -69,6 +69,7 @@ import {
 } from "@/lib/describe";
 import { describeBuild } from "@/lib/judge";
 import { describeScreenAsk, readScreenAsk, type ScreenShown } from "@/lib/screen";
+import { approvedExamples, describeExamples, examplesFor } from "@/lib/examples";
 import { aiStoreTools, fitForModel } from "@/lib/store-tools";
 import { aiProposeTool } from "@/lib/store-action-propose";
 
@@ -615,35 +616,45 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // system prompt because that prompt is cached across projects.
   // Beside it, what the owner's own connected assistant asked for
   // lately: the one piece of intent that lives outside this thread.
-  const [{ data: ruleRows }, requests, { data: changeOn }, { data: profile }, notesRows, skills] = await Promise.all([
-    client
-      .from("automations")
-      .select("id, name, enabled, module_id, definition")
-      .eq("project_id", project.id)
-      .order("created_at", { ascending: true })
-      .limit(RULES_IN_CONTEXT),
-    recentRequests(client, project.id, modules),
-    // Whether Luke may ask for a change in the shop: the account's own
-    // switch, off unless somebody at Warmluke turned it on. Read only
-    // when the tools are on offer at all.
-    lookups && store ? client.rpc("abo_feature", { p_name: "store_actions" }) : Promise.resolve({ data: false }),
-    // Who they are, from onboarding: read under their own RLS, so a
-    // connected assistant acting for them reads theirs and nobody else's.
-    client.from("profiles").select("full_name, business_name, role, monthly_orders, platform, team_size").maybeSingle(),
-    // What earlier conversations taught about the business (0131), read
-    // only when something writes it: the setting is the switch.
-    memoryModel() ? notesFor(client, project.id) : Promise.resolve([] as string[]),
-    // What Luke learned for this store (0176): read whenever it exists,
-    // switch or no switch, since only learning costs a model call. [] on
-    // a database without the table.
-    skillsFor(client, project.id),
-  ]);
+  const [{ data: ruleRows }, requests, { data: changeOn }, { data: profile }, notesRows, skills, approvedEx] =
+    await Promise.all([
+      client
+        .from("automations")
+        .select("id, name, enabled, module_id, definition")
+        .eq("project_id", project.id)
+        .order("created_at", { ascending: true })
+        .limit(RULES_IN_CONTEXT),
+      recentRequests(client, project.id, modules),
+      // Whether Luke may ask for a change in the shop: the account's own
+      // switch, off unless somebody at Warmluke turned it on. Read only
+      // when the tools are on offer at all.
+      lookups && store ? client.rpc("abo_feature", { p_name: "store_actions" }) : Promise.resolve({ data: false }),
+      // Who they are, from onboarding: read under their own RLS, so a
+      // connected assistant acting for them reads theirs and nobody else's.
+      client
+        .from("profiles")
+        .select("full_name, business_name, role, monthly_orders, platform, team_size")
+        .maybeSingle(),
+      // What earlier conversations taught about the business (0131), read
+      // only when something writes it: the setting is the switch.
+      memoryModel() ? notesFor(client, project.id) : Promise.resolve([] as string[]),
+      // What Luke learned for this store (0176): read whenever it exists,
+      // switch or no switch, since only learning costs a model call. [] on
+      // a database without the table.
+      skillsFor(client, project.id),
+      // Kept designs an administrator approved as examples (0181), beside our seeds.
+      approvedExamples(client),
+    ]);
   const known = notesRows;
   // After what is known, so the plan, talk and design prompts all read it.
   // Only a project that has learned something has a block, and no
   // recorded turn's project has, so the tapes replay unchanged.
   const { block: learnedBlock, used } = describeSkills(skills, message);
   const learned = { skills, used };
+  // Designs that worked for a similar ask (lib/examples.ts), for the plan
+  // step and the design call alone: the talk road answers, it does not design.
+  const examples = examplesFor(message, approvedEx);
+  const examplesBlock = describeExamples(examples);
   const merchant =
     [describeMerchant(profile as ProfileRow | null), describeKnown(known), learnedBlock].filter(Boolean).join("\n") ||
     null;
@@ -751,7 +762,8 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   if (!resume) tell({ step: "road", road });
   // Money as the owner chose it, else as their shop keeps it: Luke writes the same currency the app shows.
   const money = projectFormat(project, store);
-  const designSystem = () => buildSystemPrompt(modules, project.name, money.locale, money.currency, store, merchant);
+  const designSystem = () =>
+    buildSystemPrompt(modules, project.name, money.locale, money.currency, store, merchant, examplesBlock);
   let system =
     road === "talk"
       ? buildTalkPrompt(modules, project.name, money.locale, money.currency, store, merchant)
@@ -783,7 +795,15 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     if (planned) return;
     planned = true;
     if (!planOn || lastReplyTypeOf(history) === "blueprint") return;
-    const planPrompt = buildPlanPrompt(modules, project.name, money.locale, money.currency, store, merchant);
+    const [planContract, planContext] = buildPlanPrompt(
+      modules,
+      project.name,
+      money.locale,
+      money.currency,
+      store,
+      merchant
+    );
+    const planPrompt: [string, string] = [planContract, planContext + examplesBlock];
     // An operator's view first, read by the plan call alone: in Luke's own
     // chat, where an idea can still be said and asked about. Not on a
     // resumed turn, and not once they agreed (a yes to a plan, or "just
@@ -794,7 +814,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     let operator = "";
     if (opsOn) {
       tell({ step: "ops", ideas: null });
-      const view = await opsView({ context: planPrompt[1], request: userTurn, history, model: opsOn, signal });
+      const view = await opsView({ context: planContext, request: userTurn, history, model: opsOn, signal });
       operator = opsBlock(view);
       tell({ step: "ops", ideas: view?.ideas.length ?? 0 });
     }
@@ -1286,6 +1306,11 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // exactly what it was before the gate.
   if (hasChecks(checks) && (parsed.reply.type === "plans" || parsed.reply.type === "blueprint")) {
     parsed.reply.checks = checks;
+  }
+  // Which designs that worked it was shown, so what stuck can be counted by them (4c).
+  delete (parsed.reply as { examples?: unknown }).examples;
+  if (examples.length && (parsed.reply.type === "plans" || parsed.reply.type === "blueprint")) {
+    parsed.reply.examples = examples.map((e) => e.id);
   }
 
   return {

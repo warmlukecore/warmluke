@@ -88,7 +88,7 @@ const STOP = new Set(
 );
 
 /** A text's words, lower-case, without filler; a plural is its singular. */
-function wordsOf(text: string): Set<string> {
+export function wordsOf(text: string): Set<string> {
   const out = new Set<string>();
   for (const w of text.toLowerCase().split(/[^\p{L}\p{N}]+/u)) {
     if (w.length < 3 || STOP.has(w) || /^\d+$/.test(w)) continue;
