@@ -15,6 +15,7 @@ import { modelErrorKindOf } from "@/lib/ai";
 import { blueprintAsText, type TurnResult } from "@/lib/engine";
 import { openAt, settleDesign, text, type Json } from "@/lib/client-design";
 import { undoableFrom } from "@/lib/undo";
+import { afterOwnerTurn } from "@/lib/learning";
 import type { TurnContext, TurnJob } from "@/lib/turn-run";
 
 /** The line an ask is answered on, filled once; false when it was stopped or filled already. */
@@ -110,6 +111,25 @@ export async function finishClientTurn(
   }
 
   const reply = turn.reply;
+  // What this ask teaches, as a turn in Luke's own chat does (5 Oct): an
+  // ask through the owner's own AI is one of theirs, and Luke grows with
+  // the store however it is reached. A builder's ask is not (0140).
+  if (ctx.proj.owner_id === job.userId)
+    later(() =>
+      afterOwnerTurn(client, {
+        projectId: ctx.proj.id,
+        conversationId: job.conversationId,
+        turnId: job.answerId,
+        message: job.message.trim(),
+        reply,
+        known: turn.known,
+        learned: turn.learned,
+        repairs: turn.repairs,
+        criticRedo: turn.criticRedo,
+        sentBack: turn.sentBackWhy,
+        viaTheirAI: true,
+      })
+    );
   // Asked back, not guessed at: the merchant sees the questions in this
   // thread and can answer here, and the assistant hears them too, and
   // carries on in the same thread with their answers.

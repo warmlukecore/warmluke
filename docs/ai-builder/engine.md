@@ -196,8 +196,10 @@ the one that helped more, then the newest), the whole about 2,500 characters at 
 read in full are the turn's `learned.used`. A project that has learned nothing has no block,
 so recorded turns replay unchanged.
 
-**Reflect.** After an owner's own turn (`finishTurn`, with `later`, never before the reply),
-each id read in full is counted (`recordUse`: `uses`, `last_used_at`, a `used` event), then
+**Reflect.** After an owner's own turn (`afterOwnerTurn`, with `later`, never before the
+reply): in Luke's own chat (`finishTurn`) and, since 5 Oct, an ask through the owner's own AI
+(`finishClientTurn`; `viaTheirAI` says so to the reflector), so Luke grows with the store
+however it is reached. Each id read in full is counted (`recordUse`: `uses`, `last_used_at`, a `used` event), then
 `reflect` runs, which is a model call only when the turn carries a signal (`hasSignal`):
 
 - the owner corrected Luke (`isCorrection`: the console's "frustrated" words from 0175, a
@@ -205,10 +207,19 @@ each id read in full is counted (`recordUse`: `uses`, `last_used_at`, a `used` e
   you");
 - two or more repairs;
 - the critic sent the design back (`criticRedo` on the turn's result);
+- a check sent the design back before the owner saw it, the critic or a reviewer after it
+  (`sentBack`, the line itself, so what was missed for this store is kept and the first
+  design is right next time);
 - a design of three or more parts passed (a procedure worth keeping);
 - the owner's thumbs on a reply (`reflectOnFeedback`, which reads the reply, the owner's
   words before it, the thread and the project under the caller's rights, and only for the
-  owner's own thread).
+  owner's own thread, their AI's asks included); a build they put back (`/api/undo`) and a
+  design they turned down through their AI (`reject_change`, with their reason) count as a
+  thumbs down.
+
+What the checks caught on a design (`reply.caught`: the line it was sent back with, what the
+validator refused on the way) is kept on the reply by the server and drawn under its card for
+a superadmin alone (`/api/models` `superadmin`), never for the merchant.
 
 No signal, no call: that is the cost guard. `ANTHROPIC_REFLECT_MODEL` is the switch (unset:
 nothing reflected). The call (`asJob("reflect")`) reads why the turn counts, the exchange as

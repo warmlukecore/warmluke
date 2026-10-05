@@ -423,6 +423,49 @@ async function clearUp(shop: Shop, thread: string, names: string[]) {
   await shop.admin.from("conversations").delete().eq("id", thread);
 }
 
+test("what the checks caught on a design is shown to a superadmin alone", async ({ signedIn: page, shop }) => {
+  // The line a design was sent back with and what the validator refused
+  // on the way, kept on the reply (lib/engine.ts) for Warmluke's own eyes
+  // (5 Oct). Who is one is the server's answer (/api/models); here it is
+  // stood in for, so no account is changed under other tests.
+  const thread = await replyThread(
+    shop,
+    {
+      type: "plans",
+      message: "This adds the sections.",
+      plans: [newSection("e2e-caught", "Caught")],
+      caught: {
+        sentBack: "SIMPLER: a table and its row form do this",
+        refused: ["newModule.name is required for a new module."],
+      },
+    },
+    "okey do that then"
+  );
+  // Both answers stood in for: the check user is an administrator.
+  let superadmin = false;
+  await page.route("**/api/models", async (route) => {
+    const res = await route.fetch();
+    await route.fulfill({ response: res, json: { ...(await res.json()), superadmin } });
+  });
+  try {
+    await page.goto(`/app/${shop.projectId}`);
+    const { panel } = await luke(page);
+    await expect(panel.getByText("New section: Caught")).toBeVisible();
+    await expect(panel.getByText(/Luke caught/)).toHaveCount(0);
+
+    superadmin = true;
+    await page.reload();
+    const { panel: admin } = await luke(page);
+    const line = admin.getByText("Luke caught 2 before the owner saw it");
+    await expect(line).toBeVisible();
+    await line.click();
+    await expect(admin.getByText("Sent back: SIMPLER: a table and its row form do this")).toBeVisible();
+    await expect(admin.getByText("Fixed: newModule.name is required for a new module.")).toBeVisible();
+  } finally {
+    await clearUp(shop, thread, ["e2e-caught"]);
+  }
+});
+
 test("two changes in one reply stay up for a yes when the thread reloads", async ({ signedIn: page, shop }) => {
   // Reloaded, a reply with more than one plan came back as a line of
   // text, and a finished turn reloads the thread (it touches the

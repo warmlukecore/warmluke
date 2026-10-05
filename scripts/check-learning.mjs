@@ -134,6 +134,11 @@ check("two repairs are", hasSignal({ ...quiet, repairs: 2 }));
 check("a design sent back is", hasSignal({ ...quiet, criticRedo: true }));
 check("three parts built is", hasSignal({ ...quiet, built: 3 }));
 check("the owner's thumbs are", hasSignal({ ...quiet, feedback: { verdict: "up" } }));
+check(
+  "a design a check sent back is, with its line (5 Oct)",
+  hasSignal({ ...quiet, sentBack: "Use the store's returns" })
+);
+check("an empty line is not", !hasSignal({ ...quiet, sentBack: null }));
 
 console.log("\nthe reflector's reply, read back");
 const empt = (d) => Object.values(d).every((v) => Array.isArray(v) && v.length === 0);
@@ -407,6 +412,17 @@ check(
 touched = false;
 await recordUse(untouchable, { projectId: "p1", conversationId: null, turnId: null, used: [] });
 check("nothing used, nothing written", !touched);
+
+console.log("\na design a check sent back, asked through their own AI (5 Oct)");
+modelSays = JSON.stringify({ create: [], patch: [], retire: [], helped: [], hurt: [], repeats: [] });
+await reflect(recording([]).db, {
+  ...input,
+  signals: { ...quiet, sentBack: "SIMPLER: a table and its row form do this", viaTheirAI: true },
+});
+const sentBackPrompt =
+  lastAsk?.messages?.[0]?.content?.map?.((c) => c.text).join("") ?? JSON.stringify(lastAsk?.messages);
+check("the reflection reads what it was sent back for", sentBackPrompt.includes("a table and its row form do this"));
+check("and that the owner asked through their own AI", /their own AI/.test(sentBackPrompt));
 
 globalThis.fetch = real;
 console.log(

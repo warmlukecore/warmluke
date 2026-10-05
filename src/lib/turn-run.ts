@@ -11,8 +11,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { modelErrorKindOf, type ChatTurn } from "@/lib/ai";
 import { MAX_REPAIR_ATTEMPTS, NOT_ANSWERED, answeredTurns, type TurnResult } from "@/lib/engine";
 import { noteJudgement } from "@/lib/judge";
-import { learn, saidBack } from "@/lib/memory";
-import { isCorrection, recordUse, reflect } from "@/lib/learning";
+import { afterOwnerTurn } from "@/lib/learning";
 import { traceTurn } from "@/lib/trace";
 import { finishClientTurn, settleClientLine } from "@/lib/client-turn";
 import { TITLE_MAX } from "@/lib/types";
@@ -329,27 +328,24 @@ export async function finishTurn(
   // next time (0131) — after the answer is out, never in its way.
   const said = turn.reply;
   // The notes are the owner's (0140): a builder's turn would pay for a call whose notes could not be kept.
-  if (ctx.proj.owner_id === job.userId) {
-    later(() => learn(client, { projectId: ctx.proj.id, message: job.message.trim(), reply: said, known: turn.known }));
+  if (ctx.proj.owner_id === job.userId)
     // And how to work for this store (learning.ts): what was read in full
     // is counted as used, then the turn is reflected on, which is a model
     // call only when something says it is worth one (hasSignal).
-    const where = { projectId: ctx.proj.id, conversationId: job.conversationId, turnId: replyId };
-    const message = job.message.trim();
-    const built =
-      said.type === "blueprint" ? said.blueprint.plans.length : said.type === "plans" ? said.plans.length : 0;
-    later(async () => {
-      await recordUse(client, { ...where, used: turn.learned.used });
-      await reflect(client, {
-        ...where,
-        message,
-        reply: saidBack(said),
-        signals: { correction: isCorrection(message), repairs: turn.repairs, criticRedo: turn.criticRedo, built },
-        used: turn.learned.used,
-        skills: turn.learned.skills,
-      });
-    });
-  }
+    later(() =>
+      afterOwnerTurn(client, {
+        projectId: ctx.proj.id,
+        conversationId: job.conversationId,
+        turnId: replyId,
+        message: job.message.trim(),
+        reply: said,
+        known: turn.known,
+        learned: turn.learned,
+        repairs: turn.repairs,
+        criticRedo: turn.criticRedo,
+        sentBack: turn.sentBackWhy,
+      })
+    );
   later(() =>
     traceTurn(client, {
       projectId: ctx.proj.id,

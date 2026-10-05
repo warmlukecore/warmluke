@@ -1,4 +1,5 @@
 import { NextResponse, after } from "next/server";
+import { reflectOnFeedback } from "@/lib/learning";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getUserClient } from "@/lib/supabase-server";
 import {
@@ -1329,6 +1330,26 @@ export async function POST(req: Request) {
       });
       if (rErr) return ok(id, text({ error: rErr.message }));
       const answer = said as { rejected: boolean; already?: boolean; status?: string; reason?: string } | null;
+
+      // Turned down: Luke learns from it as from a thumbs down on the
+      // design the ask was answered with (5 Oct).
+      if (answer?.rejected && !answer.already) {
+        const { data: line } = await db
+          .from("messages")
+          .select("id")
+          .eq("role", "assistant")
+          .eq("payload->>request_id", requestId)
+          .limit(1)
+          .maybeSingle();
+        if (line)
+          after(() =>
+            reflectOnFeedback(db, {
+              messageId: line.id as string,
+              verdict: "down",
+              note: reason ? `The owner turned this design down: ${reason}` : "The owner turned this design down.",
+            })
+          );
+      }
 
       if (!answer?.rejected) {
         return ok(

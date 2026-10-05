@@ -571,6 +571,8 @@ export type AssistantReply =
         checks?: DesignChecks;
       }
   ) & {
+    /** Set by the server, never the model: what the checks caught before the owner saw it (lib/engine.ts), for the superadmin's eyes. */
+    caught?: { sentBack?: string; refused?: string[] };
     /**
      * Set by the server, never the model: the owner said yes to this design
      * in words before it was drawn (a proposal, then "build it"), so the

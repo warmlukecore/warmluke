@@ -28,7 +28,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callModel, reflectModel, stripFences } from "@/lib/ai";
-import { saidBack } from "@/lib/memory";
+import { learn, saidBack } from "@/lib/memory";
 import { asJob, metered } from "@/lib/usage";
 import type { AssistantReply } from "@/lib/types";
 
@@ -166,11 +166,19 @@ export type ReflectSignals = {
   /** Parts in a design that passed: three or more is a procedure that may be worth keeping. */
   built: number;
   feedback?: { verdict: "up" | "down"; note?: string };
+  /**
+   * What a check (the critic, or a reviewer after it) sent the design back
+   * for, before the owner saw it: what was missed for this store, worth
+   * keeping so the first design is right next time (5 Oct).
+   */
+  sentBack?: string | null;
+  /** Asked through the owner's own AI (MCP): their words came through it. */
+  viaTheirAI?: boolean;
 };
 
 /** Whether a turn is worth a reflection. None, no call: this is what keeps it cheap. */
 export function hasSignal(s: ReflectSignals): boolean {
-  return s.correction || s.repairs >= 2 || s.criticRedo || s.built >= 3 || !!s.feedback;
+  return s.correction || s.repairs >= 2 || s.criticRedo || s.built >= 3 || !!s.feedback || !!s.sentBack;
 }
 
 type NewSkill = { kind: "lesson" | "skill"; title: string; when_to_use: string; body: string };
@@ -344,8 +352,13 @@ function why(s: ReflectSignals): string {
   const out: string[] = [];
   if (s.correction) out.push("The owner corrected the assistant.");
   if (s.repairs >= 2) out.push(`The design needed ${s.repairs} repairs before it passed the checks.`);
-  if (s.criticRedo) out.push("A check sent the design back once for missing what was asked.");
+  if (s.sentBack)
+    out.push(
+      `A check sent the design back before the owner saw it: "${s.sentBack.slice(0, 600)}". Keep what this says about how this store works, so the first design is right next time; not a rule about designing in general.`
+    );
+  else if (s.criticRedo) out.push("A check sent the design back once for missing what was asked.");
   if (s.built >= 3) out.push(`A design of ${s.built} parts passed: a procedure that may be worth keeping.`);
+  if (s.viaTheirAI) out.push("The owner asked through their own AI assistant: their words came through it.");
   if (s.feedback)
     out.push(
       `The owner rated this reply ${s.feedback.verdict === "up" ? "up" : "down"}${s.feedback.note ? `: "${s.feedback.note.slice(0, 500)}"` : "."}`
@@ -566,6 +579,55 @@ async function write(db: SupabaseClient, w: Where, d: CuratedDeltas): Promise<Ou
 }
 
 /** What a turn read in full, counted as used. Never throws. */
+/**
+ * What an owner's turn leaves behind, once its answer is out (callers run
+ * it later): the business facts in it (memory.ts), what was read in full
+ * counted as used, and a reflection, a model call only when a signal says
+ * one is worth it. Luke's own chat and an ask through the owner's own AI
+ * alike (5 Oct): one Luke, growing with each store however it is reached.
+ */
+export async function afterOwnerTurn(
+  db: SupabaseClient,
+  t: {
+    projectId: string;
+    conversationId: string;
+    turnId: string;
+    message: string;
+    reply: AssistantReply;
+    known: string[];
+    learned: { skills: Skill[]; used: string[] };
+    repairs: number;
+    criticRedo: boolean;
+    sentBack?: string | null;
+    viaTheirAI?: boolean;
+  }
+): Promise<void> {
+  const where = { projectId: t.projectId, conversationId: t.conversationId, turnId: t.turnId };
+  const built =
+    t.reply.type === "blueprint" ? t.reply.blueprint.plans.length : t.reply.type === "plans" ? t.reply.plans.length : 0;
+  await Promise.all([
+    learn(db, { projectId: t.projectId, message: t.message, reply: t.reply, known: t.known }),
+    (async () => {
+      await recordUse(db, { ...where, used: t.learned.used });
+      await reflect(db, {
+        ...where,
+        message: t.message,
+        reply: saidBack(t.reply),
+        signals: {
+          correction: isCorrection(t.message),
+          repairs: t.repairs,
+          criticRedo: t.criticRedo,
+          built,
+          sentBack: t.sentBack ?? null,
+          viaTheirAI: t.viaTheirAI,
+        },
+        used: t.learned.used,
+        skills: t.learned.skills,
+      });
+    })(),
+  ]);
+}
+
 export async function recordUse(
   db: SupabaseClient,
   input: { projectId: string; conversationId: string | null; turnId: string | null; used: string[] }
@@ -617,7 +679,8 @@ export async function reflectOnFeedback(
         .eq("id", reply.conversation_id)
         .maybeSingle(),
     ]);
-    if (!asked || !thread || thread.asked_client) return;
+    // An ask through their own AI is theirs too (5 Oct): its thread teaches like any other.
+    if (!asked || !thread) return;
     const { data: project } = await db
       .from("projects")
       .select("id, owner_id")

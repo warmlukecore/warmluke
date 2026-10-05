@@ -774,6 +774,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         if (last && p.usage) last.usage = p.usage;
         if (last && p.trace) last.trace = p.trace;
         if (last && "checks" in p && p.checks) last.checks = p.checks;
+        if (last && p.caught) last.caught = p.caught;
         // An ask from their AI that waits as a request (0139): the line
         // says so, and what became of it is read off the request itself.
         const waitsAs = (p as { request_id?: unknown }).request_id;
@@ -813,6 +814,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     default: string | null;
     shows: LukeShows;
     team?: boolean;
+    superadmin?: boolean;
   } | null>(null);
   const [modelChoice, setModelChoice] = useState<string | null>(() => {
     try {
@@ -1975,6 +1977,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         const took = {
           ...(reply.usage ? { usage: reply.usage } : {}),
           ...("checks" in reply && reply.checks ? { checks: reply.checks } : {}),
+          ...(reply.caught ? { caught: reply.caught } : {}),
         };
 
         if (reply.type === "clarify") {

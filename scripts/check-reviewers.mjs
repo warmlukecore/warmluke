@@ -616,6 +616,15 @@ check(
 fresh({ design: DESIGN, gap: '{"unmet": []}' });
 const repaired = await drawn(REFUSED);
 check("one the validator refuses, Luke repairs", designs() === 1 && repaired.r.ok && repaired.r.repairs === 1);
+check(
+  "what was caught is kept on the reply for the superadmin, and nothing when nothing was",
+  holds.r.ok &&
+    holds.r.reply.caught === undefined &&
+    reviewedOnce.r.ok &&
+    /Use the store's own returns/.test(reviewedOnce.r.reply.caught?.sentBack ?? "") &&
+    repaired.r.ok &&
+    (repaired.r.reply.caught?.refused ?? []).length > 0
+);
 
 console.log("\nthe operator's view, before the plan");
 fresh(

@@ -178,6 +178,8 @@ export interface ChatMessage {
   usage?: TurnUsage;
   /** On a design card: what the reviewers after the critic said of it, as the reply keeps it (lib/review-gate). */
   checks?: DesignChecks;
+  /** On a design card: what the checks caught before the owner saw it (lib/engine.ts), drawn for the superadmin alone. */
+  caught?: { sentBack?: string; refused?: string[] };
 }
 
 /**
@@ -1160,6 +1162,35 @@ function dryRunWords(d: DryRun): string {
 }
 
 /**
+ * What the checks caught on a design before the owner saw it, under its
+ * card, for Warmluke's superadmin alone (5 Oct): the line it was sent back
+ * with, and what the validator refused on the way. Closed until opened.
+ */
+function CaughtLine({ caught }: { caught: NonNullable<ChatMessage["caught"]> }) {
+  const refused = caught.refused ?? [];
+  const count = (caught.sentBack ? 1 : 0) + refused.length;
+  return (
+    <details className="group text-[11px] text-fg-faint">
+      <summary className="cursor-pointer list-none select-none hover:text-fg-muted">
+        <ChevronRight
+          aria-hidden
+          size={14}
+          strokeWidth={2}
+          className="inline shrink-0 align-[-2px] transition-transform duration-150 group-open:rotate-90"
+        />
+        Luke caught {count} before the owner saw it
+      </summary>
+      <ul className="mt-1 space-y-1 border-l border-line pl-2.5 leading-relaxed break-words text-fg-muted">
+        {caught.sentBack && <li>Sent back: {withoutIds(caught.sentBack)}</li>}
+        {refused.map((r, i) => (
+          <li key={i}>Fixed: {withoutIds(r)}</li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/**
  * What the reviewers after the critic said of a design, under its card:
  * one quiet line, closed until opened, with a mark when something needs a
  * look. Read from the reply as kept, so a reloaded thread shows it too.
@@ -1249,12 +1280,17 @@ function BlueprintCard({
   peek,
   onReadSection,
   checks,
+  caught,
+  superadmin = false,
 }: {
   message: string;
   blueprint: Blueprint;
   modules: ModuleRow[];
   /** What the reviewers after the critic said of this design, when they said anything. */
   checks?: DesignChecks;
+  /** What the checks caught before the owner saw it; drawn only for a superadmin. */
+  caught?: ChatMessage["caught"];
+  superadmin?: boolean;
   /** Columns of the section in view, so a plan that adds some says so. */
   currentColumns?: Array<{ field: string; label: string }>;
   /** That section's features today (null: none, so its table), so a plan replacing a view or a tab says what goes. */
@@ -1522,6 +1558,7 @@ function BlueprintCard({
       )}
 
       {checks && <ChecksLine checks={checks} />}
+      {superadmin && caught && <CaughtLine caught={caught} />}
 
       {!done && nothingLeft && (
         <div className="text-[11px] text-fg-faint">Nothing left to build: all of this is already in your app.</div>
@@ -2184,7 +2221,13 @@ export default function ChatPanel({
   /** Luke is answering in another thread than the one on screen; this goes back to it. */
   turnElsewhere?: (() => void) | null;
   /** What this account's Luke may answer on, and what each reply shows them (/api/models). */
-  luke?: { models: OfferedModel[]; default: string | null; shows: LukeShows; team?: boolean } | null;
+  luke?: {
+    models: OfferedModel[];
+    default: string | null;
+    shows: LukeShows;
+    team?: boolean;
+    superadmin?: boolean;
+  } | null;
   /** The model picked for the next turn. */
   model?: string | null;
   onModel?: (id: string) => void;
@@ -2634,6 +2677,8 @@ export default function ChatPanel({
   const shows: LukeShows = luke?.shows ?? "nothing";
   // Warmluke's own team (0158): each reply's turn and time, and the thread's id and total.
   const team = luke?.team === true;
+  // An administrator alone (5 Oct): what the checks caught on each design.
+  const superadmin = luke?.superadmin === true;
   const debugOf = (m: ChatMessage): TurnDebug | null =>
     team && UUID.test(m.id) ? { turnId: m.id, conversationId, projectId, ms: m.trace?.ms ?? null } : null;
   // The thumbs this person gave the replies in this thread, read once as
@@ -4023,6 +4068,8 @@ export default function ChatPanel({
                             peek={onPeekSection}
                             onReadSection={onReadSection}
                             checks={m.checks}
+                            caught={m.caught}
+                            superadmin={superadmin}
                           />
                           {replyFoot(m)}
                         </div>
@@ -4294,6 +4341,7 @@ export default function ChatPanel({
                           {!built && <ChangePreview plan={plan} peek={onPeekSection} onReadSection={onReadSection} />}
 
                           {m.checks && <ChecksLine checks={m.checks} />}
+                          {superadmin && m.caught && <CaughtLine caught={m.caught} />}
 
                           {/* Actions */}
                           {plan.changeType === "MODULE_DELETE" && targetModule ? (

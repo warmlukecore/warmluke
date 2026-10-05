@@ -34,6 +34,8 @@ export async function GET(req: Request) {
       default: settings.default,
       shows: settings.shows,
       team: settings.team,
+      // An administrator alone (5 Oct): what the checks caught on each design.
+      superadmin: admin === true,
       ...(offered ? { offered } : {}),
     },
     { headers: { "cache-control": "private, no-store" } }

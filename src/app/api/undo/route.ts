@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { getUserClient } from "@/lib/supabase-server";
 import { putBack } from "@/lib/apply";
+import { reflectOnFeedback } from "@/lib/learning";
 import type { UndoStep } from "@/lib/undo";
 
 export const runtime = "nodejs";
@@ -68,6 +69,11 @@ export async function POST(req: Request) {
       await client.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", thread);
     }
 
+    // Putting a build back says it was not what they wanted: Luke learns
+    // from it as from a thumbs down on that build (5 Oct).
+    if (done.length) {
+      after(() => reflectOnFeedback(client, { messageId, verdict: "down", note: "The owner put this build back." }));
+    }
     return NextResponse.json({ done, couldNot, message: line });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";

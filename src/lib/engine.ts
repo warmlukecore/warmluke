@@ -1255,6 +1255,17 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // questions or next steps ("an 'internal_status' field", a blueprint's
   // summary, 4 Oct). The raw reply the thread replays keeps them.
   plainReply(parsed.reply, columnLabels(modules, schemas));
+  // What the checks caught before the owner saw it: the line the design was
+  // sent back with, and what the validator refused on the way. Kept on the
+  // reply for Warmluke's superadmin (ChatPanel), never drawn for the
+  // merchant (5 Oct). The server's alone, as heads_up is.
+  delete (parsed.reply as { caught?: unknown }).caught;
+  const caughtLine = sentBack ? (sentBackDesign?.why ?? null) : null;
+  if (caughtLine || repairErrors.length)
+    parsed.reply.caught = {
+      ...(caughtLine ? { sentBack: caughtLine } : {}),
+      ...(repairErrors.length ? { refused: repairErrors.slice(0, 5) } : {}),
+    };
   // What the reviewers said of the design that is the answer, kept on the
   // reply for its card. Nothing when they said nothing: the reply is then
   // exactly what it was before the gate.
