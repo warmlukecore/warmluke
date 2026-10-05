@@ -18,6 +18,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, ThumbsDown, ThumbsUp } from "lucide-react";
 import { supabase } from "@/lib/supabase-client";
+import { scopeArgs, useConsoleScope } from "@/lib/console-scope";
 import { useUser } from "@/lib/auth";
 import { ago } from "@/lib/when";
 import { dollars, modelName } from "@/lib/model-prices";
@@ -162,6 +163,8 @@ function said(e: Event): string {
 
 export default function LearningPage() {
   const { user, loading } = useUser();
+  // Whose numbers: every account, one, or one app of it (0184).
+  const scope = useConsoleScope();
   const router = useRouter();
   const gate = useParams<{ gate: string }>().gate;
   const open = useSearchParams().get("project");
@@ -184,7 +187,7 @@ export default function LearningPage() {
   }, []);
 
   const load = useCallback(async () => {
-    const { data, error: err } = await supabase.rpc("abo_admin_learning", { p_days: days });
+    const { data, error: err } = await supabase.rpc("abo_admin_learning", { p_days: days, ...scopeArgs(scope) });
     if (err) {
       setError(adminError(err, "0176"));
       return;
@@ -192,7 +195,7 @@ export default function LearningPage() {
     setError(null);
     setL(data as Learning);
     setNow(Date.now());
-  }, [days]);
+  }, [days, scope]);
 
   useEffect(() => {
     if (user) load();

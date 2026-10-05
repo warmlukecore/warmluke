@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
+import { scopeArgs, useConsoleScope } from "@/lib/console-scope";
 import { useUser } from "@/lib/auth";
 import { PageFrame } from "@/components/PageFrame";
 import { Choices, Stat, adminError } from "@/components/AdminParts";
@@ -52,6 +53,8 @@ const date = (iso: string | null) =>
 
 export default function WhatStuckPage() {
   const { user, loading } = useUser();
+  // Whose numbers: every account, one, or one app of it (0184).
+  const scope = useConsoleScope();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [r, setR] = useState<Report | null>(null);
@@ -63,14 +66,14 @@ export default function WhatStuckPage() {
   }, [loading, user, router]);
 
   const load = useCallback(async () => {
-    const { data, error: err } = await supabase.rpc("abo_admin_what_stuck", { p_weeks: weeks });
+    const { data, error: err } = await supabase.rpc("abo_admin_what_stuck", { p_weeks: weeks, ...scopeArgs(scope) });
     if (err) {
       setError(adminError(err, "0181"));
       return;
     }
     setError(null);
     setR(data as Report);
-  }, [weeks]);
+  }, [weeks, scope]);
 
   useEffect(() => {
     if (user) void load();

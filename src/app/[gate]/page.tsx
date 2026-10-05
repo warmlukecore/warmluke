@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
+import { useConsoleScope } from "@/lib/console-scope";
 import { useUser } from "@/lib/auth";
 import { PageFrame } from "@/components/PageFrame";
 import { Switch } from "@/components/ui/Switch";
@@ -100,6 +101,8 @@ export default function Admin() {
   const [now, setNow] = useState(() => Date.now());
   // The account whose whole story is open, if any.
   const [open, setOpen] = useState<Account | null>(null);
+  // One account chosen above (0184): the list is that account, its whole story open.
+  const scope = useConsoleScope();
   /** The account whose Luke models and costs are being set. */
   const [lukeFor, setLukeFor] = useState<Account | null>(null);
 
@@ -237,13 +240,19 @@ export default function Admin() {
     () =>
       (rows ?? []).filter(
         (r) =>
-          !q ||
-          r.email.toLowerCase().includes(q) ||
-          (r.full_name ?? "").toLowerCase().includes(q) ||
-          (r.business_name ?? "").toLowerCase().includes(q)
+          (!scope.account || r.user_id === scope.account) &&
+          (!q ||
+            r.email.toLowerCase().includes(q) ||
+            (r.full_name ?? "").toLowerCase().includes(q) ||
+            (r.business_name ?? "").toLowerCase().includes(q))
       ),
-    [rows, q]
+    [rows, q, scope]
   );
+  useEffect(() => {
+    if (!scope.account || !rows) return;
+    const chosen = rows.find((r) => r.user_id === scope.account);
+    if (chosen) setOpen(chosen);
+  }, [scope, rows]);
 
   // The numbers at the top, from the same rows as the table: the
   // merchants', not Warmluke's own team, who are not onboarded as a

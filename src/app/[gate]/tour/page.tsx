@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
+import { scopeArgs, useConsoleScope } from "@/lib/console-scope";
 import { useUser } from "@/lib/auth";
 import { ago } from "@/lib/when";
 import { TOUR_STOPS, type TourCopy } from "@/lib/tour";
@@ -49,6 +50,8 @@ const titleOf = (key: string | null) => TOUR_STOPS.find((s) => s.key === key)?.t
 
 export default function TourAdmin() {
   const { user, loading } = useUser();
+  // Whose numbers: every account, one, or one app of it (0184).
+  const scope = useConsoleScope();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<Report | null>(null);
@@ -66,7 +69,7 @@ export default function TourAdmin() {
 
   const load = useCallback(async () => {
     const [r, s] = await Promise.all([
-      supabase.rpc("abo_admin_tour_report", { p_limit: 200 }),
+      supabase.rpc("abo_admin_tour_report", { p_limit: 200, ...scopeArgs(scope) }),
       supabase.from("tour_settings").select("enabled, copy").maybeSingle(),
     ]);
     setNow(Date.now());
@@ -88,7 +91,7 @@ export default function TourAdmin() {
       setEnabled(settings.enabled);
       setCopy(settings.copy);
     }
-  }, []);
+  }, [scope]);
 
   useEffect(() => {
     if (user) load();

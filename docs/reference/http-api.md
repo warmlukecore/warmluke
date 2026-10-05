@@ -113,6 +113,10 @@ with a 404. Unset, the console is at `/admin`. The screens still refuse non-admi
 and so does every function behind them; the address only keeps it from being found.
 
 Its Conversations screen (0158) opens any conversation by its id, a message's or a turn's:
+Since 0184 every console report (`abo_admin_spend`, `_routing`, `_trouble`, `_their_ai`, `_agents`,
+`_learning`, `_conversations`, `_tour_report`, `_what_stuck`) takes `p_account` and `p_app`: one account's
+apps and the team in them, or one app, counted in the database; neither is everyone, as before. The
+access log takes `p_account` and `p_admin`, and says which administrators have acted.
 `abo_admin_conversations` lists them (latest, went wrong, cost most, took longest, over a
 window of days, or by owner, project, store or title words), and `abo_admin_conversation`
 returns one whole, with every turn's trace, writing a `view_conversation` row to the

@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
+import { scopeArgs, useConsoleScope } from "@/lib/console-scope";
 import { useUser } from "@/lib/auth";
 import { dollars, modelName, tokensShort } from "@/lib/model-prices";
 import { PageFrame } from "@/components/PageFrame";
@@ -43,6 +44,8 @@ const day = (d: string) =>
 
 export default function SpendPage() {
   const { user, loading } = useUser();
+  // Whose numbers: every account, one, or one app of it (0184).
+  const scope = useConsoleScope();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [s, setS] = useState<Spend | null>(null);
@@ -63,9 +66,9 @@ export default function SpendPage() {
 
   const load = useCallback(async () => {
     const [{ data, error: err }, r, road] = await Promise.all([
-      supabase.rpc("abo_admin_spend", { p_days: days }),
+      supabase.rpc("abo_admin_spend", { p_days: days, ...scopeArgs(scope) }),
       supabase.rpc("abo_admin_retention"),
-      supabase.rpc("abo_admin_routing", { p_days: days }),
+      supabase.rpc("abo_admin_routing", { p_days: days, ...scopeArgs(scope) }),
     ]);
     // Not there yet (0169 not run) is no reason to hide what is.
     setRouting((road.data as typeof routing) ?? null);
@@ -77,7 +80,7 @@ export default function SpendPage() {
     setS(data as Spend);
     const rule = r.data as { enabled: boolean; days: number } | null;
     setKept(rule?.enabled ? rule.days : null);
-  }, [days]);
+  }, [days, scope]);
 
   useEffect(() => {
     if (user) load();

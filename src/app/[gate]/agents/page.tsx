@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
+import { scopeArgs, useConsoleScope } from "@/lib/console-scope";
 import { useUser } from "@/lib/auth";
 import { dollars, tokensShort } from "@/lib/model-prices";
 import { PageFrame } from "@/components/PageFrame";
@@ -95,6 +96,8 @@ const seconds = (ms: number) => `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`;
 
 export default function AgentsPage() {
   const { user, loading } = useUser();
+  // Whose numbers: every account, one, or one app of it (0184).
+  const scope = useConsoleScope();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [a, setA] = useState<Agents | null>(null);
@@ -105,14 +108,14 @@ export default function AgentsPage() {
   }, [loading, user, router]);
 
   const load = useCallback(async () => {
-    const { data, error: err } = await supabase.rpc("abo_admin_agents", { p_days: days });
+    const { data, error: err } = await supabase.rpc("abo_admin_agents", { p_days: days, ...scopeArgs(scope) });
     if (err) {
       setError(adminError(err, "0176"));
       return;
     }
     setError(null);
     setA(data as Agents);
-  }, [days]);
+  }, [days, scope]);
 
   useEffect(() => {
     if (user) load();

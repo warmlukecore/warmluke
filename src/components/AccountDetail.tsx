@@ -222,6 +222,14 @@ export function AccountDetail({ account: a, now, onClose }: { account: Account; 
       onClose={onClose}
     >
       <div className="space-y-4">
+        {/* The whole console narrowed to them (0184): spend, Luke, trouble, their AI, what stuck, as theirs. */}
+        <Link
+          href={`/${gate}?account=${a.user_id}`}
+          onClick={onClose}
+          className="inline-flex text-[13px] font-medium text-link hover:underline"
+        >
+          See only this account across the console
+        </Link>
         <Section title="What they told us">
           {a.is_superadmin ? (
             <p className="text-fg-muted">Warmluke team, not onboarded as a business.</p>

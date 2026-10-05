@@ -16,6 +16,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
+import { scopeArgs, useConsoleScope } from "@/lib/console-scope";
 import { useUser } from "@/lib/auth";
 import { ago } from "@/lib/when";
 import { PageFrame } from "@/components/PageFrame";
@@ -48,6 +49,8 @@ const KIND: Record<Sign["kind"], [string, string]> = {
 
 export default function TroublePage() {
   const { user, loading } = useUser();
+  // Whose numbers: every account, one, or one app of it (0184).
+  const scope = useConsoleScope();
   const router = useRouter();
   const gate = useParams<{ gate: string }>().gate;
   const [error, setError] = useState<string | null>(null);
@@ -60,7 +63,7 @@ export default function TroublePage() {
   }, [loading, user, router]);
 
   const load = useCallback(async () => {
-    const { data, error: err } = await supabase.rpc("abo_admin_trouble", { p_days: days });
+    const { data, error: err } = await supabase.rpc("abo_admin_trouble", { p_days: days, ...scopeArgs(scope) });
     if (err) {
       setError(adminError(err, "0175"));
       return;
@@ -68,7 +71,7 @@ export default function TroublePage() {
     setError(null);
     setSigns((data ?? []) as Sign[]);
     setNow(Date.now());
-  }, [days]);
+  }, [days, scope]);
 
   useEffect(() => {
     if (user) load();

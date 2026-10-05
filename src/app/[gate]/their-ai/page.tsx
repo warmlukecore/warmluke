@@ -24,6 +24,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
+import { scopeArgs, useConsoleScope } from "@/lib/console-scope";
 import { useUser } from "@/lib/auth";
 import { PageFrame } from "@/components/PageFrame";
 import { Breakdown, Choices, Stat, adminError } from "@/components/AdminParts";
@@ -81,6 +82,8 @@ async function asTheirAI(method: string, params: Record<string, unknown>) {
 
 export default function TheirAIPage() {
   const { user, loading } = useUser();
+  // Whose numbers: every account, one, or one app of it (0184).
+  const scope = useConsoleScope();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [r, setR] = useState<Report | null>(null);
@@ -92,14 +95,14 @@ export default function TheirAIPage() {
   }, [loading, user, router]);
 
   const load = useCallback(async () => {
-    const { data, error: err } = await supabase.rpc("abo_admin_their_ai", { p_days: days });
+    const { data, error: err } = await supabase.rpc("abo_admin_their_ai", { p_days: days, ...scopeArgs(scope) });
     if (err) {
       setError(adminError(err, "0180"));
       return;
     }
     setError(null);
     setR(data as Report);
-  }, [days]);
+  }, [days, scope]);
 
   useEffect(() => {
     if (user) load();

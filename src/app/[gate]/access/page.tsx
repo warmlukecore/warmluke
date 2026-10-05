@@ -17,6 +17,8 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { supabase } from "@/lib/supabase-client";
+import { useConsoleScope } from "@/lib/console-scope";
+import { Select } from "@/components/ui/Select";
 import { useUser } from "@/lib/auth";
 import { ago } from "@/lib/when";
 import { PageFrame } from "@/components/PageFrame";
@@ -80,6 +82,10 @@ export default function AccessLog() {
   const [query, setQuery] = useState("");
   const [asked, setAsked] = useState("");
   const [action, setAction] = useState("");
+  // Which administrator acted, and on whose account (0184).
+  const [admin, setAdmin] = useState("");
+  const [admins, setAdmins] = useState<Array<{ id: string; email: string | null }>>([]);
+  const scope = useConsoleScope();
   const [days, setDays] = useState(30);
   const [now, setNow] = useState(() => Date.now());
 
@@ -97,19 +103,26 @@ export default function AccessLog() {
         p_days: days,
         p_limit: PAGE,
         p_before: before,
+        p_account: scope.account,
+        p_admin: admin || null,
       });
       if (err) {
         setError(adminError(err, "0159"));
         return;
       }
-      const out = data as { rows: Line[]; actions: Record<string, number> };
+      const out = data as {
+        rows: Line[];
+        actions: Record<string, number>;
+        admins?: Array<{ id: string; email: string | null }>;
+      };
+      setAdmins(out.admins ?? []);
       setError(null);
       setNow(Date.now());
       setCounts(out.actions);
       setRows((had) => (before && had ? [...had, ...out.rows] : out.rows));
       setMore(out.rows.length === PAGE);
     },
-    [asked, action, days]
+    [asked, action, days, admin, scope]
   );
 
   useEffect(() => {
@@ -180,6 +193,17 @@ export default function AccessLog() {
             <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3">
               <Choices options={DAYS} value={days} onChange={setDays} />
               <Choices options={kinds} value={action} onChange={setAction} />
+              {admins.length > 0 && (
+                <div className="w-64 max-w-full">
+                  <Select
+                    label="Administrator"
+                    value={admin}
+                    options={admins.map((x) => ({ value: x.id, label: x.email ?? "an administrator" }))}
+                    empty="Every administrator"
+                    onChange={setAdmin}
+                  />
+                </div>
+              )}
             </div>
 
             <div className={`${card} mt-4 overflow-hidden`}>

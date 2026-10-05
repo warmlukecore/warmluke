@@ -14,6 +14,31 @@
 -- one only once an administrator has read it and approved it. Nobody
 -- reads or writes the table itself: the functions below are the way in.
 
+-- A console report's scope (used here first, and by every report since 0184):
+-- The apps in view: an account's, one app, or null for every app.
+create or replace function public.abo_admin_scope(p_account uuid, p_app uuid) returns uuid[]
+language sql stable security definer set search_path = public as $$
+  select case when p_account is null and p_app is null then null
+         else coalesce(array(select p.id from public.projects p
+                              where (p_account is null or p.owner_id = p_account)
+                                and (p_app is null or p.id = p_app)), '{}'::uuid[]) end
+$$;
+revoke all on function public.abo_admin_scope(uuid, uuid) from public, anon, authenticated;
+
+-- The people in view: the owner and the team of those apps, or null for everyone.
+create or replace function public.abo_admin_scope_people(p_account uuid, p_app uuid) returns uuid[]
+language sql stable security definer set search_path = public as $$
+  select case when p_account is null and p_app is null then null
+         else coalesce(array(
+           select p.owner_id from public.projects p where p.id = any(public.abo_admin_scope(p_account, p_app))
+           union
+           select m.user_id from public.project_members m
+            where m.project_id = any(public.abo_admin_scope(p_account, p_app)) and m.user_id is not null
+           union
+           select p_account where p_account is not null), '{}'::uuid[]) end
+$$;
+revoke all on function public.abo_admin_scope_people(uuid, uuid) from public, anon, authenticated;
+
 create table if not exists public.design_examples (
   id uuid primary key default gen_random_uuid(),
   ask text not null check (char_length(ask) between 10 and 400),
@@ -60,7 +85,7 @@ grant execute on function public.abo_design_examples() to authenticated;
 -- Each build that said what it made, and whether it stuck: its sections
 -- all still there, and each with a row added or a rule run since.
 create or replace function public.abo_built_and_kept(p_weeks integer)
-returns table (build_id uuid, built_at timestamptz, old_enough boolean, kept boolean, examples jsonb, design_id uuid)
+returns table (build_id uuid, built_at timestamptz, old_enough boolean, kept boolean, examples jsonb, design_id uuid, project_id uuid)
 language sql stable security definer set search_path = public as $$
   with builds as (
     select
@@ -71,8 +96,10 @@ language sql stable security definer set search_path = public as $$
         m.created_at
       ) as done_at,
       array(select jsonb_array_elements_text(m.payload -> 'made'))::uuid[] as made,
-      case when (m.payload ->> 'design') ~ '^[0-9a-f-]{36}$' then (m.payload ->> 'design')::uuid end as design_id
+      case when (m.payload ->> 'design') ~ '^[0-9a-f-]{36}$' then (m.payload ->> 'design')::uuid end as design_id,
+      c.project_id
     from public.messages m
+    join public.conversations c on c.id = m.conversation_id
     where m.payload ->> 'type' = 'build'
       and m.payload ->> 'status' = 'built'
       and jsonb_typeof(m.payload -> 'made') = 'array'
@@ -98,23 +125,31 @@ language sql stable security definer set search_path = public as $$
       from unnest(b.made) x
     ),
     coalesce(d.payload -> 'examples', '[]'::jsonb),
-    b.design_id
+    b.design_id,
+    b.project_id
   from builds b
   left join public.messages d on d.id = b.design_id
 $$;
 revoke all on function public.abo_built_and_kept(integer) from public, anon, authenticated;
 
 -- The console's screen: the rate by week, and by the example it was shown.
-create or replace function public.abo_admin_what_stuck(p_weeks integer default 8)
+create or replace function public.abo_admin_what_stuck(
+  p_weeks integer default 8, p_account uuid default null, p_app uuid default null
+)
 returns jsonb
 language plpgsql stable security definer set search_path = public, auth as $$
 declare
   v jsonb;
+  -- One account, one app of it, or everyone (0184).
+  v_scope uuid[] := public.abo_admin_scope(p_account, p_app);
 begin
   if not public.abo_is_superadmin() then
     raise exception 'Not an administrator.' using errcode = '42501';
   end if;
-  with j as (select * from public.abo_built_and_kept(p_weeks))
+  with j as (
+    select * from public.abo_built_and_kept(p_weeks) k
+     where v_scope is null or k.project_id = any(v_scope)
+  )
   select jsonb_build_object(
     'weeks', coalesce((
       select jsonb_agg(w order by w ->> 'week' desc) from (
@@ -147,8 +182,8 @@ begin
   return v;
 end
 $$;
-revoke all on function public.abo_admin_what_stuck(integer) from public, anon;
-grant execute on function public.abo_admin_what_stuck(integer) to authenticated;
+revoke all on function public.abo_admin_what_stuck(integer, uuid, uuid) from public, anon;
+grant execute on function public.abo_admin_what_stuck(integer, uuid, uuid) to authenticated;
 
 -- Kept builds not yet proposed, with what was asked and what was designed,
 -- for the curator to put in words (lib/curator.ts). The owner's words are

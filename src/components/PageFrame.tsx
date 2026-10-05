@@ -30,6 +30,8 @@ import {
 import { signOut } from "@/lib/auth";
 import { useConsoleBase } from "@/lib/console-base";
 import { CONSOLE_NAV, SEARCH_FROM } from "@/lib/console-nav";
+import { SCOPED, scopeQuery, useConsoleScope } from "@/lib/console-scope";
+import { ConsoleScope } from "@/components/ConsoleScope";
 import { menu, menuItem, note } from "@/components/ui/controls";
 import { supabase } from "@/lib/supabase-client";
 import { ago } from "@/lib/when";
@@ -136,6 +138,9 @@ function ConsoleFrame({ email, children }: { email: string | null | undefined; c
 
   const all = CONSOLE_NAV.flatMap((g) => g.screens);
   const hrefOf = (to: string) => (to ? `${base}/${to}` : base);
+  // The scope chosen (0184) goes with the links to every screen that narrows to it.
+  const scope = useConsoleScope();
+  const linkOf = (to: string) => `${hrefOf(to)}${SCOPED.has(to) ? scopeQuery(scope) : ""}`;
   // The screen on show: its own address, or one under it (a conversation opened).
   const here = (to: string) => (to ? path === hrefOf(to) || path.startsWith(`${hrefOf(to)}/`) : path === base);
   const current = all.find((s) => here(s.to));
@@ -231,7 +236,7 @@ function ConsoleFrame({ email, children }: { email: string | null | undefined; c
                 return (
                   <Link
                     key={s.to}
-                    href={hrefOf(s.to)}
+                    href={linkOf(s.to)}
                     title={rail ? s.label : s.about}
                     aria-label={rail ? s.label : undefined}
                     aria-current={on ? "page" : undefined}
@@ -287,6 +292,8 @@ function ConsoleFrame({ email, children }: { email: string | null | undefined; c
         </header>
         <main className="min-w-0 flex-1 bg-canvas sm:mx-2 sm:mb-2 sm:rounded-card sm:shadow-card lg:mt-2 lg:ml-0 lg:rounded-pane">
           <LukeHealth />
+          {/* Whose numbers this screen shows (0184): on the screens that narrow to an account. */}
+          {current && SCOPED.has(current.to) && <ConsoleScope />}
           {children}
         </main>
       </div>

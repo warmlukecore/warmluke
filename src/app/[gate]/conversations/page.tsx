@@ -21,6 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Check, ChevronRight, Copy, Download, Search, TriangleAlert } from "lucide-react";
 import { supabase } from "@/lib/supabase-client";
+import { useConsoleScope } from "@/lib/console-scope";
 import { useUser } from "@/lib/auth";
 import { ago } from "@/lib/when";
 import { dollars, modelName, tokensShort } from "@/lib/model-prices";
@@ -128,6 +129,7 @@ export default function Conversations() {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
+  const scope = useConsoleScope();
   // Find was just pressed with a whole id: open what it names, once. Not
   // again when Back comes to the list with the same search still in it.
   const jump = useRef<string | null>(null);
@@ -141,6 +143,9 @@ export default function Conversations() {
         p_days: days,
         p_limit: PAGE,
         p_before: before,
+        // Whose conversations: every account, one, or one app of it (0184).
+        p_account: scope.account,
+        p_app: scope.app,
       });
       setBusy(false);
       setNow(Date.now());
@@ -166,7 +171,7 @@ export default function Conversations() {
         if (UUID.test(asked) && got.length === 1) show(got[0].id);
       }
     },
-    [asked, filter, days, show]
+    [asked, filter, days, show, scope]
   );
 
   useEffect(() => {
