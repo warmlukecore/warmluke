@@ -1,0 +1,184 @@
+{
+  "label": "scan-box-not-a-reason",
+  "started": "2026-10-05T07:59:12.492Z",
+  "design_model": "claude-sonnet-5",
+  "sim_model": "claude-haiku-4-5",
+  "grade_model": "claude-haiku-4-5",
+  "cap": 0.53,
+  "spent": 0.4893,
+  "partial": false,
+  "cases": [
+    {
+      "id": "returns-screen",
+      "title": "A returns screen: pick the order, its items come in, a return is made",
+      "turns": 3,
+      "built": true,
+      "signs": {
+        "workarounds": [],
+        "jargon": [],
+        "proposed_first": true
+      },
+      "criteria": [
+        {
+          "text": "Luke prefers a returns table with a row form that fills in from the chosen order over a hand-written screen",
+          "met": true,
+          "said": true,
+          "evidence": "Main ek return-request screen banata hoon: order chuno, uske items load honge, reason aur exchange-ya-refund chuno, aur return ban jayega."
+        },
+        {
+          "text": "if Luke writes a screen, it reads only sections that exist and looks like the rest of the app",
+          "met": true,
+          "said": true,
+          "evidence": "Row khol ke return turant log ho jaati hai, apne app mein hi, Shopify kuch chhua nahi jaata."
+        },
+        {
+          "text": "every list shown has an empty state",
+          "met": false,
+          "said": false,
+          "evidence": "The app design shows no empty state text for any section or table."
+        },
+        {
+          "text": "the plan is said in plain words before anything is built, with no field names or types",
+          "met": true,
+          "said": true,
+          "evidence": "order chuno, uske items load honge, reason ke saath return request save ho jayegi"
+        },
+        {
+          "text": "ends by asking whether to build",
+          "met": true,
+          "said": true,
+          "evidence": "Build kar doon?"
+        }
+      ],
+      "must_not": [
+        {
+          "text": "a written screen when a table and a row form do the job",
+          "hit": false,
+          "evidence": "Section \"Return Requests\" is shown as: table, list (a table with row form, not a written screen)"
+        },
+        {
+          "text": "a change to the Shopify store",
+          "hit": false,
+          "evidence": "sirf apne app mein record ho, bas... Shopify mein kuch likha nahi jayega... Shopify kuch chhua nahi jaata"
+        },
+        {
+          "text": "jargon such as \"boolean\" or \"set_fields\" in what the owner reads",
+          "hit": false,
+          "evidence": "All language in the conversation is plain Hindi/English without technical jargon; the app shows only field labels and plain dropdown options (Wrong size / Damaged / Not as described / Changed mind / Other) with no boolean, set_fields, or type names visible to the owner"
+        }
+      ],
+      "scores": {
+        "discussed": 5,
+        "plain": 5,
+        "better_idea": 4,
+        "simplest": 4
+      },
+      "cost": 0.4893,
+      "ms": 184526,
+      "transcript": [
+        {
+          "who": "owner",
+          "text": "returns ka screen chahiye: order chuno, uske items aaye, return create ho"
+        },
+        {
+          "who": "luke",
+          "text": "Main ek return-request screen banata hoon: order chuno, uske items load honge, reason aur exchange-ya-refund chuno, aur return ban jayega. Yeh Shopify ke apne returns list mein seedha nahi likh sakta (woh sirf synced copy hai) — isliye yeh apna naya tracking section hoga, jo order number se Shopify ke return se juda rahega. Ek behtar idea: return banate waqt reason capture karo aur exchange ko pehle offer karo — isse sale bachti hai aur baad mein pata chalta hai kaunsa product sabse zyada wapas aa raha hai. Chahte ho? Aur: COD refund ke liye UPI/bank detail zaroori banau, aur QC pass kiye bina refund band na ho — dono theek hai? Build kar doon?"
+        },
+        {
+          "who": "owner",
+          "text": "Luke, theek hai return-request screen banana. Lekin do baatein: ek, Shopify mein likhne ki zaroorat nahi — sirf apne app mein record ho, bas. Aur dusri, UPI/bank aur QC pass wali baatein abhi mat add karo. Pehle return quickly log ho, phir baaki dekha jayega. Bas yeh simple karo na."
+        },
+        {
+          "who": "luke",
+          "text": "Theek hai, simple rakhta hoon: order chuno, uske items load honge, reason ke saath return request save ho jayegi — apne app mein hi, Shopify mein kuch likha nahi jayega. Do baatein dhyan mein rakhna: isse Shopify ke return se alag record hai, toh quantity match karna manually dekhna padega; aur abhi QC ya refund-method capture nahi ho raha, toh baad mein jab refund dena ho tab yeh return request khud nahi bata payegi kaunsa pass hua. Jab chaho tab add kara dena. Build kar doon?"
+        },
+        {
+          "who": "owner",
+          "text": "haan bana do"
+        },
+        {
+          "who": "luke",
+          "text": "Main Orders aur Order items ko reference ke liye laata hoon (sirf order chunne aur uske items dikhane ke liye), aur ek Return requests table banata hoon jisme order ek link column se chuna jaata hai aur uska item doosre link column se — quantity, reason aur status ke saath. Row khol ke return turant log ho jaati hai, apne app mein hi, Shopify kuch chhua nahi jaata.\n[The design, built on the owner's yes:]\n- NEW_MODULE \"Orders\": Shopify ke orders yahan dikhte hain, taaki return request mein order chuna ja sake.\n  fields: Order (text) · Placed (date) · Customer (text) · Phone (phone) · Total (currency) · Before refunds (currency) · Goods (currency) · Shipping (currency) · Tax (currency) · Discount (currency) · Currency (text) · Status (badge) · Fulfilment (badge) · Payment (badge) · City (text) · State (text) · Discounts (text)\n- NEW_MODULE \"Order Items\": Har order ke SKU-wise items yahan dikhte hain, taaki return request mein unme se item chuna ja sake.\n  fields: Order (text) · Placed (date) · Customer (text) · Product (text) · Variant (text) · SKU (text) · Qty (number) · Price (currency) · Line total (currency) · Status (badge)\n- NEW_MODULE \"Return Requests\": Ek table jahan naya return log karne ke liye order aur uska item link se chuna jaata hai, saath mein quantity aur reason — sab apne app mein hi save hota hai, Shopify mein kuch likha nahi jaata.\n  fields: Order (link) · Item (link) · Qty returning (number) · Reason (dropdown: Wrong size / Damaged / Not as described / Changed mind / Other) · Status (badge)"
+        },
+        {
+          "who": "app",
+          "text": "Built."
+        }
+      ],
+      "trace": [
+        {
+          "turn": 1,
+          "repairs": 0,
+          "refused": [],
+          "steps": [
+            "accepted",
+            "store",
+            "context",
+            "road design",
+            "ops",
+            "ops",
+            "plan",
+            "lookup",
+            "lookup",
+            "plan"
+          ]
+        },
+        {
+          "turn": 2,
+          "repairs": 0,
+          "refused": [],
+          "steps": [
+            "accepted",
+            "store",
+            "context",
+            "road design",
+            "ops",
+            "ops",
+            "plan",
+            "plan"
+          ]
+        },
+        {
+          "turn": 3,
+          "repairs": 1,
+          "refused": [
+            "features.search.fields names \"product_title\", which is not a column here.",
+            "This section's columns are: order_number, placed_at, customer_name, title, variant_title, sku, quantity, price, line_total, status. Use these names exactly."
+          ],
+          "steps": [
+            "accepted",
+            "store",
+            "context",
+            "road design",
+            "plan",
+            "model 1/3",
+            "lookup",
+            "checked 2 problems",
+            "model 2/3",
+            "checked",
+            "critic fits",
+            "simplicity redo",
+            "ux redo screenshot",
+            "model 3/4",
+            "checked",
+            "critic fits 4 missing",
+            "simplicity redo"
+          ]
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "pass_rate": 0,
+    "said_rate": 0.8,
+    "avg_scores": {
+      "discussed": 5,
+      "plain": 5,
+      "better_idea": 4,
+      "simplest": 4
+    },
+    "signs_total": 0,
+    "cost": 0.4893,
+    "avg_ms": 184526
+  }
+}

@@ -30,6 +30,8 @@ process.env.ANTHROPIC_MODEL = "claude-design-stand-in";
 process.env.ANTHROPIC_GAP_MODEL = "claude-gap-stand-in";
 process.env.TYPESAFE_API_KEY = "";
 
+import { readFileSync } from "node:fs";
+
 const { parseOps, opsBlock, parseSimplicity, workaroundSigns } = await import("../src/lib/reviewers.ts");
 const { reviewDesign, redoFrom, hasChecks, REDO_MAX } = await import("../src/lib/review-gate.ts");
 const { runTurn } = await import("../src/lib/engine.ts");
@@ -209,9 +211,18 @@ check(
     workaroundSigns([showing(picking)], modules, schemas).join("\n")
   )
 );
+// A scan box Luke added unasked kept this out (eval, 5 Oct): a scanner types into a link's search too.
 check(
-  "a scan screen doing the same is real work, not this",
-  workaroundSigns([showing(picking.replace("go(n)", "scan(n)"))], modules, schemas).length === 0
+  "a scan box to find the row does not hide it",
+  /picks rows of #orders and writes a row/.test(
+    workaroundSigns([showing(picking.replace("go(n)", "scan(n)"))], modules, schemas).join("\n")
+  )
+);
+check(
+  "the reviewer weighs whether the owner asked for scanning",
+  /takes scans the owner asked for[^\n]*A scan box only to find the one row to pick is not that/.test(
+    readFileSync(new URL("../src/lib/reviewers.ts", import.meta.url), "utf8")
+  )
 );
 const twoTables = plan({
   changeType: "FEATURE_UPDATE",

@@ -160,5 +160,41 @@
       "cost": 0,
       "avg_ms": 0
     }
+  },
+  {
+    "file": "20261005-0751-linked-row-reviewer.json",
+    "label": "linked-row-reviewer",
+    "started": "2026-10-05T07:51:56.132Z",
+    "summary": {
+      "pass_rate": 0,
+      "said_rate": 0,
+      "avg_scores": {
+        "discussed": 2,
+        "plain": 4,
+        "better_idea": 4,
+        "simplest": 1
+      },
+      "signs_total": 1,
+      "cost": 0.4624,
+      "avg_ms": 156697
+    }
+  },
+  {
+    "file": "20261005-0759-scan-box-not-a-reason.json",
+    "label": "scan-box-not-a-reason",
+    "started": "2026-10-05T07:59:12.492Z",
+    "summary": {
+      "pass_rate": 0,
+      "said_rate": 0.8,
+      "avg_scores": {
+        "discussed": 5,
+        "plain": 5,
+        "better_idea": 4,
+        "simplest": 4
+      },
+      "signs_total": 0,
+      "cost": 0.4893,
+      "avg_ms": 184526
+    }
   }
 ]

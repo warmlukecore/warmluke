@@ -11,6 +11,8 @@ import r5 from "./20261004-1811-after5.json";
 import r6 from "./20261004-1822-after6.json";
 import r7 from "./20261004-1844-after7a.json";
 import r8 from "./20261004-1849-after7b.json";
+import r9 from "./20261005-0751-linked-row-reviewer.json";
+import r10 from "./20261005-0759-scan-box-not-a-reason.json";
 
 export const RUN_FILES: Record<string, EvalRun> = {
   "20261003-1953-before.json": r0 as unknown as EvalRun,
@@ -22,4 +24,6 @@ export const RUN_FILES: Record<string, EvalRun> = {
   "20261004-1822-after6.json": r6 as unknown as EvalRun,
   "20261004-1844-after7a.json": r7 as unknown as EvalRun,
   "20261004-1849-after7b.json": r8 as unknown as EvalRun,
+  "20261005-0751-linked-row-reviewer.json": r9 as unknown as EvalRun,
+  "20261005-0759-scan-box-not-a-reason.json": r10 as unknown as EvalRun,
 };

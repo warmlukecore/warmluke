@@ -1,0 +1,182 @@
+{
+  "label": "linked-row-reviewer",
+  "started": "2026-10-05T07:51:56.132Z",
+  "design_model": "claude-sonnet-5",
+  "sim_model": "claude-haiku-4-5",
+  "grade_model": "claude-haiku-4-5",
+  "cap": 0.6,
+  "spent": 0.4624,
+  "partial": false,
+  "cases": [
+    {
+      "id": "returns-screen",
+      "title": "A returns screen: pick the order, its items come in, a return is made",
+      "turns": 3,
+      "built": true,
+      "signs": {
+        "workarounds": [
+          "Return Requests has a written screen over rows a table shows"
+        ],
+        "jargon": [],
+        "proposed_first": true
+      },
+      "criteria": [
+        {
+          "text": "Luke prefers a returns table with a row form that fills in from the chosen order over a hand-written screen",
+          "met": false,
+          "said": false,
+          "evidence": "Luke said \"I'll build your own Return requests screen: search the order, its items show up, pick what's coming back, reason, and log it\" and asked \"Chaahte ho main yeh add karun?\" in message 2, but the owner in message 3 said \"Luke, exchange aur refund sab baad mein soch lenge. Abhi bas yeh chahiye\""
+        },
+        {
+          "text": "if Luke writes a screen, it reads only sections that exist and looks like the rest of the app",
+          "met": false,
+          "said": false,
+          "evidence": ""
+        },
+        {
+          "text": "every list shown has an empty state",
+          "met": false,
+          "said": false,
+          "evidence": ""
+        },
+        {
+          "text": "the plan is said in plain words before anything is built, with no field names or types",
+          "met": false,
+          "said": false,
+          "evidence": ""
+        },
+        {
+          "text": "ends by asking whether to build",
+          "met": false,
+          "said": false,
+          "evidence": ""
+        }
+      ],
+      "must_not": [
+        {
+          "text": "a written screen when a table and a row form do the job",
+          "hit": true,
+          "evidence": "A written screen \"Log a return\" was built. The owner in message 3 asked for \"return request log ho jaye phone pe\" and \"packing team ko bas ek simple form chahiye.\" A table with a row form (like \"Order Items\" shown as a table, and \"Return Requests\" with a dedicated row entry form) would have met the "
+        },
+        {
+          "text": "a change to the Shopify store",
+          "hit": false,
+          "evidence": "No change to Shopify was made. Luke said \"I can't create a real Shopify return from this screen\" (message 2) and built only app records. The owner confirmed \"nahi, abhi sirf app me record chahiye\" (the facts they answered from)."
+        },
+        {
+          "text": "jargon such as \"boolean\" or \"set_fields\" in what the owner reads",
+          "hit": false,
+          "evidence": "Luke used plain Hindi and English: \"phone form\", \"order number\", \"item\", \"quantity\", \"reason\", \"status\", \"packing team\", \"filter by status\". No jargon such as \"boolean\", \"set_fields\", \"dropdown\", or field types appeared in the owner's lines or Luke's plain speech lines."
+        }
+      ],
+      "scores": {
+        "discussed": 2,
+        "plain": 4,
+        "better_idea": 4,
+        "simplest": 1
+      },
+      "cost": 0.4624,
+      "ms": 156697,
+      "transcript": [
+        {
+          "who": "owner",
+          "text": "returns ka screen chahiye: order chuno, uske items aaye, return create ho"
+        },
+        {
+          "who": "luke",
+          "text": "Shopify's own Returns list is read-only here, so I can't create a real Shopify return from this screen — instead I'll build your own Return requests screen: search the order, its items show up, pick what's coming back, reason, and log it. Stock won't show as available again until you tick QC pass, so a return in transit can't be sold by mistake. Ek behtar idea: pehle exchange option dikhayein, refund sirf tab jab customer exchange na chahe — exchange sale bachata hai. Chaahte ho main yeh add karun? Aur COD refund ke liye UPI/bank detail kahan dalni hai, aur exchange ek naya draft order banaye ya bas ek tick ho — yeh bata do. Want me to build it?"
+        },
+        {
+          "who": "owner",
+          "text": "Luke, exchange aur refund sab baad mein soch lenge. Abhi bas yeh chahiye: return request log ho jaye phone pe — order, item, quantity, reason, aur status track ho. Itna hi kaafi hai abhi. Baaki complexity mat add karo, packing team ko bas ek simple form chahiye. Aap bas yeh build karo pehle."
+        },
+        {
+          "who": "luke",
+          "text": "Simple form ban jayega: order search karo, uske items aa jayenge, quantity aur reason daal ke status ke saath log ho jayega — packing team phone pe seconds mein bhar sakti hai. Ek behtar idea: reason ko ek fixed list (size/fit, damaged, wrong item, not as expected, changed mind) se rakhna — warna har banda apni bhasha mein likhega aur baad mein 'sabse zyada kis wajah se return aata hai' kabhi pata nahi chalega. Chaahte ho yeh fixed list add karun, ya abhi free text hi rakhun? Want me to build it?"
+        },
+        {
+          "who": "owner",
+          "text": "haan bana do"
+        },
+        {
+          "who": "luke",
+          "text": "Building a Return requests section with a phone form — scan or type the order number, its items will appear from your Shopify order lines, tap one, enter quantity and reason, and it logs with status 'Asked for'. A list tab lets anyone filter by status to see what's open.\n[The design, built on the owner's yes:]\n- NEW_MODULE \"Order Items\": A plain view of your Shopify order lines, used by the return form to look up what was in an order.\n  fields: Order (text) · Placed (date) · Customer (text) · Product (text) · Variant (text) · SKU (text) · Qty (number) · Price (currency) · Line total (currency) · Status (badge)\n- NEW_MODULE \"Return Requests\": A phone form where the packing team scans or types an order number, taps the returning item, enters quantity and reason, and logs the return; a list tab shows every return filterable by status.\n  fields: Order Number (text) · Item (text) · Quantity (number) · Reason (dropdown: Size / fit issue / Damaged / Wrong item sent / Not as expected / Changed mind / Other) · Status (badge)\n- AUTOMATION_ADD: Any return request that comes in without a status gets set to 'Asked for' automatically, so nothing is logged blank.\n  rule: Default new return status"
+        },
+        {
+          "who": "app",
+          "text": "Built."
+        }
+      ],
+      "trace": [
+        {
+          "turn": 1,
+          "repairs": 0,
+          "refused": [],
+          "steps": [
+            "accepted",
+            "store",
+            "context",
+            "road design",
+            "ops",
+            "ops",
+            "plan",
+            "lookup",
+            "plan"
+          ]
+        },
+        {
+          "turn": 2,
+          "repairs": 0,
+          "refused": [],
+          "steps": [
+            "accepted",
+            "store",
+            "context",
+            "road design",
+            "ops",
+            "ops",
+            "plan",
+            "plan"
+          ]
+        },
+        {
+          "turn": 3,
+          "repairs": 1,
+          "refused": [
+            "A custom view may not contain a tag that loads or sends elsewhere: it runs sealed off, and reaches its section only through window.wl."
+          ],
+          "steps": [
+            "accepted",
+            "store",
+            "context",
+            "road design",
+            "plan",
+            "model 1/3",
+            "lookup",
+            "lookup",
+            "checked 1 problems",
+            "model 2/3",
+            "checked",
+            "critic fits",
+            "dryrun",
+            "simplicity simple",
+            "ux pass screenshot"
+          ]
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "pass_rate": 0,
+    "said_rate": 0,
+    "avg_scores": {
+      "discussed": 2,
+      "plain": 4,
+      "better_idea": 4,
+      "simplest": 1
+    },
+    "signs_total": 1,
+    "cost": 0.4624,
+    "avg_ms": 156697
+  }
+}
