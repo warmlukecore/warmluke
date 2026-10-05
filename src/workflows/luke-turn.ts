@@ -151,6 +151,9 @@ async function turnLeg(job: DurableTurn, state: TurnState | null): Promise<Leg> 
         // always ran, which designs plain plans and looks nothing up.
         // ponytail: no lookups for these, so their recordings still play; turn it on and record them to give them Luke's.
         lookups: !job.client,
+        // One check for every design, whoever writes it (5 Oct).
+        reviewed: true,
+        givenDesign: job.design,
         ...(job.client ? { plansAllowed: true } : {}),
         signal: halt.signal,
         onEvent: tell,

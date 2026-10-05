@@ -207,5 +207,70 @@ console.log("\na section deleted while a rule of another reads it");
   );
 }
 
+console.log("\na rule turned off that another waits on is said on its card, not refused (4 Oct)");
+{
+  const flagger = {
+    module_id: ORD,
+    name: "Flag repeat orders",
+    enabled: true,
+    definition: {
+      trigger: { type: "store_row_added" },
+      actions: [{ type: "run_code", code: "return { set: [{ id: row.id, fields: { repeat_flag: true } }] };" }],
+    },
+  };
+  const sender = {
+    module_id: ORD,
+    name: "Send new flags",
+    enabled: true,
+    definition: {
+      trigger: {
+        type: "record_updated",
+        when: {
+          op: "and",
+          args: [
+            { op: "=", args: [{ field: "repeat_flag" }, { const: true }] },
+            { op: "changed", args: [{ field: "repeat_flag" }] },
+          ],
+        },
+      },
+      actions: [{ type: "create_record", module_id: SHIP, data: {} }],
+    },
+  };
+  const OFF = {
+    changeType: "AUTOMATION_REMOVE",
+    targetModuleId: ORD,
+    automationRemoveName: "Flag repeat orders",
+    explanation: "Not needed.",
+  };
+  const off = (rules, plans = [OFF]) =>
+    parseReply(
+      JSON.stringify({ type: "plans", message: "Off.", plans }),
+      modules,
+      null,
+      null,
+      (mid) => (mid === ORD ? { columns: [{ field: "repeat_flag", label: "Repeat", type: "boolean" }] } : null),
+      (mid) => rules.filter((r) => r.module_id === mid)
+    );
+  const headsOf = (r) => (r.ok ? r.reply.plans.find((p) => p.changeType === "AUTOMATION_REMOVE")?.heads_up : "refused");
+  const said = off([flagger, sender]);
+  check("not refused", said.ok);
+  check(
+    "its card says what is left waiting, by the field's label",
+    headsOf(said)?.length === 1 && headsOf(said)[0].startsWith('"Send new flags" runs when Repeat changes')
+  );
+  check(
+    "quiet when the waiting rule is off already",
+    headsOf(off([flagger, { ...sender, enabled: false }])) === undefined
+  );
+  check(
+    "or turned off in the same design",
+    headsOf(off([flagger, sender], [OFF, { ...OFF, automationRemoveName: "Send new flags" }])) === undefined
+  );
+  check(
+    "a heads-up the model wrote itself is dropped",
+    headsOf(off([flagger], [{ ...OFF, heads_up: ["made up"] }])) === undefined
+  );
+}
+
 console.log(fails.length ? `\n${fails.length} FAILED` : "\na column comes off, and nothing that reads it breaks");
 process.exit(fails.length ? 1 : 0);

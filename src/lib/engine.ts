@@ -251,6 +251,20 @@ export type TurnInput = {
    * spent on lookups is our model budget spent twice.
    */
   lookups?: boolean;
+  /**
+   * Whether the reviewers after the critic read the design (the review
+   * gate). Defaults to lookups: Luke's own chat. Every design an outside
+   * assistant asks for or draws goes through them too (5 Oct): one check,
+   * whoever writes the design.
+   */
+  reviewed?: boolean;
+  /**
+   * A design another assistant drew (submit_design), taken as the first
+   * attempt's reply: no plan step, no model for it. The validator, the
+   * critic and the reviewers read it as they read Luke's, and what they
+   * find is fixed by Luke, with everything Luke knows of the business.
+   */
+  givenDesign?: string;
   signal?: AbortSignal;
   /**
    * Told each step as it happens, so a caller that can stream has
@@ -309,6 +323,8 @@ export type TurnState = {
     unmet: string[];
     /** Who sent it back: the critic, or ('gate') the reviewers after it. Absent: the critic. */
     by?: "gate";
+    /** The line it was sent back with. Absent in a state from before it was kept. */
+    why?: string;
   } | null;
   /** What the review gate last said, of the design it last read. Absent in a state from before the gate. */
   checks?: DesignChecks | null;
@@ -366,6 +382,8 @@ export type TurnResult =
       learned: { skills: Skill[]; used: string[] };
       /** Whether the critic (not the review gate) sent the design back once this turn: a sign the turn is worth learning from. */
       criticRedo: boolean;
+      /** What the design was sent back for, by the critic or the reviewers, if it was. */
+      sentBackWhy?: string | null;
     }
   | {
       ok: false;
@@ -567,6 +585,8 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     plansAllowed = blueprintShown,
     moduleId = null,
     lookups = false,
+    reviewed = lookups,
+    givenDesign,
     signal,
     onEvent,
     onWords,
@@ -716,6 +736,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   let approved = resume?.approved ?? (goAhead || (!!lookups && wantsItBuilt(message)));
   let road: Road =
     resume?.road ??
+    (givenDesign ? "design" : null) ??
     // After a plan in words, an answer to its questions is more of the
     // design, not a follow-up question: it plans again.
     (agreed && (goAhead || !isQuestion(message))
@@ -807,7 +828,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     planBlock = agreedBlock(agreed);
     tell({ step: "plan", goal: agreed.goal });
   }
-  if (road === "design") await plan();
+  if (road === "design" && !givenDesign) await plan();
   // An answer to the plan said in words that leaves nothing more to talk
   // over is their go-ahead, changes and all ("Bas iska screen bana do",
   // eval 4 Oct): the planner said nothing back, so what it now understood
@@ -915,20 +936,24 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         },
       };
     }
-    tell({ step: "model", attempt: attempt + 1, of: lastAttempt() + 1 });
-    // Tools on the first attempt only: a repair fixes the reply's shape,
-    // and what was looked up is already written into the reply it fixes.
-    raw = await tapeRoad.run(road, () =>
-      callModel({
-        system,
-        turns: [...history, ...attemptTurns],
-        signal,
-        // The one they picked wins on both roads; otherwise each road's own.
-        model: model ?? (road === "talk" ? talkModel() : undefined),
-        lookups: attempt === 0 && tools ? { tools } : undefined,
-        onText: draft,
-      })
-    );
+    // The design another assistant drew is the first attempt: read, not asked for.
+    if (attempt === 0 && givenDesign) raw = givenDesign;
+    else {
+      tell({ step: "model", attempt: attempt + 1, of: lastAttempt() + 1 });
+      // Tools on the first attempt only: a repair fixes the reply's shape,
+      // and what was looked up is already written into the reply it fixes.
+      raw = await tapeRoad.run(road, () =>
+        callModel({
+          system,
+          turns: [...history, ...attemptTurns],
+          signal,
+          // The one they picked wins on both roads; otherwise each road's own.
+          model: model ?? (road === "talk" ? talkModel() : undefined),
+          lookups: attempt === 0 && tools ? { tools } : undefined,
+          onText: draft,
+        })
+      );
+    }
     // The talk road hands a build back: a "build" reply, or a design it
     // drew anyway. The design road then starts over, tools and all.
     if (road === "talk") {
@@ -1071,7 +1096,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         critiqued = { unmet: verdict.unmet };
         if (verdict.redo && !sentBack) {
           sentBack = true;
-          sentBackDesign = { parsed, raw, unmet: verdict.unmet };
+          sentBackDesign = { parsed, raw, unmet: verdict.unmet, why: verdict.redo };
           tell({ step: "critic", verdict: "redo", missing: verdict.unmet.length });
           attemptTurns.push(
             { role: "assistant", content: raw },
@@ -1092,14 +1117,14 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
 
     // The reviewers after the critic (review-gate.ts): a simpler build,
     // the store's own rows, the rules tried on them, the screens looked
-    // at. In Luke's own chat only: an outside assistant's design waits as
-    // a request the owner approves, and is not made to wait for these.
-    // It may send the design back too, but a turn sends one back once in
+    // at. Every reviewed design: Luke's own chat, and since 5 Oct an outside
+    // assistant's ask and its own drawn design too, so what reaches the
+    // merchant passed one check, whoever wrote it. It may send the design back too, but a turn sends one back once in
     // all, critic and gate together. With every switch off and nothing
     // found, nothing here changes what the model is sent.
-    if (parsed.ok && lookups && (parsed.reply.type === "plans" || parsed.reply.type === "blueprint")) {
+    if (parsed.ok && reviewed && (parsed.reply.type === "plans" || parsed.reply.type === "blueprint")) {
       const plans = parsed.reply.type === "blueprint" ? parsed.reply.blueprint.plans : parsed.reply.plans;
-      const reviewed = await reviewDesign(
+      const gated = await reviewDesign(
         {
           db: client,
           projectId: project.id,
@@ -1120,10 +1145,10 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           columnLines: sectionLines,
         }
       );
-      checks = reviewed.checks;
-      if (reviewed.redo && !sentBack) {
+      checks = gated.checks;
+      if (gated.redo && !sentBack) {
         sentBack = true;
-        sentBackDesign = { parsed, raw, unmet: critiqued?.unmet ?? [], by: "gate" };
+        sentBackDesign = { parsed, raw, unmet: critiqued?.unmet ?? [], by: "gate", why: gated.redo };
         attemptTurns.push(
           { role: "assistant", content: raw },
           {
@@ -1131,7 +1156,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
             // The whole design: told only "the corrected JSON", a redo sent the one
             // changed section, which the validator refused, and the design it
             // sent back stood as the answer (returns eval, 4 Oct).
-            content: `The design was reviewed before the owner sees it, and sent back:\n\n${reviewed.redo}\n\nRedesign so it does the same job for them, changing what this says and nothing else, and reply with the whole corrected design as JSON only: every plan, as if sent for the first time, not just the ones that change. Do not apologise or explain.`,
+            content: `The design was reviewed before the owner sees it, and sent back:\n\n${gated.redo}\n\nRedesign so it does the same job for them, changing what this says and nothing else, and reply with the whole corrected design as JSON only: every plan, as if sent for the first time, not just the ones that change. Do not apologise or explain.`,
           }
         );
         continue;
@@ -1251,6 +1276,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     known,
     learned,
     criticRedo: sentBack && sentBackDesign?.by !== "gate",
+    sentBackWhy: sentBack ? (sentBackDesign?.why ?? null) : null,
   };
 }
 

@@ -375,6 +375,9 @@ holds it, with the model stood in for.
 
 ## Human-in-the-loop gates
 
+- A rule turned off while another enabled rule waits for what it writes (a field its
+  `record_updated` trigger watches) is not refused: the plan carries a `heads_up` its card
+  shows, set by the server only, and with automatic builds on it waits for the merchant.
 - A new module cannot arrive as plain plans in built-in chat before a blueprint has been
   shown: plain plans with a new section are shown as a blueprint card to approve, not sent
   back to be rewrapped (a resend cost a whole design call).
@@ -453,8 +456,9 @@ What goes back is one line to the designer (`redoFrom`), each part under a short
 cut to 1,200 characters: the simpler way; the data findings that are problems ("Checked
 against their own rows"); a schedule writing one value into every row it met ("would
 rewrite all N rows every run"); the screen's fix. Notes and passes are never sent back.
-Only in Luke's own chat: an outside assistant's design waits as a request the owner
-approves, and is not made to wait. A reviewer that fails, or is off, is no reviewer; the
+Every design reaching a merchant goes through it (`reviewed`): Luke's own chat, an outside
+assistant's ask (`propose_change`) and, since 5 Oct, a design it drew (`submit_design`,
+read as the turn's first attempt, `givenDesign`). One check, whoever writes the design. A reviewer that fails, or is off, is no reviewer; the
 gate never throws.
 
 **One redo a turn.** The gate sends a design back exactly as the critic does, inside the

@@ -38,8 +38,8 @@ console.log("\nand never built without a person");
 // The one that matters most: auto-build is a standing yes to ordinary
 // changes, and a standing yes must not reach this one.
 check(
-  "auto-build cannot reach it",
-  /const automatic = wantsAuto && autoReason === null && gone\.length === 0;/.test(mcp)
+  "auto-build cannot reach it, nor a design that leaves a rule waiting (4 Oct)",
+  /const automatic = wantsAuto && autoReason === null && gone\.length === 0 && headsUp\.length === 0;/.test(mcp)
 );
 check("approving from chat still refuses", /This design removes a section, which cannot be built from here/.test(mcp));
 // And says so about the WHOLE request. A merchant's assistant read

@@ -78,6 +78,8 @@ const VERSION_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
  * designing": under the minute a client is commonly given for a tool.
  */
 const DESIGN_WAIT_MS = Number(process.env.MCP_DESIGN_WAIT_MS) || 40_000;
+/** Designs their AI draws that Luke checks, each app, each day (5 Oct): past it, the validator alone. */
+const DRAWN_REVIEWED_A_DAY = 20;
 
 type RpcRequest = { jsonrpc: "2.0"; id?: string | number | null; method: string; params?: Json };
 
@@ -259,7 +261,7 @@ const TOOLS = [
     // Drawn beside the answer by a host that speaks MCP Apps (lib/design-view).
     _meta: { ui: { resourceUri: DESIGN_VIEW_URI }, "openai/outputTemplate": DESIGN_VIEW_URI },
     description:
-      "Submit a design you wrote yourself. Warmluke checks it against the same validator its own engine answers to and, if it holds, puts it in front of the merchant for approval exactly like propose_change does. Rejections come back as a list of what is wrong, so you can correct it and submit again. Unlike propose_change this runs no Warmluke model, so it does not use one of the merchant's included designs — use it when they have run out, or whenever you would rather design it yourself.",
+      "Submit a design you wrote yourself. Warmluke puts it through every check its own designs go through — the validator, a check against what the merchant asked for, and reviewers for a simpler build, the store's real rows, the rules tried on them and the screens — and Luke fixes what they find, knowing the business, before it goes in front of the merchant for approval exactly like propose_change does. The answer says under checked_by_luke whether Luke changed it, and why. It can take a minute; past that you get a conversation_id, and pending_changes has the result. It does not use one of the merchant's included designs. To find problems yourself first, free and at once, call validate_design.",
     inputSchema: {
       type: "object",
       properties: {
@@ -457,6 +459,111 @@ const clientIdOf = (req: Request): string | null => {
  * durably: the same turn, read and ended the same way (lib/client-turn),
  * and its charge given back unless it wrote a request down.
  */
+/**
+ * An ask of the merchant's own AI, run as Luke's turn in a thread of its
+ * own (0139) and waited on a while: propose_change asks in words, and
+ * submit_design with the design its AI drew as well, which Luke's loop
+ * reads as its first attempt and checks as it checks its own (5 Oct).
+ * The answer is what the tool replies with.
+ */
+async function askInThread(
+  req: Request,
+  db: SupabaseClient,
+  userId: string,
+  project: ProjectRow,
+  request: string,
+  ask: { conversationId: string | null; spendId: string | null; design?: string }
+): Promise<Json> {
+  const origin = new URL(req.url).origin;
+  // The charge, given back unless a run takes it over: the durable run
+  // gives it back itself, and the one run here in runHere.
+  let refundable: string | null = ask.spendId;
+  let started = false;
+  let job: TurnJob;
+  try {
+    const { data: opened, error: openErr } = await db.rpc("abo_client_ask", {
+      p_project: project.id,
+      p_request: request,
+      p_conversation: ask.conversationId,
+    });
+    if (openErr || !opened) {
+      return text({ error: openErr?.message ?? "Warmluke could not start this conversation." });
+    }
+    const o = opened as {
+      conversation_id: string;
+      asked_id: string;
+      answer_id: string;
+      asked_at: string;
+      new: boolean;
+      /** The same words moments ago (0139): that ask is waited on, and nothing starts twice. */
+      again?: boolean;
+    };
+    job = {
+      userId,
+      projectId: project.id,
+      moduleId: null,
+      conversationId: o.conversation_id,
+      askedId: o.asked_id,
+      answerId: o.answer_id,
+      message: request,
+      askedModel: null,
+      askedAt: Date.parse(o.asked_at),
+      isNewConversation: o.new,
+      client: { origin },
+      ...(ask.design ? { design: ask.design } : {}),
+    };
+    const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+    // Asked again (a retry): its first ask is running or done, so nothing
+    // starts, and this charge goes back in `finally`.
+    if (o.again) {
+      /* waited on below */
+    } else if (process.env.LUKE_WORKFLOW === "1" && lapsesAt(token) - Date.now() > TOKEN_LEFT_MS) {
+      try {
+        await start(lukeTurn, [{ ...job, token, spendId: refundable }]);
+        started = true;
+        refundable = null;
+      } catch (e) {
+        console.error(`[mcp] durable turn not started, running here: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+    // Not durable (switched off, a token too near its end, a run that
+    // would not start): run here, held open past this answer. Known by
+    // its start, not by a charge left over: a drawn design has none (5 Oct).
+    if (!o.again && !started) {
+      const here = runHere(db, project, job, refundable);
+      refundable = null;
+      after(() => here);
+    }
+  } finally {
+    if (refundable) await db.rpc("abo_refund_turn", { p_spend: refundable });
+  }
+
+  const line = await answerWhenReady(db, job.answerId, DESIGN_WAIT_MS);
+  if (line) return answerFor(line, job.conversationId);
+  // Past the wait: said so, and the turn goes on in the merchant's panel.
+  return {
+    ...text({
+      status: "still designing",
+      conversation_id: job.conversationId,
+      note: `Warmluke is still designing this, in a conversation of its own in the merchant's Luke panel, and keeps going without you. Call pending_changes in a minute or two: it says whether this is still being designed, has a question for the merchant, or failed, and a finished design is listed there as a request. ${
+        project.auto_build === true
+          ? "This app builds designs as they arrive, so it may already be built by then."
+          : "Nothing is built until the merchant says yes."
+      }`,
+      open: openAt(origin, project.id),
+    }),
+    structuredContent: {
+      design: {
+        status: "designing",
+        request,
+        open: openAt(origin, project.id),
+        format: projectFormat(project, null),
+        parts: [],
+      } satisfies ViewDesign,
+    },
+  };
+}
+
 async function runHere(db: SupabaseClient, project: ProjectRow, job: TurnJob, spend: string | null): Promise<void> {
   let charged = false;
   try {
@@ -478,6 +585,9 @@ async function runHere(db: SupabaseClient, project: ProjectRow, job: TurnJob, sp
       currentFeatures: ctx.currentFeatures,
       blueprintShown: ctx.blueprintShown,
       plansAllowed: true,
+      // One check for every design, whoever writes it (5 Oct).
+      reviewed: true,
+      givenDesign: job.design,
     });
     const done = await finishTurn(db, job, ctx, turn, null, [], (fn) => after(fn));
     charged = done.charged;
@@ -710,7 +820,7 @@ export async function POST(req: Request) {
             // exist. What actually costs money is Warmluke doing the
             // designing; you doing it costs nothing, and that door is
             // open with no limit on it.
-            note: "That counter is only for designs Warmluke writes. Write this one yourself instead: call design_format, then submit_design. It is checked by the same validator, goes to the merchant the same way, and does not touch the counter.",
+            note: "That counter is only for designs Warmluke writes. Write this one yourself instead: call design_format, then submit_design. It goes through the same checks, to the merchant the same way, and does not touch the counter.",
             do_this_instead: "design_format",
             reading_still_works:
               "orders, stock, products, customers — and pending_changes says what, if anything, is still waiting to be approved",
@@ -728,90 +838,13 @@ export async function POST(req: Request) {
       // finished here as a design: three asks from ChatGPT in one evening
       // ended in a question, an empty reply and a timeout, and not one of
       // them left anything behind.
-      const origin = new URL(req.url).origin;
-      // The charge, given back unless a run takes it over: the durable run
-      // gives it back itself, and the one run here in runHere.
-      let refundable: string | null = turns.spend_id ?? null;
-      let job: TurnJob;
-      try {
-        const { data: opened, error: openErr } = await db.rpc("abo_client_ask", {
-          p_project: project.id,
-          p_request: request,
-          p_conversation: (args.conversation_id as string | undefined)?.trim() || null,
-        });
-        if (openErr || !opened) {
-          return ok(id, text({ error: openErr?.message ?? "Warmluke could not start this conversation." }));
-        }
-        const o = opened as {
-          conversation_id: string;
-          asked_id: string;
-          answer_id: string;
-          asked_at: string;
-          new: boolean;
-          /** The same words moments ago (0139): that ask is waited on, and nothing starts twice. */
-          again?: boolean;
-        };
-        job = {
-          userId: auth.userId,
-          projectId: project.id,
-          moduleId: null,
-          conversationId: o.conversation_id,
-          askedId: o.asked_id,
-          answerId: o.answer_id,
-          message: request,
-          askedModel: null,
-          askedAt: Date.parse(o.asked_at),
-          isNewConversation: o.new,
-          client: { origin },
-        };
-        const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
-        // Asked again (a retry): its first ask is running or done, so nothing
-        // starts, and this charge goes back in `finally`.
-        if (o.again) {
-          /* waited on below */
-        } else if (process.env.LUKE_WORKFLOW === "1" && lapsesAt(token) - Date.now() > TOKEN_LEFT_MS) {
-          try {
-            await start(lukeTurn, [{ ...job, token, spendId: refundable }]);
-            refundable = null;
-          } catch (e) {
-            console.error(`[mcp] durable turn not started, running here: ${e instanceof Error ? e.message : e}`);
-          }
-        }
-        // Not durable (switched off, a token too near its end, a run that
-        // would not start): run here, held open past this answer.
-        if (!o.again && (refundable !== null || process.env.LUKE_WORKFLOW !== "1")) {
-          const here = runHere(db, project, job, refundable);
-          refundable = null;
-          after(() => here);
-        }
-      } finally {
-        if (refundable) await db.rpc("abo_refund_turn", { p_spend: refundable });
-      }
-
-      const line = await answerWhenReady(db, job.answerId, DESIGN_WAIT_MS);
-      if (line) return ok(id, answerFor(line, job.conversationId));
-      // Past the wait: said so, and the turn goes on in the merchant's panel.
-      return ok(id, {
-        ...text({
-          status: "still designing",
-          conversation_id: job.conversationId,
-          note: `Warmluke is still designing this, in a conversation of its own in the merchant's Luke panel, and keeps going without you. Call pending_changes in a minute or two: it says whether this is still being designed, has a question for the merchant, or failed, and a finished design is listed there as a request. ${
-            project.auto_build === true
-              ? "This app builds designs as they arrive, so it may already be built by then."
-              : "Nothing is built until the merchant says yes."
-          }`,
-          open: openAt(origin, project.id),
-        }),
-        structuredContent: {
-          design: {
-            status: "designing",
-            request,
-            open: openAt(origin, project.id),
-            format: projectFormat(project, null),
-            parts: [],
-          } satisfies ViewDesign,
-        },
-      });
+      return ok(
+        id,
+        await askInThread(req, db, auth.userId, project, request, {
+          conversationId: (args.conversation_id as string | undefined)?.trim() || null,
+          spendId: turns.spend_id ?? null,
+        })
+      );
     }
 
     if (name === "read_section") {
@@ -1406,6 +1439,38 @@ export async function POST(req: Request) {
         );
       }
 
+      // A drawn design goes through what Luke's own go through (5 Oct): run
+      // as Luke's turn with it as the first attempt, so the validator, the
+      // critic and the reviewers read it, and what they find Luke fixes,
+      // knowing the business as their AI cannot. Up to a number a day for
+      // each app, as this door costs the merchant nothing; past it, the
+      // validator alone, as before. A dry run stays free and instant.
+      if (!dryRun) {
+        const { count: today } = await db
+          .from("build_requests")
+          .select("id", { count: "exact", head: true })
+          .eq("project_id", project.id)
+          .not("client_id", "is", null)
+          .gte("created_at", new Date(Date.now() - 86_400_000).toISOString());
+        if ((today ?? 0) < DRAWN_REVIEWED_A_DAY) {
+          const words =
+            String(args.request ?? "").trim() ||
+            given
+              .map((p) => (p as { explanation?: unknown })?.explanation)
+              .filter((e): e is string => typeof e === "string" && e.trim() !== "")
+              .join(" ") ||
+            "A change designed by their own assistant";
+          return ok(
+            id,
+            await askInThread(req, db, auth.userId, project, words, {
+              conversationId: (args.conversation_id as string | undefined)?.trim() || null,
+              spendId: null,
+              design: JSON.stringify({ type: "plans", plans: given }),
+            })
+          );
+        }
+      }
+
       const { data: modules } = await db
         .from("modules")
         .select("*")
@@ -1419,10 +1484,11 @@ export async function POST(req: Request) {
       // anybody else's — that is the whole reason this is safe to
       // offer. No model runs on our side, so no turn is spent.
       const schemas = await schemasFor(db, moduleList);
-      // Its rules too, so a field one still reads is not taken away.
+      // Its rules too, so a field one still reads is not taken away, and a
+      // rule turned off that another waits on is said (heads_up).
       const { data: ruleRows } = await db
         .from("automations")
-        .select("module_id, name, definition")
+        .select("module_id, name, enabled, definition")
         .eq("project_id", project.id);
       const checked = parseReply(
         JSON.stringify({ plans: given }),
@@ -1488,6 +1554,7 @@ export async function POST(req: Request) {
               : [];
           }),
           ...retypedCopies(plans, facts),
+          ...plans.flatMap((pl) => pl.heads_up ?? []),
         ];
         return ok(
           id,

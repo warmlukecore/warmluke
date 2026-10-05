@@ -155,26 +155,27 @@ try {
   // down the app changes and the merchant's history stays blank. As a
   // client, the write is the kind RLS refuses — so it is asked here,
   // not assumed from the owner-token checks that passed.
-  const { data: thread } = await admin
-    .from("conversations")
-    .select("id")
-    .eq("project_id", project.id)
-    .eq("title", "Changes from your AI")
-    .maybeSingle();
-  const { data: noted } = thread
-    ? await admin
-        .from("messages")
-        .select("role, content")
-        .eq("conversation_id", thread.id)
-        .ilike("content", `%${stamp}%`)
-    : { data: [] };
-  check(
-    "the merchant's thread records what the client built",
-    (noted ?? []).some((m) => m.role === "user")
-  );
+  // Each drawn design is an ask in a thread of its own (5 Oct), as
+  // propose_change's are: the one whose asking line carries this run's stamp.
+  const { data: convs } = await admin.from("conversations").select("id").eq("project_id", project.id);
+  const { data: noted } = await admin
+    .from("messages")
+    .select("conversation_id, role, content, payload")
+    .in(
+      "conversation_id",
+      (convs ?? []).map((c) => c.id)
+    );
+  const asked = (noted ?? []).find((m) => m.role === "user" && m.content.includes(stamp));
+  check("the merchant's thread records what the client built", !!asked);
   check(
     "and what came of it",
-    (noted ?? []).some((m) => m.role === "assistant" && m.content.startsWith("✅"))
+    (noted ?? []).some(
+      (m) =>
+        m.conversation_id === asked?.conversation_id &&
+        m.role === "assistant" &&
+        m.payload?.type === "applied" &&
+        String(m.payload?.message ?? "").startsWith("✅")
+    )
   );
 
   // The judge's row is written through a definer function because a

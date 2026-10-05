@@ -100,8 +100,14 @@ answers, failed, or carried on in Warmluke) until they become requests.
 ### Client-authored design
 
 A capable external assistant may call `design_format`, construct plans, and iterate with
-`validate_design`. `submit_design` runs the same project-aware validation and creates the
-same kind of approval request without spending a Warmluke model turn. `design_format`
+`validate_design` (free and at once: the validator and the free checks, `heads_up`).
+`submit_design` puts the design through everything Luke's own designs go through (5 Oct):
+it is run as Luke's turn in a thread of its own, with the design as the first attempt
+(`givenDesign`), so the validator, the critic and the reviewers read it and Luke fixes what
+they find, with the business's context the outside assistant lacks. The answer says under
+`checked_by_luke` whether Luke changed it and why; past the wait it is `still designing`,
+like `propose_change`. It spends none of the merchant's included designs. Up to 20 a day
+for each app (`DRAWN_REVIEWED_A_DAY`); past that, the validator alone, as before. `design_format`
 carries the plan's shape and the same guides Luke designs by, from the same constants:
 `written_screens` (`CUSTOM_VIEW_GUIDE`: `window.wl`, the kit) and `code_rules`
 (`CODE_RULE_GUIDE`: what a rule's code is handed, the store's clock, `next`). When the

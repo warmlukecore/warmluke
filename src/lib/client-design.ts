@@ -175,7 +175,12 @@ export async function settleDesign(opts: {
   // approve_change still refuses it.
   const gone = removals(plans);
 
-  const automatic = wantsAuto && autoReason === null && gone.length === 0;
+  // And one that leaves a rule waiting on a rule it turns off (heads_up,
+  // lib/ai.ts) is put to the merchant first: with automatic builds on,
+  // an assistant turned off the two rules that flagged repeat orders,
+  // and nothing flagged one for a day (4 Oct).
+  const headsUp = plans.flatMap((p) => p.heads_up ?? []);
+  const automatic = wantsAuto && autoReason === null && gone.length === 0 && headsUp.length === 0;
   // Why an automatic build did not happen, when it was meant to.
   let autoFailed: string[] = [];
 
@@ -367,7 +372,10 @@ export async function settleDesign(opts: {
             }
           : wantsAuto && autoReason
             ? { not_automatic_because: autoReason }
-            : {}),
+            : wantsAuto && headsUp.length
+              ? { not_automatic_because: "it turns off a rule another one waits on (heads_up): the merchant decides" }
+              : {}),
+        ...(headsUp.length ? { heads_up: headsUp } : {}),
         what_the_merchant_does: stepsToFinish(
           { status: "pending", plans },
           openAt(origin, project.id, requestId as string)

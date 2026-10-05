@@ -153,7 +153,23 @@ export async function finishClientTurn(
     later,
     inThread: true,
   });
-  const answer = saying(settled.answer, thread);
+  // Their AI drew this one (submit_design): what Luke found in it and
+  // changed before the merchant saw it, said, never done quietly.
+  const changed = job.design ? [...turn.repairErrors.slice(0, 3), ...(turn.sentBackWhy ? [turn.sentBackWhy] : [])] : [];
+  const answer = saying(settled.answer, {
+    ...thread,
+    ...(job.design
+      ? {
+          checked_by_luke: changed.length
+            ? {
+                changed: true,
+                why: changed,
+                note: "Luke changed the design you sent before the merchant saw it. The design here is the one they see.",
+              }
+            : { changed: false },
+        }
+      : {}),
+  });
   const said = saidIn(answer);
   const undo = undoableFrom(settled.applied);
   const payload =

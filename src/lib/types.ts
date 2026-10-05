@@ -418,6 +418,8 @@ export interface AssistantPlan {
   explanation: string;
   /** In a blueprint: the owner may untick this one before building. */
   optional?: boolean;
+  /** Set by the server, never the model: what this leaves waiting, said on its card (lib/ai.ts, a rule turned off). */
+  heads_up?: string[];
   /** Required when optional — why it might be worth having. */
   optionalWhy?: string;
 }

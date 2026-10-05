@@ -569,6 +569,54 @@ check("the critic sends it back; the gate after it cannot send it again", design
 check("the gate does not read the design the critic sent back", calls.filter((c) => c === "review").length === 1);
 check("the critic's redo is still the critic's", both.r.ok && both.r.criticRedo === true);
 
+console.log("\na design their AI drew goes through what Luke's do (5 Oct)");
+const drawn = async (design) => {
+  const steps = [];
+  const r = await runTurn({
+    client: db,
+    project,
+    modules: [],
+    message: "Add a returns list with a tick for RTO",
+    history: [],
+    plansAllowed: true,
+    reviewed: true,
+    givenDesign: design,
+    onEvent: (e) => steps.push(e),
+  });
+  return { r, steps };
+};
+fresh({ design: DESIGN, gap: '{"unmet": []}' });
+const holds = await drawn(DESIGN);
+check("one that holds needs no model to draw it", designs() === 0 && holds.r.ok && holds.r.repairs === 0);
+fresh(
+  {
+    design: DESIGN,
+    gap: '{"unmet": []}',
+    review: '{"verdict":"redo","redo":"Use the store\'s own returns","why":"same rows"}',
+  },
+  { ANTHROPIC_REVIEW_MODEL: "claude-review-stand-in" }
+);
+const reviewedOnce = await drawn(DESIGN);
+check(
+  "the reviewers read it, and Luke redraws what they send back",
+  calls.includes("review") && designs() === 1 && reviewedOnce.r.ok
+);
+check(
+  "Luke's redraw is handed their design to start from",
+  sent
+    .find((s) => s.job === "design")
+    ?.messages.some(
+      (m) => m.role === "assistant" && JSON.stringify(m.content).includes("A returns list with a tick for RTO")
+    )
+);
+check(
+  "and the turn says what it was sent back for",
+  reviewedOnce.r.ok && /Use the store's own returns/.test(reviewedOnce.r.sentBackWhy ?? "")
+);
+fresh({ design: DESIGN, gap: '{"unmet": []}' });
+const repaired = await drawn(REFUSED);
+check("one the validator refuses, Luke repairs", designs() === 1 && repaired.r.ok && repaired.r.repairs === 1);
+
 console.log("\nthe operator's view, before the plan");
 fresh(
   {

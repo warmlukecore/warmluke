@@ -226,28 +226,33 @@ try {
   // Nobody tapped anything, so if the server does not write it down
   // the app changes and the merchant's history stays blank.
   console.log("\nand the merchant can read what happened without being there");
-  const { data: thread } = await admin
-    .from("conversations")
-    .select("id")
-    .eq("project_id", project.id)
-    .eq("title", "Changes from your AI")
-    .maybeSingle();
-  aiThreadId = thread?.id ?? null;
-  check("an automatic build is written to the AI's own thread", !!aiThreadId);
-  if (aiThreadId) {
-    const { data: msgs } = await admin
-      .from("messages")
-      .select("role, content")
-      .eq("conversation_id", aiThreadId)
-      .order("created_at", { ascending: false })
-      .limit(20);
-    check(
-      "with what was asked",
-      (msgs ?? []).some((m) => m.role === "user" && m.content.includes(stamp))
+  // Each drawn design is an ask in a thread of its own (5 Oct), as
+  // propose_change's are: the one whose asking line carries this run's stamp.
+  const { data: convs } = await admin.from("conversations").select("id").eq("project_id", project.id);
+  const { data: said } = await admin
+    .from("messages")
+    .select("conversation_id, role, content, payload")
+    .in(
+      "conversation_id",
+      (convs ?? []).map((c) => c.id)
     );
+  // Several asks carry it (the delete too, never built): any of their threads.
+  const threads = new Set(
+    (said ?? []).filter((m) => m.role === "user" && m.content.includes(stamp)).map((m) => m.conversation_id)
+  );
+  aiThreadId = [...threads][0] ?? null;
+  check("an automatic build is written to the AI's own thread", threads.size > 0);
+  if (aiThreadId) {
+    check("with what was asked", threads.size > 0);
     check(
       "and what came of it",
-      (msgs ?? []).some((m) => m.role === "assistant" && m.content.startsWith("✅"))
+      (said ?? []).some(
+        (m) =>
+          threads.has(m.conversation_id) &&
+          m.role === "assistant" &&
+          m.payload?.type === "applied" &&
+          String(m.payload?.message ?? "").startsWith("✅")
+      )
     );
   }
 } finally {

@@ -51,6 +51,8 @@ export type TurnJob = {
    * may not write messages, and ended as a request (lib/client-turn).
    */
   client?: { origin: string };
+  /** A design their AI drew itself (submit_design), read as the turn's first attempt (lib/engine.ts givenDesign). */
+  design?: string;
 };
 
 /** Life a token needs left for a durable turn: several legs, with room. */

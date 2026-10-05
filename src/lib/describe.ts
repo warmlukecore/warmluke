@@ -478,7 +478,11 @@ export function describePlan(
   /** The section's features today (null: none, so its table), when known, so a plan that replaces a view or a tab says what goes. */
   currentFeatures?: FeatureSchema | null
 ): PlanSummary {
-  const warnings = [...storeOverlap(plan, store ?? null), ...viewReplaced(plan, modules, currentFeatures)];
+  const warnings = [
+    ...(plan.heads_up ?? []),
+    ...storeOverlap(plan, store ?? null),
+    ...viewReplaced(plan, modules, currentFeatures),
+  ];
   const withWarnings = (s: PlanSummary): PlanSummary => (warnings.length ? { ...s, warnings } : s);
   return withWarnings(describePlanBody(plan, modules, currentColumns));
 }

@@ -2718,6 +2718,49 @@ function parsePlans(
       );
   }
 
+  // A rule turned off while another still waits for what it writes: the
+  // other goes on waiting, and nothing says so. An owner's own assistant
+  // turned off the two rules that set "repeat_flag" while "Send new flags
+  // to Flagged Orders" waited for it to change, and orders went unchecked
+  // for a day (4 Oct). Not refused, as they may mean to set it by hand:
+  // said on the plan's card instead (heads_up, the server's alone).
+  for (const p of raw as AssistantPlan[]) if (isPlainObject(p)) delete p.heads_up;
+  const turnedOff = new Set(
+    (raw as AssistantPlan[]).filter((o) => o?.changeType === "AUTOMATION_REMOVE").map((o) => o.automationRemoveName)
+  );
+  const live = modules.flatMap((m) => rulesOf?.(m.id) ?? []).filter((r) => r.enabled !== false);
+  const fieldsIn = (n: unknown): string[] =>
+    Array.isArray(n)
+      ? n.flatMap(fieldsIn)
+      : isPlainObject(n)
+        ? [...[n.field, n.was].filter((f): f is string => typeof f === "string"), ...Object.values(n).flatMap(fieldsIn)]
+        : [];
+  for (const p of raw as AssistantPlan[]) {
+    if (p?.changeType !== "AUTOMATION_REMOVE") continue;
+    const off = live.find((r) => r.name === p.automationRemoveName);
+    const acts = (off?.definition as AutomationDefinition | undefined)?.actions;
+    if (!off || !Array.isArray(acts)) continue;
+    const section = modules.find((m) => m.id === off.module_id)?.nav_label ?? "this section";
+    const labelOf = (f: string) =>
+      (off.module_id ? schemas?.(off.module_id)?.columns?.find((c) => c.field === f)?.label : null) ?? f;
+    const heads_up: string[] = [];
+    for (const r of live) {
+      const trigger = (r.definition as AutomationDefinition | undefined)?.trigger;
+      if (turnedOff.has(r.name) || r.module_id !== off.module_id || trigger?.type !== "record_updated") continue;
+      const watched = [...new Set(fieldsIn(trigger.when))];
+      const fed = watched.filter((f) => reads(acts, f));
+      if (fed.length)
+        heads_up.push(
+          `"${r.name}" runs when ${fed.map(labelOf).join(" or ")} changes, and "${off.name}" is what changes it. Turned off, "${r.name}" waits for someone to change it by hand.`
+        );
+      else if (!watched.length && acts.some((a) => a?.type === "set_fields" || a?.type === "run_code"))
+        heads_up.push(
+          `"${r.name}" runs when a row of ${section} changes, and "${off.name}" is what changes them. Turned off, "${r.name}" waits for someone to change one by hand.`
+        );
+    }
+    if (heads_up.length) p.heads_up = heads_up;
+  }
+
   // All or nothing. A batch is one coordinated build: quietly keeping the
   // plans that happened to validate would hand the owner half a feature
   // and no indication that the rest went missing.
@@ -2844,7 +2887,7 @@ export function sectionsRead(html: string): string[] {
 }
 
 /** A rule as the design checks see it: which section, its name, what it does. */
-export type RuleRef = { module_id: string | null; name: string; definition: unknown };
+export type RuleRef = { module_id: string | null; name: string; definition: unknown; enabled?: boolean };
 
 /**
  * Whether a part of a section reads this field: a value naming it, a key
