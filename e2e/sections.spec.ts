@@ -538,6 +538,9 @@ test("a screen beside the store's orders is a tab, and the orders stay", async (
     // Opened again, on the tab last open here; the arrows move along the row.
     await page.reload();
     await expect(tabs.getByRole("tab", { name: "Packing" })).toHaveAttribute("aria-selected", "true");
+    // Loaded first: a written screen takes the focus as it loads, for a
+    // scanner, and an arrow pressed before then went to it (CI, phone, 5 Oct).
+    await expect(page.frameLocator('iframe[title="Packing"]').locator("#count")).toHaveText(/^\d+ to pack$/);
     await tabs.getByRole("tab", { name: "Packing" }).press("ArrowLeft");
     await expect(tabs.getByRole("tab", { name: "Table" })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("table")).toBeVisible();
