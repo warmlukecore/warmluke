@@ -56,10 +56,21 @@ export type UxVerdict = {
   ms: number;
 };
 
+/** What the tryout (lib/tryout.ts) found on a part used as the merchant will: a break, or only a note. */
+export type TryFinding = { plan: number; text: string; severity: "problem" | "note" };
+
 /** Everything the reviewers said of the design that was built, kept on the reply for its card. */
 export type DesignChecks = {
   simplicity: { verdict: "simple" | "redo"; why: string | null } | null;
   data: DataFinding[];
   dryRuns: DryRun[];
   ux: UxVerdict | null;
+  /** The design used as the merchant will: how many parts were tried, what broke, what picking a linked row fills. Absent on replies from before it. */
+  tryout?: {
+    tried: number;
+    found: TryFinding[];
+    fills: string[];
+    /** The owner's own work, written as scenarios and played on the design (lib/scenarios.ts). */
+    scenarios?: Array<{ title: string; section: string; ok: boolean; why?: string }>;
+  } | null;
 };

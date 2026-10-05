@@ -461,12 +461,15 @@ reviewers run at once, each told as it lands and only when it said something:
   leans on, against the store's own rows;
 - the rule dry-run (`dryRunRules`, `lib/dry-run.ts`): each rule over the rows it would meet;
 - the screen review (`reviewScreens`, `lib/ux-review.ts`, `ANTHROPIC_UX_MODEL`): a written
-  screen looked at on a phone and a laptop, or its code read.
+  screen looked at on a phone and a laptop, or its code read;
+- the tryout (`tryDesign`, `lib/tryout.ts`): the design used as the merchant will use it,
+  with the app's own functions on the rows it will meet (below).
 
 What goes back is one line to the designer (`redoFrom`), each part under a short header,
 cut to 1,200 characters: the simpler way; the data findings that are problems ("Checked
 against their own rows"); a schedule writing one value into every row it met ("would
-rewrite all N rows every run"); the screen's fix. Notes and passes are never sent back.
+rewrite all N rows every run"); the screen's fix; with the review's switch on, the tryout's
+breaks ("Used as they will use it"). Notes and passes are never sent back.
 Every design reaching a merchant goes through it (`reviewed`): Luke's own chat, an outside
 assistant's ask (`propose_change`) and, since 5 Oct, a design it drew (`submit_design`,
 read as the turn's first attempt, `givenDesign`). One check, whoever writes the design. A reviewer that fails, or is off, is no reviewer; the
@@ -520,6 +523,43 @@ another section, or the rows that would alert or add one. Up to three are named 
 (an order number, a title), never a phone, an email, an address or a customer. It says "every
 row" when a rule touches all of twenty or more. A rule of code, one that counts other rows as it
 runs, and one that fires on a change have no count, and say why.
+
+### The tryout
+
+The reviewers each read one part; the tryout (`lib/tryout.ts`, 5 Oct) uses the section, the
+first layer of trying a design as its merchant will. Each section the design makes or changes,
+as the design leaves it (its last columns, every change to its features laid over), on the
+rows it will meet: the store's own (read once a section, as the dry-run reads them), or the
+rows it seeds into a new section of theirs. With the app's own functions, it tries that the row
+form's statuses and choices offer something to pick (`optionsFor`, the form's own), that a link
+has rows to pick and what picking one fills in (`fillFromLinked`), that a worked-out column and
+a counter come out as something and from something (a blank reads as 0 in an expression, so a
+column made from fields no row has shows 0 everywhere), that a button shows on a row, what it
+writes can be worked out and the row is settled after it, that a scan has codes to match, that
+the dates a section opens on hold rows, and that a board, calendar, cards or list view has the
+field it is drawn by. A concrete break is a problem; what only might be is a note; a field the
+design adds, which no row can hold yet, is never held against it. Problems go back to the
+designer only with the review's switch on (`ANTHROPIC_REVIEW_MODEL`), so a recorded
+conversation plays as recorded; the card's Checked line always lists what was tried, what
+broke and what a linked row fills. `validate_design` gives an outside assistant the same
+tryout before it submits (`tried_as_used`). `check-tryout` (pure) holds each part, its break
+and its note.
+
+Its second layer is the owner's own work (`lib/scenarios.ts`, with `ANTHROPIC_TRYOUT_MODEL`
+set). A model reads what the owner said and the design, told as each section's fields and
+choices, links, filters, buttons, counters, rules and up to three rows (never a phone, an
+email or an address), and writes two to four scenarios in a small step language: add a row
+(picking a linked one), find one already there, edit a field in its form, expect what it
+shows, a filter, a button, a scan, a counter. Code plays them one after another on the same
+copy of the rows, as a day's work: with the form's own choices, fill and narrowing, the
+filters' own matching, the buttons' and the design's rules' expressions, and a counter read
+against the step before. A step the design stops is a problem, sent back with why ("'Wrong
+item' is not one of Reason's choices"); a step the scenario got wrong itself (a row it assumed,
+a row it misread under a filter) is not tried and never held against the design; a button there
+is none of, where a status of that name is, is done the long way and said as a note. The card
+lists each scenario, worked or not. `check-scenario-play` (pure) holds the player;
+`check-scenario-eval` (model tier) the writer, on eight designs, four broken. Next: the built
+screen walked in a browser.
 
 ### The screen check
 

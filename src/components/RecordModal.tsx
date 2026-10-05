@@ -6,6 +6,7 @@
 // the assistant generated without knowing anything about it.
 // ─────────────────────────────────────────────────────────────
 
+import { optionsFor } from "@/lib/filters";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase-client";
 import { ago } from "@/lib/when";
@@ -22,24 +23,8 @@ import { button, field, label } from "@/components/ui/controls";
 
 export type RecordDraft = Record<string, unknown>;
 
-/**
- * Choices for a badge/dropdown field: whatever the assistant configured
- * as a filter, plus every value already in use. Derived, so a field
- * nobody configured still offers the values the owner actually types.
- */
-export function optionsFor(
-  field: string,
-  features: FeatureSchema | null,
-  records: Array<Pick<RecordRow, "data">>
-): string[] {
-  const configured = features?.filters?.find((f) => f.field === field)?.options ?? [];
-  const seen = new Set<string>(configured);
-  for (const r of records) {
-    const v = r.data?.[field];
-    if (typeof v === "string" && v.trim()) seen.add(v.trim());
-  }
-  return [...seen];
-}
+// The choices a dropdown offers, from lib/filters (the design's tryout reads them too).
+export { optionsFor };
 
 export function Field({
   col,

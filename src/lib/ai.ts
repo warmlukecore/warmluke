@@ -3192,6 +3192,8 @@ const MODEL_JOBS = {
   review: "ANTHROPIC_REVIEW_MODEL",
   /** The screen review after the critic: a design's screens looked at, or read (unset: no review). */
   ux: "ANTHROPIC_UX_MODEL",
+  /** The tryout's scenarios: the owner's own work written as steps, played on the design (unset: parts only, no scenarios). */
+  tryout: "ANTHROPIC_TRYOUT_MODEL",
   /** Reading two short texts and naming what is missing. */
   gap: "ANTHROPIC_GAP_MODEL",
   /** Where a design goes when Gemini stays busy. */
@@ -3262,6 +3264,9 @@ export function reviewModel(): string | null {
 }
 export function uxModel(): string | null {
   return optionalModel("ux");
+}
+export function tryoutModel(): string | null {
+  return optionalModel("tryout");
 }
 
 /** A job's model when its setting is there, else null — without the log line an unset required one earns. */

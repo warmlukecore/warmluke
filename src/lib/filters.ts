@@ -11,7 +11,7 @@
 // offered "active / draft / archived"; Shopify stores ACTIVE, DRAFT
 // and ARCHIVED. Selecting one matched zero rows out of twenty-one.
 //
-// Callers: src/components/GenericRenderer.tsx.
+// Callers: src/components/GenericRenderer.tsx, src/components/RecordModal.tsx (optionsFor), src/lib/tryout.ts.
 
 export type RecordRow = { data?: Record<string, unknown> | null };
 
@@ -108,4 +108,23 @@ export function filterOptions(declared: string[], rows: RecordRow[], field: stri
   }
 
   return out;
+}
+
+/**
+ * Choices for a badge/dropdown field: whatever the assistant configured
+ * as a filter, plus every value already in use. Derived, so a field
+ * nobody configured still offers the values the owner actually types.
+ */
+export function optionsFor(
+  field: string,
+  features: { filters?: Array<{ field: string; options: string[] }> } | null,
+  records: Array<{ data?: Record<string, unknown> | null }>
+): string[] {
+  const configured = features?.filters?.find((f) => f.field === field)?.options ?? [];
+  const seen = new Set<string>(configured);
+  for (const r of records) {
+    const v = r.data?.[field];
+    if (typeof v === "string" && v.trim()) seen.add(v.trim());
+  }
+  return [...seen];
 }

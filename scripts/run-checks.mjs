@@ -70,6 +70,7 @@ const MODEL = new Set([
   "check-ops-eval",
   "check-simplicity-eval",
   "check-ux-eval",
+  "check-scenario-eval",
 ]);
 
 const classify = (name) => {

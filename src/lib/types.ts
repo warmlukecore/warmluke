@@ -598,7 +598,18 @@ export type AssistantReply =
   };
 
 /** What a model call was for: the reply itself, the gap pass, or routing the question. */
-export type UsageJob = "reply" | "gap" | "route" | "plan" | "critic" | "memory" | "reflect" | "ops" | "review" | "ux";
+export type UsageJob =
+  | "reply"
+  | "gap"
+  | "route"
+  | "plan"
+  | "critic"
+  | "memory"
+  | "reflect"
+  | "ops"
+  | "review"
+  | "ux"
+  | "tryout";
 
 /** One model's share of a turn: its calls for one job, their tokens, and their dollars. */
 export type ModelUse = {
@@ -682,7 +693,9 @@ export type TurnEvent =
   /** The design's rules were tried on the rows they would meet: how many, and the rows they match in all (null when it cannot be told). */
   | { step: "dryrun"; rules: number; matched: number | null }
   /** The screen review looked at the design's screens: how it saw them, and whether they pass. */
-  | { step: "ux"; verdict: "pass" | "redo" | "skipped"; how: "screenshot" | "text" | "none" };
+  | { step: "ux"; verdict: "pass" | "redo" | "skipped"; how: "screenshot" | "text" | "none" }
+  /** The design was used as the merchant will (lib/tryout.ts): how many parts were tried, and how many broke. */
+  | { step: "tryout"; tried: number; problems: number };
 
 // ── Conversation persistence ─────────────────────────────────
 

@@ -89,6 +89,7 @@ import {
   FlaskConical,
   Lightbulb,
   MonitorSmartphone,
+  MousePointerClick,
   Shrink,
 } from "lucide-react";
 import { button, fieldOf, iconButton, menu, menuItem } from "@/components/ui/controls";
@@ -211,7 +212,8 @@ function TraceLine({ trace }: { trace: { steps: TurnEvent[]; ms: number } }) {
   else if (tries > 1) parts.push(`took ${tries} tries`);
   if (trace.steps.some((s) => s.step === "gaps")) parts.push("checked for gaps");
   if (trace.steps.some((s) => s.step === "critic")) parts.push("checked against what you asked");
-  if (trace.steps.some((s) => ["simplicity", "data", "dryrun", "ux"].includes(s.step))) parts.push("reviewed it");
+  if (trace.steps.some((s) => ["simplicity", "data", "dryrun", "ux", "tryout"].includes(s.step)))
+    parts.push("reviewed it");
   if (parts.length === 0) return null;
   const secs = Math.max(1, Math.round(trace.ms / 1000));
   return (
@@ -345,6 +347,7 @@ const STEP_MARK: Record<TurnEvent["step"], LucideIcon> = {
   data: Database,
   dryrun: FlaskConical,
   ux: MonitorSmartphone,
+  tryout: MousePointerClick,
 };
 
 /** A step already taken: its mark and its words, in the margin's voice. */
@@ -418,6 +421,10 @@ function stepWords(step: TurnEvent): string | null {
     case "ux":
       if (step.how === "none" || step.verdict === "skipped") return null;
       return `${step.how === "screenshot" ? "Looked at the screen on a phone and a laptop" : "Read the screen’s code"}${step.verdict === "redo" ? " — fixing it" : ""}`;
+    case "tryout":
+      return step.problems > 0
+        ? `Tried it as you will use it: ${n(step.problems, "thing")} to fix`
+        : `Tried it as you will use it: ${n(step.tried, "part")} work`;
   }
 }
 
@@ -1202,7 +1209,8 @@ function ChecksLine({ checks }: { checks: DesignChecks }) {
     checks.dryRuns.some((d) => d.everyRow) ||
     checks.data.some((f) => f.severity === "problem") ||
     checks.ux?.verdict === "redo" ||
-    checks.simplicity?.verdict === "redo";
+    checks.simplicity?.verdict === "redo" ||
+    !!checks.tryout?.found.some((f) => f.severity === "problem");
   return (
     <details className="group text-[11px] text-fg-faint">
       <summary className="cursor-pointer list-none select-none hover:text-fg-muted">
@@ -1246,6 +1254,32 @@ function ChecksLine({ checks }: { checks: DesignChecks }) {
             {checks.ux.issues.map((issue, i) => (
               <span key={i} className="block text-[10px] text-fg-faint">
                 {withoutIds(issue)}
+              </span>
+            ))}
+          </li>
+        )}
+        {checks.tryout && (
+          <li className="text-fg-muted">
+            {`Tried as you will use it: ${checks.tryout.tried} part${checks.tryout.tried === 1 ? "" : "s"}`}
+            {(checks.tryout.scenarios ?? []).map((sc, i) => (
+              <span key={`s${i}`} className={`block text-[10px] ${sc.ok ? "text-fg-faint" : "text-tone-attention-fg"}`}>
+                {withoutIds(`${sc.title}: ${sc.ok ? "worked" : (sc.why ?? "did not work")}`)}
+              </span>
+            ))}
+            {checks.tryout.found
+              // A scenario that did not work is said above, with its title.
+              .filter((f) => !f.text.startsWith('Tried "'))
+              .map((f, i) => (
+                <span
+                  key={i}
+                  className={`block text-[10px] ${f.severity === "problem" ? "text-tone-attention-fg" : "text-fg-faint"}`}
+                >
+                  {withoutIds(f.text)}
+                </span>
+              ))}
+            {checks.tryout.fills.map((f, i) => (
+              <span key={`f${i}`} className="block text-[10px] text-fg-faint">
+                {withoutIds(f)}
               </span>
             ))}
           </li>
@@ -1589,6 +1623,7 @@ const JOB_WORDS: Record<ModelUse["job"], string> = {
   ops: "Operator's view",
   review: "Simplicity check",
   ux: "Screen check",
+  tryout: "Tryout",
 };
 
 /** A reply's dollars in rupees, at a rate that says the day it is from. */

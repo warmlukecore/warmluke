@@ -131,7 +131,9 @@ answers, failed, or carried on in Warmluke) until they become requests.
 ### Client-authored design
 
 A capable external assistant may call `design_format`, construct plans, and iterate with
-`validate_design` (free and at once: the validator and the free checks, `heads_up`).
+`validate_design` (free and at once: the validator and the free checks, `heads_up`, and the
+tryout, `tried_as_used`: the design used as the merchant will on their own rows, with what
+would break, notes and what a linked row fills; `lib/tryout.ts`).
 `submit_design` puts the design through everything Luke's own designs go through (5 Oct).
 What the validator refuses goes back to the assistant that wrote it, free and at once: its
 own shape to fix. A design that holds is run as Luke's turn in a thread of its own, with the

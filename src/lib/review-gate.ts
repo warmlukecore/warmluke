@@ -14,11 +14,12 @@
 //
 // Callers: src/lib/engine.ts (runTurn), scripts/check-reviewers.mjs.
 
-import { reviewModel } from "@/lib/ai";
+import { reviewModel, tryoutModel } from "@/lib/ai";
 import { checkAgainstData } from "@/lib/data-check";
 import { dryRunRules } from "@/lib/dry-run";
 import { simplicityReview, workaroundSigns, type SimplicityVerdict } from "@/lib/reviewers";
 import { reviewScreens } from "@/lib/ux-review";
+import { tryDesign, type Tryout } from "@/lib/tryout";
 import type { DataFinding, DesignChecks, DryRun, ReviewContext, UxVerdict } from "@/lib/review-types";
 import type { AssistantPlan, TurnEvent } from "@/lib/types";
 
@@ -26,11 +27,11 @@ import type { AssistantPlan, TurnEvent } from "@/lib/types";
 export const REDO_MAX = 1200;
 
 /** Checks with nothing in them. */
-export const noChecks = (): DesignChecks => ({ simplicity: null, data: [], dryRuns: [], ux: null });
+export const noChecks = (): DesignChecks => ({ simplicity: null, data: [], dryRuns: [], ux: null, tryout: null });
 
 /** Whether the reviewers said anything a card could show: with every switch off they say nothing, and the reply is as it was. */
 export const hasChecks = (c: DesignChecks | null | undefined): c is DesignChecks =>
-  !!c && (!!c.simplicity || c.data.length > 0 || c.dryRuns.length > 0 || !!c.ux);
+  !!c && (!!c.simplicity || c.data.length > 0 || c.dryRuns.length > 0 || !!c.ux || (c.tryout?.tried ?? 0) > 0);
 
 /** A rule that runs on a schedule and writes the same value into every row it sets: what "would rewrite all N rows" means. */
 function writesConstantOnSchedule(plan: AssistantPlan | undefined): boolean {
@@ -52,10 +53,19 @@ function writesConstantOnSchedule(plan: AssistantPlan | undefined): boolean {
  * cut to REDO_MAX. Notes and passes are for the card, never sent back.
  */
 export function redoFrom(
-  found: { simplicity: SimplicityVerdict | null; data: DataFinding[]; dryRuns: DryRun[]; ux: UxVerdict | null },
+  found: {
+    simplicity: SimplicityVerdict | null;
+    data: DataFinding[];
+    dryRuns: DryRun[];
+    ux: UxVerdict | null;
+    /** Sent back only with the review's switch on: off, a recorded conversation must play as it was recorded. */
+    tryout?: Tryout | null;
+  },
   plans: AssistantPlan[]
 ): string | null {
   const parts: string[] = [];
+  const broke = (found.tryout?.found ?? []).filter((f) => f.severity === "problem");
+  if (broke.length) parts.push(`Used as they will use it:\n${broke.map((f) => `- ${f.text}`).join("\n")}`);
   if (found.simplicity?.verdict === "redo" && found.simplicity.redo) parts.push(`SIMPLER: ${found.simplicity.redo}`);
   const problems = found.data.filter((f) => f.severity === "problem");
   if (problems.length) {
@@ -119,7 +129,7 @@ export async function reviewDesign(
   };
   try {
     const review = reviewModel();
-    const [simplicity, data, dryRuns, ux] = await Promise.all([
+    const [simplicity, data, dryRuns, ux, tryout] = await Promise.all([
       review
         ? quietly("simplicity", async () => {
             const v = await simplicityReview({
@@ -158,12 +168,19 @@ export async function reviewDesign(
         if (u.verdict !== "skipped") tell({ step: "ux", verdict: u.verdict, how: u.how });
         return u;
       }),
+      quietly("tryout", async () => {
+        const t = await tryDesign(ctx, plans, { scenarios: tryoutModel() });
+        if (t.tried)
+          tell({ step: "tryout", tried: t.tried, problems: t.found.filter((f) => f.severity === "problem").length });
+        return t;
+      }),
     ]);
     const found = {
       simplicity,
       data: data ?? [],
       dryRuns: dryRuns ?? [],
       ux: ux && ux.verdict !== "skipped" ? ux : null,
+      tryout: review ? tryout : null,
     };
     return {
       redo: redoFrom(found, plans),
@@ -172,6 +189,7 @@ export async function reviewDesign(
         data: found.data,
         dryRuns: found.dryRuns,
         ux: found.ux,
+        tryout: tryout && tryout.tried > 0 ? tryout : null,
       },
     };
   } catch (e) {

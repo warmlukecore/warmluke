@@ -161,6 +161,11 @@ try {
     const dry = await tool("validate_design", { plans: format.worked_example.plans, project_id: project.id }, 21);
     check("the example design holds", dry?.status === "holds");
     if (dry?.status !== "holds") console.log(`     said: ${JSON.stringify(dry?.errors ?? dry)}`);
+    // Used as the merchant will, before it is sent (lib/tryout, 5 Oct).
+    check(
+      "and it is tried as the merchant will use it, saying how many parts",
+      typeof dry?.tried_as_used?.parts === "number"
+    );
     check("and nothing was put in front of the merchant", !dry?.request_id);
   }
 

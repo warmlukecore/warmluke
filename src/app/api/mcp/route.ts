@@ -15,6 +15,7 @@ import {
 } from "@/lib/store-read";
 import { asksFromStore } from "@/lib/suggest";
 import { viewEditPlans, type ViewEdit } from "@/lib/view-edit";
+import { tryDesign } from "@/lib/tryout";
 import { PROMPTS, guideFor, guideVersion, outcomeOf, promptFor, type ToolLine } from "@/lib/client-guide";
 import { blueprintAsText, runTurn, schemasFor, storeFactsFor } from "@/lib/engine";
 import { describeBuild } from "@/lib/judge";
@@ -251,7 +252,7 @@ const TOOLS = [
   {
     name: "validate_design",
     description:
-      "Check a design without sending it anywhere. Returns the same list of problems submit_design would return, or confirms it holds — but nothing is requested, nothing reaches the merchant and nothing is changed. Use it while you are still writing: it is cheaper to be told the shape is wrong here than to put a half-right design in front of somebody.",
+      "Check a design without sending it anywhere. Returns the same list of problems submit_design would return, or confirms it holds — but nothing is requested, nothing reaches the merchant and nothing is changed. A design that holds is also tried as the merchant will use it, on their own rows: what would break comes back under tried_as_used.would_break, with notes and what picking a linked row fills. Use it while you are still writing: it is cheaper to be told the shape is wrong here than to put a half-right design in front of somebody.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1811,13 +1812,44 @@ async function handle(req: Request, seen: Seen) {
           ...retypedCopies(plans, facts),
           ...plans.flatMap((pl) => pl.heads_up ?? []),
         ];
+        // Used as the merchant will use it, on their own rows, as Luke's own
+        // designs are (lib/tryout): what would break, before it is sent.
+        const { data: shop } = await db.from("stores").select("timezone").eq("project_id", project.id).maybeSingle();
+        const tried = await tryDesign(
+          {
+            db,
+            projectId: project.id,
+            store: null,
+            modules: moduleList,
+            schemas,
+            ownerWords: "",
+            understood: "",
+            locale: project.locale,
+            currency: project.currency,
+            uxModel: null,
+          },
+          plans,
+          // The parts alone: their check is free, so no model writes scenarios for it.
+          { zone: (shop?.timezone as string | undefined) ?? "UTC" }
+        );
+        const broke = tried.found.filter((f) => f.severity === "problem").map((f) => f.text);
         return ok(
           id,
           text({
             status: "holds",
-            note: "Nothing was requested and the merchant has seen nothing. Call submit_design with these same plans to put it in front of them.",
+            note: broke.length
+              ? "It holds, but used as the merchant will use it, the parts in would_break do not work. Fix them before submit_design: nothing was requested and the merchant has seen nothing."
+              : "Nothing was requested and the merchant has seen nothing. Call submit_design with these same plans to put it in front of them.",
             would_build: plans.map((pl) => describePlan(pl, moduleList)),
             ...(heads_up.length ? { heads_up } : {}),
+            tried_as_used: {
+              parts: tried.tried,
+              ...(broke.length ? { would_break: broke } : {}),
+              ...(tried.found.some((f) => f.severity === "note")
+                ? { notes: tried.found.filter((f) => f.severity === "note").map((f) => f.text) }
+                : {}),
+              ...(tried.fills.length ? { fills: tried.fills } : {}),
+            },
           })
         );
       }
