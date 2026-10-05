@@ -201,6 +201,18 @@ check(
     schemas
   ).length === 0
 );
+// A screen that picks an order and writes a return: the row form does that now (5 Oct).
+const picking = `<script>async function go(n){const o=await wl.find("order_number",n,"#orders");await wl.add({order:o[0].id})}</script>`;
+check(
+  "a written screen that picks a row of another section and writes one",
+  /"RTO list" on Orders picks rows of #orders and writes a row: a link column/.test(
+    workaroundSigns([showing(picking)], modules, schemas).join("\n")
+  )
+);
+check(
+  "a scan screen doing the same is real work, not this",
+  workaroundSigns([showing(picking.replace("go(n)", "scan(n)"))], modules, schemas).length === 0
+);
 const twoTables = plan({
   changeType: "FEATURE_UPDATE",
   targetModuleId: ORDERS.id,
