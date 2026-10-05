@@ -222,13 +222,36 @@ export async function writeRecord(
     if (col.type !== "link") continue;
     const id = clean[col.field];
     if (!id || typeof id !== "string") continue;
-    const { data: target } = await client
-      .from("records")
-      .select("id")
-      .eq("id", id)
-      .eq("module_id", col.linkTo ?? "")
-      .limit(1);
-    if (!target?.[0]) {
+    // A section over a store's list points at that store's rows: one of
+    // the store this app is connected to, never another's (5 Oct). Before,
+    // only rows of their own counted, so no store row could be linked.
+    const { data: over } = await client
+      .from("modules")
+      .select("source_table, project_id")
+      .eq("id", col.linkTo ?? "")
+      .maybeSingle();
+    const table = (over as { source_table?: string | null } | null)?.source_table;
+    let there = false;
+    if (isStoreTable(table)) {
+      const { data: store } = await client
+        .from("stores")
+        .select("id")
+        .eq("project_id", (over as { project_id: string }).project_id)
+        .maybeSingle();
+      const { data: row } = store
+        ? await client.from(STORE_TABLES[table].view).select("id").eq("id", id).eq("store_id", store.id).limit(1)
+        : { data: null };
+      there = !!row?.[0];
+    } else {
+      const { data: target } = await client
+        .from("records")
+        .select("id")
+        .eq("id", id)
+        .eq("module_id", col.linkTo ?? "")
+        .limit(1);
+      there = !!target?.[0];
+    }
+    if (!there) {
       return reply({ error: `"${col.label}" points at a row that isn't in the linked section.` }, { status: 400 });
     }
   }

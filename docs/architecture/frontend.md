@@ -75,6 +75,18 @@ Supported views are declared in `src/lib/capabilities.ts` and implemented in
 Links store a target record UUID. `LinkContext` resolves user-facing labels from the
 target section instead of copying label text into the source row.
 
+A link may point at a section over a store's list (orders, their items, products,
+customers): those rows are found as they are typed (`LinkSource.search`, twenty at a time,
+asked of the server) rather than listed up front, and a store row a link points at is named
+by `storeRowLabel`, never "(deleted)". Choosing a linked row in the row form fills the form
+from it (`fillFromLinked` in `lib/links.ts`): a field of the same key or label takes the
+row's value in its own type; what the owner typed, a computed column, a link and a field a
+row keeps about itself (status, notes, reason) are never written; choosing again replaces
+only what the last pick filled. A second link is narrowed by the first (`narrowFor`): a
+store list by its parent's id column (`storeParents`: `order_id` is an order's), a section
+of theirs by its link column to the chosen one; changing the first clears a second it no
+longer fits. Nothing is configured: every section gets this from its own columns.
+
 ## Chat and design UI
 
 `ChatPanel` renders four assistant reply shapes:

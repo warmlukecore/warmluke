@@ -26,8 +26,8 @@ import { FormatProvider } from "@/lib/format";
 import { projectFormat } from "@/lib/money";
 import ProjectSettings, { TeammateSettings } from "@/components/ProjectSettings";
 import ShareSection from "@/components/ShareSection";
-import { LinkProvider, type LinkOptions } from "@/components/LinkContext";
-import { labelForRow } from "@/lib/links";
+import { LinkProvider, type LinkOption, type LinkOptions, type LinkSource } from "@/components/LinkContext";
+import { labelForRow, type LinkTarget } from "@/lib/links";
 import ModuleSettings from "@/components/ModuleSettings";
 import NewSection from "@/components/NewSection";
 import StoreStrip from "@/components/StoreStrip";
@@ -47,7 +47,10 @@ import {
   keptPageSize,
   readStorePage,
   readStoreRows,
+  storeParents,
+  storeRowLabel,
   storeRowsMatching,
+  STORE_TABLES,
   searchFieldsOf,
   storeSectionColumns,
   withOwnFields,
@@ -371,6 +374,10 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   }, [schema, loadedSource]);
   const [recordTotal, setRecordTotal] = useState(0);
   const [linkOptions, setLinkOptions] = useState<LinkOptions>({});
+  // What each link points at, for narrowing and filling (lib/links.ts).
+  const [linkTargets, setLinkTargets] = useState<Record<string, LinkTarget>>({});
+  const linkOptionsNow = useRef(linkOptions);
+  linkOptionsNow.current = linkOptions;
   const [schemaHistory, setSchemaHistory] = useState<UiSchemaRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -1167,9 +1174,10 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       return;
     }
     const next: LinkOptions = {};
+    const pointed: Record<string, LinkTarget> = {};
     await Promise.all(
       targets.map(async (moduleId) => {
-        const [{ data: rows }, { data: schemaRows }] = await Promise.all([
+        const [{ data: rows }, { data: schemaRows }, { data: mod }] = await Promise.all([
           supabase.from("records").select("*").eq("module_id", moduleId).is("store_row_id", null).limit(500),
           supabase
             .from("ui_schemas")
@@ -1177,16 +1185,99 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             .eq("module_id", moduleId)
             .order("version", { ascending: false })
             .limit(1),
+          supabase.from("modules").select("source_table").eq("id", moduleId).maybeSingle(),
         ]);
         const targetSchema = (schemaRows?.[0] as UiSchemaRow | undefined)?.schema_json ?? null;
+        const table = (mod as { source_table?: string | null } | null)?.source_table;
+        // A section over a store's list: its rows are found as they are typed
+        // (searchLinked), never pulled whole; it had no options before (5 Oct).
+        if (isStoreTable(table)) {
+          next[moduleId] = [];
+          pointed[moduleId] = { table, parents: storeParents(table), columns: STORE_TABLES[table].columns };
+          return;
+        }
         next[moduleId] = ((rows ?? []) as RecordRow[]).map((r) => ({
           id: r.id,
           label: labelForRow(r, targetSchema),
+          data: r.data ?? {},
         }));
+        pointed[moduleId] = { table: null, parents: {}, columns: targetSchema?.columns ?? [] };
       })
     );
     setLinkOptions(next);
+    setLinkTargets(pointed);
   }, []);
+
+  /**
+   * The rows a link may point at, matching what was typed: a store's list
+   * asked of the server, twenty at a time; a section of theirs out of the
+   * rows listed up front. Narrowed when another link in the form narrows
+   * it: an order's items once the order is chosen (lib/links.ts).
+   * ponytail: a section of theirs is searched among its first 500 rows;
+   * ask the server too once a section of theirs outgrows that.
+   */
+  const searchLinked = useCallback<LinkSource["search"]>(
+    async (moduleId, q, narrow) => {
+      const target = linkTargets[moduleId];
+      if (target?.table && isStoreTable(target.table) && storeId) {
+        const table = target.table;
+        const found = await readStoreRows(
+          supabase,
+          storeId,
+          table,
+          20,
+          q || undefined,
+          null,
+          null,
+          narrow ? { field: narrow.field, values: [narrow.value] } : null
+        );
+        const rows = await withOwnFields(supabase, moduleId, found.rows);
+        return rows.map((r) => ({ id: r.id, label: storeRowLabel(table, r.data), data: r.data }));
+      }
+      const words = q.toLowerCase();
+      return (linkOptions[moduleId] ?? [])
+        .filter(
+          (o) =>
+            (!words || o.label.toLowerCase().includes(words)) &&
+            (!narrow || String(o.data?.[narrow.field] ?? "") === narrow.value)
+        )
+        .slice(0, 50);
+    },
+    [linkOptions, linkTargets, storeId]
+  );
+  const linkSource = useMemo<LinkSource>(
+    () => ({ search: searchLinked, targetOf: (moduleId) => linkTargets[moduleId] ?? null }),
+    [searchLinked, linkTargets]
+  );
+
+  // A link to a store's row reads as that row, never "(deleted)": the rows
+  // this section's links point at, looked up by id once they are shown.
+  useEffect(() => {
+    if (!storeId) return;
+    const cols = (schema?.schema_json?.columns ?? []).filter(
+      (c) => c.type === "link" && c.linkTo && linkTargets[c.linkTo]?.table
+    );
+    for (const col of cols) {
+      const target = linkTargets[col.linkTo!];
+      const table = target.table;
+      if (!isStoreTable(table)) continue;
+      const known = new Set((linkOptionsNow.current[col.linkTo!] ?? []).map((o) => o.id));
+      const ids = [
+        ...new Set(records.map((r) => String(r.data?.[col.field] ?? "")).filter((v) => v && !known.has(v))),
+      ].slice(0, 200);
+      if (ids.length === 0) continue;
+      void readStoreRows(supabase, storeId, table, ids.length, undefined, null, null, {
+        field: "id",
+        values: ids,
+      }).then(({ rows }) => {
+        const named: LinkOption[] = rows.map((r) => ({ id: r.id, label: storeRowLabel(table, r.data), data: r.data }));
+        setLinkOptions((prev) => {
+          const have = new Set((prev[col.linkTo!] ?? []).map((o) => o.id));
+          return { ...prev, [col.linkTo!]: [...(prev[col.linkTo!] ?? []), ...named.filter((o) => !have.has(o.id))] };
+        });
+      });
+    }
+  }, [records, linkTargets, storeId, schema]);
 
   const loadMoreRecords = useCallback(async () => {
     if (!selectedModuleId) return;
@@ -3078,7 +3169,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
 
   return (
     <FormatProvider locale={project?.locale} currency={project?.currency}>
-      <LinkProvider options={linkOptions}>
+      <LinkProvider options={linkOptions} source={linkSource}>
         <div
           className="font-ui flex h-[100dvh] gap-0 overflow-hidden bg-frame text-fg lg:gap-2 lg:p-2 lg:pl-0"
           // Headings inside the app are set in the same face as the rest;

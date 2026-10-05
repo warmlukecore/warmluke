@@ -167,6 +167,39 @@ function sortable(spec: TableSpec, field: string): boolean {
   return spec.columns.some((c) => c.field === field);
 }
 
+/**
+ * How a store's row reads in a link's list: its own words, not its
+ * parent's. An order is its number and customer; an order's item is its
+ * product and variant, the order it is in being chosen already. The first
+ * two text fields the list has that its parents do not, as they are filled.
+ */
+export function storeRowLabel(table: StoreTable, data: Record<string, unknown>): string {
+  const inParents = new Set(
+    Object.values(storeParents(table)).flatMap((p) => STORE_TABLES[p].columns.map((c) => c.field))
+  );
+  const words = STORE_TABLES[table].columns
+    .filter((c) => c.type === "text" && !inParents.has(c.field))
+    .map((c) => String(data[c.field] ?? "").trim())
+    .filter(Boolean)
+    .slice(0, 2);
+  return words.join(" · ") || "(no name)";
+}
+
+/**
+ * The store lists a list's rows belong to, by the column that names the
+ * parent: "order_id" is an order's, "product_id" a product's. Read off
+ * the columns the list reads, never declared a second time: an order's
+ * items are found by it once the order is chosen (5 Oct).
+ */
+export function storeParents(table: StoreTable): Record<string, StoreTable> {
+  const out: Record<string, StoreTable> = {};
+  for (const col of STORE_TABLES[table].select.split(",").map((c) => c.trim())) {
+    const m = /^([a-z]+)_id$/.exec(col);
+    if (m && isStoreTable(`${m[1]}s`)) out[col] = `${m[1]}s` as StoreTable;
+  }
+  return out;
+}
+
 export type StoreLeaders = {
   /** Biggest spenders first, by Shopify's lifetime figure; those not yet synced follow, by orders. */
   top_customers: Array<{ name: string | null; orders: number; spent: number | null }>;
@@ -1130,7 +1163,11 @@ export async function readStoreRows(
   // ponytail: orders has no (store_id, order_number) index, so a scan's
   // look-up reads the store's orders in full; add it when a store's
   // order count makes the first scan slow.
-  if (equals && (sortable(spec, equals.field) || equals.field === "id") && equals.values.length)
+  if (
+    equals &&
+    (sortable(spec, equals.field) || equals.field === "id" || equals.field in storeParents(table)) &&
+    equals.values.length
+  )
     query = query.in(equals.field, equals.values);
 
   const { data, count, error } = await query;

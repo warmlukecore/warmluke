@@ -6,13 +6,19 @@
 // closes, a letter jumps to the next option starting with it. Opens up
 // when there is no room below, as in a dialog's last field.
 //
+//
+// With `search`, the rows are too many to list at once (a store's
+// orders): a box at the top of the list, and the rows asked for as they
+// are typed, an answer that comes back late never drawn over a newer one.
+//
 // Callers: src/components/RecordModal.tsx, src/components/AutomationsPanel.tsx (and placeBy: ui/DateField.tsx).
 
 import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import { field, menu, menuItem } from "@/components/ui/controls";
 
-export type SelectOption = { value: string; label: string };
+/** A choice; `data` is the row behind it, for a form to fill from (lib/links.ts). */
+export type SelectOption = { value: string; label: string; data?: Record<string, unknown> };
 
 /**
  * Where a list or a month opens: under its button, or over it when the
@@ -56,30 +62,66 @@ export function Select({
   label,
   empty = "—",
   clearable = true,
+  search,
+  chosenLabel,
 }: {
   value: string;
   options: SelectOption[];
-  onChange: (value: string) => void;
+  /** The value chosen, and the option it is: its row, when it has one. */
+  onChange: (value: string, option?: SelectOption) => void;
   /** What the field is, for a screen reader: the form's own label. */
   label: string;
   /** Shown when nothing is chosen, and offered first to clear it. */
   empty?: string;
   /** False for a choice that always has an answer (which rules to show): no empty first option. */
   clearable?: boolean;
+  /** The rows matching what is typed, asked for as it is typed; `options` is then what shows before. */
+  search?: (q: string) => Promise<SelectOption[]>;
+  /** What the chosen value reads as when it is not among the options shown (found by an earlier search). */
+  chosenLabel?: string;
 }) {
-  const all = clearable ? [{ value: "", label: empty }, ...options] : options;
+  const [found, setFound] = useState<SelectOption[] | null>(null);
+  const [q, setQ] = useState("");
+  const asked = useRef(0);
+  const shown = search && found ? found : options;
+  const all = clearable ? [{ value: "", label: empty }, ...shown] : shown;
   const [open, setOpen] = useState(false);
   const [place, setPlace] = useState<CSSProperties>({});
   const [active, setActive] = useState(0);
   const box = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLUListElement>(null);
+  const findBox = useRef<HTMLInputElement>(null);
   const id = useId();
-  const chosen = all.find((o) => o.value === value);
+  const chosen =
+    all.find((o) => o.value === value) ?? (value && chosenLabel ? { value, label: chosenLabel } : undefined);
 
   useEffect(() => {
-    if (open) list.current?.focus({ preventScroll: true });
-  }, [open]);
+    if (!open) return;
+    if (search) findBox.current?.focus({ preventScroll: true });
+    else list.current?.focus({ preventScroll: true });
+  }, [open, search]);
+  // What is typed, asked for a moment after the last key; only the newest answer is drawn.
+  useEffect(() => {
+    if (!open || !search) return;
+    const n = ++asked.current;
+    const t = setTimeout(
+      () => {
+        void search(q.trim())
+          .then((rows) => {
+            if (n === asked.current) {
+              setFound(rows);
+              setActive(0);
+            }
+          })
+          .catch(() => {
+            if (n === asked.current) setFound([]);
+          });
+      },
+      q ? 250 : 0
+    );
+    return () => clearTimeout(t);
+  }, [open, q, search]);
   useCloseAway(open, box, setOpen);
   useEffect(() => {
     if (open) list.current?.children[active]?.scrollIntoView({ block: "nearest" });
@@ -96,8 +138,10 @@ export function Select({
     setOpen(true);
   };
   const choose = (i: number) => {
-    onChange(all[i].value);
+    if (!all[i]) return;
+    onChange(all[i].value, all[i]);
     setOpen(false);
+    setQ("");
     trigger.current?.focus();
   };
   const keys = (e: KeyboardEvent) => {
@@ -106,13 +150,14 @@ export function Select({
     else if (e.key === "ArrowUp") setActive((a) => Math.max(0, a - 1));
     else if (e.key === "Home") setActive(0);
     else if (e.key === "End") setActive(last);
-    else if (e.key === "Enter" || e.key === " ") choose(active);
+    else if (e.key === "Enter" || (e.key === " " && !search)) choose(active);
     else if (e.key === "Escape") {
       // The dialog around it stays open: only the list closes.
       e.stopPropagation();
       setOpen(false);
       trigger.current?.focus();
     } else if (e.key === "Tab") return setOpen(false);
+    else if (search) return;
     else if (e.key.length === 1) {
       const k = e.key.toLowerCase();
       const next = all
@@ -147,6 +192,22 @@ export function Select({
       </button>
       {open && (
         <div className={menu} style={{ ...place, width: place.minWidth }}>
+          {search && (
+            <input
+              ref={findBox}
+              type="search"
+              role="combobox"
+              aria-expanded
+              aria-controls={`${id}-list`}
+              aria-activedescendant={`${id}-${active}`}
+              aria-label={`Find ${label}`}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={keys}
+              placeholder="Type to find…"
+              className={`${field} mb-1`}
+            />
+          )}
           <ul
             ref={list}
             id={`${id}-list`}
@@ -173,6 +234,9 @@ export function Select({
                 )}
               </li>
             ))}
+            {search && found !== null && shown.length === 0 && (
+              <li className={`${menuItem} text-fg-faint`}>{q ? "Nothing matches" : "Nothing here yet"}</li>
+            )}
           </ul>
         </div>
       )}

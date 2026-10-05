@@ -9,11 +9,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase-client";
 import { ago } from "@/lib/when";
-import { useLinkOptions } from "@/components/LinkContext";
+import { useLinkOptions, useLinkSource } from "@/components/LinkContext";
+import { fillFromLinked, narrowFor } from "@/lib/links";
 import type { FeatureSchema, RecordRow, SchemaColumn, UiSchema } from "@/lib/types";
 import { Check } from "lucide-react";
 import { Dialog } from "@/components/ui/Dialog";
-import { Select } from "@/components/ui/Select";
+import { Select, type SelectOption } from "@/components/ui/Select";
 import { DateField } from "@/components/ui/DateField";
 import { badgeLabel } from "@/lib/tone";
 import { useFormat } from "@/lib/format";
@@ -45,14 +46,37 @@ export function Field({
   value,
   options,
   onChange,
+  narrow = null,
+  chosenLabel,
 }: {
   col: SchemaColumn;
   value: unknown;
   options: string[];
-  onChange: (v: string) => void;
+  /** The value, and for a link the row chosen, for the form to fill from. */
+  onChange: (v: string, option?: SelectOption) => void;
+  /** A link's rows narrowed by another link already chosen (lib/links.ts). */
+  narrow?: { field: string; value: string } | null;
+  /** What a link chosen by a search reads as. */
+  chosenLabel?: string;
 }) {
   const linkOptions = useLinkOptions();
+  const source = useLinkSource();
   const fmt = useFormat();
+  // A link's rows asked for as they are typed, narrowed as the form says;
+  // the same function while nothing it asks by changes, or the list re-asks forever.
+  const linkTo = col.type === "link" ? col.linkTo : undefined;
+  const narrowField = narrow?.field;
+  const narrowValue = narrow?.value;
+  const search = useMemo(
+    () =>
+      source && linkTo
+        ? (q: string) =>
+            source
+              .search(linkTo, q, narrowField && narrowValue ? { field: narrowField, value: narrowValue } : null)
+              .then((rows) => rows.map((r) => ({ value: r.id, label: r.label, data: r.data })))
+        : undefined,
+    [source, linkTo, narrowField, narrowValue]
+  );
   const base = field;
   const str = value === null || value === undefined ? "" : String(value);
 
@@ -60,14 +84,19 @@ export function Field({
   // is the whole point of it not being a copied string.
   if (col.type === "link") {
     const rows = (col.linkTo && linkOptions[col.linkTo]) || [];
+    const known = rows.find((r) => r.id === str)?.label ?? chosenLabel;
     return (
       <Select
         label={col.label}
         value={str}
         onChange={onChange}
+        search={search}
+        chosenLabel={known}
         options={[
-          ...rows.map((r) => ({ value: r.id, label: r.label })),
-          ...(str && !rows.some((r) => r.id === str) ? [{ value: str, label: "(deleted)" }] : []),
+          ...rows
+            .filter((r) => !narrow || String(r.data?.[narrow.field] ?? "") === narrow.value)
+            .map((r) => ({ value: r.id, label: r.label, data: r.data })),
+          ...(str && !known ? [{ value: str, label: "(deleted)" }] : []),
         ]}
       />
     );
@@ -99,7 +128,15 @@ export function Field({
   }
 
   if (col.type === "longtext") {
-    return <textarea value={str} onChange={(e) => onChange(e.target.value)} rows={3} className={`${base} resize-y`} />;
+    return (
+      <textarea
+        aria-label={col.label}
+        value={str}
+        onChange={(e) => onChange(e.target.value)}
+        rows={3}
+        className={`${base} resize-y`}
+      />
+    );
   }
 
   if ((col.type === "badge" || col.type === "dropdown") && options.length > 0) {
@@ -147,6 +184,7 @@ export function Field({
   return (
     <input
       type={inputType}
+      aria-label={col.label}
       value={str}
       onChange={(e) => onChange(e.target.value)}
       step={col.type === "currency" ? "0.01" : undefined}
@@ -284,6 +322,60 @@ export default function RecordModal({
     return start;
   });
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const source = useLinkSource();
+  // What each link's pick filled (field -> value), and what a searched pick reads as.
+  const [filledBy, setFilledBy] = useState<Record<string, Record<string, unknown>>>({});
+  const [picked, setPicked] = useState<Record<string, string>>({});
+  const targetOf = (moduleId: string) => source?.targetOf(moduleId) ?? null;
+  // Only a choice the field is set up with is filled into a badge or a dropdown.
+  const fixedOptions = (f: string) => features?.filters?.find((x) => x.field === f)?.options ?? null;
+  const isEmpty = (v: unknown) => v === null || v === undefined || v === "";
+
+  /**
+   * A field changed. A link fills the form from the row chosen and leaves
+   * what the owner typed alone (lib/links.ts); a link it narrowed no longer
+   * fits once it points elsewhere, and is cleared with what it filled.
+   */
+  const change = (col: SchemaColumn, v: string, option?: SelectOption) => {
+    if (col.type !== "link") {
+      setDraft((prev) => ({ ...prev, [col.field]: v }));
+      return;
+    }
+    const fills = { ...filledBy };
+    const target = col.linkTo ? targetOf(col.linkTo) : null;
+    let next: RecordDraft = { ...draft, [col.field]: v };
+    const own = fillFromLinked(
+      columns,
+      next,
+      col,
+      { id: v, data: v && option?.data ? option.data : {} },
+      target?.columns ?? [],
+      fills[col.field] ?? {},
+      fixedOptions
+    );
+    next = own.draft;
+    fills[col.field] = own.filled;
+    for (const other of columns) {
+      if (other === col || other.type !== "link" || isEmpty(next[other.field])) continue;
+      const before = narrowFor(other, columns, draft, targetOf);
+      const after = narrowFor(other, columns, next, targetOf);
+      if (before && (before.field !== after?.field || before.value !== after?.value)) {
+        next = fillFromLinked(
+          columns,
+          { ...next, [other.field]: "" },
+          other,
+          { id: "", data: {} },
+          [],
+          fills[other.field] ?? {},
+          fixedOptions
+        ).draft;
+        fills[other.field] = {};
+      }
+    }
+    setDraft(next);
+    setFilledBy(fills);
+    setPicked((p) => ({ ...p, [col.field]: v ? (option?.label ?? p[col.field] ?? "") : "" }));
+  };
 
   const optionMap = useMemo(() => {
     const m: Record<string, string[]> = {};
@@ -328,8 +420,19 @@ export default function RecordModal({
               col={col}
               value={draft[col.field]}
               options={optionMap[col.field] ?? []}
-              onChange={(v) => setDraft((prev) => ({ ...prev, [col.field]: v }))}
+              onChange={(v, option) => change(col, v, option)}
+              narrow={col.type === "link" ? narrowFor(col, columns, draft, targetOf) : null}
+              chosenLabel={picked[col.field] || undefined}
             />
+            {col.type === "link" && Object.keys(filledBy[col.field] ?? {}).length > 0 && (
+              <p className="mt-1 text-[11px] text-fg-faint">
+                Filled{" "}
+                {Object.keys(filledBy[col.field])
+                  .map((f) => columns.find((c) => c.field === f)?.label ?? f)
+                  .join(", ")}{" "}
+                from {picked[col.field] || "the row chosen"}. Change any of them as you like.
+              </p>
+            )}
           </div>
         ))}
         {record && <RowHistory record={record} columns={schema.columns ?? []} />}
