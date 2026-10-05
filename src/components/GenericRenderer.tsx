@@ -271,6 +271,8 @@ export default function GenericRenderer({
   onPeriod,
   serverRows,
   ask,
+  onApprovalButton,
+  waitsForOwner = false,
 }: {
   schema: UiSchema;
   records: RecordRow[];
@@ -328,6 +330,10 @@ export default function GenericRenderer({
   onPeriod?: (range: PeriodRange | null) => void;
   /** Asked of this screen by Luke, or by a link from their own AI (lib/screen.ts): done once each time `at` changes. */
   ask?: (ScreenAsk & { at: number }) | null;
+  /** Presses a button that needs the owner's yes (0183): the server works it out, and waits or does it. */
+  onApprovalButton?: (rec: RecordRow, label: string) => Promise<void>;
+  /** This person is not the owner: such a button's press waits for the owner. */
+  waitsForOwner?: boolean;
 }) {
   const fmt = useFormat();
   const total = totalRecords ?? records.length;
@@ -720,9 +726,14 @@ export default function GenericRenderer({
     onClearFilters: filtered ? clearFilters : undefined,
     allRecordCount: records.length,
     onOpen: editable ? (rec: RecordRow) => setEditing(rec) : preview ? undefined : onInspect,
-    actions: features?.actions,
+    // A button that needs the owner's yes is the server's to work out and decide
+    // (0183): pressed, it goes there; and a teammate sees that it will wait.
+    actions: features?.actions?.map((a) => (a.approval && waitsForOwner ? { ...a, waits: true } : a)),
     onAction: canSet
-      ? (rec: RecordRow, set: Record<string, unknown>) => runWrite(() => onUpdate!(rec.id, set), rec.id)
+      ? (rec: RecordRow, set: Record<string, unknown>, action?: { label: string; approval?: boolean }) =>
+          action?.approval && onApprovalButton
+            ? runWrite(() => onApprovalButton(rec, action.label), rec.id)
+            : runWrite(() => onUpdate!(rec.id, set), rec.id)
       : undefined,
     busyRecordId,
   };

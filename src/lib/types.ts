@@ -231,6 +231,8 @@ export interface FeatureSchema {
     /** Shown only when this evaluates true for the row. */
     when?: Expr;
     style?: "primary" | "danger" | "neutral";
+    /** A teammate's press waits for the owner's yes (0183, lib/row-approval.ts); the owner's applies at once. */
+    approval?: boolean;
   }>;
   /** Scan mode: camera barcode scan → find record → apply action. */
   scanMode?: {

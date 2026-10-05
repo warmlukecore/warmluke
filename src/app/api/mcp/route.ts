@@ -1327,6 +1327,38 @@ async function handle(req: Request, seen: Seen) {
         };
       });
 
+      // A teammate's press of a button that waits for the owner (0183):
+      // listed so their AI can tell them, never decided here. Only the
+      // owner approves, in Warmluke; the database refuses an AI's token.
+      let pressQuery = db
+        .from("row_approvals")
+        .select("id, project_id, module_id, action, row_label, asked_at")
+        .eq("status", "waiting")
+        .order("asked_at", { ascending: false })
+        .limit(SHOW_WAITING);
+      if (wanted) pressQuery = pressQuery.eq("project_id", wanted);
+      const { data: pressRows } = await pressQuery;
+      const pressSections = new Map<string, string>();
+      if (pressRows?.length) {
+        const { data: mods } = await db
+          .from("modules")
+          .select("id, nav_label")
+          .in(
+            "id",
+            pressRows.map((p) => p.module_id)
+          );
+        for (const m of mods ?? []) pressSections.set(m.id, m.nav_label);
+      }
+      const buttonPresses = (pressRows ?? []).map((p) => ({
+        button: p.action,
+        row: p.row_label || null,
+        section: pressSections.get(p.module_id) ?? null,
+        asked_at: p.asked_at,
+        you_can_approve_it: false,
+        what_the_merchant_does: "Open Warmluke: it waits in the bell, with Approve or Not this one.",
+        open: openAt(new URL(req.url).origin, p.project_id),
+      }));
+
       // What this assistant asked for that is not a request yet: still
       // being designed, a question waiting on the merchant, or a turn
       // that failed (lib/client-turn). Without these, a design still
@@ -1397,6 +1429,13 @@ async function handle(req: Request, seen: Seen) {
                 your_asks: asks,
                 your_asks_note:
                   "What you asked propose_change for that is not a request yet. A design still being made lands here as a request when it is done; do not ask for it again.",
+              }
+            : {}),
+          ...(buttonPresses.length
+            ? {
+                waiting_button_presses: buttonPresses,
+                button_presses_note:
+                  "A teammate pressed a button the owner approves (a refund, a discount). Only the owner decides, in Warmluke: tell them it waits, never approve it.",
               }
             : {}),
           ...(shopChanges.length

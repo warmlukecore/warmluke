@@ -9,6 +9,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { STORE_TABLES, canCarryOwnFields, isStoreTable, ownColumns, type StoreTable } from "@/lib/store-read";
 import type { FeatureSchema, SchemaColumn, UiSchema, UiSchemaRow } from "@/lib/types";
+import { approvalNeededFor } from "@/lib/row-approval";
 
 type SchemaJsonWithFeatures = UiSchema & { features?: FeatureSchema | null };
 
@@ -159,6 +160,37 @@ export async function writeRecord(
     return reply({ error: "This section has no fields of your own yet." }, { status: 400 });
   }
   const clean = cleanData(writable, data);
+
+  // A change an approval button makes is the owner's, or waits for their
+  // yes (0183, lib/row-approval.ts): a teammate's edit that would make it
+  // by hand is refused here, with the button to press instead.
+  const features = (schemaRow?.schema_json as SchemaJsonWithFeatures | undefined)?.features ?? null;
+  if ((action === "update" || action === "update_store_row") && features?.actions?.some((a) => a.approval)) {
+    const { data: owns } = await client.rpc("abo_owns", { p: projectId });
+    if (owns !== true) {
+      const own = async (q: { id?: string; storeRowId?: string }) => {
+        let read = client.from("records").select("data").eq("module_id", moduleId);
+        read = q.id ? read.eq("id", q.id) : read.eq("store_row_id", q.storeRowId ?? "");
+        const { data: rec } = await read.maybeSingle();
+        return ((rec as { data?: Record<string, unknown> } | null)?.data ?? {}) as Record<string, unknown>;
+      };
+      let previous: Record<string, unknown> = {};
+      if (action === "update" && recordId) previous = await own({ id: recordId });
+      if (action === "update_store_row" && table && storeRowId) {
+        const spec = STORE_TABLES[table];
+        const { data: theirs } = await client.from(spec.view).select(spec.select).eq("id", storeRowId).maybeSingle();
+        previous = { ...(theirs as Record<string, unknown> | null), ...(await own({ storeRowId })) };
+      }
+      const label = approvalNeededFor(features, columns, previous, clean);
+      if (label) {
+        return reply(
+          { error: `Only the owner makes this change. Press “${label}” on the row to ask them.`, approval: label },
+          { status: 409 }
+        );
+      }
+    }
+  }
+
   const onWritten = written
     ? (w: {
         event: "created" | "updated";

@@ -286,7 +286,9 @@ export function describeFeaturesFull(f: FeatureSchema, modules: ModuleRow[]): st
       .map(([k, v]) => `${k} = ${exprText(v)}`)
       .join(", ");
     const when = a.when ? `, shown when ${exprText(a.when)}` : "";
-    out.push(`Button “${a.label}” — sets ${sets}${when}`);
+    // Said where the owner reads the design: a teammate's press of this one waits for them (0183).
+    const yes = a.approval ? "; a teammate's press waits for your yes" : "";
+    out.push(`Button “${a.label}” — sets ${sets}${when}${yes}`);
   }
   if (f.scanMode) {
     const sets = Object.entries(f.scanMode.action.set)

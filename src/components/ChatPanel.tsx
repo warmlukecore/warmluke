@@ -1305,6 +1305,60 @@ function ChecksLine({ checks }: { checks: DesignChecks }) {
 }
 
 /**
+ * A teammate pressed a button that waits for the owner (0183): which one,
+ * on which row of which section, and the owner's Approve or not. What it
+ * does is worked out again from the row when approved; a row that has
+ * moved on says so here, and nothing changes.
+ */
+function ApprovalCard({
+  approval,
+  onApproval,
+}: {
+  approval: { id: string; action: string; row_label: string; section: string; asked_at: string };
+  onApproval?: (id: string, decision: "approve" | "decline") => Promise<string | null>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
+  // When it was asked, read against the moment the card was drawn.
+  const [now] = useState(() => Date.now());
+  const go = async (decision: "approve" | "decline") => {
+    if (!onApproval) return;
+    setBusy(true);
+    const r = await onApproval(approval.id, decision);
+    setBusy(false);
+    setSaid(r);
+  };
+  return (
+    <div className="rounded-xl border border-tone-attention bg-tone-attention/25 px-2.5 py-2">
+      <div className="text-[10px] font-semibold tracking-widest text-tone-attention-fg">
+        A TEAMMATE ASKS · {approval.section.toUpperCase()}
+      </div>
+      <div className="mt-1 text-[12px] leading-relaxed text-fg">
+        “{approval.action}” on {approval.row_label ? `“${approval.row_label}”` : "a row"}
+      </div>
+      <div className="mt-1 text-[10px] text-fg-muted">{ago(approval.asked_at, now)}</div>
+      {said && <div className="mt-1 text-[10px] leading-relaxed text-tone-critical-fg">{said}</div>}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        <button
+          onClick={() => go("approve")}
+          disabled={busy || !onApproval}
+          className="rounded-lg bg-primary px-2 py-1 text-[10px] font-medium text-on-primary hover:bg-primary-hover disabled:opacity-40"
+        >
+          {busy ? "Doing it…" : "Approve"}
+        </button>
+        <button
+          onClick={() => go("decline")}
+          disabled={busy || !onApproval}
+          className="ml-auto text-[10px] text-tone-attention-fg hover:underline disabled:opacity-40"
+        >
+          Not this one
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * What Luke did on the screen open as he answered (lib/screen.ts), in the
  * code's words rather than his: what is shown, what was left undone, and
  * a way to set it again once they have moved it.
@@ -2257,6 +2311,8 @@ export default function ChatPanel({
   onEmpty,
   onWalkFix,
   onShow,
+  approvals = [],
+  onApproval,
   onEditPrompt,
   onPeekSection,
   openSectionId = null,
@@ -2377,6 +2433,10 @@ export default function ChatPanel({
   onWalkFix?: (section: string, problem: string) => void;
   /** Sets the screen as Luke set it under an answer, again (AppShell). */
   onShow?: (show: ScreenShown) => void;
+  /** Teammates' presses of a button that waits for the owner (0183): the owner's to approve, in the bell. */
+  approvals?: Array<{ id: string; action: string; row_label: string; section: string; asked_at: string }>;
+  /** The owner's word on one; a line back when it was not done (the row moved on). */
+  onApproval?: (id: string, decision: "approve" | "decline") => Promise<string | null>;
   /**
    * Corrects a prompt already sent and runs it again. The shell owns
    * it because retiring the old exchange is a write, and because the
@@ -3125,7 +3185,8 @@ export default function ChatPanel({
   // anywhere would find it by accident or not at all.
   const pendingCount =
     requests.filter((r) => r.status === "pending" || r.status === "partly_built").length +
-    shopChanges.filter((a) => a.status === "pending").length;
+    shopChanges.filter((a) => a.status === "pending").length +
+    approvals.length;
   /**
    * Which ones are waiting, as one string.
    *
@@ -3138,6 +3199,7 @@ export default function ChatPanel({
   const waitingKey = [
     ...requests.filter((r) => r.status === "pending" || r.status === "partly_built").map((r) => r.id),
     ...shopChanges.filter((a) => a.status === "pending").map((a) => a.id),
+    ...approvals.map((a) => a.id),
   ].join(",");
 
   // On the tab, not only in the panel. A merchant is not sitting here
@@ -3393,21 +3455,30 @@ export default function ChatPanel({
                             onDismiss={(a) => onSeeAlerts([a.id], true)}
                           />
                         ))}
-                      {bellTab === "asked" && requests.length === 0 && shopChanges.length === 0 && (
-                        <div className="flex flex-col items-center px-4 py-6 text-center">
-                          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-canvas text-fg-faint">
-                            <Bell aria-hidden size={16} strokeWidth={1.75} />
-                          </span>
-                          <div className="mt-2.5 text-[13px] font-medium text-fg">Nothing waiting on you</div>
-                          <p className="mt-1 text-xs leading-relaxed text-fg-muted">
-                            When your own AI asks for a section or a change to your shop, it shows up here for your yes.
-                          </p>
-                        </div>
-                      )}
+                      {bellTab === "asked" &&
+                        requests.length === 0 &&
+                        shopChanges.length === 0 &&
+                        approvals.length === 0 && (
+                          <div className="flex flex-col items-center px-4 py-6 text-center">
+                            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-canvas text-fg-faint">
+                              <Bell aria-hidden size={16} strokeWidth={1.75} />
+                            </span>
+                            <div className="mt-2.5 text-[13px] font-medium text-fg">Nothing waiting on you</div>
+                            <p className="mt-1 text-xs leading-relaxed text-fg-muted">
+                              When your own AI asks for a section or a change to your shop, it shows up here for your
+                              yes.
+                            </p>
+                          </div>
+                        )}
                       {/* Changes to the shop, above the designs. Not a different
             colour — a different first line. The words are what say
             this one leaves the building, and a second palette would
             only be one more thing to learn. */}
+                      {/* A teammate's press waiting on the owner's yes (0183), first:
+            it is someone on their team waiting, not a suggestion. */}
+                      {(bellTab === "asked" ? approvals : []).map((p) => (
+                        <ApprovalCard key={p.id} approval={p} onApproval={onApproval} />
+                      ))}
                       {(bellTab === "asked" ? shopChanges : []).map((a) => {
                         const spec = actionSpec(a.action);
                         const waiting = a.status === "pending";

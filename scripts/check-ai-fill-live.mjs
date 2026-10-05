@@ -91,16 +91,14 @@ try {
   await admin.from("automations").update({ enabled: true }).eq("id", auto.id);
 
   console.log("\nthe project's day");
-  await admin
-    .from("automation_runs")
-    .insert(
-      Array.from({ length: 198 }, () => ({
-        automation_id: auto.id,
-        record_id: rec.id,
-        ok: true,
-        detail: { ai: "filled" },
-      }))
-    );
+  await admin.from("automation_runs").insert(
+    Array.from({ length: 198 }, () => ({
+      automation_id: auto.id,
+      record_id: rec.id,
+      ok: true,
+      detail: { ai: "filled" },
+    }))
+  );
   const { data: last } = await db.rpc("abo_ai_fill_claim", { p_automation: auto.id, p_record: rec.id });
   check("the 200th of the day still begins", typeof last === "string");
   const { data: past } = await db.rpc("abo_ai_fill_claim", { p_automation: auto.id, p_record: rec.id });

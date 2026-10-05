@@ -17,7 +17,7 @@ import { isId, looksLikeCode } from "@/lib/no-ids";
 import { isYes } from "@/lib/filters";
 import { useLinkLabel } from "@/components/LinkContext";
 import { button, type ButtonTone } from "@/components/ui/controls";
-import { ArrowDown, ArrowUp, ArrowUpDown, Check, Copy, Inbox, Plus, SearchX } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, Clock, Copy, Inbox, Plus, SearchX } from "lucide-react";
 
 /**
  * The first column stays put while the rest scroll under it: a line at its
@@ -280,7 +280,7 @@ export interface ViewProps {
   /** Row action buttons the assistant configured for this section. */
   actions?: FeatureSchema["actions"];
   /** Applies one action's field changes to a row. */
-  onAction?: (rec: RecordRow, set: Record<string, unknown>) => void;
+  onAction?: (rec: RecordRow, set: Record<string, unknown>, action?: RowButton) => void;
   busyRecordId?: string | null;
   /** Empties the search and filters, offered when they hide every row. */
   onClearFilters?: () => void;
@@ -299,6 +299,9 @@ function actionsFor(actions: FeatureSchema["actions"], rec: RecordRow): NonNulla
   return (actions ?? []).filter((a) => a.when === undefined || truthy(evalExpr(a.when, withId(rec))));
 }
 
+/** A row's button as a view draws it: "waits" when this person's press goes to the owner for a yes (0183). */
+export type RowButton = NonNullable<FeatureSchema["actions"]>[number] & { waits?: boolean };
+
 const ACTION_TONES: Record<string, ButtonTone> = {
   primary: "primary",
   danger: "critical",
@@ -313,7 +316,7 @@ export function ActionButtons({
 }: {
   rec: RecordRow;
   actions: FeatureSchema["actions"];
-  onAction?: (rec: RecordRow, set: Record<string, unknown>) => void;
+  onAction?: (rec: RecordRow, set: Record<string, unknown>, action?: RowButton) => void;
   busy?: boolean;
 }) {
   const available = actionsFor(actions, rec);
@@ -332,11 +335,14 @@ export function ActionButtons({
             for (const [f, v] of Object.entries(a.set)) {
               resolved[f] = evalExpr(v, withId(rec));
             }
-            onAction(rec, resolved);
+            onAction(rec, resolved, a);
           }}
+          title={(a as RowButton).waits ? "Goes to the owner for a yes" : undefined}
           className={button(ACTION_TONES[a.style ?? "neutral"] ?? "secondary", "sm")}
         >
+          {(a as RowButton).waits && <Clock aria-hidden size={12} strokeWidth={2} />}
           {a.label}
+          {(a as RowButton).waits && <span className="sr-only"> (goes to the owner for a yes)</span>}
         </button>
       ))}
     </div>

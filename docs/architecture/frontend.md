@@ -128,6 +128,14 @@ Under a build's line, what the browser walk found on the sections it built (`wal
 `lib/walk.ts`): "Tried in a browser on a laptop and a phone: N things, all worked", or what
 did not work, each with "Fix it", which sends Luke the break in plain words.
 
+A row button marked `approval` (a refund, a discount) goes to `/api/row-action` when
+pressed, which works out the change from the row on the server. The owner's press is
+made at once. A teammate sees a clock on that button, and their press waits: a note says
+it went to the owner. The press shows in the owner's bell, under what waits on their yes,
+as "A teammate asks", with the row named, Approve and Not this one. A teammate's hand edit
+that would make the same change is refused by `lib/record-write.ts`, naming the button
+(`lib/row-approval.ts`).
+
 An answer that did something on the screen open (`show`, `lib/screen.ts`) does it as it
 arrives: the section opens if it was not, its bar is set as the merchant would set it (a
 view is the whole view: what it leaves out is cleared), and a row to put in opens the form

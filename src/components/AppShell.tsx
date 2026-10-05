@@ -145,6 +145,9 @@ function withStoreColumns(row: UiSchemaRow, sourceTable: string | null | undefin
 }
 
 /** A build from the chat, as /api/apply writes it into the thread. */
+/** A teammate's press of a button that waits for the owner (0183), as the bell lists it. */
+type ButtonApproval = { id: string; action: string; row_label: string; module_id: string; asked_at: string };
+
 type BuildPayload = {
   status: "building" | "built" | "refused";
   design?: string | null;
@@ -2551,6 +2554,65 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     [writeRecord]
   );
 
+  // A button that needs the owner's yes (0183): the server works out what
+  // it does from the row. The owner's press is made; a teammate's waits in
+  // the owner's bell, and says so here.
+  const [waitNote, setWaitNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (!waitNote) return;
+    const t = setTimeout(() => setWaitNote(null), 6000);
+    return () => clearTimeout(t);
+  }, [waitNote]);
+  const pressApproval = useCallback(
+    async (rec: RecordRow, label: string) => {
+      if (!selectedModuleId) throw new Error("No section selected.");
+      const { ok, data } = await apiFetch("/api/row-action", {
+        projectId,
+        moduleId: selectedModuleId,
+        label,
+        ...(isStoreTable(loadedSource) ? { storeRowId: rec.id } : { recordId: rec.id }),
+      });
+      if (!ok || data.error) throw new Error((data.error as string) ?? "That didn't go through.");
+      if (data.waiting) {
+        setWaitNote(`“${label}” went to the owner for a yes. It happens once they approve it.`);
+        return;
+      }
+      if (!patchRow(data.record as Record<string, unknown> | undefined, selectedModuleId))
+        await loadModuleData(selectedModuleId);
+    },
+    [projectId, selectedModuleId, loadedSource, patchRow, loadModuleData]
+  );
+
+  // What teammates pressed and waits for the owner's yes, heard as it changes.
+  const [approvals, setApprovals] = useState<ButtonApproval[]>([]);
+  const loadApprovals = useCallback(async () => {
+    if (!isOwner) return setApprovals([]);
+    const { data, error } = await supabase
+      .from("row_approvals")
+      .select("id, action, row_label, module_id, asked_at")
+      .eq("project_id", projectId)
+      .eq("status", "waiting")
+      .order("asked_at");
+    if (!error) setApprovals((data ?? []) as ButtonApproval[]);
+  }, [projectId, isOwner]);
+  useEffect(() => {
+    void loadApprovals();
+    return watchRows(`approvals:${projectId}`, [
+      { table: "row_approvals", filter: `project_id=eq.${projectId}`, onChange: () => void loadApprovals() },
+    ]);
+  }, [projectId, loadApprovals]);
+  /** The owner's word on one: what came of it, in a line when it was not done. */
+  const decideApproval = useCallback(
+    async (id: string, decision: "approve" | "decline"): Promise<string | null> => {
+      const { ok, data } = await apiFetch("/api/row-action", { projectId, approvalId: id, decision });
+      if (!ok || data.error) return (data.error as string) ?? "That didn't go through.";
+      setApprovals((prev) => prev.filter((a) => a.id !== id));
+      if (selectedModuleId) await loadModuleData(selectedModuleId);
+      return data.stale ? ((data.said as string) ?? null) : null;
+    },
+    [projectId, selectedModuleId, loadModuleData]
+  );
+
   /**
    * Applies an approved blueprint. The plans came from the card the
    * owner just read, so what runs is exactly what they saw — there is
@@ -3771,6 +3833,11 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                         )}
                       </div>
                     )}
+                  {waitNote && (
+                    <div role="status" className={`${note.info} mb-3 text-[13px]`}>
+                      {waitNote}
+                    </div>
+                  )}
                   <GenericRenderer
                     schema={shownSchema ?? schema.schema_json}
                     records={records}
@@ -3798,6 +3865,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     timeZone={store?.timezone ?? undefined}
                     onPeriod={periodChanged}
                     ask={screenAsk?.moduleId === selectedModuleId ? screenAsk : null}
+                    onApprovalButton={pressApproval}
+                    waitsForOwner={!isOwner}
                     {...(storeBacked
                       ? // No write handlers at all, which is how the renderer
                         // already expresses read-only. The import owns these
@@ -3860,6 +3929,11 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 suggestions={suggestions}
                 onWalkFix={walkFix}
                 onShow={showOnScreen}
+                approvals={approvals.map((a) => ({
+                  ...a,
+                  section: modules.find((m) => m.id === a.module_id)?.nav_label ?? "a section",
+                }))}
+                onApproval={decideApproval}
                 onEmpty={countSignals}
                 onReadSection={readSection}
                 onPeekSection={peekSection}
