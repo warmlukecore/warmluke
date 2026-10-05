@@ -215,6 +215,11 @@ export function describeAutomation(
       out.push(`→ tell you in the bell: “${a.title}”${a.show?.length ? `, with ${a.show.join(", ")}` : ""}`);
     } else if (a.type === "webhook") {
       out.push("→ call an external service");
+    } else if (a.type === "ai_fill") {
+      // Said as what it does to the row, and that it is an AI step with a day's limit (0182).
+      out.push(
+        `→ read ${a.from.join(", ")} and fill ${a.set.join(", ")} where still empty (an AI step, up to 200 a day)`
+      );
     }
   }
   return out;

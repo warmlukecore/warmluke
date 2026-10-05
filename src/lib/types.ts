@@ -102,6 +102,8 @@ export type AutomationAction =
   | { type: "create_record"; module_id: string; data: Record<string, Expr> }
   /** The rule's own function, run sealed off (lib/code-run.ts), for logic the expressions cannot say. */
   | { type: "run_code"; code: string; reads?: string[] }
+  /** A row's own words read to fill its other fields (lib/ai-fill.ts): a choice of theirs, or a value out of the words. */
+  | { type: "ai_fill"; from: string[]; set: string[]; hint?: string }
   /** Stop the save, in the owner's words: only on a before_save rule (0143). Nothing is written. */
   | { type: "refuse"; message: string }
   /** Tell the owner, in the bell and on the Overview (0164): a title, and up to four of the row's fields. */
@@ -614,7 +616,8 @@ export type UsageJob =
   | "ops"
   | "review"
   | "ux"
-  | "tryout";
+  | "tryout"
+  | "fill";
 
 /** One model's share of a turn: its calls for one job, their tokens, and their dollars. */
 export type ModelUse = {

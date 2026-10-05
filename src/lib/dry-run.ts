@@ -278,6 +278,11 @@ async function tryRule(
   const actions = Array.isArray(definition.actions) ? definition.actions : [];
   // ponytail: v1 tries no code; a rule of code could be run on a copy of these rows (lib/code-run) once its count is wanted.
   if (actions.some((a) => a.type === "run_code")) return told(at.name, "A rule of code is tried on its first run.");
+  if (actions.some((a) => a.type === "ai_fill"))
+    return told(
+      at.name,
+      "An AI step reads each row's own words when it is added or changed; it is tried on its first."
+    );
   const when = definition.trigger?.when;
   // Every expression it works out: its condition, what it writes, and how it finds the rows it writes to.
   const said = [

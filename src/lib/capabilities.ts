@@ -212,6 +212,8 @@ export const AUTOMATION_ACTIONS = {
     "add a row to another section, filling its fields from this one. This is how work moves between sections without the owner retyping it: an order that gets refused opens a return, a job marked done raises an invoice, a delivery that fails becomes a callback. Whenever two sections describe the same thing at different stages, the second one should be created by a rule, not by hand — typed twice means the two drift apart",
   run_code:
     "run a function you write, for logic the expressions cannot say — a slab rate, a table to look up, a sum across sections, a calendar. It is handed the row and the rows it reads, and returns the fields to set (see CODE RULE)",
+  ai_fill:
+    'read a row\'s own words (a note, a pasted message) and fill other fields of it the owner would otherwise type: { "from": ["notes"], "set": ["issue", "priority"], "hint": "what to look for, in a line" }. It picks one of a field\'s own choices, or takes a value out of the words (an order number, a phone, an amount, a date); it never writes free text, never a link or a yes/no, never overwrites what the owner typed, and runs only when a row is added or changed. For when the facts arrive as words; when they are already in a field, set_fields says it exactly',
   refuse:
     'stop the save and show { "message": "…" }, one sentence in the owner\'s language saying what to do instead ("Only what is left can be held — release a hold first"). Only on a before_save rule, and alone',
   alert:

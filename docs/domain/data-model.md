@@ -93,8 +93,9 @@ An automation has one trigger and one or more actions:
 
 - triggers: record created, record updated, scheduled, or, for a code rule on a section
   over the store, a row the store brings in (`store_row_added`);
-- actions: set fields on self/matching rows or create a record in another module, or run
-  the rule's own code (`run_code`).
+- actions: set fields on self/matching rows or create a record in another module, run
+  the rule's own code (`run_code`), or an AI step (`ai_fill`, 0182) that reads fields of
+  the row and fills others.
 
 A section's rules run in the order they were made, on a change and on the clock alike;
 when two write one field on one change, the newer one's value stands (0135).
@@ -104,6 +105,17 @@ own fields and keeps what it writes beside that row (a record with `store_row_id
 0128), never in the store's own list. `run_code` is not run by the database: the app runs
 it after its own write (`src/lib/code-rules.ts`), and on a schedule or a row the store
 brings in through the queue below (0134).
+
+`ai_fill` is not run by the database either. The app runs it after a row is added or
+changed (`runFill` in `src/lib/code-rules.ts`), on the fill model (`ANTHROPIC_FILL_MODEL`).
+It fills only fields still empty, with one of a field's own choices or a short value
+taken out of the words (`src/lib/ai-fill.ts`). It never fills a link, a yes/no or a
+worked-out field, and never overwrites what the owner typed.
+
+Each run is a line in the rule's own history (`automation_runs`, its `detail` saying
+`ai`, what it filled, what it left, the model and the dollars). A project may run 200 a
+day (UTC); past that `abo_ai_fill_claim` starts none and raises the rule's bell alert
+once that day.
 
 The TypeScript contract includes a webhook action for historical compatibility, but the
 platform capability registry advertises only implemented/accepted actions. Treat

@@ -1698,6 +1698,7 @@ const JOB_WORDS: Record<ModelUse["job"], string> = {
   review: "Simplicity check",
   ux: "Screen check",
   tryout: "Tryout",
+  fill: "AI step",
 };
 
 /** A reply's dollars in rupees, at a rate that says the day it is from. */

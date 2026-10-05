@@ -1,5 +1,5 @@
-// A section's code rules (automation action "run_code"), run after the
-// owner's own write.
+// A section's code rules (automation action "run_code") and AI steps
+// ("ai_fill", lib/ai-fill.ts), run after the owner's own write.
 //
 // The database runs a rule's expressions; a rule's own code runs here,
 // once the write it follows stands: the row as the owner's screen sees
@@ -30,6 +30,9 @@ import {
   type StoreTable,
 } from "@/lib/store-read";
 import type { AutomationDefinition, SchemaColumn, UiSchema } from "@/lib/types";
+import { callModel, fillModel } from "@/lib/ai";
+import { fillPrompt, readFill, type FillAsk } from "@/lib/ai-fill";
+import { asJob, metered } from "@/lib/usage";
 
 /** Rows of a read section handed to the code. ponytail: the newest 500; a rule over a bigger list is asked to read less. */
 const ROWS_A_SECTION = 500;
@@ -145,7 +148,7 @@ export async function runCodeRules(client: SupabaseClient, w: Written): Promise<
       .eq("module_id", w.moduleId)
       .eq("enabled", true);
     const coded = (rules ?? []).filter((r) =>
-      (r.definition as AutomationDefinition | null)?.actions?.some((a) => a.type === "run_code")
+      (r.definition as AutomationDefinition | null)?.actions?.some((a) => a.type === "run_code" || a.type === "ai_fill")
     );
     if (!coded.length) return;
 
@@ -171,6 +174,10 @@ export async function runCodeRules(client: SupabaseClient, w: Written): Promise<
       }
       if (def.trigger.when !== undefined && !truthy(evalExpr(def.trigger.when, row, previous ?? {}))) continue;
       for (const a of def.actions) {
+        if (a.type === "ai_fill") {
+          await runFill(client, w, r, a, row);
+          continue;
+        }
         if (a.type !== "run_code") continue;
         const t0 = Date.now();
         const given = await readSections(client, w.projectId, a.reads ?? []);
@@ -193,6 +200,72 @@ export async function runCodeRules(client: SupabaseClient, w: Written): Promise<
     }
   } catch (e) {
     console.error(`[code rule] ${e instanceof Error ? e.message : "failed"}`);
+  }
+}
+
+/**
+ * A rule's AI step on the row just written (lib/ai-fill.ts, 0182): the
+ * row's words read on the fill model, and only what is still empty filled,
+ * each value held to what its field may hold, through the same door as
+ * the owner's writes. Nothing to read or nothing left to fill is no run
+ * and no cost; past the project's day it is not run, and the rule says so.
+ */
+async function runFill(
+  client: SupabaseClient,
+  w: Written,
+  rule: { id: string; name: string },
+  a: FillAsk,
+  row: Record<string, unknown>
+): Promise<void> {
+  const model = fillModel();
+  if (!model) {
+    console.log(`[ai step] "${rule.name}": ANTHROPIC_FILL_MODEL is not set; nothing filled`);
+    return;
+  }
+  const { data: ui } = await client
+    .from("ui_schemas")
+    .select("schema_json")
+    .eq("module_id", w.moduleId)
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const schema = { ...(ui?.schema_json as UiSchema | null), columns: w.columns } as UiSchema;
+  const prompt = fillPrompt(schema, a, row, storeClock(await storeZone(client, w.projectId)).today);
+  if (!prompt) return;
+  const recordId = String(w.record.id);
+  const { data: run } = await client.rpc("abo_ai_fill_claim", { p_automation: rule.id, p_record: recordId });
+  if (!run) {
+    console.log(`[ai step] "${rule.name}": not run (the project's day is used, or the rule is not this caller's)`);
+    return;
+  }
+  try {
+    const [raw, usage] = await metered(() =>
+      asJob("fill", () => callModel({ system: prompt.system, turns: [{ role: "user", content: prompt.user }], model }))
+    );
+    const { data: mod } = await client.from("modules").select("nav_label").eq("id", w.moduleId).maybeSingle();
+    const { set, left } = readFill(raw, schema, (mod?.nav_label as string | undefined) ?? "this section", a, row);
+    if (Object.keys(set).length) {
+      const res = await writeRecord(client, {
+        projectId: w.projectId,
+        moduleId: w.moduleId,
+        ...(w.table && w.storeRowId
+          ? { action: "update_store_row" as const, storeRowId: w.storeRowId }
+          : { action: "update" as const, recordId }),
+        data: set,
+      });
+      if (res.status !== 200) left.push(`the row would not take it: ${String(res.body.error ?? res.status)}`);
+    }
+    await client.rpc("abo_ai_fill_done", {
+      p_run: run,
+      p_ok: true,
+      p_detail: { filled: Object.keys(set), left: left.slice(0, 5), usd: usage()?.usd ?? null, model },
+    });
+  } catch (e) {
+    await client.rpc("abo_ai_fill_done", {
+      p_run: run,
+      p_ok: false,
+      p_detail: { error: (e instanceof Error ? e.message : "failed").slice(0, 200), model },
+    });
   }
 }
 

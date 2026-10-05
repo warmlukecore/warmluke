@@ -6,6 +6,7 @@
 // the apply route re-validates everything under the caller's RLS.
 // ─────────────────────────────────────────────────────────────
 
+import { AI_FILLABLE } from "./ai-fill";
 import {
   APICallError,
   NoContentGeneratedError,
@@ -1842,6 +1843,52 @@ function validateAutomation(
       continue;
     }
 
+    if (a.type === "ai_fill") {
+      // The app runs it after the owner's own write (lib/code-rules.ts):
+      // a row added or changed, never a schedule over every row.
+      if (trigger.type !== "record_created" && trigger.type !== "record_updated") {
+        err(
+          errors,
+          'An ai_fill rule runs when a row is added or changed ("record_created", "record_updated"): it reads that row\'s own words.'
+        );
+        continue;
+      }
+      if (trigger.when !== undefined) validateExpr(trigger.when, ownHas, errors, "client");
+      const fill = a as { from?: unknown; set?: unknown; hint?: unknown };
+      const names = (v: unknown) =>
+        Array.isArray(v) && v.length > 0 && v.length <= 8 && v.every((f) => typeof f === "string" && f.trim());
+      if (!names(fill.from) || !(fill.from as string[]).every(ownHas)) {
+        err(errors, 'An ai_fill rule\'s "from" lists the fields of this row it reads (a note, a message), by name.');
+      }
+      if (!names(fill.set)) {
+        err(errors, 'An ai_fill rule\'s "set" lists the fields of this row it fills, by name.');
+      } else {
+        for (const f of fill.set as string[]) {
+          const col = currentSchema?.columns.find((c) => c.field === f);
+          if (!ownHas(f) || storeFields?.has(f)) {
+            err(errors, `ai_fill sets "${f}", which is not a field of this section's own.`);
+          } else if (ownComputed.has(f)) {
+            err(errors, `ai_fill sets "${f}", which is worked out, not stored.`);
+          } else if (col && !AI_FILLABLE.has(col.type)) {
+            err(
+              errors,
+              `ai_fill sets "${f}", a ${col.type} field: it fills a choice, text, a number, an amount, a date, a phone or an email.`
+            );
+          }
+          if ((fill.from as unknown[] | undefined)?.includes(f)) {
+            err(errors, `ai_fill reads and sets "${f}": it reads one field and fills others.`);
+          }
+        }
+      }
+      if (fill.hint !== undefined && (typeof fill.hint !== "string" || fill.hint.length > 300)) {
+        err(
+          errors,
+          "An ai_fill rule's \"hint\" is what to look for, in a line of the owner's words (up to 300 characters)."
+        );
+      }
+      continue;
+    }
+
     if (a.type === "alert") {
       if (typeof a.title !== "string" || !a.title.trim() || a.title.length > 120) {
         err(
@@ -1881,7 +1928,7 @@ function validateAutomation(
 
     err(
       errors,
-      `Action type "${String((a as { type?: unknown }).type)}" must be set_fields, create_record, run_code, alert or refuse.`
+      `Action type "${String((a as { type?: unknown }).type)}" must be set_fields, create_record, run_code, ai_fill, alert or refuse.`
     );
   }
 }
@@ -3206,6 +3253,8 @@ const MODEL_JOBS = {
   ux: "ANTHROPIC_UX_MODEL",
   /** The tryout's scenarios: the owner's own work written as steps, played on the design (unset: parts only, no scenarios). */
   tryout: "ANTHROPIC_TRYOUT_MODEL",
+  /** A rule's AI step: a row's own words read to fill its fields (lib/ai-fill.ts). A small, cheap model; unset, the step does nothing. */
+  fill: "ANTHROPIC_FILL_MODEL",
   /** Reading two short texts and naming what is missing. */
   gap: "ANTHROPIC_GAP_MODEL",
   /** Where a design goes when Gemini stays busy. */
@@ -3279,6 +3328,11 @@ export function uxModel(): string | null {
 }
 export function tryoutModel(): string | null {
   return optionalModel("tryout");
+}
+
+/** The model a rule's AI step runs on; null when it is not set, and the step then does nothing. */
+export function fillModel(): string | null {
+  return optionalModel("fill");
 }
 
 /** A job's model when its setting is there, else null — without the log line an unset required one earns. */
