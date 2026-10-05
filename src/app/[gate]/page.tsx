@@ -258,16 +258,18 @@ export default function Admin() {
   // merchants', not Warmluke's own team, who are not onboarded as a
   // business and would count as customers who never answered.
   const stats = useMemo(() => {
-    const all = (rows ?? []).filter((r) => !r.is_superadmin);
+    // The numbers follow the scope chosen above (0184): one account's, or everyone's.
+    const inScope = (rows ?? []).filter((r) => !scope.account || r.user_id === scope.account);
+    const all = inScope.filter((r) => !r.is_superadmin);
     return {
-      team: (rows ?? []).length - all.length,
+      team: inScope.length - all.length,
       total: all.length,
       onboarded: all.filter((r) => r.onboarded_at).length,
       withStore: all.filter((r) => r.stores > 0).length,
       thisWeek: all.filter((r) => now - Date.parse(r.created_at) < WEEK_MS).length,
       heard: topCounts(all.map((r) => labelOf(HEARD_OPTIONS, r.heard_from))),
     };
-  }, [rows, now]);
+  }, [rows, now, scope]);
 
   if (loading || !user || rows === null) {
     return (

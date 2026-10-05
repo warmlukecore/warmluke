@@ -56,7 +56,7 @@ try {
   };
   const { data: auto } = await admin
     .from("automations")
-    .insert({ module_id: mod.id, name: "Read the message", definition, enabled: true })
+    .insert({ project_id: project.id, module_id: mod.id, name: "Read the message", definition, enabled: true })
     .select("id")
     .single();
   const { data: rec } = await admin
