@@ -110,6 +110,12 @@ longer fits. Nothing is configured: every section gets this from its own columns
   button that says what it builds ("Build 2 sections and a rule");
 - `plans`: edits to an already-discussed application.
 
+An empty thread offers, under "From your store", up to three asks read off the store's own
+counts (`lib/suggest.ts` over `storeSignals`): its COD share, failed deliveries, refunds,
+low stock, late shipments, repeat customers, abandoned carts. Each is offered only when the
+store shows it and no section of theirs already meets it (by name); tapped, it is sent like
+any message. `read_section` gives the same list to an MCP client.
+
 It also renders pending MCP-originated requests, build history, turn progress, undo
 controls, OAuth client connections, quotas, and feature-switch state. Plans are not
 trusted merely because they arrived in the browser; `/api/apply` reloads live state and

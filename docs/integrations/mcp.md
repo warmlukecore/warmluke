@@ -37,7 +37,7 @@ through owner-scoped RPCs and the built-in chat settings UI.
 | `search_store`    | Read a supported canonical store list                                                                                                                                                                 |                         No |
 | `low_stock`       | Read inventory at or below a threshold                                                                                                                                                                |                         No |
 | `store_metrics`   | A figure over the whole store: a measure by a dimension in a window (revenue by week, orders by city, new customers this month), counted in the database                                              |                         No |
-| `read_section`    | List/inspect generated sections and owner-managed rows (a section over the store: the store's rows with the merchant's own fields beside them); with `history`, the section's version history instead |                         No |
+| `read_section`    | List/inspect generated sections and owner-managed rows (a section over the store: the store's rows with the merchant's own fields beside them); with `history`, the section's version history instead. Listed with no section, it also returns `suggested_from_the_store`: what the store's own numbers make worth building (`lib/suggest.ts`), as asks for `propose_change` |                         No |
 | `undo_build`      | Reverse a build this client made, from what that build recorded                                                                                                                                       |                        Yes |
 | `propose_change`  | Run Warmluke's design engine and create an approval request                                                                                                                                           |     Creates a request only |
 | `pending_changes` | Read requests currently awaiting a decision                                                                                                                                                           |                         No |
@@ -109,7 +109,7 @@ fixes what they find, with the business's context the outside assistant lacks. T
 `checked_by_luke` whether Luke changed it and why; past the wait it is `still designing`,
 like `propose_change`. It spends none of the merchant's included designs. Up to 20 a day
 for each app (`DRAWN_REVIEWED_A_DAY`); past that, the validator alone, as before. `design_format`
-carries the plan's shape and the same guides Luke designs by, from the same constants:
+carries the plan's shape, `linked_rows` (a link fills the merchant's form from the row chosen and narrows a second link to it, so a section beats a written screen that copies a row), and the same guides Luke designs by, from the same constants:
 `written_screens` (`CUSTOM_VIEW_GUIDE`: `window.wl`, the kit) and `code_rules`
 (`CODE_RULE_GUIDE`: what a rule's code is handed, the store's clock, `next`). When the
 assistant passes the merchant's own words as `request`, the submitted design goes through

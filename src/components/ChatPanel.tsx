@@ -2143,6 +2143,7 @@ export default function ChatPanel({
   onModel,
   inr = null,
   onSend,
+  suggestions = [],
   onEditPrompt,
   onPeekSection,
   openSectionId = null,
@@ -2255,6 +2256,8 @@ export default function ChatPanel({
   /** What is being written once the draft's words are done ("questions"). */
   phase?: string | null;
   onSend: (text: string) => Promise<void> | void;
+  /** What the empty panel offers to ask, from the store's own numbers (lib/suggest.ts). */
+  suggestions?: NextStep[];
   /**
    * Corrects a prompt already sent and runs it again. The shell owns
    * it because retiring the old exchange is a write, and because the
@@ -3897,6 +3900,13 @@ export default function ChatPanel({
                     <LukeMark size="lg" />
                     <h2 className="mt-4 text-lg font-semibold text-fg">{LUKE_COPY.emptyTitle}</h2>
                     <p className="mt-1.5 max-w-xs text-[13px] leading-relaxed text-fg-muted">{LUKE_COPY.emptyBody}</p>
+                    {/* Offered from this store's own numbers, never invented ones (lib/suggest.ts). */}
+                    {suggestions.length > 0 && !busy && (
+                      <div className="mt-5 w-full max-w-sm text-left">
+                        <p className="mb-1 text-[11px] text-fg-faint">From your store</p>
+                        <FollowUps next={suggestions} onPick={(prompt) => send(prompt)} />
+                      </div>
+                    )}
                   </div>
                 )}
 

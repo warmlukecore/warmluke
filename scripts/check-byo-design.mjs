@@ -115,6 +115,16 @@ try {
   // search, sorting, stats — see the vocabulary" — which names the
   // parts and not one key, and is what sent a client guessing at
   // "operator" / "op" / "type" through eight rejected submissions.
+  check(
+    "it says how a linked row fills the form, so a client builds a section and not a screen (5 Oct)",
+    /fills this section's fields of the same name/.test(String(format?.linked_rows ?? ""))
+  );
+  const sectionList = await tool("read_section", { project_id: project.id });
+  check(
+    "the sections listed come with what the store's own numbers make worth building",
+    Array.isArray(sectionList?.suggested_from_the_store) &&
+      sectionList.suggested_from_the_store.every((s) => typeof s.ask === "string" && typeof s.because === "string")
+  );
   const shape = String(format?.plan_format ?? "");
   check("it says what a plan looks like", shape.length > 500);
   check("naming the operator key out loud", /"op": "\*"/.test(shape));

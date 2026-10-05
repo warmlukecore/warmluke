@@ -17,6 +17,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { FeatureSchema, SchemaColumn } from "@/lib/types";
 import type { Resource } from "@/lib/shopify-resources";
 import { isYes } from "@/lib/filters";
+import type { StoreSignals } from "@/lib/suggest";
 
 export type StoreBrief = {
   id: string;
@@ -1083,6 +1084,32 @@ export async function ownFieldsOf(
  * difference is that nothing here is editable, which the caller enforces
  * by passing no write handlers.
  */
+/**
+ * What a store shows, counted, for the asks Luke's empty panel offers
+ * (lib/suggest.ts): small counts under the caller's rights, nothing
+ * read but how many. A count that cannot be read is none, so a store
+ * the counts cannot see is offered nothing rather than something wrong.
+ */
+export async function storeSignals(db: SupabaseClient, storeId: string): Promise<StoreSignals> {
+  const since = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+  const head = (view: string) => db.from(view).select("id", { count: "exact", head: true }).eq("store_id", storeId);
+  const n = async (q: PromiseLike<{ count: number | null }>) => (await q).count ?? 0;
+  const [orders30, cod30, failedDeliveries, refunds60, lowStock, repeatCustomers, lateUnshipped, abandoned30] =
+    await Promise.all([
+      n(head("store_orders").gte("placed_ts", since(30))),
+      n(head("store_orders").gte("placed_ts", since(30)).or("gateway.ilike.%cod%,gateway.ilike.%cash%")),
+      n(head("store_fulfillments").in("shipment_status", ["FAILURE", "ATTEMPTED_DELIVERY"])),
+      n(head("store_refunds").gte("refunded_at", since(60))),
+      n(head("store_inventory").lte("available", 5)),
+      n(head("store_customers").gte("orders_count", 2)),
+      n(
+        head("store_orders").is("cancelled_at", null).eq("fulfilment_status", "UNFULFILLED").lte("placed_ts", since(2))
+      ),
+      n(head("store_abandoned_checkouts").gte("started_at", since(30))),
+    ]);
+  return { orders30, cod30, failedDeliveries, refunds60, lowStock, repeatCustomers, lateUnshipped, abandoned30 };
+}
+
 export async function readStoreRows(
   db: SupabaseClient,
   storeId: string,

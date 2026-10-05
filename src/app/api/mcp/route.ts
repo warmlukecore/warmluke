@@ -9,8 +9,10 @@ import {
   ownColumns,
   readStoreRows,
   storeSectionColumns,
+  storeSignals,
   withOwnFields,
 } from "@/lib/store-read";
+import { asksFromStore } from "@/lib/suggest";
 import { blueprintAsText, runTurn, schemasFor, storeFactsFor } from "@/lib/engine";
 import { describeBuild } from "@/lib/judge";
 import { DESIGN_VIEW_MIME, DESIGN_VIEW_URI, designViewHtml, type ViewDesign } from "@/lib/design-view";
@@ -901,6 +903,19 @@ export async function POST(req: Request) {
               ((await ruleRowsFor(db, project.id, null)) ?? []) as RuleRow[],
               sections
             ),
+            // What this store's own numbers make worth building, as Luke's
+            // empty panel offers it (lib/suggest.ts, 5 Oct): an ask to pass
+            // to propose_change, and the number behind it. None for a need a
+            // section already meets.
+            suggested_from_the_store: await (async () => {
+              const { data: store } = await db.from("stores").select("id").eq("project_id", project.id).maybeSingle();
+              if (!store) return [];
+              const signals = await storeSignals(db, store.id as string);
+              return asksFromStore(
+                signals,
+                sections.map((m) => m.nav_label)
+              ).map((a) => ({ ask: a.prompt, because: a.label }));
+            })(),
           })
         );
       }
@@ -1406,6 +1421,11 @@ export async function POST(req: Request) {
           // What each list is, in the same words Luke reads — so a
           // client asked for "a SKU list for my orders" finds the list
           // that already is one, instead of building a hand-typed copy.
+          // How a row is made from another (lib/links.ts, 5 Oct): what the
+          // merchant's form does with a link, so a client builds the section
+          // and not a written screen that picks a row and copies it.
+          linked_rows:
+            "A \"link\" column to another section (the store's orders and their items too) is how a row is made from another: in the row form the merchant searches that section, and choosing a row fills this section's fields of the same name or label (customer, phone, total), never what they typed. A second link to a list under it (an order's items) offers that row's items alone. Build a section with links rather than a written screen that picks a row and copies its fields.",
           store_lists: Object.fromEntries(Object.entries(STORE_TABLES).map(([table, spec]) => [table, spec.what])),
           store_columns: Object.fromEntries(
             Object.entries(STORE_TABLES).map(([table, spec]) => [table, spec.columns.map((c) => c.field)])

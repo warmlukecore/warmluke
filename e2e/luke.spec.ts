@@ -423,6 +423,22 @@ async function clearUp(shop: Shop, thread: string, names: string[]) {
   await shop.admin.from("conversations").delete().eq("id", thread);
 }
 
+test("the empty panel offers what this store's own numbers show, and sends it", async ({ signedIn: page, shop }) => {
+  // Invented problems once sat here and read as somebody else's product;
+  // these come from the store's own counts (lib/suggest.ts, 5 Oct).
+  await page.goto(`/app/${shop.projectId}`);
+  const { panel } = await luke(page);
+  await expect(panel.getByText("From your store")).toBeVisible();
+  const first = panel.getByRole("group", { name: "Ask next" }).getByRole("button").first();
+  await expect(first).toHaveAccessibleName(/^Ask: (Set up|Track|Tell me|Make|Show)/);
+  await expect(first).toHaveText(
+    /at 5 or fewer|refunds in 2 months|failed|COD|late to ship|repeat customers|carts left/
+  );
+  const sent = catchNextTurn(page);
+  await first.click();
+  expect(await sent).toMatch(/^(Set up|Track|Tell me|Make|Show) /);
+});
+
 test("what the checks caught on a design is shown to a superadmin alone", async ({ signedIn: page, shop }) => {
   // The line a design was sent back with and what the validator refused
   // on the way, kept on the reply (lib/engine.ts) for Warmluke's own eyes

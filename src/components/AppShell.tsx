@@ -28,6 +28,7 @@ import ProjectSettings, { TeammateSettings } from "@/components/ProjectSettings"
 import ShareSection from "@/components/ShareSection";
 import { LinkProvider, type LinkOption, type LinkOptions, type LinkSource } from "@/components/LinkContext";
 import { labelForRow, type LinkTarget } from "@/lib/links";
+import { asksFromStore, type StoreSignals } from "@/lib/suggest";
 import ModuleSettings from "@/components/ModuleSettings";
 import NewSection from "@/components/NewSection";
 import StoreStrip from "@/components/StoreStrip";
@@ -50,6 +51,7 @@ import {
   storeParents,
   storeRowLabel,
   storeRowsMatching,
+  storeSignals,
   STORE_TABLES,
   searchFieldsOf,
   storeSectionColumns,
@@ -374,6 +376,35 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   }, [schema, loadedSource]);
   const [recordTotal, setRecordTotal] = useState(0);
   const [linkOptions, setLinkOptions] = useState<LinkOptions>({});
+  // What the empty Luke panel offers to ask, from this store's own numbers
+  // (lib/suggest.ts): counted once a store is open, never for a need a
+  // section already meets.
+  const [signals, setSignals] = useState<StoreSignals | null>(null);
+  useEffect(() => {
+    if (!storeId) {
+      setSignals(null);
+      return;
+    }
+    let live = true;
+    void storeSignals(supabase, storeId)
+      .then((s) => {
+        if (live) setSignals(s);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [storeId]);
+  const suggestions = useMemo(
+    () =>
+      signals
+        ? asksFromStore(
+            signals,
+            modules.map((m) => m.nav_label)
+          )
+        : [],
+    [signals, modules]
+  );
   // What each link points at, for narrowing and filling (lib/links.ts).
   const [linkTargets, setLinkTargets] = useState<Record<string, LinkTarget>>({});
   const linkOptionsNow = useRef(linkOptions);
@@ -3743,6 +3774,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             <FormatProvider locale={own.locale} currency={sectionMoneyCurrency} approxRate={sectionApprox}>
               <ChatPanel
                 projectId={projectId}
+                suggestions={suggestions}
                 onReadSection={readSection}
                 onPeekSection={peekSection}
                 openSectionId={selectedModuleId}
