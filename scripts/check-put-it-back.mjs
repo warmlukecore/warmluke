@@ -96,17 +96,23 @@ const latestSchema = async () =>
       .single()
   ).data;
 /** The message the build wrote, which is what the button hangs off. */
-const lastBuildMessage = async () =>
-  (
-    await admin
-      .from("messages")
-      .select("id, payload, content")
-      .eq("conversation_id", aiThreadId)
-      .eq("role", "assistant")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .single()
-  ).data;
+// Each drawn design is an ask in a thread of its own (5 Oct), as
+// propose_change's are: its build is that thread's answer line. The app's
+// build lines, newest first, across its threads.
+const buildLines = async () => {
+  const { data: convs } = await admin.from("conversations").select("id").eq("project_id", project.id);
+  const { data } = await admin
+    .from("messages")
+    .select("id, payload, content, conversation_id")
+    .in(
+      "conversation_id",
+      (convs ?? []).map((c) => c.id)
+    )
+    .eq("role", "assistant")
+    .order("created_at", { ascending: false });
+  return (data ?? []).filter((m) => m.payload?.type === "applied");
+};
+const lastBuildMessage = async () => (await buildLines())[0] ?? null;
 
 try {
   await setAuto(true);
@@ -128,15 +134,7 @@ try {
   if (!isBuilt(made)) show(made);
   moduleId = (made?.built ?? []).map((b) => b.moduleId).find(Boolean) ?? null;
 
-  const thread = (
-    await admin
-      .from("conversations")
-      .select("id")
-      .eq("project_id", project.id)
-      .eq("title", "Changes from your AI")
-      .maybeSingle()
-  ).data;
-  aiThreadId = thread?.id ?? null;
+  aiThreadId = (await lastBuildMessage())?.conversation_id ?? null;
 
   // A whole new section is deliberately not offered: taking it back
   // means deleting it and every row in it, which is the one thing the
@@ -487,12 +485,7 @@ try {
   // A section deleted after a build on it: the undo says so, not
   // "changed -3 times since".
   console.log("\nand an undo on a section that is gone says so");
-  const { data: lastSchemaMsg } = await admin
-    .from("messages")
-    .select("id, payload")
-    .eq("conversation_id", aiThreadId)
-    .eq("role", "assistant")
-    .order("created_at", { ascending: false });
+  const lastSchemaMsg = await buildLines();
   const schemaMsg = (lastSchemaMsg ?? []).find((m) => (m.payload?.undo ?? []).some((u) => u.kind === "schema"));
   await admin.from("modules").delete().eq("id", moduleId);
   moduleId = null;

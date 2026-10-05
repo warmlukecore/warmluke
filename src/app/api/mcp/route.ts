@@ -261,7 +261,7 @@ const TOOLS = [
     // Drawn beside the answer by a host that speaks MCP Apps (lib/design-view).
     _meta: { ui: { resourceUri: DESIGN_VIEW_URI }, "openai/outputTemplate": DESIGN_VIEW_URI },
     description:
-      "Submit a design you wrote yourself. Warmluke puts it through every check its own designs go through — the validator, a check against what the merchant asked for, and reviewers for a simpler build, the store's real rows, the rules tried on them and the screens — and Luke fixes what they find, knowing the business, before it goes in front of the merchant for approval exactly like propose_change does. The answer says under checked_by_luke whether Luke changed it, and why. It can take a minute; past that you get a conversation_id, and pending_changes has the result. It does not use one of the merchant's included designs. To find problems yourself first, free and at once, call validate_design.",
+      "Submit a design you wrote yourself. Warmluke puts it through every check its own designs go through. What its validator refuses comes back as a list of what is wrong, for you to correct and submit again. A design that holds is then checked against what the merchant asked for and by reviewers for a simpler build, the store's real rows, the rules tried on them and the screens, and Luke fixes what they find, knowing the business, before it goes in front of the merchant for approval exactly like propose_change does. The answer says under checked_by_luke whether Luke changed it, and why. It can take a minute; past that you get a conversation_id, and pending_changes has the result. It does not use one of the merchant's included designs. To find problems yourself first, free and at once, call validate_design.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1439,38 +1439,6 @@ export async function POST(req: Request) {
         );
       }
 
-      // A drawn design goes through what Luke's own go through (5 Oct): run
-      // as Luke's turn with it as the first attempt, so the validator, the
-      // critic and the reviewers read it, and what they find Luke fixes,
-      // knowing the business as their AI cannot. Up to a number a day for
-      // each app, as this door costs the merchant nothing; past it, the
-      // validator alone, as before. A dry run stays free and instant.
-      if (!dryRun) {
-        const { count: today } = await db
-          .from("build_requests")
-          .select("id", { count: "exact", head: true })
-          .eq("project_id", project.id)
-          .not("client_id", "is", null)
-          .gte("created_at", new Date(Date.now() - 86_400_000).toISOString());
-        if ((today ?? 0) < DRAWN_REVIEWED_A_DAY) {
-          const words =
-            String(args.request ?? "").trim() ||
-            given
-              .map((p) => (p as { explanation?: unknown })?.explanation)
-              .filter((e): e is string => typeof e === "string" && e.trim() !== "")
-              .join(" ") ||
-            "A change designed by their own assistant";
-          return ok(
-            id,
-            await askInThread(req, db, auth.userId, project, words, {
-              conversationId: (args.conversation_id as string | undefined)?.trim() || null,
-              spendId: null,
-              design: JSON.stringify({ type: "plans", plans: given }),
-            })
-          );
-        }
-      }
-
       const { data: modules } = await db
         .from("modules")
         .select("*")
@@ -1577,6 +1545,30 @@ export async function POST(req: Request) {
           .filter(Boolean)
           .join(" ") ||
         "A change designed by their own assistant";
+
+      // A design that holds goes through what Luke's own go through (5 Oct):
+      // run as Luke's turn with it as the first attempt, so the critic and
+      // the reviewers read it, and what they find Luke fixes, knowing the
+      // business as their AI cannot. What the validator refuses went back
+      // above to the assistant that wrote it: its own shape to fix, free and
+      // at once. Up to a number a day for each app, as this door costs the
+      // merchant nothing; past it, as before.
+      const { count: today } = await db
+        .from("build_requests")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", project.id)
+        .not("client_id", "is", null)
+        .gte("created_at", new Date(Date.now() - 86_400_000).toISOString());
+      if ((today ?? 0) < DRAWN_REVIEWED_A_DAY) {
+        return ok(
+          id,
+          await askInThread(req, db, auth.userId, project, request, {
+            conversationId: (args.conversation_id as string | undefined)?.trim() || null,
+            spendId: null,
+            design: JSON.stringify({ type: "plans", plans }),
+          })
+        );
+      }
 
       // What they asked for that this does not do, said as Luke's own
       // designs say it: the same gap pass, over the merchant's words when
