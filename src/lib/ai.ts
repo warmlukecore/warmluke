@@ -2300,10 +2300,9 @@ export type ParsedReply = { ok: true; reply: AssistantReply } | { ok: false; err
 export type SchemaLookup = (moduleId: string) => UiSchema | null | undefined;
 
 export function stripFences(raw: string): string {
-  return raw
-    .trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```\s*$/, "");
+  // The closing fence by its end, not a pattern that backtracks over a long run of spaces (CodeQL, 5 Oct).
+  const t = raw.trim().replace(/^```(?:json)?\s*/i, "");
+  return t.endsWith("```") ? t.slice(0, -3).trimEnd() : t;
 }
 
 function asStringArray(v: unknown, max: number): string[] {
@@ -2901,7 +2900,11 @@ function reads(node: unknown, field: string): boolean {
   return Object.entries(node).some(
     ([k, v]) =>
       k === field ||
-      ((k === "html" || k === "code") && typeof v === "string" && new RegExp(`\\b${field}\\b`).test(v)) ||
+      // The name taken as itself, never as a pattern: a rule's own field
+      // names are not all checked as keys (CodeQL, 5 Oct).
+      ((k === "html" || k === "code") &&
+        typeof v === "string" &&
+        new RegExp(`\\b${field.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(v)) ||
       (!["label", "title", "message", "explanation", "placeholder"].includes(k) && reads(v, field))
   );
 }
@@ -2977,7 +2980,9 @@ export function parseReply(
 /** What the conversation is about, as a thread's name: a few words, no quotes, nothing at the end. */
 function asTitle(v: unknown): string | undefined {
   if (typeof v !== "string") return undefined;
+  // Cut first: the pattern backtracks over a long run of those marks (CodeQL, 5 Oct).
   const t = v
+    .slice(0, TITLE_MAX * 4)
     .replace(/^["'“”‘’\s]+|["'“”‘’.!?,;:\s]+$/g, "")
     .replace(/\s+/g, " ")
     .slice(0, TITLE_MAX);

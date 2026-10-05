@@ -6,7 +6,7 @@
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-plan.mjs
 
-import { intentBlock, parseIntent, plainReply, plainSay } from "../src/lib/plan.ts";
+import { intentBlock, isGoAhead, parseIntent, plainReply, plainSay } from "../src/lib/plan.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -107,6 +107,15 @@ check(
       ask.questions[0].why === "is rto ke liye" &&
       ask.questions[0].suggestions[0] === "Spent"
   );
+}
+
+// A yes is a few words: a long message is not one, and is answered at once (CodeQL, 5 Oct).
+{
+  const long = `${"!".repeat(50_000)}x`;
+  const t0 = performance.now();
+  check("a long message is not a yes", !isGoAhead(long));
+  check("and is answered at once", performance.now() - t0 < 50);
+  check("a short yes still is", isGoAhead("haan bana do!"));
 }
 
 console.log(fails.length === 0 ? "\nthe plan step reads back what was understood" : `\n${fails.length} FAILED`);

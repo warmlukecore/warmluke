@@ -10,7 +10,7 @@
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-remove-field.mjs
 
-import { parseReply } from "../src/lib/ai.ts";
+import { fieldUsers, parseReply } from "../src/lib/ai.ts";
 import { storeSectionColumns } from "../src/lib/store-read.ts";
 
 const fails = [];
@@ -271,6 +271,23 @@ console.log("\na rule turned off that another waits on is said on its card, not 
     headsOf(off([flagger], [{ ...OFF, heads_up: ["made up"] }])) === undefined
   );
 }
+
+// A field's name is taken as itself in a rule's code, never as a pattern (CodeQL, 5 Oct).
+check(
+  "a name with a dot in it is not read as a pattern",
+  fieldUsers(
+    "a.b",
+    null,
+    [],
+    [{ module_id: null, name: "r", definition: { actions: [{ type: "run_code", code: "row.axb" }] } }]
+  ).length === 0 &&
+    fieldUsers(
+      "a.b",
+      null,
+      [],
+      [{ module_id: null, name: "r", definition: { actions: [{ type: "run_code", code: "row['a.b']" }] } }]
+    ).length === 1
+);
 
 console.log(fails.length ? `\n${fails.length} FAILED` : "\na column comes off, and nothing that reads it breaks");
 process.exit(fails.length ? 1 : 0);

@@ -54,7 +54,8 @@ export function customViewProblem(html: unknown): string | null {
  * nothing is refused.
  */
 export function customViewScriptProblem(html: string): string | null {
-  for (const [, script] of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)) {
+  // A closing tag as a browser reads it: "</script >" closes too (CodeQL, 5 Oct).
+  for (const [, script] of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\b[^>]*>/gi)) {
     try {
       new Function(script);
     } catch (e) {

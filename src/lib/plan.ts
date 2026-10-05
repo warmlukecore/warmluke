@@ -114,6 +114,9 @@ export function proposalOf(history: Array<{ role: string; content: string }>): D
 
 /** A plain yes to a plan, in either language: nothing added that would change it. */
 export function isGoAhead(message: string): boolean {
+  // A yes is a few words; a long message is never one, and is not run
+  // through the pattern below, which backtracks over a long run (CodeQL, 5 Oct).
+  if (message.length > 200) return false;
   const m = message
     .trim()
     .toLowerCase()
