@@ -82,6 +82,13 @@ $$;
 revoke all on function public.abo_design_examples() from public, anon;
 grant execute on function public.abo_design_examples() to authenticated;
 
+-- Found without reading every message: builds alone, by when (the What
+-- stuck screen reads weeks of them), and a section's rows newest first (is
+-- one there since the build; a section's own list, newest first, too).
+create index if not exists messages_builds on public.messages (created_at)
+  where payload ->> 'type' = 'build' and payload ->> 'status' = 'built';
+create index if not exists records_section_newest on public.records (module_id, created_at desc);
+
 -- Each build that said what it made, and whether it stuck: its sections
 -- all still there, and each with a row added or a rule run since.
 create or replace function public.abo_built_and_kept(p_weeks integer)

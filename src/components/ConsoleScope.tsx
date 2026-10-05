@@ -13,6 +13,22 @@ import { supabase } from "@/lib/supabase-client";
 import { Select, type SelectOption } from "@/components/ui/Select";
 import { scopeQuery, useConsoleScope } from "@/lib/console-scope";
 
+/**
+ * Every account, as the picker offers them: asked once a visit and shared by
+ * every screen, not again on each one.
+ * ponytail: the whole list in the browser; a search asked of the server
+ * (abo_admin_accounts with a query) once there are thousands of accounts.
+ */
+let accountList: Promise<SelectOption[]> | null = null;
+const allAccounts = () =>
+  (accountList ??= Promise.resolve(supabase.rpc("abo_admin_accounts")).then(({ data, error }) => {
+    if (error) accountList = null;
+    return ((data ?? []) as Array<{ user_id: string; email: string; business_name?: string | null }>).map((a) => ({
+      value: a.user_id,
+      label: a.business_name ? `${a.business_name} · ${a.email}` : a.email,
+    }));
+  }));
+
 export function ConsoleScope() {
   const scope = useConsoleScope();
   const router = useRouter();
@@ -21,14 +37,7 @@ export function ConsoleScope() {
   const [apps, setApps] = useState<SelectOption[]>([]);
 
   useEffect(() => {
-    supabase.rpc("abo_admin_accounts").then(({ data }) =>
-      setAccounts(
-        ((data ?? []) as Array<{ user_id: string; email: string; business_name?: string | null }>).map((a) => ({
-          value: a.user_id,
-          label: a.business_name ? `${a.business_name} · ${a.email}` : a.email,
-        }))
-      )
-    );
+    void allAccounts().then(setAccounts);
   }, []);
   useEffect(() => {
     if (!scope.account) return setApps([]);

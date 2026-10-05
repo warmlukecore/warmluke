@@ -35,13 +35,16 @@ begin
   end if;
   -- One count at a time a project, so two saves at once cannot both take the last run.
   perform pg_advisory_xact_lock(hashtext('ai_fill:' || v_project::text));
+  -- This project's rules, each read by its own (automation_id, created_at)
+  -- index: never every project's runs of the day.
   select count(*) into v_used
     from public.automation_runs r
-    join public.automations a on a.id = r.automation_id
-    join public.modules m on m.id = a.module_id
-   where m.project_id = v_project
-     and r.detail ? 'ai'
-     and r.created_at >= date_trunc('day', now());
+   where r.automation_id = any(array(
+           select a.id from public.automations a
+             join public.modules m on m.id = a.module_id
+            where m.project_id = v_project))
+     and r.created_at >= date_trunc('day', now())
+     and r.detail ? 'ai';
   if v_used >= c_limit then
     perform public.abo_rule_alert(
       p_automation, v_project, 'ai-limit ' || to_char(now(), 'YYYY-MM-DD'), '{}'::jsonb,
