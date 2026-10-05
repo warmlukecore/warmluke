@@ -72,6 +72,7 @@ const MODEL = new Set([
   "check-ux-eval",
   "check-scenario-eval",
   "check-screen-eval",
+  "check-examples-eval",
   // A Vercel Sandbox, started by hand: the browser walk (lib/walk.ts).
   "check-walk",
 ]);

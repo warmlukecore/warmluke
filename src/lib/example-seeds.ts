@@ -22,7 +22,7 @@ export const SEED_EXAMPLES: DesignExample[] = [
     design:
       "Over the store's own order items, no copy list: a packing screen where the packer scans the order's label, then each item's barcode; each scan ticks that line's packed count up, a wrong item says so on the spot, and when every line of the order is packed it moves to the next order by itself. One field on the store's items: packed (a number). A stat above: orders packed today.",
     why: "The scan is the real work here, so a written screen earns its place; the rows stay the store's.",
-    tags: ["packing", "scan", "barcode", "pack", "items", "wrong item", "dispatch"],
+    tags: ["packing", "scan", "scanner", "barcode", "pack", "box", "wrong item", "dispatch", "check"],
   },
   {
     id: "seed-cod-remittance",
@@ -38,7 +38,19 @@ export const SEED_EXAMPLES: DesignExample[] = [
     design:
       "A Collabs section of their own: creator (text), handle (url), product sent (a link to the store's products), sent on (date), status (Sent, Posted, Ghosted), post link (url). A Posted button on a row that sets the status, a board by status, and a rule that turns a row Ghosted 21 days after it was sent with no post link.",
     why: "One status carries the whole story; the product is linked, not retyped.",
-    tags: ["influencer", "creator", "collab", "barter", "pr", "post", "posted", "sent", "instagram"],
+    tags: [
+      "influencer",
+      "creator",
+      "collab",
+      "barter",
+      "gift",
+      "reel",
+      "content",
+      "post",
+      "posted",
+      "sent",
+      "instagram",
+    ],
   },
   {
     id: "seed-supplier-restock",

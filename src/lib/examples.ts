@@ -20,21 +20,18 @@ export { SEED_EXAMPLES, type DesignExample } from "./example-seeds";
 
 /** At least this many words in common before an example is said to bear on an ask. */
 const MIN_OVERLAP = 2;
-/** Words nearly every store's ask has: they say nothing about which work it is ("flag orders from customers" is not a review request). */
-const EVERY_STORE = new Set([
-  "order",
-  "customer",
-  "product",
-  "store",
-  "shop",
-  "item",
-  "track",
-  "karne",
-  "chahiye",
-  "process",
-  "app",
-]);
-const workWords = (text: string) => new Set([...wordsOf(text)].filter((w) => !EVERY_STORE.has(w)));
+/**
+ * Words that say nothing about which work an ask is: ones nearly every
+ * store's ask has ("flag orders from customers" is not a review request),
+ * and the Hinglish that carries a sentence ("pata nahi chalta", "bhool
+ * jaate") rather than its subject.
+ */
+const SAYS_NOTHING_HERE = new Set(
+  "order customer product store shop item track karne chahiye process app nahi pata chalta chalti jaata jaate jaati hota hoti rehta rehti bhool reh aata aati wala".split(
+    " "
+  )
+);
+const workWords = (text: string) => new Set([...wordsOf(text)].filter((w) => !SAYS_NOTHING_HERE.has(w)));
 
 /** The examples nearest an ask, best first; none when nothing is near enough. */
 export function examplesFor(message: string, extra: DesignExample[] = [], max = 2): DesignExample[] {
