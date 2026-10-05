@@ -1,9 +1,10 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getUserClient } from "@/lib/supabase-server";
 import { applyPlans, logClientBuild } from "@/lib/apply";
 import { describePlan } from "@/lib/describe";
 import { undoableFrom } from "@/lib/undo";
+import { walkAfterBuild } from "@/lib/walk";
 import type { AssistantPlan, ModuleRow, NextStep } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -111,6 +112,8 @@ export async function POST(req: Request) {
           `${shown}${rest > 0 ? ` · and ${rest} more` : ""}.${offer.length ? "" : " Tell me what to change next."}`,
           { status: "built", ...(undo.length ? { undo } : {}), ...(offer.length ? { next: offer } : {}) }
         );
+        // Then each section built walked in a browser, after the answer has gone (lib/walk.ts).
+        if (errors.length === 0) after(() => walkAfterBuild(client, projectId, applied, book.id));
       }
     }
     const recorded = book ? { recorded: book.id } : {};

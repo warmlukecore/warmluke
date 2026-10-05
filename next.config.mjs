@@ -53,33 +53,35 @@ const securityHeaders = [
   // environment that lacks it gets no CSP rather than a fatal one.
   // Every header below this still applies.
   ...(supabaseOrigin
-    ? [{
-    key: "Content-Security-Policy",
-    value: [
-      "default-src 'self'",
-      // Cloudflare Turnstile: its script, and the frame it runs the
-      // check in (src/components/Captcha.tsx).
-      `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""} https://challenges.cloudflare.com`,
-      "frame-src https://challenges.cloudflare.com",
-      `connect-src 'self' ${supabaseOrigin} ${supabaseSocket}`.trim(),
-      "img-src 'self' data: blob: https:",
-      // The landing hero's film, which is served from here. Worth
-      // saying why the line exists at all: with no media-src this
-      // falls back to default-src 'self' and, while that happens to
-      // allow our own file, the day the video moves to a CDN the
-      // browser refuses it while every header still looks correct
-      // from curl. It fails silently — the hero simply never moves.
-      // check-csp-media holds this and the page together.
-      "media-src 'self'",
-      // next/font self-hosts at build time, so no external font origin.
-      "style-src 'self' 'unsafe-inline'",
-      "font-src 'self' data:",
-      "frame-ancestors 'none'",
-      "object-src 'none'",
-      "base-uri 'self'",
-      "form-action 'self'",
-    ].join("; "),
-      }]
+    ? [
+        {
+          key: "Content-Security-Policy",
+          value: [
+            "default-src 'self'",
+            // Cloudflare Turnstile: its script, and the frame it runs the
+            // check in (src/components/Captcha.tsx).
+            `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""} https://challenges.cloudflare.com`,
+            "frame-src https://challenges.cloudflare.com",
+            `connect-src 'self' ${supabaseOrigin} ${supabaseSocket}`.trim(),
+            "img-src 'self' data: blob: https:",
+            // The landing hero's film, which is served from here. Worth
+            // saying why the line exists at all: with no media-src this
+            // falls back to default-src 'self' and, while that happens to
+            // allow our own file, the day the video moves to a CDN the
+            // browser refuses it while every header still looks correct
+            // from curl. It fails silently — the hero simply never moves.
+            // check-csp-media holds this and the page together.
+            "media-src 'self'",
+            // next/font self-hosts at build time, so no external font origin.
+            "style-src 'self' 'unsafe-inline'",
+            "font-src 'self' data:",
+            "frame-ancestors 'none'",
+            "object-src 'none'",
+            "base-uri 'self'",
+            "form-action 'self'",
+          ].join("; "),
+        },
+      ]
     : []),
   // A merchant's project id travels in the path. It is not a credential
   // — access is decided by row-level security, not by knowing it — but
@@ -110,6 +112,12 @@ const nextConfig = {
   // (e.g. ~/package-lock.json) don't confuse module resolution.
   turbopack: {
     root: projectDir,
+  },
+  // The tryout's browser walk (lib/walk.ts) reads the walk page the build
+  // makes (scripts/build-walk-page.mjs) and the walker from disk, to hand
+  // them to a sandbox: files no import names, so they are named here.
+  outputFileTracingIncludes: {
+    "/api/apply": ["./.walk/walk.html", "./src/walk/walker.mjs"],
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

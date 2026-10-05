@@ -154,6 +154,8 @@ type BuildPayload = {
   errors?: string[];
   undo?: Array<{ what: string }>;
   next?: NextStep[];
+  /** Each section built, walked in a browser after it (lib/walk.ts). */
+  walked?: Array<{ name: string; tried: number; breaks: string[] }>;
 };
 
 /** How long a build may say "building" before the thread stops believing it: far past any real one. */
@@ -726,6 +728,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               text: b.message,
               ...(b.undo?.length ? { undo: { messageId: m.id, what: b.undo.map((u) => u.what) } } : {}),
               ...(next?.length ? { next } : {}),
+              ...(Array.isArray(b.walked) && b.walked.length ? { walked: b.walked } : {}),
             });
           }
           continue;
@@ -1979,7 +1982,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // blueprint to approve, or with plans to apply. Only the last one
   // ever touches data.
   const runPrompt = useCallback(
-    async (text: string, opts?: { silent?: boolean; alertId?: string }) => {
+    async (text: string, opts?: { silent?: boolean; alertId?: string; moduleId?: string }) => {
       if (!text.trim() || chatBusy || building) return;
       if (!opts?.silent) {
         setChatMessages((prev) => [...prev, { id: nextChatId(), role: "user", text }]);
@@ -2011,7 +2014,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           {
             message: text,
             projectId,
-            moduleId: selectedModuleId,
+            // A fix names its own section, so Luke reads its settings whatever is on screen.
+            moduleId: opts?.moduleId ?? selectedModuleId,
             conversationId: openThread,
             ...(pickedModel ? { model: pickedModel } : {}),
             ...(opts?.alertId ? { alertId: opts.alertId } : {}),
@@ -2757,6 +2761,26 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       }
     },
     [loadModules, runPrompt, selectedModuleId, loadModuleData]
+  );
+
+  // What the browser walk found after a build, handed to Luke with that
+  // section open, so the turn reads its own settings (filters, buttons,
+  // its screen) and not whatever was on screen when "Fix it" was tapped.
+  const walkFix = useCallback(
+    (section: string, problem: string) => {
+      const m = modules.find((x) => x.nav_label === section);
+      if (m) setSelectedModuleId(m.id);
+      setChatMessages((prev) => [...prev, { id: nextChatId(), role: "system", text: "Asking Luke to fix it…" }]);
+      void runPrompt(
+        [
+          `After the last build, ${section} was tried in a browser, on a laptop and a phone, as the team would use it, and this did not work:`,
+          `- ${problem}`,
+          `Fix ${section} so it works as they would expect. Change only what has to change.`,
+        ].join("\n"),
+        { silent: true, ...(m ? { moduleId: m.id } : {}) }
+      );
+    },
+    [modules, runPrompt, setSelectedModuleId]
   );
 
   // A written screen that broke while it ran: kept once a message a visit,
@@ -3789,6 +3813,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               <ChatPanel
                 projectId={projectId}
                 suggestions={suggestions}
+                onWalkFix={walkFix}
                 onEmpty={countSignals}
                 onReadSection={readSection}
                 onPeekSection={peekSection}

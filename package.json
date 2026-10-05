@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "next dev -p 3100",
     "dev:sandbox": "sh scripts/dev-sandbox.sh",
-    "build": "NODE_ENV=production next build",
+    "build": "node scripts/build-walk-page.mjs && NODE_ENV=production next build",
     "start": "next start -p 3100",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src scripts e2e",
@@ -18,7 +18,8 @@
     "check:pure": "node scripts/run-checks.mjs --tier pure",
     "check:live": "node scripts/run-checks.mjs --tier live",
     "check:list": "node scripts/run-checks.mjs --list",
-    "hooks": "git config core.hooksPath scripts/hooks"
+    "hooks": "git config core.hooksPath scripts/hooks",
+    "walk-page": "node scripts/build-walk-page.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.69",
@@ -44,8 +45,10 @@
     "@types/node": "^26.6.3",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "esbuild": "0.28.2",
     "oxfmt": "0.71.0",
     "oxlint": "1.86.0",
+    "postcss": "8.5.23",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2"
   }

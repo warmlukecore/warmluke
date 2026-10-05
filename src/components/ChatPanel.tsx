@@ -158,6 +158,8 @@ export interface ChatMessage {
    * build, and the section may have moved on twice since.
    */
   undo?: { messageId: string; what: string[] };
+  /** Each section the build made or changed, walked in a browser after it (lib/walk.ts): how much was tried, what broke. */
+  walked?: Array<{ name: string; tried: number; breaks: string[] }>;
   /**
    * What the design offered to do next, on the receipt of its build.
    * Shown only while this is the last thing in the thread: once
@@ -1299,6 +1301,48 @@ function ChecksLine({ checks }: { checks: DesignChecks }) {
   );
 }
 
+/**
+ * What the browser walk found on the sections a build made (lib/walk.ts):
+ * one quiet line when all of it worked; what broke, each with a way to ask
+ * Luke to fix it, when something did not.
+ */
+function WalkedLine({
+  walked,
+  onFix,
+}: {
+  walked: Array<{ name: string; tried: number; breaks: string[] }>;
+  onFix?: (section: string, problem: string) => void;
+}) {
+  const tried = walked.reduce((n, w) => n + w.tried, 0);
+  const broke = walked.flatMap((w) => w.breaks.map((b) => ({ section: w.name, b })));
+  if (broke.length === 0)
+    return (
+      <p className="text-[11px] text-fg-faint">
+        Tried in a browser on a laptop and a phone: {tried} thing{tried === 1 ? "" : "s"}, all worked
+      </p>
+    );
+  return (
+    <div className="text-[11px]">
+      <p className="text-tone-attention-fg">
+        <TriangleAlert aria-hidden size={12} strokeWidth={2} className="mr-1 inline align-[-2px]" />
+        Tried in a browser: {broke.length} of {tried} did not work
+      </p>
+      <ul className="mt-1 space-y-1 border-l border-line pl-2.5 text-fg-muted">
+        {broke.map(({ section, b }, i) => (
+          <li key={i} className="leading-relaxed break-words">
+            {withoutIds(`${section}: ${b}`)}
+            {onFix && (
+              <button onClick={() => onFix(section, b)} className="ml-2 text-fg transition-colors hover:underline">
+                Fix it
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function BlueprintCard({
   message,
   blueprint,
@@ -2180,6 +2224,7 @@ export default function ChatPanel({
   onSend,
   suggestions = [],
   onEmpty,
+  onWalkFix,
   onEditPrompt,
   onPeekSection,
   openSectionId = null,
@@ -2296,6 +2341,8 @@ export default function ChatPanel({
   suggestions?: NextStep[];
   /** Told once the empty welcome is on screen: the suggestions are counted only when they will be offered. */
   onEmpty?: () => void;
+  /** Hands Luke what the browser walk found on a section, with that section open (AppShell). */
+  onWalkFix?: (section: string, problem: string) => void;
   /**
    * Corrects a prompt already sent and runs it again. The shell owns
    * it because retiring the old exchange is a write, and because the
@@ -4167,6 +4214,7 @@ export default function ChatPanel({
                               <span>{m.undo.what.join(", ")}</span>
                             </div>
                           )}
+                          {m.walked && <WalkedLine walked={m.walked} onFix={busy ? undefined : onWalkFix} />}
                           {/* A design their AI asked for, waiting as a request:
                     what became of it since, read from the bell's own
                     list, so a line that said "it waits" does not go on

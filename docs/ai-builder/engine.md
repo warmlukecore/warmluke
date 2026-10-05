@@ -558,8 +558,26 @@ item' is not one of Reason's choices"); a step the scenario got wrong itself (a 
 a row it misread under a filter) is not tried and never held against the design; a button there
 is none of, where a status of that name is, is done the long way and said as a note. The card
 lists each scenario, worked or not. `check-scenario-play` (pure) holds the player;
-`check-scenario-eval` (model tier) the writer, on eight designs, four broken. Next: the built
-screen walked in a browser.
+`check-scenario-eval` (model tier) the writer, on eight designs, four broken.
+
+Its third layer walks what was built in a real browser (`lib/walk.ts`). The walk page
+(`src/walk/page.tsx`) is the section drawn by the app's own components, `GenericRenderer` and
+all, bundled with the app's CSS into one sealed file by `scripts/build-walk-page.mjs`, which
+`pnpm build` runs first, so it is the app as it ships; it keeps rows in memory, offers a link's
+rows as handed in, and stands a do-nothing client in for the database. After a build, each
+section it made or changed (two at most) is read as it now stands, with its newest 50 rows and
+its links' rows, and walked in a Vercel Sandbox from the screen check's snapshot, every outbound
+connection denied, at 1440 and 390 wide, by `src/walk/walker.mjs`: as a person would, by the
+page's roles and names, every filter and each choice, the search with a row's own words, each
+column's sort, each tab, a row's first button, and the form filled and saved; with the page's
+own errors and a written screen's breaks heard. It runs after the answer has gone
+(`walkAfterBuild`, from `/api/apply`), and what it found is kept on the build's line as
+`walked`, shown under it: one quiet line when it all worked, what broke with "Fix it" (which
+asks Luke in the merchant's words) when something did not. The page and the walker reach the
+function through `outputFileTracingIncludes`. `e2e/walk.spec.ts` walks the page in the checks'
+own browser (a section that works, a filter with nothing to choose, a written screen that
+throws) and shows the line; `check-walk` (by hand) walks it in the real sandbox;
+`check-walk-lines` (pure) holds what it is handed and how it says what broke.
 
 ### The screen check
 

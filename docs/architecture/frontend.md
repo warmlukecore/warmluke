@@ -124,6 +124,10 @@ so it is validated, kept as the owner's own version and put back by History; no 
 asked. A status's filter taken off the bar keeps its choices for the row form. On a section
 over the store, a column keeps where the owner put it and a name they gave it (`named`).
 
+Under a build's line, what the browser walk found on the sections it built (`walked`,
+`lib/walk.ts`): "Tried in a browser on a laptop and a phone: N things, all worked", or what
+did not work, each with "Fix it", which sends Luke the break in plain words.
+
 It also renders pending MCP-originated requests, build history, turn progress, undo
 controls, OAuth client connections, quotas, and feature-switch state. Plans are not
 trusted merely because they arrived in the browser; `/api/apply` reloads live state and
