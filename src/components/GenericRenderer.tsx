@@ -10,6 +10,7 @@
 
 import { filterOptions, matchesFilter } from "@/lib/filters";
 import { filterIsOff } from "@/lib/view-edit";
+import type { ScreenAsk } from "@/lib/screen";
 import ErrorNote from "@/components/ErrorNote";
 import { asError } from "@/lib/errors";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -269,6 +270,7 @@ export default function GenericRenderer({
   timeZone,
   onPeriod,
   serverRows,
+  ask,
 }: {
   schema: UiSchema;
   records: RecordRow[];
@@ -324,6 +326,8 @@ export default function GenericRenderer({
   timeZone?: string;
   /** Told the dates picked, so the page can read the rows inside them rather than only the page it holds. */
   onPeriod?: (range: PeriodRange | null) => void;
+  /** Asked of this screen by Luke, or by a link from their own AI (lib/screen.ts): done once each time `at` changes. */
+  ask?: (ScreenAsk & { at: number }) | null;
 }) {
   const fmt = useFormat();
   const total = totalRecords ?? records.length;
@@ -457,6 +461,28 @@ export default function GenericRenderer({
     onPeriod?.(range);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rangeKey]);
+
+  // What Luke, or a link from their own AI, asked of this screen (lib/screen.ts),
+  // set as they would set the bar themselves. A view is the whole view: what
+  // it leaves out is cleared. A row to put in opens the form filled, for their Save.
+  const [filled, setFilled] = useState<Record<string, unknown> | null>(null);
+  useEffect(() => {
+    if (!ask) return;
+    if (ask.search !== undefined || ask.filters || ask.sort || ask.period !== undefined) {
+      setSearch(ask.search ?? "");
+      setFilterValues(ask.filters ?? {});
+      setSort(ask.sort ?? null);
+      setScanGroup(null);
+      setPage(0);
+      if (ask.period !== undefined && periodSpec) choosePick(ask.period);
+    }
+    if (ask.add && editable) {
+      setEditing(null);
+      setFilled(ask.add);
+      setAdding(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ask?.at]);
 
   // Computed columns are filled in once, up front, so that everything
   // below — the search box, the filters, the sort, the stats and every
@@ -1020,6 +1046,8 @@ export default function GenericRenderer({
 
       {(adding || editing) && editable && (
         <RecordModal
+          // A row filled in again while the form is open starts the form again.
+          key={editing ? editing.id : filled ? JSON.stringify(filled) : "new"}
           schema={schema}
           records={records}
           record={editing}
@@ -1029,8 +1057,10 @@ export default function GenericRenderer({
           onClose={() => {
             setEditing(null);
             setAdding(false);
+            setFilled(null);
             setWriteError(null);
           }}
+          filled={editing ? null : filled}
         />
       )}
     </div>

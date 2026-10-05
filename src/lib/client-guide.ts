@@ -45,6 +45,7 @@ export function howToHelp(tools: ToolLine[]): string {
     ...SIMPLER_WAYS.map((w) => `  - ${w}`),
     `- ${REAL_WORK}`,
     "- How a section looks (names, columns on or off the table, their order, filters, the order rows open in) is edit_view: nothing is designed or charged.",
+    "- To see a section's rows a certain way now, or to put in a row from details they gave you (a customer's message, a note), is show_on_screen: a link that opens it that way; a filled form waits for their own Add row.",
     `- Their shop itself changes only through propose_store_action: it can ${whatCanChange()}, and only the merchant can agree to one, in Warmluke; you cannot, whatever their settings say. It has no way to ${whatNeverChanges()} anything.`,
     "",
     "WHICH TOOL:",

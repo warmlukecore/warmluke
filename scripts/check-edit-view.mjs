@@ -150,11 +150,12 @@ try {
     check("the status filter as it was", now.schema_json.features.filters?.[0]?.options?.length === 3);
   }
 
+  const requests = async () =>
+    (await admin.from("build_requests").select("id", { count: "exact", head: true }).eq("project_id", project.id))
+      .count;
+
   console.log("\nwhat cannot be done is said, and nothing is requested");
   {
-    const requests = async () =>
-      (await admin.from("build_requests").select("id", { count: "exact", head: true }).eq("project_id", project.id))
-        .count;
     const was = await requests();
     const money = await tool("edit_view", { section: "Returns", filters: ["amount"] });
     check(
@@ -180,12 +181,49 @@ try {
     );
     check("and not one request was made", (await requests()) === was);
   }
+
+  // Seeing it a certain way, or a row to put in (lib/screen.ts, #3): a
+  // link that opens the section so, read by the code Luke's answers go
+  // through; nothing requested, changed or written.
+  console.log("\ntheir AI's show_on_screen");
+  {
+    const was = await requests();
+    const version = (await latest(mod.id)).version;
+    const rows = async () =>
+      (await admin.from("records").select("id", { count: "exact", head: true }).eq("module_id", mod.id)).count;
+    const rowsWere = await rows();
+    const shown = await tool("show_on_screen", {
+      section: "Returns",
+      filters: { Status: "received", courier: "Delhivery" },
+      add: { customer: "Neha", amount: "₹700" },
+    });
+    const url = shown?.link ? new URL(shown.link) : null;
+    check(
+      "a link to the section",
+      url?.pathname === `/app/${project.id}` && url?.searchParams.get("section") === mod.id
+    );
+    const show = JSON.parse(url?.searchParams.get("show") ?? "{}");
+    check("held to its own filters, spelled as they offer them", show.filters?.status === "Received");
+    check("a row filled as its form holds it", show.add?.customer === "Neha" && show.add?.amount === 700);
+    check("what it does not have, said", shown?.not_done?.includes("Returns has no courier filter"));
+    check("said in words", (shown?.shows ?? "").startsWith("Returns: Status: Received; a new row in Returns, "));
+    check("nothing saved till they press Add row", /Add row/.test(shown?.note ?? ""));
+    check(
+      "nothing asked: said so",
+      /Nothing asked/.test((await tool("show_on_screen", { section: "Returns" }))?.error ?? "")
+    );
+    check("no section: asked which", /Which section/.test((await tool("show_on_screen", {}))?.error ?? ""));
+    check("no request made, no version", (await requests()) === was && (await latest(mod.id)).version === version);
+    check("and no row written", (await rows()) === rowsWere);
+  }
 } finally {
   await admin.from("mcp_calls").delete().eq("user_id", uid).gte("created_at", runStartedAt);
   await project.remove();
 }
 
 console.log(
-  fails.length === 0 ? "\na section's look changes without a design, both ways in" : `\n${fails.length} FAILED`
+  fails.length === 0
+    ? "\na section's look changes without a design, both ways in, and is shown as asked"
+    : `\n${fails.length} FAILED`
 );
 process.exit(fails.length === 0 ? 0 : 1);

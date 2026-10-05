@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { watchRows } from "@/lib/live";
+import { readScreenAsk, screenFromHref, type ScreenAsk, type ScreenShown } from "@/lib/screen";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ResizeHandle } from "@/components/ui/ResizeHandle";
@@ -461,6 +462,42 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // Finding a section by name, from the sidebar's search box.
   const [navQuery, setNavQuery] = useState("");
   const [chatOpen, setChatOpen] = useState(false);
+  // What Luke, or a link from their own AI, asked of the screen open
+  // (lib/screen.ts): handed to the section once its rows are here, and
+  // let go once done, so coming back to it later does not do it again.
+  const [screenAsk, setScreenAsk] = useState<(ScreenAsk & { at: number }) | null>(null);
+  const showOnScreen = useCallback(
+    (ask: ScreenAsk) => {
+      setSelectedModuleId(ask.moduleId);
+      setScreenAsk({ ...ask, at: Date.now() });
+      // On a phone Luke's panel covers the section: shut, so what was done is seen.
+      if (!window.matchMedia("(min-width: 1024px)").matches) setChatOpen(false);
+    },
+    [setSelectedModuleId]
+  );
+  useEffect(() => {
+    if (screenAsk && screenAsk.moduleId === selectedModuleId && loadedFor === selectedModuleId) setScreenAsk(null);
+  }, [screenAsk, selectedModuleId, loadedFor]);
+  // A link from their own AI (MCP show_on_screen): read again against the
+  // section as it is, since a link is anyone's words, then taken off the address.
+  const showParam = searchParams.get("show");
+  useEffect(() => {
+    if (!showParam || !selectedModuleId || loadedFor !== selectedModuleId || !shownSchema) return;
+    // The section's rows can come before the list of sections: read once both are here,
+    // or the link was taken off the address with nothing done (phone, 5 Oct).
+    const m = modules.find((x) => x.id === selectedModuleId);
+    if (!m) return;
+    const at = new URLSearchParams(window.location.search);
+    at.delete("show");
+    window.history.replaceState(null, "", `${window.location.pathname}${at.size ? `?${at}` : ""}`);
+    const { ask } = readScreenAsk(screenFromHref(showParam), {
+      id: m.id,
+      name: m.nav_label,
+      schema: shownSchema,
+      canAdd: !m.source_table,
+    });
+    if (ask) setScreenAsk({ ...ask, at: Date.now() });
+  }, [showParam, selectedModuleId, loadedFor, shownSchema, modules]);
   // Shut on a wide screen, Luke's panel stays in the layout at no width, so
   // it slides shut and open beside the section rather than jumping out of
   // the page and back. Opened as a drawer (chatOpen), it is the drawer.
@@ -809,6 +846,10 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             text: (p as { message?: string }).message ?? "(an earlier reply)",
             ...(undoSteps.length ? { undo: { messageId: m.id, what: undoSteps.map((u) => u.what) } } : {}),
             ...(next?.length ? { next } : {}),
+            // What it did on their screen then: said, and offered again, never done again on its own.
+            ...(p.type === "answer" && (p as { show?: ScreenShown }).show
+              ? { show: (p as { show: ScreenShown }).show }
+              : {}),
           });
         }
         // Every branch above pushes exactly one, so this marks the
@@ -2154,10 +2195,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               role: "assistant",
               text: reply.message,
               ...(reply.next?.length ? { next: reply.next } : {}),
+              ...(reply.show ? { show: reply.show } : {}),
               trace: trace(),
               ...took,
             },
           ]);
+          // Done on their screen as it is said (lib/screen.ts).
+          if (reply.show?.said) showOnScreen(reply.show);
           return;
         }
 
@@ -2239,7 +2283,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         setChatPhase(null);
       }
     },
-    [chatBusy, building, projectId, selectedModuleId, loadThread, rememberConversation, pickedModel]
+    [chatBusy, building, projectId, selectedModuleId, loadThread, rememberConversation, pickedModel, showOnScreen]
   );
 
   /**
@@ -3753,6 +3797,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     // The shop's days on every section of a project with a shop, as the server's are (0162).
                     timeZone={store?.timezone ?? undefined}
                     onPeriod={periodChanged}
+                    ask={screenAsk?.moduleId === selectedModuleId ? screenAsk : null}
                     {...(storeBacked
                       ? // No write handlers at all, which is how the renderer
                         // already expresses read-only. The import owns these
@@ -3814,6 +3859,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 projectId={projectId}
                 suggestions={suggestions}
                 onWalkFix={walkFix}
+                onShow={showOnScreen}
                 onEmpty={countSignals}
                 onReadSection={readSection}
                 onPeekSection={peekSection}

@@ -68,6 +68,7 @@ import {
   type StoreFacts,
 } from "@/lib/describe";
 import { describeBuild } from "@/lib/judge";
+import { describeScreenAsk, readScreenAsk, type ScreenShown } from "@/lib/screen";
 import { aiStoreTools, fitForModel } from "@/lib/store-tools";
 import { aiProposeTool } from "@/lib/store-action-propose";
 
@@ -741,7 +742,12 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     // design, not a follow-up question: it plans again.
     (agreed && (goAhead || !isQuestion(message))
       ? "design"
-      : roadFor({ message, lastReplyType: lastReplyTypeOf(history), routed: !!store?.snapshot?.slice }));
+      : roadFor({
+          message,
+          lastReplyType: lastReplyTypeOf(history),
+          routed: !!store?.snapshot?.slice,
+          open: !!moduleId,
+        }));
   if (!resume) tell({ step: "road", road });
   // Money as the owner chose it, else as their shop keeps it: Luke writes the same currency the app shows.
   const money = projectFormat(project, store);
@@ -995,6 +1001,15 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         currentFeatures,
         (mid) => schemas.get(mid) ?? null
       );
+    }
+
+    // What Luke does on the screen that is open (lib/screen.ts): held to
+    // the section's own columns and filters by code, and said under the
+    // answer in the code's words, not the model's.
+    if (parsed.ok && parsed.reply.type === "answer") {
+      const open = moduleId ? modules.find((m) => m.id === moduleId) : undefined;
+      const shown = open ? shownOnScreen(raw, open, currentSchema ?? schemas.get(open.id) ?? null) : null;
+      if (shown) parsed.reply.show = shown;
     }
 
     // Structural gate, enforced here rather than trusted to the prompt.
@@ -1331,4 +1346,30 @@ export function blueprintAsText(
     for (const u of bp.unmet) lines.push(`  · ${u}`);
   }
   return lines.join("\n");
+}
+
+/** The "show" of an answer, read against the section open; null when it asked for nothing there. */
+export function shownOnScreen(raw: string, open: ModuleRow, schema: UiSchema | null): ScreenShown | null {
+  let said: unknown;
+  try {
+    said = JSON.parse(stripFences(raw));
+  } catch {
+    return null;
+  }
+  const show = said && typeof said === "object" ? (said as { show?: unknown }).show : undefined;
+  if (show === undefined || show === null) return null;
+  const section = {
+    id: open.id,
+    name: open.nav_label,
+    schema,
+    canAdd: !open.source_table && !open.read_only,
+  };
+  const { ask, left } = readScreenAsk(show, section);
+  if (left.length) console.log(`[screen] left out: ${left.join("; ")}`);
+  if (!ask && !left.length) return null;
+  return {
+    ...(ask ?? { moduleId: open.id }),
+    said: ask ? describeScreenAsk(ask, section) : "",
+    ...(left.length ? { left } : {}),
+  };
 }

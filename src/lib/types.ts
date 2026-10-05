@@ -8,6 +8,7 @@
 export { COLUMN_TYPES, type ColumnType } from "./capabilities";
 import type { ColumnType, ExprOp } from "./capabilities";
 import type { DesignChecks } from "./review-types";
+import type { ScreenShown } from "./screen";
 
 export interface SchemaColumn {
   field: string;
@@ -544,6 +545,8 @@ export type AssistantReply =
         message: string;
         /** What they might ask next, as the model offers it: tapped, each is sent as written. */
         next?: NextStep[];
+        /** Done on the section open as this is said (lib/screen.ts): read by code, never saved. */
+        show?: ScreenShown;
         /** On a proposal, what was understood, so their yes builds exactly that (lib/plan DesignIntent). */
         understood?: unknown;
         grounding?: {

@@ -144,6 +144,21 @@ message that is neither, after an answer, is a follow-up and stays on talk.
 `check-intent` holds the routing; `check-answer` the talk contract. How often each wrong
 turn happens, and what the design-road ones cost, is on the console's Spend screen (0169).
 
+### On the screen open
+
+With a section open, asking to see its rows a certain way ("sirf COD wale dikhao", "filter
+by Pending", "newest first") or giving a row to put in (a customer's message, pasted or
+typed) takes the talk road, unless it also asks to add or change a part of the app ("add
+a filter for COD" stays a design). An answer may then carry `show` (ON THEIR SCREEN in the
+answer shape): search, the section's own filters, a sort, its dates, or a new row's fields.
+Code holds it to that section (`readScreenAsk` in `src/lib/screen.ts`, called by
+`shownOnScreen` in the engine): a filter it does not have, a choice its filter does not
+offer, a worked-out field or a row on a store list is left out and said in `left`; what
+holds is kept on the reply with its words (`said`), written by the code, never the model.
+Nothing is saved by it: the app applies it as the merchant would set the bar, and a
+filled form waits for their Add row. `check-screen` holds the reading, the receipt and the
+routing.
+
 ### The plan step
 
 On the design road, before the design call, one short call with none of the design grammar
@@ -489,7 +504,6 @@ problems, the screen's verdict and the simplicity verdict. The last checks are c
 `TurnState`, so a turn in legs returns the checks of the design it returns. With every
 switch off and nothing found, the reply carries no `checks`, and nothing the model is sent
 changes: the tapes replay as they were (`check-reviewers` holds both).
-
 
 After structural validation, `findGaps` compares the owner's original request with a
 deterministic description of what the plans actually build. Missing requested outcomes

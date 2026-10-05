@@ -37,6 +37,7 @@ import type {
 } from "@/lib/types";
 import { ago, dayGroup } from "@/lib/when";
 import type { DesignChecks, DryRun } from "@/lib/review-types";
+import type { ScreenShown } from "@/lib/screen";
 import { TITLE_MAX } from "@/lib/types";
 import { changeShown } from "@/lib/change-preview";
 import { Icon } from "@/components/ui/Icon";
@@ -160,6 +161,8 @@ export interface ChatMessage {
   undo?: { messageId: string; what: string[] };
   /** Each section the build made or changed, walked in a browser after it (lib/walk.ts): how much was tried, what broke. */
   walked?: Array<{ name: string; tried: number; breaks: string[] }>;
+  /** What Luke did on the screen open as he said this (lib/screen.ts), in the code's words. */
+  show?: ScreenShown;
   /**
    * What the design offered to do next, on the receipt of its build.
    * Shown only while this is the last thing in the thread: once
@@ -1302,6 +1305,33 @@ function ChecksLine({ checks }: { checks: DesignChecks }) {
 }
 
 /**
+ * What Luke did on the screen open as he answered (lib/screen.ts), in the
+ * code's words rather than his: what is shown, what was left undone, and
+ * a way to set it again once they have moved it.
+ */
+function ShownLine({ show, onShow }: { show: ScreenShown; onShow?: (show: ScreenShown) => void }) {
+  return (
+    <div className="text-[11px] text-fg-faint">
+      {show.said && (
+        <p className="break-words">
+          <Search aria-hidden size={12} strokeWidth={2} className="mr-1 inline align-[-2px]" />
+          On your screen: {show.said}
+          {onShow && (
+            <button
+              onClick={() => onShow(show)}
+              className="ml-2 text-fg-muted transition-colors hover:text-fg hover:underline"
+            >
+              Show again
+            </button>
+          )}
+        </p>
+      )}
+      {show.left?.length ? <p className="break-words">Not done: {show.left.join("; ")}</p> : null}
+    </div>
+  );
+}
+
+/**
  * What the browser walk found on the sections a build made (lib/walk.ts):
  * one quiet line when all of it worked; what broke, each with a way to ask
  * Luke to fix it, when something did not.
@@ -2225,6 +2255,7 @@ export default function ChatPanel({
   suggestions = [],
   onEmpty,
   onWalkFix,
+  onShow,
   onEditPrompt,
   onPeekSection,
   openSectionId = null,
@@ -2343,6 +2374,8 @@ export default function ChatPanel({
   onEmpty?: () => void;
   /** Hands Luke what the browser walk found on a section, with that section open (AppShell). */
   onWalkFix?: (section: string, problem: string) => void;
+  /** Sets the screen as Luke set it under an answer, again (AppShell). */
+  onShow?: (show: ScreenShown) => void;
   /**
    * Corrects a prompt already sent and runs it again. The shell owns
    * it because retiring the old exchange is a write, and because the
@@ -4215,6 +4248,7 @@ export default function ChatPanel({
                             </div>
                           )}
                           {m.walked && <WalkedLine walked={m.walked} onFix={busy ? undefined : onWalkFix} />}
+                          {m.show && <ShownLine show={m.show} onShow={onShow} />}
                           {/* A design their AI asked for, waiting as a request:
                     what became of it since, read from the bell's own
                     list, so a line that said "it waits" does not go on

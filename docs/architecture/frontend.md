@@ -128,6 +128,17 @@ Under a build's line, what the browser walk found on the sections it built (`wal
 `lib/walk.ts`): "Tried in a browser on a laptop and a phone: N things, all worked", or what
 did not work, each with "Fix it", which sends Luke the break in plain words.
 
+An answer that did something on the screen open (`show`, `lib/screen.ts`) does it as it
+arrives: the section opens if it was not, its bar is set as the merchant would set it (a
+view is the whole view: what it leaves out is cleared), and a row to put in opens the form
+filled, under "Filled in for you", where a link given as words ("#1042") is searched as a
+person would search it and picked only when one row alone answers, filling the rest as
+their pick would; nothing is saved until Add row. Under the answer, "On your screen: …" in
+the code's words, with Show again, and anything not done. On a phone the panel stands aside
+so the section is seen. The same ask arrives as `?show=` in a link from their own AI
+(`show_on_screen`), read again against the section as it opens and then taken off the
+address. `e2e/screen.spec.ts` walks both.
+
 It also renders pending MCP-originated requests, build history, turn progress, undo
 controls, OAuth client connections, quotas, and feature-switch state. Plans are not
 trusted merely because they arrived in the browser; `/api/apply` reloads live state and

@@ -15,6 +15,7 @@ import {
 } from "@/lib/store-read";
 import { asksFromStore } from "@/lib/suggest";
 import { viewEditPlans, type ViewEdit } from "@/lib/view-edit";
+import { describeScreenAsk, readScreenAsk, screenHref } from "@/lib/screen";
 import { tryDesign } from "@/lib/tryout";
 import { PROMPTS, guideFor, guideVersion, outcomeOf, promptFor, type ToolLine } from "@/lib/client-guide";
 import { blueprintAsText, runTurn, schemasFor, storeFactsFor } from "@/lib/engine";
@@ -340,6 +341,41 @@ const TOOLS = [
         request: {
           type: "string",
           description: "What the merchant asked for, in their own words, for the approval card. Optional.",
+        },
+        project_id: { type: "string", description: "Which app, when they have more than one. Optional." },
+      },
+      required: ["section"],
+    },
+  },
+  {
+    name: "show_on_screen",
+    description:
+      "Open one of their sections set up the way they asked to see it, or with a new row's form filled in from details they gave you (a customer's message, a note), for them to check and save. Nothing is saved or changed: it returns a link for them to tap, and a filled form waits for their own Add row. The same as asking Luke with the section open. Call read_section first for its fields and its filters' choices; what the section does not have comes back in not_done, with why.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        section: { type: "string", description: "The section's name, as read_section lists it." },
+        search: { type: "string", description: "Words to search its rows for." },
+        filters: {
+          type: "object",
+          additionalProperties: { type: "string" },
+          description:
+            'Its own filters set: { "<field>": "<one of that filter\'s choices>" }. Those left out show everything.',
+        },
+        sort: {
+          type: "object",
+          properties: { field: { type: "string" }, dir: { type: "string", enum: ["asc", "desc"] } },
+          required: ["field"],
+        },
+        period: {
+          description:
+            'Its dates, when it has a date picker: { "days": N } for one of its presets, { "named": "yesterday" | "this_week" | "last_week" | "this_month" | "last_month" | "this_year" }, { "from": "YYYY-MM-DD", "to": "YYYY-MM-DD" }, or "all".',
+          anyOf: [{ type: "object" }, { type: "string", enum: ["all"] }],
+        },
+        add: {
+          type: "object",
+          description:
+            'A new row to put in, { "<field>": value }, each as the field holds it (a number, "YYYY-MM-DD", true or false, one of a dropdown\'s choices); a link field is the words of the row it points at ("#1042"). Leave out what they did not give.',
         },
         project_id: { type: "string", description: "Which app, when they have more than one. Optional." },
       },
@@ -707,6 +743,39 @@ type Seen = { db?: SupabaseClient; callId?: number };
  * Records a call and says whether it was allowed: with the guide and the
  * row's id since 0180, as before it until that has run.
  */
+/** The app and the section a tool's arguments name (section, project_id), or what to say back when they name none. */
+async function sectionNamed(
+  db: SupabaseClient,
+  args: Record<string, unknown>
+): Promise<{ project: ProjectRow; moduleList: ModuleRow[]; section: ModuleRow } | { error: Json }> {
+  const { data: projects } = await db.from("projects").select("*");
+  const list = (projects ?? []) as ProjectRow[];
+  const wantedProject = (args.project_id as string | undefined)?.trim();
+  const project = wantedProject ? list.find((p) => p.id === wantedProject) : list.length === 1 ? list[0] : null;
+  if (!project)
+    return {
+      error: {
+        error: list.length ? "Which app is this for? Pass project_id." : "This account has no app yet.",
+        projects: list.map((p) => ({ id: p.id, name: p.name })),
+      },
+    };
+  const { data: modules } = await db
+    .from("modules")
+    .select("*")
+    .eq("project_id", project.id)
+    .order("sort_order", { ascending: true });
+  const moduleList = (modules ?? []) as ModuleRow[];
+  const asked = String(args.section ?? "")
+    .trim()
+    .toLowerCase();
+  const section =
+    moduleList.find((m) => m.nav_label.toLowerCase() === asked) ??
+    moduleList.find((m) => m.name.toLowerCase() === asked);
+  if (!section)
+    return { error: { error: `No section called "${args.section}".`, sections: moduleList.map((m) => m.nav_label) } };
+  return { project, moduleList, section };
+}
+
 async function record(db: SupabaseClient, tool: string, seen: Seen) {
   const now = await db.rpc("abo_mcp_record", { p_tool: tool, p_guide: GUIDE_VERSION });
   if (!now.error) {
@@ -1590,6 +1659,44 @@ async function handle(req: Request, seen: Seen) {
       return ok(id, text({ guide: await guideFor(db, TOOL_LINES), version: GUIDE_VERSION }));
     }
 
+    if (name === "show_on_screen") {
+      // Refused before anything is read (the AI stack's rule 8).
+      if (!String(args.section ?? "").trim()) return ok(id, text({ error: "Which section? Pass section." }));
+      const found = await sectionNamed(db, args);
+      if ("error" in found) return ok(id, text(found.error));
+      const { project, section } = found;
+      // Held to the section as it is, by the code Luke's own answers go through (lib/screen.ts).
+      const target = {
+        id: section.id,
+        name: section.nav_label,
+        schema: (await schemasFor(db, [section])).get(section.id) ?? null,
+        canAdd: !section.source_table,
+      };
+      const { ask, left } = readScreenAsk(args, target);
+      if (!ask) {
+        return ok(
+          id,
+          text({
+            error: left.length
+              ? `Nothing of this can be done on "${section.nav_label}".`
+              : "Nothing asked: pass search, filters, sort, period or add.",
+            ...(left.length ? { not_done: left } : {}),
+          })
+        );
+      }
+      return ok(
+        id,
+        text({
+          link: `${new URL(req.url).origin}${screenHref(project.id, ask)}`,
+          shows: describeScreenAsk(ask, target),
+          ...(left.length ? { not_done: left } : {}),
+          note: ask.add
+            ? "Nothing is saved until they check the form and press Add row. Give them the link."
+            : "Nothing is saved or changed: the link only opens the section this way. Give them the link.",
+        })
+      );
+    }
+
     if (name === "edit_view") {
       // Refused before anything is read (the AI stack's rule 8).
       if (!String(args.section ?? "").trim()) return ok(id, text({ error: "Which section? Pass section." }));
@@ -1599,40 +1706,9 @@ async function handle(req: Request, seen: Seen) {
         ["sort", args.sort === undefined || args.sort === null || typeof args.sort === "object"],
       ] as const)
         if (!ok_) return ok(id, text({ error: `${part} is not in the shape edit_view takes: see its description.` }));
-      const { data: projects } = await db.from("projects").select("*");
-      const list = (projects ?? []) as ProjectRow[];
-      const wantedProject = (args.project_id as string | undefined)?.trim();
-      const project = wantedProject ? list.find((p) => p.id === wantedProject) : list.length === 1 ? list[0] : null;
-      if (!project) {
-        return ok(
-          id,
-          text({
-            error: list.length ? "Which app is this for? Pass project_id." : "This account has no app yet.",
-            projects: list.map((p) => ({ id: p.id, name: p.name })),
-          })
-        );
-      }
-      const { data: modules } = await db
-        .from("modules")
-        .select("*")
-        .eq("project_id", project.id)
-        .order("sort_order", { ascending: true });
-      const moduleList = (modules ?? []) as ModuleRow[];
-      const asked = String(args.section ?? "")
-        .trim()
-        .toLowerCase();
-      const section =
-        moduleList.find((m) => m.nav_label.toLowerCase() === asked) ??
-        moduleList.find((m) => m.name.toLowerCase() === asked);
-      if (!section) {
-        return ok(
-          id,
-          text({
-            error: `No section called "${args.section}".`,
-            sections: moduleList.map((m) => m.nav_label),
-          })
-        );
-      }
+      const found = await sectionNamed(db, args);
+      if ("error" in found) return ok(id, text(found.error));
+      const { project, moduleList, section } = found;
       const schema = (await schemasFor(db, [section])).get(section.id);
       if (!schema) return ok(id, text({ error: `"${section.nav_label}" has no columns to change.` }));
 

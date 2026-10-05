@@ -35,6 +35,19 @@ const ASKED_TO_BUILD =
   /^(can|could|will|would|please|pls|plz|what if|how about|is it possible|would it be possible|i want|i need|i wish|mujhe|kya (hum|main|aap|ye|yeh|isme|ismein))\b[^.?!]{0,60}\b(add|build|make|create|remove|delete|rename|change|design|track|scan|automate|banao|bana ?do|jodo|hatao|badlo|lagao|chahiye|ho sakta|kar sakte)\b/i;
 const GREETING =
   /^(hi+|hello|hey+|yo|namaste|namaskar|thanks?|thank you|thx|ok(ay)?|good (morning|evening|afternoon|night)|bye|hola|sup)\b/i;
+/**
+ * With a section open, asking to see its rows a certain way, or giving a
+ * row to put in (lib/screen.ts): "sirf COD wale dikhao", "filter by
+ * Pending", "Asha ka return add karo #1042", or a customer's message
+ * pasted on lines of its own. Luke does it on the screen, so it is talk.
+ */
+const ON_SCREEN =
+  /\b(show|only|just|sirf|bas|see|dekh\w*|dikha\w*|filter|sort|newest|oldest|latest|recent|first|pehle|naye|purane|search|find|dhoo?nd\w*|wale|wali|vale|add|daal\w*|dal ?do|jod ?do|jodo|entry|likh ?do|note ?kar|fill|bhar ?do)\b|\n/i;
+/** The app's own parts: asking to add or change one of these is a design, whatever else it says. */
+const APP_PART =
+  /\b(sections?|fields?|columns?|buttons?|rules?|filters?|tabs?|views?|boards?|calendar|dashboards?|screens?|automat\w*|alerts?|remind\w*|notif\w*|scan\w*|track\w*|options?|forms?|workflow)\b/i;
+const CHANGE_VERB =
+  /\b(add|build|make|create|remove|delete|drop|rename|change|edit|set ?up|enable|disable|move|reorder|banao|bana ?do|bnao|jodo|jod ?do|hatao|hata ?do|badlo|badal ?do|laga ?do|lagao)\b/i;
 
 export function roadFor(turn: {
   message: string;
@@ -42,12 +55,17 @@ export function roadFor(turn: {
   lastReplyType: LastReply;
   /** The question already read as one about a store list, by the router. */
   routed: boolean;
+  /** A section is open: Luke can do what they ask on its screen. */
+  open?: boolean;
 }): Road {
   const m = turn.message.trim();
   // Answers to Luke's questions, and a yes or no to a design, belong
   // to the design that asked: the stepper sends "Question\n→ answer".
   if (turn.lastReplyType === "clarify" || turn.lastReplyType === "blueprint" || /\n→ /.test(m)) return "design";
   if (turn.routed) return "talk";
+  // On the screen open, unless it also asks to add or change a part of
+  // the app ("add a filter for COD"): the talk road hands a build back.
+  if (turn.open && ON_SCREEN.test(m) && !(CHANGE_VERB.test(m) && APP_PART.test(m))) return "talk";
   const words = m.split(/\s+/).length;
   // "ok add the RTO field" starts like a greeting and is not one.
   if (GREETING.test(m) && words <= 6 && !BUILD.test(m)) return "talk";
