@@ -123,7 +123,10 @@ console.log("\nwhat the model is told");
 console.log("\nwhat of the answer is kept");
 {
   const row = { message: "…", issue: "", order_no: "" };
-  const kept = readFill('{"issue": "late", "order_no": "#1042"}', schema, "Complaints", fill(), row);
+  const kept = readFill('{"issue": "late", "order_no": "#1042"}', schema, "Complaints", fill(), {
+    ...row,
+    message: "Order #1042 late",
+  });
   check("a choice, spelled as set up", kept.set.issue === "Late");
   check("a value taken out of the words", kept.set.order_no === "#1042");
   const off = readFill('{"issue": "Lost in transit"}', schema, "Complaints", fill(), row);
@@ -156,6 +159,21 @@ console.log("\nwhat of the answer is kept");
     "an answer that is not JSON fills nothing",
     Object.keys(readFill("Sure! Issue: Late", schema, "C", fill(), row).set).length === 0
   );
+  const madeUp = readFill('{"order_no": "#9999"}', schema, "C", fill(), {
+    message: "Order #1042 aaya hi nahi",
+    issue: "",
+    order_no: "",
+  });
+  check(
+    "a value not in the words is not kept: taken, never made up",
+    !("order_no" in madeUp.set) && madeUp.left.some((l) => /not in the words/.test(l))
+  );
+  const spaced = readFill('{"order_no": "1042"}', schema, "C", fill(), {
+    message: "order no 10 42 please",
+    issue: "",
+    order_no: "",
+  });
+  check("found however it is spaced", spaced.set.order_no === "1042");
   check(
     "a fenced answer is read",
     readFill('```json\n{"issue": "Late"}\n```', schema, "C", fill(), row).set.issue === "Late"
