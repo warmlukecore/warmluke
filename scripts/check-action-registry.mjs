@@ -213,7 +213,9 @@ console.log("\nand what the pages promise is what the registry holds");
     "src/components/ConnectShopify.tsx": ["whatCanChange"],
     "src/app/page.tsx": ["whatCanChange", "whatNeverChanges"],
     "src/app/terms/page.tsx": ["whatCanChange", "whatNeverChanges"],
-    "src/app/api/mcp/route.ts": ["whatCanChange", "whatNeverChanges"],
+    // What a connected AI is told on connecting, from the guide (lib/client-guide), and the route still never claims otherwise.
+    "src/lib/client-guide.ts": ["whatCanChange", "whatNeverChanges"],
+    "src/app/api/mcp/route.ts": [],
   };
   for (const [file, uses] of Object.entries(SURFACES)) {
     const src = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");

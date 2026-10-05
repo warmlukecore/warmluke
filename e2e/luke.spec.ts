@@ -428,6 +428,9 @@ test("the empty panel offers what this store's own numbers show, and sends it", 
   // these come from the store's own counts (lib/suggest.ts, 5 Oct).
   await page.goto(`/app/${shop.projectId}`);
   const { panel } = await luke(page);
+  // An empty thread: the newest one is open, and a test before this one may have asked in it.
+  const fresh = panel.getByRole("button", { name: "New conversation" });
+  if (await fresh.count()) await fresh.click();
   await expect(panel.getByText("From your store")).toBeVisible();
   const first = panel.getByRole("group", { name: "Ask next" }).getByRole("button").first();
   await expect(first).toHaveAccessibleName(/^Ask: (Set up|Track|Tell me|Make|Show)/);

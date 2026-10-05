@@ -13,7 +13,7 @@
 //
 // Callers: src/components/RecordModal.tsx, src/components/AutomationsPanel.tsx (and placeBy: ui/DateField.tsx).
 
-import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import { field, menu, menuItem } from "@/components/ui/controls";
 
@@ -35,24 +35,45 @@ export function placeBy(button: HTMLElement | null, height: number): CSSProperti
     : { position: "fixed", left, minWidth: at.width, top: at.bottom + 4 };
 }
 
-/** While open: a click elsewhere, or the page under it scrolling or resizing, closes it. */
-export function useCloseAway(open: boolean, box: { current: HTMLElement | null }, setOpen: (open: boolean) => void) {
+/**
+ * While open: a click elsewhere, or the window resizing, closes it. When
+ * what carries its button scrolls (the page, a dialog's body), it follows
+ * the button, and closes only once the button is off the screen: a tap on
+ * a phone lands while a sheet is still coasting from the swipe, and the
+ * list shut as it opened (5 Oct). Its own list scrolling, or another part
+ * of the page scrolling by itself (Luke's thread going to a new message),
+ * moves nothing under it.
+ */
+export function useCloseAway(
+  open: boolean,
+  box: { current: HTMLElement | null },
+  setOpen: (open: boolean) => void,
+  /** Puts the list or month back beside its button. */
+  follow?: () => void
+) {
   useEffect(() => {
     if (!open) return;
     const away = (e: Event) => {
       if (!box.current?.contains(e.target as Node)) setOpen(false);
     };
     const resized = () => setOpen(false);
+    const moved = (e: Event) => {
+      const t = e.target;
+      const at = box.current;
+      if (!(t instanceof Node) || !at || at.contains(t) || !t.contains(at)) return;
+      const r = at.getBoundingClientRect();
+      if (!follow || r.bottom < 0 || r.top > window.innerHeight) setOpen(false);
+      else follow();
+    };
     document.addEventListener("mousedown", away);
-    // Its own list scrolling is not the page moving under it.
-    window.addEventListener("scroll", away, true);
+    window.addEventListener("scroll", moved, true);
     window.addEventListener("resize", resized);
     return () => {
       document.removeEventListener("mousedown", away);
-      window.removeEventListener("scroll", away, true);
+      window.removeEventListener("scroll", moved, true);
       window.removeEventListener("resize", resized);
     };
-  }, [open, box, setOpen]);
+  }, [open, box, setOpen, follow]);
 }
 
 export function Select({
@@ -122,9 +143,19 @@ export function Select({
     );
     return () => clearTimeout(t);
   }, [open, q, search]);
-  useCloseAway(open, box, setOpen);
+  const follow = useCallback(() => setPlace(placeBy(trigger.current, 232)), []);
+  useCloseAway(open, box, setOpen, follow);
+  // The choice in hand kept in sight by scrolling the list alone. scrollIntoView
+  // moved what scrolls around it too, a dialog's body on a phone, and the
+  // page moving under the list closes it (useCloseAway): it shut as it opened.
   useEffect(() => {
-    if (open) list.current?.children[active]?.scrollIntoView({ block: "nearest" });
+    const ul = list.current;
+    const row = ul?.children[active];
+    if (!open || !ul || !row) return;
+    const r = row.getBoundingClientRect();
+    const u = ul.getBoundingClientRect();
+    if (r.top < u.top) ul.scrollTop -= u.top - r.top;
+    else if (r.bottom > u.bottom) ul.scrollTop += r.bottom - u.bottom;
   }, [open, active]);
 
   const show = () => {

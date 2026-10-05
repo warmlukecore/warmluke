@@ -43,6 +43,12 @@ export interface SchemaColumn {
    * when I open the row" is a hidden column (Tanish, 3 Oct).
    */
   hidden?: boolean;
+  /**
+   * The owner renamed it (Customize, lib/view-edit). On a store column
+   * this name is kept over ours; a saved label without it is ours from
+   * the day it was saved, and is not (lib/store-read storeSectionColumns).
+   */
+  named?: boolean;
 }
 
 // ── Automations: business logic as expression trees ──────────

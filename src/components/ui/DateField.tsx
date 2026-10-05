@@ -6,7 +6,7 @@
 //
 // Callers: src/components/RecordModal.tsx.
 
-import { useRef, useState, type CSSProperties } from "react";
+import { useCallback, useRef, useState, type CSSProperties } from "react";
 import { DayPicker } from "react-day-picker";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { button, field, menu } from "@/components/ui/controls";
@@ -37,7 +37,8 @@ export function DateField({
   const day = /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : "";
   const shown = day ? asDate(day).toLocaleDateString(locale, { day: "numeric", month: "short", year: "numeric" }) : "";
 
-  useCloseAway(open, box, setOpen);
+  const follow = useCallback(() => setPlace({ ...placeBy(trigger.current, 360), minWidth: undefined }), []);
+  useCloseAway(open, box, setOpen, follow);
 
   const show = () => {
     setPlace({ ...placeBy(trigger.current, 360), minWidth: undefined });

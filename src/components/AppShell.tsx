@@ -30,6 +30,7 @@ import { LinkProvider, type LinkOption, type LinkOptions, type LinkSource } from
 import { labelForRow, type LinkTarget } from "@/lib/links";
 import { asksFromStore, type StoreSignals } from "@/lib/suggest";
 import ModuleSettings from "@/components/ModuleSettings";
+import ViewEditor from "@/components/ViewEditor";
 import NewSection from "@/components/NewSection";
 import StoreStrip from "@/components/StoreStrip";
 import StoreSwitcher from "@/components/StoreSwitcher";
@@ -93,6 +94,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
+  SlidersHorizontal,
   Compass,
   Users,
   Zap,
@@ -377,33 +379,32 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   const [recordTotal, setRecordTotal] = useState(0);
   const [linkOptions, setLinkOptions] = useState<LinkOptions>({});
   // What the empty Luke panel offers to ask, from this store's own numbers
-  // (lib/suggest.ts): counted once a store is open, never for a need a
-  // section already meets.
-  const [signals, setSignals] = useState<StoreSignals | null>(null);
-  useEffect(() => {
-    if (!storeId) {
-      setSignals(null);
-      return;
-    }
-    let live = true;
-    void storeSignals(supabase, storeId)
-      .then((s) => {
-        if (live) setSignals(s);
-      })
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
+  // (lib/suggest.ts), never for a need a section already meets. Counted
+  // once the empty panel is on screen to offer them, once a store: a thread
+  // already open never shows them, and every open of the app read the
+  // orders three times for them. Kept with their store, so another store's
+  // are never offered while this one's are counted.
+  const [signals, setSignals] = useState<{ store: string; counted: StoreSignals } | null>(null);
+  const signalsAsked = useRef<string | null>(null);
+  const countSignals = useCallback(() => {
+    if (!storeId || signalsAsked.current === storeId) return;
+    const store = storeId;
+    signalsAsked.current = store;
+    void storeSignals(supabase, store)
+      .then((counted) => setSignals({ store, counted }))
+      .catch(() => {
+        if (signalsAsked.current === store) signalsAsked.current = null;
+      });
   }, [storeId]);
   const suggestions = useMemo(
     () =>
-      signals
+      signals && signals.store === storeId
         ? asksFromStore(
-            signals,
+            signals.counted,
             modules.map((m) => m.nav_label)
           )
         : [],
-    [signals, modules]
+    [signals, storeId, modules]
   );
   // What each link points at, for narrowing and filling (lib/links.ts).
   const [linkTargets, setLinkTargets] = useState<Record<string, LinkTarget>>({});
@@ -414,6 +415,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   const [loadError, setLoadError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
+  // Customize: the section's look changed by its owner, without Luke (ViewEditor).
+  const [customizing, setCustomizing] = useState(false);
   // Below lg the three panes become drawers: the phone shows one at a time.
   const [navOpen, setNavOpen] = useState(false);
   // Which pane has a wide screen: all three, the section alone, or Luke
@@ -3564,6 +3567,17 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     <span className="hidden sm:inline">Share</span>
                   </button>
                 )}
+                {selectedModule && mine(selectedModule) && schema && loadedFor === selectedModule.id && (
+                  <button
+                    onClick={() => setCustomizing(true)}
+                    aria-label="Customize"
+                    title="Rename, hide or move columns, and choose filters and order"
+                    className={button("secondary")}
+                  >
+                    <SlidersHorizontal aria-hidden size={15} strokeWidth={1.75} />
+                    <span className="hidden sm:inline">Customize</span>
+                  </button>
+                )}
                 {(isOwner || mine(selectedModule)) && (
                   <button onClick={() => setRulesOpen(true)} title="Rules" className={button("secondary")}>
                     <Zap aria-hidden size={15} strokeWidth={1.75} />
@@ -3775,6 +3789,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               <ChatPanel
                 projectId={projectId}
                 suggestions={suggestions}
+                onEmpty={countSignals}
                 onReadSection={readSection}
                 onPeekSection={peekSection}
                 openSectionId={selectedModuleId}
@@ -3862,6 +3877,26 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 setSelectedModuleId(m.id);
               }}
               onClose={() => setNewSectionParent(undefined)}
+            />
+          )}
+          {customizing && schema && selectedModule && (
+            <ViewEditor
+              sectionName={selectedModule.nav_label}
+              moduleId={selectedModule.id}
+              schema={schema.schema_json}
+              records={records}
+              facets={facets}
+              onSave={async (plans) => {
+                // The owner's own edit: checked and kept as any change is, with no model asked.
+                const { ok, data } = await apiFetch("/api/apply", { projectId, plans, by: "user" });
+                if (!ok)
+                  return Array.isArray(data.errors) && data.errors.length
+                    ? data.errors.map(String)
+                    : [String(data.error ?? "That didn't save.")];
+                await loadModuleData(selectedModule.id);
+                return [];
+              }}
+              onClose={() => setCustomizing(false)}
             />
           )}
           {moduleSettingsFor && (

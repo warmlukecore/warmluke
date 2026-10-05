@@ -949,15 +949,34 @@ export function ownColumns(table: StoreTable, columns: SchemaColumn[]): SchemaCo
  * columns", for the screen, for Luke and for the validator alike.
  */
 export function storeSectionColumns(table: StoreTable, saved: SchemaColumn[] | null | undefined): SchemaColumn[] {
-  // The store's own columns are always ours, in our order: one taken off
-  // the table is hidden, never gone, and that is kept from what was saved.
-  const hidden = new Set((saved ?? []).filter((c) => c?.hidden).map((c) => c.field));
-  const theirs = STORE_TABLES[table].columns.map((t) => (hidden.has(t.field) ? { ...t, hidden: true } : t));
+  // The store's own columns are always there, with our types: one taken
+  // off the table is hidden, never gone. What the owner made of them is
+  // kept from what was saved: where each sits, whether it is on the
+  // table, and a name they gave it (Customize, 5 Oct; before, a moved or
+  // renamed store column went back on the next load). Only a name they
+  // gave: a saved label otherwise is ours from the day it was saved, and
+  // ours get corrected (customers and products once had theirs swapped).
+  // One the saved list never placed goes after the one before it in our
+  // order, or first: a design naming only the merchant's own fields shows
+  // the store's columns first and theirs after, and a column the store
+  // gained since lands where it belongs among the rest.
+  const ours = STORE_TABLES[table].columns;
   const own = canCarryOwnFields(table);
-  const added = (saved ?? []).filter(
-    (c) => c && typeof c.field === "string" && !theirs.some((t) => t.field === c.field) && (c.compute || own)
-  );
-  return [...theirs, ...added];
+  const out: SchemaColumn[] = [];
+  for (const c of saved ?? []) {
+    if (!c || typeof c.field !== "string" || out.some((o) => o.field === c.field)) continue;
+    const t = ours.find((x) => x.field === c.field);
+    if (t) {
+      const kept: SchemaColumn = c.named && c.label?.trim() ? { ...t, label: c.label, named: true } : { ...t };
+      out.push(c.hidden ? { ...kept, hidden: true } : kept);
+    } else if (c.compute || own) out.push(c);
+  }
+  for (const [i, t] of ours.entries()) {
+    if (out.some((o) => o.field === t.field)) continue;
+    const before = ours.slice(0, i).findLast((p) => out.some((o) => o.field === p.field));
+    out.splice(before ? out.findIndex((o) => o.field === before.field) + 1 : 0, 0, t);
+  }
+  return out;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

@@ -146,7 +146,13 @@ over the distinct lessons used in the window; each store's counts,
 newest first, up to 200; and the 20 active lessons most used across stores by their shared name.
 `abo_admin_learning_project(p_project, p_days)` opens one store (`?project=`): every lesson and
 skill in any status, its timeline (newest 300, a patch with its version counted) and its owner's
-verdicts on replies (newest 100). **Agents** (`abo_admin_agents(p_days)`, 0176) says how each of
+verdicts on replies (newest 100). **Their AI** (`abo_admin_their_ai(p_days)`, 0180) reads the
+calls an outside assistant made (a client id on the token): the same figures by guide version,
+by week, by tool and in all (connections, accounts, designs drawn and refused, problems a
+refusal listed, designs Luke changed before the merchant saw them, free view edits, designs
+asked of Luke, undos, errors), each tool's outcomes as the rows hold them, and the requests
+it raised by status; the guide itself is shown as served, from `how_to_help` and
+`prompts/list`. **Agents** (`abo_admin_agents(p_days)`, 0176) says how each of
 Luke's agents did, from the traces and the learning timeline: plan, design, validator, critic,
 gap, memory, reflect and the shadow judge, each with its runs, how they came out, its metered
 calls, tokens and dollars (null where nothing was metered), and each road's turns with their p50

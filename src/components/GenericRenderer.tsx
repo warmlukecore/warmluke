@@ -9,6 +9,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { filterOptions, matchesFilter } from "@/lib/filters";
+import { filterIsOff } from "@/lib/view-edit";
 import ErrorNote from "@/components/ErrorNote";
 import { asError } from "@/lib/errors";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -342,6 +343,8 @@ export default function GenericRenderer({
   // A yes/no column filters as a tick: Yes, or every row not ticked.
   const yesNo = (f: string) => columns.some((c) => c.field === f && c.type === "boolean");
   const features: FeatureSchema | null = (schema as UiSchema & { features?: FeatureSchema | null })?.features ?? null;
+  // On the bar: one taken off it with Customize keeps its choices for the row form (lib/view-edit).
+  const barFilters = (features?.filters ?? []).filter((f) => !filterIsOff(f));
 
   const [search, setSearch] = useState("");
   // The group a scan opened (scanMode.first): while it is open the
@@ -849,7 +852,7 @@ export default function GenericRenderer({
         }
       >
         {/* Only with something in it to use: a bar holding a lone "Table" said nothing. */}
-        {!custom && (searchable || (features?.filters?.length ?? 0) > 0 || editable) && (
+        {!custom && (searchable || barFilters.length > 0 || editable) && (
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-2.5">
             {searchable && (
               <input
@@ -864,7 +867,7 @@ export default function GenericRenderer({
                 className={`${fieldOf("md")} w-full min-w-0 sm:w-60`}
               />
             )}
-            {(features?.filters ?? []).map((fl) => (
+            {barFilters.map((fl) => (
               <FilterMenu
                 key={fl.field}
                 label={fl.label}

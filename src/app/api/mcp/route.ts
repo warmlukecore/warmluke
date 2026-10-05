@@ -7,12 +7,15 @@ import {
   isStoreTable,
   listStores,
   ownColumns,
+  readStorePage,
   readStoreRows,
   storeSectionColumns,
   storeSignals,
   withOwnFields,
 } from "@/lib/store-read";
 import { asksFromStore } from "@/lib/suggest";
+import { viewEditPlans, type ViewEdit } from "@/lib/view-edit";
+import { PROMPTS, guideFor, guideVersion, outcomeOf, promptFor, type ToolLine } from "@/lib/client-guide";
 import { blueprintAsText, runTurn, schemasFor, storeFactsFor } from "@/lib/engine";
 import { describeBuild } from "@/lib/judge";
 import { DESIGN_VIEW_MIME, DESIGN_VIEW_URI, designViewHtml, type ViewDesign } from "@/lib/design-view";
@@ -30,7 +33,7 @@ import {
   stepsToFinishAction,
   type RuleRow,
 } from "@/lib/describe";
-import { actionSpec, whatCanChange, whatNeverChanges } from "@/lib/store-actions";
+import { actionSpec } from "@/lib/store-actions";
 import { applyPlans, logClientBuild, putBack } from "@/lib/apply";
 import { undoableFrom } from "@/lib/undo";
 import { STORE_TOOLS, storeTool, type StoreTool } from "@/lib/store-tools";
@@ -115,6 +118,12 @@ const forMcp = (t: StoreTool) => ({
 const TOOLS = [
   // The store's reading tools, declared once in store-tools and shared with Luke.
   ...STORE_TOOLS.map(forMcp),
+  {
+    name: "how_to_help",
+    description:
+      "Read this first: how to help this merchant well, as Warmluke's own designer does, which tool is for what, and what it has learned about how they work. The same guide this server gives when you connect, for an assistant that did not read it.",
+    inputSchema: { type: "object", properties: {} },
+  },
   {
     name: "read_section",
     description:
@@ -288,6 +297,55 @@ const TOOLS = [
     },
   },
   {
+    name: "edit_view",
+    _meta: { ui: { resourceUri: DESIGN_VIEW_URI }, "openai/outputTemplate": DESIGN_VIEW_URI },
+    description:
+      "Change how a section looks, with nothing designed and nothing charged: rename its columns, take one off the table or put it back (a column off the table is still in the row when it is opened), put them in another order, choose which columns are filters above the table, and the order its rows open in. The same as Customize in Warmluke. Call read_section first for its columns. It goes in front of the merchant as any change does: built at once if they turned on automatic builds, otherwise read it back and call approve_change. A filter offers the values its column's rows hold, and a yes/no column Yes and No; what cannot be a filter comes back with why. For a new field, a rule, or a change to what the section does, use propose_change.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        section: { type: "string", description: "The section's name, as read_section lists it." },
+        columns: {
+          type: "array",
+          description:
+            "Columns in the order to show them, each { field, label?, hidden? }. One left out keeps its name and comes after these. Leave the list out to keep the columns as they are.",
+          items: {
+            type: "object",
+            properties: {
+              field: { type: "string" },
+              label: { type: "string", description: "Its new name. Leave out to keep it." },
+              hidden: { type: "boolean", description: "true takes it off the table; false puts it back." },
+            },
+            required: ["field"],
+          },
+        },
+        filters: {
+          type: "array",
+          items: { type: "string" },
+          description: "The fields to filter by, in order: the whole list, [] for none. Leave out to keep them.",
+        },
+        sort: {
+          description:
+            'The order rows open in: { "field": "<a column>", "dir": "asc" | "desc" }, or null for the order they came in. Leave out to keep it.',
+          anyOf: [
+            {
+              type: "object",
+              properties: { field: { type: "string" }, dir: { type: "string", enum: ["asc", "desc"] } },
+              required: ["field"],
+            },
+            { type: "null" },
+          ],
+        },
+        request: {
+          type: "string",
+          description: "What the merchant asked for, in their own words, for the approval card. Optional.",
+        },
+        project_id: { type: "string", description: "Which app, when they have more than one. Optional." },
+      },
+      required: ["section"],
+    },
+  },
+  {
     name: "propose_store_action",
     description:
       "Ask for something to be changed IN the merchant's Shopify shop itself — a tag on some orders, a note, a stock count. Warmluke writes the sentence they will read, from the change, not from you. Nothing happens until they agree to it in Warmluke, and you cannot agree for them: a change to a live shop is theirs alone, whatever the app's auto-build setting says. Call it once per kind of change; the answer says what they have to do next. What can be asked for: " +
@@ -315,6 +373,10 @@ const TOOLS = [
     },
   },
 ] as const;
+
+/** The tools as the guide names them (lib/client-guide), and which guide that makes. */
+const TOOL_LINES: ToolLine[] = TOOLS.map((t) => ({ name: t.name, description: t.description }));
+const GUIDE_VERSION = guideVersion(TOOL_LINES);
 
 /**
  * The rules on a project, or on one section of it.
@@ -614,7 +676,54 @@ const ok = (id: RpcRequest["id"], result: Json) =>
 const rpcError = (id: RpcRequest["id"], code: number, message: string) =>
   NextResponse.json({ jsonrpc: "2.0", id, error: { code, message } });
 
+/**
+ * A call, recorded with the guide that was current (0180), and what came
+ * of it read off the answer after it has gone, for the console's Their AI
+ * screen. Nothing here decides the answer.
+ */
 export async function POST(req: Request) {
+  const seen: Seen = {};
+  const res = await handle(req, seen);
+  const { db, callId } = seen;
+  if (db && callId) {
+    after(async () => {
+      const { outcome, problems } = outcomeOf(
+        await res
+          .clone()
+          .json()
+          .catch(() => null)
+      );
+      await db.rpc("abo_mcp_outcome", { p_id: callId, p_outcome: outcome, p_problems: problems });
+    });
+  }
+  return res;
+}
+
+/** What the call left to note once it is answered: the row it was recorded as. */
+type Seen = { db?: SupabaseClient; callId?: number };
+
+/**
+ * Records a call and says whether it was allowed: with the guide and the
+ * row's id since 0180, as before it until that has run.
+ */
+async function record(db: SupabaseClient, tool: string, seen: Seen) {
+  const now = await db.rpc("abo_mcp_record", { p_tool: tool, p_guide: GUIDE_VERSION });
+  if (!now.error) {
+    const id = (now.data as { id?: number } | null)?.id;
+    if (typeof id === "number") Object.assign(seen, { db, callId: id });
+    return now;
+  }
+  return db.rpc("abo_mcp_call", { p_tool: tool });
+}
+
+/** A call that is not a tool's, recorded with what it came to at once: a connection, a prompt asked for. */
+async function noteNow(db: SupabaseClient, tool: string, outcome: string) {
+  const seen: Seen = {};
+  await record(db, tool, seen);
+  if (seen.callId) await db.rpc("abo_mcp_outcome", { p_id: seen.callId, p_outcome: outcome, p_problems: null });
+}
+
+async function handle(req: Request, seen: Seen) {
   // Required by the spec: without it a page on another origin could
   // drive an MCP server through someone's browser.
   const origin = req.headers.get("origin");
@@ -702,6 +811,8 @@ export async function POST(req: Request) {
   const { id, method, params = {} } = body;
 
   if (method === "initialize") {
+    // Which guide each connection was given, for the console (0180).
+    after(() => noteNow(db, "initialize", "connected"));
     // Negotiation proper: speak the client's revision when it is one we
     // were written against, otherwise name ours and let it decide.
     const asked = (params as { protocolVersion?: string }).protocolVersion;
@@ -711,20 +822,43 @@ export async function POST(req: Request) {
       capabilities: {
         tools: {},
         resources: {},
+        // Ready-made asks whose words come from the store's own numbers (lib/client-guide).
+        prompts: {},
         extensions: { "io.modelcontextprotocol/ui": { mimeTypes: [DESIGN_VIEW_MIME] } },
       },
       serverInfo: { name: "warmluke", version: "0.1.0" },
-      instructions:
-        // The first thing every connected assistant reads about this
-        // server. It said "store data is read-only" after the shop
-        // could be changed, which is the one sentence that guarantees
-        // an assistant never offers to. What can change comes off the
-        // registry, so it stays true as actions are added.
-        `One merchant's Warmluke app and connected Shopify store. A day always means a day in the store's own timezone. Changes to their app go through propose_change, which returns a design, and approve_change, which builds it only after they have heard the design and agreed. Changes to their shop go through propose_store_action: it can ${whatCanChange()}, and only the merchant can agree to one, in Warmluke — you cannot, whatever their settings say. It has no way to ${whatNeverChanges()} anything.`,
+      // The first thing every connected assistant reads: how to help them,
+      // from what Luke works to, and their own app and what Luke has learned
+      // there (lib/client-guide). What the shop allows still comes off the
+      // registry, so it stays true as actions are added.
+      instructions: await guideFor(db, TOOL_LINES),
     });
   }
 
   if (method === "ping") return ok(id, {});
+  if (method === "prompts/list") {
+    return ok(id, {
+      prompts: PROMPTS.map((p) => ({
+        name: p.name,
+        title: p.title,
+        description: p.description,
+        ...(p.arguments ? { arguments: p.arguments } : {}),
+      })),
+    });
+  }
+  if (method === "prompts/get") {
+    const { name: asked, arguments: given } = params as { name?: string; arguments?: Record<string, unknown> };
+    const args = Object.fromEntries(Object.entries(given ?? {}).map(([k, v]) => [k, String(v ?? "")]));
+    const found = await promptFor(db, String(asked ?? ""), args);
+    if (found) after(() => noteNow(db, `prompt:${found.prompt.name}`, "asked"));
+    if (!found) return rpcError(id, -32602, `No prompt "${asked}".`);
+    const missing = (found.prompt.arguments ?? []).filter((a) => a.required && !args[a.name]?.trim());
+    if (missing.length) return rpcError(id, -32602, `Say ${missing.map((a) => a.name).join(" and ")}.`);
+    return ok(id, {
+      description: found.prompt.description,
+      messages: [{ role: "user", content: { type: "text", text: found.text } }],
+    });
+  }
   if (method === "tools/list") return ok(id, { tools: TOOLS });
   // The design's preview: one page, the same for every design, which draws what each answer carries.
   if (method === "resources/list") {
@@ -757,9 +891,7 @@ export async function POST(req: Request) {
   // in a loop, and a limiter that only notices once the reads have
   // happened has already paid for them. The same row is the record of
   // what the assistant asked for.
-  const { data: allowance, error: callErr } = await db.rpc("abo_mcp_call", {
-    p_tool: name ?? "?",
-  });
+  const { data: allowance, error: callErr } = await record(db, name ?? "?", seen);
   if (callErr) return rpcError(id, -32603, callErr.message);
   const allowed = allowance as { ok: boolean; used: number; limit: number } | null;
   if (allowed && !allowed.ok) {
@@ -1451,6 +1583,120 @@ export async function POST(req: Request) {
             "Where these guides say CONTEXT, they mean the app's sections: call read_section to list them and their fields.",
         })
       );
+    }
+
+    if (name === "how_to_help") {
+      return ok(id, text({ guide: await guideFor(db, TOOL_LINES), version: GUIDE_VERSION }));
+    }
+
+    if (name === "edit_view") {
+      // Refused before anything is read (the AI stack's rule 8).
+      if (!String(args.section ?? "").trim()) return ok(id, text({ error: "Which section? Pass section." }));
+      for (const [part, ok_] of [
+        ["columns", args.columns === undefined || Array.isArray(args.columns)],
+        ["filters", args.filters === undefined || Array.isArray(args.filters)],
+        ["sort", args.sort === undefined || args.sort === null || typeof args.sort === "object"],
+      ] as const)
+        if (!ok_) return ok(id, text({ error: `${part} is not in the shape edit_view takes: see its description.` }));
+      const { data: projects } = await db.from("projects").select("*");
+      const list = (projects ?? []) as ProjectRow[];
+      const wantedProject = (args.project_id as string | undefined)?.trim();
+      const project = wantedProject ? list.find((p) => p.id === wantedProject) : list.length === 1 ? list[0] : null;
+      if (!project) {
+        return ok(
+          id,
+          text({
+            error: list.length ? "Which app is this for? Pass project_id." : "This account has no app yet.",
+            projects: list.map((p) => ({ id: p.id, name: p.name })),
+          })
+        );
+      }
+      const { data: modules } = await db
+        .from("modules")
+        .select("*")
+        .eq("project_id", project.id)
+        .order("sort_order", { ascending: true });
+      const moduleList = (modules ?? []) as ModuleRow[];
+      const asked = String(args.section ?? "")
+        .trim()
+        .toLowerCase();
+      const section =
+        moduleList.find((m) => m.nav_label.toLowerCase() === asked) ??
+        moduleList.find((m) => m.name.toLowerCase() === asked);
+      if (!section) {
+        return ok(
+          id,
+          text({
+            error: `No section called "${args.section}".`,
+            sections: moduleList.map((m) => m.nav_label),
+          })
+        );
+      }
+      const schema = (await schemasFor(db, [section])).get(section.id);
+      if (!schema) return ok(id, text({ error: `"${section.nav_label}" has no columns to change.` }));
+
+      const edit: ViewEdit = {
+        ...(Array.isArray(args.columns) ? { columns: args.columns as ViewEdit["columns"] } : {}),
+        ...(Array.isArray(args.filters) ? { filters: (args.filters as unknown[]).map(String) } : {}),
+        ...(args.sort !== undefined ? { sort: args.sort as ViewEdit["sort"] } : {}),
+      };
+      // What a filter could offer: the values its rows hold, the whole
+      // store list's for a section over the store.
+      const asks = edit.filters ?? [];
+      const values = new Map<string, string[]>();
+      if (asks.length) {
+        if (isStoreTable(section.source_table)) {
+          const page = await readStorePage(
+            db,
+            section.id,
+            section.source_table,
+            { page: 0, size: 25, search: "", filters: {}, sort: null },
+            schema.features ?? null,
+            schema.columns,
+            null,
+            asks
+          );
+          for (const [f, v] of Object.entries(page.facets)) values.set(f, v);
+        } else {
+          const { data: rows } = await db.from("records").select("data").eq("module_id", section.id).limit(500);
+          for (const f of asks)
+            values.set(
+              f,
+              (rows ?? []).flatMap((r) => {
+                const v = (r.data as Record<string, unknown> | null)?.[f];
+                return Array.isArray(v) ? v.map(String) : v == null || v === "" ? [] : [String(v)];
+              })
+            );
+        }
+      }
+      const { plans, said, errors } = viewEditPlans(section.id, schema, edit, (f) => values.get(f) ?? []);
+      if (errors.length) {
+        return ok(
+          id,
+          text({
+            status: "not accepted",
+            errors,
+            note: "Nothing has been requested or changed. Correct these and call edit_view again.",
+          })
+        );
+      }
+      if (plans.length === 0) {
+        return ok(id, text({ status: "nothing to change", note: `"${section.nav_label}" already looks like that.` }));
+      }
+      const request = String(args.request ?? "").trim() || `${section.nav_label}: ${said.join("; ")}`;
+      const settled = await settleDesign({
+        db,
+        origin: new URL(req.url).origin,
+        project,
+        moduleList,
+        plans,
+        design: blueprintAsText({ type: "plans", plans }, moduleList, null, []),
+        unmet: [],
+        request,
+        store: null,
+        later: (fn) => after(fn),
+      });
+      return ok(id, settled.answer);
     }
 
     if (name === "validate_design" || name === "submit_design") {

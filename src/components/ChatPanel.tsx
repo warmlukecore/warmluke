@@ -2144,6 +2144,7 @@ export default function ChatPanel({
   inr = null,
   onSend,
   suggestions = [],
+  onEmpty,
   onEditPrompt,
   onPeekSection,
   openSectionId = null,
@@ -2258,6 +2259,8 @@ export default function ChatPanel({
   onSend: (text: string) => Promise<void> | void;
   /** What the empty panel offers to ask, from the store's own numbers (lib/suggest.ts). */
   suggestions?: NextStep[];
+  /** Told once the empty welcome is on screen: the suggestions are counted only when they will be offered. */
+  onEmpty?: () => void;
   /**
    * Corrects a prompt already sent and runs it again. The shell owns
    * it because retiring the old exchange is a write, and because the
@@ -2903,6 +2906,12 @@ export default function ChatPanel({
     if (typed > was.typed && last?.role === "user") pin(last.id);
     else if (messages.length === 0) release();
   }, [messages, conversationId, pin, release]);
+
+  // The welcome is on screen: now the store's numbers are worth counting.
+  const welcome = messages.length === 0 && !threadOpening;
+  useEffect(() => {
+    if (welcome) onEmpty?.();
+  }, [welcome, onEmpty]);
   // A card their AI raised, arriving at the end: followed only by a list
   // already at its newest, and only down. Not a reply: that grows below
   // the pinned question, and following it would push the question away.

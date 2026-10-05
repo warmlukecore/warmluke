@@ -9,6 +9,7 @@
 
 import {
   Bot,
+  Cable,
   Coins,
   Compass,
   Eye,
@@ -68,6 +69,12 @@ export const CONSOLE_NAV: ConsoleGroup[] = [
         label: "Agents",
         icon: Bot,
         about: "How each of Luke's agents did: runs, verdicts, cost and time",
+      },
+      {
+        to: "their-ai",
+        label: "Their AI",
+        icon: Cable,
+        about: "What a merchant's own ChatGPT or Claude is told, and how its asks come out",
       },
       {
         to: "evals",

@@ -38,6 +38,8 @@ through owner-scoped RPCs and the built-in chat settings UI.
 | `low_stock`       | Read inventory at or below a threshold                                                                                                                                                                |                         No |
 | `store_metrics`   | A figure over the whole store: a measure by a dimension in a window (revenue by week, orders by city, new customers this month), counted in the database                                              |                         No |
 | `read_section`    | List/inspect generated sections and owner-managed rows (a section over the store: the store's rows with the merchant's own fields beside them); with `history`, the section's version history instead. Listed with no section, it also returns `suggested_from_the_store`: what the store's own numbers make worth building (`lib/suggest.ts`), as asks for `propose_change` |                         No |
+| `how_to_help`     | The guide their AI is given on connecting (below), for a client that does not read server instructions, with its version                                                                                |                         No |
+| `edit_view`       | How a section looks, with nothing designed or charged: names, columns on or off the table, their order, filters, the order rows open in (`lib/view-edit.ts`, the same as Customize in the app). Waits for the merchant's yes like any change, or builds at once with automatic builds on |     Creates a request only |
 | `undo_build`      | Reverse a build this client made, from what that build recorded                                                                                                                                       |                        Yes |
 | `propose_change`  | Run Warmluke's design engine and create an approval request                                                                                                                                           |     Creates a request only |
 | `pending_changes` | Read requests currently awaiting a decision                                                                                                                                                           |                         No |
@@ -66,9 +68,38 @@ project/shop selectors disambiguate accounts with more than one visible project 
 store. Tools impose bounded limits and return user-readable text plus structured data as
 appropriate.
 
-Every tool call passes through `abo_mcp_call`, which applies the current usage ceiling
-and records the authenticated user/client combination. A client cannot evade accounting
+Every tool call passes through `abo_mcp_record` (0180; `abo_mcp_call` before it), which
+applies the current usage ceiling and records the authenticated user/client combination,
+with the guide's version. Once the answer has gone, its outcome is read off the answer
+itself (`outcomeOf` in `lib/client-guide.ts`: the status it said, `luke changed it`, an
+error, or answered, with how many problems it listed) and kept on the same row by
+`abo_mcp_outcome`. A connection and a prompt asked for are recorded too. The console's
+**Their AI** screen reads it back by guide, by week and by tool. A client cannot evade accounting
 by changing a request argument because identity comes from the token.
+
+## What their AI is told
+
+On `initialize` the server's `instructions` are a guide (`lib/client-guide.ts`, 5 Oct),
+built from what Luke itself works to, so the merchant's own AI designs as Luke would
+rather than be sent back by Luke's checks:
+
+- how to help: hear the problem in their words, read before changing, say the plan back
+  in plain words and build on their yes;
+- the simpler builds, from the very list the simplicity reviewer reads (`SIMPLER_WAYS`,
+  `REAL_WORK` in `lib/reviewers.ts`), and edit_view for how a section looks;
+- what the shop allows, from the store-actions registry;
+- every tool, by the first sentence of its own description;
+- then this merchant: their apps and sections, and what Luke has learned about how they
+  work (`luke_skills`), said as facts and never as instructions.
+
+`how_to_help` returns the same guide. `prompts/list` and `prompts/get` offer ready-made
+asks (what to build, what needs them today, change how a section looks, fix a section,
+what runs on its own), whose words are built at the time asked: "what to build" carries
+the store's own numbers (`lib/suggest.ts`). The guide's version is a hash of everything
+but the merchant's part (`guideVersion`), so a change to a shared rule, a tool's words or
+a prompt makes a new version by itself, and each call is recorded under it.
+`check-client-guide` (pure) holds that the guide carries the reviewer's list, names only
+tools there are, and moves its version with our words and never a merchant's.
 
 ## Change workflows
 

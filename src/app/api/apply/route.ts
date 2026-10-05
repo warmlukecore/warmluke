@@ -9,7 +9,7 @@ import type { AssistantPlan, ModuleRow, NextStep } from "@/lib/types";
 export const runtime = "nodejs";
 
 /**
- * POST /api/apply — body: { projectId, plans, requestId?, thread? }
+ * POST /api/apply — body: { projectId, plans, requestId?, thread?, by? }
  *
  * The app's entrance to the builder. The work itself lives in
  * lib/apply, which the MCP approval path uses as well, so a change to
@@ -36,11 +36,13 @@ export async function POST(req: Request) {
     // The body before anything that waits: a browser that goes away
     // takes its unread body with it, and the build it asked for failed
     // to start. Read at once, the build carries on without it.
-    const { projectId, plans, requestId, thread } = (await req.json()) as {
+    const { projectId, plans, requestId, thread, by } = (await req.json()) as {
       projectId?: string;
       plans?: AssistantPlan[];
       requestId?: string;
       thread?: Thread;
+      /** "user" from Customize: the owner's own edit, not a design, in the version history. */
+      by?: string;
     };
     const auth = await getUserClient(req);
     if (!auth) {
@@ -79,7 +81,13 @@ export async function POST(req: Request) {
 
     const book = !requestId && thread?.conversationId ? await openBook(client, projectId, thread, plans.length) : null;
 
-    const { applied, errors, failedAt } = await applyPlans(client, projectId, plans, requestId ?? null);
+    const { applied, errors, failedAt } = await applyPlans(
+      client,
+      projectId,
+      plans,
+      requestId ?? null,
+      by === "user" && !requestId ? "user" : "ai"
+    );
 
     if (book) {
       if (applied.length === 0) {

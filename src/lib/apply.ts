@@ -438,9 +438,13 @@ export async function applyPlans(
   projectId: string,
   plans: AssistantPlan[],
   /** The approved request this build is spending, when a client asked. */
-  requestId: string | null = null
+  requestId: string | null = null,
+  /** Who the versions it writes are by: "user" for the owner's own edit (Customize), not a design. */
+  by: "ai" | "user" = "ai"
 ): Promise<ApplyOutcome> {
-  const write = writer(client, projectId, requestId);
+  const raw = writer(client, projectId, requestId);
+  const write: Write =
+    by === "user" ? (op, p) => raw(op, op === "schema_insert" ? { ...p, created_by: "user" } : p) : raw;
   const undo: Undo[] = [];
   const recorded = recording(client, projectId, write, undo);
   const applied: Array<Record<string, unknown>> = [];
@@ -771,10 +775,16 @@ async function validateAndApply(
   const sj = (latestRow?.schema_json ?? { columns: [] }) as SchemaJsonWithFeatures;
   const nextVersion = (latestRow?.version ?? 0) + 1;
 
+  // A column given a new name says so, whoever renamed it: on a section
+  // over the store that name is kept over ours (storeSectionColumns).
+  const columns = plan.newSchema.columns.map((c) => {
+    const was = currentSchema?.columns.find((x) => x.field === c.field);
+    return was && was.label !== c.label ? { ...c, named: true } : c;
+  });
   await write("schema_insert", {
     module_id: plan.targetModuleId!,
     schema_json: {
-      columns: plan.newSchema.columns,
+      columns,
       features: sj.features ?? null,
     } as SchemaJsonWithFeatures,
     version: nextVersion,

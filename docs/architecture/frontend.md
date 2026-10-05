@@ -114,7 +114,15 @@ An empty thread offers, under "From your store", up to three asks read off the s
 counts (`lib/suggest.ts` over `storeSignals`): its COD share, failed deliveries, refunds,
 low stock, late shipments, repeat customers, abandoned carts. Each is offered only when the
 store shows it and no section of theirs already meets it (by name); tapped, it is sent like
-any message. `read_section` gives the same list to an MCP client.
+any message. They are counted once the empty welcome is on screen, once a store (`onEmpty`), not on every load. `read_section` gives the same list to an MCP client.
+
+A section's header offers **Customize** to whoever made it (`ViewEditor`): each column's
+name, whether it is on the table and where, the filters above it (only columns whose rows
+give a choice: a tick, a status, a word with a few values) and the order rows open in.
+Saved through `/api/apply` with `by: "user"`, as the plans Luke would send (`lib/view-edit.ts`),
+so it is validated, kept as the owner's own version and put back by History; no model is
+asked. A status's filter taken off the bar keeps its choices for the row form. On a section
+over the store, a column keeps where the owner put it and a name they gave it (`named`).
 
 It also renders pending MCP-originated requests, build history, turn progress, undo
 controls, OAuth client connections, quotas, and feature-switch state. Plans are not
