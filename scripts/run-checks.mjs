@@ -72,6 +72,7 @@ const MODEL = new Set([
   "check-simplicity-eval",
   "check-ux-eval",
   "check-scenario-eval",
+  "check-store-columns-eval",
   "check-screen-eval",
   "check-examples-eval",
   "check-ai-fill-eval",

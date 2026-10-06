@@ -1747,7 +1747,7 @@ async function handle(req: Request, seen: Seen) {
           ),
           ...(narrowedLists().length
             ? {
-                store_columns_not_shown: `Warmluke shows this account only some of the store's columns on: ${narrowedLists().join("; ")}. The rest are not theirs to build on; if they ask for one, say it is not shown to them here.`,
+                store_columns_not_shown: `Warmluke shows this account only some of the store's columns on: ${narrowedLists().join("; ")}. What those columns hold is in nothing you read here, and they are not theirs to build on. If they ask for one, say that column is not shown to them here (Warmluke can turn it on), not that the store lacks it; never guess it or work it out from other columns.`,
               }
             : {}),
           // This store as it is: each list's fields with how full they are and their values.

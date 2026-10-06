@@ -360,9 +360,16 @@ default). `runTurn` reads the app's choice once (`abo_store_columns`) and runs i
 (`withStoreShown` in `src/lib/store-columns.ts`, AsyncLocalStorage, as the usage meter), so
 everything that names a list's columns names only those (`storeTableSchema`,
 `storeSectionColumns`, Scout's field-by-field store, each list's advice by sentence), the
-rows a lookup or the router reads are cut to them (`narrowRow`, `narrowResult`), the
-validator finds no other, and the brief says some are not shown so Luke says so rather than
-guess. `/api/apply` checks a design inside the same choice, and each MCP call opens it for the
+rows a lookup or the router reads are cut to them (`narrowRow`), and an answer shaped by hand
+(the snapshot's orders, an order with its customer and lines, low stock, the leaders) is cut
+by where each part comes from (`SHAPES` in `store-read.ts`, `narrowResult`): an order's
+`customer` by the customers list, its `financial_status` as the orders' Status. A total by a
+column not shown (`store_metrics` by city, by payment, in a window of dates) is refused, by
+what `STORE_METRIC_READS` says each reads. The validator finds no other column, and the brief
+names the columns not shown, so Luke says a column is not shown rather than that the store
+lacks it, and neither guesses it nor works it out from others. `check-store-columns-eval`
+(model tier, by hand) asks for a city, phones and cash on delivery with them left out, on
+production's models: 6 Oct, all said not shown, nothing guessed, $1.02 in all. `/api/apply` checks a design inside the same choice, and each MCP call opens it for the
 app it is about. A rule running on its own is in no request and reads its rows whole, so
 nothing built breaks. `check-store-columns` (pure), `check-store-columns-luke` (a turn, the
 model stood in for), `check-store-columns-mcp` and `check-store-columns-live` hold it.

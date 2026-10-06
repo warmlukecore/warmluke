@@ -15,6 +15,8 @@ import {
   hiddenColumns,
   isStoreTable,
   readShownFrom,
+  STORE_TABLES,
+  type ListShape,
   type ShownScope,
   type StoreShown,
   type StoreTable,
@@ -49,32 +51,47 @@ export function enterStoreShown(shown: StoreShown) {
   scope.enterWith({ shown, strip: true });
 }
 
-/** The lists narrowed, in words for Luke and their AI: "orders (8 of its columns not shown)". Empty when none is. */
+/**
+ * The lists narrowed, in words for Luke and their AI, each with the columns
+ * it is not shown by the names the app gives them: "orders (not shown:
+ * Phone, City)". Named, so a column left out is said to be left out rather
+ * than taken for one the store does not have; what it holds is in nothing.
+ * Empty when none is.
+ */
 export function narrowedLists(): string[] {
   const shown = scope.getStore()?.shown ?? {};
   return (Object.keys(shown) as StoreTable[])
     .map((t) => [t, hiddenColumns(t)] as const)
     .filter(([, hidden]) => hidden)
-    .map(([t, hidden]) => `${t} (${hidden!.size} of its columns not shown)`);
+    .map(
+      ([t, hidden]) =>
+        `${t} (not shown: ${STORE_TABLES[t].columns
+          .filter((c) => hidden!.has(c.field))
+          .map((c) => c.label)
+          .join(", ")})`
+    );
 }
 
 /**
- * A lookup's answer without what this account is not shown of `table`:
- * every key of that list's hidden columns, wherever it sits in the answer
- * (a row, a list of rows, an order with its lines).
+ * An answer without what this account is not shown, by where its parts come
+ * from (store-read SHAPES): a list's rows by that list, an order's customer
+ * by the customers list, a key called otherwise by the column it is. A list
+ * alone is its rows, keys named as its columns. Outside a request, as it is.
  */
-export function narrowResult(table: StoreTable | null, value: unknown): unknown {
-  const hidden = table && scope.getStore()?.strip ? hiddenColumns(table) : null;
-  if (!hidden) return value;
-  const cut = (v: unknown): unknown =>
-    Array.isArray(v)
-      ? v.map(cut)
-      : v && typeof v === "object"
-        ? Object.fromEntries(
-            Object.entries(v)
-              .filter(([k]) => !hidden.has(k))
-              .map(([k, x]) => [k, cut(x)])
-          )
-        : v;
-  return cut(value);
+export function narrowResult(shape: ListShape | StoreTable | null, value: unknown): unknown {
+  if (!shape || !scope.getStore()?.strip) return value;
+  return cut(typeof shape === "string" ? { list: shape } : shape, value);
+}
+
+function cut(shape: ListShape, value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((v) => cut(shape, v));
+  if (!value || typeof value !== "object") return value;
+  const hidden = shape.list ? hiddenColumns(shape.list) : null;
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([k, v]) => {
+      const inner = shape.nested?.[k];
+      if (inner) return [[k, cut(inner, v)]];
+      return hidden?.has(shape.names?.[k] ?? k) ? [] : [[k, cut(shape, v)]];
+    })
+  );
 }

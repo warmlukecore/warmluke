@@ -80,6 +80,26 @@ export const STORE_METRICS = {
   },
   filters: ["status", "gateway", "fulfilment", "city", "state", "product", "include_cancelled"],
 } as const;
+/**
+ * The orders column each measure, dimension and filter reads, and a window
+ * of dates reads placed_at: one the account is not shown (0192) is refused
+ * rather than counted, so a total never says what a hidden column holds.
+ * Counts of orders, items and customers read no column of the list.
+ */
+export const STORE_METRIC_READS: Record<string, string> = {
+  revenue: "total",
+  aov: "total",
+  day: "placed_at",
+  week: "placed_at",
+  month: "placed_at",
+  window: "placed_at",
+  city: "ship_city",
+  state: "ship_state",
+  gateway: "gateway",
+  status: "status",
+  fulfilment: "fulfilment_status",
+  customer: "customer_name",
+};
 export type StoreMeasure = keyof typeof STORE_METRICS.measures;
 export type StoreDimension = keyof typeof STORE_METRICS.dimensions;
 
@@ -946,6 +966,37 @@ export function hiddenColumns(table: StoreTable): Set<string> | null {
   const hidden = STORE_TABLES[table].columns.map((c) => c.field).filter((f) => !keep.includes(f));
   return hidden.length ? new Set(hidden) : null;
 }
+/**
+ * Where the parts of an answer come from (0192), for an answer shaped by
+ * hand rather than read off a list: the list its keys are columns of, what
+ * each key is called there when it is called something else, and what sits
+ * inside it from another list. What the account is not shown of each is cut
+ * by it (store-columns narrowResult); a key that is no column (a count, the
+ * shop) is kept.
+ */
+export type ListShape = { list?: StoreTable; names?: Record<string, string>; nested?: Record<string, ListShape> };
+const ORDER_SHAPE: ListShape = {
+  list: "orders",
+  names: { financial_status: "status", number: "order_number", placed: "placed_at" },
+  nested: { customer: { list: "customers" }, items: { list: "order_line_items" } },
+};
+const STOCK_SHAPE: ListShape = { list: "inventory_levels", names: { location: "location_name" } };
+export const SHAPES = {
+  /** searchOrders and orderDetail: an order, its customer (a customer's row) and its lines. */
+  order: ORDER_SHAPE,
+  /** lowStock: a stock row. */
+  stock: STOCK_SHAPE,
+  /** abo_sales_between: a product's sales. */
+  sold: { list: "product_sales" },
+  /** storeLeaders: the top customers, by their row's names, and the best sellers. */
+  leaders: {
+    nested: {
+      top_customers: { list: "customers", names: { orders: "orders_count", spent: "total_spent" } },
+      best_sellers: { list: "product_sales" },
+    },
+  },
+} satisfies Record<string, ListShape>;
+
 /**
  * A list's advice for whoever designs over it, without a sentence naming a
  * column this account is not shown: of this list, or of another it points

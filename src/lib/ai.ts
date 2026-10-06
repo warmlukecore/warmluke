@@ -105,6 +105,18 @@ const CHANGE_TYPES = [
  * One constant, two readers. Luke is told this and so is anybody
  * writing a design by hand, and neither can drift from the other.
  */
+/**
+ * A snapshot row's parts, in order, " · " between them, leaving out a part
+ * whose key the row does not carry: a column the account is not shown
+ * (0192) is cut from the row, and is not to be read as empty.
+ */
+function shownParts<T extends object>(row: T, parts: Partial<Record<keyof T, () => string>>): string {
+  return (Object.keys(parts) as Array<keyof T>)
+    .filter((k) => k in row)
+    .map((k) => parts[k]!())
+    .join(" · ");
+}
+
 export const PLAN_FORMAT = `Each plan must have exactly this shape:
 {
   "changeType": "UI_CHANGE" | "FIELD_ADD" | "NEW_MODULE" | "MODULE_UPDATE" | "MODULE_DELETE" | "FEATURE_UPDATE" | "RECORD_SEED" | "AUTOMATION_ADD" | "AUTOMATION_REMOVE",
@@ -599,7 +611,7 @@ function storeBlock(store: StoreContext | null, projectCurrency: string, road: "
   const narrowed = narrowedLists();
   if (narrowed.length > 0)
     lines.push(
-      `Warmluke shows this account only some of the store's columns on: ${narrowed.join("; ")}. The rest are in nothing you read here, and are not theirs to build on. If they ask for one, say it is not shown to them here (Warmluke can turn it on), and never guess its values.`
+      `Warmluke shows this account only some of the store's columns on: ${narrowed.join("; ")}. What those columns hold is in nothing you read here, and they are not theirs to build on. If they ask for one, say that column is not shown to them here (Warmluke can turn it on), not that the store lacks it; never guess its values, and never work them out from other columns either.`
     );
 
   // Scout (lib/scout): every list's fields as they are here. A database
@@ -643,7 +655,12 @@ function storeBlock(store: StoreContext | null, projectCurrency: string, road: "
       lines.push(`  Most recent ${snap.recent.length} orders (newest first):`);
       for (const o of snap.recent) {
         lines.push(
-          `    ${o.number} · ${o.placed ?? "no date"} · ${o.total ?? "?"} ${o.currency ?? store.currency} · ${o.status ?? "no status"}`
+          `    ${shownParts(o, {
+            number: () => `${o.number}`,
+            placed: () => o.placed ?? "no date",
+            total: () => `${o.total ?? "?"} ${o.currency ?? store.currency}`,
+            status: () => o.status ?? "no status",
+          })}`
         );
       }
     } else {
@@ -654,7 +671,11 @@ function storeBlock(store: StoreContext | null, projectCurrency: string, road: "
       lines.push(`  Running low (under 10), lowest first:`);
       for (const l of snap.low) {
         lines.push(
-          `    ${l.product}${l.variant ? ` / ${l.variant}` : ""} · ${l.location ?? "—"} · ${l.available} left`
+          `    ${shownParts(l, {
+            product: () => `${l.product}${l.variant ? ` / ${l.variant}` : ""}`,
+            location: () => l.location ?? "—",
+            available: () => `${l.available} left`,
+          })}`
         );
       }
     } else {
@@ -665,7 +686,11 @@ function storeBlock(store: StoreContext | null, projectCurrency: string, road: "
       lines.push(`  Top customers by lifetime spend — Shopify's figure over the whole shop, not these rows:`);
       for (const c of snap.top_customers) {
         lines.push(
-          `    ${c.name ?? "no name"} · ${c.orders} orders · ${c.spent === null ? "spend not synced yet" : `${c.spent} ${store.currency}`}`
+          `    ${shownParts(c, {
+            name: () => c.name ?? "no name",
+            orders: () => `${c.orders} orders`,
+            spent: () => (c.spent === null ? "spend not synced yet" : `${c.spent} ${store.currency}`),
+          })}`
         );
       }
     }
@@ -675,7 +700,11 @@ function storeBlock(store: StoreContext | null, projectCurrency: string, road: "
       );
       for (const b of snap.best_sellers) {
         lines.push(
-          `    ${b.title ?? "untitled"} · ${b.units} sold · ${b.revenue ?? "?"} ${b.currency ?? store.currency}`
+          `    ${shownParts(b, {
+            title: () => b.title ?? "untitled",
+            units: () => `${b.units} sold`,
+            revenue: () => `${b.revenue ?? "?"} ${b.currency ?? store.currency}`,
+          })}`
         );
       }
     }

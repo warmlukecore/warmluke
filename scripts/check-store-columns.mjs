@@ -14,6 +14,9 @@ import {
   storeSectionColumns,
   storeTableSchema,
   withoutHidden,
+  SHAPES,
+  STORE_METRICS,
+  STORE_METRIC_READS,
   STORE_TABLES,
 } from "../src/lib/store-read.ts";
 import { narrowResult, narrowedLists, withStoreShown } from "../src/lib/store-columns.ts";
@@ -47,7 +50,11 @@ await withStoreShown(shown, async () => {
   });
   check("a lookup's answer is cut throughout", !JSON.stringify(order).includes("Asha"));
   check("and its lines kept", order.lines[0].title === "Shirt");
-  check("said in words", narrowedLists()[0] === `orders (${all.length - 4} of its columns not shown)`);
+  check(
+    "said in words, each column by its name in the app",
+    narrowedLists()[0]?.startsWith("orders (not shown: Customer, Phone, ") &&
+      !narrowedLists()[0].includes("customer_phone")
+  );
   // A read across an await keeps it: the stand-in client answers after a beat.
   const db = {
     from: () => {
@@ -98,12 +105,91 @@ await withStoreShown({ customers: ["name", "email"] }, async () => {
   );
   check("and still finds an order by one shown", (await asked("orders", "98765 43210")).includes("phone_digits"));
   // Each tool says which list its rows are of; search_store, the one it was asked for.
+  // A total never counts by what the account is not shown, and is never asked of the database.
+  const metrics = storeTool("store_metrics");
+  let reached = 0;
+  const ctx = {
+    db: { rpc: async () => ((reached += 1), { data: { value: 1 }, error: null }) },
+    store: { id: "s1", timezone: "Asia/Kolkata" },
+  };
+  await withStoreShown({ orders: ["order_number", "total", "status"] }, async () => {
+    const byCity = await metrics.run({ measure: "orders", by: "city" }, ctx);
+    const byPay = await metrics.run({ measure: "revenue", filters: { gateway: "COD" } }, ctx);
+    const inWindow = await metrics.run({ measure: "orders", from: "2026-09-01" }, ctx);
+    check(
+      "a total by a column not shown is refused, and says so",
+      /ship_city/.test(byCity.error) && /gateway/.test(byPay.error) && /placed_at/.test(inWindow.error) && reached === 0
+    );
+    await metrics.run({ measure: "revenue", by: "status" }, ctx);
+    check("a total by what is shown is counted", reached === 1);
+  });
+  const known = new Set([
+    ...Object.keys(STORE_METRICS.measures),
+    ...Object.keys(STORE_METRICS.dimensions),
+    ...STORE_METRICS.filters,
+    "window",
+  ]);
+  check(
+    "what each total reads is a measure, a dimension or a filter, of a column orders has",
+    Object.entries(STORE_METRIC_READS).every(
+      ([k, f]) => known.has(k) && STORE_TABLES.orders.columns.some((c) => c.field === f)
+    )
+  );
   const tool = storeTool("search_store");
   check(
     "a lookup is cut by the list it read",
-    tool.list({ table: "customers" }) === "customers" && tool.list({ table: "nope" }) === null
+    tool.shape({ table: "customers" })?.nested?.rows?.list === "customers" && tool.shape({ table: "nope" }) === null
   );
 });
+
+console.log("\nan answer shaped by hand, cut by where each part comes from");
+await withStoreShown(
+  {
+    orders: ["order_number", "total", "customer_name"],
+    customers: ["name", "email"],
+  },
+  async () => {
+    // As searchOrders and orderDetail shape an order: the customer is a customer's row.
+    const hit = narrowResult(SHAPES.order, {
+      order_number: "#1006",
+      placed_at: "2026-09-28",
+      total: 1424,
+      financial_status: "PENDING",
+      customer: { name: "Kabir Singh", phone: "+919810000005", email: "k@example.com" },
+      items: [{ title: "Shirt", sku: "S-1", quantity: 1, price: 1424 }],
+    });
+    check(
+      "the customer's phone, by the customers list",
+      hit.customer.phone === undefined && hit.customer.name === "Kabir Singh"
+    );
+    check("how it stands, as the orders' status", hit.financial_status === undefined && hit.total === 1424);
+    check("when it was placed", hit.placed_at === undefined);
+    check("its lines, by their own list, whole", hit.items[0].sku === "S-1");
+    // As the turn's snapshot names an order: number, placed.
+    const recent = narrowResult(SHAPES.order, [{ number: "#1006", placed: "2026-09-28", total: 1424, status: "PAID" }]);
+    check(
+      "a snapshot's order, by the columns its keys are",
+      JSON.stringify(recent) === '[{"number":"#1006","total":1424}]'
+    );
+    const leaders = narrowResult(SHAPES.leaders, {
+      top_customers: [{ name: "Asha", orders: 3, spent: 900 }],
+      best_sellers: [{ title: "Shirt", units: 4, revenue: 100 }],
+    });
+    check(
+      "the top customers' counts, as the columns they are",
+      JSON.stringify(leaders.top_customers) === '[{"name":"Asha"}]' && leaders.best_sellers[0].units === 4
+    );
+    const wrapped = narrowResult(storeTool("search_orders").shape({}), {
+      count: 1,
+      total: 9,
+      orders: [{ total: 5, financial_status: "PAID" }],
+    });
+    check(
+      "a wrapper's own count is no column",
+      wrapped.total === 9 && wrapped.orders[0].financial_status === undefined
+    );
+  }
+);
 
 console.log("\nthe app's choice in force");
 const inApp = { shown, strip: false };

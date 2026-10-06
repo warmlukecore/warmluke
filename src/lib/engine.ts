@@ -14,8 +14,15 @@
 
 import { profileStore, scoutSize } from "@/lib/scout";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isStoreTable, STORE_TABLES, storeSectionColumns, storeTableSchema, type StoreTable } from "@/lib/store-read";
-import { storeShownFor, withStoreShown } from "@/lib/store-columns";
+import {
+  isStoreTable,
+  SHAPES,
+  STORE_TABLES,
+  storeSectionColumns,
+  storeTableSchema,
+  type StoreTable,
+} from "@/lib/store-read";
+import { narrowResult, storeShownFor, withStoreShown } from "@/lib/store-columns";
 import {
   asNextSteps,
   buildSystemPrompt,
@@ -196,27 +203,36 @@ export async function storeContextFor(
       history: storeRow.history_from
         ? { from: storeRow.history_from as string, days: (storeRow.history_days as number | null) ?? null }
         : null,
-      top_customers: leaders.top_customers,
-      best_sellers: leaders.best_sellers,
+      // As the account is shown each list (0192), by where each part comes from.
+      ...(narrowResult(SHAPES.leaders, {
+        top_customers: leaders.top_customers,
+        best_sellers: leaders.best_sellers,
+      }) as Pick<typeof leaders, "top_customers" | "best_sellers">),
       slice: slice
         ? {
             read_as: { list: routed!.list, window: routed!.window, kind: routed!.kind, month: routed!.month },
             ...slice,
           }
         : undefined,
-      recent: recent.map((o) => ({
-        number: o.order_number ?? "—",
-        placed: o.placed_at,
-        total: o.total,
-        currency: o.currency,
-        status: o.financial_status,
-      })),
-      low: low.map((l) => ({
-        product: l.product ?? "—",
-        variant: l.variant,
-        location: l.location,
-        available: l.available,
-      })),
+      recent: narrowResult(
+        SHAPES.order,
+        recent.map((o) => ({
+          number: o.order_number ?? "—",
+          placed: o.placed_at,
+          total: o.total,
+          currency: o.currency,
+          status: o.financial_status,
+        }))
+      ) as Array<{ number: string; placed: string; total: number; currency: string; status: string }>,
+      low: narrowResult(
+        SHAPES.stock,
+        low.map((l) => ({
+          product: l.product ?? "—",
+          variant: l.variant,
+          location: l.location,
+          available: l.available,
+        }))
+      ) as Array<{ product: string; variant: string | null; location: string; available: number }>,
     },
   };
 }

@@ -36,11 +36,14 @@ import {
   storeOverview,
   storeMetrics,
   STORE_METRICS,
+  STORE_METRIC_READS,
   STORE_TABLES,
+  hiddenColumns,
   type StoreDimension,
   type StoreMeasure,
   type StoreBrief,
-  type StoreTable,
+  type ListShape,
+  SHAPES,
 } from "@/lib/store-read";
 import { RESOURCES, SHOPIFY_RESOURCES } from "@/lib/shopify-resources";
 import { routeQuestion } from "@/lib/route";
@@ -63,10 +66,10 @@ export type StoreTool = {
   /** What a call looked up, in a few words for the merchant: "order #1042". */
   about: (args: Args) => string;
   /**
-   * The store list its answer is rows of, when it is rows (totals are not):
-   * what the account is not shown of that list is cut from the answer (0192).
+   * Where its answer's parts come from, when they are a list's (store-read
+   * SHAPES): what the account is not shown of each is cut from it (0192).
    */
-  list?: (args: Args) => StoreTable | null;
+  shape?: (args: Args) => ListShape | null;
 };
 
 /** A string argument, trimmed, or nothing. */
@@ -108,6 +111,7 @@ const TOOLS: readonly StoreTool[] = [
   },
   {
     name: "store_overview",
+    shape: () => SHAPES.leaders,
     about: () => "the store's overview",
     description:
       "What is in the merchant's connected Shopify store: the shop domain, its timezone and currency, when it last synced, and how many rows it holds of each list Shopify fills.",
@@ -175,7 +179,7 @@ const TOOLS: readonly StoreTool[] = [
   },
   {
     name: "search_orders",
-    list: () => "orders",
+    shape: () => ({ nested: { orders: SHAPES.order } }),
     about: (a) =>
       word(a.q)
         ? `orders matching “${word(a.q)}”`
@@ -230,7 +234,7 @@ const TOOLS: readonly StoreTool[] = [
   },
   {
     name: "get_order",
-    list: () => "orders",
+    shape: () => SHAPES.order,
     about: (a) =>
       `order #${
         String(a.order_number ?? "")
@@ -267,7 +271,7 @@ const TOOLS: readonly StoreTool[] = [
   },
   {
     name: "search_store",
-    list: (args) => (isStoreTable(args.table) ? args.table : null),
+    shape: (args) => (isStoreTable(args.table) ? { nested: { rows: { list: args.table } } } : null),
     about: (a) => `${word(a.table) ?? "a list"}${word(a.q) ? ` matching “${word(a.q)}”` : ""}`,
     // Named from the one declaration of the lists rather than by hand.
     // This sentence is how the client learns a list exists at all, and
@@ -322,7 +326,7 @@ const TOOLS: readonly StoreTool[] = [
   },
   {
     name: "low_stock",
-    list: () => "inventory_levels",
+    shape: () => ({ nested: { rows: SHAPES.stock } }),
     about: (a) => `stock at or below ${Number.isFinite(Number(a.threshold ?? 5)) ? Number(a.threshold ?? 5) : 5}`,
     description:
       "Products running out: every variant at or below a number, lowest first, with the location it is short at. Ask with threshold 0 for what is already out of stock.",
@@ -405,6 +409,15 @@ const TOOLS: readonly StoreTool[] = [
           (STORE_METRICS.filters as readonly string[]).includes(k)
         )
       );
+      // Nothing counted by a column this account is not shown (0192): said, not guessed at.
+      const hidden = hiddenColumns("orders");
+      const reads = [measure, by, ...Object.keys(filters), ...(args.from || args.to ? ["window"] : [])];
+      const barred = hidden ? reads.filter((k) => hidden.has(STORE_METRIC_READS[k] ?? "")) : [];
+      if (barred.length) {
+        return {
+          error: `Not shown to this account: ${[...new Set(barred.map((k) => STORE_METRIC_READS[k]))].join(", ")} on its orders. Say it is not shown to them here (Warmluke can turn it on); do not guess it.`,
+        };
+      }
       return storeMetrics(db, store.id, {
         measure: measure as StoreMeasure,
         by: by as StoreDimension,
@@ -416,9 +429,9 @@ const TOOLS: readonly StoreTool[] = [
   },
 ];
 
-/** Each tool whose answer is rows of a list, cut to what the account is shown of it (0192). */
+/** Each tool whose answer holds a list's rows, cut to what the account is shown of them (0192). */
 export const STORE_TOOLS: readonly StoreTool[] = TOOLS.map((t) =>
-  t.list ? { ...t, run: async (args, ctx) => narrowResult(t.list!(args), await t.run(args, ctx)) } : t
+  t.shape ? { ...t, run: async (args, ctx) => narrowResult(t.shape!(args), await t.run(args, ctx)) } : t
 );
 
 const BY_NAME = new Map(STORE_TOOLS.map((t) => [t.name, t]));

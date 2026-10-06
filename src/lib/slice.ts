@@ -8,7 +8,8 @@
 // here is computed; Luke does the arithmetic over rows it can quote.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { dayRangeInZone, lowStock, readStoreRows } from "@/lib/store-read";
+import { SHAPES, dayRangeInZone, lowStock, readStoreRows } from "@/lib/store-read";
+import { narrowResult } from "@/lib/store-columns";
 import { ROUTE_TABLE, type Route } from "@/lib/route";
 import { shiftDay as shift, todayIn } from "@/lib/period";
 
@@ -132,7 +133,9 @@ export async function fetchSlice(
       p_limit: 20,
     });
     if (error) throw new Error(error.message);
-    const rows = (data ?? []) as Array<Record<string, unknown>>;
+    const rows = narrowResult(SHAPES.sold, (data ?? []) as Array<Record<string, unknown>>) as Array<
+      Record<string, unknown>
+    >;
     return { what: `products sold${when}, most units first`, rows, total: rows.length };
   }
 
@@ -161,7 +164,9 @@ export async function fetchSlice(
   }
 
   if (route.list === "stock" && route.kind !== "lookup") {
-    const low = await lowStock(db, store.id, { threshold: 10, limit: ROWS });
+    const low = narrowResult(SHAPES.stock, await lowStock(db, store.id, { threshold: 10, limit: ROWS })) as Array<
+      Record<string, unknown>
+    >;
     return { what: "stock running low (under 10), lowest first", rows: low, total: null };
   }
 
