@@ -64,6 +64,8 @@ const GUARDED = {
   abo_shopify_claim_ok: "the app server's own key; answers yes or no, reads no secret out",
   abo_shopify_came_through: "the app server's own key; marks which app a shop came through, after Shopify's signature",
   abo_shopify_internal: "nothing to guard: whether internal mode is on, the same answer for everyone",
+  abo_design_examples:
+    "nothing to guard: examples an administrator approved, shapes with no names, the same for every signed-in owner; anon cannot",
 };
 
 /** What a body that checks its caller says. */
