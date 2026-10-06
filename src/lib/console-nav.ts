@@ -19,6 +19,7 @@ import {
   Inbox,
   MessagesSquare,
   Pin,
+  Scale,
   ScrollText,
   ShieldCheck,
   ShoppingBag,
@@ -94,6 +95,13 @@ export const CONSOLE_NAV: ConsoleGroup[] = [
         label: "Agents",
         icon: Bot,
         about: "How each of Luke's agents did: runs, verdicts, cost and time",
+      },
+      {
+        to: "judge",
+        scoped: true,
+        label: "Judge",
+        icon: Scale,
+        about: "Mark designs right or wrong, and see how often the judge agrees with people",
       },
       {
         to: "their-ai",

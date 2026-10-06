@@ -1353,6 +1353,20 @@ async function handle(req: Request, seen: Seen) {
           );
         for (const m of mods ?? []) pressSections.set(m.id, m.nav_label);
       }
+      // Builds of theirs nobody has used since (0190): listed so their AI can
+      // ask how it went, never answered here; the answer is theirs, in the bell.
+      const notUsed = (
+        await Promise.all(
+          (wanted ? [wanted] : projectList.map((p) => p.id)).slice(0, 5).map(async (pid) => {
+            const { data } = await db.rpc("abo_follow_ups", { p_project: pid });
+            return ((data ?? []) as Array<{ sections: string[]; built_at: string }>).map((f) => ({
+              app: projectList.find((p) => p.id === pid)?.name ?? null,
+              sections: f.sections,
+              built_at: f.built_at,
+            }));
+          })
+        )
+      ).flat();
       const buttonPresses = (pressRows ?? []).map((p) => ({
         button: p.action,
         row: p.row_label || null,
@@ -1440,6 +1454,13 @@ async function handle(req: Request, seen: Seen) {
                 waiting_button_presses: buttonPresses,
                 button_presses_note:
                   "A teammate pressed a button the owner approves (a refund, a discount). Only the owner decides, in Warmluke: tell them it waits, never approve it.",
+              }
+            : {}),
+          ...(notUsed.length
+            ? {
+                not_used_since_built: notUsed,
+                not_used_note:
+                  "Built for them and not used since. Ask whether it does what they meant; if it does not, hear what is off and propose the fix with propose_change. They close the question themselves, in Warmluke's bell.",
               }
             : {}),
           ...(shopChanges.length

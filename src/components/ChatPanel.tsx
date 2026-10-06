@@ -28,6 +28,7 @@ import type {
   ModuleRow,
   NextStep,
   LukeShows,
+  FollowUp,
   RecordRow,
   ThreadSummary,
   TurnEvent,
@@ -1363,6 +1364,55 @@ function ApprovalCard({
 }
 
 /**
+ * A build nobody has used since it was made (0190), asked about once:
+ * was it fine, or not what they meant. "Not what I meant" opens Luke on it.
+ */
+function FollowUpCard({
+  followUp: f,
+  onFollowUp,
+}: {
+  followUp: FollowUp;
+  onFollowUp?: (f: FollowUp, answer: "fine" | "missed") => Promise<string | null>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
+  const [now] = useState(() => Date.now());
+  const what = f.sections.length ? f.sections.map((s) => `“${s}”`).join(" and ") : (f.title ?? "What Luke built");
+  const go = async (answer: "fine" | "missed") => {
+    if (!onFollowUp) return;
+    setBusy(true);
+    const r = await onFollowUp(f, answer);
+    setBusy(false);
+    setSaid(r);
+  };
+  return (
+    <div className="rounded-xl border border-line bg-surface px-2.5 py-2">
+      <div className="text-[10px] font-semibold tracking-widest text-fg-muted">DID IT WORK?</div>
+      <div className="mt-1 text-[12px] leading-relaxed text-fg">
+        {what}, built {ago(f.built_at, now)}, has not been used since.
+      </div>
+      {said && <div className="mt-1 text-[10px] leading-relaxed text-tone-critical-fg">{said}</div>}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        <button
+          onClick={() => go("missed")}
+          disabled={busy || !onFollowUp}
+          className="rounded-lg bg-primary px-2 py-1 text-[10px] font-medium text-on-primary hover:bg-primary-hover disabled:opacity-40"
+        >
+          Not what I meant
+        </button>
+        <button
+          onClick={() => go("fine")}
+          disabled={busy || !onFollowUp}
+          className="ml-auto text-[10px] text-fg-muted hover:underline disabled:opacity-40"
+        >
+          It&rsquo;s fine
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * What Luke did on the screen open as he answered (lib/screen.ts), in the
  * code's words rather than his: what is shown, what was left undone, and
  * a way to set it again once they have moved it.
@@ -2300,6 +2350,8 @@ export default function ChatPanel({
   onWalkFix,
   onShow,
   approvals = [],
+  followUps = [],
+  onFollowUp,
   onApproval,
   onEditPrompt,
   onPeekSection,
@@ -2423,6 +2475,9 @@ export default function ChatPanel({
   onShow?: (show: ScreenShown) => void;
   /** Teammates' presses of a button that waits for the owner (0183): the owner's to approve, in the bell. */
   approvals?: Array<{ id: string; action: string; row_label: string; section: string; asked_at: string }>;
+  /** Builds of theirs nobody has used since (0190), each asked about once in the bell. */
+  followUps?: FollowUp[];
+  onFollowUp?: (f: FollowUp, answer: "fine" | "missed") => Promise<string | null>;
   /** The owner's word on one; a line back when it was not done (the row moved on). */
   onApproval?: (id: string, decision: "approve" | "decline") => Promise<string | null>;
   /**
@@ -3174,7 +3229,8 @@ export default function ChatPanel({
   const pendingCount =
     requests.filter((r) => r.status === "pending" || r.status === "partly_built").length +
     shopChanges.filter((a) => a.status === "pending").length +
-    approvals.length;
+    approvals.length +
+    followUps.length;
   /**
    * Which ones are waiting, as one string.
    *
@@ -3188,6 +3244,7 @@ export default function ChatPanel({
     ...requests.filter((r) => r.status === "pending" || r.status === "partly_built").map((r) => r.id),
     ...shopChanges.filter((a) => a.status === "pending").map((a) => a.id),
     ...approvals.map((a) => a.id),
+    ...followUps.map((f) => f.build_id),
   ].join(",");
 
   // On the tab, not only in the panel. A merchant is not sitting here
@@ -3446,7 +3503,8 @@ export default function ChatPanel({
                       {bellTab === "asked" &&
                         requests.length === 0 &&
                         shopChanges.length === 0 &&
-                        approvals.length === 0 && (
+                        approvals.length === 0 &&
+                        followUps.length === 0 && (
                           <div className="flex flex-col items-center px-4 py-6 text-center">
                             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-canvas text-fg-faint">
                               <Bell aria-hidden size={16} strokeWidth={1.75} />
@@ -3466,6 +3524,21 @@ export default function ChatPanel({
             it is someone on their team waiting, not a suggestion. */}
                       {(bellTab === "asked" ? approvals : []).map((p) => (
                         <ApprovalCard key={p.id} approval={p} onApproval={onApproval} />
+                      ))}
+                      {/* A build of theirs nobody has used (0190): did it work? */}
+                      {(bellTab === "asked" ? followUps : []).map((f) => (
+                        <FollowUpCard
+                          key={f.build_id}
+                          followUp={f}
+                          onFollowUp={
+                            onFollowUp &&
+                            ((x, answer) => {
+                              // Out of the way of the thread Luke opens to hear what is off.
+                              if (answer === "missed") setBellOpen(false);
+                              return onFollowUp(x, answer);
+                            })
+                          }
+                        />
                       ))}
                       {(bellTab === "asked" ? shopChanges : []).map((a) => {
                         const spec = actionSpec(a.action);

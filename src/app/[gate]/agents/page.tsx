@@ -92,8 +92,9 @@ const GOOD = new Set([
   "clean",
   "pass",
   "filled",
+  "fine",
 ]);
-const BAD = new Set(["failed", "redo", "misses", "repeats"]);
+const BAD = new Set(["failed", "redo", "misses", "repeats", "not what they meant"]);
 const WARN = new Set(["repaired", "found missing", "asked back", "problems found"]);
 const toneOf = (k: string) =>
   GOOD.has(k)

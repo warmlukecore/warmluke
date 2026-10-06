@@ -335,6 +335,7 @@ const AGENTS = [
   "reflect",
   "judge",
   "ai step",
+  "follow-up",
 ];
 // After them, a card of its own for any model job none of them counts (0186): the talk road's replies, say.
 const names = (aa?.agents ?? []).map((g) => g.name);

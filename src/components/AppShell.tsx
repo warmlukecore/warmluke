@@ -76,6 +76,7 @@ import type {
   TurnEvent,
   UiSchema,
   UiSchemaRow,
+  FollowUp,
 } from "@/lib/types";
 import { TITLE_MAX } from "@/lib/types";
 import { Icon } from "@/components/ui/Icon";
@@ -2583,6 +2584,14 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     [projectId, selectedModuleId, loadedSource, patchRow, loadModuleData]
   );
 
+  // Builds of theirs nobody has used since, asked about once (0190): read on opening the app.
+  const [followUps, setFollowUps] = useState<FollowUp[]>([]);
+  useEffect(() => {
+    void supabase.rpc("abo_follow_ups", { p_project: projectId }).then(({ data, error }) => {
+      if (!error) setFollowUps((data ?? []) as FollowUp[]);
+    });
+  }, [projectId]);
+
   // What teammates pressed and waits for the owner's yes, heard as it changes.
   const [approvals, setApprovals] = useState<ButtonApproval[]>([]);
   const loadApprovals = useCallback(async () => {
@@ -3091,6 +3100,23 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     if (chatBusy || building) return;
     startNewThread();
     void runPrompt(text);
+  };
+  /**
+   * The owner's word on a build nobody has used (0190). "Not what I meant"
+   * opens a thread of its own on it, where Luke asks what is off and fixes it;
+   * either way the answer is kept, and the card goes.
+   */
+  const answerFollowUp = async (f: FollowUp, answer: "fine" | "missed"): Promise<string | null> => {
+    const { error } = await supabase.rpc("abo_answer_follow_up", { p_build: f.build_id, p_answer: answer });
+    if (error) return error.code === "PGRST202" ? "This app cannot keep that answer yet." : "That didn't go through.";
+    setFollowUps((prev) => prev.filter((x) => x.build_id !== f.build_id));
+    if (answer === "missed") {
+      const what = f.sections.length ? f.sections.join(" and ") : (f.title ?? "what you built");
+      askLukeToWatch(
+        `The ${what} you built for me on ${new Date(f.built_at).toLocaleDateString(undefined, { day: "numeric", month: "short" })} isn't what I meant. Ask me what's off, then fix it.`
+      );
+    }
+    return null;
   };
   const hideLuke = () => {
     setChatOpen(false);
@@ -3934,6 +3960,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                   section: modules.find((m) => m.id === a.module_id)?.nav_label ?? "a section",
                 }))}
                 onApproval={decideApproval}
+                followUps={followUps}
+                onFollowUp={answerFollowUp}
                 onEmpty={countSignals}
                 onReadSection={readSection}
                 onPeekSection={peekSection}

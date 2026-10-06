@@ -184,6 +184,16 @@ repeat, which and how often, over the newest 2,000 rows a list. `src/lib/scout.t
 Luke's design and plan prompts as the exact fields of each list with rows; a turn tells it as the
 `scout` step, and the Agents screen counts it. `design_format` gives the merchant's own AI the same
 brief as `this_store` (`project_id` when they have more than one app).
+**Did it work?** (0190) asks once about a build nobody has used since: `abo_follow_ups(p_project)`
+lists, for whoever asked for them (`conversations.created_by`, else the app's owner), builds three to
+thirty days old whose sections have had no row added and no rule run since (What stuck's test), the
+newest three; `abo_answer_follow_up(p_build, 'fine' | 'missed')` keeps the answer once in
+`build_followups`. The bell shows them under what waits on the owner, and "Not what I meant" opens a
+thread where Luke asks what is off. `pending_changes` lists them to the merchant's own AI as
+`not_used_since_built`. **Judge** (console) marks judged designs right or wrong
+(`abo_admin_judge_label`, `judgement_labels`) and `abo_admin_judge_queue` says how often the judge
+(0082) agrees with people, an owner's follow-up answer counting as a mark; the Agents screen counts the
+answers as the `follow-up` card.
 The console's word searches have trigram indexes on conversation titles, project
 names and shop domains. Every console screen asks `abo_admin_luke_health` (0165) whether
 Luke's newest answers are failing because the model was not there (`payload.failed`), and

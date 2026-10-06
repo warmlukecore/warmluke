@@ -118,6 +118,10 @@ export const AGENTS: Record<string, AgentInfo> = {
     about: "Reads a row's own words in a rule and fills its other fields: a choice, or a value the words name",
     jobs: ["fill"],
   },
+  "follow-up": {
+    label: "Follow-up",
+    about: "Asks the owner about a build nobody has used since: fine, or not what they meant",
+  },
 };
 
 /** Steps a turn tells that are the turn's own plumbing, not an agent's. */

@@ -621,6 +621,16 @@ export type UsageJob =
   | "tryout"
   | "fill";
 
+/** A build nobody has used since, asked about once (abo_follow_ups, 0190). */
+export type FollowUp = {
+  build_id: string;
+  built_at: string;
+  conversation_id: string;
+  title: string | null;
+  /** The sections it made, as the sidebar names them. */
+  sections: string[];
+};
+
 /** One model's share of a turn: its calls for one job, their tokens, and their dollars. */
 export type ModelUse = {
   provider: string;

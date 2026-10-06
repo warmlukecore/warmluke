@@ -220,7 +220,7 @@ export function ListPanel({
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-xs text-fg-faint tabular-nums" aria-live="polite">
             {total === undefined || shown === total
-              ? `${shown.toLocaleString()} ${noun}`
+              ? `${shown.toLocaleString()} ${(total ?? shown) === 1 ? noun.replace(/s$/, "") : noun}`
               : `${shown.toLocaleString()} of ${total.toLocaleString()} ${noun}`}
           </span>
           {actions}
