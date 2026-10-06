@@ -73,7 +73,7 @@ try {
   await db.rpc("abo_ai_fill_done", {
     p_run: run,
     p_ok: true,
-    p_detail: { filled: ["issue"], left: [], usd: 0.0008, model: "check", ai: "forged" },
+    p_detail: { filled: ["issue"], left: [], usd: 0.0008, input: 900, output: 40, model: "check", ai: "forged" },
   });
   const { data: done } = await admin.from("automation_runs").select("ok, detail").eq("id", run).single();
   check("it ends saying what it filled and what it cost", done?.detail?.ai === "filled" && done.detail.usd === 0.0008);
@@ -83,6 +83,15 @@ try {
   check("and a run ends once", once?.ok === true && once.detail.ai === "filled");
   const { data: log } = await db.rpc("abo_rule_log", { p_project: project.id });
   check("the Rules screen counts it", JSON.stringify(log ?? "").includes(auto.id));
+  // And the console's Agents screen (0185), for this app alone: no turn holds the AI step.
+  const { data: seen } = await db.rpc("abo_admin_agents", { p_days: 1, p_account: owner.user.id, p_app: project.id });
+  const step = seen?.agents?.find((g) => g.name === "ai step");
+  check("the console's Agents screen counts it, for this app alone", step?.runs === 1 && step.outcomes?.filled === 1);
+  check(
+    "with what it cost and its tokens",
+    Number(step?.usd) === 0.0008 && Number(step?.input) === 900 && Number(step?.output) === 40
+  );
+  check("and the tryout has a card of its own", !!seen?.agents?.some((g) => g.name === "tryout"));
 
   console.log("\na rule switched off");
   await admin.from("automations").update({ enabled: false }).eq("id", auto.id);

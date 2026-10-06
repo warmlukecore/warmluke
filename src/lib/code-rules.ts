@@ -255,10 +255,19 @@ async function runFill(
       });
       if (res.status !== 200) left.push(`the row would not take it: ${String(res.body.error ?? res.status)}`);
     }
+    // Its own meter, as the console's Agents screen reads it (0185): no turn holds it.
+    const u = usage();
     await client.rpc("abo_ai_fill_done", {
       p_run: run,
       p_ok: true,
-      p_detail: { filled: Object.keys(set), left: left.slice(0, 5), usd: usage()?.usd ?? null, model },
+      p_detail: {
+        filled: Object.keys(set),
+        left: left.slice(0, 5),
+        usd: u?.usd ?? null,
+        input: u?.uses.reduce((s, x) => s + x.input, 0) ?? null,
+        output: u?.uses.reduce((s, x) => s + x.output, 0) ?? null,
+        model,
+      },
     });
   } catch (e) {
     await client.rpc("abo_ai_fill_done", {

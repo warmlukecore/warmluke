@@ -61,6 +61,7 @@ const made = async (label) => {
     .from("turn_traces")
     .insert({ project_id: p.id, conversation_id: c.id, usage: { usd: label === "a" ? 0.5 : 0.25 } });
   await admin.from("mcp_calls").insert({ user_id: u.user.id, tool: "read_section", client_id: "check-scope" });
+  if (label === "b") await admin.from("merchant_notes").insert({ project_id: p.id, note: `Ships from Pune ${stamp}` });
   await admin.from("admin_account_audit").insert({
     actor_user_id: me.user.id,
     target_user_id: u.user.id,
@@ -108,6 +109,12 @@ try {
     "and who has acted, for the filter",
     byMe?.admins?.some((x) => x.id === me.user.id)
   );
+
+  console.log("\nthe agents");
+  const memory = async (who) =>
+    (await db.rpc("abo_admin_agents", { p_days: 1, p_account: who })).data?.agents?.find((g) => g.name === "memory")
+      ?.outcomes?.["notes written"];
+  check("memory counts one account's notes alone", (await memory(b.user)) === 1 && (await memory(a.user)) === 0);
 
   console.log("\nthe rest answer for one account");
   for (const fn of ["abo_admin_trouble", "abo_admin_agents", "abo_admin_learning", "abo_admin_routing"]) {

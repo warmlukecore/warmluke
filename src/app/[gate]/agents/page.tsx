@@ -5,7 +5,8 @@
 // left (0132) and the learning timeline. The planner, the design call,
 // the validator, the critic, the reviewers after it (0177: the operator's
 // view, simplicity, the data check, the dry-run and the screen check),
-// the gap pass, memory, the reflector and the shadow judge: how often
+// the tryout, the gap pass, memory, the reflector, the shadow judge and the
+// AI step in a rule (0185), which runs outside any turn: how often
 // each ran, how its runs came out, and what its calls cost; and how long
 // a turn takes on each road.
 //
@@ -61,10 +62,12 @@ const NAME: Record<string, string> = {
   "data check": "Data check",
   "dry-run": "Rule dry-run",
   "screen check": "Screen check",
+  tryout: "Tryout",
   gap: "Gap pass",
   memory: "Memory",
   reflect: "Reflect",
   judge: "Judge",
+  "ai step": "AI step",
 };
 const ROAD: Record<string, string> = { talk: "Talk", design: "Design" };
 // What each outcome means, by its tone; the numbers beside them say how many.
@@ -79,6 +82,7 @@ const GOOD = new Set([
   "simple",
   "clean",
   "pass",
+  "filled",
 ]);
 const BAD = new Set(["failed", "redo", "misses", "repeats"]);
 const WARN = new Set(["repaired", "found missing", "asked back", "problems found"]);
@@ -190,7 +194,7 @@ export default function AgentsPage() {
             <p className="mt-2 text-xs text-fg-faint">
               Dollars and tokens are what the turn&rsquo;s meter counted; the reflector writes its own dollars down. The
               validator, the data check and the dry-run are code; memory and the judge run after the reply, outside the
-              meter.
+              meter. The AI step runs in rules, outside any turn, and writes its own dollars down.
             </p>
 
             <div className={`${card} mt-4 overflow-hidden`}>
