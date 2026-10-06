@@ -118,13 +118,13 @@ if (signedIn?.session) {
   console.log("\nand what the merchant is meant to see, they can see");
   // StoreStrip's query, not an approximation of it: the same columns,
   // filtered the same way. A version that only resembles it can pass
-  // while the real one still fails on a column nobody granted.
-  const project = (await admin.from("stores").select("project_id").eq("status", "connected").limit(1).maybeSingle())
-    .data;
+  // while the real one still fails on a column nobody granted. The store
+  // whose owner is signed in: any connected store could be a test's left
+  // behind, someone else's, and rightly hidden from this owner.
   const shown = await owner
     .from("stores")
     .select("id, shop_domain, status, webhook_error, last_synced_at")
-    .eq("project_id", project?.project_id ?? "00000000-0000-0000-0000-000000000000");
+    .eq("project_id", store.project_id);
   check("the strip's own query is answered", !shown.error);
   check("and it comes back with a store", (shown.data ?? []).length > 0);
 
