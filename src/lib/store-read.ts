@@ -847,8 +847,8 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
  * as it being worth searching, and matching a postcode against a
  * product title helps nobody.
  */
-/** Lists with a phone's digits to search by (0166). */
-const PHONE_DIGITS = new Set<StoreTable>(["orders", "customers"]);
+/** Lists with a phone's digits to search by (0166), and the column the digits are of. */
+const PHONE_DIGITS: Partial<Record<StoreTable, string>> = { orders: "customer_phone", customers: "phone" };
 
 const SEARCHABLE: Record<StoreTable, string[]> = {
   orders: [
@@ -1353,8 +1353,10 @@ export const searchFieldsOf = (table: StoreTable): string[] => {
   return hidden ? SEARCHABLE[table].filter((f) => !hidden.has(f)) : SEARCHABLE[table];
 };
 /** Whether a phone typed any way finds a row of `table`: not when the account is not shown its phone. */
-const searchesPhone = (table: StoreTable) =>
-  PHONE_DIGITS.has(table) && ![...(hiddenColumns(table) ?? [])].some((f) => f.includes("phone"));
+const searchesPhone = (table: StoreTable) => {
+  const phone = PHONE_DIGITS[table];
+  return !!phone && !hiddenColumns(table)?.has(phone);
+};
 
 /**
  * One page of a section over the store, from the whole list (0167):

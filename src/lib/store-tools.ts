@@ -62,6 +62,11 @@ export type StoreTool = {
   run: (args: Args, ctx: StoreToolContext) => Promise<unknown>;
   /** What a call looked up, in a few words for the merchant: "order #1042". */
   about: (args: Args) => string;
+  /**
+   * The store list its answer is rows of, when it is rows (totals are not):
+   * what the account is not shown of that list is cut from the answer (0192).
+   */
+  list?: (args: Args) => StoreTable | null;
 };
 
 /** A string argument, trimmed, or nothing. */
@@ -170,6 +175,7 @@ const TOOLS: readonly StoreTool[] = [
   },
   {
     name: "search_orders",
+    list: () => "orders",
     about: (a) =>
       word(a.q)
         ? `orders matching “${word(a.q)}”`
@@ -224,6 +230,7 @@ const TOOLS: readonly StoreTool[] = [
   },
   {
     name: "get_order",
+    list: () => "orders",
     about: (a) =>
       `order #${
         String(a.order_number ?? "")
@@ -260,6 +267,7 @@ const TOOLS: readonly StoreTool[] = [
   },
   {
     name: "search_store",
+    list: (args) => (isStoreTable(args.table) ? args.table : null),
     about: (a) => `${word(a.table) ?? "a list"}${word(a.q) ? ` matching “${word(a.q)}”` : ""}`,
     // Named from the one declaration of the lists rather than by hand.
     // This sentence is how the client learns a list exists at all, and
@@ -314,6 +322,7 @@ const TOOLS: readonly StoreTool[] = [
   },
   {
     name: "low_stock",
+    list: () => "inventory_levels",
     about: (a) => `stock at or below ${Number.isFinite(Number(a.threshold ?? 5)) ? Number(a.threshold ?? 5) : 5}`,
     description:
       "Products running out: every variant at or below a number, lowest first, with the location it is short at. Ask with threshold 0 for what is already out of stock.",
@@ -407,15 +416,9 @@ const TOOLS: readonly StoreTool[] = [
   },
 ];
 
-/** Which store list a tool's answer is rows of: what the account is not shown of it is cut (0192). Totals are not rows. */
-const LIST_OF: Record<string, (args: Args) => StoreTable | null> = {
-  search_orders: () => "orders",
-  get_order: () => "orders",
-  low_stock: () => "inventory_levels",
-  search_store: (args) => (isStoreTable(args.table) ? args.table : null),
-};
+/** Each tool whose answer is rows of a list, cut to what the account is shown of it (0192). */
 export const STORE_TOOLS: readonly StoreTool[] = TOOLS.map((t) =>
-  LIST_OF[t.name] ? { ...t, run: async (args, ctx) => narrowResult(LIST_OF[t.name](args), await t.run(args, ctx)) } : t
+  t.list ? { ...t, run: async (args, ctx) => narrowResult(t.list!(args), await t.run(args, ctx)) } : t
 );
 
 const BY_NAME = new Map(STORE_TOOLS.map((t) => [t.name, t]));

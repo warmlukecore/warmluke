@@ -17,6 +17,7 @@ import {
   STORE_TABLES,
 } from "../src/lib/store-read.ts";
 import { narrowResult, narrowedLists, withStoreShown } from "../src/lib/store-columns.ts";
+import { storeTool } from "../src/lib/store-tools.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -70,6 +71,39 @@ await withStoreShown(shown, async () => {
   );
 });
 check("and outside it, nothing is narrowed", fields(storeTableSchema("orders").columns).length === all.length);
+
+// What a search asks the database for, read off a stand-in client.
+const asked = async (table, q) => {
+  let clause = "";
+  const db = {
+    from: () => {
+      const b = {
+        select: () => b,
+        eq: () => b,
+        order: () => b,
+        limit: () => b,
+        or: (c) => ((clause = c), b),
+        then: (ok) => Promise.resolve(ok({ data: [], count: 0, error: null })),
+      };
+      return b;
+    },
+  };
+  await readStoreRows(db, "s1", table, 10, q);
+  return clause;
+};
+await withStoreShown({ customers: ["name", "email"] }, async () => {
+  check(
+    "a phone typed finds no customer by a phone not shown",
+    !(await asked("customers", "98765 43210")).includes("phone")
+  );
+  check("and still finds an order by one shown", (await asked("orders", "98765 43210")).includes("phone_digits"));
+  // Each tool says which list its rows are of; search_store, the one it was asked for.
+  const tool = storeTool("search_store");
+  check(
+    "a lookup is cut by the list it read",
+    tool.list({ table: "customers" }) === "customers" && tool.list({ table: "nope" }) === null
+  );
+});
 
 console.log("\nthe app's choice in force");
 const inApp = { shown, strip: false };
