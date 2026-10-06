@@ -179,7 +179,10 @@ included, read their owner's choice through `abo_store_columns`, which checks th
 use the app; a stranger reads nothing. It is a choice of what is shown, not a wall: the rows
 are still read whole by the app, so a column left out is not a secret from the account, and a
 merchant's own search can still find a row by a phone number they typed. Luke and their AI
-read inside it, so neither names nor builds on what is left out. `check-store-columns-live`
+read inside it, so neither names nor builds on what is left out. Hiding takes nothing away:
+what reads a hidden column is kept through every save and is back the moment it is shown
+again, and rules and row buttons keep working on the whole row
+(`check-store-columns-roundtrip`). `check-store-columns-live`
 covers the setter, the refusals, who reads it and the trail.
 
 An administrator can send a customer an invite to start (0119): a link with a 192-bit

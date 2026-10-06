@@ -37,7 +37,7 @@ import StoreStrip from "@/components/StoreStrip";
 import StoreSwitcher from "@/components/StoreSwitcher";
 import Overview from "@/components/Overview";
 import { AlertsPanel } from "@/components/Alerts";
-import { describeAlert, type Alert } from "@/lib/alerts";
+import { alertShown, describeAlert, type Alert } from "@/lib/alerts";
 import StoreRecordDetail, { type DetailRow } from "@/components/StoreRecordDetail";
 import StorePicker, { addStoreSections } from "@/components/StorePicker";
 import {
@@ -47,6 +47,7 @@ import {
   defaultPeriod,
   hiddenColumns,
   readShownFrom,
+  readsHidden,
   withoutHidden,
   type StoreShown,
   isStoreTable,
@@ -409,7 +410,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       const features = (sj as UiSchema & { features?: FeatureSchema }).features;
       return {
         ...sj,
-        columns: sj.columns.filter((c) => !hidden.has(c.field)),
+        columns: sj.columns.filter((c) => !hidden.has(c.field) && !readsHidden(c.compute, hidden)),
         ...(features ? { features: withoutHidden(features, hidden) ?? undefined } : {}),
       };
     },
@@ -2061,10 +2062,16 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   const loadAlerts = useCallback(async () => {
     const { data, error } = await supabase.rpc("abo_alerts", { p_project: projectId });
     if (error) return;
-    setAlerts((data as Alert[] | null) ?? []);
+    // Not one worked out from a store column this account is not shown (0192).
+    setAlerts(((data as Alert[] | null) ?? []).filter(alertShown));
     setAlertsAt(Date.now());
   }, [projectId]);
   // Not only with a store: a rule of their own tells about their own sections too (0164).
+  // Read again when what the account is shown changes, which may land after them.
+  useEffect(() => {
+    void loadAlerts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeShown]);
   useEffect(() => {
     void loadAlerts();
     return watchRows(`alerts:${projectId}`, [

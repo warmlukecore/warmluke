@@ -15,11 +15,13 @@
 import { profileStore, scoutSize } from "@/lib/scout";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  hiddenColumns,
   isStoreTable,
   SHAPES,
   STORE_TABLES,
   storeSectionColumns,
   storeTableSchema,
+  withoutHidden,
   type StoreTable,
 } from "@/lib/store-read";
 import { narrowResult, storeShownFor, withStoreShown } from "@/lib/store-columns";
@@ -462,7 +464,8 @@ export async function schemasFor(client: SupabaseClient, modules: ModuleRow[]): 
       const saved = byModule.get(m.id);
       byModule.set(m.id, {
         columns: storeSectionColumns(m.source_table, saved?.columns),
-        features: saved?.features ?? null,
+        // Without what reads a column the account is not shown (0192), for Luke's brief.
+        features: withoutHidden(saved?.features, hiddenColumns(m.source_table), true) ?? null,
       });
     }
   }
@@ -594,7 +597,26 @@ export function answeredTurns<T extends { role: string; ptype: string | null }>(
 export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // What the account is shown of the store's lists (0192), in force for the
   // whole turn: the brief, the lookups and the checks name only those columns.
-  return withStoreShown(await storeShownFor(input.client, input.project.id), () => turnShown(input));
+  return withStoreShown(await storeShownFor(input.client, input.project.id), () => turnShown(asShown(input)));
+}
+
+/**
+ * The open section's design as the account is shown it (0192): read whole
+ * before the turn (turnContext), it is narrowed here, inside the choice, so
+ * Luke neither names what is not shown nor tries to change it. A save keeps
+ * what he could not see (apply keepHidden).
+ */
+function asShown(input: TurnInput): TurnInput {
+  const source = input.modules.find((m) => m.id === input.moduleId)?.source_table;
+  const hidden = isStoreTable(source) ? hiddenColumns(source) : null;
+  if (!hidden) return input;
+  return {
+    ...input,
+    currentSchema: input.currentSchema && {
+      columns: storeSectionColumns(source as StoreTable, input.currentSchema.columns),
+    },
+    currentFeatures: withoutHidden(input.currentFeatures, hidden, true) ?? null,
+  };
 }
 
 async function turnShown(input: TurnInput): Promise<TurnResult> {

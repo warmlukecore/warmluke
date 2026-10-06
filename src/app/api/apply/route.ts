@@ -85,7 +85,8 @@ export async function POST(req: Request) {
 
     // Checked and saved as the account is shown the store's lists (0192):
     // a column it is not shown is not one a design can put back on screen.
-    const { applied, errors, failedAt } = await withStoreShown(await storeShownFor(client, projectId), () =>
+    const columnsShown = await storeShownFor(client, projectId);
+    const { applied, errors, failedAt } = await withStoreShown(columnsShown, () =>
       applyPlans(client, projectId, plans, requestId ?? null, by === "user" && !requestId ? "user" : "ai")
     );
 
@@ -122,7 +123,9 @@ export async function POST(req: Request) {
           }
         );
         // Then each section built walked in a browser, after the answer has gone (lib/walk.ts).
-        if (errors.length === 0) after(() => walkAfterBuild(client, projectId, applied, book.id));
+        // As the account is shown the store (0192): what the walk says is about what they see.
+        if (errors.length === 0)
+          after(() => withStoreShown(columnsShown, () => walkAfterBuild(client, projectId, applied, book.id)));
       }
     }
     const recorded = book ? { recorded: book.id } : {};

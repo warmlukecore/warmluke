@@ -10,6 +10,7 @@
 // Callers: src/components/AppShell.tsx, scripts/check-suggest.mjs.
 
 import type { NextStep } from "@/lib/types";
+import { hiddenColumns, type StoreTable } from "@/lib/store-read";
 
 /** What the store shows, counted: the facts the offers are made from. */
 export type StoreSignals = {
@@ -30,6 +31,28 @@ export type StoreSignals = {
   abandoned30: number;
 };
 
+/**
+ * The store list columns each signal is counted by (storeSignals): one the
+ * account is not shown (0192) leaves the signal out, so no offer says what
+ * the column holds ("40% of orders are COD" with how it was paid hidden).
+ */
+export const SIGNAL_READS: Record<keyof StoreSignals, Array<[StoreTable, string]>> = {
+  orders30: [["orders", "placed_at"]],
+  cod30: [
+    ["orders", "placed_at"],
+    ["orders", "gateway"],
+  ],
+  failedDeliveries: [["fulfillments", "shipment_status"]],
+  refunds60: [["refunds", "refunded_at"]],
+  lowStock: [["inventory_levels", "available"]],
+  repeatCustomers: [["customers", "orders_count"]],
+  lateUnshipped: [
+    ["orders", "fulfilment_status"],
+    ["orders", "placed_at"],
+  ],
+  abandoned30: [["carts", "started_at"]],
+};
+
 type Offer = {
   /** How strongly the store shows the need: the order offers are made in. */
   weight: number;
@@ -47,7 +70,13 @@ const AT_MOST = 3;
  * out any a section of theirs already meets (by its name). None when the
  * store shows nothing: then the panel asks for their own words alone.
  */
-export function asksFromStore(s: StoreSignals, sectionNames: string[]): NextStep[] {
+export function asksFromStore(counted: StoreSignals, sectionNames: string[]): NextStep[] {
+  const s = Object.fromEntries(
+    Object.entries(counted).map(([k, v]) => [
+      k,
+      SIGNAL_READS[k as keyof StoreSignals]?.some(([t, f]) => hiddenColumns(t)?.has(f)) ? 0 : v,
+    ])
+  ) as StoreSignals;
   const offers: Offer[] = [];
   const share = s.orders30 > 0 ? s.cod30 / s.orders30 : 0;
   if (s.cod30 >= 3 && share >= 0.15)

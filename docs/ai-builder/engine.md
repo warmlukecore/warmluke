@@ -369,7 +369,22 @@ what `STORE_METRIC_READS` says each reads. The validator finds no other column, 
 names the columns not shown, so Luke says a column is not shown rather than that the store
 lacks it, and neither guesses it nor works it out from others. `check-store-columns-eval`
 (model tier, by hand) asks for a city, phones and cash on delivery with them left out, on
-production's models: 6 Oct, all said not shown, nothing guessed, $1.02 in all. `/api/apply` checks a design inside the same choice, and each MCP call opens it for the
+production's models: 6 Oct, all said not shown, nothing guessed, $1.02 in all.
+
+Nothing a merchant built is lost by a column being hidden, and nothing else slows. What reads
+a hidden column is found by the design's own naming (`readsHidden`: a `field`, `by`,
+`groupBy`, any `…Field`, a list of `fields` or `columns`, a written screen's `html`), never a
+word that only matches. On screen it is set aside (a filter, a card, the sort, the dates, a
+board falls back to the table); row buttons, scans and rules keep working on the whole row.
+Luke's brief and their AI's leave out a button or scan that reads one too, so neither tries
+to change it. Every save goes through `validateAndApply`, which puts back what its editor
+could not see (`keepHidden`, `keepHiddenColumns`): the owner's Customize, Luke and their AI
+editing round a hidden column leave it, its name and place, and all that reads it, as it was.
+The store's offers to build (`SIGNAL_READS`) and its alerts (`reads` in `ALERT_WORDS`) say
+which columns they are worked out from and stay away while one is hidden; the walk after a
+build runs inside the choice. `check-store-columns-roundtrip` hides two columns, edits round
+them through `/api/apply` and shows them again: on the code before it, four things were
+lost; now none. `/api/apply` checks a design inside the same choice, and each MCP call opens it for the
 app it is about. A rule running on its own is in no request and reads its rows whole, so
 nothing built breaks. `check-store-columns` (pure), `check-store-columns-luke` (a turn, the
 model stood in for), `check-store-columns-mcp` and `check-store-columns-live` hold it.

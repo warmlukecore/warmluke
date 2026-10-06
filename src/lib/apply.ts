@@ -15,7 +15,14 @@ import { sameColumns } from "@/lib/view-edit";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { undoableFrom, type UndoStep } from "@/lib/undo";
 import { validatePlan } from "@/lib/ai";
-import { isStoreTable, storeSectionColumns } from "@/lib/store-read";
+import {
+  hiddenColumns,
+  isStoreTable,
+  keepHidden,
+  keepHiddenColumns,
+  storeSectionColumns,
+  withoutHidden,
+} from "@/lib/store-read";
 import { findSection } from "@/lib/section-ref";
 import {
   mergeFeatures,
@@ -555,6 +562,11 @@ async function validateAndApply(
 
   let currentSchema: UiSchema | null = null;
   let currentFeatures: FeatureSchema | null = null;
+  // What the account is not shown of the section's store list (0192): the
+  // change is checked as its editor saw the section, and saved with what
+  // they could not see kept (keepHidden, keepHiddenColumns).
+  const target = moduleList.find((m) => m.id === rawPlan.targetModuleId)?.source_table;
+  const hiddenHere = isStoreTable(target) ? hiddenColumns(target) : null;
   if (rawPlan.targetModuleId) {
     const { data: rows } = await client
       .from("ui_schemas")
@@ -569,7 +581,7 @@ async function validateAndApply(
       // shows, as the design was: the registry's today, then its own.
       const source = moduleList.find((m) => m.id === rawPlan.targetModuleId)?.source_table;
       currentSchema = { columns: isStoreTable(source) ? storeSectionColumns(source, sj.columns) : sj.columns };
-      currentFeatures = sj.features ?? null;
+      currentFeatures = withoutHidden(sj.features, hiddenHere) ?? null;
     }
   }
 
@@ -697,7 +709,7 @@ async function validateAndApply(
       // Laid over what the section has: what the change leaves out stays.
       schema_json: {
         columns: sj.columns,
-        features: mergeFeatures(sj.features, plan.features),
+        features: mergeFeatures(sj.features, keepHidden(sj.features, plan.features, hiddenHere)),
       } as SchemaJsonWithFeatures,
       version: nextVersion,
       created_by: "ai",
@@ -802,7 +814,7 @@ async function validateAndApply(
   await write("schema_insert", {
     module_id: plan.targetModuleId!,
     schema_json: {
-      columns,
+      columns: keepHiddenColumns(sj.columns, columns, hiddenHere),
       features: sj.features ?? null,
     } as SchemaJsonWithFeatures,
     version: nextVersion,

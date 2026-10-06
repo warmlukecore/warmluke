@@ -13,6 +13,8 @@ import {
   storeSignals,
   storeTableSchema,
   withOwnFields,
+  withoutHidden,
+  hiddenColumns,
   adviceOf,
   type StoreTable,
 } from "@/lib/store-read";
@@ -52,7 +54,15 @@ import { start } from "workflow/api";
 import { lukeTurn } from "@/workflows/luke-turn";
 import { ACTION_CATALOGUE, PROPOSE_INPUT, proposeStoreAction } from "@/lib/store-action-propose";
 import { ALLOWED_ICONS } from "@/lib/types";
-import type { AssistantPlan, ModuleRow, NextStep, ProjectRow, SchemaColumn, UiSchema } from "@/lib/types";
+import type {
+  AssistantPlan,
+  FeatureSchema,
+  ModuleRow,
+  NextStep,
+  ProjectRow,
+  SchemaColumn,
+  UiSchema,
+} from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -1225,8 +1235,15 @@ async function handle(req: Request, seen: Seen) {
         section: section.nav_label,
         rows_from: section.source_table ? `Shopify ${section.source_table}` : "this app",
         version: schemaRow?.version ?? null,
-        fields: (sj.columns ?? []).map((c) => ({ field: c.field, label: c.label, type: c.type })),
-        features: sj.features ?? null,
+        // As the account is shown the store's list (0192): no column it is not shown, nor what reads one.
+        fields: (isStoreTable(section.source_table)
+          ? storeSectionColumns(section.source_table, sj.columns as SchemaColumn[] | undefined)
+          : (sj.columns ?? [])
+        ).map((c) => ({ field: c.field, label: c.label, type: c.type })),
+        features:
+          (isStoreTable(section.source_table)
+            ? withoutHidden(sj.features as FeatureSchema | null, hiddenColumns(section.source_table), true)
+            : sj.features) ?? null,
         rules: sectionRules.length ? sectionRules : "none on this section",
       };
 

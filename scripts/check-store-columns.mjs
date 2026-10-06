@@ -15,12 +15,17 @@ import {
   storeTableSchema,
   withoutHidden,
   SHAPES,
+  keepHidden,
+  keepHiddenColumns,
+  readsHidden,
   STORE_METRICS,
   STORE_METRIC_READS,
   STORE_TABLES,
 } from "../src/lib/store-read.ts";
 import { narrowResult, narrowedLists, withStoreShown } from "../src/lib/store-columns.ts";
 import { storeTool } from "../src/lib/store-tools.ts";
+import { mergeFeatures } from "../src/lib/types.ts";
+import { asksFromStore } from "../src/lib/suggest.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -240,6 +245,119 @@ check("the dates stay when shown", f.period?.field === "placed_at");
 check("a stat reading it, or split by it", f.stats.map((s) => s.label).join() === "Revenue");
 check("a search field", f.search.fields.join() === "order_number");
 check("nothing narrowed, nothing changed", withoutHidden({ filters: [] }, null).filters.length === 0);
+
+console.log("\nhidden, edited round, shown again: nothing lost");
+{
+  const H = new Set(["gateway", "customer_phone"]);
+  const cod = { op: "=", args: [{ field: "gateway" }, { const: "COD" }] };
+  const saved = {
+    filters: [
+      { field: "status", label: "Status", options: [] },
+      { field: "gateway", label: "Paid by", options: [] },
+    ],
+    stats: [
+      { label: "Gross", op: "sum", value: { field: "total" } },
+      { label: "COD", op: "count", where: cod },
+    ],
+    defaultSort: { field: "gateway", dir: "asc" },
+    actions: [
+      { label: "Packed", set: { packed: { const: true } } },
+      { label: "Confirm COD", set: { called: { const: true } }, when: cod },
+    ],
+    view: { type: "board", groupBy: "gateway" },
+    tabs: [{ label: "By city", view: { type: "board", groupBy: "ship_city" } }],
+    scanMode: { lookupField: "order_number", action: { set: { packed: { const: true } } } },
+  };
+  check(
+    "what reads a hidden column is found: a field, a groupBy, a written screen's code",
+    readsHidden(saved.stats[1], H) &&
+      readsHidden(saved.view, H) &&
+      readsHidden(
+        { type: "custom", title: "COD", html: "<script>rows.filter((r) => r.gateway === 'COD')</script>" },
+        H
+      ) &&
+      !readsHidden(saved.stats[0], H)
+  );
+  // The walk's catch (6 Oct): Gross, formatted as currency, vanished when the Currency column was hidden.
+  check(
+    "a word that only matches a column's name is not that column",
+    !readsHidden({ label: "Gross", op: "sum", value: { field: "total" }, format: "currency" }, new Set(["currency"])) &&
+      !readsHidden({ field: "status", label: "Status", options: ["gateway"] }, H)
+  );
+  const screen = withoutHidden(saved, H);
+  check(
+    "on screen: no filter, card, sort or board over it; the buttons and the scan keep working",
+    screen.filters.length === 1 &&
+      screen.stats.length === 1 &&
+      screen.defaultSort === undefined &&
+      screen.view.type === "table" &&
+      screen.actions.length === 2 &&
+      !!screen.scanMode
+  );
+  const brief = withoutHidden(saved, H, true);
+  check("in Luke's brief, not a button that reads it either", brief.actions.length === 1);
+
+  // The owner removes the only filter they see; Luke adds a card and a button, sending what he sees.
+  const customize = keepHidden(saved, { filters: null, defaultSort: null }, H);
+  const luke = keepHidden(
+    saved,
+    {
+      stats: [...screen.stats, { label: "Orders", op: "count" }],
+      actions: brief.actions.concat({ label: "Called", set: { called: { const: true } } }),
+    },
+    H
+  );
+  const after = mergeFeatures(mergeFeatures(saved, customize), luke);
+  check(
+    "the filter they could not see stays; the one they took off goes",
+    JSON.stringify(after.filters.map((f) => f.field)) === '["gateway"]'
+  );
+  check(
+    "the card they could not see stays beside the new one",
+    after.stats.map((x) => x.label).join() === "Gross,Orders,COD"
+  );
+  check(
+    "the button they could not see stays",
+    after.actions.map((x) => x.label).join() === "Packed,Called,Confirm COD"
+  );
+  check(
+    "the sort, the board and the scan, as saved",
+    after.defaultSort.field === "gateway" && after.view.groupBy === "gateway" && !!after.scanMode
+  );
+  check("shown again, all of it is there", JSON.stringify(withoutHidden(after, null)) === JSON.stringify(after));
+
+  const cols = [
+    { field: "order_number", label: "Order", type: "text" },
+    { field: "customer_phone", label: "Mobile", type: "text", named: true },
+    { field: "is_cod", label: "COD?", type: "boolean", compute: cod },
+    { field: "total", label: "Total", type: "currency" },
+  ];
+  const next = keepHiddenColumns(cols, [{ ...cols[0], label: "Order no" }, cols[3]], H);
+  check(
+    "columns saved while hidden: theirs renamed, the hidden ones back in their place, with their names",
+    next.map((c) => `${c.field}:${c.label}`).join() ===
+      "order_number:Order no,customer_phone:Mobile,is_cod:COD?,total:Total"
+  );
+}
+
+console.log("\nwhat the store offers to build, and its alerts, follow it");
+await withStoreShown({ orders: ["order_number", "placed_at", "total", "status"] }, async () => {
+  const counted = {
+    orders30: 20,
+    cod30: 10,
+    failedDeliveries: 0,
+    refunds60: 0,
+    lowStock: 3,
+    repeatCustomers: 0,
+    lateUnshipped: 0,
+    abandoned30: 0,
+  };
+  const asks = asksFromStore(counted, []);
+  check(
+    "no offer from a column not shown (how it was paid)",
+    !asks.some((a) => /COD/i.test(a.label)) && asks.some((a) => /5 or fewer/.test(a.label))
+  );
+});
 
 console.log(fails.length ? `\n${fails.length} FAILED` : "\nan account sees the columns it is shown, everywhere");
 process.exit(fails.length ? 1 : 0);

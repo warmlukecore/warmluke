@@ -10,6 +10,7 @@
 // src/components/ProjectSettings.tsx.
 
 import type { LucideIcon } from "lucide-react";
+import { hiddenColumns, type StoreTable } from "@/lib/store-read";
 import { Bell, BellRing, MessageSquareWarning, PackageMinus, TrendingUp, Truck } from "lucide-react";
 
 export type Alert = {
@@ -58,6 +59,8 @@ type Words = {
   ask?: (f: Facts) => string;
   /** Its settings, in order: the words before the number, and after. */
   settings: Array<{ key: string; before: string; after: string }>;
+  /** The store list columns it is worked out from: one the account is not shown (0192) keeps it off their screen. */
+  reads?: Array<[StoreTable, string]>;
 };
 
 const factsOf = (raw: Record<string, unknown>): Facts => ({
@@ -74,6 +77,7 @@ const titled = (kind: string) => kind.replace(/_/g, " ").replace(/^./, (c) => c.
 
 export const ALERT_WORDS: Record<string, Words> = {
   low_stock: {
+    reads: [["inventory_levels", "available"]],
     icon: PackageMinus,
     name: "Running low",
     about: "A product that will run out soon at the pace it sells.",
@@ -96,6 +100,10 @@ export const ALERT_WORDS: Record<string, Words> = {
     ],
   },
   dispatch_late: {
+    reads: [
+      ["orders", "fulfilment_status"],
+      ["orders", "placed_at"],
+    ],
     icon: Truck,
     name: "Late to send",
     about: "Orders still not sent long after they were placed.",
@@ -130,6 +138,7 @@ export const ALERT_WORDS: Record<string, Words> = {
     ],
   },
   return_reason: {
+    reads: [["returns", "reasons"]],
     icon: MessageSquareWarning,
     name: "A return reason repeats",
     about: "The same reason given for returns again and again.",
@@ -209,3 +218,7 @@ export const NEEDS_NAMES: Record<string, string> = {
   fulfillments: "shipments",
   returns: "returns",
 };
+
+/** Whether this account is shown an alert: not one worked out from a store column it is not shown (0192). */
+export const alertShown = (a: Pick<Alert, "kind">) =>
+  !(ALERT_WORDS[a.kind]?.reads ?? []).some(([table, field]) => hiddenColumns(table)?.has(field));

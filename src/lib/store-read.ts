@@ -1027,31 +1027,120 @@ export function narrowRow(table: StoreTable, data: Record<string, unknown>): Rec
   return hidden ? Object.fromEntries(Object.entries(data).filter(([k]) => !hidden.has(k))) : data;
 }
 /**
- * A section's features without what reads a column this account is not
- * shown: a filter, the sort, the dates or a stat over it would show what
- * the column does. What is left works as it did; the design is kept.
+ * Whether a part of a design reads a column this account is not shown: by a
+ * key that names a column (field, by, groupBy, colorBy, any …Field, a list
+ * of fields or columns) or by name in a written screen's html. Read off the
+ * design's own naming, never a list of its parts, so a part added tomorrow
+ * that names a column the same way is read the same way; a word that only
+ * happens to match a column's name (format: "currency") is not one. A part
+ * read so is set aside while the column is not shown, and kept as it is,
+ * to come back whole when it is.
+ */
+export function readsHidden(part: unknown, hidden: ReadonlySet<string> | null): boolean {
+  if (!hidden?.size) return false;
+  const named = new RegExp(`\\b(${[...hidden].join("|")})\\b`);
+  const names = (key: string) => key === "field" || key === "by" || /^(groupBy|colorBy)$|Field$/.test(key);
+  const lists = (key: string) => key === "fields" || key === "columns";
+  const reads = (v: unknown, key = ""): boolean =>
+    typeof v === "string"
+      ? (names(key) && hidden.has(v)) || (key === "html" && named.test(v))
+      : Array.isArray(v)
+        ? v.some((x) => (lists(key) && typeof x === "string" ? hidden.has(x) : reads(x)))
+        : !!v && typeof v === "object" && Object.entries(v).some(([k, x]) => reads(x, k));
+  return reads(part);
+}
+
+/**
+ * A section's features as this account is shown them: what reads a column
+ * it is not shown is set aside, so nothing on screen says what the column
+ * holds (a filter, the sort, the dates, a stat, a search over it, a view or
+ * a tab built on it; a view falls back to the table). For Luke's brief and
+ * their AI's (`brief`), a row button or a scan that reads one too, so they
+ * neither name it nor try to change it; on screen those keep working on the
+ * whole row. Nothing here is saved: a save keeps them (keepHidden).
  */
 export function withoutHidden(
   features: FeatureSchema | null | undefined,
-  hidden: ReadonlySet<string> | null
+  hidden: ReadonlySet<string> | null,
+  brief = false
 ): FeatureSchema | null | undefined {
   if (!features || !hidden?.size) return features;
-  const reads = (v: unknown): boolean =>
-    Array.isArray(v)
-      ? v.some(reads)
-      : !!v && typeof v === "object"
-        ? Object.entries(v).some(([k, x]) => (k === "field" && typeof x === "string" && hidden.has(x)) || reads(x))
-        : false;
-  return {
-    ...features,
-    ...(features.filters ? { filters: features.filters.filter((f) => !hidden.has(f.field)) } : {}),
-    ...(features.defaultSort && hidden.has(features.defaultSort.field) ? { defaultSort: undefined } : {}),
-    ...(features.period && hidden.has(features.period.field) ? { period: undefined } : {}),
-    ...(features.stats ? { stats: features.stats.filter((st) => !reads(st) && !(st.by && hidden.has(st.by))) } : {}),
-    ...(features.search?.fields
-      ? { search: { ...features.search, fields: features.search.fields.filter((f) => !hidden.has(f)) } }
-      : {}),
+  const out: Record<string, unknown> = { ...features };
+  const reads = (v: unknown) => readsHidden(v, hidden);
+  for (const part of ["filters", "stats", "tabs", ...(brief ? ["actions"] : [])] as const) {
+    const list = (features as Record<string, unknown>)[part];
+    if (Array.isArray(list)) out[part] = list.filter((x) => !reads(x));
+  }
+  for (const part of ["defaultSort", "period", ...(brief ? ["scanMode"] : [])])
+    if (reads((features as Record<string, unknown>)[part])) delete out[part];
+  if (features.view && reads(features.view)) out.view = { type: "table" };
+  if (features.search?.fields)
+    out.search = { ...features.search, fields: features.search.fields.filter((f) => !hidden.has(f)) };
+  return out as FeatureSchema;
+}
+
+/**
+ * A change saved while some columns are not shown, with what its editor
+ * could not see kept (0192): each part of the saved design that reads one
+ * (withoutHidden set it aside) stays, beside what the change says. A list
+ * part (filters, stats, tabs, buttons) keeps its hidden items after the new
+ * ones; a part the change takes away (null) that read one is left as saved,
+ * since they could not see it to take it away; a search keeps its hidden
+ * fields. So the owner's Customize, Luke and their AI, editing round it,
+ * leave it whole, and it is back as it was the moment the column is shown.
+ */
+export function keepHidden<T extends Record<string, unknown> | FeatureSchema | null | undefined>(
+  saved: FeatureSchema | null | undefined,
+  change: T,
+  hidden: ReadonlySet<string> | null
+): T {
+  if (!change || !saved || !hidden?.size) return change;
+  const out: Record<string, unknown> = { ...change };
+  const key = (x: unknown) => {
+    const o = (x ?? {}) as Record<string, unknown>;
+    return JSON.stringify(o.field ?? o.label ?? o.title ?? x);
   };
+  for (const [part, next] of Object.entries(change)) {
+    const was = (saved as Record<string, unknown>)[part];
+    if (was === null || was === undefined) continue;
+    if (Array.isArray(was)) {
+      const kept = was.filter((x) => readsHidden(x, hidden));
+      if (!kept.length) continue;
+      const mine = Array.isArray(next) ? next : [];
+      out[part] = [...mine, ...kept.filter((x) => !mine.some((y) => key(y) === key(x)))];
+    } else if (part === "search") {
+      const fields = (was as { fields?: string[] }).fields?.filter((f) => hidden.has(f)) ?? [];
+      const mine = next as { fields?: unknown } | null;
+      if (fields.length && mine && Array.isArray(mine.fields))
+        out.search = { ...mine, fields: [...new Set([...(mine.fields as string[]), ...fields])] };
+    } else if (next === null && readsHidden(was, hidden)) delete out[part];
+  }
+  return out as T;
+}
+
+/**
+ * A section's columns saved while some are not shown, with the saved ones
+ * its editor could not see put back where they stood (0192): a store column
+ * not shown, with the name and place the owner gave it, and a column of
+ * theirs worked out from one.
+ */
+export function keepHiddenColumns(
+  saved: SchemaColumn[] | null | undefined,
+  next: SchemaColumn[],
+  hidden: ReadonlySet<string> | null
+): SchemaColumn[] {
+  if (!saved?.length || !hidden?.size) return next;
+  const out = [...next];
+  saved.forEach((c, i) => {
+    if (out.some((o) => o.field === c.field)) return;
+    if (!hidden.has(c.field) && !readsHidden(c.compute, hidden)) return;
+    const before = saved
+      .slice(0, i)
+      .reverse()
+      .find((p) => out.some((o) => o.field === p.field));
+    out.splice(before ? out.findIndex((o) => o.field === before.field) + 1 : 0, 0, c);
+  });
+  return out;
 }
 
 // ── The merchant's own fields on the store's rows (0128) ─────────
@@ -1113,8 +1202,9 @@ export function storeSectionColumns(table: StoreTable, saved: SchemaColumn[] | n
     const before = ours.slice(0, i).findLast((p) => out.some((o) => o.field === p.field));
     out.splice(before ? out.findIndex((o) => o.field === before.field) + 1 : 0, 0, t);
   }
+  // Not shown, and not what is worked out from one: kept on save (keepHiddenColumns).
   const hidden = hiddenColumns(table);
-  return hidden ? out.filter((c) => !hidden.has(c.field)) : out;
+  return hidden ? out.filter((c) => !hidden.has(c.field) && !readsHidden(c.compute, hidden)) : out;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
