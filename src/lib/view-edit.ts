@@ -14,7 +14,7 @@
 // Callers: src/components/ViewEditor.tsx, src/app/api/mcp/route.ts,
 // scripts/check-view-edit.mjs.
 
-import { YES_NO } from "@/lib/filters";
+import { filterKind, YES_NO } from "@/lib/filters";
 import type { AssistantPlan, FeatureSchema, SchemaColumn, UiSchema } from "@/lib/types";
 
 export type Sort = { field: string; dir: "asc" | "desc" };
@@ -34,16 +34,18 @@ export const MAX_CHOICES = 15;
 
 /**
  * The choices a filter on this column offers, or why it can offer none.
- * A tick is Yes / No by itself; a status keeps the choices it was given
- * and adds what its rows hold; a word column is a filter only while its
- * rows hold a few values, not a different one each.
+ * A tick is Yes / No by itself; a number or an amount is a lowest and a
+ * highest (lib/filters filterKind), with no list; a status keeps the
+ * choices it was given and adds what its rows hold; a word column is a
+ * filter only while its rows hold a few values, not a different one each.
  */
 export function filterChoices(
   col: SchemaColumn,
   kept: string[] | undefined,
   values: string[]
-): { options: string[] } | { why: string } {
+): { options: string[]; range?: true } | { why: string } {
   if (col.type === "boolean") return { options: [...YES_NO] };
+  if (filterKind(col.type) === "range") return { options: [], range: true };
   if (col.type !== "badge" && col.type !== "dropdown" && col.type !== "text")
     return { why: `"${col.label}" is not a column of choices, so a filter has nothing to list` };
   const seen = [...new Set([...(kept ?? []), ...values].map((v) => String(v ?? "").trim()).filter(Boolean))];

@@ -10,7 +10,7 @@
 
 import { InfoTip } from "@/components/ui/InfoTip";
 import { explainStat } from "@/lib/describe";
-import { filterOptions, matchesFilter } from "@/lib/filters";
+import { filterKind, filterOptions, matchesFilter, rangeText, readRange, type Range } from "@/lib/filters";
 import { filterChoices, filterIsOff } from "@/lib/view-edit";
 import type { ScreenAsk } from "@/lib/screen";
 import ErrorNote from "@/components/ErrorNote";
@@ -26,6 +26,8 @@ export type StatRequest = {
     search: string;
     search_fields: string[];
     filters: Record<string, string>;
+    /** A number or an amount's lowest and highest (0194), out of `filters`. */
+    ranges?: Record<string, Range>;
     computed: Array<{ field: string; expr: unknown }>;
     currency_fields: string[];
     /** The dates picked above the section (0161), as abo_in_period reads them. */
@@ -215,6 +217,153 @@ function FilterMenu({
 }
 
 /**
+ * A filter by a number or an amount (lib/filters filterKind): a lowest
+ * and a highest, either left open, behind a button like the bar's other
+ * filters. Set with Apply or Enter, so a figure half typed narrows nothing.
+ */
+function RangeMenu({
+  label,
+  value,
+  show,
+  onChange,
+}: {
+  label: string;
+  /** As the bar keeps it: "500..2000", "500..", "..2000", or "". */
+  value: string;
+  /** A figure as the column shows it: ₹2,000, 2,000 or 15%. */
+  show: (n: number) => string;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [fromRight, setFromRight] = useState(false);
+  const [min, setMin] = useState("");
+  const [max, setMax] = useState("");
+  const box = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const first = useRef<HTMLInputElement>(null);
+  const id = useId();
+  const now = readRange(value);
+  const said = !now
+    ? ""
+    : now.min === undefined
+      ? `up to ${show(now.max!)}`
+      : now.max === undefined
+        ? `${show(now.min)} or more`
+        : `${show(now.min)} – ${show(now.max)}`;
+  // Typed with a lowest above the highest: said, and not applied.
+  const typed = readRange(`${min}..${max}`);
+  const backwards = typed?.min !== undefined && typed.max !== undefined && typed.min > typed.max;
+
+  useEffect(() => {
+    if (!open) return;
+    first.current?.focus({ preventScroll: true });
+    const away = (e: MouseEvent) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [open]);
+
+  const reveal = () => {
+    const at = trigger.current?.getBoundingClientRect();
+    setFromRight(!!at && at.left + 240 > window.innerWidth - 8);
+    setMin(now?.min !== undefined ? String(now.min) : "");
+    setMax(now?.max !== undefined ? String(now.max) : "");
+    setOpen(true);
+  };
+  const close = () => {
+    setOpen(false);
+    trigger.current?.focus();
+  };
+  const apply = () => {
+    if (backwards) return;
+    onChange(rangeText(typed));
+    close();
+  };
+
+  return (
+    <div ref={box} className="relative">
+      <button
+        ref={trigger}
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={`${id}-range`}
+        aria-label={`Filter by ${label}${said ? `: ${said}` : ""}`}
+        onClick={() => (open ? setOpen(false) : reveal())}
+        className={button("secondary", "sm")}
+      >
+        <span className={said ? "text-fg-muted" : ""}>{label}</span>
+        {said && <span className="max-w-44 truncate tabular-nums">{said}</span>}
+        <ChevronDown
+          aria-hidden
+          size={13}
+          strokeWidth={2}
+          className={`text-fg-faint transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open && (
+        <div
+          id={`${id}-range`}
+          role="dialog"
+          aria-label={`${label}, lowest and highest`}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              close();
+            } else if (e.key === "Enter") {
+              e.preventDefault();
+              apply();
+            }
+          }}
+          className={`${menu} absolute top-full mt-1 w-60 p-3 ${fromRight ? "right-0" : "left-0"}`}
+        >
+          <div className="grid grid-cols-2 gap-2">
+            {(
+              [
+                ["Min", min, setMin, first],
+                ["Max", max, setMax, undefined],
+              ] as const
+            ).map(([name, v, set, ref]) => (
+              <label key={name} className="min-w-0">
+                <span className="mb-1 block text-xs text-fg-muted">{name}</span>
+                <input
+                  ref={ref}
+                  inputMode="decimal"
+                  value={v}
+                  onChange={(e) => set(e.target.value)}
+                  placeholder="Any"
+                  aria-invalid={backwards || undefined}
+                  className={`${fieldOf("sm")} w-full min-w-0 tabular-nums`}
+                />
+              </label>
+            ))}
+          </div>
+          {backwards && <p className="mt-2 text-xs text-tone-critical-fg">Min is above Max.</p>}
+          <div className="mt-3 flex justify-end gap-2">
+            {now && (
+              <button
+                type="button"
+                onClick={() => {
+                  onChange("");
+                  close();
+                }}
+                className={button("plain", "sm")}
+              >
+                Clear
+              </button>
+            )}
+            <button type="button" onClick={apply} disabled={backwards} className={button("primary", "sm")}>
+              Apply
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * The dates a section is read over (features.period): one button saying
  * which, opening shortcuts and a calendar (ui/DateRange). The pick
  * narrows the rows, the stat cards and the view together; said in words
@@ -373,6 +522,8 @@ export default function GenericRenderer({
   const columns = useMemo(() => schema?.columns ?? [], [schema]);
   // A yes/no column filters as a tick: Yes, or every row not ticked.
   const yesNo = (f: string) => columns.some((c) => c.field === f && c.type === "boolean");
+  // And a number or an amount as a lowest and a highest (lib/filters).
+  const kindOf = (f: string) => filterKind(columns.find((c) => c.field === f)?.type);
   const features: FeatureSchema | null = (schema as UiSchema & { features?: FeatureSchema | null })?.features ?? null;
   // On the bar: one taken off it with Customize keeps its choices for the row form (lib/view-edit).
   const barFilters = (features?.filters ?? []).filter((f) => !filterIsOff(f));
@@ -548,7 +699,7 @@ export default function GenericRenderer({
       // Compared the way the search box beside it compares: a
       // dropdown that matched byte for byte offered "active" against
       // Shopify's "ACTIVE" and found nothing, twenty-one times.
-      if (v) rows = rows.filter((r) => matchesFilter(r, fl.field, v, yesNo(fl.field)));
+      if (v) rows = rows.filter((r) => matchesFilter(r, fl.field, v, kindOf(fl.field)));
     }
 
     if (effectiveSort && columns.some((c) => c.field === effectiveSort.field) && computedOnly(effectiveSort.field)) {
@@ -658,7 +809,13 @@ export default function GenericRenderer({
         scope: {
           search: features.search?.enabled ? search.trim() : "",
           search_fields: searchFields,
-          filters: filterValues,
+          filters: Object.fromEntries(Object.entries(filterValues).filter(([f]) => kindOf(f) !== "range")),
+          ranges: Object.fromEntries(
+            Object.entries(filterValues).flatMap(([f, v]) => {
+              const r = kindOf(f) === "range" ? readRange(v) : null;
+              return r ? [[f, r]] : [];
+            })
+          ),
           computed: columns.filter((c) => c.compute).map((c) => ({ field: c.field, expr: c.compute })),
           currency_fields: rowCurrencyFields,
           period: range
@@ -1030,31 +1187,51 @@ export default function GenericRenderer({
                 className={`${fieldOf("md")} w-full min-w-0 sm:w-60`}
               />
             )}
-            {barFilters.map((fl) => (
-              <FilterMenu
-                key={fl.field}
-                label={fl.label}
-                value={filterValues[fl.field] ?? ""}
-                options={filterOptions(
-                  fl.options ?? [],
-                  server
-                    ? [
-                        ...rowsWithComputed,
-                        ...(serverRows!.facets[fl.field] ?? []).map(
-                          (v) => ({ id: "", data: { [fl.field]: v } }) as RecordRow
-                        ),
-                      ]
-                    : rowsWithComputed,
-                  fl.field,
-                  yesNo(fl.field)
-                )}
-                badges={columns.find((c) => c.field === fl.field)?.type === "badge"}
-                onChange={(v) => {
-                  setFilterValues((prev) => ({ ...prev, [fl.field]: v }));
-                  setPage(0);
-                }}
-              />
-            ))}
+            {barFilters.map((fl) =>
+              kindOf(fl.field) === "range" ? (
+                <RangeMenu
+                  key={fl.field}
+                  label={fl.label}
+                  value={filterValues[fl.field] ?? ""}
+                  show={(n) => {
+                    const type = columns.find((c) => c.field === fl.field)?.type;
+                    return type === "currency"
+                      ? fmt.money(n)
+                      : type === "percent"
+                        ? `${fmt.number(n)}%`
+                        : fmt.number(n);
+                  }}
+                  onChange={(v) => {
+                    setFilterValues((prev) => ({ ...prev, [fl.field]: v }));
+                    setPage(0);
+                  }}
+                />
+              ) : (
+                <FilterMenu
+                  key={fl.field}
+                  label={fl.label}
+                  value={filterValues[fl.field] ?? ""}
+                  options={filterOptions(
+                    fl.options ?? [],
+                    server
+                      ? [
+                          ...rowsWithComputed,
+                          ...(serverRows!.facets[fl.field] ?? []).map(
+                            (v) => ({ id: "", data: { [fl.field]: v } }) as RecordRow
+                          ),
+                        ]
+                      : rowsWithComputed,
+                    fl.field,
+                    yesNo(fl.field)
+                  )}
+                  badges={columns.find((c) => c.field === fl.field)?.type === "badge"}
+                  onChange={(v) => {
+                    setFilterValues((prev) => ({ ...prev, [fl.field]: v }));
+                    setPage(0);
+                  }}
+                />
+              )
+            )}
             {views.length === 1 && (
               <span className="ml-auto hidden rounded-full bg-tone-neutral px-2 py-0.5 text-xs text-tone-neutral-fg sm:inline">
                 {VIEW_NAMES[view.type]}

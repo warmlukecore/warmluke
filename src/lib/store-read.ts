@@ -16,7 +16,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { FeatureSchema, SchemaColumn } from "@/lib/types";
 import type { Resource } from "@/lib/shopify-resources";
-import { isYes } from "@/lib/filters";
+import { filterKind, isYes, readRange } from "@/lib/filters";
 import type { StoreSignals } from "@/lib/suggest";
 
 export type StoreBrief = {
@@ -1535,8 +1535,10 @@ export async function readStorePage(
   const sort = state.sort ?? features?.defaultSort ?? null;
   const type = sort ? columns.find((c) => c.field === sort.field)?.type : undefined;
   const fields = features?.search?.fields?.length ? features.search.fields : searchFieldsOf(table);
-  // A yes/no field is asked as a tick (0171): ticked, or every row not.
+  // A yes/no field is asked as a tick (0171): ticked, or every row not;
+  // a number or an amount as a lowest and a highest (0194), with no list.
   const ticks = new Set(columns.filter((c) => c.type === "boolean").map((c) => c.field));
+  const ranged = new Set(columns.filter((c) => filterKind(c.type) === "range").map((c) => c.field));
   const chosen = Object.entries(state.filters).filter(([f, v]) => v && !computed.has(f));
   const { data, error } = await db.rpc("abo_store_page", {
     p_module: moduleId,
@@ -1545,8 +1547,14 @@ export async function readStorePage(
       limit: state.size,
       search: state.search.trim(),
       search_fields: fields.filter((f) => !computed.has(f)),
-      filters: Object.fromEntries(chosen.filter(([f]) => !ticks.has(f))),
+      filters: Object.fromEntries(chosen.filter(([f]) => !ticks.has(f) && !ranged.has(f))),
       flags: Object.fromEntries(chosen.filter(([f]) => ticks.has(f)).map(([f, v]) => [f, isYes(v)])),
+      ranges: Object.fromEntries(
+        chosen.flatMap(([f, v]) => {
+          const r = ranged.has(f) ? readRange(v) : null;
+          return r ? [[f, r]] : [];
+        })
+      ),
       sort:
         sort && !computed.has(sort.field)
           ? { ...sort, kind: type === "number" || type === "currency" ? "number" : "text" }
@@ -1556,7 +1564,7 @@ export async function readStorePage(
         dir: (spec.opens ?? spec.order).ascending ? "asc" : "desc",
       },
       period,
-      facets: facets.filter((f) => !computed.has(f) && !ticks.has(f)),
+      facets: facets.filter((f) => !computed.has(f) && !ticks.has(f) && !ranged.has(f)),
     },
   });
   if (error) throw new Error(error.message);

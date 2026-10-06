@@ -19,7 +19,7 @@
 import { callModel, stripFences } from "@/lib/ai";
 import { asJob } from "@/lib/usage";
 import { evalExpr, truthy, withComputed } from "@/lib/expr";
-import { isYes, matchesFilter, optionsFor } from "@/lib/filters";
+import { filterKind, inRange, isYes, matchesFilter, optionsFor, rangeText, readRange } from "@/lib/filters";
 import { fillFromLinked } from "@/lib/links";
 import { sameCode } from "@/lib/scan";
 import type { AssistantPlan, Expr, FeatureSchema, SchemaColumn } from "@/lib/types";
@@ -360,6 +360,17 @@ export function playScenario(
         );
         if (!f) return fail(`There is no ${name} filter above ${s.name}.`);
         const yesNo = s.columns.some((c) => c.field === f.field && c.type === "boolean");
+        // A number or an amount is a lowest and a highest, { "min", "max" } (lib/filters).
+        const range =
+          filterKind(s.columns.find((c) => c.field === f.field)?.type) === "range" ? readRange(choice) : null;
+        if (range) {
+          const under = row ? inRange(row[f.field], range) : rows.some((r) => inRange(r[f.field], range));
+          if (under !== (step.shows !== false))
+            return fail(
+              `${under ? "Rows are" : "No row is"} listed under ${f.label}: ${rangeText(range).replace("..", " to ")}.`
+            );
+          continue;
+        }
         if (!yesNo && f.options.length && !f.options.some((o) => same(o, String(choice))))
           return fail(`The ${f.label} filter has no "${choice}" (it offers ${f.options.slice(0, 6).join(", ")}).`);
         const now: Row | null = row;

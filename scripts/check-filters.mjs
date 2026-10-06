@@ -11,7 +11,7 @@
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-filters.mjs
 
-import { filterOptions, matchesFilter } from "../src/lib/filters.ts";
+import { filterKind, filterOptions, matchesFilter, rangeText, readRange } from "../src/lib/filters.ts";
 import { parseReply } from "../src/lib/ai.ts";
 
 const fails = [];
@@ -159,6 +159,62 @@ console.log("\na yes/no field is a tick: ticked, or not (an RTO column, 3 Oct)")
   );
   check("sent with no choices, it is kept, not refused or dropped", filterOf(bare)?.options?.join() === "Yes,No");
   if (!bare.ok) console.log("     →", bare.errors);
+}
+
+console.log("\na number or an amount: a lowest and a highest (Tanish, 6 Oct: a Min / Max price)");
+{
+  const priced = [300, 900, "1,200", "₹ 1,500", "", null, "on request"].map((price) => ({ data: { price } }));
+  const under = (chosen) => priced.filter((r) => matchesFilter(r, "price", chosen, "range")).map((r) => r.data.price);
+  check("between two: only the rows inside", under("500..1000").join() === "900");
+  check("from one up, money written any way", under("1000..").join() === "1,200,₹ 1,500");
+  check("up to one", under("..500").join() === "300");
+  check(
+    "a blank or a word is in no range, not 0",
+    !under("..2000").some((v) => v === "" || v === null || v === "on request")
+  );
+  check(
+    "a number, an amount and a percent filter by range",
+    ["number", "currency", "percent"].every((t) => filterKind(t) === "range")
+  );
+  check("a tick and a word do not", filterKind("boolean") === "yesno" && filterKind("text") === "choice");
+  check("given as a model gives it", rangeText(readRange({ min: 500, max: "2,000" })) === "500..2000");
+  check("one end open", rangeText(readRange({ max: 2000 })) === "..2000");
+  check("a word is no range", readRange("cheap") === null && readRange({}) === null && rangeText(null) === "");
+
+  const SHOP = "66666666-6666-4666-8666-666666666666";
+  const ORDERS = "77777777-7777-4777-8777-777777777777";
+  const modules = [
+    { id: SHOP, project_id: "p", name: "catalogue", nav_label: "Catalogue", icon: "table", source_table: null },
+    { id: ORDERS, project_id: "p", name: "orders", nav_label: "Orders", icon: "table", source_table: "orders" },
+  ];
+  const name = { field: "name", label: "Name", type: "text" };
+  const price = { field: "price", label: "Price", type: "currency" };
+  const filtersOf = (target, filters, columns) => {
+    const r = parseReply(
+      JSON.stringify({
+        type: "plans",
+        message: "A price filter.",
+        plans: [
+          { changeType: "FEATURE_UPDATE", targetModuleId: target, features: { filters }, explanation: "Filter." },
+        ],
+      }),
+      modules,
+      { columns },
+      null
+    );
+    if (!r.ok) console.log("     →", r.errors);
+    return r.ok ? r.reply.plans.at(-1).features.filters : null;
+  };
+  const bands = filtersOf(
+    SHOP,
+    [{ field: "price", label: "Price", options: ["Under 500", "500-1000"] }],
+    [name, price]
+  );
+  check("sent as bands, it is a range: no list to match nothing", bands?.[0]?.options?.length === 0);
+  const bare = filtersOf(SHOP, [{ field: "price", label: "Price" }], [name, price]);
+  check("sent with no choices, kept, not dropped", bare?.[0]?.field === "price" && bare[0].options.length === 0);
+  const store = filtersOf(ORDERS, [{ field: "total", label: "Total" }], []);
+  check("over the store's own amount too", store?.[0]?.field === "total" && store[0].options.length === 0);
 }
 
 console.log(fails.length === 0 ? "\nthe dropdown points at the rows" : `\n${fails.length} FAILED`);

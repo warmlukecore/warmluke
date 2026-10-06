@@ -11,7 +11,11 @@
 // offered "active / draft / archived"; Shopify stores ACTIVE, DRAFT
 // and ARCHIVED. Selecting one matched zero rows out of twenty-one.
 //
-// Callers: src/components/GenericRenderer.tsx, src/components/RecordModal.tsx (optionsFor), src/lib/tryout.ts.
+// A number or an amount is filtered by a range instead (filterKind),
+// here, in the store's page and in the stat cards alike (0194).
+//
+// Callers: src/components/GenericRenderer.tsx, src/components/RecordModal.tsx (optionsFor), src/lib/tryout.ts,
+// src/lib/store-read.ts, src/lib/screen.ts, src/lib/view-edit.ts, the validator in src/lib/ai.ts.
 
 export type RecordRow = { data?: Record<string, unknown> | null };
 
@@ -50,16 +54,72 @@ export const isYes = (v: unknown) => v === true || v === 1 || ["true", "yes"].in
 export const YES_NO = ["Yes", "No"];
 
 /**
+ * How a filter asks, by its column: a tick is Yes or No; a number or an
+ * amount is a range, a lowest and a highest, either left open ("price
+ * between ₹500 and ₹2,000"), since a list of every price is no choice;
+ * anything else is one of its values.
+ */
+export type FilterKind = "choice" | "yesno" | "range";
+export const filterKind = (type: string | undefined): FilterKind =>
+  type === "boolean" ? "yesno" : type === "number" || type === "currency" || type === "percent" ? "range" : "choice";
+
+/** A range: the lowest and the highest, either left open. */
+export type Range = { min?: number; max?: number };
+
+const num = (v: unknown): number | undefined => {
+  if (typeof v === "number") return Number.isFinite(v) ? v : undefined;
+  const s = String(v ?? "")
+    .replace(/^(rs\.?|inr)\s*/i, "")
+    .replace(/[,\s₹$€£%]/g, "");
+  if (!s) return undefined;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : undefined;
+};
+
+/**
+ * A range, as the bar keeps it ("500..2000", "500..", "..2000") or as a
+ * model or a link gives it ({ "min": 500, "max": 2000 }). Null when it
+ * names neither end.
+ */
+export function readRange(v: unknown): Range | null {
+  let min: unknown;
+  let max: unknown;
+  if (v && typeof v === "object" && !Array.isArray(v)) ({ min, max } = v as Record<string, unknown>);
+  else if (typeof v === "string" && v.includes("..")) [min, max] = v.split("..");
+  else return null;
+  const r: Range = {};
+  if (num(min) !== undefined) r.min = num(min);
+  if (num(max) !== undefined) r.max = num(max);
+  return r.min === undefined && r.max === undefined ? null : r;
+}
+
+/** A range as the bar keeps it: "" when it names neither end. */
+export const rangeText = (r: Range | null) => (r ? `${r.min ?? ""}..${r.max ?? ""}` : "");
+
+/** A value inside a range: a blank or a word is in none, not 0. */
+export function inRange(value: unknown, r: Range | null): boolean {
+  if (!r) return true;
+  const n = num(value);
+  return n !== undefined && (r.min === undefined || n >= r.min) && (r.max === undefined || n <= r.max);
+}
+
+/**
  * Does this row belong under this choice?
  *
  * Case and stray spaces are not what a merchant means by a category.
  * The search box beside these filters has always matched this way;
  * only the filters were comparing byte for byte.
  */
-export function matchesFilter(row: RecordRow, field: string, chosen: string, yesNo = false): boolean {
+export function matchesFilter(
+  row: RecordRow,
+  field: string,
+  chosen: string,
+  kind: FilterKind | boolean = "choice"
+): boolean {
   const value = row.data?.[field];
+  if (kind === "range") return inRange(value, readRange(chosen));
   const want = key(chosen);
-  if (yesNo) return isYes(value) === (want === "yes");
+  if (kind === true || kind === "yesno") return isYes(value) === (want === "yes");
   // The whole cell first, for a choice that is itself a list — an
   // option designed before this, or a value with a comma in its name.
   return key(value) === want || parts(value).some((p) => key(p) === want);

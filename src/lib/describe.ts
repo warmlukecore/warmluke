@@ -324,7 +324,8 @@ export function describeFeaturesFull(f: FeatureSchema, modules: ModuleRow[]): st
     out.push(`Search${f.search.fields?.length ? ` over ${f.search.fields.join(", ")}` : ""}`);
   }
   for (const fl of f.filters ?? []) {
-    out.push(`Filter by ${fl.label} (${fl.options.join(" / ")})`);
+    // No choices: a number's or an amount's, by its lowest and highest (lib/filters filterKind).
+    out.push(`Filter by ${fl.label} (${fl.options?.length ? fl.options.join(" / ") : "lowest to highest"})`);
   }
   if (f.period) {
     const p = f.period;

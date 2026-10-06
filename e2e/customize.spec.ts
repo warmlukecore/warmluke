@@ -62,8 +62,9 @@ test("Customize renames, hides, moves, filters and orders a section, with no mod
     await sheet.getByRole("textbox", { name: "Name of Customer" }).fill("Buyer");
     await sheet.getByRole("switch", { name: "Show Amount on the table" }).click();
     await sheet.getByRole("button", { name: "Move Reason up" }).click();
-    // A filter is offered only where the rows give it choices: the reasons, not the amounts.
-    await expect(sheet.getByRole("switch", { name: "Filter by Amount" })).toHaveCount(0);
+    // A filter is offered where the rows give it choices, the reasons; an amount by its lowest and highest.
+    await expect(sheet.getByRole("switch", { name: "Filter by Amount" })).toBeVisible();
+    await expect(sheet.getByText("Min and max, either left open")).toBeVisible();
     await sheet.getByRole("switch", { name: "Filter by Reason" }).click();
     // Lists are chosen from with the keys they answer to: a click scrolls the
     // sheet first, and a list closes when what carries it moves (ui/Select).

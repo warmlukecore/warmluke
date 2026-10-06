@@ -75,11 +75,11 @@ export default function ViewEditor({
     valuesOf
   );
   const named = new Map(cols.map((c) => [c.field, c.label.trim() || c.field]));
-  // A column a filter can list choices for, with them; no other is offered: a control nobody can use is not shown.
+  // A column a filter can list choices for, with them, or a number or an amount to narrow by its lowest and highest; no other is offered: a control nobody can use is not shown.
   const filterable = schema.columns.flatMap((c) => {
     const kept = schema.features?.filters?.find((f) => f.field === c.field)?.options;
     const choices = filterChoices(c, kept, valuesOf(c.field));
-    return "options" in choices ? [{ field: c.field, options: choices.options }] : [];
+    return "options" in choices ? [{ field: c.field, options: choices.options, range: !!choices.range }] : [];
   });
   const problems = refused.length ? refused : outcome.errors;
 
@@ -186,7 +186,10 @@ export default function ViewEditor({
         </Group>
 
         {filterable.length > 0 && (
-          <Group title="Filters" description="The choices above the table, from what its rows hold.">
+          <Group
+            title="Filters"
+            description="The choices above the table, from what its rows hold; a number or an amount by its lowest and highest."
+          >
             <ul className="-my-2 divide-y divide-line">
               {filterable.map((f) => {
                 const on = filters.includes(f.field);
@@ -194,7 +197,9 @@ export default function ViewEditor({
                   <li key={f.field} className="flex items-center gap-3 py-2">
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[13px] text-fg">{named.get(f.field)}</div>
-                      <div className="truncate text-xs text-fg-muted">{f.options.join(", ")}</div>
+                      <div className="truncate text-xs text-fg-muted">
+                        {f.range ? "Min and max, either left open" : f.options.join(", ")}
+                      </div>
                     </div>
                     <span className="w-6 shrink-0 text-right text-xs text-fg-muted">{on ? "On" : "Off"}</span>
                     <Switch

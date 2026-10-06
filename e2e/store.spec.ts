@@ -127,3 +127,74 @@ test("a field of the merchant's sits on the store's own orders: set by a button,
     await shop.admin.from("modules").delete().eq("id", id);
   }
 });
+
+test("a price between two: Min and Max narrow the whole list, and its cards with it", async ({
+  signedIn: page,
+  shop,
+}) => {
+  // A section over the orders with a filter by its total, sent as a
+  // design sends it (as bands); the validator makes it a lowest and a
+  // highest (Tanish, 6 Oct: their AI said a Min / Max price could not be built).
+  const made = await page.request.post("/api/apply", {
+    headers: { Authorization: `Bearer ${(shop.session as { access_token: string }).access_token}` },
+    data: {
+      projectId: shop.projectId,
+      plans: [
+        {
+          changeType: "NEW_MODULE",
+          targetModuleId: null,
+          newModule: { name: "e2e-priced", nav_label: "Priced", icon: "table", source_table: "orders" },
+          newSchema: null,
+          features: {
+            filters: [{ field: "total", label: "Total", options: ["Under 1000", "1000 and up"] }],
+            stats: [{ label: "Orders in view", op: "count" }],
+          },
+          newRecords: null,
+          explanation: "The store's orders, to narrow by what they came to.",
+        },
+      ],
+    },
+  });
+  expect(made.ok(), `the section was built: ${await made.text()}`).toBe(true);
+  const { data: mod } = await shop.admin
+    .from("modules")
+    .select("id")
+    .eq("project_id", shop.projectId)
+    .eq("name", "e2e-priced")
+    .single();
+  const id = mod!.id as string;
+  const { data: orders } = await shop.admin.from("orders").select("total").eq("store_id", shop.storeId);
+  const totals = (orders ?? []).map((o) => Number(o.total)).sort((a, b) => a - b);
+  const [low, high] = [totals[2], totals[totals.length - 3]];
+  const inside = totals.filter((t) => t >= low && t <= high).length;
+  try {
+    await page.goto(`/app/${shop.projectId}?section=${id}`);
+    await expect(page.getByRole("heading", { level: 1, name: "Priced" })).toBeVisible();
+    const rows = page.getByRole("row").filter({ hasText: /#10\d\d/ });
+    await expect(rows).toHaveCount(totals.length);
+    const card = page.locator("div.shadow-card").filter({
+      has: page.getByRole("button", { name: "How Orders in view is worked out" }),
+    });
+    await expect(card).toContainText(String(totals.length));
+
+    await page.getByRole("button", { name: "Filter by Total" }).click();
+    const box = page.getByRole("dialog", { name: "Total, lowest and highest" });
+    await box.getByRole("textbox", { name: "Min" }).fill(String(low));
+    await box.getByRole("textbox", { name: "Max" }).fill(String(high));
+    await box.getByRole("button", { name: "Apply" }).click();
+    await expect(rows).toHaveCount(inside);
+    await expect(card).toContainText(String(inside));
+    await expect(page.getByRole("button", { name: /^Filter by Total: / })).toBeVisible();
+
+    // A lowest above the highest is said, and narrows nothing.
+    await page.getByRole("button", { name: /^Filter by Total: / }).click();
+    await box.getByRole("textbox", { name: "Min" }).fill(String(high + 1));
+    await expect(box.getByText("Min is above Max.")).toBeVisible();
+    await expect(box.getByRole("button", { name: "Apply" })).toBeDisabled();
+    await box.getByRole("button", { name: "Clear" }).click();
+    await expect(rows).toHaveCount(totals.length);
+    await expect(card).toContainText(String(totals.length));
+  } finally {
+    await shop.admin.from("modules").delete().eq("id", id);
+  }
+});

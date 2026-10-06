@@ -111,7 +111,12 @@ console.log("\nfilters, from what the rows hold");
     "a choice column: what its rows hold",
     filterChoices(col("reason"), undefined, rows.reason).options?.join() === "Size,Damaged"
   );
-  check("money is no filter", "why" in filterChoices(col("amount"), undefined, rows.amount));
+  check(
+    "money is a lowest and a highest, with no list",
+    (({ options, range }) => range === true && options.length === 0)(
+      filterChoices(col("amount"), undefined, rows.amount)
+    )
+  );
   check("one value is no filter", "why" in filterChoices(col("status"), undefined, ["Requested"]));
   check(
     "a status keeps its own choices, and adds the rows'",

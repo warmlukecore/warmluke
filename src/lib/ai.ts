@@ -43,7 +43,7 @@ import {
 import { isTransient } from "@/lib/retry";
 import { customViewProblem, customViewScriptProblem } from "@/lib/custom-view";
 import { DEFAULT_PRESETS } from "@/lib/period";
-import { YES_NO } from "@/lib/filters";
+import { filterKind, YES_NO } from "@/lib/filters";
 import { findSection, readsSection } from "@/lib/section-ref";
 import { MAX_TABS, tabName, type TabView } from "@/lib/tabs";
 import { codeProblem } from "@/lib/code-run";
@@ -169,7 +169,7 @@ HOW TO CHOOSE changeType:
   )}, whose rows each total many others, so there is no one row for it to sit beside. The store's own fields are read here, never written: a row action or scan mode sets a field of theirs ("Mark packed" sets packed; scanning the order number finds the order and ticks it). A rule on such a section reads the store's fields and theirs, and sets only theirs. It runs when a field of theirs changes (record_updated, from the first one set on a row), or on a schedule over every row of the list ("when" picks the rows; a row it acts on gets its fields then) — so "flag the COD orders delivered a week ago and still unpaid" is a daily rule reading gateway, fulfilment_status and financial_status. A change in Shopify reaches the rows within seconds, but it does not fire a rule: a rule over them runs when a field of theirs changes, or a schedule rule sees it on its next run. No rule adds rows to it (record_created is refused). Filters, search, stats and sort work over both.
 - MODULE_UPDATE — nav metadata only: rename label, change icon, move it inside another section (parent_id), reposition (sort_order: below the lowest existing value for top, midpoint like 1.5 for between, above max for bottom).
 - MODULE_DELETE — only when the user clearly asks to delete/remove a whole section. deleteConfirmName = exact name slug.
-- FEATURE_UPDATE — search box, dropdown filters (a filter on a yes/no field is Yes / No by itself, and No is every row not ticked, blank or false alike: never fill rows with false or "No", or add a second field, to make a filter work), STAT CARDS (op: count | sum | avg | min | max over "value", an EXPRESSION evaluated per row — so a stock value is { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, not a bare column; optional "where" expression limits which rows count. Never label a stat as something the expression does not actually compute), default sort, a PERIOD (a choice of dates over the section: { "field": "<a date column>", "label": "Placed", "presets": [15, 30, 60], "default": 15 } draws chips for the last 15, 30 and 60 days, their own dates and All, and narrows the rows, the stats and the view together; whenever they want to see a window of days, or change it, this is how, never a written screen. With a period, no stat carries days_since of that field in its "where", and no label names the days: the period picks them), ROW ACTION buttons (a one-click change to that row, which the owner can also press on many rows at once by ticking them in the table: "set" maps field -> EXPRESSION, and the optional "when" is an EXPRESSION deciding whether the button shows on that row — same operators as automations, so "only while it isn't Done" is { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }; "approval": true when a teammate must not make that change alone, a refund, a discount, a cancellation: the owner's press does it, a teammate's waits in the owner's bell for their yes, and a teammate cannot make the same change by hand), or SCAN MODE (a scan-and-go bar: lookupField = the code column scanned into it, action.set = field -> expression applied to the matched row, sequenceField = a numeric column that must never go backwards between scans, for picking or queue order). It works with any USB or Bluetooth barcode scanner, which types the code like a keyboard — there is no camera scanning. A scan that matches nothing changes NOTHING: the person sees it on screen and that is the whole safeguard. Nothing is recorded, so never add a "scan errors" or "mistakes" count — no rule can fill it, and a stat built on it counts successful scans instead. Scanning only reaches rows currently in view, so the section needs a filter that narrows to the job in hand. Send only the parts you change: each part you send (view, tabs, stats, filters, actions, scanMode, search, defaultSort, period) replaces that part whole, a part you leave out stays exactly as it is, and null removes it. To add a stat, send "stats" with the old ones and the new; leave a written screen's "view" out unless you are changing the screen. A "view" you send REPLACES the section's view: a written screen sent over Orders takes its table away. To add counters, a filter or a choice of dates to a section they already use, send stats, filters or period and leave "view" out; send a view only when they ask to see the section a different way instead. To show it another way as well (a written screen beside Orders' table, a board by stage beside a list), send "tabs": the old tabs and the new, each a view, named by a written screen's "title" or another view's "label". On a section over the store a written screen only ever goes in tabs.
+- FEATURE_UPDATE — search box, dropdown filters (a filter on a yes/no field is Yes / No by itself, and No is every row not ticked, blank or false alike: never fill rows with false or "No", or add a second field, to make a filter work; a filter on a number or money field is a lowest and a highest by itself, Min and Max, sent with "options": [], so "price between ₹500 and ₹2,000" or "orders over ₹5,000" is that filter, never bands, a new field or a written screen), STAT CARDS (op: count | sum | avg | min | max over "value", an EXPRESSION evaluated per row — so a stock value is { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, not a bare column; optional "where" expression limits which rows count. Never label a stat as something the expression does not actually compute), default sort, a PERIOD (a choice of dates over the section: { "field": "<a date column>", "label": "Placed", "presets": [15, 30, 60], "default": 15 } draws chips for the last 15, 30 and 60 days, their own dates and All, and narrows the rows, the stats and the view together; whenever they want to see a window of days, or change it, this is how, never a written screen. With a period, no stat carries days_since of that field in its "where", and no label names the days: the period picks them), ROW ACTION buttons (a one-click change to that row, which the owner can also press on many rows at once by ticking them in the table: "set" maps field -> EXPRESSION, and the optional "when" is an EXPRESSION deciding whether the button shows on that row — same operators as automations, so "only while it isn't Done" is { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }; "approval": true when a teammate must not make that change alone, a refund, a discount, a cancellation: the owner's press does it, a teammate's waits in the owner's bell for their yes, and a teammate cannot make the same change by hand), or SCAN MODE (a scan-and-go bar: lookupField = the code column scanned into it, action.set = field -> expression applied to the matched row, sequenceField = a numeric column that must never go backwards between scans, for picking or queue order). It works with any USB or Bluetooth barcode scanner, which types the code like a keyboard — there is no camera scanning. A scan that matches nothing changes NOTHING: the person sees it on screen and that is the whole safeguard. Nothing is recorded, so never add a "scan errors" or "mistakes" count — no rule can fill it, and a stat built on it counts successful scans instead. Scanning only reaches rows currently in view, so the section needs a filter that narrows to the job in hand. Send only the parts you change: each part you send (view, tabs, stats, filters, actions, scanMode, search, defaultSort, period) replaces that part whole, a part you leave out stays exactly as it is, and null removes it. To add a stat, send "stats" with the old ones and the new; leave a written screen's "view" out unless you are changing the screen. A "view" you send REPLACES the section's view: a written screen sent over Orders takes its table away. To add counters, a filter or a choice of dates to a section they already use, send stats, filters or period and leave "view" out; send a view only when they ask to see the section a different way instead. To show it another way as well (a written screen beside Orders' table, a board by stage beside a list), send "tabs": the old tabs and the new, each a view, named by a written screen's "title" or another view's "label". On a section over the store a written screen only ever goes in tabs.
 - RECORD_SEED — ADDS rows to an existing module. It only ever inserts; it cannot change or delete a row that is already there. Never use it to "correct" or "update" existing data — that produces a duplicate and tells the owner it was an edit. Changing a value is something they do themselves by opening the row.
 - RECORD_SEED — add rows to an existing module (field names must exist in its schema).
 - AUTOMATION_ADD — business logic that runs automatically. "targetModuleId" is the section whose rows trigger it. You BUILD the rule out of the operators below — there is no menu of pre-made rule types, so express exactly what the owner described.
@@ -322,10 +322,10 @@ const ANSWER_SHAPE = `(0) ANSWER — they asked you something, or said something
 Never use this shape to design or build anything; if they want something built, use (1), (2) or (3). A message that asks a question AND asks for a change is (1), (2) or (3), with the question answered first in "message".
 
 ON THEIR SCREEN — "show" does it in the section they are looking at (CONTEXT: the module the user is looking at), as they would with its own bar, while you answer. Nothing is saved by it:
-{ "search": "words", "filters": { "<field>": "<one of that filter's options>" }, "sort": { "field": "<field>", "dir": "asc" | "desc" }, "period": { "days": N } | { "named": "yesterday" | "this_week" | "last_week" | "this_month" | "last_month" | "this_year" } | { "from": "YYYY-MM-DD", "to": "YYYY-MM-DD" } | "all", "add": { "<field>": value } }
+{ "search": "words", "filters": { "<field>": "<one of that filter's options>" | { "min": N, "max": N } }, "sort": { "field": "<field>", "dir": "asc" | "desc" }, "period": { "days": N } | { "named": "yesterday" | "this_week" | "last_week" | "this_month" | "last_month" | "this_year" } | { "from": "YYYY-MM-DD", "to": "YYYY-MM-DD" } | "all", "add": { "<field>": value } }
 - Use it when they ask to see, find, narrow, sort or date that section's rows ("sirf COD wale", "pending ones first", "Asha ka order dhundo"), or give you a new row to put in there: a customer's message, a note, details typed or pasted.
 - Give only the keys they asked for. It is the whole view they mean: a filter left out is cleared, so a follow-up ("ab sirf Delhi wale") repeats the ones still wanted.
-- "filters": only that section's own filters (CONTEXT — current features), each with one of its options, spelled as there. "period": only when its features have one; "days" one of its presets. Anything else goes in "search".
+- "filters": only that section's own filters (CONTEXT — current features), each with one of its options, spelled as there; a number or money filter (no options) takes { "min": N, "max": N }, either left out. "period": only when its features have one; "days" one of its presets. Anything else goes in "search".
 - "add" opens a new row's form with these filled and waits for their Save: its own fields, each as the field holds it (a number, "YYYY-MM-DD", true or false, one of a dropdown's options); a link field is the words of the row it points at ("#1042"). Never a field that is worked out; leave out what they did not give.
 - "kind" is "conversation", or "store" when you also answered a question about their shop's data. "message" first says in a line what you did ("Showing only COD orders that are still pending." / "Filled the return in: check it and press Add row."), then anything worth adding. Never say it is saved, and never a number of rows you were not shown.
 - Never for a section other than the one open, and never instead of a change they asked for: a filter, a column or a view to keep is a build.`;
@@ -935,6 +935,15 @@ export function buildUserMessage(
     ? JSON.stringify(currentSchema)
     : "none is open — they are not looking at one. The list above is the whole app, and it is enough to design from. Never ask them to open a section.";
   const featuresCtx = currentFeatures ? JSON.stringify(currentFeatures) : "null (no features configured)";
+  // A lowest-and-highest filter has no options to pick (lib/filters
+  // filterKind): said only where one is, so what every other section is
+  // told stays word for word as it was.
+  const ranged = (currentFeatures?.filters ?? [])
+    .filter((f) => filterKind(currentSchema?.columns?.find((c) => c.field === f.field)?.type) === "range")
+    .map((f) => `"${f.field}"`);
+  const rangeCtx = ranged.length
+    ? `\nOf these, ${ranged.join(", ")} ${ranged.length > 1 ? "are filters" : "is a filter"} by a lowest and a highest, with no options: on their screen set as { "min": N, "max": N }, either left out ("over 5000" is { "min": 5000 }).`
+    : "";
   return `CONTEXT — every section in this app and the fields it has.
 These are the ONLY field names that exist. A rule, filter or stat on a
 section must use one of its fields, or add the field in the same batch.
@@ -944,7 +953,7 @@ CONTEXT — schema of the module the user is looking at:
 ${schemaCtx}
 
 CONTEXT — current features (search/filters/stats/sort) of that module:
-${featuresCtx}
+${featuresCtx}${rangeCtx}
 
 CONTEXT — rules already running on this app. Do not propose one that
 is already here; to change a rule, remove it and add the new one.
@@ -1067,7 +1076,9 @@ export function validateFeatures(
   /** On a section over the store, the store's own columns: read, never written. */
   storeFields?: ReadonlySet<string>,
   /** The date column a period the section already has reads, when this change leaves the period as it is. */
-  periodField?: string | null
+  periodField?: string | null,
+  /** On a section over the store, its columns as the store gives them, for what kind of filter each is. */
+  storeColumns?: SchemaColumn[]
 ): void {
   if (!isPlainObject(features)) {
     err(errors, "features must be an object.");
@@ -1146,12 +1157,22 @@ export function validateFeatures(
       for (const fl of f.filters)
         if (fl && typeof fl.field === "string" && columns.some((c) => c.field === fl.field && c.type === "boolean"))
           fl.options = [...YES_NO];
+      // A number or an amount is a lowest and a highest by itself, with
+      // no list (lib/filters filterKind): a price filter had no way to be
+      // said, and their own AI told the merchant it could not be built.
+      const ranged = (fl: { field?: unknown } | null) =>
+        !!fl &&
+        filterKind(
+          (columns?.find((c) => c.field === fl.field) ?? storeColumns?.find((c) => c.field === fl.field))?.type
+        ) === "range";
+      for (const fl of f.filters) if (ranged(fl)) fl.options = [];
       // A filter with one option or none is no filter, and one with
       // more than fifteen is a list: cosmetic, so shaped rather than
       // refused — a whole attempt was spent on a filter over a column
       // the store held one value in.
       f.filters = f.filters.filter(
-        (fl) => !fl || typeof fl.field !== "string" || !Array.isArray(fl.options) || fl.options.length >= 2
+        (fl) =>
+          !fl || typeof fl.field !== "string" || !Array.isArray(fl.options) || fl.options.length >= 2 || ranged(fl)
       );
       for (const fl of f.filters)
         if (fl && Array.isArray(fl.options) && fl.options.length > 15) fl.options = fl.options.slice(0, 15);
@@ -2062,6 +2083,7 @@ export function validatePlan(
   const storeSource =
     plan?.changeType === "NEW_MODULE" ? (plan.newModule?.source_table ?? null) : sourceOf(plan?.targetModuleId);
   const storeFields = isStoreTable(storeSource) ? new Set(storeRowFields(storeSource)) : undefined;
+  const storeColumns = isStoreTable(storeSource) ? STORE_TABLES[storeSource].columns : undefined;
 
   // One definition of "this field exists" for the whole plan: the module's
   // current columns plus anything an earlier plan in this batch adds. Every
@@ -2248,7 +2270,15 @@ export function validatePlan(
     // FEATURE_UPDATE in the same batch could not target it, because the
     // module does not exist until this plan is applied.
     if (plan.features) {
-      validateFeatures(plan.features, plan.newSchema?.columns ?? columns, errors, undefined, storeFields);
+      validateFeatures(
+        plan.features,
+        plan.newSchema?.columns ?? columns,
+        errors,
+        undefined,
+        storeFields,
+        undefined,
+        storeColumns
+      );
     }
     plan.targetModuleId = null;
   } else {
@@ -2391,7 +2421,8 @@ export function validatePlan(
         errors,
         pendingFields,
         storeFields,
-        currentSchema?.features?.period?.field
+        currentSchema?.features?.period?.field,
+        storeColumns
       );
     }
 

@@ -320,7 +320,7 @@ const TOOLS = [
     name: "edit_view",
     _meta: { ui: { resourceUri: DESIGN_VIEW_URI }, "openai/outputTemplate": DESIGN_VIEW_URI },
     description:
-      "Change how a section looks, with nothing designed and nothing charged: rename its columns, take one off the table or put it back (a column off the table is still in the row when it is opened), put them in another order, choose which columns are filters above the table, and the order its rows open in. The same as Customize in Warmluke. Call read_section first for its columns. It goes in front of the merchant as any change does: built at once if they turned on automatic builds, otherwise read it back and call approve_change. A filter offers the values its column's rows hold, and a yes/no column Yes and No; what cannot be a filter comes back with why. For a new field, a rule, or a change to what the section does, use propose_change.",
+      "Change how a section looks, with nothing designed and nothing charged: rename its columns, take one off the table or put it back (a column off the table is still in the row when it is opened), put them in another order, choose which columns are filters above the table, and the order its rows open in. The same as Customize in Warmluke. Call read_section first for its columns. It goes in front of the merchant as any change does: built at once if they turned on automatic builds, otherwise read it back and call approve_change. A filter offers the values its column's rows hold, a yes/no column Yes and No, and a number or money column a lowest and a highest (Min and Max: a price between 500 and 2,000); what cannot be a filter comes back with why. For a new field, a rule, or a change to what the section does, use propose_change.",
     inputSchema: {
       type: "object",
       properties: {
@@ -376,9 +376,14 @@ const TOOLS = [
         search: { type: "string", description: "Words to search its rows for." },
         filters: {
           type: "object",
-          additionalProperties: { type: "string" },
+          additionalProperties: {
+            anyOf: [
+              { type: "string" },
+              { type: "object", properties: { min: { type: "number" }, max: { type: "number" } } },
+            ],
+          },
           description:
-            'Its own filters set: { "<field>": "<one of that filter\'s choices>" }. Those left out show everything.',
+            'Its own filters set: { "<field>": "<one of that filter\'s choices>" }, or for a number or money filter { "min": N, "max": N }, either left out. Those left out show everything.',
         },
         sort: {
           type: "object",

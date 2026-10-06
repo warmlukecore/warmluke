@@ -169,10 +169,10 @@ try {
   console.log("\nwhat cannot be done is said, and nothing is requested");
   {
     const was = await requests();
-    const money = await tool("edit_view", { section: "Returns", filters: ["amount"] });
+    const names = await tool("edit_view", { section: "Returns", filters: ["customer"] });
     check(
-      "money is no filter, with why",
-      money?.status === "not accepted" && /not a column of choices/.test(money.errors?.join())
+      "a name on every row is no filter, with why",
+      names?.status === "not accepted" && /different value on almost every row/.test(names.errors?.join())
     );
     const nope = await tool("edit_view", { section: "Returns", columns: [{ field: "nope" }] });
     check("a column that is not there", nope?.status === "not accepted");
@@ -227,6 +227,25 @@ try {
     check("no section: asked which", /Which section/.test((await tool("show_on_screen", {}))?.error ?? ""));
     check("no request made, no version", (await requests()) === was && (await latest(mod.id)).version === version);
     check("and no row written", (await rows()) === rowsWere);
+  }
+
+  // An amount by its lowest and highest (Tanish, 6 Oct: their AI said a
+  // Min / Max price filter could not be built).
+  console.log("\nan amount, by Min and Max");
+  {
+    const priced = await tool("edit_view", { section: "Returns", filters: ["status", "reason", "amount"] });
+    check("an amount is a filter", priced?.status === "built");
+    const amount = (await latest(mod.id)).schema_json.features.filters?.find((f) => f.field === "amount");
+    check("by its lowest and highest, with no list", amount?.options?.length === 0);
+    const shown = await tool("show_on_screen", { section: "Returns", filters: { Amount: { min: 1000 } } });
+    const show = JSON.parse(new URL(shown?.link ?? "http://none").searchParams.get("show") ?? "{}");
+    check("set on the screen as the bar keeps it", show.filters?.amount === "1000..");
+    check("said in words", /Amount: 1000 or more/.test(shown?.shows ?? ""));
+    const word = await tool("show_on_screen", { section: "Returns", filters: { Amount: "cheap" } });
+    check(
+      "a word is no range: said, not tried",
+      (word?.not_done ?? []).some((n) => /Amount takes a lowest and a highest/.test(n))
+    );
   }
 } finally {
   await admin.from("mcp_calls").delete().eq("user_id", uid).gte("created_at", runStartedAt);

@@ -11,7 +11,7 @@
 // Callers: lib/engine.ts (Luke's answer), app/api/mcp (the link),
 // components/AppShell (the link opened). Pure.
 
-import { isYes, YES_NO } from "./filters";
+import { filterKind, isYes, rangeText, readRange, YES_NO } from "./filters";
 import { keptPick, NAMED, type PeriodPick } from "./period";
 import type { FeatureSchema, SchemaColumn, UiSchema } from "./types";
 import { filterIsOff } from "./view-edit";
@@ -21,7 +21,7 @@ export interface ScreenAsk {
   /** The section, by id: the caller's, never the model's. */
   moduleId: string;
   search?: string;
-  /** field -> the choice, as its filter offers it. The whole view: a filter not named is cleared. */
+  /** field -> the choice, as its filter offers it, or a range as the bar keeps it ("500..2000"). The whole view: a filter not named is cleared. */
   filters?: Record<string, string>;
   sort?: { field: string; dir: "asc" | "desc" };
   /** null is every date. */
@@ -114,6 +114,16 @@ export function readScreenAsk(raw: unknown, section: ScreenSection): { ask: Scre
         left.push(`${section.name} has no ${name} filter`);
         continue;
       }
+      // A number or an amount is a lowest and a highest: { "min", "max" }, or "500..2000" as the bar keeps it.
+      if (filterKind(cols.find((c) => c.field === f.field)?.type) === "range") {
+        const r = readRange(value);
+        if (r) out[f.field] = rangeText(r);
+        else if (value !== null && value !== undefined && value !== "")
+          left.push(
+            `${f.label} takes a lowest and a highest, not "${(typeof value === "string" ? value : JSON.stringify(value)).slice(0, 40)}"`
+          );
+        continue;
+      }
       const given = typeof value === "boolean" ? (value ? "Yes" : "No") : String(value ?? "").trim();
       if (!given) continue;
       const yesNo = cols.find((c) => c.field === f.field)?.type === "boolean";
@@ -182,7 +192,20 @@ export function describeScreenAsk(ask: ScreenAsk, section: ScreenSection): strin
   const cols = section.schema?.columns ?? [];
   const labelOf = (f: string) => cols.find((c) => c.field === f)?.label ?? f;
   const parts: string[] = [];
-  for (const [f, v] of Object.entries(ask.filters ?? {})) parts.push(`${labelOf(f)}: ${v}`);
+  for (const [f, v] of Object.entries(ask.filters ?? {})) {
+    const r = filterKind(cols.find((c) => c.field === f)?.type) === "range" ? readRange(v) : null;
+    parts.push(
+      `${labelOf(f)}: ${
+        !r
+          ? v
+          : r.min === undefined
+            ? `up to ${r.max}`
+            : r.max === undefined
+              ? `${r.min} or more`
+              : `${r.min} to ${r.max}`
+      }`
+    );
+  }
   if (ask.search) parts.push(`searched "${ask.search}"`);
   if (ask.period !== undefined) {
     const p = ask.period;
