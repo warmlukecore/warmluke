@@ -328,14 +328,19 @@ const AGENTS = [
   "data check",
   "dry-run",
   "screen check",
+  "tryout",
   "gap",
   "memory",
   "reflect",
   "judge",
+  "ai step",
 ];
+// After them, a card of its own for any model job none of them counts (0186): the talk road's replies, say.
+const names = (aa?.agents ?? []).map((g) => g.name);
+check("every agent is there, the reviewers after the critic", names.slice(0, AGENTS.length).join() === AGENTS.join());
 check(
-  "every agent is there, the reviewers after the critic",
-  (aa?.agents ?? []).map((g) => g.name).join() === AGENTS.join()
+  "and after them only model jobs no card counts",
+  names.slice(AGENTS.length).every((n) => !AGENTS.includes(n) && !(aa?.agents ?? []).find((g) => g.name === n)?.about)
 );
 check("the critic: three fit, two went back", moved("critic", "fits") === 3 && moved("critic", "redo") === 2);
 check(
