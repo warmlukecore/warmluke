@@ -22,7 +22,7 @@ import { supabase } from "@/lib/supabase-client";
 import { scopeArgs, useConsoleScope } from "@/lib/console-scope";
 import { useUser } from "@/lib/auth";
 import { PageFrame } from "@/components/PageFrame";
-import { Choices, Stat, adminError } from "@/components/AdminParts";
+import { Choices, SearchBox, Stat, adminError, matches, scrollList } from "@/components/AdminParts";
 import { button, card, field, label, note } from "@/components/ui/controls";
 import { exampleFromBuild } from "@/lib/curator";
 import { SEED_EXAMPLES } from "@/lib/example-seeds";
@@ -60,6 +60,7 @@ export default function WhatStuckPage() {
   const [r, setR] = useState<Report | null>(null);
   const [weeks, setWeeks] = useState(8);
   const [proposed, setProposed] = useState(0);
+  const [find, setFind] = useState("");
 
   useEffect(() => {
     if (!loading && !user) router.replace(`/login?next=${encodeURIComponent(window.location.pathname)}`);
@@ -237,19 +238,26 @@ export default function WhatStuckPage() {
             <h2 className="mt-8 text-sm font-semibold text-fg">
               Examples Luke reads ({active.length + SEED_EXAMPLES.length})
             </h2>
-            <ul className="mt-3 space-y-2">
-              {active.map((e) => (
-                <li key={e.id} className={`${card} flex items-start justify-between gap-3 p-3 text-[13px]`}>
-                  <div className="min-w-0">
-                    <div className="text-fg">&ldquo;{e.ask}&rdquo;</div>
-                    <div className="mt-0.5 text-xs text-fg-muted">Approved {date(e.decided_at)}, from a kept build</div>
-                  </div>
-                  <button className={button("critical-plain", "sm")} onClick={() => decide(e.id, "retired", {})}>
-                    Retire
-                  </button>
-                </li>
-              ))}
-              {SEED_EXAMPLES.map((s) => (
+            <div className="mt-3">
+              <SearchBox value={find} onChange={setFind} placeholder="Find an example by its words" />
+            </div>
+            <ul className={`${scrollList} mt-3 space-y-2 p-0.5`}>
+              {active
+                .filter((e) => matches(find, e.ask, e.design, e.why, ...e.tags))
+                .map((e) => (
+                  <li key={e.id} className={`${card} flex items-start justify-between gap-3 p-3 text-[13px]`}>
+                    <div className="min-w-0">
+                      <div className="text-fg">&ldquo;{e.ask}&rdquo;</div>
+                      <div className="mt-0.5 text-xs text-fg-muted">
+                        Approved {date(e.decided_at)}, from a kept build
+                      </div>
+                    </div>
+                    <button className={button("critical-plain", "sm")} onClick={() => decide(e.id, "retired", {})}>
+                      Retire
+                    </button>
+                  </li>
+                ))}
+              {SEED_EXAMPLES.filter((s) => matches(find, s.ask, ...s.tags)).map((s) => (
                 <li key={s.id} className={`${card} p-3 text-[13px]`}>
                   <div className="text-fg">&ldquo;{s.ask}&rdquo;</div>
                   <div className="mt-0.5 text-xs text-fg-muted">One of ours, kept in the code</div>

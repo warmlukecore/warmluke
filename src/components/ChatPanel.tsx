@@ -17,6 +17,7 @@ import ErrorNote from "@/components/ErrorNote";
 import type { BuildOutcome } from "@/components/AppShell";
 import { storeOverview } from "@/lib/store-read";
 import { supabase } from "@/lib/supabase-client";
+import { jobLabel } from "@/lib/agents";
 import { showWaiting } from "@/lib/favicon";
 import { NOT_SUPPORTED } from "@/lib/capabilities";
 import { ResizeHandle } from "@/components/ui/ResizeHandle";
@@ -27,7 +28,6 @@ import type {
   ModuleRow,
   NextStep,
   LukeShows,
-  ModelUse,
   RecordRow,
   ThreadSummary,
   TurnEvent,
@@ -1739,22 +1739,6 @@ function BlueprintCard({
   );
 }
 
-/** What each job is called in a reply's breakdown. */
-const JOB_WORDS: Record<ModelUse["job"], string> = {
-  reply: "Reply",
-  gap: "Gap check",
-  route: "Question router",
-  plan: "Plan",
-  critic: "Critic",
-  memory: "Memory",
-  reflect: "Learning",
-  ops: "Operator's view",
-  review: "Simplicity check",
-  ux: "Screen check",
-  tryout: "Tryout",
-  fill: "AI step",
-};
-
 /** A reply's dollars in rupees, at a rate that says the day it is from. */
 export type InrRate = { rate: number; asOf: string | null };
 
@@ -1864,7 +1848,7 @@ function debugText(usage: TurnUsage, d: TurnDebug, inr: InrRate | null): string 
     `Cost: ${dollars(usage.usd)}${inr ? ` (${rupees(usage.usd, inr)})` : ""}${usage.partial ? ", some calls unpriced" : ""}`,
     ...usage.uses.map(
       (u) =>
-        `  ${JOB_WORDS[u.job]}: ${u.model}, ${u.input} in, ${u.output} out${u.usd === null ? "" : `, ${dollars(u.usd)}`}`
+        `  ${jobLabel(u.job)}: ${u.model}, ${u.input} in, ${u.output} out${u.usd === null ? "" : `, ${dollars(u.usd)}`}`
     ),
     `Took: ${d.ms === null ? "unknown" : seconds(d.ms)}`,
     `Copied: ${new Date().toISOString()}`,
@@ -1928,7 +1912,7 @@ function UsageLine({
       <ul className="mt-1 space-y-0.5 border-l border-line pl-2.5">
         {usage.uses.map((u, k) => (
           <li key={k} className="tabular-nums">
-            {JOB_WORDS[u.job]} · {modelName(u.model)}
+            {jobLabel(u.job)} · {modelName(u.model)}
             {u.calls > 1 ? ` · ${u.calls} calls` : ""} · {tokensShort(u.input)} in
             {u.cacheRead > 0 ? ` (${tokensShort(u.cacheRead)} from cache)` : ""} · {tokensShort(u.output)} out
             {shows === "cost"

@@ -24,13 +24,14 @@ import { supabase } from "@/lib/supabase-client";
 import { scopeArgs, useConsoleScope } from "@/lib/console-scope";
 import { useUser } from "@/lib/auth";
 import { dollars, tokensShort } from "@/lib/model-prices";
+import { AGENTS, agentLabel } from "@/lib/agents";
 import { PageFrame } from "@/components/PageFrame";
 import { Choices, adminError } from "@/components/AdminParts";
 import { card, note } from "@/components/ui/controls";
 
 type Agent = {
   name: string;
-  about: string;
+  about: string | null;
   runs: number;
   outcomes: Record<string, number>;
   /** One more figure where it says something: tries a design, repairs a repaired one. */
@@ -52,23 +53,31 @@ const DAYS: Array<[number, string]> = [
   [7, "7 days"],
   [30, "30 days"],
 ];
-const NAME: Record<string, string> = {
-  plan: "Plan",
-  design: "Design",
-  validator: "Validator",
-  critic: "Critic",
-  ops: "Operator's view",
-  simplicity: "Simplicity",
-  "data check": "Data check",
-  "dry-run": "Rule dry-run",
-  "screen check": "Screen check",
-  tryout: "Tryout",
-  gap: "Gap pass",
-  memory: "Memory",
-  reflect: "Reflect",
-  judge: "Judge",
-  "ai step": "AI step",
-};
+/**
+ * Every agent the database counted, and each one named in lib/agents.ts
+ * that it has not counted yet, in the order named there; one it counted
+ * that nobody named comes last, under its own name. A new agent has its
+ * card from its first line in lib/agents.ts.
+ */
+function cardsOf(counted: Agent[]): Agent[] {
+  const order = Object.keys(AGENTS);
+  const seen = new Set(counted.map((g) => g.name));
+  const waiting = order
+    .filter((n) => !seen.has(n))
+    .map((name): Agent => ({
+      name,
+      about: "",
+      runs: 0,
+      outcomes: {},
+      note: "Not counted on this screen yet",
+      calls: 0,
+      input: 0,
+      output: 0,
+      usd: null,
+    }));
+  const rank = (n: string) => (order.includes(n) ? order.indexOf(n) : order.length);
+  return [...counted, ...waiting].toSorted((x, y) => rank(x.name) - rank(y.name));
+}
 const ROAD: Record<string, string> = { talk: "Talk", design: "Design" };
 // What each outcome means, by its tone; the numbers beside them say how many.
 const GOOD = new Set([
@@ -163,16 +172,18 @@ export default function AgentsPage() {
         {a && (
           <>
             <ul className="mt-6 grid gap-3 sm:grid-cols-2">
-              {a.agents.map((g) => (
+              {cardsOf(a.agents).map((g) => (
                 <li key={g.name} className={`${card} flex flex-col p-4`}>
                   <div className="flex items-baseline justify-between gap-3">
-                    <h2 className="text-[13px] font-medium text-fg">{NAME[g.name] ?? g.name}</h2>
+                    <h2 className="text-[13px] font-medium text-fg">{agentLabel(g.name)}</h2>
                     <span className="text-xs text-fg-muted tabular-nums">
                       {g.runs.toLocaleString()} {g.runs === 1 ? "run" : "runs"}
                     </span>
                   </div>
-                  <p className="mt-0.5 text-xs text-fg-muted">{g.about}</p>
-                  <Split outcomes={g.outcomes} />
+                  <p className="mt-0.5 text-xs text-fg-muted">
+                    {AGENTS[g.name]?.about ?? (g.about || "A new agent, not described yet")}
+                  </p>
+                  {Object.keys(g.outcomes ?? {}).length > 0 && <Split outcomes={g.outcomes} />}
                   {g.note && <p className="mt-2 text-xs text-fg-faint">{g.note}</p>}
                   <div className="mt-auto flex flex-wrap justify-between gap-x-3 gap-y-1 pt-3 text-xs text-fg-faint tabular-nums">
                     <span className="text-fg">{g.usd === null ? "not metered" : money(Number(g.usd))}</span>

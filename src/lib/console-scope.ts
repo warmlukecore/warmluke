@@ -9,20 +9,10 @@
 
 import { useMemo } from "react";
 import { useSearchParams } from "next/navigation";
+import { CONSOLE_NAV } from "@/lib/console-nav";
 
-/** The console screens whose reports narrow to an account (lib/console-nav `to`). */
-export const SCOPED = new Set([
-  "",
-  "conversations",
-  "spend",
-  "trouble",
-  "learning",
-  "agents",
-  "their-ai",
-  "what-stuck",
-  "access",
-  "tour",
-]);
+/** The console screens whose reports narrow to an account: those lib/console-nav marks `scoped`. */
+export const SCOPED = new Set(CONSOLE_NAV.flatMap((g) => g.screens.filter((s) => s.scoped).map((s) => s.to)));
 
 export type Scope = { account: string | null; app: string | null };
 

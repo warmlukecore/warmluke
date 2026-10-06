@@ -165,7 +165,19 @@ and p90 times. The reflector runs after a turn is priced, so its runs, what they
 dollars are read from its own `reflected` rows, not the traces. Since 0177 it also counts the
 reviewers after the critic from their trace steps: the operator's view, simplicity and the screen
 check on their own metered jobs (`ops`, `review`, `ux`), and the data check and the rule dry-run,
-which are code and have no dollars. The console's word searches have trigram indexes on conversation titles, project
+which are code and have no dollars. 0185 adds the tryout (its `tryout` step and job) and the AI
+step in a rule, which runs outside any turn and is read from its own runs in `automation_runs`
+(filled, left, dollars and tokens); 0186 gives any model job no card counts a card of its own
+under the job's name, so a new agent shows the day it first runs. Each card's name and words come
+from `src/lib/agents.ts`, where an agent is named once; `scripts/check-registries.mjs` fails until
+every model job and every step a turn tells is named there, and every console page is in the
+sidebar (`src/lib/console-nav.ts`, whose `scoped` flag also puts the scope bar above a report).
+**Rename** (`abo_admin_rename(p_user, p_full_name, p_business, p_apps)`, 0187) corrects an
+account's name and business (`profiles`) and the names of the apps it owns, written to the
+audit trail as `rename` with the names before and after; blank keeps a name, an app not theirs is
+passed over, and an administrator's own account and other administrators are refused. 0188 makes
+Learning's "across stores" and the access log's counts by kind follow the scope as their rows do.
+The console's word searches have trigram indexes on conversation titles, project
 names and shop domains. Every console screen asks `abo_admin_luke_health` (0165) whether
 Luke's newest answers are failing because the model was not there (`payload.failed`), and
 says so in red, with how many turns and apps since when and what to do, until an answer

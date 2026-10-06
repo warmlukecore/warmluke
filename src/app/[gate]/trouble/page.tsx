@@ -20,7 +20,7 @@ import { scopeArgs, useConsoleScope } from "@/lib/console-scope";
 import { useUser } from "@/lib/auth";
 import { ago } from "@/lib/when";
 import { PageFrame } from "@/components/PageFrame";
-import { Choices, adminError } from "@/components/AdminParts";
+import { Choices, ListPanel, adminError, matches } from "@/components/AdminParts";
 import { card, note } from "@/components/ui/controls";
 
 type Sign = {
@@ -57,6 +57,8 @@ export default function TroublePage() {
   const [signs, setSigns] = useState<Sign[] | null>(null);
   const [days, setDays] = useState(7);
   const [now, setNow] = useState(0);
+  const [kind, setKind] = useState("");
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     if (!loading && !user) router.replace(`/login?next=${encodeURIComponent(window.location.pathname)}`);
@@ -89,6 +91,17 @@ export default function TroublePage() {
   }
 
   const refused = error === "This page is for administrators.";
+  // A chip for every kind the signs have, a new one too, each with its count.
+  const kinds: Array<[string, string]> = [
+    ["", `All ${signs?.length ?? 0}`],
+    ...[...new Set((signs ?? []).map((x) => x.kind))].map((k): [string, string] => [
+      k,
+      `${KIND[k]?.[0] ?? k} ${(signs ?? []).filter((x) => x.kind === k).length}`,
+    ]),
+  ];
+  const shown = (signs ?? []).filter(
+    (x) => (!kind || x.kind === kind) && matches(query, x.detail, x.sample, x.project, x.title)
+  );
   return (
     <PageFrame email={user.email} isSuperadmin={!refused}>
       <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-8 sm:py-8">
@@ -114,37 +127,52 @@ export default function TroublePage() {
           </div>
         )}
         {signs && signs.length > 0 && (
-          <ul className={`${card} mt-6 divide-y divide-line overflow-hidden`}>
-            {signs.map((s, i) => (
-              <li key={`${s.kind}-${s.at}-${i}`} className="flex items-start gap-3 px-5 py-3">
-                <span
-                  className={`mt-px w-16 shrink-0 rounded-full px-2 py-0.5 text-center text-[11px] font-medium ${KIND[s.kind]?.[1] ?? "bg-tone-neutral text-tone-neutral-fg"}`}
-                >
-                  {KIND[s.kind]?.[0] ?? s.kind}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[13px] text-fg">{s.detail}</p>
-                  {s.sample && <p className="mt-0.5 line-clamp-2 text-xs text-fg-muted">“{s.sample}”</p>}
-                  <p className="mt-1 flex flex-wrap gap-x-1.5 text-xs text-fg-faint">
-                    <span>{s.project}</span>
-                    {s.title && <span>· {s.title}</span>}
-                    <span title={new Date(s.at).toLocaleString()}>· {ago(s.at, now)}</span>
-                    {s.conversation_id && (
-                      <span>
-                        ·{" "}
-                        <Link
-                          href={`/${gate}/conversations?id=${s.conversation_id}`}
-                          className="text-link hover:underline"
-                        >
-                          Open the conversation
-                        </Link>
-                      </span>
-                    )}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <div className="mt-6 space-y-3">
+            <Choices options={kinds} value={kind} onChange={setKind} />
+            <ListPanel
+              query={query}
+              onQuery={setQuery}
+              placeholder="Find by words, project or conversation"
+              shown={shown.length}
+              total={signs.length}
+              noun="signs"
+            >
+              <ul className="divide-y divide-line">
+                {shown.length === 0 && (
+                  <li className="px-5 py-8 text-center text-[13px] text-fg-muted">Nothing matches.</li>
+                )}
+                {shown.map((s, i) => (
+                  <li key={`${s.kind}-${s.at}-${i}`} className="flex items-start gap-3 px-5 py-3">
+                    <span
+                      className={`mt-px w-16 shrink-0 rounded-full px-2 py-0.5 text-center text-[11px] font-medium ${KIND[s.kind]?.[1] ?? "bg-tone-neutral text-tone-neutral-fg"}`}
+                    >
+                      {KIND[s.kind]?.[0] ?? s.kind}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] text-fg">{s.detail}</p>
+                      {s.sample && <p className="mt-0.5 line-clamp-2 text-xs text-fg-muted">“{s.sample}”</p>}
+                      <p className="mt-1 flex flex-wrap gap-x-1.5 text-xs text-fg-faint">
+                        <span>{s.project}</span>
+                        {s.title && <span>· {s.title}</span>}
+                        <span title={new Date(s.at).toLocaleString()}>· {ago(s.at, now)}</span>
+                        {s.conversation_id && (
+                          <span>
+                            ·{" "}
+                            <Link
+                              href={`/${gate}/conversations?id=${s.conversation_id}`}
+                              className="text-link hover:underline"
+                            >
+                              Open the conversation
+                            </Link>
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </ListPanel>
+          </div>
         )}
       </div>
     </PageFrame>

@@ -23,7 +23,7 @@ import { useUser } from "@/lib/auth";
 import { ago } from "@/lib/when";
 import { dollars, modelName } from "@/lib/model-prices";
 import { PageFrame } from "@/components/PageFrame";
-import { Choices, adminError } from "@/components/AdminParts";
+import { Choices, SearchBox, adminError, matches, scrollList } from "@/components/AdminParts";
 import { button, card, note } from "@/components/ui/controls";
 
 type Kind = "lesson" | "skill";
@@ -252,6 +252,10 @@ export default function LearningPage() {
 }
 
 function Overview({ l, days, now, onOpen }: { l: Learning; days: number; now: number; onOpen: (id: string) => void }) {
+  // One search over both lists: a store by its name, a lesson or skill by its words.
+  const [q, setQ] = useState("");
+  const stores = l.projects.filter((s) => matches(q, s.project));
+  const top = l.top.filter((x) => matches(q, x.title, x.kind));
   const t = l.totals;
   const cards: Array<[string, ReactNode, string]> = [
     [
@@ -302,16 +306,29 @@ function Overview({ l, days, now, onOpen }: { l: Learning; days: number; now: nu
         ))}
       </div>
 
+      {(l.projects.length > 0 || l.top.length > 0) && (
+        <div className="mt-4">
+          <SearchBox value={q} onChange={setQ} placeholder="Find a store, lesson or skill" />
+        </div>
+      )}
+
       <div className={`${card} mt-4 overflow-hidden`}>
         <div className="flex items-baseline justify-between gap-3 px-5 pt-5">
-          <div className="text-[13px] font-medium text-fg">Stores</div>
+          <div className="text-[13px] font-medium text-fg">
+            Stores{" "}
+            <span className="font-normal text-fg-faint tabular-nums">
+              {stores.length === l.projects.length ? l.projects.length : `${stores.length} of ${l.projects.length}`}
+            </span>
+          </div>
           <div className="text-xs text-fg-faint">newest first; open one for its lessons</div>
         </div>
         {l.projects.length === 0 ? (
           <p className="px-5 py-4 text-[13px] text-fg-muted">Luke has learned nothing for any store yet.</p>
+        ) : stores.length === 0 ? (
+          <p className="px-5 py-4 text-[13px] text-fg-muted">No store matches.</p>
         ) : (
-          <ul className="mt-2 divide-y divide-line">
-            {l.projects.map((s) => (
+          <ul className={`${scrollList} mt-2 divide-y divide-line`}>
+            {stores.map((s) => (
               <li key={s.project_id}>
                 <button
                   type="button"
@@ -357,9 +374,11 @@ function Overview({ l, days, now, onOpen }: { l: Learning; days: number; now: nu
         </div>
         {l.top.length === 0 ? (
           <p className="px-5 py-4 text-[13px] text-fg-muted">Nothing active yet.</p>
+        ) : top.length === 0 ? (
+          <p className="px-5 py-4 text-[13px] text-fg-muted">No lesson or skill matches.</p>
         ) : (
-          <ul className="mt-2 divide-y divide-line">
-            {l.top.map((x) => (
+          <ul className={`${scrollList} mt-2 divide-y divide-line`}>
+            {top.map((x) => (
               <li key={`${x.kind}-${x.title}`} className="flex items-start gap-3 px-5 py-2.5">
                 <span className={`${badge} mt-px ${KIND[x.kind]?.[1] ?? ""}`}>{KIND[x.kind]?.[0] ?? x.kind}</span>
                 <div className="min-w-0 flex-1">
@@ -457,7 +476,7 @@ function StoreLearning({
             {s.skills.length === 0 ? (
               <p className="px-5 py-4 text-[13px] text-fg-muted">Nothing learned for this store yet.</p>
             ) : (
-              <ul className="mt-2 divide-y divide-line">
+              <ul className={`${scrollList} mt-2 divide-y divide-line`}>
                 {s.skills.map((k) => (
                   <li key={k.id} className={`px-5 py-3 ${k.status === "active" ? "" : "opacity-70"}`}>
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -499,7 +518,7 @@ function StoreLearning({
             {s.events.length === 0 ? (
               <p className="px-5 py-4 text-[13px] text-fg-muted">Nothing happened in this time.</p>
             ) : (
-              <ul className="mt-2 divide-y divide-line">
+              <ul className={`${scrollList} mt-2 divide-y divide-line`}>
                 {s.events.map((e, i) => (
                   <li key={`${e.at}-${e.event}-${i}`} className="flex items-start gap-3 px-5 py-2.5">
                     <span className={`${badge} mt-px ${EVENT_TONE[e.event] ?? "bg-tone-neutral text-tone-neutral-fg"}`}>
@@ -532,7 +551,7 @@ function StoreLearning({
             {s.feedback.length === 0 ? (
               <p className="px-5 py-4 text-[13px] text-fg-muted">No thumbs on a reply in this time.</p>
             ) : (
-              <ul className="mt-2 divide-y divide-line">
+              <ul className={`${scrollList} mt-2 divide-y divide-line`}>
                 {s.feedback.map((f, i) => (
                   <li key={`${f.message_id}-${i}`} className="flex items-start gap-3 px-5 py-2.5">
                     <span

@@ -20,7 +20,7 @@ import { scopeArgs, useConsoleScope } from "@/lib/console-scope";
 import { useUser } from "@/lib/auth";
 import { dollars, modelName, tokensShort } from "@/lib/model-prices";
 import { PageFrame } from "@/components/PageFrame";
-import { Choices, adminError } from "@/components/AdminParts";
+import { Choices, adminError, scrollList } from "@/components/AdminParts";
 import { card, note } from "@/components/ui/controls";
 
 type Spend = {
@@ -249,10 +249,13 @@ export default function SpendPage() {
 
               <div className={`${card} overflow-hidden`}>
                 <div className="px-5 pt-5 text-[13px] font-medium text-fg">Accounts that spent most</div>
+                <p className="px-5 text-xs text-fg-faint">
+                  The twenty that spent most; choose one above to see it alone.
+                </p>
                 {s.accounts.length === 0 ? (
                   <p className="px-5 py-3 text-[13px] text-fg-muted">Nobody in this window.</p>
                 ) : (
-                  <ul className="mt-2 divide-y divide-line">
+                  <ul className={`${scrollList} mt-2 divide-y divide-line`}>
                     {s.accounts.map((a) => (
                       <li key={a.user_id} className="flex items-baseline gap-3 px-5 py-2.5 text-[13px]">
                         <span className="min-w-0 flex-1 truncate text-fg" title={a.email ?? undefined}>

@@ -24,6 +24,7 @@ import { TOUR_STOPS, type TourCopy } from "@/lib/tour";
 import { PageFrame } from "@/components/PageFrame";
 import { button, card, field, label, note } from "@/components/ui/controls";
 import { Switch } from "@/components/ui/Switch";
+import { SearchBox, matches, scrollList } from "@/components/AdminParts";
 
 type Person = {
   user_id: string;
@@ -61,6 +62,7 @@ export default function TourAdmin() {
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<{ ok: boolean; text: string } | null>(null);
   const [resetting, setResetting] = useState<string | null>(null);
+  const [who, setWho] = useState("");
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -270,35 +272,44 @@ export default function TourAdmin() {
                 <p className="mt-0.5 text-xs text-fg-muted">
                   The latest {report.people.length.toLocaleString()} of {t.shown.toLocaleString()}, newest first.
                 </p>
+                {report.people.length > 0 && (
+                  <div className="mt-3">
+                    <SearchBox value={who} onChange={setWho} placeholder="Find someone by email" />
+                  </div>
+                )}
               </div>
               {report.people.length === 0 ? (
                 <p className="px-5 py-6 text-[13px] text-fg-muted">Nobody has been shown it yet.</p>
+              ) : !report.people.some((p) => matches(who, p.email)) ? (
+                <p className="px-5 py-6 text-[13px] text-fg-muted">Nobody among them matches.</p>
               ) : (
-                <ul className="divide-y divide-line">
-                  {report.people.map((p) => (
-                    <li key={p.user_id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3 text-[13px]">
-                      <span className="min-w-0 flex-1 truncate text-fg">{p.email ?? "An account since deleted"}</span>
-                      <span className="text-xs text-fg-muted">
-                        {p.outcome === "finished"
-                          ? `To the end, ${p.stops} stops`
-                          : p.outcome === "closed"
-                            ? `Closed at “${titleOf(p.closed_on)}”, ${p.reached} of ${p.stops}`
-                            : "Left open"}
-                      </span>
-                      <span className="w-28 text-xs text-fg-faint" title={new Date(p.last_at).toLocaleString()}>
-                        {p.times > 1 ? `${p.times} times, ` : ""}
-                        {ago(p.last_at, now)}
-                      </span>
-                      <button
-                        onClick={() => reset(p)}
-                        disabled={resetting === p.user_id}
-                        title="Show it to them again the next time they open the app"
-                        className={button("plain", "sm")}
-                      >
-                        {resetting === p.user_id ? "Resetting…" : "Show again"}
-                      </button>
-                    </li>
-                  ))}
+                <ul className={`${scrollList} divide-y divide-line`}>
+                  {report.people
+                    .filter((p) => matches(who, p.email))
+                    .map((p) => (
+                      <li key={p.user_id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3 text-[13px]">
+                        <span className="min-w-0 flex-1 truncate text-fg">{p.email ?? "An account since deleted"}</span>
+                        <span className="text-xs text-fg-muted">
+                          {p.outcome === "finished"
+                            ? `To the end, ${p.stops} stops`
+                            : p.outcome === "closed"
+                              ? `Closed at “${titleOf(p.closed_on)}”, ${p.reached} of ${p.stops}`
+                              : "Left open"}
+                        </span>
+                        <span className="w-28 text-xs text-fg-faint" title={new Date(p.last_at).toLocaleString()}>
+                          {p.times > 1 ? `${p.times} times, ` : ""}
+                          {ago(p.last_at, now)}
+                        </span>
+                        <button
+                          onClick={() => reset(p)}
+                          disabled={resetting === p.user_id}
+                          title="Show it to them again the next time they open the app"
+                          className={button("plain", "sm")}
+                        >
+                          {resetting === p.user_id ? "Resetting…" : "Show again"}
+                        </button>
+                      </li>
+                    ))}
                 </ul>
               )}
             </div>

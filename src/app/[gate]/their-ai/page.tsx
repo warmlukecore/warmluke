@@ -27,7 +27,7 @@ import { supabase } from "@/lib/supabase-client";
 import { scopeArgs, useConsoleScope } from "@/lib/console-scope";
 import { useUser } from "@/lib/auth";
 import { PageFrame } from "@/components/PageFrame";
-import { Breakdown, Choices, Stat, adminError } from "@/components/AdminParts";
+import { Breakdown, Choices, Stat, adminError, scrollList, stickyHead } from "@/components/AdminParts";
 import { card, note } from "@/components/ui/controls";
 
 type Figures = {
@@ -275,10 +275,10 @@ function Table({
       {rows.length === 0 ? (
         <p className="px-5 py-4 text-[13px] text-fg-muted">No calls in this time.</p>
       ) : (
-        <div className="mt-2 overflow-x-auto">
+        <div className={`${scrollList} mt-2 overflow-x-auto`}>
           <table className="w-full min-w-[640px] text-left text-xs tabular-nums">
-            <thead className="text-fg-muted">
-              <tr className="border-b border-line">
+            <thead className={`${stickyHead} text-fg-muted`}>
+              <tr>
                 <th scope="col" className="px-5 py-2 font-medium">
                   {first}
                 </th>

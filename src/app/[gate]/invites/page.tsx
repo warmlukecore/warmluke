@@ -19,7 +19,7 @@ import { Check, Copy } from "lucide-react";
 import { supabase } from "@/lib/supabase-client";
 import { useUser } from "@/lib/auth";
 import { PageFrame } from "@/components/PageFrame";
-import { Choices } from "@/components/AdminParts";
+import { Choices, ListPanel, matches, stickyHead } from "@/components/AdminParts";
 import { button, card, field, fieldOf, label, note } from "@/components/ui/controls";
 import { Switch } from "@/components/ui/Switch";
 
@@ -82,6 +82,8 @@ export default function Invites() {
   const { user, loading } = useUser();
   const router = useRouter();
   const [rows, setRows] = useState<Invite[] | null>(null);
+  const [query, setQuery] = useState("");
+  const [showing, setShowing] = useState<Invite["state"] | "">("");
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
@@ -222,6 +224,18 @@ export default function Invites() {
   }
 
   const refused = error === "This page is for administrators.";
+  // Found by who it is for, what it says, or who took it; and by where it stands.
+  const shown = rows.filter(
+    (r) =>
+      (!showing || r.state === showing) &&
+      matches(query, r.email, r.full_name, r.business_name, r.note, ...r.claimed_by.map((c) => c.email))
+  );
+  const states: Array<[Invite["state"] | "", string]> = [
+    ["", `All ${rows.length}`],
+    ...(Object.keys(STATE) as Invite["state"][])
+      .filter((k) => rows.some((r) => r.state === k) || k === showing)
+      .map((k): [Invite["state"], string] => [k, `${STATE[k][0]} ${rows.filter((r) => r.state === k).length}`]),
+  ];
   return (
     <PageFrame email={user.email} isSuperadmin={!refused}>
       <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-8 sm:py-8">
@@ -369,130 +383,154 @@ export default function Invites() {
               )}
             </form>
 
-            {/* relative: the sr-only label in the last column is absolute, and it stretched the page past a phone. */}
-            <div className={`${card} thin-scroll relative mt-6 overflow-x-auto`}>
-              {rows.length === 0 ? (
-                <p className="px-4 py-8 text-center text-[13px] text-fg-muted">
-                  No invites yet. The first one you make appears here.
-                </p>
-              ) : (
-                <table className="w-full text-left text-[13px]">
-                  <thead className="border-b border-line bg-surface-subdued text-xs text-fg-muted">
-                    <tr>
-                      <th className="px-4 py-2.5 font-medium">For</th>
-                      <th className="px-3 py-2.5 font-medium">State</th>
-                      <th className="px-3 py-2.5 font-medium">Ends</th>
-                      <th className="px-3 py-2.5 font-medium">Taken by</th>
-                      <th className="px-3 py-2.5 font-medium">
-                        <span className="sr-only">Actions</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-line">
-                    {rows.map((r) => {
-                      const [stateText, tone] = STATE[r.state];
-                      return (
-                        <tr key={r.id} className="align-top">
-                          <td className="px-4 py-3">
-                            <div className="max-w-64 min-w-44">
-                              <div className="truncate font-medium text-fg">{r.email ?? "Anyone with the link"}</div>
-                              {(r.full_name || r.business_name) && (
-                                <div className="truncate text-xs text-fg-muted">
-                                  {[r.full_name, r.business_name].filter(Boolean).join(" · ")}
-                                </div>
+            {rows.length === 0 ? (
+              <p className={`${card} mt-6 px-4 py-8 text-center text-[13px] text-fg-muted`}>
+                No invites yet. The first one you make appears here.
+              </p>
+            ) : (
+              <div className="mt-6">
+                <div className="mb-3" aria-label="Show invites that are">
+                  <Choices options={states} value={showing} onChange={setShowing} />
+                </div>
+                {/* ListPanel's card is relative: the sr-only label in the last column is absolute, and it stretched the page past a phone. */}
+                <ListPanel
+                  query={query}
+                  onQuery={setQuery}
+                  placeholder="Find by email, name, business or note"
+                  shown={shown.length}
+                  total={rows.length}
+                  noun="invites"
+                >
+                  <table className="w-full text-left text-[13px]">
+                    <thead className={`${stickyHead} text-xs text-fg-muted`}>
+                      <tr>
+                        <th className="px-4 py-2.5 font-medium">For</th>
+                        <th className="px-3 py-2.5 font-medium">State</th>
+                        <th className="px-3 py-2.5 font-medium">Ends</th>
+                        <th className="px-3 py-2.5 font-medium">Taken by</th>
+                        <th className="px-3 py-2.5 font-medium">
+                          <span className="sr-only">Actions</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-line">
+                      {shown.map((r) => {
+                        const [stateText, tone] = STATE[r.state];
+                        return (
+                          <tr key={r.id} className="align-top">
+                            <td className="px-4 py-3">
+                              <div className="max-w-64 min-w-44">
+                                <div className="truncate font-medium text-fg">{r.email ?? "Anyone with the link"}</div>
+                                {(r.full_name || r.business_name) && (
+                                  <div className="truncate text-xs text-fg-muted">
+                                    {[r.full_name, r.business_name].filter(Boolean).join(" · ")}
+                                  </div>
+                                )}
+                                {r.note && (
+                                  <div className="truncate text-[11px] text-fg-faint" title={r.note}>
+                                    {r.note}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-3 py-3">
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${tone}`}
+                              >
+                                {stateText}
+                              </span>
+                              <div className="mt-1 text-[11px] text-fg-faint tabular-nums">
+                                {r.uses} of {r.max_uses} used
+                              </div>
+                            </td>
+                            <td className="px-3 py-3 whitespace-nowrap text-fg-muted" title={when(r.expires_at)}>
+                              {r.state === "revoked" ? null : relative(r.expires_at, now)}
+                            </td>
+                            <td className="px-3 py-3">
+                              {r.claimed_by.length === 0 ? (
+                                <span className="text-xs text-fg-faint">Nobody yet</span>
+                              ) : (
+                                <ul className="max-w-56 space-y-0.5 text-xs">
+                                  {r.claimed_by.map((c) => (
+                                    <li key={c.email} className="truncate text-fg">
+                                      {c.email}
+                                    </li>
+                                  ))}
+                                </ul>
                               )}
-                              {r.note && (
-                                <div className="truncate text-[11px] text-fg-faint" title={r.note}>
-                                  {r.note}
+                            </td>
+                            <td className="px-3 py-3">
+                              {r.state === "revoked" ? null : withdrawing === r.id ? (
+                                <div className={`${note.attention} min-w-56`}>
+                                  <p>Withdraw this link? Anyone who opens it after this is told it was withdrawn.</p>
+                                  <div className="mt-2 flex gap-1.5">
+                                    <button
+                                      onClick={() => change(r.id, { revoke: true })}
+                                      disabled={busy === r.id}
+                                      className={button("critical", "sm")}
+                                    >
+                                      Withdraw
+                                    </button>
+                                    <button onClick={() => setWithdrawing(null)} className={button("plain", "sm")}>
+                                      Keep it
+                                    </button>
+                                  </div>
                                 </div>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-3 py-3">
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${tone}`}
-                            >
-                              {stateText}
-                            </span>
-                            <div className="mt-1 text-[11px] text-fg-faint tabular-nums">
-                              {r.uses} of {r.max_uses} used
-                            </div>
-                          </td>
-                          <td className="px-3 py-3 whitespace-nowrap text-fg-muted" title={when(r.expires_at)}>
-                            {r.state === "revoked" ? null : relative(r.expires_at, now)}
-                          </td>
-                          <td className="px-3 py-3">
-                            {r.claimed_by.length === 0 ? (
-                              <span className="text-xs text-fg-faint">Nobody yet</span>
-                            ) : (
-                              <ul className="max-w-56 space-y-0.5 text-xs">
-                                {r.claimed_by.map((c) => (
-                                  <li key={c.email} className="truncate text-fg">
-                                    {c.email}
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                          </td>
-                          <td className="px-3 py-3">
-                            {r.state === "revoked" ? null : withdrawing === r.id ? (
-                              <div className={`${note.attention} min-w-56`}>
-                                <p>Withdraw this link? Anyone who opens it after this is told it was withdrawn.</p>
-                                <div className="mt-2 flex gap-1.5">
+                              ) : moving === r.id ? (
+                                <div className="min-w-56">
+                                  <div className="mb-1.5 text-xs text-fg-muted">End it, from now, in</div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {LASTS.map(([h, text]) => (
+                                      <button
+                                        key={h}
+                                        onClick={() => change(r.id, { hours: h })}
+                                        disabled={busy === r.id}
+                                        className={button("secondary", "sm")}
+                                      >
+                                        {text}
+                                      </button>
+                                    ))}
+                                    <button onClick={() => setMoving(null)} className={button("plain", "sm")}>
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex flex-wrap justify-end gap-1">
+                                  {r.state === "open" && (
+                                    <button onClick={() => copy(r.token)} className={button("secondary", "sm")}>
+                                      {copied === r.token ? "Copied" : "Copy link"}
+                                    </button>
+                                  )}
+                                  <button onClick={() => setMoving(r.id)} className={button("plain", "sm")}>
+                                    {r.state === "expired" ? "Reopen" : "Change end"}
+                                  </button>
                                   <button
-                                    onClick={() => change(r.id, { revoke: true })}
-                                    disabled={busy === r.id}
-                                    className={button("critical", "sm")}
+                                    onClick={() => setWithdrawing(r.id)}
+                                    className={button("critical-plain", "sm")}
                                   >
                                     Withdraw
                                   </button>
-                                  <button onClick={() => setWithdrawing(null)} className={button("plain", "sm")}>
-                                    Keep it
-                                  </button>
                                 </div>
-                              </div>
-                            ) : moving === r.id ? (
-                              <div className="min-w-56">
-                                <div className="mb-1.5 text-xs text-fg-muted">End it, from now, in</div>
-                                <div className="flex flex-wrap gap-1">
-                                  {LASTS.map(([h, text]) => (
-                                    <button
-                                      key={h}
-                                      onClick={() => change(r.id, { hours: h })}
-                                      disabled={busy === r.id}
-                                      className={button("secondary", "sm")}
-                                    >
-                                      {text}
-                                    </button>
-                                  ))}
-                                  <button onClick={() => setMoving(null)} className={button("plain", "sm")}>
-                                    Cancel
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="flex flex-wrap justify-end gap-1">
-                                {r.state === "open" && (
-                                  <button onClick={() => copy(r.token)} className={button("secondary", "sm")}>
-                                    {copied === r.token ? "Copied" : "Copy link"}
-                                  </button>
-                                )}
-                                <button onClick={() => setMoving(r.id)} className={button("plain", "sm")}>
-                                  {r.state === "expired" ? "Reopen" : "Change end"}
-                                </button>
-                                <button onClick={() => setWithdrawing(r.id)} className={button("critical-plain", "sm")}>
-                                  Withdraw
-                                </button>
-                              </div>
-                            )}
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    {shown.length === 0 && (
+                      <tbody>
+                        <tr>
+                          <td colSpan={5} className="px-4 py-8 text-center text-[13px] text-fg-muted">
+                            No invite matches.
                           </td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
+                      </tbody>
+                    )}
+                  </table>
+                </ListPanel>
+              </div>
+            )}
           </>
         )}
       </div>

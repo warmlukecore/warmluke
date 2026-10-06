@@ -22,7 +22,7 @@ import { Select } from "@/components/ui/Select";
 import { useUser } from "@/lib/auth";
 import { ago } from "@/lib/when";
 import { PageFrame } from "@/components/PageFrame";
-import { Choices, adminError } from "@/components/AdminParts";
+import { Choices, adminError, panelScroll } from "@/components/AdminParts";
 import { button, card, field, note } from "@/components/ui/controls";
 
 type Line = {
@@ -49,8 +49,11 @@ const ACTIONS: Record<string, string> = {
   set_luke: "changed Luke's models",
   set_tester: "changed the testing team",
   view_conversation: "read a conversation",
+  rename: "renamed",
 };
-const chip = (k: string) => ACTIONS[k].charAt(0).toUpperCase() + ACTIONS[k].slice(1);
+/** An action's words; one added since this list, by its own name ("set_x" as "set x"). */
+const words = (k: string) => ACTIONS[k] ?? k.replaceAll("_", " ");
+const chip = (k: string) => words(k).charAt(0).toUpperCase() + words(k).slice(1);
 const DAYS: Array<[number, string]> = [
   [7, "7 days"],
   [30, "30 days"],
@@ -143,7 +146,8 @@ export default function AccessLog() {
   const refused = error === "This page is for administrators.";
   const kinds: Array<[string, string]> = [
     ["", "Everything"],
-    ...Object.keys(ACTIONS)
+    // Every action the log has, a new one too, and the one chosen.
+    ...[...new Set([...Object.keys(ACTIONS), ...Object.keys(counts)])]
       .filter((k) => counts[k] || k === action)
       .map((k): [string, string] => [k, `${chip(k)} · ${counts[k] ?? 0}`]),
   ];
@@ -204,9 +208,15 @@ export default function AccessLog() {
                   />
                 </div>
               )}
+              {rows.length > 0 && (
+                <span className="ml-auto text-xs text-fg-faint tabular-nums" aria-live="polite">
+                  {rows.length.toLocaleString()} {rows.length === 1 ? "entry" : "entries"}
+                  {more ? ", older below" : ""}
+                </span>
+              )}
             </div>
 
-            <div className={`${card} mt-4 overflow-hidden`}>
+            <div className={`${card} ${panelScroll} mt-4`}>
               {rows.length === 0 ? (
                 <p className="px-5 py-6 text-[13px] text-fg-muted">Nothing in this window.</p>
               ) : (
@@ -222,7 +232,7 @@ export default function AccessLog() {
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-baseline gap-x-1.5">
                             <span className="font-medium text-fg">{l.actor ?? "An account since deleted"}</span>
-                            <span className="text-fg-muted">{ACTIONS[l.action] ?? l.action}</span>
+                            <span className="text-fg-muted">{words(l.action)}</span>
                             <span className="text-fg-muted">{seen ? "of" : "for"}</span>
                             <span className="truncate text-fg">{l.target ?? "an account since deleted"}</span>
                           </div>

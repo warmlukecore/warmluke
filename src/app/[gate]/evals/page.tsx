@@ -20,6 +20,7 @@ import { supabase } from "@/lib/supabase-client";
 import { useUser } from "@/lib/auth";
 import { dollars, modelName } from "@/lib/model-prices";
 import { PageFrame } from "@/components/PageFrame";
+import { scrollList } from "@/components/AdminParts";
 import { Select } from "@/components/ui/Select";
 import { card, label, note } from "@/components/ui/controls";
 import {
@@ -162,7 +163,7 @@ export default function EvalsPage() {
           </div>
         ) : (
           <>
-            <ul className={`${card} mt-6 divide-y divide-line overflow-hidden`}>
+            <ul className={`${card} ${scrollList} mt-6 divide-y divide-line`}>
               {RUNS.map((r) => (
                 <li key={r.file}>
                   <button

@@ -2,7 +2,8 @@
 //
 // A new screen is a page under src/app/[gate]/ and one line here: the
 // sidebar, its search and the phone's menu all read this list, so nothing
-// else has to learn that it exists. `to` is the path after the console's
+// else has to learn that it exists. `scoped` puts the account scope bar
+// above it (lib/console-scope). `to` is the path after the console's
 // own address; "" is its first screen.
 //
 // Callers: src/components/PageFrame.tsx.
@@ -26,14 +27,27 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-export type ConsoleScreen = { to: string; label: string; icon: LucideIcon; about: string };
+export type ConsoleScreen = {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+  about: string;
+  /** Its report narrows to one account or app (0184): the scope bar shows above it, and links keep the scope. */
+  scoped?: boolean;
+};
 export type ConsoleGroup = { title: string; screens: ConsoleScreen[] };
 
 export const CONSOLE_NAV: ConsoleGroup[] = [
   {
     title: "People",
     screens: [
-      { to: "", label: "Accounts", icon: Users, about: "Who uses Warmluke, and what is switched on for them" },
+      {
+        to: "",
+        scoped: true,
+        label: "Accounts",
+        icon: Users,
+        about: "Who uses Warmluke, and what is switched on for them",
+      },
       {
         to: "invites",
         label: "Invites",
@@ -48,37 +62,49 @@ export const CONSOLE_NAV: ConsoleGroup[] = [
     screens: [
       {
         to: "conversations",
+        scoped: true,
         label: "Conversations",
         icon: MessagesSquare,
         about: "Any conversation, with every turn's trace",
       },
-      { to: "spend", label: "Spend", icon: Coins, about: "What Luke's model calls cost, by day, model and account" },
+      {
+        to: "spend",
+        scoped: true,
+        label: "Spend",
+        icon: Coins,
+        about: "What Luke's model calls cost, by day, model and account",
+      },
       {
         to: "trouble",
+        scoped: true,
         label: "Needs a look",
         icon: Eye,
         about: "Where something went wrong: failed turns, unhappy owners, churn, failing rules, workarounds",
       },
       {
         to: "learning",
+        scoped: true,
         label: "Learning",
         icon: GraduationCap,
         about: "What Luke learned for each store, how it changed, and whether it helped",
       },
       {
         to: "agents",
+        scoped: true,
         label: "Agents",
         icon: Bot,
         about: "How each of Luke's agents did: runs, verdicts, cost and time",
       },
       {
         to: "their-ai",
+        scoped: true,
         label: "Their AI",
         icon: Cable,
         about: "What a merchant's own ChatGPT or Claude is told, and how its asks come out",
       },
       {
         to: "what-stuck",
+        scoped: true,
         label: "What stuck",
         icon: Pin,
         about: "Which builds merchants kept and used, and the examples Luke designs from",
@@ -97,12 +123,20 @@ export const CONSOLE_NAV: ConsoleGroup[] = [
   },
   {
     title: "Product",
-    screens: [{ to: "tour", label: "Tour", icon: Compass, about: "The first look round the app, and who saw it" }],
+    screens: [
+      { to: "tour", scoped: true, label: "Tour", icon: Compass, about: "The first look round the app, and who saw it" },
+    ],
   },
   {
     title: "Trust",
     screens: [
-      { to: "access", label: "Access log", icon: ScrollText, about: "What administrators did, on whose account" },
+      {
+        to: "access",
+        scoped: true,
+        label: "Access log",
+        icon: ScrollText,
+        about: "What administrators did, on whose account",
+      },
       {
         to: "privacy",
         label: "Data & privacy",

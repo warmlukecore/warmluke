@@ -16,8 +16,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
 import { Dialog } from "@/components/ui/Dialog";
-import { note } from "@/components/ui/controls";
-import { DEMO_STAGES, STAGE_TONE, siteLink } from "@/components/AdminParts";
+import { button, field, label, note } from "@/components/ui/controls";
+import { DEMO_STAGES, STAGE_TONE, scrollList, siteLink } from "@/components/AdminParts";
 import {
   HEARD_OPTIONS,
   MEMBER_ROLE_OPTIONS,
@@ -108,6 +108,9 @@ type Story = {
 /** The switches, by the names the accounts table gives them. */
 const SWITCH: Record<string, string> = { chat: "Warmluke AI", mcp: "Their own AI", store_actions: "Change their shop" };
 
+/** A rename's apps, before or after: id to name. */
+const appNames = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, string>) : {});
+
 /** What an administrator did, as a sentence. */
 function said({ action, old_value, new_value }: Story["trail"][number]): string {
   const was = old_value ?? {};
@@ -125,13 +128,22 @@ function said({ action, old_value, new_value }: Story["trail"][number]): string 
       return "Suspended";
     case "restore":
       return "Let back in";
+    case "rename": {
+      const parts = [
+        now.full_name ? `name ${String(was.full_name ?? "?")} → ${String(now.full_name)}` : null,
+        now.business_name ? `business ${String(was.business_name ?? "?")} → ${String(now.business_name)}` : null,
+        ...Object.entries(appNames(now.apps)).map(([id, name]) => `app ${appNames(was.apps)[id] ?? "?"} → ${name}`),
+      ].filter(Boolean);
+      return `Renamed: ${parts.join("; ") || "nothing"}`;
+    }
     case "set_luke": {
       const models = Array.isArray(now.models) ? (now.models as string[]).map(modelName).join(", ") : "every model";
       const shows = SHOWS_WORDS.find(([v]) => v === now.shows)?.[1].toLowerCase() ?? String(now.shows);
       return `Luke: ${models}; under each reply, ${shows}`;
     }
     default:
-      return action;
+      // One added since this list, by its own name ("set_x" as "Set x").
+      return action.charAt(0).toUpperCase() + action.slice(1).replaceAll("_", " ");
   }
 }
 
@@ -147,11 +159,23 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-export function AccountDetail({ account: a, now, onClose }: { account: Account; now: number; onClose: () => void }) {
+export function AccountDetail({
+  account: a,
+  now,
+  onClose,
+  onChanged,
+}: {
+  account: Account;
+  now: number;
+  onClose: () => void;
+  /** After a rename: the list reads the account again. */
+  onChanged?: () => void;
+}) {
   // The console's own address ([gate]), for links to its other screens.
   const gate = useParams<{ gate: string }>().gate;
   const [story, setStory] = useState<Story | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
 
   useEffect(() => {
     // A second row opened before the first answered keeps its own answer.
@@ -223,13 +247,36 @@ export function AccountDetail({ account: a, now, onClose }: { account: Account; 
     >
       <div className="space-y-4">
         {/* The whole console narrowed to them (0184): spend, Luke, trouble, their AI, what stuck, as theirs. */}
-        <Link
-          href={`/${gate}?account=${a.user_id}`}
-          onClick={onClose}
-          className="inline-flex text-[13px] font-medium text-link hover:underline"
-        >
-          See only this account across the console
-        </Link>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Link
+            href={`/${gate}?account=${a.user_id}`}
+            onClick={onClose}
+            className="inline-flex text-[13px] font-medium text-link hover:underline"
+          >
+            See only this account across the console
+          </Link>
+          {/* Another administrator is not changed from here (abo_admin_may_manage). */}
+          {!a.is_superadmin && story && !renaming && (
+            <button onClick={() => setRenaming(true)} className={button("secondary", "sm")}>
+              Rename
+            </button>
+          )}
+        </div>
+        {renaming && story && (
+          <Rename
+            account={a}
+            apps={story.projects}
+            onCancel={() => setRenaming(false)}
+            onDone={() => {
+              setRenaming(false);
+              // Read again, so the apps and the trail say what changed.
+              void supabase
+                .rpc("abo_admin_account", { p_user: a.user_id })
+                .then(({ data }) => data && setStory(data as Story));
+              onChanged?.();
+            }}
+          />
+        )}
         <Section title="What they told us">
           {a.is_superadmin ? (
             <p className="text-fg-muted">Warmluke team, not onboarded as a business.</p>
@@ -384,7 +431,7 @@ export function AccountDetail({ account: a, now, onClose }: { account: Account; 
               {story.trail.length === 0 ? (
                 <p className="text-fg-muted">Nothing yet.</p>
               ) : (
-                <ol className="space-y-1.5">
+                <ol className={`${scrollList} space-y-1.5`}>
                   {story.trail.map((t, i) => (
                     <li key={`${t.at}-${i}`} className="flex items-baseline justify-between gap-3">
                       <span>{said(t)}</span>
@@ -400,5 +447,96 @@ export function AccountDetail({ account: a, now, onClose }: { account: Account; 
         )}
       </div>
     </Dialog>
+  );
+}
+
+/**
+ * The names an administrator may correct (0187): the person's, their
+ * business's as onboarding took them, and each app they own. Blank keeps
+ * a name; what changed goes in the access log.
+ */
+function Rename({
+  account: a,
+  apps,
+  onCancel,
+  onDone,
+}: {
+  account: Account;
+  apps: Story["projects"];
+  onCancel: () => void;
+  onDone: () => void;
+}) {
+  // Onboarding made the profile; before it there is no name or business to correct.
+  const hasProfile = a.full_name != null || a.business_name != null;
+  const [name, setName] = useState(a.full_name ?? "");
+  const [business, setBusiness] = useState(a.business_name ?? "");
+  const [names, setNames] = useState<Record<string, string>>(Object.fromEntries(apps.map((p) => [p.id, p.name])));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    const { error: err } = await supabase.rpc("abo_admin_rename", {
+      p_user: a.user_id,
+      p_full_name: hasProfile ? name : null,
+      p_business: hasProfile ? business : null,
+      p_apps: apps.map((p) => ({ id: p.id, name: names[p.id] ?? p.name })),
+    });
+    setBusy(false);
+    if (err) {
+      setError(err.code === "PGRST202" ? "This database cannot rename yet: apply migration 0187." : err.message);
+      return;
+    }
+    onDone();
+  };
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save();
+      }}
+      className="space-y-3 rounded-control border border-line p-3"
+    >
+      {hasProfile ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label>
+            <span className={label}>Name</span>
+            <input value={name} maxLength={120} onChange={(e) => setName(e.target.value)} className={field} />
+          </label>
+          <label>
+            <span className={label}>Business</span>
+            <input value={business} maxLength={160} onChange={(e) => setBusiness(e.target.value)} className={field} />
+          </label>
+        </div>
+      ) : (
+        <p className="text-xs text-fg-muted">No name or business yet: they have not finished onboarding.</p>
+      )}
+      {apps.map((p) => (
+        <label key={p.id} className="block">
+          <span className={label}>App</span>
+          <input
+            value={names[p.id] ?? ""}
+            maxLength={120}
+            onChange={(e) => setNames((n) => ({ ...n, [p.id]: e.target.value }))}
+            className={field}
+          />
+        </label>
+      ))}
+      {error && (
+        <div role="alert" className={note.critical}>
+          {error}
+        </div>
+      )}
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onCancel} className={button("secondary", "sm")}>
+          Cancel
+        </button>
+        <button type="submit" disabled={busy} className={button("primary", "sm")}>
+          {busy ? "Saving…" : "Save names"}
+        </button>
+      </div>
+    </form>
   );
 }

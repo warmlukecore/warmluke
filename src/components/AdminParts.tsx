@@ -1,11 +1,14 @@
 // What the admin screens share: the stages a demo request moves through,
 // a number with a line under it, a count broken down as bars, a link
-// somebody typed made safe to follow, and a row of choices.
+// somebody typed made safe to follow, a row of choices, and a list that
+// keeps its size (ListPanel: a search, a count, its own scroller).
 //
 // Callers: src/app/[gate]/page.tsx, src/app/[gate]/demos/page.tsx,
 // src/app/[gate]/invites/page.tsx, and the privacy, access and spend screens.
 
-import { card } from "@/components/ui/controls";
+import type { ReactNode } from "react";
+import { Search } from "lucide-react";
+import { button, card, field } from "@/components/ui/controls";
 import type { Option } from "@/lib/onboarding";
 
 /**
@@ -132,4 +135,105 @@ export function adminError(e: { code?: string; message: string }, migration: str
   if (e.code === "42501") return "This page is for administrators.";
   if (e.code === "PGRST202") return `This database does not have this screen yet: apply migration ${migration}.`;
   return e.message;
+}
+
+/** A table's header row, held at the top of its ListPanel as the rows scroll under it. */
+export const stickyHead = "sticky top-0 z-[1] border-b border-line bg-surface-subdued";
+
+/** A console list's card: it scrolls in place past a screenful rather than stretching the page. */
+export const panelScroll = "thin-scroll max-h-[min(70vh,44rem)] overflow-auto";
+
+/** A list inside a card of its own that scrolls in place past a screenful, rather than stretching the page. */
+export const scrollList = "thin-scroll max-h-[min(60vh,30rem)] overflow-y-auto";
+
+/** Whether any of a row's words holds what was typed, case aside. */
+export const matches = (q: string, ...words: Array<string | null | undefined>) => {
+  const w = q.trim().toLowerCase();
+  return !w || words.some((x) => (x ?? "").toLowerCase().includes(w));
+};
+
+/** The console's search box: an icon, the words, Escape to clear. */
+export function SearchBox({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (q: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <label className="relative block w-full max-w-xs">
+      <Search
+        aria-hidden
+        size={15}
+        strokeWidth={1.75}
+        className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-fg-faint"
+      />
+      <input
+        type="search"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => e.key === "Escape" && onChange("")}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        className={`${field} pl-8`}
+      />
+    </label>
+  );
+}
+
+/**
+ * A console list that keeps its size: a search over it, how many show of
+ * how many, and the rows in a card that scrolls in place past a screenful,
+ * so a long list does not stretch the page (a table puts `stickyHead` on
+ * its header row). When the server sends it in pages, `more` asks for the
+ * next one.
+ */
+export function ListPanel({
+  query,
+  onQuery,
+  placeholder = "Find",
+  shown,
+  total,
+  noun,
+  actions,
+  more,
+  children,
+}: {
+  query?: string;
+  onQuery?: (q: string) => void;
+  placeholder?: string;
+  shown: number;
+  /** All there are, when known; a paged list without a count leaves it out. */
+  total?: number;
+  /** What a row is, for the count: "accounts". */
+  noun: string;
+  actions?: ReactNode;
+  more?: { onMore: () => void; busy?: boolean } | null;
+  children: ReactNode;
+}) {
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {onQuery ? <SearchBox value={query ?? ""} onChange={onQuery} placeholder={placeholder} /> : <span />}
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-xs text-fg-faint tabular-nums" aria-live="polite">
+            {total === undefined || shown === total
+              ? `${shown.toLocaleString()} ${noun}`
+              : `${shown.toLocaleString()} of ${total.toLocaleString()} ${noun}`}
+          </span>
+          {actions}
+        </div>
+      </div>
+      <div className={`${card} ${panelScroll} relative mt-3`}>{children}</div>
+      {more && (
+        <div className="mt-3 flex justify-center">
+          <button onClick={more.onMore} disabled={more.busy} className={button("secondary", "sm")}>
+            {more.busy ? "Loading…" : "Show more"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }

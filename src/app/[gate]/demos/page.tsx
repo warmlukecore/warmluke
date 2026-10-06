@@ -18,13 +18,23 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { Download, Search } from "lucide-react";
+import { Download } from "lucide-react";
 import { supabase } from "@/lib/supabase-client";
 import { useUser } from "@/lib/auth";
 import { PageFrame } from "@/components/PageFrame";
-import { Breakdown, Choices, DEMO_STAGES, STAGE_TONE, Stat, siteLink, topCounts } from "@/components/AdminParts";
+import {
+  Breakdown,
+  Choices,
+  DEMO_STAGES,
+  ListPanel,
+  STAGE_TONE,
+  Stat,
+  siteLink,
+  stickyHead,
+  topCounts,
+} from "@/components/AdminParts";
 import { Dialog } from "@/components/ui/Dialog";
-import { button, card, field, hint, label, note } from "@/components/ui/controls";
+import { button, field, hint, label, note } from "@/components/ui/controls";
 import { downloadCsv, type Column } from "@/lib/csv";
 import { quietClasses } from "@/lib/tone";
 import { HEARD_OPTIONS, ORDER_OPTIONS, TEAM_OPTIONS, labelOf } from "@/lib/onboarding";
@@ -221,223 +231,217 @@ export default function DemoRequests() {
               <Breakdown label="Orders a month" counts={stats.orders} empty="Nobody has said yet" />
             </div>
 
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
-              <label className="relative block w-full max-w-xs">
-                <Search
-                  aria-hidden
-                  size={15}
-                  strokeWidth={1.75}
-                  className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-fg-faint"
-                />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === "Escape" && setQuery("")}
-                  placeholder="Find by name, email or store"
-                  aria-label="Find a demo request"
-                  className={`${field} pl-8`}
-                />
-              </label>
-              {/* What is shown, so a search or a stage narrows the file too. */}
-              <button
-                onClick={() => downloadCsv("warmluke-demo-requests", shown, CSV_COLUMNS)}
-                disabled={shown.length === 0}
-                className={button("secondary")}
-              >
-                <Download aria-hidden size={14} strokeWidth={1.75} />
-                Download CSV{shown.length < rows.length ? ` (${shown.length})` : ""}
-              </button>
-            </div>
-            <div className="mt-3" aria-label="Show requests at this stage">
+            <div className="mt-6" aria-label="Show requests at this stage">
               <Choices options={stageOptions} value={stage} onChange={setStage} />
             </div>
-
-            <div className={`${card} thin-scroll relative mt-3 overflow-x-auto`}>
-              <table className="w-full text-left text-[13px]">
-                <thead className="border-b border-line bg-surface-subdued text-xs text-fg-muted">
-                  <tr>
-                    <th className="px-3 py-2.5 font-medium first:pl-4">Who</th>
-                    <th className="px-3 py-2.5 font-medium first:pl-4">Stage</th>
-                    <th className="px-3 py-2.5 font-medium first:pl-4">Business</th>
-                    <th className="px-3 py-2.5 font-medium first:pl-4">Heard of us</th>
-                    <th className="px-3 py-2.5 font-medium first:pl-4">Came from</th>
-                    <th className="px-3 py-2.5 font-medium first:pl-4">What Luke should fix first</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {shown.map((r) => {
-                    const site = siteLink(r.store);
-                    const asked = times.get(who(r)) ?? 1;
-                    // Bookings from before these were asked have none of them.
-                    const facts = [
-                      r.team_size ? `team ${labelOf(TEAM_OPTIONS, r.team_size)}` : null,
-                      r.monthly_orders === "undisclosed"
-                        ? "orders not said"
-                        : r.monthly_orders
-                          ? `${labelOf(ORDER_OPTIONS, r.monthly_orders)} orders/mo`
-                          : null,
-                    ].filter(Boolean);
-                    const source = [r.utm_source, r.utm_medium].filter(Boolean).join(" / ");
-                    return (
-                      <tr key={r.id} className="align-top transition-colors hover:bg-surface-subdued/60">
-                        <td className="px-3 py-3 first:pl-4">
-                          <div className="flex items-start gap-2.5">
-                            <span
-                              aria-hidden
-                              className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${quietClasses(who(r))}`}
-                            >
-                              {(r.name || r.email || "?").trim().charAt(0).toUpperCase()}
-                            </span>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <span className="max-w-[14rem] truncate font-medium text-fg">
-                                  {r.name || "No name given"}
-                                </span>
-                                {r.has_account && r.email && (
-                                  <Link
-                                    href={`${admin}?find=${encodeURIComponent(r.email.trim())}`}
-                                    title="Open their account"
-                                    className="rounded-full bg-tone-success px-1.5 py-px text-[10px] font-medium whitespace-nowrap text-tone-success-fg hover:underline"
+            <div className="mt-3">
+              <ListPanel
+                query={query}
+                onQuery={setQuery}
+                placeholder="Find by name, email or store"
+                shown={shown.length}
+                total={rows.length}
+                noun="requests"
+                actions={
+                  // What is shown, so a search or a stage narrows the file too.
+                  <button
+                    onClick={() => downloadCsv("warmluke-demo-requests", shown, CSV_COLUMNS)}
+                    disabled={shown.length === 0}
+                    className={button("secondary")}
+                  >
+                    <Download aria-hidden size={14} strokeWidth={1.75} />
+                    Download CSV{shown.length < rows.length ? ` (${shown.length})` : ""}
+                  </button>
+                }
+              >
+                <table className="w-full text-left text-[13px]">
+                  <thead className={`${stickyHead} text-xs text-fg-muted`}>
+                    <tr>
+                      <th className="px-3 py-2.5 font-medium first:pl-4">Who</th>
+                      <th className="px-3 py-2.5 font-medium first:pl-4">Stage</th>
+                      <th className="px-3 py-2.5 font-medium first:pl-4">Business</th>
+                      <th className="px-3 py-2.5 font-medium first:pl-4">Heard of us</th>
+                      <th className="px-3 py-2.5 font-medium first:pl-4">Came from</th>
+                      <th className="px-3 py-2.5 font-medium first:pl-4">What Luke should fix first</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {shown.map((r) => {
+                      const site = siteLink(r.store);
+                      const asked = times.get(who(r)) ?? 1;
+                      // Bookings from before these were asked have none of them.
+                      const facts = [
+                        r.team_size ? `team ${labelOf(TEAM_OPTIONS, r.team_size)}` : null,
+                        r.monthly_orders === "undisclosed"
+                          ? "orders not said"
+                          : r.monthly_orders
+                            ? `${labelOf(ORDER_OPTIONS, r.monthly_orders)} orders/mo`
+                            : null,
+                      ].filter(Boolean);
+                      const source = [r.utm_source, r.utm_medium].filter(Boolean).join(" / ");
+                      return (
+                        <tr key={r.id} className="align-top transition-colors hover:bg-surface-subdued/60">
+                          <td className="px-3 py-3 first:pl-4">
+                            <div className="flex items-start gap-2.5">
+                              <span
+                                aria-hidden
+                                className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${quietClasses(who(r))}`}
+                              >
+                                {(r.name || r.email || "?").trim().charAt(0).toUpperCase()}
+                              </span>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="max-w-[14rem] truncate font-medium text-fg">
+                                    {r.name || "No name given"}
+                                  </span>
+                                  {r.has_account && r.email && (
+                                    <Link
+                                      href={`${admin}?find=${encodeURIComponent(r.email.trim())}`}
+                                      title="Open their account"
+                                      className="rounded-full bg-tone-success px-1.5 py-px text-[10px] font-medium whitespace-nowrap text-tone-success-fg hover:underline"
+                                    >
+                                      has an account
+                                    </Link>
+                                  )}
+                                  {asked > 1 && (
+                                    <span className="rounded-full bg-tone-attention px-1.5 py-px text-[10px] font-medium whitespace-nowrap text-tone-attention-fg">
+                                      asked {asked} times
+                                    </span>
+                                  )}
+                                </div>
+                                {r.business && (
+                                  <div className="max-w-[14rem] truncate text-xs text-fg-muted">{r.business}</div>
+                                )}
+                                {r.email && (
+                                  <a
+                                    href={`mailto:${r.email}`}
+                                    className="block max-w-[14rem] truncate text-xs text-link hover:underline"
                                   >
-                                    has an account
+                                    {r.email}
+                                  </a>
+                                )}
+                                {r.email && !r.has_account && (
+                                  <Link
+                                    href={inviteHref(admin, r)}
+                                    className="mt-1 inline-block text-xs font-medium text-link hover:underline"
+                                  >
+                                    {r.invited_at
+                                      ? `Invited ${ago(r.invited_at, now)} · make another`
+                                      : "Make invite link"}
                                   </Link>
                                 )}
-                                {asked > 1 && (
-                                  <span className="rounded-full bg-tone-attention px-1.5 py-px text-[10px] font-medium whitespace-nowrap text-tone-attention-fg">
-                                    asked {asked} times
-                                  </span>
-                                )}
-                              </div>
-                              {r.business && (
-                                <div className="max-w-[14rem] truncate text-xs text-fg-muted">{r.business}</div>
-                              )}
-                              {r.email && (
-                                <a
-                                  href={`mailto:${r.email}`}
-                                  className="block max-w-[14rem] truncate text-xs text-link hover:underline"
+                                <div
+                                  className="text-[11px] whitespace-nowrap text-fg-faint"
+                                  title={new Date(r.created_at).toLocaleString()}
                                 >
-                                  {r.email}
-                                </a>
-                              )}
-                              {r.email && !r.has_account && (
-                                <Link
-                                  href={inviteHref(admin, r)}
-                                  className="mt-1 inline-block text-xs font-medium text-link hover:underline"
-                                >
-                                  {r.invited_at
-                                    ? `Invited ${ago(r.invited_at, now)} · make another`
-                                    : "Make invite link"}
-                                </Link>
-                              )}
-                              <div
-                                className="text-[11px] whitespace-nowrap text-fg-faint"
-                                title={new Date(r.created_at).toLocaleString()}
-                              >
-                                {new Date(r.created_at).toLocaleDateString(undefined, {
-                                  day: "numeric",
-                                  month: "short",
-                                  year: "numeric",
-                                })}
-                                {" · "}
-                                {ago(r.created_at, now)}
+                                  {new Date(r.created_at).toLocaleDateString(undefined, {
+                                    day: "numeric",
+                                    month: "short",
+                                    year: "numeric",
+                                  })}
+                                  {" · "}
+                                  {ago(r.created_at, now)}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 first:pl-4">
-                          <div className="min-w-40 max-w-56">
-                            <button
-                              onClick={() => setOpen(r)}
-                              title="Update where this stands"
-                              className={`rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap hover:ring-2 hover:ring-line-strong ${STAGE_TONE[r.stage ?? "new"] ?? STAGE_TONE.new}`}
-                            >
-                              {labelOf(DEMO_STAGES, r.stage ?? "new")}
-                            </button>
-                            {r.follow_up_note && (
-                              <p className="mt-1 line-clamp-2 text-xs break-words text-fg-muted">{r.follow_up_note}</p>
-                            )}
-                            {r.followed_up_at ? (
-                              <div className="mt-0.5 text-[11px] text-fg-faint">
-                                <span className="break-all">{r.followed_up_by ?? "a former administrator"}</span> ·{" "}
-                                <span className="whitespace-nowrap">{ago(r.followed_up_at, now)}</span>
-                              </div>
-                            ) : (
+                          </td>
+                          <td className="px-3 py-3 first:pl-4">
+                            <div className="min-w-40 max-w-56">
                               <button
                                 onClick={() => setOpen(r)}
-                                className="mt-1 block text-[11px] text-link hover:underline"
+                                title="Update where this stands"
+                                className={`rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap hover:ring-2 hover:ring-line-strong ${STAGE_TONE[r.stage ?? "new"] ?? STAGE_TONE.new}`}
                               >
-                                Add a note
+                                {labelOf(DEMO_STAGES, r.stage ?? "new")}
                               </button>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 first:pl-4">
-                          <div className="min-w-44 max-w-60">
-                            {site ? (
-                              <a
-                                href={site.href}
-                                target="_blank"
-                                rel="noopener noreferrer nofollow"
-                                className="block truncate font-medium text-link hover:underline"
-                              >
-                                {site.text}
-                              </a>
-                            ) : (
-                              <div className="truncate font-medium text-fg">{r.store || "No store given"}</div>
-                            )}
-                            {facts.length > 0 ? (
-                              <div className="text-xs text-fg-muted">{facts.join(" · ")}</div>
-                            ) : (
-                              <div className="text-xs text-fg-faint">Size not asked</div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 first:pl-4">
-                          {r.heard_from ? (
-                            <div className="min-w-32 max-w-48">
-                              <div className="text-fg">{labelOf(HEARD_OPTIONS, r.heard_from)}</div>
-                              {r.heard_from_detail && (
-                                <div className="text-xs break-words text-fg-muted">{r.heard_from_detail}</div>
+                              {r.follow_up_note && (
+                                <p className="mt-1 line-clamp-2 text-xs break-words text-fg-muted">
+                                  {r.follow_up_note}
+                                </p>
+                              )}
+                              {r.followed_up_at ? (
+                                <div className="mt-0.5 text-[11px] text-fg-faint">
+                                  <span className="break-all">{r.followed_up_by ?? "a former administrator"}</span> ·{" "}
+                                  <span className="whitespace-nowrap">{ago(r.followed_up_at, now)}</span>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setOpen(r)}
+                                  className="mt-1 block text-[11px] text-link hover:underline"
+                                >
+                                  Add a note
+                                </button>
                               )}
                             </div>
-                          ) : (
-                            <span className="text-xs text-fg-faint">Not asked</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-3 first:pl-4">
-                          <div className="min-w-36 max-w-56 text-xs">
-                            <div className="text-fg">{source || "Direct"}</div>
-                            {r.utm_campaign && (
-                              <div className="truncate text-fg-muted" title={r.utm_campaign}>
-                                {r.utm_campaign}
+                          </td>
+                          <td className="px-3 py-3 first:pl-4">
+                            <div className="min-w-44 max-w-60">
+                              {site ? (
+                                <a
+                                  href={site.href}
+                                  target="_blank"
+                                  rel="noopener noreferrer nofollow"
+                                  className="block truncate font-medium text-link hover:underline"
+                                >
+                                  {site.text}
+                                </a>
+                              ) : (
+                                <div className="truncate font-medium text-fg">{r.store || "No store given"}</div>
+                              )}
+                              {facts.length > 0 ? (
+                                <div className="text-xs text-fg-muted">{facts.join(" · ")}</div>
+                              ) : (
+                                <div className="text-xs text-fg-faint">Size not asked</div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 first:pl-4">
+                            {r.heard_from ? (
+                              <div className="min-w-32 max-w-48">
+                                <div className="text-fg">{labelOf(HEARD_OPTIONS, r.heard_from)}</div>
+                                {r.heard_from_detail && (
+                                  <div className="text-xs break-words text-fg-muted">{r.heard_from_detail}</div>
+                                )}
                               </div>
+                            ) : (
+                              <span className="text-xs text-fg-faint">Not asked</span>
                             )}
-                            {r.variant && <div className="text-fg-faint">saw the {r.variant} hero</div>}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 first:pl-4">
-                          {r.note ? (
-                            <p className="max-w-sm min-w-56 whitespace-pre-line break-words text-fg">{r.note}</p>
+                          </td>
+                          <td className="px-3 py-3 first:pl-4">
+                            <div className="min-w-36 max-w-56 text-xs">
+                              <div className="text-fg">{source || "Direct"}</div>
+                              {r.utm_campaign && (
+                                <div className="truncate text-fg-muted" title={r.utm_campaign}>
+                                  {r.utm_campaign}
+                                </div>
+                              )}
+                              {r.variant && <div className="text-fg-faint">saw the {r.variant} hero</div>}
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 first:pl-4">
+                            {r.note ? (
+                              <p className="max-w-sm min-w-56 whitespace-pre-line break-words text-fg">{r.note}</p>
+                            ) : (
+                              <span className="text-xs text-fg-faint">Nothing written</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {shown.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-8 text-center text-[13px] text-fg-muted">
+                          {stage === "all" ? (
+                            <>No request matches &ldquo;{query}&rdquo;.</>
                           ) : (
-                            <span className="text-xs text-fg-faint">Nothing written</span>
+                            `No request ${q ? "that matches is" : "is"} at “${labelOf(DEMO_STAGES, stage)}”.`
                           )}
                         </td>
                       </tr>
-                    );
-                  })}
-                  {shown.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-[13px] text-fg-muted">
-                        {stage === "all" ? (
-                          <>No request matches &ldquo;{query}&rdquo;.</>
-                        ) : (
-                          `No request ${q ? "that matches is" : "is"} at “${labelOf(DEMO_STAGES, stage)}”.`
-                        )}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                    )}
+                  </tbody>
+                </table>
+              </ListPanel>
             </div>
           </>
         )}

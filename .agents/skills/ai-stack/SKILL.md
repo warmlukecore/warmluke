@@ -41,7 +41,9 @@ database decides who may do what.
    `node_modules/@ai-sdk/*/docs`. v7 renamed things (`system` → `instructions`,
    `stepCountIs` → `isStepCount`, `onFinish` → `onEnd`); code from older examples breaks.
 2. **No model name in code.** A new job gets a row in `MODEL_JOBS` and a line in
-   `docs/reference/environment.md`. A `gemini-…` name goes to Google, anything else to the
+   `docs/reference/environment.md`, and its agent one entry in `src/lib/agents.ts` (its name,
+   what it does, its job and the step it tells): the console's Agents screen and a reply's
+   breakdown read it from there, and `scripts/check-registries.mjs` fails until it is there. A `gemini-…` name goes to Google, anything else to the
    Anthropic-format host, and a proxy (`ANTHROPIC_API_URL`) must serve every name it is
    sent, or it refuses them. Choosing a model is measured, not guessed: the comparison in
    `docs/reference/environment.md` (scenarios and lookups, cost from reported usage) picked

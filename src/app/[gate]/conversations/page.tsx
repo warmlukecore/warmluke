@@ -27,7 +27,7 @@ import { ago } from "@/lib/when";
 import { dollars, modelName, tokensShort } from "@/lib/model-prices";
 import type { TurnUsage } from "@/lib/types";
 import { PageFrame } from "@/components/PageFrame";
-import { Choices } from "@/components/AdminParts";
+import { Choices, panelScroll } from "@/components/AdminParts";
 import { button, card, field, note } from "@/components/ui/controls";
 
 type Filter = "recent" | "problems" | "costly" | "slow";
@@ -262,8 +262,14 @@ export default function Conversations() {
               <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3">
                 <Choices options={FILTERS} value={filter} onChange={setFilter} />
                 <Choices options={DAYS} value={days} onChange={setDays} />
+                {!!rows?.length && (
+                  <span className="ml-auto text-xs text-fg-faint tabular-nums" aria-live="polite">
+                    {rows.length.toLocaleString()} {rows.length === 1 ? "conversation" : "conversations"}
+                    {more ? ", older below" : ""}
+                  </span>
+                )}
               </div>
-              <div className={`${card} mt-4 overflow-hidden`}>
+              <div className={`${card} ${panelScroll} mt-4`}>
                 {rows === null ? (
                   <div className="h-48 animate-pulse bg-surface-subdued" aria-busy />
                 ) : rows.length === 0 ? (

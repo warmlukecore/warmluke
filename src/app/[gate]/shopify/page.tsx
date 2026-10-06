@@ -25,6 +25,7 @@ import { Switch } from "@/components/ui/Switch";
 import { PasswordInput } from "@/components/ui/PasswordInput";
 import { button, card, field, label, note } from "@/components/ui/controls";
 import { missingScopes, ownAppSettings } from "@/lib/shopify-resources";
+import { SearchBox, matches, scrollList } from "@/components/AdminParts";
 import { windowName } from "@/lib/when";
 
 type Shop = {
@@ -99,6 +100,9 @@ export default function ShopifyAppsAdmin() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  // A shop by its address, its app in Warmluke, or its owner, across every app.
+  const [shopQ, setShopQ] = useState("");
+  const shopsOf = (app: App) => app.shops.filter((s) => matches(shopQ, s.shop, s.project, s.owner));
   const [copied, setCopied] = useState<string | null>(null);
   const [origin, setOrigin] = useState("");
 
@@ -300,7 +304,13 @@ export default function ShopifyAppsAdmin() {
           </div>
         )}
 
-        <div className="mt-6 space-y-4">
+        {state.apps.some((a) => a.shops.length > 0) && (
+          <div className="mt-6">
+            <SearchBox value={shopQ} onChange={setShopQ} placeholder="Find a shop, its app or its owner" />
+          </div>
+        )}
+
+        <div className="mt-4 space-y-4">
           {state.apps.map((app) => (
             <div key={app.id} className={`${card} p-5`}>
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -351,8 +361,15 @@ export default function ShopifyAppsAdmin() {
                 </div>
               </div>
 
-              <ul className="mt-4 divide-y divide-line overflow-hidden rounded-card border border-line">
-                {app.shops.map((s) => {
+              {app.shops.length > 0 && (
+                <div className="mt-4 text-xs text-fg-faint tabular-nums">
+                  {shopsOf(app).length === app.shops.length
+                    ? `${app.shops.length} ${app.shops.length === 1 ? "shop" : "shops"}`
+                    : `${shopsOf(app).length} of ${app.shops.length} shops`}
+                </div>
+              )}
+              <ul className={`${scrollList} mt-2 divide-y divide-line rounded-card border border-line`}>
+                {shopsOf(app).map((s) => {
                   // Connected, but through another app than this one: what this
                   // app was granted says nothing about that connection.
                   const elsewhere = s.status === "connected" && !s.verified;

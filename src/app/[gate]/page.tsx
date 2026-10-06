@@ -21,7 +21,7 @@ import { useConsoleScope } from "@/lib/console-scope";
 import { useUser } from "@/lib/auth";
 import { PageFrame } from "@/components/PageFrame";
 import { Switch } from "@/components/ui/Switch";
-import { button, card, field, fieldOf, note } from "@/components/ui/controls";
+import { button, field, fieldOf, note } from "@/components/ui/controls";
 import { quietClasses } from "@/lib/tone";
 import {
   HEARD_OPTIONS,
@@ -32,9 +32,9 @@ import {
   TEAM_OPTIONS,
   labelOf,
 } from "@/lib/onboarding";
-import { Download, Search } from "lucide-react";
+import { Download } from "lucide-react";
 import { ago } from "@/lib/when";
-import { Breakdown, Stat, siteLink, topCounts } from "@/components/AdminParts";
+import { Breakdown, ListPanel, Stat, siteLink, stickyHead, topCounts } from "@/components/AdminParts";
 import { Dialog } from "@/components/ui/Dialog";
 import { AccountDetail, type Account } from "@/components/AccountDetail";
 import { LukeAccess } from "@/components/LukeAccess";
@@ -100,7 +100,8 @@ export default function Admin() {
   // Moved on each time the list is read again, so "2 min ago" stays true.
   const [now, setNow] = useState(() => Date.now());
   // The account whose whole story is open, if any.
-  const [open, setOpen] = useState<Account | null>(null);
+  // By id, so the dialog shows the row as the list reads it again.
+  const [openId, setOpenId] = useState<string | null>(null);
   // One account chosen above (0184): the list is that account, its whole story open.
   const scope = useConsoleScope();
   /** The account whose Luke models and costs are being set. */
@@ -150,6 +151,8 @@ export default function Admin() {
   // As it happens, near enough: accounts are read through administrator
   // functions, which do not stream, so the screen asks again every few
   // seconds while it is on screen (someone joins, opens the app, signs up).
+  // ponytail: the whole list each time; past a few thousand accounts, read a
+  // page from the server (search, sort and count in SQL) and poll only that.
   useEffect(() => {
     if (!user) return;
     const t = setInterval(() => {
@@ -248,11 +251,11 @@ export default function Admin() {
       ),
     [rows, q, scope]
   );
+  // Opened once when the scope names it, not again each time the list is read.
   useEffect(() => {
-    if (!scope.account || !rows) return;
-    const chosen = rows.find((r) => r.user_id === scope.account);
-    if (chosen) setOpen(chosen);
-  }, [scope, rows]);
+    if (scope.account) setOpenId(scope.account);
+  }, [scope.account]);
+  const open = (rows ?? []).find((r) => r.user_id === openId) ?? null;
 
   // The numbers at the top, from the same rows as the table: the
   // merchants', not Warmluke's own team, who are not onboarded as a
@@ -316,411 +319,192 @@ export default function Admin() {
               <Breakdown label="Where they heard of us" counts={stats.heard} empty="Nobody has said yet" />
             </div>
 
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
-              <label className="relative block w-full max-w-xs">
-                <Search
-                  aria-hidden
-                  size={15}
-                  strokeWidth={1.75}
-                  className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-fg-faint"
-                />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === "Escape" && setQuery("")}
-                  placeholder="Find by email, name or business"
-                  aria-label="Find an account"
-                  className={`${field} pl-8`}
-                />
-              </label>
-              {/* What is shown, so a search narrows the file too. */}
-              <button
-                onClick={() => downloadCsv("warmluke-accounts", shown, CSV_COLUMNS)}
-                disabled={shown.length === 0}
-                className={button("secondary")}
+            <div className="mt-6">
+              <ListPanel
+                query={query}
+                onQuery={setQuery}
+                placeholder="Find by email, name or business"
+                shown={shown.length}
+                total={rows.length}
+                noun="accounts"
+                actions={
+                  // What is shown, so a search narrows the file too.
+                  <button
+                    onClick={() => downloadCsv("warmluke-accounts", shown, CSV_COLUMNS)}
+                    disabled={shown.length === 0}
+                    className={button("secondary")}
+                  >
+                    <Download aria-hidden size={14} strokeWidth={1.75} />
+                    Download CSV{q ? ` (${shown.length})` : ""}
+                  </button>
+                }
               >
-                <Download aria-hidden size={14} strokeWidth={1.75} />
-                Download CSV{q ? ` (${shown.length})` : ""}
-              </button>
-            </div>
-
-            <div className={`${card} thin-scroll relative mt-3 overflow-x-auto`}>
-              <table className="w-full text-left text-[13px]">
-                <thead className="border-b border-line bg-surface-subdued text-xs text-fg-muted">
-                  <tr>
-                    <th className="px-3 py-2.5 font-medium first:pl-4">Account</th>
-                    <th className="px-3 py-2.5 font-medium first:pl-4">Business</th>
-                    <th className="px-3 py-2.5 font-medium first:pl-4">Projects</th>
-                    <th className="px-3 py-2.5 font-medium first:pl-4">Stores</th>
-                    {/* Early in the row, where it is seen without scrolling. */}
-                    <th className="px-3 py-2.5 font-medium first:pl-4">Access</th>
-                    <th className="px-3 py-2.5 font-medium first:pl-4">Warmluke AI</th>
-                    <th className="px-3 py-2.5 font-medium first:pl-4">Their own AI</th>
-                    {/* The one that reaches outside the building. Off for
+                <table className="w-full text-left text-[13px]">
+                  <thead className={`${stickyHead} text-xs text-fg-muted`}>
+                    <tr>
+                      <th className="px-3 py-2.5 font-medium first:pl-4">Account</th>
+                      <th className="px-3 py-2.5 font-medium first:pl-4">Business</th>
+                      <th className="px-3 py-2.5 font-medium first:pl-4">Projects</th>
+                      <th className="px-3 py-2.5 font-medium first:pl-4">Stores</th>
+                      {/* Early in the row, where it is seen without scrolling. */}
+                      <th className="px-3 py-2.5 font-medium first:pl-4">Access</th>
+                      <th className="px-3 py-2.5 font-medium first:pl-4">Warmluke AI</th>
+                      <th className="px-3 py-2.5 font-medium first:pl-4">Their own AI</th>
+                      {/* The one that reaches outside the building. Off for
                         everybody until somebody here decides otherwise,
                         which is why it needs a button rather than a row
                         of SQL somebody remembers. */}
-                    <th className="px-3 py-2.5 font-medium first:pl-4">Change their shop</th>
-                    <th className="px-3 py-2.5 font-medium first:pl-4">Included designs</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {shown.map((r) => {
-                    const draft = drafts[r.user_id] ?? String(r.free_turns);
-                    const nextAllowance = allowanceFrom(draft);
-                    const allowanceChanged = nextAllowance !== null && nextAllowance !== r.free_turns;
-                    const confirming = pending?.row.user_id === r.user_id ? pending : null;
-                    const site = siteLink(r.website);
-                    const facts = [
-                      labelOf(ROLE_OPTIONS, r.role),
-                      r.monthly_orders ? `${labelOf(ORDER_OPTIONS, r.monthly_orders)} orders/mo` : null,
-                      labelOf(PLATFORM_OPTIONS, r.platform),
-                      r.team_size ? `team ${labelOf(TEAM_OPTIONS, r.team_size)}` : null,
-                    ].filter(Boolean);
+                      <th className="px-3 py-2.5 font-medium first:pl-4">Change their shop</th>
+                      <th className="px-3 py-2.5 font-medium first:pl-4">Included designs</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {shown.map((r) => {
+                      const draft = drafts[r.user_id] ?? String(r.free_turns);
+                      const nextAllowance = allowanceFrom(draft);
+                      const allowanceChanged = nextAllowance !== null && nextAllowance !== r.free_turns;
+                      const confirming = pending?.row.user_id === r.user_id ? pending : null;
+                      const site = siteLink(r.website);
+                      const facts = [
+                        labelOf(ROLE_OPTIONS, r.role),
+                        r.monthly_orders ? `${labelOf(ORDER_OPTIONS, r.monthly_orders)} orders/mo` : null,
+                        labelOf(PLATFORM_OPTIONS, r.platform),
+                        r.team_size ? `team ${labelOf(TEAM_OPTIONS, r.team_size)}` : null,
+                      ].filter(Boolean);
 
-                    return (
-                      <tr key={r.user_id} className="align-top transition-colors hover:bg-surface-subdued/60">
-                        <td className="px-3 py-3 first:pl-4">
-                          <div className="flex items-start gap-2.5">
-                            <span
-                              aria-hidden
-                              className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${quietClasses(r.email)}`}
-                            >
-                              {(r.full_name || r.email).trim().charAt(0).toUpperCase()}
-                            </span>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  onClick={() => setOpen(r)}
-                                  title="See everything about this account"
-                                  className="max-w-[12rem] truncate text-left font-medium text-fg hover:text-link hover:underline"
-                                >
-                                  {r.full_name || r.memberships?.find((m) => m.name)?.name || r.email}
-                                </button>
-                                {r.suspended && (
-                                  <span className="rounded-full bg-tone-critical px-1.5 py-px text-[10px] font-medium text-tone-critical-fg">
-                                    suspended
-                                  </span>
-                                )}
-                                {r.is_superadmin && (
-                                  <span className="rounded-full bg-tone-neutral px-1.5 py-px text-[10px] font-medium text-tone-neutral-fg">
-                                    admin
-                                  </span>
-                                )}
-                              </div>
-                              {r.full_name && (
-                                <div title={r.email} className="max-w-[12rem] truncate text-xs text-fg-muted">
-                                  {r.email}
-                                </div>
-                              )}
-                              <div className="text-[11px] text-fg-faint">
-                                Joined{" "}
-                                {new Date(r.created_at).toLocaleDateString(undefined, {
-                                  day: "numeric",
-                                  month: "short",
-                                  year: "numeric",
-                                })}
-                                {" · "}
-                                {ago(r.last_sign_in_at, now, "never signed in")}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 first:pl-4">
-                          {r.business_name ? (
-                            <div className="min-w-44 max-w-60">
-                              <div className="truncate font-medium text-fg">{r.business_name}</div>
-                              {facts.length > 0 && <div className="text-xs text-fg-muted">{facts.join(" · ")}</div>}
-                              <div className="mt-0.5 flex flex-wrap gap-x-2 text-[11px] text-fg-faint">
-                                {site && (
-                                  <a
-                                    href={site.href}
-                                    target="_blank"
-                                    rel="noopener noreferrer nofollow"
-                                    className="text-link hover:underline"
-                                  >
-                                    {site.text}
-                                  </a>
-                                )}
-                                {r.heard_from && (
-                                  <span>
-                                    via {labelOf(HEARD_OPTIONS, r.heard_from)}
-                                    {r.heard_from_detail ? ` (${r.heard_from_detail})` : ""}
-                                  </span>
-                                )}
-                              </div>
-                              {!r.onboarded_at && (
-                                <span className="mt-1 inline-block rounded-full bg-tone-attention px-1.5 py-px text-[10px] font-medium text-tone-attention-fg">
-                                  Onboarding not finished
-                                </span>
-                              )}
-                            </div>
-                          ) : r.is_superadmin ? (
-                            <span className="rounded-full bg-tone-info px-2 py-0.5 text-[11px] text-tone-info-fg">
-                              Warmluke team
-                            </span>
-                          ) : r.memberships?.length ? (
-                            // Invited into somebody's app: whose, and what they said they do there.
-                            <div className="min-w-44 max-w-60 space-y-1">
-                              {r.memberships.map((m) => (
-                                <div key={`${m.project}-${m.joined_at}`}>
-                                  <div className="truncate font-medium text-fg">
-                                    {m.project}
-                                    {m.role && (
-                                      <span className="font-normal text-fg-muted">
-                                        {" "}
-                                        · {labelOf(MEMBER_ROLE_OPTIONS, m.role)}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="truncate text-[11px] text-fg-faint">
-                                    Team member{m.owner ? `, invited by ${m.owner}` : ""}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="rounded-full bg-tone-neutral px-2 py-0.5 text-[11px] text-tone-neutral-fg">
-                              Hasn&rsquo;t answered yet
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-3 py-3 text-fg-muted tabular-nums">{r.projects}</td>
-                        <td className="px-3 py-3 text-fg-muted tabular-nums">{r.stores}</td>
-                        <td className="px-3 py-3 first:pl-4">
-                          {r.is_superadmin || r.user_id === user.id ? (
-                            // Not taken off from here: yourself, or another
-                            // administrator, who is demoted first on purpose.
-                            <span className="text-xs text-fg-faint">
-                              {r.user_id === user.id ? "You" : "Administrator"}
-                            </span>
-                          ) : offRow?.user_id === r.user_id ? (
-                            <div className={`${note.attention} min-w-60`}>
-                              <p>
-                                {r.suspended
-                                  ? "Let them sign in again? Everything they had is still there."
-                                  : "Suspend this account? They are signed out everywhere and cannot sign in. Nothing is deleted."}
-                              </p>
-                              <div className="mt-2 flex gap-1.5">
-                                <button
-                                  onClick={() => suspend(r, !r.suspended)}
-                                  disabled={busy === r.user_id}
-                                  className={button("primary", "sm")}
-                                >
-                                  {busy === r.user_id ? "Saving…" : r.suspended ? "Restore" : "Suspend"}
-                                </button>
-                                <button
-                                  onClick={() => setOffRow(null)}
-                                  disabled={busy === r.user_id}
-                                  className={button("plain", "sm")}
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="flex flex-col items-start gap-1.5">
-                              <button
-                                onClick={() => setOffRow(r)}
-                                disabled={busy === r.user_id}
-                                className={button("secondary", "sm")}
-                              >
-                                {r.suspended ? "Restore" : "Suspend"}
-                              </button>
-                              {/* Only once suspended: nobody is erased by one click. */}
-                              {r.suspended && (
-                                <button
-                                  onClick={() => {
-                                    setErase(r);
-                                    setTyped("");
-                                    setEraseError(null);
-                                  }}
-                                  className={button("critical-plain", "sm")}
-                                >
-                                  Delete forever
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </td>
-                        {(["chat", "mcp", "store_actions"] as const).map((feature) => {
-                          const on =
-                            feature === "chat"
-                              ? r.chat_enabled
-                              : feature === "mcp"
-                                ? r.mcp_enabled
-                                : r.store_actions_enabled;
-                          return (
-                            <td key={feature} className="px-3 py-3">
-                              <div className="flex items-center gap-2">
-                                <Switch
-                                  checked={on}
-                                  onChange={(next) => setFeature(r, feature, next)}
-                                  disabled={busy === r.user_id}
-                                  label={`${feature === "chat" ? "Warmluke AI" : feature === "mcp" ? "Their own AI" : "Changing their shop"} for ${r.email}`}
-                                />
-                                <span
-                                  className={`text-xs ${on ? (feature === "store_actions" ? "font-medium text-tone-attention-fg" : "text-fg") : "text-fg-faint"}`}
-                                >
-                                  {on ? "On" : "Off"}
-                                </span>
-                              </div>
-                              {/* Which models their Luke may use, and what each reply shows them. */}
-                              {feature === "chat" && (
-                                <button
-                                  onClick={() => setLukeFor(r)}
-                                  aria-label={`Luke's models for ${r.email}`}
-                                  className="mt-1.5 text-xs text-link hover:underline"
-                                >
-                                  Models and costs
-                                </button>
-                              )}
-                            </td>
-                          );
-                        })}
-                        <td className="px-3 py-3 first:pl-4">
-                          <div className="min-w-44 space-y-2">
-                            {/* Used against granted. Editing only changes a
-                              draft: spend controls should never save just
-                              because somebody clicked elsewhere. */}
-                            <div className="flex items-center gap-1.5">
-                              {/* What they have spent, and the ceiling it is
-                                spent against. With no cap the ceiling is
-                                kept but does not apply, and saying "22 / 10"
-                                beside "no cap" reads like a contradiction,
-                                so the slash only appears when it means
-                                something. */}
-                              <span className="text-fg tabular-nums">{r.turns_used}</span>
-                              <span className="text-fg-faint">{r.turns_unlimited ? "used" : "/"}</span>
-                              <input
-                                type="number"
-                                min={0}
-                                max={MAX_ALLOWANCE}
-                                step={1}
-                                value={draft}
-                                aria-label={`Included designs for ${r.email}`}
-                                onChange={(e) =>
-                                  setDrafts((current) => ({
-                                    ...current,
-                                    [r.user_id]: e.target.value,
-                                  }))
-                                }
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter" && allowanceChanged) {
-                                    setPending({ kind: "turns", row: r, next: nextAllowance });
-                                  }
-                                  if (e.key === "Escape") {
-                                    setDrafts((current) => ({
-                                      ...current,
-                                      [r.user_id]: String(r.free_turns),
-                                    }));
-                                  }
-                                }}
-                                disabled={busy === r.user_id}
-                                title={
-                                  r.turns_unlimited
-                                    ? "Kept for when unlimited is switched off"
-                                    : "Designs this account may spend in total"
-                                }
-                                className={`${fieldOf("sm")} w-20 tabular-nums ${r.turns_unlimited ? "opacity-60" : ""}`}
-                              />
-                              <button
-                                type="button"
-                                disabled={!allowanceChanged || busy === r.user_id}
-                                onClick={() =>
-                                  nextAllowance !== null && setPending({ kind: "turns", row: r, next: nextAllowance })
-                                }
-                                className={button("secondary", "sm")}
-                              >
-                                Save
-                              </button>
-                            </div>
-
-                            {nextAllowance === null && (
-                              <p className="text-[11px] text-tone-critical-fg">
-                                Enter a whole number from 0 to {MAX_ALLOWANCE.toLocaleString()}.
-                              </p>
-                            )}
-
-                            <div className="flex items-center gap-3 text-xs">
-                              {/* The count only ever goes up, so the box is a
-                                ceiling and not a grant. Say what remains
-                                rather than making the admin do arithmetic. */}
+                      return (
+                        <tr key={r.user_id} className="align-top transition-colors hover:bg-surface-subdued/60">
+                          <td className="px-3 py-3 first:pl-4">
+                            <div className="flex items-start gap-2.5">
                               <span
-                                className={`whitespace-nowrap ${
-                                  r.turns_unlimited
-                                    ? "text-tone-success-fg"
-                                    : r.free_turns - r.turns_used > 0
-                                      ? "text-fg-muted"
-                                      : "font-medium text-tone-attention-fg"
-                                }`}
+                                aria-hidden
+                                className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${quietClasses(r.email)}`}
                               >
-                                {r.turns_unlimited
-                                  ? "no cap"
-                                  : r.free_turns - r.turns_used > 0
-                                    ? `${r.free_turns - r.turns_used} left`
-                                    : "none left"}
+                                {(r.full_name || r.email).trim().charAt(0).toUpperCase()}
                               </span>
-                              {/* The state is said, not only coloured. A
-                                knob on a track reads as "on" to most
-                                people, and the one person who uses this
-                                screen read it that way, then asked why an
-                                "unlimited" account still said "none left".
-                                It was off, and every number on the row was
-                                correct. */}
-                              <span className="inline-flex items-center gap-2">
-                                <Switch
-                                  checked={r.turns_unlimited}
-                                  onChange={(next) => setPending({ kind: "unlimited", row: r, next })}
-                                  disabled={busy === r.user_id}
-                                  label={`Unlimited included designs for ${r.email}`}
-                                />
-                                <span
-                                  className={`whitespace-nowrap ${r.turns_unlimited ? "text-tone-success-fg" : "text-fg-muted"}`}
-                                >
-                                  Unlimited {r.turns_unlimited ? "on" : "off"}
-                                </span>
-                              </span>
-                              {/* This was plain text, and plain text does not
-                                look like something you may click; the
-                                person who owns this screen asked to be
-                                given the ability they already had. */}
-                              {r.turns_used > 0 && (
-                                <button
-                                  type="button"
-                                  disabled={busy === r.user_id}
-                                  onClick={() => setPending({ kind: "reset", row: r })}
-                                  title={`Set used back to 0 for ${r.email}`}
-                                  className={button("secondary", "sm")}
-                                >
-                                  Reset used to 0
-                                </button>
-                              )}
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    onClick={() => setOpenId(r.user_id)}
+                                    title="See everything about this account"
+                                    className="max-w-[12rem] truncate text-left font-medium text-fg hover:text-link hover:underline"
+                                  >
+                                    {r.full_name || r.memberships?.find((m) => m.name)?.name || r.email}
+                                  </button>
+                                  {r.suspended && (
+                                    <span className="rounded-full bg-tone-critical px-1.5 py-px text-[10px] font-medium text-tone-critical-fg">
+                                      suspended
+                                    </span>
+                                  )}
+                                  {r.is_superadmin && (
+                                    <span className="rounded-full bg-tone-neutral px-1.5 py-px text-[10px] font-medium text-tone-neutral-fg">
+                                      admin
+                                    </span>
+                                  )}
+                                </div>
+                                {r.full_name && (
+                                  <div title={r.email} className="max-w-[12rem] truncate text-xs text-fg-muted">
+                                    {r.email}
+                                  </div>
+                                )}
+                                <div className="text-[11px] text-fg-faint">
+                                  Joined{" "}
+                                  {new Date(r.created_at).toLocaleDateString(undefined, {
+                                    day: "numeric",
+                                    month: "short",
+                                    year: "numeric",
+                                  })}
+                                  {" · "}
+                                  {ago(r.last_sign_in_at, now, "never signed in")}
+                                </div>
+                              </div>
                             </div>
-
-                            {confirming && (
-                              <div className={note.attention}>
+                          </td>
+                          <td className="px-3 py-3 first:pl-4">
+                            {r.business_name ? (
+                              <div className="min-w-44 max-w-60">
+                                <div className="truncate font-medium text-fg">{r.business_name}</div>
+                                {facts.length > 0 && <div className="text-xs text-fg-muted">{facts.join(" · ")}</div>}
+                                <div className="mt-0.5 flex flex-wrap gap-x-2 text-[11px] text-fg-faint">
+                                  {site && (
+                                    <a
+                                      href={site.href}
+                                      target="_blank"
+                                      rel="noopener noreferrer nofollow"
+                                      className="text-link hover:underline"
+                                    >
+                                      {site.text}
+                                    </a>
+                                  )}
+                                  {r.heard_from && (
+                                    <span>
+                                      via {labelOf(HEARD_OPTIONS, r.heard_from)}
+                                      {r.heard_from_detail ? ` (${r.heard_from_detail})` : ""}
+                                    </span>
+                                  )}
+                                </div>
+                                {!r.onboarded_at && (
+                                  <span className="mt-1 inline-block rounded-full bg-tone-attention px-1.5 py-px text-[10px] font-medium text-tone-attention-fg">
+                                    Onboarding not finished
+                                  </span>
+                                )}
+                              </div>
+                            ) : r.is_superadmin ? (
+                              <span className="rounded-full bg-tone-info px-2 py-0.5 text-[11px] text-tone-info-fg">
+                                Warmluke team
+                              </span>
+                            ) : r.memberships?.length ? (
+                              // Invited into somebody's app: whose, and what they said they do there.
+                              <div className="min-w-44 max-w-60 space-y-1">
+                                {r.memberships.map((m) => (
+                                  <div key={`${m.project}-${m.joined_at}`}>
+                                    <div className="truncate font-medium text-fg">
+                                      {m.project}
+                                      {m.role && (
+                                        <span className="font-normal text-fg-muted">
+                                          {" "}
+                                          · {labelOf(MEMBER_ROLE_OPTIONS, m.role)}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="truncate text-[11px] text-fg-faint">
+                                      Team member{m.owner ? `, invited by ${m.owner}` : ""}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="rounded-full bg-tone-neutral px-2 py-0.5 text-[11px] text-tone-neutral-fg">
+                                Hasn&rsquo;t answered yet
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-fg-muted tabular-nums">{r.projects}</td>
+                          <td className="px-3 py-3 text-fg-muted tabular-nums">{r.stores}</td>
+                          <td className="px-3 py-3 first:pl-4">
+                            {r.is_superadmin || r.user_id === user.id ? (
+                              // Not taken off from here: yourself, or another
+                              // administrator, who is demoted first on purpose.
+                              <span className="text-xs text-fg-faint">
+                                {r.user_id === user.id ? "You" : "Administrator"}
+                              </span>
+                            ) : offRow?.user_id === r.user_id ? (
+                              <div className={`${note.attention} min-w-60`}>
                                 <p>
-                                  {confirming.kind === "turns"
-                                    ? `Set this account’s total allowance to ${confirming.next}?`
-                                    : confirming.kind === "unlimited"
-                                      ? confirming.next
-                                        ? "Remove the included-design limit for this account?"
-                                        : `Restore the finite limit of ${r.free_turns}?`
-                                      : `Reset used designs from ${r.turns_used} to 0? This starts a fresh allowance.`}
+                                  {r.suspended
+                                    ? "Let them sign in again? Everything they had is still there."
+                                    : "Suspend this account? They are signed out everywhere and cannot sign in. Nothing is deleted."}
                                 </p>
                                 <div className="mt-2 flex gap-1.5">
                                   <button
-                                    type="button"
-                                    onClick={applyPending}
+                                    onClick={() => suspend(r, !r.suspended)}
                                     disabled={busy === r.user_id}
                                     className={button("primary", "sm")}
                                   >
-                                    {busy === r.user_id ? "Saving…" : "Confirm"}
+                                    {busy === r.user_id ? "Saving…" : r.suspended ? "Restore" : "Suspend"}
                                   </button>
                                   <button
-                                    type="button"
-                                    onClick={() => setPending(null)}
+                                    onClick={() => setOffRow(null)}
                                     disabled={busy === r.user_id}
                                     className={button("plain", "sm")}
                                   >
@@ -728,21 +512,232 @@ export default function Admin() {
                                   </button>
                                 </div>
                               </div>
+                            ) : (
+                              <div className="flex flex-col items-start gap-1.5">
+                                <button
+                                  onClick={() => setOffRow(r)}
+                                  disabled={busy === r.user_id}
+                                  className={button("secondary", "sm")}
+                                >
+                                  {r.suspended ? "Restore" : "Suspend"}
+                                </button>
+                                {/* Only once suspended: nobody is erased by one click. */}
+                                {r.suspended && (
+                                  <button
+                                    onClick={() => {
+                                      setErase(r);
+                                      setTyped("");
+                                      setEraseError(null);
+                                    }}
+                                    className={button("critical-plain", "sm")}
+                                  >
+                                    Delete forever
+                                  </button>
+                                )}
+                              </div>
                             )}
-                          </div>
+                          </td>
+                          {(["chat", "mcp", "store_actions"] as const).map((feature) => {
+                            const on =
+                              feature === "chat"
+                                ? r.chat_enabled
+                                : feature === "mcp"
+                                  ? r.mcp_enabled
+                                  : r.store_actions_enabled;
+                            return (
+                              <td key={feature} className="px-3 py-3">
+                                <div className="flex items-center gap-2">
+                                  <Switch
+                                    checked={on}
+                                    onChange={(next) => setFeature(r, feature, next)}
+                                    disabled={busy === r.user_id}
+                                    label={`${feature === "chat" ? "Warmluke AI" : feature === "mcp" ? "Their own AI" : "Changing their shop"} for ${r.email}`}
+                                  />
+                                  <span
+                                    className={`text-xs ${on ? (feature === "store_actions" ? "font-medium text-tone-attention-fg" : "text-fg") : "text-fg-faint"}`}
+                                  >
+                                    {on ? "On" : "Off"}
+                                  </span>
+                                </div>
+                                {/* Which models their Luke may use, and what each reply shows them. */}
+                                {feature === "chat" && (
+                                  <button
+                                    onClick={() => setLukeFor(r)}
+                                    aria-label={`Luke's models for ${r.email}`}
+                                    className="mt-1.5 text-xs text-link hover:underline"
+                                  >
+                                    Models and costs
+                                  </button>
+                                )}
+                              </td>
+                            );
+                          })}
+                          <td className="px-3 py-3 first:pl-4">
+                            <div className="min-w-44 space-y-2">
+                              {/* Used against granted. Editing only changes a
+                              draft: spend controls should never save just
+                              because somebody clicked elsewhere. */}
+                              <div className="flex items-center gap-1.5">
+                                {/* What they have spent, and the ceiling it is
+                                spent against. With no cap the ceiling is
+                                kept but does not apply, and saying "22 / 10"
+                                beside "no cap" reads like a contradiction,
+                                so the slash only appears when it means
+                                something. */}
+                                <span className="text-fg tabular-nums">{r.turns_used}</span>
+                                <span className="text-fg-faint">{r.turns_unlimited ? "used" : "/"}</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={MAX_ALLOWANCE}
+                                  step={1}
+                                  value={draft}
+                                  aria-label={`Included designs for ${r.email}`}
+                                  onChange={(e) =>
+                                    setDrafts((current) => ({
+                                      ...current,
+                                      [r.user_id]: e.target.value,
+                                    }))
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" && allowanceChanged) {
+                                      setPending({ kind: "turns", row: r, next: nextAllowance });
+                                    }
+                                    if (e.key === "Escape") {
+                                      setDrafts((current) => ({
+                                        ...current,
+                                        [r.user_id]: String(r.free_turns),
+                                      }));
+                                    }
+                                  }}
+                                  disabled={busy === r.user_id}
+                                  title={
+                                    r.turns_unlimited
+                                      ? "Kept for when unlimited is switched off"
+                                      : "Designs this account may spend in total"
+                                  }
+                                  className={`${fieldOf("sm")} w-20 tabular-nums ${r.turns_unlimited ? "opacity-60" : ""}`}
+                                />
+                                <button
+                                  type="button"
+                                  disabled={!allowanceChanged || busy === r.user_id}
+                                  onClick={() =>
+                                    nextAllowance !== null && setPending({ kind: "turns", row: r, next: nextAllowance })
+                                  }
+                                  className={button("secondary", "sm")}
+                                >
+                                  Save
+                                </button>
+                              </div>
+
+                              {nextAllowance === null && (
+                                <p className="text-[11px] text-tone-critical-fg">
+                                  Enter a whole number from 0 to {MAX_ALLOWANCE.toLocaleString()}.
+                                </p>
+                              )}
+
+                              <div className="flex items-center gap-3 text-xs">
+                                {/* The count only ever goes up, so the box is a
+                                ceiling and not a grant. Say what remains
+                                rather than making the admin do arithmetic. */}
+                                <span
+                                  className={`whitespace-nowrap ${
+                                    r.turns_unlimited
+                                      ? "text-tone-success-fg"
+                                      : r.free_turns - r.turns_used > 0
+                                        ? "text-fg-muted"
+                                        : "font-medium text-tone-attention-fg"
+                                  }`}
+                                >
+                                  {r.turns_unlimited
+                                    ? "no cap"
+                                    : r.free_turns - r.turns_used > 0
+                                      ? `${r.free_turns - r.turns_used} left`
+                                      : "none left"}
+                                </span>
+                                {/* The state is said, not only coloured. A
+                                knob on a track reads as "on" to most
+                                people, and the one person who uses this
+                                screen read it that way, then asked why an
+                                "unlimited" account still said "none left".
+                                It was off, and every number on the row was
+                                correct. */}
+                                <span className="inline-flex items-center gap-2">
+                                  <Switch
+                                    checked={r.turns_unlimited}
+                                    onChange={(next) => setPending({ kind: "unlimited", row: r, next })}
+                                    disabled={busy === r.user_id}
+                                    label={`Unlimited included designs for ${r.email}`}
+                                  />
+                                  <span
+                                    className={`whitespace-nowrap ${r.turns_unlimited ? "text-tone-success-fg" : "text-fg-muted"}`}
+                                  >
+                                    Unlimited {r.turns_unlimited ? "on" : "off"}
+                                  </span>
+                                </span>
+                                {/* This was plain text, and plain text does not
+                                look like something you may click; the
+                                person who owns this screen asked to be
+                                given the ability they already had. */}
+                                {r.turns_used > 0 && (
+                                  <button
+                                    type="button"
+                                    disabled={busy === r.user_id}
+                                    onClick={() => setPending({ kind: "reset", row: r })}
+                                    title={`Set used back to 0 for ${r.email}`}
+                                    className={button("secondary", "sm")}
+                                  >
+                                    Reset used to 0
+                                  </button>
+                                )}
+                              </div>
+
+                              {confirming && (
+                                <div className={note.attention}>
+                                  <p>
+                                    {confirming.kind === "turns"
+                                      ? `Set this account’s total allowance to ${confirming.next}?`
+                                      : confirming.kind === "unlimited"
+                                        ? confirming.next
+                                          ? "Remove the included-design limit for this account?"
+                                          : `Restore the finite limit of ${r.free_turns}?`
+                                        : `Reset used designs from ${r.turns_used} to 0? This starts a fresh allowance.`}
+                                  </p>
+                                  <div className="mt-2 flex gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={applyPending}
+                                      disabled={busy === r.user_id}
+                                      className={button("primary", "sm")}
+                                    >
+                                      {busy === r.user_id ? "Saving…" : "Confirm"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPending(null)}
+                                      disabled={busy === r.user_id}
+                                      className={button("plain", "sm")}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {shown.length === 0 && (
+                      <tr>
+                        <td colSpan={9} className="px-4 py-8 text-center text-[13px] text-fg-muted">
+                          No account matches &ldquo;{query}&rdquo;.
                         </td>
                       </tr>
-                    );
-                  })}
-                  {shown.length === 0 && (
-                    <tr>
-                      <td colSpan={9} className="px-4 py-8 text-center text-[13px] text-fg-muted">
-                        No account matches &ldquo;{query}&rdquo;.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                    )}
+                  </tbody>
+                </table>
+              </ListPanel>
             </div>
           </>
         )}
@@ -759,7 +754,7 @@ export default function Admin() {
           offered only once suspended, asks for the email back, and takes the account and the apps it owns.
         </p>
       </div>
-      {open && <AccountDetail account={open} now={now} onClose={() => setOpen(null)} />}
+      {open && <AccountDetail account={open} now={now} onClose={() => setOpenId(null)} onChanged={load} />}
       {lukeFor && <LukeAccess userId={lukeFor.user_id} email={lukeFor.email} onClose={() => setLukeFor(null)} />}
       {erase && (
         <Dialog

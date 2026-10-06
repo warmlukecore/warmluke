@@ -57,11 +57,25 @@ const made = async (label) => {
     .insert({ project_id: p.id, title: `Scope ${label} ${stamp}` })
     .select("id")
     .single();
-  await admin
-    .from("turn_traces")
-    .insert({ project_id: p.id, conversation_id: c.id, usage: { usd: label === "a" ? 0.5 : 0.25 } });
+  await admin.from("turn_traces").insert({
+    project_id: p.id,
+    conversation_id: c.id,
+    // A's turn was made by a model job no card counts yet (0186): it must still have a card.
+    usage:
+      label === "a"
+        ? { usd: 0.5, uses: [{ job: `zzjob${stamp}`, calls: 1, input: 10, output: 2, usd: 0.5 }] }
+        : { usd: 0.25 },
+  });
   await admin.from("mcp_calls").insert({ user_id: u.user.id, tool: "read_section", client_id: "check-scope" });
-  if (label === "b") await admin.from("merchant_notes").insert({ project_id: p.id, note: `Ships from Pune ${stamp}` });
+  if (label === "b") {
+    await admin.from("merchant_notes").insert({ project_id: p.id, note: `Ships from Pune ${stamp}` });
+    await admin.from("luke_skills").insert({
+      project_id: p.id,
+      kind: "lesson",
+      title: `Pune parcels ${stamp}`,
+      body: "Parcels from Pune go out by noon.",
+    });
+  }
   await admin.from("admin_account_audit").insert({
     actor_user_id: me.user.id,
     target_user_id: u.user.id,
@@ -115,6 +129,43 @@ try {
     (await db.rpc("abo_admin_agents", { p_days: 1, p_account: who })).data?.agents?.find((g) => g.name === "memory")
       ?.outcomes?.["notes written"];
   check("memory counts one account's notes alone", (await memory(b.user)) === 1 && (await memory(a.user)) === 0);
+  const cards = (await db.rpc("abo_admin_agents", { p_days: 1, p_account: a.user })).data?.agents ?? [];
+  const newJob = cards.find((g) => g.name === `zzjob${stamp}`);
+  check("a model job no card counts still has a card of its own", newJob?.calls === 1 && Number(newJob.usd) === 0.5);
+
+  console.log("\nlearning");
+  const across = async (who) =>
+    ((await db.rpc("abo_admin_learning", { p_days: 1, p_account: who })).data?.top ?? []).some((x) =>
+      x.title.endsWith(`${stamp}`)
+    );
+  check("across stores counts the scope's lessons alone", (await across(b.user)) && !(await across(a.user)));
+
+  console.log("\nrenamed");
+  const { data: renamed, error: renameErr } = await db.rpc("abo_admin_rename", {
+    p_user: b.user,
+    p_apps: [{ id: b.project, name: `Scope b renamed ${stamp}` }],
+  });
+  check("an administrator renames their app", !renameErr && !!renamed?.apps);
+  const { data: proj } = await admin.from("projects").select("name").eq("id", b.project).single();
+  check("and the app has its new name", proj?.name === `Scope b renamed ${stamp}`);
+  const { data: again } = await db.rpc("abo_admin_rename", {
+    p_user: b.user,
+    p_apps: [{ id: b.project, name: `Scope b renamed ${stamp}` }],
+  });
+  check("the same name again changes nothing", JSON.stringify(again) === "{}");
+  const { data: notTheirs } = await db.rpc("abo_admin_rename", {
+    p_user: b.user,
+    p_apps: [{ id: a.project, name: "Not theirs" }],
+  });
+  const { data: projA } = await admin.from("projects").select("name").eq("id", a.project).single();
+  check("an app that is not theirs is passed over", JSON.stringify(notTheirs) === "{}" && projA?.name === "Scope a");
+  const own = await db.rpc("abo_admin_rename", { p_user: me.user.id, p_full_name: "Me" });
+  check("nor is an administrator's own account renamed from here", !!own.error);
+  const logged = async (who) => (await log({ p_account: who })).actions?.rename ?? 0;
+  check(
+    "the log counts the rename for that account alone",
+    (await logged(b.user)) === 1 && (await logged(a.user)) === 0
+  );
 
   console.log("\nthe rest answer for one account");
   for (const fn of ["abo_admin_trouble", "abo_admin_agents", "abo_admin_learning", "abo_admin_routing"]) {
