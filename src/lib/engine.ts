@@ -178,8 +178,9 @@ export async function storeContextFor(
       )
     : null;
   // Scout (0189): every list read field by field in one call. Without it,
-  // the values of six columns, a read each, as before.
-  const profile = await profileStore(client, storeRow.id as string);
+  // the values of six columns, a read each, as before. LUKE_SCOUT=off turns
+  // it off without a deploy, for an eval's baseline or a store it is slow on.
+  const profile = process.env.LUKE_SCOUT === "off" ? null : await profileStore(client, storeRow.id as string);
   const values = profile ? {} : await storeValues(client, storeRow.id as string);
   const { data: runs } = await client.from("import_runs").select("status").eq("store_id", storeRow.id);
   const runList = (runs ?? []) as Array<{ status: string }>;

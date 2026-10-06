@@ -177,6 +177,13 @@ account's name and business (`profiles`) and the names of the apps it owns, writ
 audit trail as `rename` with the names before and after; blank keeps a name, an app not theirs is
 passed over, and an administrator's own account and other administrators are refused. 0188 makes
 Learning's "across stores" and the access log's counts by kind follow the scope as their rows do.
+**Scout** (`abo_store_profile(p_store, p_views, p_sample)`, 0189) reads every store list the app
+names (the views of `STORE_TABLES`, as the caller, so only a store they can see) in one call: per
+column, its kind, how often it is filled, how many values it has and, when they are 25 or fewer and
+repeat, which and how often, over the newest 2,000 rows a list. `src/lib/scout.ts` writes it for
+Luke's design and plan prompts as the exact fields of each list with rows; a turn tells it as the
+`scout` step, and the Agents screen counts it. `design_format` gives the merchant's own AI the same
+brief as `this_store` (`project_id` when they have more than one app).
 The console's word searches have trigram indexes on conversation titles, project
 names and shop domains. Every console screen asks `abo_admin_luke_health` (0165) whether
 Luke's newest answers are failing because the model was not there (`payload.failed`), and
