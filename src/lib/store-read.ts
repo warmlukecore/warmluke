@@ -423,7 +423,7 @@ const one = <T>(v: T | T[] | null | undefined): T | null => (Array.isArray(v) ? 
 export const STORE_TABLES: Record<StoreTable, TableSpec> = {
   orders: {
     label: "Shopify orders",
-    what: 'one row per order — number, customer, total and what it is made of (goods, shipping, tax, discount), paid / pending / cancelled, fulfilment, what paid (COD or the gateway), discount codes, shipping city and state; what "our orders", "revenue", "COD pending", "how much did we sell", "how much was tax", "what did we charge for delivery" and "orders by city" mean',
+    what: 'one row per order — number, customer, total and what it is made of (goods, shipping, tax, discount), paid / pending / cancelled, fulfilment, what paid (COD or the gateway), discount codes, shipping city and state, where it is (its latest shipment: status, courier, tracking number, shipped and delivered day) and what was refunded; what "our orders", "revenue", "COD pending", "how much did we sell", "how much was tax", "what did we charge for delivery" and "orders by city" mean',
     section: { label: "Orders", icon: "shopping-cart", importedWith: "orders" },
     // What a stat over these rows should be, said once and read by both
     // doors — Luke's prompt and design_format. A merchant's "revenue"
@@ -431,7 +431,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     // refunds, all in. On a four-order store that is $4,942 where the
     // money actually collected is $0.
     advice:
-      'Money: `total` is what the order comes to today, after refunds; `total_original` is what it came to when placed. Do not sum `total` over every row and call it revenue — most of it may be unpaid. Revenue collected = sum(total) where financial_status = "PAID". Awaiting payment (COD) = sum(total) where financial_status = "PENDING". Cancelled = count where cancelled_at is not empty, kept out of both. Average order value = avg(total_original). When a merchant asks for one revenue number, show these apart and say which is which. COD vs prepaid: `gateway` is what paid — "Cash on Delivery (COD)" for COD, otherwise the payment provider. Orders by place = group by ship_city or ship_state. What the total is made of: total = subtotal + shipping + tax, with discount already taken off subtotal. `tax` is owed to a tax authority and is NEVER the merchant\'s income; `shipping` is what the customer was charged for delivery, usually paid straight out again; `subtotal` is the goods. So "what did we actually earn on goods" is sum(subtotal), not sum(total). Any of these can be empty on an order imported before they were read — that means unknown, not zero, so leave those rows out of a total and say how many. Fulfilment (FULFILLED / UNFULFILLED) only says whether it was handed to a courier; where the parcel is (in transit, out for delivery, attempted, delivered) is the shipments list\'s shipment_status, one row per shipment, so an order\'s delivery stage comes from its shipments (its latest, or mixed when they differ). Shopify has no RTO status: a parcel returned to origin is marked by the merchant, in a field of theirs.',
+      'Money: `total` is what the order comes to today, after refunds; `total_original` is what it came to when placed. Do not sum `total` over every row and call it revenue — most of it may be unpaid. Revenue collected = sum(total) where financial_status = "PAID". Awaiting payment (COD) = sum(total) where financial_status = "PENDING". Cancelled = count where cancelled_at is not empty, kept out of both. Average order value = avg(total_original). When a merchant asks for one revenue number, show these apart and say which is which. COD vs prepaid: `gateway` is what paid — "Cash on Delivery (COD)" for COD, otherwise the payment provider. Orders by place = group by ship_city or ship_state. What the total is made of: total = subtotal + shipping + tax, with discount already taken off subtotal. `tax` is owed to a tax authority and is NEVER the merchant\'s income; `shipping` is what the customer was charged for delivery, usually paid straight out again; `subtotal` is the goods. So "what did we actually earn on goods" is sum(subtotal), not sum(total). Any of these can be empty on an order imported before they were read — that means unknown, not zero, so leave those rows out of a total and say how many. Fulfilment (FULFILLED / UNFULFILLED) only says whether it was handed to a courier; where the parcel is (in transit, out for delivery, attempted, delivered) is shipment_status, from the order\'s latest shipment, with its carrier, tracking_number, shipped_at and delivered_at beside it; shipments says how many it went in (the shipments list has each). Shopify has no RTO status: a parcel returned to origin is marked by the merchant, in a field of theirs. A cancelled or fully refunded order\'s total is 0, Shopify\'s figure for it now: what it was worth is total_original, and what was given back is refunded (all its refunds). Asked how much was cancelled or refunded, sum total_original where cancelled_at is not empty, or sum refunded: never total, which says 0.',
     view: "store_orders",
     dated: "placed_at",
     // A change to the shop is aimed with Shopify's own id (0121).
@@ -440,16 +440,18 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     // a day too, and on the orders index rather than a sort of them all.
     order: { field: "placed_ts", ascending: false },
     select:
-      "id, order_number, placed_at, customer_name, customer_phone, total, total_original, currency, status, fulfilment_status, financial_status, cancelled_at, tags, gateway, discount_codes, ship_city, ship_state, ship_country, subtotal, tax, shipping, discount",
+      "id, order_number, placed_at, customer_name, customer_phone, total, total_original, refunded, currency, status, fulfilment_status, financial_status, cancelled_at, tags, gateway, discount_codes, ship_city, ship_state, ship_country, subtotal, tax, shipping, discount, shipment_status, carrier, tracking_number, shipped_at, delivered_at, shipments",
     columns: [
       { field: "order_number", label: "Order", type: "text" },
       { field: "placed_at", label: "Placed", type: "date" },
       { field: "customer_name", label: "Customer", type: "text" },
       { field: "customer_phone", label: "Phone", type: "phone" },
       // What the order comes to today, after refunds — Shopify's own
-      // meaning of total — and what it came to when placed.
-      { field: "total", label: "Total", type: "currency", currencyField: "currency" },
+      // meaning of total, 0 for one cancelled or refunded, so it says what
+      // it was (was) — what it came to when placed, and what was given back.
+      { field: "total", label: "Total", type: "currency", currencyField: "currency", was: "total_original" },
       { field: "total_original", label: "Before refunds", type: "currency", currencyField: "currency" },
+      { field: "refunded", label: "Refunded", type: "currency", currencyField: "currency" },
       { field: "subtotal", label: "Goods", type: "currency", currencyField: "currency" },
       { field: "shipping", label: "Shipping", type: "currency", currencyField: "currency" },
       { field: "tax", label: "Tax", type: "currency", currencyField: "currency" },
@@ -457,10 +459,17 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "currency", label: "Currency", type: "text" },
       { field: "status", label: "Status", type: "badge" },
       { field: "fulfilment_status", label: "Fulfilment", type: "badge" },
+      // Where it is: its latest shipment (0193).
+      { field: "shipment_status", label: "Shipment", type: "badge" },
+      { field: "carrier", label: "Courier", type: "text" },
+      { field: "tracking_number", label: "Tracking", type: "text" },
+      { field: "shipped_at", label: "Shipped", type: "date" },
+      { field: "delivered_at", label: "Delivered", type: "date" },
       { field: "gateway", label: "Payment", type: "badge" },
       { field: "ship_city", label: "City", type: "text" },
       { field: "ship_state", label: "State", type: "text" },
       { field: "discount_codes", label: "Discounts", type: "text" },
+      { field: "shipments", label: "Shipments", type: "number" },
     ],
   },
   customers: {
@@ -880,6 +889,7 @@ const SEARCHABLE: Record<StoreTable, string[]> = {
     "gateway",
     "ship_city",
     "ship_state",
+    "tracking_number",
   ],
   fulfillments: ["order_number", "customer_name", "carrier", "tracking_number", "shipment_status"],
   transactions: ["order_number", "customer_name", "gateway", "kind", "status"],
@@ -977,7 +987,7 @@ export function hiddenColumns(table: StoreTable): Set<string> | null {
 export type ListShape = { list?: StoreTable; names?: Record<string, string>; nested?: Record<string, ListShape> };
 const ORDER_SHAPE: ListShape = {
   list: "orders",
-  names: { financial_status: "status", number: "order_number", placed: "placed_at" },
+  names: { financial_status: "status", number: "order_number", placed: "placed_at", was: "total_original" },
   nested: { customer: { list: "customers" }, items: { list: "order_line_items" } },
 };
 const STOCK_SHAPE: ListShape = { list: "inventory_levels", names: { location: "location_name" } };
@@ -1662,10 +1672,32 @@ export type OrderSearch = {
   limit?: number;
 };
 
+/**
+ * What an order was worth and what was given back, only when its total no
+ * longer says it (cancelled, refunded): never a bare 0, and nothing more
+ * than its total for an order as it was placed (0193).
+ */
+function worthIfChanged(
+  total: unknown,
+  original: unknown,
+  refunds?: Array<{ amount: number | string | null }> | null
+): { total_original?: number; refunded?: number } {
+  const back = (refunds ?? []).reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+  return {
+    ...(original !== null && original !== undefined && Number(original) !== Number(total)
+      ? { total_original: Number(original) }
+      : {}),
+    ...(back > 0 ? { refunded: back } : {}),
+  };
+}
+
 export type OrderHit = {
   order_number: string | null;
   placed_at: string | null;
+  /** What it comes to now: 0 once cancelled or refunded (0193). */
   total: number | null;
+  /** What it came to when placed, when its total says otherwise now. */
+  total_original?: number;
   currency: string | null;
   financial_status: string | null;
   fulfilment_status: string | null;
@@ -1688,7 +1720,7 @@ export async function searchOrders(
   let q = db
     .from("orders")
     .select(
-      "order_number, placed_at, total, currency, financial_status, fulfilment_status, cancelled_at, tags, customers(name, phone, email)"
+      "order_number, placed_at, total, total_original, currency, financial_status, fulfilment_status, cancelled_at, tags, customers(name, phone, email)"
     )
     .eq("store_id", store.id)
     .order("placed_at", { ascending: false })
@@ -1751,8 +1783,10 @@ export async function searchOrders(
     const { customers, ...rest } = row as unknown as Omit<OrderHit, "customer"> & {
       customers: OrderHit["customer"] | OrderHit["customer"][] | null;
     };
+    const { total_original, ...plain } = rest as typeof rest & { total_original?: number | null };
     return {
-      ...rest,
+      ...plain,
+      ...worthIfChanged(plain.total, total_original),
       customer: Array.isArray(customers) ? (customers[0] ?? null) : (customers ?? null),
     };
   });
@@ -1826,7 +1860,7 @@ export async function orderDetail(
   const { data, error } = await db
     .from("orders")
     .select(
-      "order_number, placed_at, total, currency, financial_status, fulfilment_status, cancelled_at, tags, customers(name, phone, email), order_line_items(title, variant_title, sku, quantity, price)"
+      "order_number, placed_at, total, total_original, currency, financial_status, fulfilment_status, cancelled_at, tags, customers(name, phone, email), order_line_items(title, variant_title, sku, quantity, price), refunds(amount)"
     )
     .eq("store_id", storeId)
     .in("order_number", numbers)
@@ -1842,6 +1876,10 @@ export async function orderDetail(
     order_number: row.order_number,
     placed_at: row.placed_at,
     total: row.total,
+    // Never a bare 0 for an order that was worth more (0193): what it was,
+    // and what went back, said when they differ from its total; an order
+    // as it was placed reads as it always did.
+    ...worthIfChanged(row.total, row.total_original, row.refunds as Array<{ amount: number | string | null }>),
     currency: row.currency,
     status: row.cancelled_at ? "cancelled" : (row.financial_status ?? null),
     fulfilment_status: row.fulfilment_status ?? null,
@@ -1870,6 +1908,7 @@ const FILTERABLE: Array<[StoreTable, string]> = [
   ["products", "vendor"],
   ["orders", "financial_status"],
   ["orders", "fulfilment_status"],
+  ["orders", "shipment_status"],
   ["inventory_levels", "location_name"],
 ];
 

@@ -1,0 +1,17 @@
+{
+  "label": "anthropic",
+  "asked": "",
+  "parts": {
+    "system": "f9cc6f667c3cbdd3",
+    "tools": "edaf5ab188823e1b",
+    "conversation": "b1c39c01b86e0e20",
+    "tag": "talk"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"claude-sonnet-5\",\"id\":\"msg_011CfmLcGT9xJHfsuv8cMnRd\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"type\\\": \\\"answer\\\",\\n  \\\"kind\\\": \\\"store\\\",\\n  \\\"title\\\": \\\"Order #1001 payment status\\\",\\n  \\\"message\\\": \\\"Order **#1001** is **not paid** — its status is **PENDING**, for **₹777**, placed on 6 Sep 2026.\\\",\\n  \\\"next\\\": [\\n    { \\\"label\\\": \\\"Show all pending orders\\\", \\\"prompt\\\": \\\"Show me all orders that are still PENDING\\\" },\\n    { \\\"label\\\": \\\"Total awaiting COD payment\\\", \\\"prompt\\\": \\\"What is the total value of orders still awaiting payment (PENDING)?\\\" }\\n  ]\\n}\"}],\"container\":null,\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":6060,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":6765,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":184,\"output_tokens_details\":{\"thinking_tokens\":0},\"service_tier\":\"standard\",\"inference_geo\":\"global\"},\"diagnostics\":null}"
+    }
+  ]
+}

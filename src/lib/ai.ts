@@ -497,6 +497,8 @@ export type StoreSnapshot = {
     number: string;
     placed: string | null;
     total: number | null;
+    /** What it came to when placed, when its total says otherwise now (cancelled, refunded). */
+    was?: number;
     currency: string | null;
     status: string | null;
   }>;
@@ -658,7 +660,8 @@ function storeBlock(store: StoreContext | null, projectCurrency: string, road: "
           `    ${shownParts(o, {
             number: () => `${o.number}`,
             placed: () => o.placed ?? "no date",
-            total: () => `${o.total ?? "?"} ${o.currency ?? store.currency}`,
+            total: () =>
+              `${o.total ?? "?"} ${o.currency ?? store.currency}${o.was !== undefined ? ` (was ${o.was})` : ""}`,
             status: () => o.status ?? "no status",
           })}`
         );

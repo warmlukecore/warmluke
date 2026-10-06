@@ -45,6 +45,12 @@ export interface SchemaColumn {
    */
   hidden?: boolean;
   /**
+   * Another column of the row, said beside this one's value when the two
+   * differ: a store order's total, 0 once cancelled or refunded, with
+   * what it was (0193). Never a bare 0 for an order that was worth more.
+   */
+  was?: string;
+  /**
    * The owner renamed it (Customize, lib/view-edit). On a store column
    * this name is kept over ours; a saved label without it is ours from
    * the day it was saved, and is not (lib/store-read storeSectionColumns).

@@ -87,7 +87,21 @@ function amountCurrency(col: SchemaColumn, rec: RecordRow): string | null {
   return typeof c === "string" ? c : null;
 }
 
-export function Cell({ col, value, currency }: { col: SchemaColumn; value: unknown; currency?: string | null }) {
+/** What a column says its value was, from the row (col.was). */
+const wasOf = (col: SchemaColumn, rec: RecordRow) => (col.was ? rec.data?.[col.was] : undefined);
+
+export function Cell({
+  col,
+  value,
+  currency,
+  was,
+}: {
+  col: SchemaColumn;
+  value: unknown;
+  currency?: string | null;
+  /** What the column says it was (col.was), shown when it differs: a cancelled order's ₹0 says what it was. */
+  was?: unknown;
+}) {
   const fmt = useFormat();
   const linkLabel = useLinkLabel();
   // A value that is only an id (a rule that copied one into a text
@@ -109,9 +123,13 @@ export function Cell({ col, value, currency }: { col: SchemaColumn; value: unkno
       // marked as such — it is for a merchant who thinks in rupees,
       // not for anything that has to add up.
       const rough = fmt.approx(n, currency);
+      const before = was === null || was === undefined || was === "" ? NaN : Number(was);
       return (
         <span className="font-medium tabular-nums">
           {fmt.money(n, currency)}
+          {!Number.isNaN(before) && before !== n && (
+            <span className="block text-[11px] font-normal text-fg-muted">was {fmt.money(before, currency)}</span>
+          )}
           {rough && <span className="block text-[11px] font-normal text-fg-faint">{rough}</span>}
         </span>
       );
@@ -487,10 +505,20 @@ export function TableView({
                           checked={!!selected?.has(rec.id)}
                           onChange={(on) => onSelect([rec.id], on)}
                         />
-                        <Cell col={col} value={rec.data?.[col.field]} currency={amountCurrency(col, rec)} />
+                        <Cell
+                          col={col}
+                          value={rec.data?.[col.field]}
+                          currency={amountCurrency(col, rec)}
+                          was={wasOf(col, rec)}
+                        />
                       </div>
                     ) : (
-                      <Cell col={col} value={rec.data?.[col.field]} currency={amountCurrency(col, rec)} />
+                      <Cell
+                        col={col}
+                        value={rec.data?.[col.field]}
+                        currency={amountCurrency(col, rec)}
+                        was={wasOf(col, rec)}
+                      />
                     )}
                   </td>
                 ))}
@@ -647,7 +675,12 @@ export function BoardView({
                       <div key={col.field} className="mt-1 flex gap-1.5 text-[11px] leading-snug">
                         <span className="shrink-0 text-fg-faint">{col.label}</span>
                         <span className="min-w-0 truncate text-fg-muted">
-                          <Cell col={col} value={rec.data?.[col.field]} currency={amountCurrency(col, rec)} />
+                          <Cell
+                            col={col}
+                            value={rec.data?.[col.field]}
+                            currency={amountCurrency(col, rec)}
+                            was={wasOf(col, rec)}
+                          />
                         </span>
                       </div>
                     );
@@ -829,7 +862,12 @@ export function CardsView({
                   <div key={col.field} className="flex justify-between gap-2 text-[11px]">
                     <dt className="text-fg-faint">{col.label}</dt>
                     <dd className="truncate font-medium text-fg">
-                      <Cell col={col} value={rec.data?.[col.field]} currency={amountCurrency(col, rec)} />
+                      <Cell
+                        col={col}
+                        value={rec.data?.[col.field]}
+                        currency={amountCurrency(col, rec)}
+                        was={wasOf(col, rec)}
+                      />
                     </dd>
                   </div>
                 );
@@ -853,7 +891,7 @@ function FieldValue({ columns, rec, field }: { columns: SchemaColumn[]; rec: Rec
   const fmt = useFormat();
   const linkLabel = useLinkLabel();
   if (!col) return <>{fieldText(fmt, columns, rec, field, linkLabel)}</>;
-  return <Cell col={col} value={rec.data?.[field]} currency={amountCurrency(col, rec)} />;
+  return <Cell col={col} value={rec.data?.[field]} currency={amountCurrency(col, rec)} was={wasOf(col, rec)} />;
 }
 
 export function ListView({

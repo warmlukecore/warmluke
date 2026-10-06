@@ -222,10 +222,12 @@ export async function storeContextFor(
           number: o.order_number ?? "—",
           placed: o.placed_at,
           total: o.total,
+          // What it came to when placed, when it says otherwise now (0193).
+          ...(o.total_original !== undefined ? { was: o.total_original } : {}),
           currency: o.currency,
           status: o.financial_status,
         }))
-      ) as Array<{ number: string; placed: string; total: number; currency: string; status: string }>,
+      ) as Array<{ number: string; placed: string; total: number; was?: number; currency: string; status: string }>,
       low: narrowResult(
         SHAPES.stock,
         low.map((l) => ({

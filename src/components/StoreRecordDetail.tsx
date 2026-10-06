@@ -196,7 +196,12 @@ export default function StoreRecordDetail({
               <div key={c.field} className="rounded-control border border-line px-3 py-2">
                 <div className="text-[11px] text-fg-muted">{c.label}</div>
                 <div className="mt-0.5 text-sm">
-                  <Cell col={c} value={top.row.data[c.field]} currency={currencyOf(c, top.row)} />
+                  <Cell
+                    col={c}
+                    value={top.row.data[c.field]}
+                    currency={currencyOf(c, top.row)}
+                    was={c.was ? top.row.data[c.was] : undefined}
+                  />
                 </div>
               </div>
             ))}
@@ -212,7 +217,12 @@ export default function StoreRecordDetail({
                 <div key={c.field} className="min-w-0">
                   <dt className="text-[11px] text-fg-muted">{c.label}</dt>
                   <dd className="mt-0.5 truncate text-[13px] text-fg">
-                    <Cell col={c} value={top.row.data[c.field]} currency={currencyOf(c, top.row)} />
+                    <Cell
+                      col={c}
+                      value={top.row.data[c.field]}
+                      currency={currencyOf(c, top.row)}
+                      was={c.was ? top.row.data[c.was] : undefined}
+                    />
                   </dd>
                 </div>
               ))}
@@ -307,7 +317,12 @@ function RelatedList({
               >
                 {cols.map((c) => (
                   <td key={c.field} className="max-w-[12rem] truncate px-4 py-2 text-fg">
-                    <Cell col={c} value={r.data[c.field]} currency={currencyOf(c, r)} />
+                    <Cell
+                      col={c}
+                      value={r.data[c.field]}
+                      currency={currencyOf(c, r)}
+                      was={c.was ? r.data[c.was] : undefined}
+                    />
                   </td>
                 ))}
                 <td className="pr-3 text-fg-faint">

@@ -1,0 +1,17 @@
+{
+  "label": "anthropic",
+  "asked": "figured) CONTEXT — rules already running on this app. Do not propose one that is already here; to change a rule, remove it and add the new one. none USER REQUEST: Is order #1001 paid? How much was it?",
+  "parts": {
+    "system": "f9cc6f667c3cbdd3",
+    "tools": "edaf5ab188823e1b",
+    "conversation": "c112428c83029b00",
+    "tag": "talk"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"claude-sonnet-5\",\"id\":\"msg_011CfmLawc4rzBu3LrAirQPr\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"EtoCCqQBCBIYAipA43aIYM+wSkeqVl8hbh75h3rCHTYyeNwy4xq2U0oglQ3taAto2P3k3kZOJHl3/FnFyPd1x/kzd9OicQqZfZFk6TIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQzNGIzYjBkMC01YmYxLTQ2NjktOGQ3Yi1mMzAxOTIyODliNmWaAREKD2NsYXVkZS1zb25uZXQtNagBsdGU1gYSDCf0xL7o+Vl8NSsYdxoM/04n2HOWv3tcu83HIjBtfcL6xZdDSRt3eufo6gkggxp8mt3OVpp04GXQfZFzqvzlE0AEfWIjCIxgHpuLPI4qY24O83hOThi/86bK8aDLkgLLK43+fusZ1R4JW5eNoo1Ln9DEkMQoPc9ZMKxQfI6QRQEkQ5F6rl3ng2dv7ETVzYTGsQFBBshwAolFIQltLM1CQ7tdQ+VdSNj+wRxmTR/SJSqcpRgB\"},{\"type\":\"tool_use\",\"id\":\"toolu_016QLVgAR1QApvW3eJ3ufVT7\",\"name\":\"get_order\",\"input\":{\"order_number\":\"1001\"},\"caller\":{\"type\":\"direct\"}}],\"container\":null,\"stop_reason\":\"tool_use\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":5725,\"cache_creation_input_tokens\":6765,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":6765,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":87,\"output_tokens_details\":{\"thinking_tokens\":35},\"service_tier\":\"standard\",\"inference_geo\":\"global\"},\"diagnostics\":null}"
+    }
+  ]
+}
