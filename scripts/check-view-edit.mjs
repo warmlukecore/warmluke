@@ -222,5 +222,44 @@ console.log("\na store section keeps what the owner made of it");
   );
 }
 
+console.log("\nhidden and put back, before saving (Carefone, 6 Oct)");
+{
+  // Keys in the order a saved section can have them, not the order the editor writes.
+  const saved = {
+    columns: [
+      { label: "Order", field: "order_no", type: "text" },
+      { type: "badge", field: "status", label: "Status" },
+    ],
+    features: { view: { type: "table" } },
+  };
+  const back = viewEditPlans(
+    "m1",
+    saved,
+    {
+      columns: [
+        { field: "order_no", label: "Order", hidden: false },
+        { field: "status", label: "Status", hidden: false },
+      ],
+    },
+    () => []
+  );
+  check(
+    "is nothing to save, not a change the validator would call none",
+    back.plans.length === 0 && back.errors.length === 0
+  );
+  const hidden = viewEditPlans(
+    "m1",
+    saved,
+    {
+      columns: [
+        { field: "order_no", label: "Order" },
+        { field: "status", label: "Status", hidden: true },
+      ],
+    },
+    () => []
+  );
+  check("while hiding one is a change", hidden.plans.length === 1 && hidden.plans[0].changeType === "UI_CHANGE");
+}
+
 console.log(fails.length === 0 ? "\na section's look changes without a design" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

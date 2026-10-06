@@ -8,13 +8,15 @@
 // specific module or field: everything comes from schema_json.
 // ─────────────────────────────────────────────────────────────
 
+import { InfoTip } from "@/components/ui/InfoTip";
+import { explainStat } from "@/lib/describe";
 import { filterOptions, matchesFilter } from "@/lib/filters";
-import { filterIsOff } from "@/lib/view-edit";
+import { filterChoices, filterIsOff } from "@/lib/view-edit";
 import type { ScreenAsk } from "@/lib/screen";
 import ErrorNote from "@/components/ErrorNote";
 import { asError } from "@/lib/errors";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import type { FeatureSchema, RecordRow, UiSchema, ViewSpec } from "@/lib/types";
+import type { FeatureSchema, RecordRow, SchemaColumn, UiSchema, ViewSpec } from "@/lib/types";
 
 type StatSpec = NonNullable<FeatureSchema["stats"]>[number];
 /** What the server is asked: the cards as designed, and what the person is looking at. */
@@ -49,6 +51,7 @@ import {
   EmptyState,
   ListView,
   TableView,
+  actionChange,
   compare,
 } from "@/components/views";
 import { useFormat } from "@/lib/format";
@@ -62,10 +65,10 @@ import { Tabs } from "@/components/ui/Tabs";
 import { VIEW_NAMES, sectionTabs, tabName } from "@/lib/tabs";
 import {
   inPeriod,
-  keptPick,
-  openingPick,
+  openingPickFor,
   periodRange,
   pickLabel,
+  pickMemory,
   presetsOf,
   todayIn,
   weekStartOf,
@@ -73,7 +76,9 @@ import {
   type PeriodRange,
   type PeriodSpec,
 } from "@/lib/period";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Plus } from "lucide-react";
+import { Select } from "@/components/ui/Select";
+import { DateField } from "@/components/ui/DateField";
 import { PAGE_SIZES, keptPageSize, pageSizeKey, type TableState } from "@/lib/store-read";
 
 /** A table shows this many rows at a time; the rest are a page away. */
@@ -269,10 +274,14 @@ export default function GenericRenderer({
   periodKey,
   timeZone,
   onPeriod,
+  reading = false,
+  rowsMoved,
+  newFields,
   serverRows,
   ask,
   onApprovalButton,
   waitsForOwner = false,
+  ownFields,
 }: {
   schema: UiSchema;
   records: RecordRow[];
@@ -328,12 +337,20 @@ export default function GenericRenderer({
   timeZone?: string;
   /** Told the dates picked, so the page can read the rows inside them rather than only the page it holds. */
   onPeriod?: (range: PeriodRange | null) => void;
+  /** The rows are being read again for what was just picked (dates, a search, a filter, a page); those shown are still the old ones. */
+  reading?: boolean;
+  /** Counts rows written or changed elsewhere; the stat cards count again when it moves. Without it, any change of rows does. */
+  rowsMoved?: number;
+  /** Columns added since this person last looked (0191): the table's head marks them New. */
+  newFields?: ReadonlySet<string>;
   /** Asked of this screen by Luke, or by a link from their own AI (lib/screen.ts): done once each time `at` changes. */
   ask?: (ScreenAsk & { at: number }) | null;
   /** Presses a button that needs the owner's yes (0183): the server works it out, and waits or does it. */
   onApprovalButton?: (rec: RecordRow, label: string) => Promise<void>;
   /** This person is not the owner: such a button's press waits for the owner. */
   waitsForOwner?: boolean;
+  /** On a section over the store, the fields that are the owner's own: the only ones a bulk "Set" may write. */
+  ownFields?: string[];
 }) {
   const fmt = useFormat();
   const total = totalRecords ?? records.length;
@@ -348,6 +365,10 @@ export default function GenericRenderer({
   const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busyRecordId, setBusyRecordId] = useState<string | null>(null);
+  // Rows ticked to act on together (Tanish, 6 Oct: "select the orders and mark them RTO").
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  const [bulkWork, setBulkWork] = useState<{ doing: string; done: number; of: number } | null>(null);
+  const [bulkSaid, setBulkSaid] = useState<string | null>(null);
   const [writeError, setWriteError] = useState<string | null>(null);
   const columns = useMemo(() => schema?.columns ?? [], [schema]);
   // A yes/no column filters as a tick: Yes, or every row not ticked.
@@ -364,6 +385,11 @@ export default function GenericRenderer({
   const [sort, setSort] = useState<{ field: string; dir: "asc" | "desc" } | null>(null);
   // The table's page, over the rows loaded; back to the first whenever what is shown changes.
   const [page, setPage] = useState(0);
+  // A new page, search, filter or choice of dates: the rows ticked are not the rows in view.
+  const pickedScope = JSON.stringify([page, search, filterValues]);
+  useEffect(() => {
+    setPicked(new Set());
+  }, [pickedScope]);
   // Over the store, the page is the server's (0167): how many a page,
   // kept on this device per section, and the search asked once typing pauses.
   const server = !!serverRows && !preview;
@@ -431,21 +457,11 @@ export default function GenericRenderer({
   // section, opening on its default, then on what this device last chose.
   const periodSpec: PeriodSpec | null = features?.period ?? null;
   const zone = timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const memory = periodKey ? `abo_period:${periodKey}` : "";
+  const memory = periodKey ? pickMemory(periodKey) : "";
   const [picks, setPicks] = useState<Record<string, PeriodPick>>({});
-  useEffect(() => {
-    if (!memory || !periodSpec || memory in picks) return;
-    let raw: string | null = null;
-    try {
-      raw = localStorage.getItem(memory);
-    } catch {
-      // Storage refused (a private window): the section's default it is.
-    }
-    const kept = keptPick(raw, periodSpec);
-    if (kept !== undefined) setPicks((p) => ({ ...p, [memory]: kept }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [memory, periodSpec]);
-  const pick: PeriodPick = !periodSpec ? null : memory in picks ? picks[memory] : openingPick(periodSpec);
+  // From the first draw, as the page's first read had it (lib/period openingPickFor).
+  const opening = useMemo(() => (periodSpec ? openingPickFor(periodSpec, memory) : null), [periodSpec, memory]);
+  const pick: PeriodPick = !periodSpec ? null : memory in picks ? picks[memory] : opening;
   const pickKey = JSON.stringify(pick);
   const range = useMemo(
     () => (periodSpec ? periodRange(periodSpec.field, pick, zone, new Date(), weekStartOf(fmt.locale)) : null),
@@ -622,6 +638,9 @@ export default function GenericRenderer({
   // Asked of the server whenever what the person is looking at changes,
   // a beat after they stop typing.
   const [serverStats, setServerStats] = useState<StatResult[] | null>(null);
+  // A count on its way: the cards show it, rather than the old figures until
+  // the new ones land (Tanish, 6 Oct: "they just change after 2 seconds").
+  const [statsCounting, setStatsCounting] = useState(false);
   const statsKey = JSON.stringify(features?.stats ?? null);
   useEffect(() => {
     if (!onStats || !features?.stats?.length) {
@@ -629,6 +648,7 @@ export default function GenericRenderer({
       return;
     }
     let live = true;
+    setStatsCounting(true);
     const searchFields = features.search?.enabled
       ? (features.search.fields?.filter((f) => columns.some((c) => c.field === f)) ?? columns.map((c) => c.field))
       : [];
@@ -651,26 +671,46 @@ export default function GenericRenderer({
         })
         .catch(() => {
           if (live) setServerStats(null);
+        })
+        .finally(() => {
+          if (live) setStatsCounting(false);
         });
     }, 250);
     return () => {
       live = false;
       clearTimeout(t);
     };
-    // records: a row added or changed is a number that moved.
+    // A row added or changed is a number that moved; rows read for a new
+    // pick are not (rowsMoved): counting again as they landed doubled the wait.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onStats, statsKey, search, filterValues, columns, records, rowCurrencyFields, rangeKey]);
+  }, [onStats, statsKey, search, filterValues, columns, rowsMoved ?? records, rowCurrencyFields, rangeKey]);
+
+  // What narrows the rows the stats count, said under each card's "i".
+  const statScope = {
+    period: range
+      ? `${columns.find((c) => c.field === range.field)?.label ?? range.field} ${[range.fromDay, range.toDay]
+          .map((d) =>
+            new Date(`${d}T00:00:00`).toLocaleDateString(fmt.locale, {
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+            })
+          )
+          .join(" – ")}`
+      : null,
+    narrowed: !!search.trim() || Object.values(filterValues).some(Boolean),
+  };
 
   const stats: StatCard[] = useMemo(() => {
     if (!features?.stats?.length) return [];
     if (onStats) {
-      return serverStats
+      return serverStats && !statsCounting
         ? features.stats.map((s, i) => cardFrom(s, serverStats[i] ?? { count: 0, value: null, currencies: [] }))
         : features.stats.map((s) => ({ label: s.label, display: "…" }));
     }
     return features.stats.map((s) => cardFrom(s, localResult(s, filteredRecords)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [features, filteredRecords, fmt, onStats, serverStats, rowCurrencyFields]);
+  }, [features, filteredRecords, fmt, onStats, serverStats, statsCounting, rowCurrencyFields]);
 
   if (columns.length === 0) {
     return (
@@ -717,6 +757,63 @@ export default function GenericRenderer({
     setPage(0);
   };
 
+  // Act on many rows at once: a table the person can write to. Each row goes
+  // the way one press on it would (actionChange, onApprovalButton, onUpdate),
+  // so a guard, an approval and the store's own fields hold row by row.
+  const bulkable = canSet && !preview && view.type === "table";
+  const tickedRows = filteredRecords.filter((r) => picked.has(r.id));
+  const settable = columns.filter(
+    (c) => !c.compute && (!ownFields || ownFields.includes(c.field)) && SETTABLE.has(c.type)
+  );
+  async function runBulk(doing: string, one: (rec: RecordRow) => Promise<"done" | "skipped" | "waits">) {
+    const rows = tickedRows;
+    const tally = { done: 0, skipped: 0, waits: 0, failed: [] as string[] };
+    const unsaved = new Set<string>();
+    setBulkSaid(null);
+    setBulkWork({ doing, done: 0, of: rows.length });
+    // A few at a time: quick on a long list, and gentle on the database.
+    for (let i = 0; i < rows.length; i += 4) {
+      await Promise.all(
+        rows.slice(i, i + 4).map(async (rec) => {
+          try {
+            tally[await one(rec)]++;
+          } catch (e) {
+            tally.failed.push(e instanceof Error ? e.message : "That didn't save.");
+            unsaved.add(rec.id);
+          }
+          setBulkWork((w) => (w ? { ...w, done: w.done + 1 } : w));
+        })
+      );
+    }
+    setBulkWork(null);
+    // What didn't save stays ticked, to press again on just those.
+    setPicked(unsaved);
+    const parts = [`done on ${tally.done}`];
+    if (tally.skipped)
+      parts.push(
+        `${tally.skipped} left as they were (it isn't offered on ${tally.skipped === 1 ? "that row" : "those rows"})`
+      );
+    if (tally.waits) parts.push(`${tally.waits} waiting for the owner's yes`);
+    if (tally.failed.length) parts.push(`${tally.failed.length} didn't save: ${tally.failed[0]}`);
+    setBulkSaid(`${doing}: ${parts.join(", ")}.`);
+  }
+  const bulkAction = (a: NonNullable<FeatureSchema["actions"]>[number]) =>
+    runBulk(a.label, async (rec) => {
+      const change = actionChange(a, rec);
+      if (!change) return "skipped";
+      if (a.approval && onApprovalButton) {
+        await onApprovalButton(rec, a.label);
+        return waitsForOwner ? "waits" : "done";
+      }
+      await onUpdate!(rec.id, change);
+      return "done";
+    });
+  const bulkSet = (col: SchemaColumn, value: unknown) =>
+    runBulk(`${col.label} set`, async (rec) => {
+      await onUpdate!(rec.id, { [col.field]: value });
+      return "done";
+    });
+
   // A hidden column is the row's, when it is opened, not the view's.
   const shown = columns.filter((c) => !c.hidden);
   const viewProps = {
@@ -736,6 +833,21 @@ export default function GenericRenderer({
             : runWrite(() => onUpdate!(rec.id, set), rec.id)
       : undefined,
     busyRecordId,
+    newFields,
+    ...(bulkable
+      ? {
+          selected: picked,
+          onSelect: (ids: string[], on: boolean) =>
+            setPicked((prev) => {
+              const next = new Set(prev);
+              for (const id of ids) {
+                if (on) next.add(id);
+                else next.delete(id);
+              }
+              return next;
+            }),
+        }
+      : {}),
   };
 
   function renderView() {
@@ -838,8 +950,19 @@ export default function GenericRenderer({
         // is narrow however wide the window, and four there broke every word.
         <div className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-2.5 sm:gap-3">
           {stats.map((s, i) => (
-            <div key={i} className="rounded-card bg-surface px-4 py-3 shadow-card">
-              <div className="text-xs font-medium text-fg-muted">{s.label}</div>
+            // A column, the figure at its foot: a label that wraps to two lines
+            // leaves its figure level with the cards beside it.
+            <div key={i} className="relative flex flex-col rounded-card bg-surface px-4 py-3 shadow-card">
+              <div className="flex items-start justify-between gap-2">
+                <div className="text-xs font-medium text-fg-muted">{s.label}</div>
+                {features?.stats?.[i] && (
+                  <InfoTip
+                    label={`How ${s.label} is worked out`}
+                    title="How this is worked out"
+                    lines={explainStat(features.stats[i], columns, statScope)}
+                  />
+                )}
+              </div>
               {s.groups ? (
                 <div className="mt-1.5 space-y-0.5">
                   {s.groups.length === 0 ? (
@@ -855,10 +978,10 @@ export default function GenericRenderer({
                 </div>
               ) : s.display === "…" ? (
                 // Still being counted: a bar where the figure will be, not a mark that reads as one.
-                <div role="status" aria-label={`Counting ${s.label}`} className="skeleton mt-2.5 mb-1 h-5 w-20" />
+                <div role="status" aria-label={`Counting ${s.label}`} className="skeleton mt-auto mb-1 h-5 w-20" />
               ) : (
                 <div
-                  className={`font-display mt-1 font-semibold text-fg tabular-nums ${
+                  className={`font-display mt-auto pt-1 font-semibold text-fg tabular-nums ${
                     s.display.length > 9 ? "text-lg" : "text-2xl"
                   }`}
                 >
@@ -882,12 +1005,15 @@ export default function GenericRenderer({
 
       {/* A written screen is the section: it carries its own search and steps, so the list's are not drawn around it. */}
       <div
+        aria-busy={reading || undefined}
         className={
           custom
             ? "relative"
             : `relative overflow-clip rounded-card bg-surface shadow-card ${fill ? "flex min-h-0 flex-col" : ""}`
         }
       >
+        {/* The rows under it are the old ones until the new arrive (Tanish, 6 Oct: "they just change after 2 seconds"). */}
+        {reading && !custom && <div aria-hidden className="reading-bar absolute inset-x-0 top-0 z-10 h-0.5" />}
         {/* Only with something in it to use: a bar holding a lone "Table" said nothing. */}
         {!custom && (searchable || barFilters.length > 0 || editable) && (
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-2.5">
@@ -944,6 +1070,33 @@ export default function GenericRenderer({
               </button>
             )}
           </div>
+        )}
+
+        {bulkable && (picked.size > 0 || bulkWork || bulkSaid) && (
+          <BulkBar
+            count={tickedRows.length}
+            actions={features?.actions ?? []}
+            waits={waitsForOwner}
+            fields={settable}
+            choicesOf={(c) => {
+              const kept = features?.filters?.find((f) => f.field === c.field)?.options;
+              const got = filterChoices(
+                c,
+                kept,
+                filteredRecords.map((r) => String(r.data?.[c.field] ?? ""))
+              );
+              return "options" in got ? got.options : [];
+            }}
+            locale={fmt.locale}
+            working={bulkWork}
+            said={bulkSaid}
+            onAction={bulkAction}
+            onSet={bulkSet}
+            onClear={() => {
+              setPicked(new Set());
+              setBulkSaid(null);
+            }}
+          />
         )}
 
         {writeError && (
@@ -1073,6 +1226,156 @@ export default function GenericRenderer({
           }}
           filled={editing ? null : filled}
         />
+      )}
+    </div>
+  );
+}
+
+/** What a bulk "Set" can write the same into many rows: a tick, a status or choice, a date, a word or a number. */
+const SETTABLE: ReadonlySet<SchemaColumn["type"]> = new Set(["boolean", "badge", "dropdown", "date", "text", "number"]);
+
+/**
+ * The ticked rows, and what to do to all of them: one of the section's own
+ * row buttons, pressed on each (its guard decides row by row), or one of the
+ * owner's fields set to the same value. Says how far it got while it works,
+ * and what came of it after: done, left as they were, waiting for a yes, or
+ * not saved.
+ */
+function BulkBar({
+  count,
+  actions,
+  waits,
+  fields,
+  choicesOf,
+  locale,
+  working,
+  said,
+  onAction,
+  onSet,
+  onClear,
+}: {
+  count: number;
+  actions: NonNullable<FeatureSchema["actions"]>;
+  waits: boolean;
+  fields: SchemaColumn[];
+  choicesOf: (c: SchemaColumn) => string[];
+  locale: string;
+  working: { doing: string; done: number; of: number } | null;
+  said: string | null;
+  onAction: (a: NonNullable<FeatureSchema["actions"]>[number]) => void;
+  onSet: (c: SchemaColumn, value: unknown) => void;
+  onClear: () => void;
+}) {
+  const [field, setField] = useState("");
+  const [value, setValue] = useState("");
+  const col = fields.find((f) => f.field === field);
+  const typed = !col
+    ? null
+    : col.type === "boolean"
+      ? value === "yes"
+        ? true
+        : value === "no"
+          ? false
+          : null
+      : col.type === "number"
+        ? value.trim() === "" || !Number.isFinite(Number(value))
+          ? null
+          : Number(value)
+        : value.trim() || null;
+  return (
+    <div
+      role="region"
+      aria-label="Act on the ticked rows"
+      className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-subdued px-4 py-2 text-[13px]"
+    >
+      {working ? (
+        <span className="text-fg-muted tabular-nums" role="status">
+          {working.doing}: {working.done} of {working.of}…
+        </span>
+      ) : count > 0 ? (
+        <>
+          <span className="font-medium text-fg tabular-nums">{count} ticked</span>
+          {actions.map((a) => (
+            <button key={a.label} type="button" onClick={() => onAction(a)} className={button("secondary", "sm")}>
+              {waits && a.approval && <Clock aria-hidden size={12} strokeWidth={2} />}
+              {a.label}
+            </button>
+          ))}
+          {fields.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <div className="w-44 max-w-full">
+                <Select
+                  label="Set a field on the ticked rows"
+                  value={field}
+                  options={fields.map((f) => ({ value: f.field, label: f.label }))}
+                  empty="Set a field…"
+                  onChange={(v) => {
+                    setField(v);
+                    setValue("");
+                  }}
+                />
+              </div>
+              {col &&
+                (col.type === "boolean" ? (
+                  <div className="w-36">
+                    <Select
+                      label={`${col.label}: ticked or not`}
+                      value={value}
+                      options={[
+                        { value: "yes", label: "Ticked" },
+                        { value: "no", label: "Not ticked" },
+                      ]}
+                      empty="Choose…"
+                      onChange={setValue}
+                    />
+                  </div>
+                ) : col.type === "badge" || col.type === "dropdown" ? (
+                  <div className="w-40">
+                    <Select
+                      label={`${col.label}: which`}
+                      value={value}
+                      options={choicesOf(col).map((o) => ({ value: o, label: o }))}
+                      empty="Choose…"
+                      onChange={setValue}
+                    />
+                  </div>
+                ) : col.type === "date" ? (
+                  <DateField value={value} onChange={setValue} label={col.label} locale={locale} />
+                ) : (
+                  <input
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    inputMode={col.type === "number" ? "decimal" : undefined}
+                    aria-label={col.label}
+                    placeholder={col.label}
+                    className={`${fieldOf("sm")} w-36`}
+                  />
+                ))}
+              {col && (
+                <button
+                  type="button"
+                  disabled={typed === null}
+                  onClick={() => typed !== null && onSet(col, typed)}
+                  className={button("primary", "sm")}
+                >
+                  Set on {count}
+                </button>
+              )}
+            </div>
+          )}
+          <button type="button" onClick={onClear} className={button("plain", "sm")}>
+            Clear
+          </button>
+        </>
+      ) : (
+        <>
+          <span className="text-fg-muted" role="status">
+            {said}
+          </span>
+          <button type="button" onClick={onClear} className={button("plain", "sm")}>
+            Done
+          </button>
+        </>
       )}
     </div>
   );

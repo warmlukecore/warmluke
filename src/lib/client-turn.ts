@@ -10,6 +10,7 @@
 //
 // Callers: src/lib/turn-run.ts (finishTurn, settleAnswer), src/app/api/mcp/route.ts.
 
+import { UNFINISHED } from "@/lib/turn-run";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { modelErrorKindOf } from "@/lib/ai";
 import { blueprintAsText, type TurnResult } from "@/lib/engine";
@@ -101,9 +102,7 @@ export async function finishClientTurn(
     const failed = modelErrorKindOf(turn.errors[0] ?? "");
     await settleClientLine(client, job.answerId, {
       type: "unanswered",
-      message: failed
-        ? turn.errors[0]
-        : "Luke could not get this right, so nothing was changed. Ask again, in other words.",
+      message: failed ? turn.errors[0] : UNFINISHED,
       ...(failed ? { failed } : {}),
       mcp: answer,
     });

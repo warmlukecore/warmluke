@@ -1089,6 +1089,13 @@ async function handle(req: Request, seen: Seen) {
 
       const asked = (args.section as string | undefined)?.trim().toLowerCase();
       if (!asked) {
+        // What is new to the merchant (0191), as their sidebar marks it.
+        const { data: newsRows } = await db.rpc("abo_whats_new", { p_project: project.id });
+        const news = new Map(
+          (Array.isArray(newsRows) ? (newsRows as Array<{ id: string; fresh: boolean; changed: boolean }>) : []).map(
+            (n) => [n.id, n]
+          )
+        );
         return ok(
           id,
           text({
@@ -1098,6 +1105,11 @@ async function handle(req: Request, seen: Seen) {
               // reading a Shopify-backed section twice — once here and
               // once through search_store — and reporting two numbers.
               rows_from: m.source_table ? `Shopify ${m.source_table}` : "this app",
+              ...(news.get(m.id)?.fresh
+                ? { new_to_them: "made, and not opened by them yet" }
+                : news.get(m.id)?.changed
+                  ? { new_to_them: "changed since they last looked" }
+                  : {}),
             })),
             note: sections.length
               ? "Call again with one of these as `section`."

@@ -411,7 +411,17 @@ following up customers, and more work on the orders a Packing section already sc
 recorded on the production model.
 
 When validation fails, the rejected model output and exact errors are sent back to the
-model. The engine permits the initial attempt plus two repair attempts. Rejected output
+model. The engine permits the initial attempt plus two repair attempts, one more for a
+design the critic or a gate sent back, and one more when the last attempt failed for
+other reasons than the one before it (it was getting somewhere). What it is told is true:
+"ran out of room" only when the model itself stopped at its output limit (its finish
+reason), and the next attempt then has the deep room (`generate`'s `roomy`); a bracket or a
+string left open is named where it opened, and never called a cut-off. Words written
+before or after one whole JSON reply are left, not sent back (`readJson` reads the first
+whole object). A repair that answers with no design, after a design that needed fixing, is
+asked once for the design itself. When attempts run out the owner reads that Luke could not
+finish and nothing was changed (`UNFINISHED` in `turn-run.ts`), never the validator's words.
+`check-repair-honest` holds it, with the model stood in for. Rejected output
 is not persisted as conversation history. One reply is not sent back: a question answered
 in prose rather than JSON is that answer, taken as it is (`isQuestion`), since a resend
 would pay for the whole contract again to say the same words (`check-prose-answer`). Nor is one whose only fault is a quote

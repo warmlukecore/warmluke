@@ -143,6 +143,27 @@ export function pickLabel(pick: PeriodPick): string {
   return pick.from === pick.to ? day(pick.from) : `${day(pick.from)} – ${day(pick.to)}`;
 }
 
+/** Where this device keeps a section's pick. */
+export const pickMemory = (moduleId: string) => `abo_period:${moduleId}`;
+
+/**
+ * The pick a section opens on: what this device last chose for it, while
+ * it still fits, else the section's default. The page works it out before
+ * its first read and the bar above the section draws the same, so the
+ * rows are read once, inside the dates shown: they were read whole, then
+ * in the default, then in the pick kept, each landing a moment apart.
+ */
+export function openingPickFor(spec: PeriodSpec, memory: string): PeriodPick {
+  let raw: string | null = null;
+  try {
+    raw = memory ? localStorage.getItem(memory) : null;
+  } catch {
+    // Storage refused (a private window): the section's default it is.
+  }
+  const kept = keptPick(raw, spec);
+  return kept !== undefined ? kept : openingPick(spec);
+}
+
 /**
  * What this device last picked for a section, kept as JSON ("all" for
  * every row), when it still fits the section: a preset since taken away

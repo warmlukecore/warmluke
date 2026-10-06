@@ -11,7 +11,16 @@
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-period.mjs
 
-import { inPeriod, keptPick, openingPick, periodRange, pickLabel, weekStartOf } from "../src/lib/period.ts";
+import {
+  inPeriod,
+  keptPick,
+  openingPick,
+  openingPickFor,
+  periodRange,
+  pickLabel,
+  pickMemory,
+  weekStartOf,
+} from "../src/lib/period.ts";
 import { validateFeatures } from "../src/lib/ai.ts";
 import { describeFeaturesFull, describeForOwner } from "../src/lib/describe.ts";
 
@@ -206,6 +215,32 @@ console.log("\nnamed spans, worked out from today each time (3 Oct 2026, a Satur
     "an Indian week starts on Sunday, a British one on Monday",
     weekStartOf("en-IN") === 0 && weekStartOf("en-GB") === 1
   );
+}
+
+console.log("\nthe dates a section opens on, worked out once (6 Oct)");
+{
+  // The page reads its rows before the bar above them is drawn: both ask
+  // openingPickFor, so the first read is inside the dates shown, not whole.
+  const spec = { field: "placed_at", presets: [7, 30, 90], default: 30 };
+  const kept = {};
+  globalThis.localStorage = { getItem: (k) => kept[k] ?? null };
+  const key = pickMemory("m1");
+  check("nothing kept: the section's default", openingPickFor(spec, key)?.days === 30);
+  kept[key] = JSON.stringify({ from: "2026-09-01", to: "2026-09-30" });
+  const own = openingPickFor(spec, key);
+  check("their own dates, kept on this device", own?.from === "2026-09-01" && own?.to === "2026-09-30");
+  kept[key] = '"all"';
+  check("every row, when that is what they last chose", openingPickFor(spec, key) === null);
+  kept[key] = '{"days":14}';
+  check("a preset since taken away: the default", openingPickFor(spec, key)?.days === 30);
+  globalThis.localStorage = {
+    getItem: () => {
+      throw new Error("refused");
+    },
+  };
+  check("storage refused: the default", openingPickFor(spec, key)?.days === 30);
+  check("no key (a preview): the default", openingPickFor(spec, "")?.days === 30);
+  delete globalThis.localStorage;
 }
 
 console.log(

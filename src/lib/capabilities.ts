@@ -335,7 +335,7 @@ export function capabilitySummary(): string {
   const does = AUTOMATION_ACTION_TYPES.map((a) => a.replace(/_/g, " "));
   return `WHAT LUKE CAN BUILD — say no more than this about the platform, in these words:
 - Sections of rows with typed fields (${COLUMN_TYPES.join(", ")}), shown as a ${VIEW_TYPES.join(", ")}.
-- Search, filters, stat cards, a choice of dates (the last N days, their own dates, all), more views of a section as tabs (a written screen beside its table), sorting, one-tap row buttons, and a barcode scan bar.
+- Search, filters, stat cards, a choice of dates (the last N days, their own dates, all), more views of a section as tabs (a written screen beside its table), sorting, one-tap row buttons (pressed on many rows at once too: tick rows in a table and press, or set one of their fields on all of them), and a barcode scan bar.
 - A screen written for their own flow when none of the views above draws it, and a rule's own code for logic the expressions cannot say.
 - Rules that run when a row is ${on.join(" or ")}, or on a schedule, and then ${does.join(" or ")}.
 - Sections over the connected store's own lists (orders, products, customers, stock and the rest), with the owner's fields kept beside each row.

@@ -60,6 +60,22 @@ export function filterChoices(
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
+/**
+ * Whether two column lists look the same on the table: the same fields in
+ * the same order, each with its label, its type and whether it is shown.
+ * The validator's test of a UI_CHANGE too (lib/ai), so the editor never
+ * sends a change the validator calls none. Compared as text before, a
+ * column rebuilt with its keys in another order read as changed, and the
+ * owner who hid a column and put it back was shown the validator's own
+ * words (Carefone, 6 Oct).
+ */
+export const sameColumns = (a: SchemaColumn[], b: SchemaColumn[]) =>
+  a.length === b.length &&
+  a.every((c, i) => {
+    const d = b[i];
+    return !!d && d.field === c.field && d.label === c.label && d.type === c.type && !d.hidden === !c.hidden;
+  });
+
 /** A filter kept for its choices and taken off the bar (a status's: see editView). */
 export const filterIsOff = (f: Filter) => (f as Filter & { hidden?: boolean }).hidden === true;
 
@@ -210,7 +226,7 @@ export function viewEditPlans(
     return t.charAt(0).toUpperCase() + t.slice(1) + ".";
   };
   const plans: AssistantPlan[] = [];
-  if (!same(v.columns, schema.columns))
+  if (!sameColumns(v.columns, schema.columns))
     plans.push(
       plan({
         changeType: "UI_CHANGE",

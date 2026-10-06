@@ -284,6 +284,11 @@ export interface ViewProps {
   busyRecordId?: string | null;
   /** Empties the search and filters, offered when they hide every row. */
   onClearFilters?: () => void;
+  /** The rows ticked to act on together, and how a tick is made or taken back (the table draws the boxes). */
+  selected?: ReadonlySet<string>;
+  onSelect?: (ids: string[], on: boolean) => void;
+  /** Columns added since this person last looked (0191), marked New in the table's head for this visit. */
+  newFields?: ReadonlySet<string>;
 }
 
 /**
@@ -292,6 +297,22 @@ export interface ViewProps {
  */
 function withId(rec: RecordRow): Record<string, unknown> {
   return { ...rec.data, id: rec.id };
+}
+
+/**
+ * What a row button writes to this row, or null when its guard does not
+ * offer it there: the one button's own logic, for a press on many rows at
+ * once (BulkBar), so ticking twenty orders and pressing Mark RTO does what
+ * twenty presses would, and nothing a press could not.
+ */
+export function actionChange(
+  a: NonNullable<FeatureSchema["actions"]>[number],
+  rec: RecordRow
+): Record<string, unknown> | null {
+  if (a.when !== undefined && !truthy(evalExpr(a.when, withId(rec)))) return null;
+  const out: Record<string, unknown> = {};
+  for (const [f, v] of Object.entries(a.set)) out[f] = evalExpr(v, withId(rec));
+  return out;
 }
 
 /** A row action is offered only when its guard matches that row. */
@@ -372,11 +393,18 @@ export function TableView({
   onClearFilters,
   sort,
   onSort,
+  selected,
+  onSelect,
+  newFields,
 }: ViewProps & {
   sort: { field: string; dir: "asc" | "desc" } | null;
   onSort: (field: string) => void;
 }) {
   const hasActions = (actions?.length ?? 0) > 0 && !!onAction;
+  // The rows to act on together: ticked in the first column, every one shown from its head.
+  const ids = records.map((r) => r.id);
+  const allTicked = ids.length > 0 && ids.every((id) => selected?.has(id));
+  const someTicked = !allTicked && ids.some((id) => selected?.has(id));
   const statusFields = columns.filter((c) => c.type === "badge").map((c) => c.field);
   // Each cell paints the row's background, so the pinned first cell covers what scrolls under it.
   // The wrapper's padding sets the band in from the card's edge; what is pinned sits on the edge
@@ -407,27 +435,19 @@ export function TableView({
                       : "z-10"
                   }`}
                 >
-                  <button
-                    type="button"
-                    onClick={() => onSort(col.field)}
-                    className={`group/sort flex h-9 w-full items-center gap-1 rounded-lg px-3 transition-colors hover:text-fg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus ${
-                      NUMERIC.has(col.type) ? "justify-end" : ""
-                    } ${dir ? "text-fg" : ""}`}
-                  >
-                    {col.label}
-                    {dir === "asc" ? (
-                      <ArrowUp aria-hidden size={12} strokeWidth={2} />
-                    ) : dir === "desc" ? (
-                      <ArrowDown aria-hidden size={12} strokeWidth={2} />
-                    ) : (
-                      <ArrowUpDown
-                        aria-hidden
-                        size={12}
-                        strokeWidth={2}
-                        className="text-fg-faint opacity-0 transition-opacity group-hover/sort:opacity-100 group-focus-visible/sort:opacity-100"
+                  {i === 0 && onSelect ? (
+                    <div className="flex items-center">
+                      <TickBox
+                        label={allTicked ? "Untick every row shown" : "Tick every row shown"}
+                        checked={allTicked}
+                        mixed={someTicked}
+                        onChange={(on) => onSelect(ids, on)}
                       />
-                    )}
-                  </button>
+                      <SortButton col={col} dir={dir} onSort={onSort} fresh={newFields?.has(col.field)} />
+                    </div>
+                  ) : (
+                    <SortButton col={col} dir={dir} onSort={onSort} fresh={newFields?.has(col.field)} />
+                  )}
                 </th>
               );
             })}
@@ -460,7 +480,18 @@ export function TableView({
                       NUMERIC.has(col.type) ? "text-right" : ""
                     } ${i === 0 ? `sticky -left-1.5 z-[1] font-semibold ${STICKY_EDGE} group-data-[scrolled=true]/table:after:from-surface ${onOpen ? "group-hover:after:from-surface-hover" : ""}` : ""}`}
                   >
-                    <Cell col={col} value={rec.data?.[col.field]} currency={amountCurrency(col, rec)} />
+                    {i === 0 && onSelect ? (
+                      <div className="flex items-center gap-2.5">
+                        <TickBox
+                          label="Tick this row"
+                          checked={!!selected?.has(rec.id)}
+                          onChange={(on) => onSelect([rec.id], on)}
+                        />
+                        <Cell col={col} value={rec.data?.[col.field]} currency={amountCurrency(col, rec)} />
+                      </div>
+                    ) : (
+                      <Cell col={col} value={rec.data?.[col.field]} currency={amountCurrency(col, rec)} />
+                    )}
                   </td>
                 ))}
                 {hasActions && (
@@ -481,6 +512,80 @@ export function TableView({
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** A column's head: its name, and the order its rows are in when it sorts them. */
+function SortButton({
+  col,
+  dir,
+  onSort,
+  fresh = false,
+}: {
+  col: SchemaColumn;
+  dir: "asc" | "desc" | null;
+  onSort: (field: string) => void;
+  /** Added since they last looked: marked New. */
+  fresh?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      aria-description={fresh ? "New since you last looked" : undefined}
+      onClick={() => onSort(col.field)}
+      className={`group/sort flex h-9 w-full items-center gap-1 rounded-lg px-3 transition-colors hover:text-fg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus ${
+        NUMERIC.has(col.type) ? "justify-end" : ""
+      } ${dir ? "text-fg" : ""}`}
+    >
+      {col.label}
+      {fresh && (
+        <span
+          aria-hidden
+          className="rounded-full bg-tone-info px-1.5 text-[10px] leading-4 font-medium text-tone-info-fg normal-case"
+        >
+          New
+        </span>
+      )}
+      {dir === "asc" ? (
+        <ArrowUp aria-hidden size={12} strokeWidth={2} />
+      ) : dir === "desc" ? (
+        <ArrowDown aria-hidden size={12} strokeWidth={2} />
+      ) : (
+        <ArrowUpDown
+          aria-hidden
+          size={12}
+          strokeWidth={2}
+          className="text-fg-faint opacity-0 transition-opacity group-hover/sort:opacity-100 group-focus-visible/sort:opacity-100"
+        />
+      )}
+    </button>
+  );
+}
+
+/** A tick to choose a row (or every row shown) to act on, that does not open the row it sits in. */
+function TickBox({
+  label,
+  checked,
+  mixed = false,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  mixed?: boolean;
+  onChange: (on: boolean) => void;
+}) {
+  return (
+    <input
+      type="checkbox"
+      aria-label={label}
+      checked={checked}
+      ref={(el) => {
+        if (el) el.indeterminate = mixed;
+      }}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onChange(e.target.checked)}
+      className="ml-1 size-4 shrink-0 cursor-pointer rounded accent-primary"
+    />
   );
 }
 

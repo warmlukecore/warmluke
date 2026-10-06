@@ -12,6 +12,7 @@ import type {
   Expr,
   FeatureSchema,
   ModuleRow,
+  SchemaColumn,
   ViewSpec,
 } from "./types";
 import { STORE_TABLES, isStoreTable, storeTableSchema } from "./store-read";
@@ -19,14 +20,18 @@ import { openingPick, presetsOf } from "./period";
 import { tabName } from "./tabs";
 
 /** Renders an expression tree as something a non-technical owner reads. */
-export function exprText(e: Expr | undefined): string {
+export function exprText(
+  e: Expr | undefined,
+  /** A field as the reader knows it: the owner's column label, or its key for Luke. */
+  name: (field: string) => string = (f) => f
+): string {
   if (!e) return "";
   if ("const" in e) return String(e.const);
-  if ("field" in e) return e.field;
-  if ("was" in e) return `previous ${e.was}`;
+  if ("field" in e) return name(e.field);
+  if ("was" in e) return `previous ${name(e.was)}`;
   if ("target" in e) return `their ${e.target}`;
 
-  const a = (e.args ?? []).map(exprText);
+  const a = (e.args ?? []).map((x) => exprText(x, name));
   switch (e.op) {
     case "and":
       return a.join(" and ");
@@ -62,9 +67,9 @@ export function exprText(e: Expr | undefined): string {
       const args = e.args ?? [];
       const fields = args
         .filter((x): x is { field: string } => !!x && "field" in x)
-        .map((x) => x.field)
+        .map((x) => name(x.field))
         .join(" and ");
-      const conds = args.filter((x) => !!x && "op" in x).map(exprText);
+      const conds = args.filter((x) => !!x && "op" in x).map((x) => exprText(x, name));
       const where = conds.length > 0 ? ` where ${conds.join(" and ")}` : "";
       return `other rows with the same ${fields}${where}`;
     }
@@ -72,11 +77,11 @@ export function exprText(e: Expr | undefined): string {
       const [value, ...rest] = e.args ?? [];
       const fields = rest
         .filter((x): x is { field: string } => !!x && "field" in x)
-        .map((x) => x.field)
+        .map((x) => name(x.field))
         .join(" and ");
-      const conds = rest.filter((x) => !!x && "op" in x).map(exprText);
+      const conds = rest.filter((x) => !!x && "op" in x).map((x) => exprText(x, name));
       const where = conds.length > 0 ? ` where ${conds.join(" and ")}` : "";
-      return `the ${exprText(value)} of other rows with the same ${fields}${where}, added up`;
+      return `the ${exprText(value, name)} of other rows with the same ${fields}${where}, added up`;
     }
     case "store_value": {
       // store_value("inventory_levels", "available", "inventory_item_id", item, …)
@@ -106,6 +111,65 @@ export function exprText(e: Expr | undefined): string {
     default:
       return a.join(` ${e.op} `);
   }
+}
+
+type StatSpec = NonNullable<FeatureSchema["stats"]>[number];
+
+/** The fields an expression reads. */
+function fieldsIn(e: Expr | undefined, out = new Set<string>()): Set<string> {
+  if (!e) return out;
+  if ("field" in e) out.add(e.field);
+  for (const a of ("args" in e ? e.args : undefined) ?? []) fieldsIn(a as Expr, out);
+  return out;
+}
+
+const OP_WORDS: Record<StatSpec["op"], string> = {
+  count: "Counts",
+  sum: "Adds up",
+  avg: "The average of",
+  min: "The smallest",
+  max: "The largest",
+};
+
+/**
+ * How a stat's number is worked out, in the names on the owner's table:
+ * what it counts or adds up, which rows it takes, how a worked-out column
+ * it reads is worked out, and what narrows it on the screen. Read off the
+ * stat as it is saved, so it is right for any stat, ours or Luke's, and
+ * no model is asked (Tanish, 6 Oct: "explanation of how this data is
+ * calculated").
+ */
+export function explainStat(
+  st: StatSpec,
+  columns: SchemaColumn[],
+  /** What narrows the rows on the screen now: the dates chosen, and whether a search or filter is set. */
+  scope: { period?: string | null; narrowed?: boolean } = {}
+): string[] {
+  const label = (f: string) => columns.find((c) => c.field === f)?.label ?? f.replace(/_/g, " ");
+  const words = (e: Expr | undefined) => {
+    // A tick read as the owner sees it, not as true and false.
+    const t = exprText(e, label)
+      .replace(/\bis not true\b|\bis false\b/g, "is not ticked")
+      .replace(/\bis true\b/g, "is ticked");
+    return t.length > 220 ? `${t.slice(0, 217)}…` : t;
+  };
+  const value = st.value ?? (st.field ? { field: st.field } : undefined);
+  const lines = [st.op === "count" ? "Counts the rows" : `${OP_WORDS[st.op]} ${words(value)}`];
+  if (st.where) lines.push(`Only the rows where ${words(st.where)}`);
+  if (st.by) lines.push(`Split by ${label(st.by)}: the top ${st.limit ?? 5}`);
+  // A worked-out column it reads, said once with how it is worked out.
+  for (const f of new Set([...fieldsIn(value), ...fieldsIn(st.where)])) {
+    const c = columns.find((x) => x.field === f);
+    if (c?.compute) lines.push(`${c.label} is worked out as ${words(c.compute as Expr)}`);
+  }
+  lines.push(
+    scope.period
+      ? `Over the rows in the dates chosen above (${scope.period})${scope.narrowed ? ", and the search and filters set" : ""}`
+      : scope.narrowed
+        ? "Over the rows the search and filters above leave"
+        : "Over every row in this section"
+  );
+  return lines;
 }
 
 /** A rule row, as the database keeps it. */

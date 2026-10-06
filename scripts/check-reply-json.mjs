@@ -3,8 +3,11 @@
 // "Luke returned invalid JSON. Try rephrasing" left the repair blind: a
 // packing screen asked for twice spent half its attempts there and was
 // never built. Now a screen's raw line breaks inside a string are escaped
-// and read, a reply cut off at the cap says so, and anything else says
-// what the parser said and where. Pure.
+// and read; a reply left open says which bracket or string never closes,
+// and says it ran out of room only when the model said so (6 Oct: one of
+// ~1,100 tokens was told "cut off at 12000" three times and the turn
+// failed); words before or after a whole reply do not hide it; anything
+// else says what the parser said and where. Pure.
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-reply-json.mjs
 
@@ -32,10 +35,32 @@ check(
   escapedQuote.ok && escapedQuote.value.html === '<p class="x">\nhi</p>'
 );
 
-const cut = readJson('{"type":"blueprint","blueprint":{"plans":[{"html":"<div>unfinish');
-check("a reply that stops inside a string was cut off, and says so", !cut.ok && /cut off/.test(cut.error));
+const unfinished = '{"type":"blueprint","blueprint":{"plans":[{"html":"<div>unfinish';
+const cut = readJson(unfinished);
+check(
+  "a reply that stops inside a string says so, and does not guess it ran out of room",
+  !cut.ok && /never ends/.test(cut.error) && !/room|cut off|12000/.test(cut.error)
+);
 const open = readJson('{"type":"blueprint","blueprint":{"plans":[]');
-check("and so does one with brackets still open", !open.ok && /cut off/.test(open.error));
+check(
+  "one with brackets still open says how many, and near what",
+  !open.ok && /leaves 2 brackets open/.test(open.error) && /near/.test(open.error) && !/room|cut off/.test(open.error)
+);
+const ranOut = readJson(unfinished, { cutAtLimit: true });
+check(
+  "only when the model said it ran out of room is it told so, with more room next time",
+  !ranOut.ok && /ran out of room/.test(ranOut.error) && /more room this time/.test(ranOut.error)
+);
+
+const trailing = readJson('{"type":"plans","plans":[]}Add fields to Orders');
+check(
+  "a whole reply with words after it is read, the words left (Carefone, 6 Oct)",
+  trailing.ok && trailing.value.type === "plans"
+);
+const leading = readJson('Now building it.\n{"type":"answer","message":"Done"}');
+check("and one with words before it", leading.ok && leading.value.message === "Done");
+const words = readJson("Now building it.");
+check("words alone are still not a reply", !words.ok && /not valid JSON/.test(words.error));
 
 const broken = readJson('{"type":"answer" "message":"Hi"}');
 check(

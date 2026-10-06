@@ -11,6 +11,7 @@
 // against a request the merchant approved.
 // ─────────────────────────────────────────────────────────────
 
+import { sameColumns } from "@/lib/view-edit";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { undoableFrom, type UndoStep } from "@/lib/undo";
 import { validatePlan } from "@/lib/ai";
@@ -453,7 +454,7 @@ export async function applyPlans(
   for (const [at, rawPlan] of plans.slice(0, 6).entries()) {
     let result: ApplyResult;
     try {
-      result = await validateAndApply(client, projectId, rawPlan, recorded);
+      result = await validateAndApply(client, projectId, rawPlan, recorded, by === "user");
     } catch (e) {
       result = { ok: false, errors: [e instanceof Error ? e.message : "Write refused."] };
     }
@@ -534,7 +535,9 @@ async function validateAndApply(
   client: Db,
   projectId: string,
   rawPlan: AssistantPlan,
-  write: Write
+  write: Write,
+  /** The owner's own edit (Customize, edit_view), not a design. */
+  ownEdit = false
 ): Promise<ApplyResult> {
   // Load live state (RLS-scoped to this owner).
   const { data: modules } = await client
@@ -568,6 +571,21 @@ async function validateAndApply(
       currentSchema = { columns: isStoreTable(source) ? storeSectionColumns(source, sj.columns) : sj.columns };
       currentFeatures = sj.features ?? null;
     }
+  }
+
+  // The owner's own edit that leaves every column as the section has it now
+  // is nothing to do, and done. The validator refuses a no-op so that a
+  // design cannot dress up what the app cannot do as a change; an owner who
+  // hid a column and put it back, or edited from a section a build had just
+  // changed, was shown that refusal in Luke's words (Carefone, 6 Oct).
+  if (
+    ownEdit &&
+    rawPlan.changeType === "UI_CHANGE" &&
+    currentSchema &&
+    Array.isArray(rawPlan.newSchema?.columns) &&
+    sameColumns(rawPlan.newSchema.columns, currentSchema.columns)
+  ) {
+    return { ok: true, applied: { changeType: "UI_CHANGE", targetModuleId: rawPlan.targetModuleId, unchanged: true } };
   }
 
   const validation = validatePlan(rawPlan, moduleList, currentSchema, currentFeatures);

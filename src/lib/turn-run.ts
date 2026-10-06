@@ -9,7 +9,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { modelErrorKindOf, type ChatTurn } from "@/lib/ai";
-import { MAX_REPAIR_ATTEMPTS, NOT_ANSWERED, answeredTurns, type TurnResult } from "@/lib/engine";
+import { NOT_ANSWERED, answeredTurns, type TurnResult } from "@/lib/engine";
 import { noteJudgement } from "@/lib/judge";
 import { afterOwnerTurn } from "@/lib/learning";
 import { traceTurn } from "@/lib/trace";
@@ -204,6 +204,14 @@ export async function settleAnswer(
  * not. `later` runs what may follow the answer (learning, the trace, the
  * judge): after the response in a request, awaited in a durable step.
  */
+/**
+ * What the owner reads when Luke's own checks turned every try down. The
+ * checks failed, not their words: "ask again, in other words" told them it
+ * was theirs (Carefone, 6 Oct). Read by the MCP road too (client-turn).
+ */
+export const UNFINISHED =
+  "Luke couldn't finish this one: it kept failing its own checks, so nothing was changed. Ask again; if it fails a second time, say it another way.";
+
 export async function finishTurn(
   client: SupabaseClient,
   job: TurnJob,
@@ -230,9 +238,7 @@ export async function finishTurn(
     const failed = modelErrorKindOf(turn.errors[0] ?? "");
     await settleAnswer(client, job, {
       type: "unanswered",
-      message: failed
-        ? turn.errors[0]
-        : "Luke could not get this right, so nothing was changed. Ask again, in other words.",
+      message: failed ? turn.errors[0] : UNFINISHED,
       ...(failed ? { failed } : {}),
     });
     later(() =>
@@ -254,7 +260,7 @@ export async function finishTurn(
         conversationId: job.conversationId,
         repairs: turn.repairs,
         errors: turn.errors,
-        hint: `The assistant tried ${MAX_REPAIR_ATTEMPTS + 1} times and its plan still failed validation, so nothing was changed. Try rephrasing your request.`,
+        hint: `The assistant tried ${turn.repairs + 1} times and its plan still failed its own checks, so nothing was changed. Ask again; if it fails again, say it another way.`,
       },
     };
   }

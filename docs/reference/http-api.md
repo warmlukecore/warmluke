@@ -184,6 +184,14 @@ repeat, which and how often, over the newest 2,000 rows a list. `src/lib/scout.t
 Luke's design and plan prompts as the exact fields of each list with rows; a turn tells it as the
 `scout` step, and the Agents screen counts it. `design_format` gives the merchant's own AI the same
 brief as `this_store` (`project_id` when they have more than one app).
+**What is new** (0191) is each person's own: `abo_whats_new(p_project)` lists every section of the app
+they can see with its latest version, the one they last saw, and `fresh` (never opened, made since
+marks began on 6 Oct) or `changed` (a version after the one they saw); read as the caller, so a
+teammate is told nothing of a section not shared with them. `abo_seen(p_module, p_version)` keeps
+the version they have seen, never lowered; it refuses a section they cannot see and does nothing for
+their own AI. `section_seen` is read only by its own person and written only through `abo_seen`.
+`read_section` with no section gives their AI the same marks (`new_to_them`).
+
 **Did it work?** (0190) asks once about a build nobody has used since: `abo_follow_ups(p_project)`
 lists, for whoever asked for them (`conversations.created_by`, else the app's owner), builds three to
 thirty days old whose sections have had no row added and no rule run since (What stuck's test), the

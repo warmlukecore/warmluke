@@ -436,6 +436,21 @@
   }
 }
 
+/* Rows being read again for a new pick of dates, a search or a page: a
+   light crossing the list's top edge, the rows under it still the old ones. */
+.reading-bar {
+  background: linear-gradient(
+      90deg,
+      transparent 0%,
+      transparent 30%,
+      var(--color-primary) 50%,
+      transparent 70%,
+      transparent 100%
+    )
+    0 0 / 250% 100%;
+  animation: shimmer 1.2s linear infinite;
+}
+
 /* A place still loading, in the shape of what is coming (ui/Skeleton):
    the same slow light, crossing a bar instead of words. Dark for the
    sidebar's frame. */
@@ -473,6 +488,11 @@
   .shimmer {
     background: none;
     color: var(--color-fg-muted);
+  }
+  .reading-bar {
+    animation: none;
+    background: var(--color-primary);
+    opacity: 0.4;
   }
   /* A bar that stands still, in its resting colour. */
   .skeleton {

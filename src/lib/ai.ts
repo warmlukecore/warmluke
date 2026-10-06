@@ -6,6 +6,7 @@
 // the apply route re-validates everything under the caller's RLS.
 // ─────────────────────────────────────────────────────────────
 
+import { sameColumns } from "@/lib/view-edit";
 import { REAL_WORK, SIMPLER_WAYS } from "@/lib/simpler";
 import { scoutLines, type StoreProfile } from "@/lib/scout";
 import { AI_FILLABLE } from "./ai-fill";
@@ -154,7 +155,7 @@ HOW TO CHOOSE changeType:
   )}, whose rows each total many others, so there is no one row for it to sit beside. The store's own fields are read here, never written: a row action or scan mode sets a field of theirs ("Mark packed" sets packed; scanning the order number finds the order and ticks it). A rule on such a section reads the store's fields and theirs, and sets only theirs. It runs when a field of theirs changes (record_updated, from the first one set on a row), or on a schedule over every row of the list ("when" picks the rows; a row it acts on gets its fields then) — so "flag the COD orders delivered a week ago and still unpaid" is a daily rule reading gateway, fulfilment_status and financial_status. A change in Shopify reaches the rows within seconds, but it does not fire a rule: a rule over them runs when a field of theirs changes, or a schedule rule sees it on its next run. No rule adds rows to it (record_created is refused). Filters, search, stats and sort work over both.
 - MODULE_UPDATE — nav metadata only: rename label, change icon, move it inside another section (parent_id), reposition (sort_order: below the lowest existing value for top, midpoint like 1.5 for between, above max for bottom).
 - MODULE_DELETE — only when the user clearly asks to delete/remove a whole section. deleteConfirmName = exact name slug.
-- FEATURE_UPDATE — search box, dropdown filters (a filter on a yes/no field is Yes / No by itself, and No is every row not ticked, blank or false alike: never fill rows with false or "No", or add a second field, to make a filter work), STAT CARDS (op: count | sum | avg | min | max over "value", an EXPRESSION evaluated per row — so a stock value is { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, not a bare column; optional "where" expression limits which rows count. Never label a stat as something the expression does not actually compute), default sort, a PERIOD (a choice of dates over the section: { "field": "<a date column>", "label": "Placed", "presets": [15, 30, 60], "default": 15 } draws chips for the last 15, 30 and 60 days, their own dates and All, and narrows the rows, the stats and the view together; whenever they want to see a window of days, or change it, this is how, never a written screen. With a period, no stat carries days_since of that field in its "where", and no label names the days: the period picks them), ROW ACTION buttons (a one-click change to that row: "set" maps field -> EXPRESSION, and the optional "when" is an EXPRESSION deciding whether the button shows on that row — same operators as automations, so "only while it isn't Done" is { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }; "approval": true when a teammate must not make that change alone, a refund, a discount, a cancellation: the owner's press does it, a teammate's waits in the owner's bell for their yes, and a teammate cannot make the same change by hand), or SCAN MODE (a scan-and-go bar: lookupField = the code column scanned into it, action.set = field -> expression applied to the matched row, sequenceField = a numeric column that must never go backwards between scans, for picking or queue order). It works with any USB or Bluetooth barcode scanner, which types the code like a keyboard — there is no camera scanning. A scan that matches nothing changes NOTHING: the person sees it on screen and that is the whole safeguard. Nothing is recorded, so never add a "scan errors" or "mistakes" count — no rule can fill it, and a stat built on it counts successful scans instead. Scanning only reaches rows currently in view, so the section needs a filter that narrows to the job in hand. Send only the parts you change: each part you send (view, tabs, stats, filters, actions, scanMode, search, defaultSort, period) replaces that part whole, a part you leave out stays exactly as it is, and null removes it. To add a stat, send "stats" with the old ones and the new; leave a written screen's "view" out unless you are changing the screen. A "view" you send REPLACES the section's view: a written screen sent over Orders takes its table away. To add counters, a filter or a choice of dates to a section they already use, send stats, filters or period and leave "view" out; send a view only when they ask to see the section a different way instead. To show it another way as well (a written screen beside Orders' table, a board by stage beside a list), send "tabs": the old tabs and the new, each a view, named by a written screen's "title" or another view's "label". On a section over the store a written screen only ever goes in tabs.
+- FEATURE_UPDATE — search box, dropdown filters (a filter on a yes/no field is Yes / No by itself, and No is every row not ticked, blank or false alike: never fill rows with false or "No", or add a second field, to make a filter work), STAT CARDS (op: count | sum | avg | min | max over "value", an EXPRESSION evaluated per row — so a stock value is { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, not a bare column; optional "where" expression limits which rows count. Never label a stat as something the expression does not actually compute), default sort, a PERIOD (a choice of dates over the section: { "field": "<a date column>", "label": "Placed", "presets": [15, 30, 60], "default": 15 } draws chips for the last 15, 30 and 60 days, their own dates and All, and narrows the rows, the stats and the view together; whenever they want to see a window of days, or change it, this is how, never a written screen. With a period, no stat carries days_since of that field in its "where", and no label names the days: the period picks them), ROW ACTION buttons (a one-click change to that row, which the owner can also press on many rows at once by ticking them in the table: "set" maps field -> EXPRESSION, and the optional "when" is an EXPRESSION deciding whether the button shows on that row — same operators as automations, so "only while it isn't Done" is { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }; "approval": true when a teammate must not make that change alone, a refund, a discount, a cancellation: the owner's press does it, a teammate's waits in the owner's bell for their yes, and a teammate cannot make the same change by hand), or SCAN MODE (a scan-and-go bar: lookupField = the code column scanned into it, action.set = field -> expression applied to the matched row, sequenceField = a numeric column that must never go backwards between scans, for picking or queue order). It works with any USB or Bluetooth barcode scanner, which types the code like a keyboard — there is no camera scanning. A scan that matches nothing changes NOTHING: the person sees it on screen and that is the whole safeguard. Nothing is recorded, so never add a "scan errors" or "mistakes" count — no rule can fill it, and a stat built on it counts successful scans instead. Scanning only reaches rows currently in view, so the section needs a filter that narrows to the job in hand. Send only the parts you change: each part you send (view, tabs, stats, filters, actions, scanMode, search, defaultSort, period) replaces that part whole, a part you leave out stays exactly as it is, and null removes it. To add a stat, send "stats" with the old ones and the new; leave a written screen's "view" out unless you are changing the screen. A "view" you send REPLACES the section's view: a written screen sent over Orders takes its table away. To add counters, a filter or a choice of dates to a section they already use, send stats, filters or period and leave "view" out; send a view only when they ask to see the section a different way instead. To show it another way as well (a written screen beside Orders' table, a board by stage beside a list), send "tabs": the old tabs and the new, each a view, named by a written screen's "title" or another view's "label". On a section over the store a written screen only ever goes in tabs.
 - RECORD_SEED — ADDS rows to an existing module. It only ever inserts; it cannot change or delete a row that is already there. Never use it to "correct" or "update" existing data — that produces a duplicate and tells the owner it was an edit. Changing a value is something they do themselves by opening the row.
 - RECORD_SEED — add rows to an existing module (field names must exist in its schema).
 - AUTOMATION_ADD — business logic that runs automatically. "targetModuleId" is the section whose rows trigger it. You BUILD the rule out of the operators below — there is no menu of pre-made rule types, so express exactly what the owner described.
@@ -1357,6 +1358,9 @@ export function validateFeatures(
  * schema of the section that fires the rule, so a typo is caught here
  * rather than silently evaluating to blank inside Postgres.
  */
+/** The field names a field check knows, when it carries them (ownHas.names). */
+const fieldsOf = (has: (f: string) => boolean): string[] => (has as { names?: () => string[] }).names?.() ?? [];
+
 function validateExpr(
   node: unknown,
   ownHas: (f: string) => boolean,
@@ -1388,7 +1392,13 @@ function validateExpr(
       } else if (leaf !== "target" && !ownHas(f)) {
         // "target" points at another section's row, whose schema is not
         // loaded here; the engine tolerates a miss by reading blank.
-        err(errors, `Rule references "${f}", which doesn't exist in this section.`);
+        // With the ones there are: told only "doesn't exist", the model
+        // guessed again (5 repairs of the month, Sept–Oct).
+        const here = fieldsOf(ownHas);
+        err(
+          errors,
+          `Rule references "${f}", which doesn't exist in this section.${here.length ? ` Its fields are: ${here.join(", ")}.` : ""}`
+        );
       }
       return;
     }
@@ -1652,8 +1662,11 @@ function validateAutomation(
   // store's row under the record when a rule is judged). Written: only
   // its own; the store's are refused below, as the next import would
   // put them back.
-  const ownHas = (f: string) =>
-    RESERVED_FIELDS.has(f) || !!ownFields?.has(f) || !!pendingFields?.has(f) || !!storeFields?.has(f);
+  const ownHas = Object.assign(
+    (f: string) => RESERVED_FIELDS.has(f) || !!ownFields?.has(f) || !!pendingFields?.has(f) || !!storeFields?.has(f),
+    // The names, for an error that says which ones there are (fieldsOf).
+    { names: () => [...new Set([...(ownFields ?? []), ...(pendingFields ?? []), ...(storeFields ?? [])])] }
+  );
   const ownComputed = new Set((currentSchema?.columns ?? []).filter((c) => c.compute).map((c) => c.field));
 
   // A rule runs in Postgres, against the row as it is stored. A
@@ -1863,7 +1876,22 @@ function validateAutomation(
       const known = (r: unknown) =>
         typeof r === "string" && (moduleOk(r) || modules.some((m) => `#${m.name}` === r.trim().toLowerCase()));
       if (reads !== undefined && (!Array.isArray(reads) || !reads.every(known))) {
-        err(errors, 'A run_code rule\'s "reads" lists sections of this project, by id or "#slug".');
+        // Each wrong one said, and the right ones listed: told only the rule,
+        // the model named the same store list twice more and the turn failed
+        // (Carefone, 6 Oct, "fulfillments").
+        const wrong = Array.isArray(reads) ? reads.filter((r) => !known(r)) : [reads];
+        const why = (r: unknown) => {
+          const key = String(r).trim().replace(/^#/, "");
+          if (!isStoreTable(key)) return `"${String(r)}" is not a section here`;
+          const over = modules.find((m) => m.source_table === key);
+          return over
+            ? `"${String(r)}" is a store list, and the section that shows it is "#${over.name}"`
+            : `"${String(r)}" is a store list no section shows yet: add one over it in this design (NEW_MODULE with "source_table": "${key}") and read that by its "#slug"`;
+        };
+        err(
+          errors,
+          `A run_code rule's "reads" lists sections of this project, by id or "#slug": ${wrong.map(why).join("; ")}. The sections here are ${modules.map((m) => `"#${m.name}"`).join(", ") || "none yet"}.`
+        );
       }
       continue;
     }
@@ -2232,15 +2260,7 @@ export function validatePlan(
         // apply. This is how a request the engine cannot serve (a badge
         // colour, say) got dressed up as a change: it validated, it
         // applied, and the owner was told it worked.
-        const same =
-          columns.length === currentSchema.columns.length &&
-          columns.every((c, i) => {
-            const cur = currentSchema.columns[i];
-            return (
-              cur && cur.field === c.field && cur.label === c.label && cur.type === c.type && !cur.hidden === !c.hidden
-            );
-          });
-        if (same) {
+        if (sameColumns(columns, currentSchema.columns)) {
           err(
             errors,
             'This UI_CHANGE leaves every column exactly as it is, so applying it would do nothing. Either make a real change, or tell the owner in "unmet" that this isn\'t something the platform can do.'
@@ -2904,17 +2924,28 @@ function withoutDoneClaims(text: string): string {
  * a string or with brackets open was cut off at the output cap, and says
  * so, so the next attempt is shorter rather than the same again.
  */
-export function readJson(text: string): { ok: true; value: unknown } | { ok: false; error: string } {
+export function readJson(
+  whole: string,
+  /** The model said it stopped at the room it had (finishReason "length"); otherwise it did not. */
+  opts: { cutAtLimit?: boolean } = {}
+): { ok: true; value: unknown } | { ok: false; error: string } {
   let first: unknown;
   try {
-    return { ok: true, value: JSON.parse(text) };
+    return { ok: true, value: JSON.parse(whole) };
   } catch (e) {
     first = e;
   }
+  // Words before the object ("Now building it.") are not the reply: it
+  // starts at its first brace. Words after it end where it closes.
+  const start = whole.indexOf("{");
+  const text = start > 0 ? whole.slice(start) : whole;
   let out = "";
   let inString = false;
   let escaped = false;
   let depth = 0;
+  // Where each bracket still open was opened, for saying which one never closes.
+  const opened: number[] = [];
+  let closedAt = -1;
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     if (inString) {
@@ -2938,14 +2969,42 @@ export function readJson(text: string): { ok: true; value: unknown } | { ok: fal
         continue;
       }
     } else if (ch === '"') inString = true;
-    else if (ch === "{" || ch === "[") depth++;
-    else if (ch === "}" || ch === "]") depth--;
+    else if (ch === "{" || ch === "[") {
+      depth++;
+      opened.push(i);
+    } else if (ch === "}" || ch === "]") {
+      depth--;
+      opened.pop();
+    }
     out += ch;
+    // The whole object, closed: what follows it (a summary in words, a
+    // second copy) is not part of the reply, and a good design is not
+    // thrown away for it (Carefone, 6 Oct: "…}}Add fields to Orders").
+    if (depth === 0 && !inString && (ch === "}" || ch === "]")) {
+      closedAt = i;
+      break;
+    }
   }
-  if (inString || depth > 0) {
+  if (closedAt < 0 && (inString || depth > 0)) {
+    // Said as it was. Before, every reply left open was called cut off at
+    // the cap and sent back "shorter"; one of ~1,100 tokens was told so
+    // three times and the turn failed (Carefone, 6 Oct). The model's own
+    // finish reason says whether it ran out of room; the next try then has
+    // more of it.
+    if (opts.cutAtLimit) {
+      return {
+        ok: false,
+        error:
+          "Your reply ran out of room before it ended. You will have more room this time: send the whole reply again, complete.",
+      };
+    }
+    const at = inString ? text.lastIndexOf('"') : (opened.at(-1) ?? 0);
+    const near = JSON.stringify(text.slice(Math.max(0, at - 40), at + 40));
     return {
       ok: false,
-      error: `Your reply was cut off before it ended: it ran past the ${MAX_OUTPUT_TOKENS} tokens one reply may use. Send the same design again, shorter: a written screen in fewer lines, and nothing it does not need.`,
+      error: inString
+        ? `Your reply's JSON has a string that never ends, near ${near}: a quote inside the words must be written \\". Send the whole reply again as one complete JSON object.`
+        : `Your reply's JSON leaves ${depth} bracket${depth === 1 ? "" : "s"} open: the one opened near ${near} is never closed. Send the whole reply again as one complete JSON object.`,
     };
   }
   try {
@@ -3047,9 +3106,11 @@ export function parseReply(
   /** Per-section schemas, for a design that touches more than one. */
   schemas?: SchemaLookup,
   /** A section's rules, so a field still read by one is not taken away. */
-  rulesOf?: (moduleId: string) => RuleRef[]
+  rulesOf?: (moduleId: string) => RuleRef[],
+  /** What the model call said of how it ended (callModel onFinish). */
+  opts: { cutAtLimit?: boolean } = {}
 ): ParsedReply {
-  const json = readJson(stripFences(raw));
+  const json = readJson(stripFences(raw), opts);
   if (!json.ok) return { ok: false, errors: [json.error] };
   const parsed: unknown = json.value;
   if (!isPlainObject(parsed)) {
@@ -3576,13 +3637,18 @@ async function generate(
   /** Hears the reply's text as it arrives, whole each time; "" when a new attempt starts. */
   onText?: (text: string) => void,
   /** How hard a Claude 5 model thinks first; the house default unless the caller says (designEffort). */
-  effort: Effort = EFFORT
+  effort: Effort = EFFORT,
+  /** More room (a try after one that truly ran out), and who hears how the call ended. */
+  more: { roomy?: boolean; onFinish?: (reason: string) => void } = {}
 ): Promise<string> {
   const id = typeof model === "string" ? model : model.modelId;
   const base = {
     model,
     instructions,
-    maxOutputTokens: effort === "low" || effort === "medium" ? MAX_OUTPUT_TOKENS : MAX_OUTPUT_TOKENS_DEEP,
+    // Room grows when it is needed: a reply that truly ran out is asked again
+    // with the deep room, as a harder think is. Unused room is not billed.
+    maxOutputTokens:
+      more.roomy || (effort !== "low" && effort !== "medium") ? MAX_OUTPUT_TOKENS_DEEP : MAX_OUTPUT_TOKENS,
     maxRetries: 0,
     abortSignal: signal,
     ...(provider === "anthropic" && TAKES_EFFORT.test(id) ? { providerOptions: { anthropic: { effort } } } : {}),
@@ -3606,7 +3672,7 @@ async function generate(
     let finish = result.finishReason;
     // Said, so a reply that fails to parse can be told apart from one cut short.
     if (result.finishReason === "length") {
-      console.warn(`[model] ${provider} reply cut off at the ${MAX_OUTPUT_TOKENS}-token cap`);
+      console.warn(`[model] ${provider} reply cut off at the ${base.maxOutputTokens}-token room it had`);
     }
     // The cap arrived while it was still looking things up, so no reply
     // was written. It is asked once more with what it found folded into
@@ -3633,12 +3699,13 @@ async function generate(
     if (!text && finish === "length" && "providerOptions" in base) {
       console.warn(`[model] ${provider} wrote nothing before the cap; asking once more at low effort`);
       hear?.("");
-      ({ text } = await step(
+      ({ text, finishReason: finish } = await step(
         provider,
         { ...base, providerOptions: { anthropic: { effort: "low" } }, messages: asMessages(turns), ...tools },
         hear
       ));
     }
+    more.onFinish?.(finish);
   } catch (e) {
     throw asModelError(provider, signal?.aborted && !(e instanceof Error && e.name === "AbortError") ? stopped() : e);
   }
@@ -3673,6 +3740,10 @@ export async function callModel(opts: {
   onText?: (text: string) => void;
   /** How hard to think first (designEffort for the design road); the house default when absent. */
   effort?: Effort;
+  /** The deep room: this try follows one that truly ran out of room. */
+  roomy?: boolean;
+  /** Hears how the call ended ("stop", "length", …), so a reader can tell a cut-off from a slip. */
+  onFinish?: (reason: string) => void;
 }): Promise<string> {
   const { system, turns, signal, lookups, onText } = opts;
   const model = opts.model || modelFor("design");
@@ -3728,7 +3799,10 @@ export async function callModel(opts: {
       ? { role: "system", content, providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } } }
       : { role: "system", content }
   );
-  return generate("anthropic", anthropic(model), instructions, turns, signal, lookups, onText, opts.effort);
+  return generate("anthropic", anthropic(model), instructions, turns, signal, lookups, onText, opts.effort, {
+    roomy: opts.roomy,
+    onFinish: opts.onFinish,
+  });
 }
 
 // ── The gap pass ────────────────────────────────────────────────

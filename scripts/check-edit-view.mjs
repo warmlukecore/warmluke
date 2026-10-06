@@ -127,6 +127,18 @@ try {
     check("renamed, and marked as theirs", buyer.label === "Buyer" && buyer.named === true);
     check("the order rows open in", now.schema_json.features.defaultSort?.field === "amount");
     check("said in History in words", /renamed "Customer" to "Buyer"/i.test(now.change_description ?? ""));
+
+    // Made from the copy before that save, and coming out as the section now
+    // is (Carefone, 6 Oct: a column hidden and put back): nothing to do, done.
+    const stale = viewEditPlans(
+      mod.id,
+      before.schema_json,
+      { columns: [{ field: "customer", label: "Buyer" }] },
+      () => []
+    );
+    const again = await post("/api/apply", { projectId: project.id, plans: stale.plans, by: "user" });
+    check("a save that changes nothing is no error", again.ok && again.data.applied === true);
+    check("and no version for it", (await latest(mod.id)).version === now.version);
   }
 
   console.log("\ntheir AI's edit_view");

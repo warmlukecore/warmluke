@@ -25,6 +25,7 @@ import {
   type DraftPhase,
   findGaps,
   parseReply,
+  readJson,
   type ChatTurn,
   type StoreContext,
   buildTalkPrompt,
@@ -97,14 +98,6 @@ const PLAN_TOOLS = ["search_store", "store_metrics", "store_overview"] as const;
 /** Two lookups, then the plan. */
 const PLAN_STEPS = 3;
 
-/**
- * How many rules the designer is shown.
- *
- * ponytail: a flat cap, and the oldest win. An app with more rules
- * than this needs them summarised by section rather than listed;
- * raise it or group them when one actually has that many.
- */
-const RULES_IN_CONTEXT = 40;
 import { lowStock, searchOrders, storeLeaders, storeOverview, storeValues } from "@/lib/store-read";
 import { routeQuestion } from "@/lib/route";
 import { fetchSlice } from "@/lib/slice";
@@ -630,8 +623,11 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         .from("automations")
         .select("id, name, enabled, module_id, definition")
         .eq("project_id", project.id)
-        .order("created_at", { ascending: true })
-        .limit(RULES_IN_CONTEXT),
+        // Every rule, up to the server's page (1,000): capped at 40, the rest
+        // were neither shown to the designer nor kept from losing a field
+        // they read (rulesOf), so a field a 41st rule read could be taken away.
+        // ponytail: past a few hundred, summarise by section rather than list.
+        .order("created_at", { ascending: true }),
       recentRequests(client, project.id, modules),
       // Whether Luke may ask for a change in the shop: the account's own
       // switch, off unless somebody at Warmluke turned it on. Read only
@@ -927,6 +923,18 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // The design the critic sent back, which stood: kept, so a redo that
   // fails does not cost the design it was redoing.
   let sentBackDesign: TurnState["sentBackDesign"] = resume?.sentBackDesign ?? null;
+  // How the last model call ended, as the call said: a reply that truly ran
+  // out of room is asked again with more (callModel roomy), and one that
+  // did not is never told it did.
+  let cutAtLimit = false;
+  // One more try, once, when a repair got further (a different problem
+  // than the one before): progress is worth an attempt, a repeat is not.
+  let earned = false;
+  let lastErrors = "";
+  // A design that came back from a repair as an answer saying nothing was
+  // built is sent back once, rather than shown as "Here's the build:".
+  let lastWasDesign = false;
+  let droppedOnce = false;
   // What the review gate said of the last design it read. Kept across its
   // redo: a redo that never passes leaves the design it sent back as the
   // answer, and these are that design's checks.
@@ -937,7 +945,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // shared them, a design that took two repairs could no longer be sent
   // back, and the reviewers read a written screen they could do nothing
   // about (returns eval, 4 Oct).
-  const lastAttempt = () => MAX_REPAIR_ATTEMPTS + (sentBack ? 1 : 0);
+  const lastAttempt = () => MAX_REPAIR_ATTEMPTS + (sentBack ? 1 : 0) + (earned ? 1 : 0);
   for (let attempt = firstAttempt; attempt <= lastAttempt(); attempt++) {
     // Out of this invocation's time, with an attempt made in it: the
     // turn so far, handed on whole, to go on in a fresh one.
@@ -976,6 +984,8 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       tell({ step: "model", attempt: attempt + 1, of: lastAttempt() + 1 });
       // Tools on the first attempt only: a repair fixes the reply's shape,
       // and what was looked up is already written into the reply it fixes.
+      const roomy = cutAtLimit;
+      cutAtLimit = false;
       raw = await tapeRoad.run(road, () =>
         callModel({
           system,
@@ -987,19 +997,21 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           onText: draft,
           // How hard a design is thought through: a deploy setting, measured (designEffort).
           effort: road === "design" ? designEffort() : undefined,
+          roomy,
+          onFinish: (reason) => {
+            cutAtLimit = reason === "length";
+          },
         })
       );
     }
     // The talk road hands a build back: a "build" reply, or a design it
     // drew anyway. The design road then starts over, tools and all.
+    // Read as the parser reads it: words around a design do not hide it
+    // (Carefone, 6 Oct: a design with a slip stayed on the talk road).
+    const read = readJson(stripFences(raw));
+    const said = read.ok ? read.value : null;
+    const type = said && typeof said === "object" ? (said as { type?: unknown }).type : undefined;
     if (road === "talk") {
-      let said: unknown = null;
-      try {
-        said = JSON.parse(stripFences(raw));
-      } catch {
-        /* the parser below says so */
-      }
-      const type = said && typeof said === "object" ? (said as { type?: unknown }).type : undefined;
       if (typeof type === "string" && type !== "answer") {
         road = "design";
         tell({ step: "road", road });
@@ -1017,8 +1029,23 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       currentSchema,
       currentFeatures,
       (mid) => schemas.get(mid) ?? null,
-      (mid) => ((ruleRows ?? []) as RuleRow[]).filter((r) => r.module_id === mid)
+      (mid) => ((ruleRows ?? []) as RuleRow[]).filter((r) => r.module_id === mid),
+      { cutAtLimit }
     );
+    // A design sent back for a fix that comes back as an answer has dropped
+    // the design, and would be shown as "Here's the build:" with nothing
+    // built (Carefone, 6 Oct). Asked once for the design itself; an answer
+    // given again is taken as meant.
+    if (parsed.ok && parsed.reply.type === "answer" && lastWasDesign && !droppedOnce && road === "design") {
+      droppedOnce = true;
+      parsed = {
+        ok: false,
+        errors: [
+          "Your reply before this was a design that needed fixing, and this one is an answer with no design in it. Send the corrected design itself: every plan, complete. If it truly cannot be built, answer again and say why in the message.",
+        ],
+      };
+    }
+    lastWasDesign = type === "plans" || type === "blueprint";
     // A question answered in prose instead of JSON: the prose is the
     // answer. Sending the whole turn back for its braces paid for it
     // twice (2 Oct: a 15-day summary, $0.19 of its $0.25 on the resend).
@@ -1210,6 +1237,10 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     if (parsed.ok) break;
 
     repairs = attempt + 1;
+    // A repair that got further than the last one earns one more try, once.
+    const errorsNow = parsed.errors.join(" | ");
+    if (!earned && !onlyAsking && lastErrors && errorsNow !== lastErrors && attempt >= lastAttempt()) earned = true;
+    lastErrors = errorsNow;
     // A question to ask is not a problem the design had.
     if (!onlyAsking) {
       repairErrors.push(...parsed.errors);

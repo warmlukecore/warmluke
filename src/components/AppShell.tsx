@@ -24,7 +24,7 @@ import { asError, engineError, fixPrompt, type FixAction } from "@/lib/errors";
 import VersionHistory from "@/components/VersionHistory";
 import AutomationsPanel from "@/components/AutomationsPanel";
 import { FormatProvider } from "@/lib/format";
-import { projectFormat } from "@/lib/money";
+import { DEFAULT_LOCALE, projectFormat } from "@/lib/money";
 import ProjectSettings, { TeammateSettings } from "@/components/ProjectSettings";
 import ShareSection from "@/components/ShareSection";
 import { LinkProvider, type LinkOption, type LinkOptions, type LinkSource } from "@/components/LinkContext";
@@ -109,7 +109,7 @@ import { Logo } from "@/components/ui/Logo";
 import { ThemeToggle } from "@/components/ThemeSync";
 import { setTodayZone, withComputed } from "@/lib/expr";
 import { findSection } from "@/lib/section-ref";
-import { shiftDay, type PeriodRange } from "@/lib/period";
+import { openingPickFor, periodRange, pickMemory, shiftDay, weekStartOf, type PeriodRange } from "@/lib/period";
 import { codeSpellings } from "@/lib/scan";
 
 /**
@@ -147,6 +147,17 @@ function withStoreColumns(row: UiSchemaRow, sourceTable: string | null | undefin
 
 /** A build from the chat, as /api/apply writes it into the thread. */
 /** A teammate's press of a button that waits for the owner (0183), as the bell lists it. */
+/** A section as new to this person (0191): never opened since it was made, or changed since they looked. */
+type SectionNews = { id: string; version: number; seen: number | null; fresh: boolean; changed: boolean };
+/** The same section, seen as far as `version`. */
+const seenAs = (n: SectionNews, version: number): SectionNews => ({
+  ...n,
+  version: Math.max(n.version, version),
+  seen: version,
+  fresh: false,
+  changed: n.version > version,
+});
+
 type ButtonApproval = { id: string; action: string; row_label: string; module_id: string; asked_at: string };
 
 type BuildPayload = {
@@ -1056,6 +1067,74 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // own, and one per row the subscription hears), and one sent before a
   // delete could come back after one sent later, bringing the section back.
   const modulesAsked = useRef(0);
+  // What is new to this person (0191): a section never opened since it was
+  // made, or changed since they last looked; kept in the database so it
+  // follows them across devices. Until it has been read, nothing is marked
+  // and nothing is marked seen. A version they have seen is never lowered
+  // by a read that left before their last look was kept.
+  const [news, setNews] = useState<Record<string, SectionNews> | null>(null);
+  const loadNews = useCallback(() => {
+    void supabase.rpc("abo_whats_new", { p_project: projectId }).then(({ data, error }) => {
+      if (error || !Array.isArray(data)) return;
+      setNews((was) =>
+        Object.fromEntries(
+          (data as SectionNews[]).map((n) => {
+            const mine = was?.[n.id]?.seen ?? null;
+            return [n.id, mine !== null && (n.seen === null || mine > n.seen) ? seenAs(n, mine) : n];
+          })
+        )
+      );
+    });
+  }, [projectId]);
+  const newsSoon = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The version they had seen when they opened the section in view: what its new columns are new since.
+  const [visitBase, setVisitBase] = useState<{ moduleId: string; seen: number | null } | null>(null);
+  // The section in view, shown as far as its version: seen. What it had
+  // been seen as is kept for the visit first, so a column added since (or
+  // added by Luke while they watch) is marked until they come back.
+  const shownVersion =
+    schema?.module_id === selectedModuleId && loadedFor === selectedModuleId ? schema?.version : null;
+  const visiting = useRef<string | null>(null);
+  useEffect(() => {
+    visiting.current = null;
+  }, [selectedModuleId]);
+  useEffect(() => {
+    if (!news || !selectedModuleId || !shownVersion) return;
+    const n = news[selectedModuleId];
+    if (visiting.current !== selectedModuleId) {
+      visiting.current = selectedModuleId;
+      // What they had seen, or, never seen, what it is as it opens: a column it gains while they look is new.
+      setVisitBase({ moduleId: selectedModuleId, seen: n?.seen ?? shownVersion });
+    }
+    if (n && n.seen !== null && n.seen >= shownVersion) return;
+    setNews((was) => ({
+      ...was,
+      [selectedModuleId]: seenAs(
+        was?.[selectedModuleId] ?? {
+          id: selectedModuleId,
+          version: shownVersion,
+          seen: null,
+          fresh: false,
+          changed: false,
+        },
+        shownVersion
+      ),
+    }));
+    // A query is sent when it is awaited; then() sends it. Not kept: shown again next time.
+    void supabase.rpc("abo_seen", { p_module: selectedModuleId, p_version: shownVersion }).then(() => undefined);
+    // On the section shown and its version; news is read, not a reason to run.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!news, selectedModuleId, shownVersion]);
+  // The columns the section in view gained since the version they had seen.
+  const newFields = useMemo(() => {
+    if (!visitBase || visitBase.moduleId !== selectedModuleId || visitBase.seen === null || !schema) return undefined;
+    const then = schemaHistory.find((h) => h.version === visitBase.seen);
+    if (!then || then.version >= schema.version) return undefined;
+    const had = new Set(withStoreColumns(then, loadedSource).schema_json.columns.map((c) => c.field));
+    const added = schema.schema_json.columns.filter((c) => !had.has(c.field)).map((c) => c.field);
+    return added.length ? new Set(added) : undefined;
+  }, [visitBase, selectedModuleId, schema, schemaHistory, loadedSource]);
+
   const loadModules = useCallback(async () => {
     const asked = ++modulesAsked.current;
     const { data, error } = await supabase
@@ -1072,13 +1151,19 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     setLoadError(null);
     setModules(data as ModuleRow[]);
     setLoading(false);
-  }, [projectId]);
+    loadNews();
+  }, [projectId, loadNews]);
 
   // The dates picked above the section in view (features.period): its
   // rows are read inside them, so the table holds every row the stat
   // cards count rather than whichever two hundred loaded first. Whose
   // section it is is kept with it; another section's pick is not this one's.
   const rowPeriod = useRef<{ moduleId: string; range: PeriodRange | null } | null>(null);
+  // Whose days and weeks those are, as the section's bar counts them: the shop's zone, the project's locale.
+  const periodPlace = useRef<{ zone: string; locale: string }>({
+    zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    locale: DEFAULT_LOCALE,
+  });
   // What a section over the store's table asks for (0167), as it last
   // said, and what was read for it: the same ask twice is read once.
   const rowTable = useRef<{ moduleId: string; state: TableState } | null>(null);
@@ -1092,6 +1177,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // asked a moment after leaving it, made the one now open look old, and
   // its answer was dropped with nothing left to say it had loaded.
   const loadSeq = useRef<Record<string, number>>({});
+  // The section last loaded whole: what a pick on it reads its rows by.
+  const shownSection = useRef<{ moduleId: string; schema: UiSchemaRow | null; source: string | null } | null>(null);
   // A design they agreed to in words before it was drawn is built as it
   // arrives (buildApproved, below, kept here by an effect).
   const buildNow = useRef<((plans: AssistantPlan[], next: NextStep[] | undefined, id: string) => void) | null>(null);
@@ -1100,12 +1187,12 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   const ownShown = useRef<{ moduleId: string; limit: number } | null>(null);
 
   const loadModuleData = useCallback(
-    async (moduleId: string, asked?: number) => {
+    async (moduleId: string, asked?: number, rowsOnly = false) => {
       const limit = asked ?? (ownShown.current?.moduleId === moduleId ? ownShown.current.limit : RECORD_PAGE);
       ownShown.current = { moduleId, limit };
       const seq = (loadSeq.current[moduleId] = (loadSeq.current[moduleId] ?? 0) + 1);
       const range = rowPeriod.current?.moduleId === moduleId ? rowPeriod.current.range : null;
-      const ranged = range && /^[a-z_][a-z0-9_]*$/i.test(range.field) ? range : null;
+      let ranged = range && /^[a-z_][a-z0-9_]*$/i.test(range.field) ? range : null;
       const ownRows = (from: number, to: number) => {
         let q = supabase
           .from("records")
@@ -1136,11 +1223,68 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         }
         return { ...first, data: rows };
       };
+      const readPage = async (pageSchema: UiSchemaRow | null, pageTable: string | null | undefined) => {
+        // One page of the whole list, from the server (0167): the page,
+        // the search, the filters and the sort the table holds now.
+        const state =
+          rowTable.current?.moduleId === moduleId
+            ? rowTable.current.state
+            : { page: 0, size: keptPageSize(moduleId), search: "", filters: {}, sort: null };
+        const features = pageSchema?.schema_json?.features ?? null;
+        const askFacets = facetsFor.current !== moduleId;
+        rowAsked.current = { moduleId, key: JSON.stringify([state, ranged?.from, ranged?.to]) };
+        try {
+          const page = await readStorePage(
+            supabase,
+            moduleId,
+            pageTable as StoreTable,
+            state,
+            features,
+            pageSchema ? withStoreColumns(pageSchema, pageTable).schema_json.columns : [],
+            ranged
+              ? {
+                  field: ranged.field,
+                  from_day: ranged.fromDay,
+                  to_day: ranged.toDay,
+                  from: ranged.from,
+                  to: ranged.to,
+                }
+              : null,
+            askFacets ? (features?.filters ?? []).map((f) => f.field) : []
+          );
+          if (seq !== loadSeq.current[moduleId]) return;
+          setRecords(page.rows as unknown as RecordRow[]);
+          setRecordTotal(page.total);
+          if (askFacets) {
+            facetsFor.current = moduleId;
+            setFacets(page.facets);
+          }
+        } catch (e) {
+          setLoadError(e instanceof Error ? e.message : "Couldn't read the store.");
+        }
+      };
+      // A pick on the section already shown (dates, a search, a page) reads
+      // its rows and nothing else: the schema, its history and the module
+      // were read again too, one trip before the rows, and a fresh schema
+      // counted the stat cards a second time.
+      const known = rowsOnly && shownSection.current?.moduleId === moduleId ? shownSection.current : null;
+      if (known) {
+        if (isStoreTable(known.source) && storeId) return readPage(known.schema, known.source);
+        const own = await readOwn();
+        if (seq !== loadSeq.current[moduleId]) return;
+        if (own.error) {
+          setLoadError(own.error.message);
+          return;
+        }
+        setRecords(own.data as RecordRow[]);
+        setRecordTotal(own.count ?? (own.data as RecordRow[]).length);
+        return;
+      }
       // The module is fetched rather than looked up in state: a section
       // created a moment ago is selected before the list has reloaded,
       // and a stale closure there means source_table reads as undefined
       // and the section renders as empty.
-      const [schemaRes, recordsRes, historyRes, modRes] = await Promise.all([
+      const [schemaRes, wholeRes, historyRes, modRes] = await Promise.all([
         supabase
           .from("ui_schemas")
           .select("*")
@@ -1152,6 +1296,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         supabase.from("modules").select("source_table").eq("id", moduleId).maybeSingle(),
       ]);
       if (seq !== loadSeq.current[moduleId]) return;
+      let recordsRes = wholeRes;
       // Named by the address and not there (removed since, or another
       // project's): the start instead, and the address says so.
       if (!modRes.error && !modRes.data) {
@@ -1175,6 +1320,30 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       // records query above still ran and found nothing, which is
       // correct — a store-backed section has no records of its own.
       const sourceTable = modRes.data?.source_table as string | null | undefined;
+      // Opened afresh: the dates it opens on are worked out here as its bar
+      // will draw them (lib/period openingPickFor), so the rows are read
+      // inside them, once.
+      if (rowPeriod.current?.moduleId !== moduleId) {
+        const spec = loadedSchema?.schema_json?.features?.period ?? defaultPeriod(sourceTable);
+        const { zone, locale } = periodPlace.current;
+        const opening = spec
+          ? periodRange(spec.field, openingPickFor(spec, pickMemory(moduleId)), zone, new Date(), weekStartOf(locale))
+          : null;
+        rowPeriod.current = { moduleId, range: opening };
+        ranged = opening && /^[a-z_][a-z0-9_]*$/i.test(opening.field) ? opening : null;
+        if (ranged && !isStoreTable(sourceTable)) {
+          // ponytail: a section of their own with dates reads its rows twice
+          // on first open (whole beside the schema, then inside the dates);
+          // read the schema first if that ever shows.
+          recordsRes = await readOwn();
+          if (seq !== loadSeq.current[moduleId]) return;
+          if (recordsRes.error) {
+            setLoadError(recordsRes.error.message);
+            setLoadedFor(moduleId);
+            return;
+          }
+        }
+      }
       // A section over the store does not own its columns — we do. The
       // saved schema is a copy taken the day it was created, so a
       // column added to the importer later never reached it: Category
@@ -1184,49 +1353,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       // Kept so read-only and currency follow the section that actually
       // loaded, not whatever the module list happens to hold.
       setLoadedSource(sourceTable ?? null);
-      if (isStoreTable(sourceTable) && storeId) {
-        // One page of the whole list, from the server (0167): the page,
-        // the search, the filters and the sort the table holds now.
-        const state =
-          rowTable.current?.moduleId === moduleId
-            ? rowTable.current.state
-            : { page: 0, size: keptPageSize(moduleId), search: "", filters: {}, sort: null };
-        const features = loadedSchema?.schema_json?.features ?? null;
-        const askFacets = facetsFor.current !== moduleId;
-        rowAsked.current = { moduleId, key: JSON.stringify([state, ranged?.from, ranged?.to]) };
-        try {
-          const page = await readStorePage(
-            supabase,
-            moduleId,
-            sourceTable as StoreTable,
-            state,
-            features,
-            loadedSchema ? withStoreColumns(loadedSchema, sourceTable).schema_json.columns : [],
-            ranged
-              ? {
-                  field: ranged.field,
-                  from_day: ranged.fromDay,
-                  to_day: ranged.toDay,
-                  from: ranged.from,
-                  to: ranged.to,
-                }
-              : null,
-            askFacets ? (features?.filters ?? []).map((f) => f.field) : []
-          );
-          if (seq !== loadSeq.current[moduleId]) return;
-          setRecords(page.rows as unknown as RecordRow[]);
-          setRecordTotal(page.total);
-          if (askFacets) {
-            facetsFor.current = moduleId;
-            setFacets(page.facets);
-          }
-        } catch (e) {
-          setLoadError(e instanceof Error ? e.message : "Couldn't read the store.");
-        }
-      } else {
+      if (isStoreTable(sourceTable) && storeId) await readPage(loadedSchema, sourceTable);
+      else {
         setRecords(recordsRes.data as RecordRow[]);
         setRecordTotal(recordsRes.count ?? (recordsRes.data as RecordRow[]).length);
       }
+      if (seq !== loadSeq.current[moduleId]) return;
+      shownSection.current = { moduleId, schema: loadedSchema, source: sourceTable ?? null };
       setSchemaHistory(historyRes.data as UiSchemaRow[]);
       setLoadedFor(moduleId);
     },
@@ -1369,6 +1502,19 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // The table says what it shows; a change reads that page of the whole
   // list, and the same ask again (its first, as the shell already read
   // it) is not read twice.
+  // Reads asked by a pick on screen (dates, a search, a filter, a page),
+  // still out: the list says it is reading until the last comes back.
+  const [reading, setReading] = useState<{ moduleId: string; out: number } | null>(null);
+  const reread = useCallback(
+    (moduleId: string) => {
+      setReading((r) => ({ moduleId, out: (r?.moduleId === moduleId ? r.out : 0) + 1 }));
+      void loadModuleData(moduleId, undefined, true).finally(() =>
+        setReading((r) => (r?.moduleId !== moduleId ? r : r.out > 1 ? { moduleId, out: r.out - 1 } : null))
+      );
+    },
+    [loadModuleData]
+  );
+
   const tableChanged = useCallback(
     (state: TableState) => {
       if (!selectedModuleId) return;
@@ -1376,9 +1522,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       const range = rowPeriod.current?.moduleId === selectedModuleId ? rowPeriod.current.range : null;
       const key = JSON.stringify([state, range?.from, range?.to]);
       if (rowAsked.current?.moduleId === selectedModuleId && rowAsked.current.key === key) return;
-      void loadModuleData(selectedModuleId);
+      reread(selectedModuleId);
     },
-    [selectedModuleId, loadModuleData]
+    [selectedModuleId, reread]
   );
 
   // The renderer says which dates are picked; a change reads the rows inside them again.
@@ -1392,9 +1538,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         return;
       // A section opened with no dates picked was read whole already.
       if (!range && !ours) return;
-      void loadModuleData(selectedModuleId);
+      reread(selectedModuleId);
     },
-    [selectedModuleId, loadModuleData]
+    [selectedModuleId, reread]
   );
 
   /**
@@ -1570,6 +1716,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // A preview draws a few rows (PREVIEW_ROWS), so it reads a few, not 500.
   const peekSection = useCallback((id: string) => loadShared(id, undefined, PEEK_ROWS), [loadShared]);
 
+  // Rows written, or changed elsewhere, in the open section: its stat cards
+  // count again. Rows read for a new pick are not a change; the pick counts them.
+  const [rowsMoved, setRowsMoved] = useState(0);
   const patchRow = useCallback((row: Record<string, unknown> | undefined, moduleId: string | null): boolean => {
     const id = row && typeof row.id === "string" ? row.id : null;
     if (!row || !id || !moduleId) return false;
@@ -1581,8 +1730,18 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       const rec = row as unknown as RecordRow;
       return prev.some((r) => r.id === id) ? prev.map((r) => (r.id === id ? rec : r)) : [...prev, rec];
     });
+    setRowsMoved((n) => n + 1);
     return true;
   }, []);
+
+  // A change that could not be placed: the section read again, and its figures with it.
+  const reloadMoved = useCallback(
+    async (moduleId: string) => {
+      await loadModuleData(moduleId, undefined, true);
+      setRowsMoved((n) => n + 1);
+    },
+    [loadModuleData]
+  );
 
   // Stat cards counted over the whole section, not the page. The
   // function evaluates the same expressions the browser would, over
@@ -1616,6 +1775,16 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       // owner flips it (0145): a member reads only their own of these.
       { table: "module_shares", onChange: loadModules },
       { table: "module_hides", onChange: loadModules },
+      // A section changed anywhere they can see (a build, a teammate, their
+      // AI): what is new to them read again, once a burst of versions is in.
+      // ui_schemas has no project_id; what arrives is only what they may read.
+      {
+        table: "ui_schemas",
+        onChange: () => {
+          if (newsSoon.current) clearTimeout(newsSoon.current);
+          newsSoon.current = setTimeout(loadNews, 800);
+        },
+      },
       // Their seat: the store let in or taken away is read again.
       {
         table: "project_members",
@@ -1631,7 +1800,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         table: "records",
         filter: `project_id=eq.${projectId}`,
         onChange: (row) => {
-          if (selectedModuleId && !patchRow(row, selectedModuleId)) loadModuleData(selectedModuleId);
+          if (selectedModuleId && !patchRow(row, selectedModuleId)) void reloadMoved(selectedModuleId);
         },
       },
       ...(selectedModuleId
@@ -1646,7 +1815,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           ]
         : []),
     ]);
-  }, [projectId, selectedModuleId, loadModules, loadModuleData, patchRow]);
+  }, [projectId, selectedModuleId, loadModules, loadModuleData, patchRow, reloadMoved, loadNews]);
 
   // Read inside a subscription that is set up once, so the values it
   // sees have to be current rather than whatever they were then.
@@ -2515,17 +2684,19 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       if (body.action === "delete") {
         setRecords((prev) => prev.filter((r) => r.id !== body.recordId));
         setRecordTotal((t) => Math.max(0, t - 1));
+        setRowsMoved((n) => n + 1);
         return;
       }
       const rec = data.record as Record<string, unknown> | undefined;
       if (body.action === "create" && typeof rec?.id === "string") {
         setRecords((prev) => [...prev, rec as unknown as RecordRow]);
         setRecordTotal((t) => t + 1);
+        setRowsMoved((n) => n + 1);
         return;
       }
-      if (!patchRow(rec, selectedModuleId)) await loadModuleData(selectedModuleId);
+      if (!patchRow(rec, selectedModuleId)) await reloadMoved(selectedModuleId);
     },
-    [projectId, selectedModuleId, loadModuleData, patchRow]
+    [projectId, selectedModuleId, reloadMoved, patchRow]
   );
 
   const createRecord = useCallback(
@@ -2579,9 +2750,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         return;
       }
       if (!patchRow(data.record as Record<string, unknown> | undefined, selectedModuleId))
-        await loadModuleData(selectedModuleId);
+        await reloadMoved(selectedModuleId);
     },
-    [projectId, selectedModuleId, loadedSource, patchRow, loadModuleData]
+    [projectId, selectedModuleId, loadedSource, patchRow, reloadMoved]
   );
 
   // Builds of theirs nobody has used since, asked about once (0190): read on opening the app.
@@ -2998,6 +3169,12 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
    */
   // The project's own money: what the owner chose, else their shop's (lib/money projectFormat).
   const own = projectFormat(project, store);
+  useEffect(() => {
+    periodPlace.current = {
+      zone: store?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+      locale: own.locale,
+    };
+  }, [store?.timezone, own.locale]);
   const sectionMoneyCurrency = storeBacked && store ? store.currency : own.currency;
   // Offered only where it can be true: a store-backed section, a rate
   // on hand, and the shop's currency being the one the rate is from.
@@ -3176,6 +3353,37 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, userId, openTour]);
 
+  /** What is new to them about a section in the menu (0191): never opened since it was made, or changed since. Not the one open. */
+  const newsOf = (id: string): "new" | "changed" | null => {
+    const n = id === selectedModuleId ? undefined : news?.[id];
+    return n?.fresh ? "new" : n?.changed ? "changed" : null;
+  };
+  const newsSaid = (id: string) => {
+    const n = newsOf(id);
+    return n === "new" ? "New, not opened yet" : n === "changed" ? "Changed since you last looked" : undefined;
+  };
+  /**
+   * The mark itself, at the end of a menu row: a word when it is new, a dot
+   * when it changed. Laid over where the row's own buttons appear, and gone
+   * while they show, so the name keeps its room.
+   */
+  const newsMark = (id: string) => {
+    const n = newsOf(id);
+    if (!n) return null;
+    const at =
+      "pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 transition-opacity group-focus-within:opacity-0 group-hover:opacity-0";
+    return n === "new" ? (
+      <span
+        aria-hidden
+        className={`${at} rounded-full bg-tone-info px-1.5 py-px text-[10px] leading-4 font-medium text-tone-info-fg`}
+      >
+        New
+      </span>
+    ) : (
+      <span aria-hidden className={`${at} mr-1 size-1.5 rounded-full bg-signal-info`} />
+    );
+  };
+
   /** A top section in the icon rail: its icon, named by its label. Lit while it or one inside it is open. */
   const railRow = (m: ModuleRow) => (
     <a
@@ -3183,11 +3391,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       href={sectionHref(m.id)}
       draggable={false}
       aria-label={m.nav_label}
+      aria-description={newsSaid(m.id)}
       aria-current={m.id === selectedModuleId ? "page" : undefined}
       onClick={(e) => openHere(e, () => setSelectedModuleId(m.id))}
-      className={railItem(m.id === selectedModuleId || selectedModule?.parent_id === m.id)}
+      className={`relative ${railItem(m.id === selectedModuleId || selectedModule?.parent_id === m.id)}`}
     >
       <Icon name={m.icon} />
+      {newsOf(m.id) && <span aria-hidden className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-signal-info" />}
     </a>
   );
   const railBuilding = (inStore: boolean) =>
@@ -3228,7 +3438,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             setDragId(null);
             setDropTarget(null);
           }}
-          className={`group mb-1 flex w-full items-center gap-1 rounded-lg pr-1 transition-colors ${
+          className={`group relative mb-1 flex w-full items-center gap-1 rounded-lg pr-1 transition-colors ${
             dropTarget === m.id ? "border-t-2 border-focus" : ""
           } ${dragId === m.id ? "opacity-40" : ""} ${
             m.id === selectedModuleId
@@ -3262,11 +3472,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 setNavOpen(false);
               })
             }
+            aria-description={newsSaid(m.id)}
             className="flex min-w-0 flex-1 items-center gap-2.5 py-2 text-left text-sm"
           >
             <Icon name={m.icon} />
             <span className="truncate">{m.nav_label}</span>
           </a>
+          {newsMark(m.id)}
           {mine(m) && (
             <>
               <button
@@ -3318,7 +3530,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 setDragId(null);
                 setDropTarget(null);
               }}
-              className={`group mb-1 ml-4 flex items-center gap-1 rounded-lg border-l border-frame-line pr-1 pl-1 transition-colors ${
+              className={`group relative mb-1 ml-4 flex items-center gap-1 rounded-lg border-l border-frame-line pr-1 pl-1 transition-colors ${
                 dropTarget === k.id ? "border-t-2 border-t-focus" : ""
               } ${dragId === k.id ? "opacity-40" : ""} ${
                 k.id === selectedModuleId
@@ -3336,11 +3548,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     setNavOpen(false);
                   })
                 }
+                aria-description={newsSaid(k.id)}
                 className="flex min-w-0 flex-1 items-center gap-2.5 py-1.5 pl-1.5 text-left text-[13px]"
               >
                 <Icon name={k.icon} />
                 <span className="truncate">{k.nav_label}</span>
               </a>
+              {newsMark(k.id)}
               {mine(k) && (
                 <button
                   onClick={() => setModuleSettingsFor(k)}
@@ -3725,7 +3939,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 )}
                 {selectedModule && mine(selectedModule) && schema && loadedFor === selectedModule.id && (
                   <button
-                    onClick={() => setCustomizing(true)}
+                    onClick={async () => {
+                      // The section as it is now, not as this screen last read it: a
+                      // build in the chat may have changed it since, and an edit made
+                      // on the older copy would put the older layout back (6 Oct).
+                      await loadModuleData(selectedModule.id);
+                      setCustomizing(true);
+                    }}
                     aria-label="Customize"
                     title="Rename, hide or move columns, and choose filters and order"
                     className={button("secondary")}
@@ -3890,6 +4110,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     // The shop's days on every section of a project with a shop, as the server's are (0162).
                     timeZone={store?.timezone ?? undefined}
                     onPeriod={periodChanged}
+                    reading={reading?.moduleId === selectedModuleId}
+                    rowsMoved={rowsMoved}
+                    newFields={newFields}
                     ask={screenAsk?.moduleId === selectedModuleId ? screenAsk : null}
                     onApprovalButton={pressApproval}
                     waitsForOwner={!isOwner}
@@ -3908,7 +4131,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                             }),
                           // Their own fields beside each row: row actions and
                           // scans set them; the store's columns stay the import's.
-                          ...(myColumns.length > 0 ? { onUpdate: updateStoreRow } : {}),
+                          ...(myColumns.length > 0
+                            ? { onUpdate: updateStoreRow, ownFields: myColumns.map((c) => c.field) }
+                            : {}),
                         }
                       : { onCreate: createRecord, onUpdate: updateRecord, onDelete: deleteRecord })}
                   />
