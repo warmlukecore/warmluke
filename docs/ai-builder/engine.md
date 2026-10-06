@@ -354,6 +354,19 @@ recorded by the tool that ran it, as a
 reached mid-lookup is still answered, in one more call with the results folded into words.
 The MCP design engine does not look things up; the client asking has the same tools.
 
+What the account is shown of the store's lists (0192) holds for the whole turn: an
+administrator may narrow a list, per account, to some of its columns (every column by
+default). `runTurn` reads the app's choice once (`abo_store_columns`) and runs inside it
+(`withStoreShown` in `src/lib/store-columns.ts`, AsyncLocalStorage, as the usage meter), so
+everything that names a list's columns names only those (`storeTableSchema`,
+`storeSectionColumns`, Scout's field-by-field store, each list's advice by sentence), the
+rows a lookup or the router reads are cut to them (`narrowRow`, `narrowResult`), the
+validator finds no other, and the brief says some are not shown so Luke says so rather than
+guess. `/api/apply` checks a design inside the same choice, and each MCP call opens it for the
+app it is about. A rule running on its own is in no request and reads its rows whole, so
+nothing built breaks. `check-store-columns` (pure), `check-store-columns-luke` (a turn, the
+model stood in for), `check-store-columns-mcp` and `check-store-columns-live` hold it.
+
 When the account's `store_actions` switch is on, the chat also offers
 `propose_store_action`, through the same gates as MCP (`store-action-propose.ts`). It only
 ever makes a request: the server writes the card's sentence from the change, the request

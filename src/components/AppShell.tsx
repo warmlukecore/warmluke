@@ -45,6 +45,10 @@ import {
   CORE_STORE_WORDS,
   canCarryOwnFields,
   defaultPeriod,
+  hiddenColumns,
+  readShownFrom,
+  withoutHidden,
+  type StoreShown,
   isStoreTable,
   ownColumns,
   keptPageSize,
@@ -389,11 +393,35 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // A section over a list of events, with no choice of dates of its own,
   // opens on its last 30 days (store-read defaultPeriod); the design is
   // left as it was saved.
+  // What the account is shown of the store's lists (0192): every column
+  // unless an administrator narrowed a list. Read with the sections; the
+  // rows stay whole here, only what is shown of them is narrowed.
+  const [storeShown, setStoreShown] = useState<StoreShown>({});
+  const storeShownRef = useRef<StoreShown>({});
+  useEffect(() => {
+    readShownFrom(() => ({ shown: storeShownRef.current, strip: false }));
+  }, []);
+  /** A section's design as this account is shown it: a store column it is not shown, and what reads one, left out. */
+  const narrowed = useCallback(
+    (sj: UiSchema | undefined): UiSchema | undefined => {
+      const hidden = sj && isStoreTable(loadedSource) ? hiddenColumns(loadedSource) : null;
+      if (!sj || !hidden) return sj;
+      const features = (sj as UiSchema & { features?: FeatureSchema }).features;
+      return {
+        ...sj,
+        columns: sj.columns.filter((c) => !hidden.has(c.field)),
+        ...(features ? { features: withoutHidden(features, hidden) ?? undefined } : {}),
+      };
+    },
+    // storeShown: read through the ref; a new choice is a new narrowing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [loadedSource, storeShown]
+  );
   const shownSchema = useMemo(() => {
     const sj = schema?.schema_json as (UiSchema & { features?: FeatureSchema }) | undefined;
     const period = sj && !sj.features?.period ? defaultPeriod(loadedSource) : null;
-    return sj && period ? { ...sj, features: { ...sj.features, period } } : sj;
-  }, [schema, loadedSource]);
+    return narrowed(sj && period ? { ...sj, features: { ...sj.features, period } } : sj);
+  }, [schema, loadedSource, narrowed]);
   const [recordTotal, setRecordTotal] = useState(0);
   const [linkOptions, setLinkOptions] = useState<LinkOptions>({});
   // What the empty Luke panel offers to ask, from this store's own numbers
@@ -1149,6 +1177,12 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       return;
     }
     setLoadError(null);
+    void supabase.rpc("abo_store_columns", { p_project: projectId }).then(({ data: shown, error: e }) => {
+      const next = !e && shown && typeof shown === "object" ? (shown as StoreShown) : {};
+      if (JSON.stringify(next) === JSON.stringify(storeShownRef.current)) return;
+      storeShownRef.current = next;
+      setStoreShown(next);
+    });
     setModules(data as ModuleRow[]);
     setLoading(false);
     loadNews();
@@ -4127,7 +4161,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                             setInspecting({
                               table: loadedSource,
                               row: { id: rec.id, data: (rec.data ?? {}) as Record<string, unknown> },
-                              columns: schema.schema_json.columns,
+                              columns: (narrowed(schema.schema_json) ?? schema.schema_json).columns,
                             }),
                           // Their own fields beside each row: row actions and
                           // scans set them; the store's columns stay the import's.
@@ -4281,7 +4315,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             <ViewEditor
               sectionName={selectedModule.nav_label}
               moduleId={selectedModule.id}
-              schema={schema.schema_json}
+              schema={narrowed(schema.schema_json) ?? schema.schema_json}
               records={records}
               facets={facets}
               onSave={async (plans) => {

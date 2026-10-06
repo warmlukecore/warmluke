@@ -40,9 +40,11 @@ import {
   type StoreDimension,
   type StoreMeasure,
   type StoreBrief,
+  type StoreTable,
 } from "@/lib/store-read";
 import { RESOURCES, SHOPIFY_RESOURCES } from "@/lib/shopify-resources";
 import { routeQuestion } from "@/lib/route";
+import { narrowResult } from "@/lib/store-columns";
 import { fetchSlice } from "@/lib/slice";
 
 /** Who is asking, and about which store. */
@@ -65,7 +67,7 @@ export type StoreTool = {
 /** A string argument, trimmed, or nothing. */
 const word = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
 
-export const STORE_TOOLS: readonly StoreTool[] = [
+const TOOLS: readonly StoreTool[] = [
   {
     name: "ask_store",
     about: (a) => (word(a.question) ? `“${word(a.question)}”` : "a question about the store"),
@@ -404,6 +406,17 @@ export const STORE_TOOLS: readonly StoreTool[] = [
     },
   },
 ];
+
+/** Which store list a tool's answer is rows of: what the account is not shown of it is cut (0192). Totals are not rows. */
+const LIST_OF: Record<string, (args: Args) => StoreTable | null> = {
+  search_orders: () => "orders",
+  get_order: () => "orders",
+  low_stock: () => "inventory_levels",
+  search_store: (args) => (isStoreTable(args.table) ? args.table : null),
+};
+export const STORE_TOOLS: readonly StoreTool[] = TOOLS.map((t) =>
+  LIST_OF[t.name] ? { ...t, run: async (args, ctx) => narrowResult(LIST_OF[t.name](args), await t.run(args, ctx)) } : t
+);
 
 const BY_NAME = new Map(STORE_TOOLS.map((t) => [t.name, t]));
 

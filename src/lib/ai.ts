@@ -6,6 +6,7 @@
 // the apply route re-validates everything under the caller's RLS.
 // ─────────────────────────────────────────────────────────────
 
+import { narrowedLists } from "@/lib/store-columns";
 import { sameColumns } from "@/lib/view-edit";
 import { REAL_WORK, SIMPLER_WAYS } from "@/lib/simpler";
 import { scoutLines, type StoreProfile } from "@/lib/scout";
@@ -33,6 +34,7 @@ import {
   isStoreTable,
   storeSectionColumns,
   storeTableSchema,
+  adviceOf,
   STORE_TABLES,
   storeKeys,
   storeRowFields,
@@ -586,10 +588,19 @@ function storeBlock(store: StoreContext | null, projectCurrency: string, road: "
     // What a stat over the store's rows should be. Said by the table
     // itself, so the merchant's own assistant reads the same words
     // through design_format.
-    for (const t of Object.values(STORE_TABLES)) {
-      if (t.advice) lines.push(`${t.label}: ${t.advice}`);
+    for (const t of Object.keys(STORE_TABLES) as Array<keyof typeof STORE_TABLES>) {
+      const advice = adviceOf(t);
+      if (advice) lines.push(`${STORE_TABLES[t].label}: ${advice}`);
     }
   }
+
+  // Lists this account is shown only some columns of (0192): what is left out
+  // is in nothing it reads, and is said to be there rather than guessed at.
+  const narrowed = narrowedLists();
+  if (narrowed.length > 0)
+    lines.push(
+      `Warmluke shows this account only some of the store's columns on: ${narrowed.join("; ")}. The rest are in nothing you read here, and are not theirs to build on. If they ask for one, say it is not shown to them here (Warmluke can turn it on), and never guess its values.`
+    );
 
   // Scout (lib/scout): every list's fields as they are here. A database
   // before 0189 gives a few columns' values, as it always did.

@@ -184,6 +184,16 @@ repeat, which and how often, over the newest 2,000 rows a list. `src/lib/scout.t
 Luke's design and plan prompts as the exact fields of each list with rows; a turn tells it as the
 `scout` step, and the Agents screen counts it. `design_format` gives the merchant's own AI the same
 brief as `this_store` (`project_id` when they have more than one app).
+**Store columns** (0192): an administrator chooses, per account and per store list, which of the
+store's columns the account is shown. `abo_admin_store_columns(p_user)` reads the choice and
+`abo_admin_set_store_columns(p_user, p_table, p_shown)` sets one list (names, once each, at least
+one; null for every column, which is no row at all), writing `set_columns` in the admin trail
+when it changes. `abo_store_columns(p_project)` gives the app's lists as its owner's account is
+shown them, to anyone who may use the app, their own AI included; a list not narrowed is not in
+it. `account_store_columns` is read only by administrators and written only through the setter.
+The rows are still read whole: the app narrows what it shows, and Luke and their AI read inside
+the choice (`src/lib/store-columns.ts`).
+
 **What is new** (0191) is each person's own: `abo_whats_new(p_project)` lists every section of the app
 they can see with its latest version, the one they last saw, and `fresh` (never opened, made since
 marks began on 6 Oct) or `changed` (a version after the one they saw); read as the caller, so a

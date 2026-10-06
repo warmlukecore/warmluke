@@ -2,6 +2,7 @@ import { NextResponse, after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getUserClient } from "@/lib/supabase-server";
 import { applyPlans, logClientBuild } from "@/lib/apply";
+import { storeShownFor, withStoreShown } from "@/lib/store-columns";
 import { describePlan } from "@/lib/describe";
 import { undoableFrom } from "@/lib/undo";
 import { walkAfterBuild } from "@/lib/walk";
@@ -82,12 +83,10 @@ export async function POST(req: Request) {
 
     const book = !requestId && thread?.conversationId ? await openBook(client, projectId, thread, plans.length) : null;
 
-    const { applied, errors, failedAt } = await applyPlans(
-      client,
-      projectId,
-      plans,
-      requestId ?? null,
-      by === "user" && !requestId ? "user" : "ai"
+    // Checked and saved as the account is shown the store's lists (0192):
+    // a column it is not shown is not one a design can put back on screen.
+    const { applied, errors, failedAt } = await withStoreShown(await storeShownFor(client, projectId), () =>
+      applyPlans(client, projectId, plans, requestId ?? null, by === "user" && !requestId ? "user" : "ai")
     );
 
     if (book) {

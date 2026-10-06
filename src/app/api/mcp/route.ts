@@ -11,8 +11,12 @@ import {
   readStoreRows,
   storeSectionColumns,
   storeSignals,
+  storeTableSchema,
   withOwnFields,
+  adviceOf,
+  type StoreTable,
 } from "@/lib/store-read";
+import { enterStoreShown, narrowedLists, storeShownFor } from "@/lib/store-columns";
 import { asksFromStore } from "@/lib/suggest";
 import { viewEditPlans, type ViewEdit } from "@/lib/view-edit";
 import { describeScreenAsk, readScreenAsk, screenHref } from "@/lib/screen";
@@ -978,6 +982,18 @@ async function handle(req: Request, seen: Seen) {
     );
   }
 
+  // What the account is shown of the store's lists (0192), in force for the
+  // rest of this call: the app it names, or their only one, or one they own.
+  {
+    const { data: apps } = await db.from("projects").select("id, owner_id");
+    const list = (apps ?? []) as Array<{ id: string; owner_id: string }>;
+    const named = typeof args.project_id === "string" ? args.project_id.trim() : "";
+    const about =
+      list.find((p) => p.id === named)?.id ??
+      (list.length === 1 ? list[0].id : list.find((p) => p.owner_id === auth.userId)?.id);
+    enterStoreShown(await storeShownFor(db, about));
+  }
+
   try {
     if (name === "propose_change") {
       const request = String(args.request ?? "").trim();
@@ -1724,8 +1740,16 @@ async function handle(req: Request, seen: Seen) {
             "A \"link\" column to another section (the store's orders and their items too) is how a row is made from another: in the row form the merchant searches that section, and choosing a row fills this section's fields of the same name or label (customer, phone, total), never what they typed. A second link to a list under it (an order's items) offers that row's items alone. Build a section with links rather than a written screen that picks a row and copies its fields.",
           store_lists: Object.fromEntries(Object.entries(STORE_TABLES).map(([table, spec]) => [table, spec.what])),
           store_columns: Object.fromEntries(
-            Object.entries(STORE_TABLES).map(([table, spec]) => [table, spec.columns.map((c) => c.field)])
+            (Object.keys(STORE_TABLES) as StoreTable[]).map((table) => [
+              table,
+              storeTableSchema(table).columns.map((c) => c.field),
+            ])
           ),
+          ...(narrowedLists().length
+            ? {
+                store_columns_not_shown: `Warmluke shows this account only some of the store's columns on: ${narrowedLists().join("; ")}. The rest are not theirs to build on; if they ask for one, say it is not shown to them here.`,
+              }
+            : {}),
           // This store as it is: each list's fields with how full they are and their values.
           this_store: profile
             ? {
@@ -1740,9 +1764,9 @@ async function handle(req: Request, seen: Seen) {
           // reads, from the same place, so the two doors cannot disagree
           // about what "revenue" means.
           store_advice: Object.fromEntries(
-            Object.entries(STORE_TABLES)
-              .filter(([, spec]) => spec.advice)
-              .map(([table, spec]) => [table, spec.advice])
+            (Object.keys(STORE_TABLES) as StoreTable[])
+              .map((table) => [table, adviceOf(table)])
+              .filter(([, advice]) => advice)
           ),
           removing_a_section:
             "MODULE_DELETE may be proposed and can never be built from here. It removes every row in the section and does not come back, so the merchant confirms it in Warmluke by typing the section's name. Propose it if that is plainly what they asked for, tell them it is waiting there for them to confirm, and do not call approve_change for it. A request is approved whole or not at all: put a removal in the same design as other changes and none of them can be built from here, so when they ask for a removal AND something else, propose them as two — the other one can then be approved in the conversation while the removal waits for them in Warmluke.",

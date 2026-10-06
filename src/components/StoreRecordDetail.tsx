@@ -19,7 +19,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ChevronRight } from "lucide-react";
 import { supabase } from "@/lib/supabase-client";
-import { RELATED, STORE_TABLES, ordersOfCustomer, readRelated, type StoreTable } from "@/lib/store-read";
+import {
+  RELATED,
+  STORE_TABLES,
+  ordersOfCustomer,
+  readRelated,
+  storeTableSchema,
+  type StoreTable,
+} from "@/lib/store-read";
 import type { SchemaColumn } from "@/lib/types";
 import { Dialog } from "@/components/ui/Dialog";
 import { Group } from "@/components/ui/Group";
@@ -84,7 +91,7 @@ export default function StoreRecordDetail({
   mine?: SchemaColumn[];
   onSaveMine?: (data: Record<string, unknown>) => Promise<void>;
 }) {
-  const [stack, setStack] = useState<Frame[]>([{ table, row, columns: columns ?? STORE_TABLES[table].columns }]);
+  const [stack, setStack] = useState<Frame[]>([{ table, row, columns: columns ?? storeTableSchema(table).columns }]);
   const top = stack[stack.length - 1];
   const spec = STORE_TABLES[top.table];
 
@@ -226,7 +233,7 @@ export default function StoreRecordDetail({
                 related={r}
                 parent={top.row}
                 onOpen={(child) =>
-                  setStack((s) => [...s, { table: r.table, row: child, columns: STORE_TABLES[r.table].columns }])
+                  setStack((s) => [...s, { table: r.table, row: child, columns: storeTableSchema(r.table).columns }])
                 }
               />
             ))
@@ -247,7 +254,9 @@ function RelatedList({
   onOpen: (row: DetailRow) => void;
 }) {
   const cols = useMemo(() => {
-    const all = STORE_TABLES[related.table].columns.filter((c) => related.rows.some((r) => present(r.data[c.field])));
+    const all = storeTableSchema(related.table).columns.filter((c) =>
+      related.rows.some((r) => present(r.data[c.field]))
+    );
     // The order a line belongs to is named by its own number, date and
     // total, even though the line repeats them; children leave out what
     // only repeats the row above.

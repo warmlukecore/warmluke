@@ -14,7 +14,8 @@
 
 import { profileStore, scoutSize } from "@/lib/scout";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isStoreTable, STORE_TABLES, storeSectionColumns, storeTableSchema } from "@/lib/store-read";
+import { isStoreTable, STORE_TABLES, storeSectionColumns, storeTableSchema, type StoreTable } from "@/lib/store-read";
+import { storeShownFor, withStoreShown } from "@/lib/store-columns";
 import {
   asNextSteps,
   buildSystemPrompt,
@@ -521,8 +522,8 @@ export async function recentRequests(
 function columnLabels(modules: ModuleRow[], schemas: Map<string, UiSchema>): Map<string, string> {
   const labels = new Map<string, string>();
   for (const m of modules) for (const c of schemas.get(m.id)?.columns ?? []) if (c.label) labels.set(c.field, c.label);
-  for (const t of Object.values(STORE_TABLES))
-    for (const c of t.columns) if (!labels.has(c.field)) labels.set(c.field, c.label);
+  for (const t of Object.keys(STORE_TABLES) as StoreTable[])
+    for (const c of storeTableSchema(t).columns) if (!labels.has(c.field)) labels.set(c.field, c.label);
   return labels;
 }
 
@@ -575,6 +576,12 @@ export function answeredTurns<T extends { role: string; ptype: string | null }>(
 }
 
 export async function runTurn(input: TurnInput): Promise<TurnResult> {
+  // What the account is shown of the store's lists (0192), in force for the
+  // whole turn: the brief, the lookups and the checks name only those columns.
+  return withStoreShown(await storeShownFor(input.client, input.project.id), () => turnShown(input));
+}
+
+async function turnShown(input: TurnInput): Promise<TurnResult> {
   const {
     client,
     project,

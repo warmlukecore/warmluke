@@ -130,6 +130,17 @@ on the line. `propose_change` waits 40 seconds (`MCP_DESIGN_WAIT_MS`) for it and
 answers `still designing`; `pending_changes` lists `your_asks` (still designing, needs
 answers, failed, or carried on in Warmluke) until they become requests.
 
+### What the account is shown
+
+Every tool call runs inside what the account is shown of the store's lists (0192): an
+administrator may narrow a list to some of its columns, per account. `read_section` gives
+only those columns and rows cut to them, the store tools' rows leave the others out,
+`design_format`'s `store_columns` and `store_advice` name only those, and
+`store_columns_not_shown` says which lists are narrowed so the assistant says a column is not
+shown rather than guess. The app the call names (`project_id`), or the account's only app,
+or one it owns, decides. Listed with no section, `read_section` also says which sections are
+`new_to_them` (0191): made and not opened yet, or changed since they last looked.
+
 ### Client-authored design
 
 A capable external assistant may call `design_format`, construct plans, and iterate with

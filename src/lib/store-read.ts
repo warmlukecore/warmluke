@@ -914,7 +914,93 @@ export function storeKeys(table: StoreTable): string[] {
 
 /** The schema a section gets when it is pointed at a store table. */
 export function storeTableSchema(table: StoreTable): { columns: SchemaColumn[] } {
-  return { columns: STORE_TABLES[table].columns };
+  const hidden = hiddenColumns(table);
+  return {
+    columns: hidden ? STORE_TABLES[table].columns.filter((c) => !hidden.has(c.field)) : STORE_TABLES[table].columns,
+  };
+}
+
+// ── What an account is shown of the store's lists (0192) ─────────
+//
+// An administrator may narrow, per account and per list, which of the
+// store's columns it sees: every column (the default), or the ones
+// ticked. The rows are read whole; a column left out is not shown, not
+// offered to build on, and not told to Luke or to their own AI. Read here,
+// from the choice in force, so every place that names a list's columns
+// narrows the same way without being told: the app registers its own
+// (AppShell), a request on the server opens one (lib/store-columns).
+
+/** The lists an account sees narrowed, each with the columns it is shown; a list not here is shown whole. */
+export type StoreShown = Partial<Record<StoreTable, string[]>>;
+/** The choice in force, and whether rows read are cut to it too: on the server, for Luke and their AI. */
+export type ShownScope = { shown: StoreShown; strip: boolean };
+let shownNow: () => ShownScope | undefined = () => undefined;
+/** Where the choice in force is read from. */
+export function readShownFrom(get: () => ShownScope | undefined) {
+  shownNow = get;
+}
+/** A list's columns this account is not shown, or null when it sees them all. */
+export function hiddenColumns(table: StoreTable): Set<string> | null {
+  const keep = shownNow()?.shown[table];
+  if (!keep) return null;
+  const hidden = STORE_TABLES[table].columns.map((c) => c.field).filter((f) => !keep.includes(f));
+  return hidden.length ? new Set(hidden) : null;
+}
+/**
+ * A list's advice for whoever designs over it, without a sentence naming a
+ * column this account is not shown: of this list, or of another it points
+ * to ("match codes against the discount_codes column on Orders"). A column
+ * this list itself shows keeps its sentences, whoever else hides one by
+ * that name.
+ */
+export function adviceOf(table: StoreTable): string | undefined {
+  const advice = STORE_TABLES[table].advice;
+  if (!advice) return advice;
+  const own = new Set(storeTableSchema(table).columns.map((c) => c.field));
+  const hidden = (Object.keys(STORE_TABLES) as StoreTable[])
+    .flatMap((t) => [...(hiddenColumns(t) ?? [])])
+    .filter((f) => !own.has(f));
+  if (!hidden.length) return advice;
+  const names = new RegExp(`\\b(${[...new Set(hidden)].join("|")})\\b`);
+  return (
+    advice
+      .split(/(?<=[.;])\s+/)
+      .filter((sentence) => !names.test(sentence))
+      .join(" ") || undefined
+  );
+}
+
+/** A row read for Luke or their AI, without what this account is not shown. As it is in the app. */
+export function narrowRow(table: StoreTable, data: Record<string, unknown>): Record<string, unknown> {
+  const hidden = shownNow()?.strip ? hiddenColumns(table) : null;
+  return hidden ? Object.fromEntries(Object.entries(data).filter(([k]) => !hidden.has(k))) : data;
+}
+/**
+ * A section's features without what reads a column this account is not
+ * shown: a filter, the sort, the dates or a stat over it would show what
+ * the column does. What is left works as it did; the design is kept.
+ */
+export function withoutHidden(
+  features: FeatureSchema | null | undefined,
+  hidden: ReadonlySet<string> | null
+): FeatureSchema | null | undefined {
+  if (!features || !hidden?.size) return features;
+  const reads = (v: unknown): boolean =>
+    Array.isArray(v)
+      ? v.some(reads)
+      : !!v && typeof v === "object"
+        ? Object.entries(v).some(([k, x]) => (k === "field" && typeof x === "string" && hidden.has(x)) || reads(x))
+        : false;
+  return {
+    ...features,
+    ...(features.filters ? { filters: features.filters.filter((f) => !hidden.has(f.field)) } : {}),
+    ...(features.defaultSort && hidden.has(features.defaultSort.field) ? { defaultSort: undefined } : {}),
+    ...(features.period && hidden.has(features.period.field) ? { period: undefined } : {}),
+    ...(features.stats ? { stats: features.stats.filter((st) => !reads(st) && !(st.by && hidden.has(st.by))) } : {}),
+    ...(features.search?.fields
+      ? { search: { ...features.search, fields: features.search.fields.filter((f) => !hidden.has(f)) } }
+      : {}),
+  };
 }
 
 // ── The merchant's own fields on the store's rows (0128) ─────────
@@ -976,7 +1062,8 @@ export function storeSectionColumns(table: StoreTable, saved: SchemaColumn[] | n
     const before = ours.slice(0, i).findLast((p) => out.some((o) => o.field === p.field));
     out.splice(before ? out.findIndex((o) => o.field === before.field) + 1 : 0, 0, t);
   }
-  return out;
+  const hidden = hiddenColumns(table);
+  return hidden ? out.filter((c) => !hidden.has(c.field)) : out;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1190,13 +1277,14 @@ export async function readStoreRows(
     .filter(Boolean)
     .slice(0, 20);
   if (terms.length) {
-    const fields = SEARCHABLE[table];
+    // Not by what the account is not shown (0192): a row found by a phone it cannot see shows it.
+    const fields = searchFieldsOf(table);
     query = query.or(
       terms
         .flatMap((t) => [
           ...fields.map((f) => `${f}.ilike.%${t}%`),
           // A phone typed any way: "98765 43210" finds "+91 98765-43210" (0166).
-          ...(PHONE_DIGITS.has(table) && t.replace(/\D/g, "").length >= 6
+          ...(searchesPhone(table) && t.replace(/\D/g, "").length >= 6
             ? [`phone_digits.ilike.%${t.replace(/\D/g, "")}%`]
             : []),
         ])
@@ -1226,7 +1314,7 @@ export async function readStoreRows(
       // reason) has no id of its own, and every list keys its rows by
       // one. What it shows is what tells its rows apart.
       const id = (row.id as string | undefined) ?? spec.columns.map((c) => String(row[c.field] ?? "")).join("|");
-      return { id, data: row };
+      return { id, data: narrowRow(table, row) };
     }),
     total: count ?? 0,
   };
@@ -1260,7 +1348,13 @@ export function keptPageSize(moduleId: string): number {
 }
 
 /** The fields a store list's search looks in when the section names none. */
-export const searchFieldsOf = (table: StoreTable): string[] => SEARCHABLE[table];
+export const searchFieldsOf = (table: StoreTable): string[] => {
+  const hidden = hiddenColumns(table);
+  return hidden ? SEARCHABLE[table].filter((f) => !hidden.has(f)) : SEARCHABLE[table];
+};
+/** Whether a phone typed any way finds a row of `table`: not when the account is not shown its phone. */
+const searchesPhone = (table: StoreTable) =>
+  PHONE_DIGITS.has(table) && ![...(hiddenColumns(table) ?? [])].some((f) => f.includes("phone"));
 
 /**
  * One page of a section over the store, from the whole list (0167):

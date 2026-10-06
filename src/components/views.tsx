@@ -563,7 +563,7 @@ function SortButton({
 }
 
 /** A tick to choose a row (or every row shown) to act on, that does not open the row it sits in. */
-function TickBox({
+export function TickBox({
   label,
   checked,
   mixed = false,

@@ -28,6 +28,10 @@ import {
   labelOf,
 } from "@/lib/onboarding";
 import { ago } from "@/lib/when";
+import { CORE_STORE_TABLES, STORE_TABLES, type StoreShown, type StoreTable } from "@/lib/store-read";
+import { Select } from "@/components/ui/Select";
+import { Switch } from "@/components/ui/Switch";
+import { TickBox } from "@/components/views";
 import { modelName } from "@/lib/model-prices";
 import { SHOWS_WORDS } from "@/components/LukeAccess";
 
@@ -135,6 +139,12 @@ function said({ action, old_value, new_value }: Story["trail"][number]): string 
         ...Object.entries(appNames(now.apps)).map(([id, name]) => `app ${appNames(was.apps)[id] ?? "?"} → ${name}`),
       ].filter(Boolean);
       return `Renamed: ${parts.join("; ") || "nothing"}`;
+    }
+    case "set_columns": {
+      const list = STORE_TABLES[String(now.list) as StoreTable]?.section.label ?? String(now.list);
+      return Array.isArray(now.shown)
+        ? `${list}: ${now.shown.length} ${now.shown.length === 1 ? "column" : "columns"} shown`
+        : `${list}: every column shown`;
     }
     case "set_luke": {
       const models = Array.isArray(now.models) ? (now.models as string[]).map(modelName).join(", ") : "every model";
@@ -427,6 +437,18 @@ export function AccountDetail({
               </Section>
             )}
 
+            {!a.is_superadmin && (
+              <StoreColumns
+                userId={a.user_id}
+                onSaved={() =>
+                  // Read again, so the trail below says what changed.
+                  void supabase
+                    .rpc("abo_admin_account", { p_user: a.user_id })
+                    .then(({ data }) => data && setStory(data as Story))
+                }
+              />
+            )}
+
             <Section title="What administrators did">
               {story.trail.length === 0 ? (
                 <p className="text-fg-muted">Nothing yet.</p>
@@ -538,5 +560,126 @@ function Rename({
         </button>
       </div>
     </form>
+  );
+}
+
+/**
+ * What this account is shown of each store list (0192), in every app it
+ * owns and for its team there: every column, or the ones ticked. Luke and
+ * their own AI see the same; the rows are still read whole. One list at a
+ * time, saved when asked, each change in the trail.
+ */
+function StoreColumns({ userId, onSaved }: { userId: string; onSaved: () => void }) {
+  const lists = [
+    ...CORE_STORE_TABLES,
+    ...(Object.keys(STORE_TABLES) as StoreTable[]).filter((t) => !CORE_STORE_TABLES.includes(t)),
+  ];
+  const [shown, setShown] = useState<StoreShown | null>(null);
+  const [table, setTable] = useState<StoreTable>("orders");
+  // Null: every column.
+  const [draft, setDraft] = useState<string[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
+
+  useEffect(() => {
+    void supabase.rpc("abo_admin_store_columns", { p_user: userId }).then(({ data, error }) => {
+      if (error) setSaid(error.message);
+      else setShown((data ?? {}) as StoreShown);
+    });
+  }, [userId]);
+  useEffect(() => {
+    setDraft(shown?.[table] ?? null);
+  }, [shown, table]);
+
+  const columns = STORE_TABLES[table].columns;
+  const saved = shown?.[table] ?? null;
+  const same = (x: string[] | null) => (x ? [...x].sort().join() : null);
+  const dirty = same(draft) !== same(saved);
+  const save = async () => {
+    setBusy(true);
+    const { data, error } = await supabase.rpc("abo_admin_set_store_columns", {
+      p_user: userId,
+      p_table: table,
+      p_shown: draft,
+    });
+    setBusy(false);
+    if (error) return setSaid(error.message);
+    setShown((data ?? {}) as StoreShown);
+    setSaid("Saved");
+    onSaved();
+  };
+
+  return (
+    <Section title="Store columns">
+      <p className="mb-2.5 text-xs text-fg-muted">
+        What this account sees of each list from its store, in every app it owns and for its team there. Luke and their
+        own AI see the same; the rows are still read whole.
+      </p>
+      {!shown ? (
+        <div aria-busy className="h-16 animate-pulse rounded-control bg-surface-hover" />
+      ) : (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="w-56 max-w-full">
+              <Select
+                label="Store list"
+                value={table}
+                clearable={false}
+                options={lists.map((t) => ({
+                  value: t,
+                  label: `${STORE_TABLES[t].section.label}${shown[t] ? ` · ${shown[t]!.length} of ${STORE_TABLES[t].columns.length}` : ""}`,
+                }))}
+                onChange={(v) => {
+                  setTable(v as StoreTable);
+                  setSaid(null);
+                }}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={!draft}
+                onChange={(all) => {
+                  setDraft(all ? null : columns.map((c) => c.field));
+                  setSaid(null);
+                }}
+                label="Every column"
+              />
+              <span>Every column</span>
+            </div>
+          </div>
+          {draft && (
+            <fieldset className="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-3">
+              <legend className="sr-only">Columns shown on {STORE_TABLES[table].section.label}</legend>
+              {columns.map((c) => (
+                <label key={c.field} className="flex min-w-0 items-center gap-1.5">
+                  <TickBox
+                    label={c.label}
+                    checked={draft.includes(c.field)}
+                    onChange={(on) => {
+                      setDraft((d) => (on ? [...(d ?? []), c.field] : (d ?? []).filter((f) => f !== c.field)));
+                      setSaid(null);
+                    }}
+                  />
+                  <span className="truncate">{c.label}</span>
+                </label>
+              ))}
+            </fieldset>
+          )}
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={save}
+              disabled={!dirty || busy || draft?.length === 0}
+              className={button("primary", "sm")}
+            >
+              {busy ? "Saving…" : "Save"}
+            </button>
+            <span role="status" className="text-xs text-fg-muted">
+              {draft?.length === 0 ? "Keep at least one column, or show every column." : said}
+            </span>
+          </div>
+        </div>
+      )}
+    </Section>
   );
 }

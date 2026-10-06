@@ -172,6 +172,16 @@ not on it is replaced by the account's default, never sent. A list or a setting 
 cannot be read gives the server's own model alone. `check-luke-access` covers the setter,
 the refusals and the trail; `check-model-prices` the rule the route calls.
 
+Which of the store's columns an account is shown (0192), per list, is kept in
+`account_store_columns`, read only by administrators and written only by
+`abo_admin_set_store_columns`, audited as `set_columns`. An app's members, their own AI
+included, read their owner's choice through `abo_store_columns`, which checks the caller may
+use the app; a stranger reads nothing. It is a choice of what is shown, not a wall: the rows
+are still read whole by the app, so a column left out is not a secret from the account, and a
+merchant's own search can still find a row by a phone number they typed. Luke and their AI
+read inside it, so neither names nor builds on what is left out. `check-store-columns-live`
+covers the setter, the refusals, who reads it and the trail.
+
 An administrator can send a customer an invite to start (0119): a link with a 192-bit
 token that lasts 72 hours unless set otherwise, can be shortened, lengthened or withdrawn,
 and is used once unless made for several people. The tables are closed; a visitor can
