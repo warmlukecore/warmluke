@@ -221,7 +221,8 @@ check(
 check(
   "the reviewer weighs whether the owner asked for scanning",
   /takes scans the owner asked for[^\n]*A scan box only to find the one row to pick is not that/.test(
-    readFileSync(new URL("../src/lib/reviewers.ts", import.meta.url), "utf8")
+    // Said once in lib/simpler, which the reviewer, Luke and their own AI all read.
+    readFileSync(new URL("../src/lib/simpler.ts", import.meta.url), "utf8")
   )
 );
 const twoTables = plan({

@@ -37,6 +37,12 @@ export const AGENTS: Record<string, AgentInfo> = {
     about: "Answers on the talk road: the store, the app and the business, without building",
     jobs: ["reply"],
   },
+  scout: {
+    label: "Scout",
+    about:
+      "Reads the store field by field before Luke designs: every list's exact fields, how full each is, the values it holds",
+    step: "scout",
+  },
   plan: {
     label: "Plan",
     about: "Reads the owner's words before a design and says the goal it understood",

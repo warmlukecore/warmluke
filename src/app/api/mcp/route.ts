@@ -19,6 +19,7 @@ import { describeScreenAsk, readScreenAsk, screenHref } from "@/lib/screen";
 import { tryDesign } from "@/lib/tryout";
 import { PROMPTS, guideFor, guideVersion, outcomeOf, promptFor, type ToolLine } from "@/lib/client-guide";
 import { blueprintAsText, runTurn, schemasFor, storeFactsFor } from "@/lib/engine";
+import { profileStore, scoutLines } from "@/lib/scout";
 import { describeBuild } from "@/lib/judge";
 import { DESIGN_VIEW_MIME, DESIGN_VIEW_URI, designViewHtml, type ViewDesign } from "@/lib/design-view";
 import { projectFormat } from "@/lib/money";
@@ -247,8 +248,11 @@ const TOOLS = [
   {
     name: "design_format",
     description:
-      "Everything you need to write a design yourself instead of asking Warmluke to write it: the column types, view types, rule triggers and actions this platform has, the expression operators, and the shape of a plan. Read this before calling submit_design. Designing here costs the merchant nothing — you are the one doing the thinking, on their own subscription.",
-    inputSchema: { type: "object", properties: {} },
+      "Everything you need to write a design yourself instead of asking Warmluke to write it: the column types, view types, rule triggers and actions this platform has, the expression operators, the shape of a plan, and their store field by field (every field's exact name, how full it is, the values it holds). Read this before calling submit_design. Designing here costs the merchant nothing — you are the one doing the thinking, on their own subscription.",
+    inputSchema: {
+      type: "object",
+      properties: { project_id: { type: "string", description: "Which app, when they have more than one. Optional." } },
+    },
   },
   {
     name: "validate_design",
@@ -1631,6 +1635,24 @@ async function handle(req: Request, seen: Seen) {
     }
 
     if (name === "design_format") {
+      // Their store as Scout reads it for Luke (lib/scout, 0189): the same
+      // brief, so their AI names the fields that are there and knows which
+      // are empty. Their only app, or the one they named; none, no brief.
+      const { data: apps } = await db.from("projects").select("id");
+      const appIds = ((apps ?? []) as Array<{ id: string }>).map((p) => p.id);
+      const wanted = (args.project_id as string | undefined)?.trim();
+      const appId = wanted ? appIds.find((p) => p === wanted) : appIds.length === 1 ? appIds[0] : undefined;
+      const { data: shop } = appId
+        ? await db
+            .from("stores")
+            .select("id, shop_domain")
+            .eq("project_id", appId)
+            .eq("status", "connected")
+            .maybeSingle()
+        : { data: null };
+      const [profile, facts] = shop
+        ? await Promise.all([profileStore(db, shop.id as string), storeFactsFor(db, appId!)])
+        : [null, null];
       // Written once, for the model that has to obey it. The engine's
       // own prompt is built from this same function, so a client
       // reading it is being told exactly what Warmluke tells itself.
@@ -1671,6 +1693,16 @@ async function handle(req: Request, seen: Seen) {
           store_columns: Object.fromEntries(
             Object.entries(STORE_TABLES).map(([table, spec]) => [table, spec.columns.map((c) => c.field)])
           ),
+          // This store as it is: each list's fields with how full they are and their values.
+          this_store: profile
+            ? {
+                shop: shop?.shop_domain,
+                note: "Name a field exactly as written. A field mostly or always empty here holds little or nothing to filter, count or rule on: say so rather than build on it. Values in braces are the ones it holds, with how many rows hold each: use them verbatim.",
+                lists: scoutLines(profile, facts?.counts ?? {}),
+              }
+            : appIds.length > 1 && !wanted
+              ? "They have more than one app: call again with project_id to read that app's store."
+              : null,
           // What a stat over each table should be — the same words Luke
           // reads, from the same place, so the two doors cannot disagree
           // about what "revenue" means.

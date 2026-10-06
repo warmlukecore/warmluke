@@ -71,6 +71,7 @@ import {
   SquareCheck,
   SquarePen,
   Store,
+  TableProperties,
   Table,
   ThumbsDown,
   ThumbsUp,
@@ -340,6 +341,7 @@ const STEP_MARK: Record<TurnEvent["step"], LucideIcon> = {
   road: Signpost,
   plan: Compass,
   store: Store,
+  scout: TableProperties,
   context: LayoutGrid,
   model: Sparkles,
   lookup: Search,
@@ -384,6 +386,8 @@ function stepWords(step: TurnEvent): string | null {
     case "store":
       if (!step.shop) return "No store connected — working from the app alone";
       return step.read ? `Read ${step.shop}: ${step.read}` : `Read ${step.shop}`;
+    case "scout":
+      return `Read ${n(step.lists, "store list")} field by field`;
     case "context":
       return `Read ${n(step.sections, "section")} and ${n(step.rules, "rule")}`;
     case "model":

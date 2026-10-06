@@ -319,6 +319,7 @@ const [ab, aa] = [json("agents_before"), json("agents")];
 const agent = (x, n) => x?.agents?.find((g) => g.name === n);
 const moved = (n, k) => Number(agent(aa, n)?.outcomes?.[k]) - Number(agent(ab, n)?.outcomes?.[k]);
 const AGENTS = [
+  "scout",
   "plan",
   "design",
   "validator",

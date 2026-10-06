@@ -675,6 +675,8 @@ export type TurnEvent =
     }
   /** The store was read. `read` names the rows a routed question pulled, when it did. */
   | { step: "store"; shop: string | null; read: string | null }
+  /** Scout (lib/scout): the store's lists read field by field before the design. */
+  | { step: "scout"; lists: number; fields: number }
   /** Every section's columns and the rules were read. */
   | { step: "context"; sections: number; rules: number }
   /** The model is being asked, for the n-th time of at most `of`. */

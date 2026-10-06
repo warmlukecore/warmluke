@@ -12,6 +12,7 @@
 // thread; the MCP tool keeps a request row. Neither belongs here.
 // ─────────────────────────────────────────────────────────────
 
+import { profileStore, scoutSize } from "@/lib/scout";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isStoreTable, STORE_TABLES, storeSectionColumns, storeTableSchema } from "@/lib/store-read";
 import {
@@ -29,6 +30,7 @@ import {
   buildTalkPrompt,
   stripFences,
   talkModel,
+  designEffort,
   buildPlanPrompt,
   planModel,
   critique,
@@ -175,7 +177,10 @@ export async function storeContextFor(
         }
       )
     : null;
-  const values = await storeValues(client, storeRow.id as string);
+  // Scout (0189): every list read field by field in one call. Without it,
+  // the values of six columns, a read each, as before.
+  const profile = await profileStore(client, storeRow.id as string);
+  const values = profile ? {} : await storeValues(client, storeRow.id as string);
   const { data: runs } = await client.from("import_runs").select("status").eq("store_id", storeRow.id);
   const runList = (runs ?? []) as Array<{ status: string }>;
 
@@ -190,6 +195,7 @@ export async function storeContextFor(
     importing: runList.length === 0 || runList.some((r) => r.status !== "done"),
     counts: overview?.counts ?? {},
     values,
+    profile,
     snapshot: {
       last_synced_at: (storeRow.last_synced_at as string | null) ?? null,
       history: storeRow.history_from
@@ -610,6 +616,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   // Read on the first leg only: every leg after designs on the same store it planned on.
   const store = resume ? resume.store : await storeContextFor(client, project.id, message);
   if (!resume) tell({ step: "store", shop: store?.shop_domain ?? null, read: store?.snapshot?.slice?.what ?? null });
+  if (!resume && store?.profile) tell({ step: "scout", ...scoutSize(store.profile) });
   // What already runs on this app. Left out, the designer proposes a
   // rule that exists, or tells the merchant no rule exists when one
   // fires every morning. It goes in the user turn rather than the
@@ -977,6 +984,8 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           model: model ?? (road === "talk" ? talkModel() : undefined),
           lookups: attempt === 0 && tools ? { tools } : undefined,
           onText: draft,
+          // How hard a design is thought through: a deploy setting, measured (designEffort).
+          effort: road === "design" ? designEffort() : undefined,
         })
       );
     }

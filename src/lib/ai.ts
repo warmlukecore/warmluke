@@ -6,6 +6,8 @@
 // the apply route re-validates everything under the caller's RLS.
 // ─────────────────────────────────────────────────────────────
 
+import { REAL_WORK, SIMPLER_WAYS } from "@/lib/simpler";
+import { scoutLines, type StoreProfile } from "@/lib/scout";
 import { AI_FILLABLE } from "./ai-fill";
 import {
   APICallError,
@@ -332,6 +334,10 @@ ${vocabularyPrompt()}
 
 ${abilitiesPrompt()}
 
+BUILD THE SIMPLE WAY FIRST. A reviewer reads every design after you and sends it back when a simpler build does the same job, so draw that one to begin with:
+${SIMPLER_WAYS.map((w) => `- ${w}`).join("\n")}
+${REAL_WORK}
+
 You reply with ONLY a single valid JSON object. No code fences, no commentary outside the JSON. Markdown lives only inside an answer's "message" (see HOW AN ANSWER READS). Every shape carries "title" (see TITLE). It must be one of four shapes:
 
 ${ANSWER_SHAPE}
@@ -509,6 +515,8 @@ export type StoreContext = {
   currency: string;
   /** The shop's country, as Shopify gives it ("IN", "US"): how its numbers are written. */
   country?: string | null;
+  /** Scout (lib/scout, 0189): every list read field by field, when the database can. */
+  profile?: StoreProfile | null;
   /**
    * What Luke is allowed to answer questions from.
    *
@@ -582,12 +590,22 @@ function storeBlock(store: StoreContext | null, projectCurrency: string, road: "
     }
   }
 
-  const known = Object.entries(store.values ?? {}).filter(([, v]) => v.length > 0);
-  if (known.length > 0) {
+  // Scout (lib/scout): every list's fields as they are here. A database
+  // before 0189 gives a few columns' values, as it always did.
+  const brief = store.profile ? scoutLines(store.profile, store.counts) : [];
+  if (brief.length > 0) {
     lines.push(
-      `These columns hold exactly these values — use them verbatim in filter options, spelling and all, rather than what they ought to be:`
+      `THE STORE, FIELD BY FIELD, read a moment ago. On a section over one of these lists, name a field exactly as written here: these are all the fields it has, and no other name will be found. "N% filled" means the other rows hold nothing in that field, and "always empty here" means none do, so a filter, count or rule leaning on it finds little or nothing: say so rather than build on it. The values in braces are the ones the field holds, with how many rows hold each: use them verbatim in filter options and rules, spelling and case and all.`
     );
-    for (const [column, vals] of known) lines.push(`  ${column}: ${vals.join(", ")}`);
+    lines.push(...brief);
+  } else {
+    const known = Object.entries(store.values ?? {}).filter(([, v]) => v.length > 0);
+    if (known.length > 0) {
+      lines.push(
+        `These columns hold exactly these values — use them verbatim in filter options, spelling and all, rather than what they ought to be:`
+      );
+      for (const [column, vals] of known) lines.push(`  ${column}: ${vals.join(", ")}`);
+    }
   }
 
   const snap = store.snapshot;
@@ -3223,8 +3241,22 @@ const MAX_OUTPUT_TOKENS = 12000;
 // nothing (the 2026-09-30 before/after eval). "medium" is Opus 5.5's own
 // default, so production's model is asked exactly as it was. Haiku 4.5
 // takes no effort and is sent none.
-const EFFORT = "medium";
+type Effort = "low" | "medium" | "high" | "xhigh" | "max";
+const EFFORT: Effort = "medium";
 const TAKES_EFFORT = /claude-(opus-(4-[5-9]|5)|sonnet-5|fable-5)/;
+const EFFORTS = new Set<string>(["low", "medium", "high", "xhigh", "max"]);
+
+/**
+ * How hard the design road thinks (ANTHROPIC_DESIGN_EFFORT, 6 Oct):
+ * "medium" unless set, read when called like the models, so it is a
+ * deploy setting measured by the eval and never a code change.
+ */
+export function designEffort(): Effort {
+  const v = process.env.ANTHROPIC_DESIGN_EFFORT?.trim().toLowerCase();
+  return v && EFFORTS.has(v) ? (v as Effort) : EFFORT;
+}
+/** Room past "medium": thinking harder must not eat the reply. What is not used is not billed. */
+const MAX_OUTPUT_TOKENS_DEEP = 32000;
 
 /**
  * Which model does which job: the setting each one reads, when a call is
@@ -3542,18 +3574,18 @@ async function generate(
   signal?: AbortSignal,
   lookups?: Lookups,
   /** Hears the reply's text as it arrives, whole each time; "" when a new attempt starts. */
-  onText?: (text: string) => void
+  onText?: (text: string) => void,
+  /** How hard a Claude 5 model thinks first; the house default unless the caller says (designEffort). */
+  effort: Effort = EFFORT
 ): Promise<string> {
   const id = typeof model === "string" ? model : model.modelId;
   const base = {
     model,
     instructions,
-    maxOutputTokens: MAX_OUTPUT_TOKENS,
+    maxOutputTokens: effort === "low" || effort === "medium" ? MAX_OUTPUT_TOKENS : MAX_OUTPUT_TOKENS_DEEP,
     maxRetries: 0,
     abortSignal: signal,
-    ...(provider === "anthropic" && TAKES_EFFORT.test(id)
-      ? { providerOptions: { anthropic: { effort: EFFORT } } }
-      : {}),
+    ...(provider === "anthropic" && TAKES_EFFORT.test(id) ? { providerOptions: { anthropic: { effort } } } : {}),
   };
   // A listener that throws does not take the call with it.
   const hear = onText
@@ -3639,6 +3671,8 @@ export async function callModel(opts: {
   lookups?: Lookups;
   /** Hears the reply as it is written; "" each time an attempt starts again. */
   onText?: (text: string) => void;
+  /** How hard to think first (designEffort for the design road); the house default when absent. */
+  effort?: Effort;
 }): Promise<string> {
   const { system, turns, signal, lookups, onText } = opts;
   const model = opts.model || modelFor("design");
@@ -3694,7 +3728,7 @@ export async function callModel(opts: {
       ? { role: "system", content, providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } } }
       : { role: "system", content }
   );
-  return generate("anthropic", anthropic(model), instructions, turns, signal, lookups, onText);
+  return generate("anthropic", anthropic(model), instructions, turns, signal, lookups, onText, opts.effort);
 }
 
 // ── The gap pass ────────────────────────────────────────────────
