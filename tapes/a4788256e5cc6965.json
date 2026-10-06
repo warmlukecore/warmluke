@@ -1,0 +1,17 @@
+{
+  "label": "anthropic",
+  "asked": " shown when pack_state is To pack Button “Undo packed” — sets packed = false, packed_on = null, shown when packed is true Scan bar on order_number — “Mark packed” sets packed = true, packed_on = today",
+  "parts": {
+    "system": "c3bf90d97ed87dde",
+    "tools": "74234e98afe7498f",
+    "conversation": "33164749bad491b4",
+    "tag": "gap"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"claude-haiku-4-5-20251001\",\"id\":\"msg_011CfmX8wpkmFMFWuK3NEVqp\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"```json\\n{\\n  \\\"unmet\\\": [\\n    \\\"scan each order's number with my barcode scanner\\\"\\n  ]\\n}\\n```\\n\\nThe scan bar exists but only works as a search field. There is no barcode scanner integration to actually *read* from the device—the owner must manually type or paste the scanned number, which defeats the purpose of using a scanner.\"}],\"container\":null,\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":603,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":85,\"service_tier\":\"standard\",\"inference_geo\":\"not_available\"},\"diagnostics\":null}"
+    }
+  ]
+}
