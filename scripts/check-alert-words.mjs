@@ -84,7 +84,27 @@ check(
 );
 check(
   "Luke is told the numbers",
-  describeAlert({ kind: "low_stock", facts: SAMPLE.low_stock }).ask.includes("has 3 left and sells about 1 a day")
+  describeAlert({ kind: "low_stock", facts: SAMPLE.low_stock }).ask.includes(
+    "has 3 left to sell, selling about 1 a day"
+  )
+);
+// Said as the title says it (7 Oct): "has 0 left … runs out in about 0 days" under "is out of stock".
+const out = describeAlert({ kind: "low_stock", facts: { ...SAMPLE.low_stock, available: 0, days_left: 0 } });
+check(
+  "an item already out is asked about as out, with no days to run",
+  out.ask.includes("has none left to sell") && !/runs out|0 days/.test(out.ask)
+);
+check(
+  "one that runs out today is asked about as today, not in fractions of a day",
+  describeAlert({ kind: "low_stock", facts: { ...SAMPLE.low_stock, days_left: 0.75 } }).ask.includes(
+    "so it runs out today"
+  )
+);
+check(
+  "a slow seller says what sold, not a pace it does not have",
+  /with about 1 sold in the last 14 days/.test(
+    describeAlert({ kind: "low_stock", facts: { ...SAMPLE.low_stock, per_day: 0.1, sales_days: 14 } }).ask
+  )
 );
 
 console.log("\na kind the app does not know yet still shows");

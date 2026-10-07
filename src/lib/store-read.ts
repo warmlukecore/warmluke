@@ -849,7 +849,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     // three hundred on the shelf, all of them promised to orders not
     // yet shipped, read the same as a shop with none.
     advice:
-      'available is what can still be SOLD: on_hand minus committed, as Shopify works it out. on_hand is what is physically there, committed is what is already promised to orders not yet shipped, incoming is what is on its way. "Running low" and "out of stock" mean available, never on_hand. stock_state says which case a row is in, including "Not tracked" — a variant Shopify does not count stock for reads zero everywhere and is not a shortage, so leave those out of any low-stock answer and say you did.',
+      'available is what can still be SOLD: on_hand minus committed, as Shopify works it out. on_hand is what is physically there, committed is what is already promised to orders not yet shipped, incoming is what is on its way. "Running low" and "out of stock" mean available, never on_hand. stock_state says which case a row is in, including "Not tracked" — a variant Shopify does not count stock for reads zero everywhere and is not a shortage, so leave those out of any low-stock answer and say you did. On the shelf with none to sell is "All promised" when orders have taken it (committed) and "Held back" when Shopify keeps it back with no order waiting (marked damaged, safety stock, quality control or reserved): say which, and that a held-back unit can be released in Shopify rather than reordered.',
     view: "store_inventory",
     order: { field: "available", ascending: true },
     select: "id, product, variant, sku, location_name, available, on_hand, committed, incoming, stock_state",

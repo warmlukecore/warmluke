@@ -156,8 +156,9 @@ try {
   await admin
     .from("inventory_levels")
     .insert({ store_id: store.id, variant_id: v.id, available: 0, on_hand: 0, incoming: 0 });
-  // One only promised away (on the shelf, none free): watched, after the
-  // one with nothing at all.
+  // One promised away to orders (on the shelf, all of it committed), and one
+  // held back in Shopify with no order on it (0196): both watched, after the
+  // one with nothing at all, and named apart.
   const { data: promised } = await admin
     .from("variants")
     .insert({ store_id: store.id, external_id: `v4-${stamp}`, product_id: prod.id, title: "Promised", tracked: true })
@@ -165,7 +166,15 @@ try {
     .single();
   await admin
     .from("inventory_levels")
-    .insert({ store_id: store.id, variant_id: promised.id, available: 0, on_hand: 3 });
+    .insert({ store_id: store.id, variant_id: promised.id, available: 0, on_hand: 3, committed: 3 });
+  const { data: held } = await admin
+    .from("variants")
+    .insert({ store_id: store.id, external_id: `v5-${stamp}`, product_id: prod.id, title: "Held", tracked: true })
+    .select("id")
+    .single();
+  await admin
+    .from("inventory_levels")
+    .insert({ store_id: store.id, variant_id: held.id, available: 0, on_hand: 1, committed: 0 });
   // One nobody tracks, and one with stock: neither is anything to watch.
   const { data: others } = await admin
     .from("variants")
@@ -199,15 +208,17 @@ try {
   check("today's bar is the same count as orders today", (o?.daily ?? []).at(-1)?.orders === 3);
   check(
     "stock is counted in the list's own words",
-    o?.stock?.["Out of stock"] === 1 && o?.stock?.["All promised"] === 1
+    o?.stock?.["Out of stock"] === 1 && o?.stock?.["All promised"] === 1 && o?.stock?.["Held back"] === 1
   );
   check(
     "only tracked variants with nothing left are watched",
-    o?.watching === 2 && (o?.stock_watch ?? []).map((w) => w.variant).join(",") === "Blue,Promised"
+    o?.watching === 3 && (o?.stock_watch ?? []).map((w) => w.variant).join(",") === "Blue,Held,Promised"
   );
   check(
     "the emptiest first, each with the list's word for it",
-    o?.stock_watch?.[0]?.stock_state === "Out of stock" && o?.stock_watch?.[1]?.stock_state === "All promised"
+    o?.stock_watch?.[0]?.stock_state === "Out of stock" &&
+      o?.stock_watch?.[1]?.stock_state === "Held back" &&
+      o?.stock_watch?.[2]?.stock_state === "All promised"
   );
   check(
     "and the store is named with its own timezone",

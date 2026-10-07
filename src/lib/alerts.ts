@@ -75,25 +75,47 @@ const waited = (hours: number) => (hours >= 48 ? plural(Math.floor(hours / 24), 
 const named = (f: Facts) => [f.str("product"), f.str("variant")].filter(Boolean).join(" · ") || "A product";
 const titled = (kind: string) => kind.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 
+/**
+ * Where a running-low item stands, in one reading for its title, its line
+ * and the question put to Luke: out already, out today, or out in so many
+ * days; and how fast it sells, a pace too slow to be a pace said so.
+ */
+const stockWhen = (f: Facts) => {
+  const left = f.num("days_left");
+  return f.num("available") <= 0
+    ? "is out of stock"
+    : left < 1
+      ? "runs out today"
+      : `runs out in about ${plural(left, "day")}`;
+};
+const stockPace = (f: Facts) => {
+  const perDay = f.num("per_day");
+  const days = plural(f.num("sales_days"), "day");
+  if (perDay <= 0) return `with no sales in the last ${days}`;
+  // Under one a week, "a day" is a pace it does not have: say what sold.
+  if (perDay < 1 / 7)
+    return `with about ${Math.max(1, Math.round(perDay * f.num("sales_days")))} sold in the last ${days}`;
+  return `selling about ${perDay} a day over the last ${days}`;
+};
+
 export const ALERT_WORDS: Record<string, Words> = {
   low_stock: {
     reads: [["inventory_levels", "available"]],
     icon: PackageMinus,
     name: "Running low",
     about: "A product that will run out soon at the pace it sells.",
-    title: (f) => {
-      const left = f.num("days_left");
-      const when =
-        f.num("available") === 0
-          ? "is out of stock"
-          : left < 1
-            ? "runs out today"
-            : `runs out in about ${plural(left, "day")}`;
-      return `${named(f)} ${when}`;
-    },
-    detail: (f) => `${f.num("available")} left · sells about ${f.num("per_day")} a day`,
+    title: (f) => `${named(f)} ${stockWhen(f)}`,
+    detail: (f) =>
+      f.num("available") <= 0 ? `None left to sell · ${stockPace(f)}` : `${f.num("available")} left · ${stockPace(f)}`,
+    // Said as the title says it, from the one reading: the question used to
+    // say "has 0 left … runs out in about 0 days" under a title saying it
+    // was already out (7 Oct).
     ask: (f) =>
-      `${named(f)}${f.str("sku") ? ` (SKU ${f.str("sku")})` : ""} has ${f.num("available")} left and sells about ${f.num("per_day")} a day over the last ${plural(f.num("sales_days"), "day")}, so it runs out in about ${plural(f.num("days_left"), "day")}. How much should I reorder, and what should I do until it arrives?`,
+      `${named(f)}${f.str("sku") ? ` (SKU ${f.str("sku")})` : ""} ${
+        f.num("available") <= 0 ? "has none left to sell" : `has ${f.num("available")} left to sell`
+      }, ${stockPace(f)}${
+        f.num("available") > 0 ? `, so it ${stockWhen(f)}` : ""
+      }. How much should I reorder, and what should I do until it arrives?`,
     settings: [
       { key: "days_left", before: "Tell me when stock lasts", after: "days or fewer" },
       { key: "sales_days", before: "Judging by sales over the last", after: "days" },

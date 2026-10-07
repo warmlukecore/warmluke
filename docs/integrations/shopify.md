@@ -256,7 +256,8 @@ over every order on the server. It answers with the windows it used (`days`,
 - open work to fulfil, whenever it came in;
 - orders per day for the chart;
 - stock by state, and the tracked variants with nothing left to sell (`stock_watch`,
-  emptiest first), the rule behind the stock view's "Out of stock", "All promised" and
+  emptiest first), the rule behind the stock view's "Out of stock", "All promised" (orders have taken
+  it), "Held back" (on the shelf, kept back in Shopify with no order on it, 0196) and
   "Out, more coming";
 - customer and product counts.
 

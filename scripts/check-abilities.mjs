@@ -111,8 +111,10 @@ for (const spec of Object.values(STORE_ACTIONS)) {
   check(`Luke knows it can ${said}`, design.includes(said) && talk.includes(said));
 }
 check(
-  "only from the chat, with the owner's yes",
-  /Only as a request made in this chat, one card per change, that the owner agrees to/.test(design)
+  "from the chat or a list's ticked rows, each with the owner's yes unless they let that kind go straight (0195), never Luke's ask",
+  /Asked for in this chat \(a card each\) or made by the owner on a list's ticked rows; each waits for their yes unless Settings → Store sends that kind straight, never what you ask/.test(
+    design
+  )
 );
 check(
   "never from a rule, a button, a scan or a screen",
