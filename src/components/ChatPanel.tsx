@@ -2597,6 +2597,8 @@ export default function ChatPanel({
   >([]);
   /** Which one is being sent right now, so it cannot be sent twice. */
   const [sending, setSending] = useState<string | null>(null);
+  // What came of putting one back, under its card (7 Oct).
+  const [putBackSaid, setPutBackSaid] = useState<{ id: string; text: string } | null>(null);
 
   /**
    * Why a design is still asking although the setting is on.
@@ -2740,11 +2742,25 @@ export default function ChatPanel({
    * the route and the database do, and whatever they say is what is
    * shown.
    */
-  async function sendShopChange(id: string, what: "run" | "dismiss") {
+  async function sendShopChange(id: string, what: "run" | "dismiss" | "undo") {
     setSending(id);
     try {
       const { ok, data } = await apiFetch("/api/store-actions", { actionId: id, do: what });
-      if (!ok) {
+      // Put back is a change of its own: it goes now or waits here, as any would.
+      if (what === "undo") {
+        const done = (data?.done as string[] | undefined) ?? [];
+        const errors = (data?.errors as string[] | undefined) ?? [];
+        setPutBackSaid({
+          id,
+          text: !ok
+            ? String(data?.error ?? "It was refused.")
+            : data?.status === "waiting"
+              ? "Putting it back is waiting for a yes, here."
+              : done.length
+                ? "Put back."
+                : `Not put back: ${String(errors[0] ?? "").replace(/^gid:\/\/shopify\/[A-Za-z]+\/\d+: /, "")}`,
+        });
+      } else if (!ok) {
         // Not a red box: the usual way to see this is a second tab,
         // or a second tap on something already gone. Reloading shows
         // what is really there, which is the answer either way.
@@ -3597,6 +3613,25 @@ export default function ChatPanel({
                                 )}
                               </div>
                             )}
+                            {(a.status === "done" || a.status === "partly_done") &&
+                              !!spec?.undo &&
+                              (a.outcome?.done ?? []).length > 0 && (
+                                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                  <button
+                                    onClick={() => sendShopChange(a.id, "undo")}
+                                    disabled={busy}
+                                    className="inline-flex items-center gap-1 text-[10px] font-medium text-fg-muted hover:text-fg hover:underline disabled:opacity-40"
+                                  >
+                                    <Undo2 aria-hidden size={11} strokeWidth={2} />
+                                    {busy ? "Putting back…" : "Undo"}
+                                  </button>
+                                  {putBackSaid?.id === a.id && (
+                                    <span role="status" className="text-[10px] text-fg-muted">
+                                      {putBackSaid.text}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             {waiting && (
                               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                                 {canRun && (

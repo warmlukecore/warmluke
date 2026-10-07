@@ -413,6 +413,15 @@ typed values through the same ask, grouped by change and value: a stock count is
 what was typed, a list of tags becomes what was added and what was taken. Nothing is
 written in Warmluke itself; the row shows Shopify's value once the change lands.
 
+A change that went through can be put back: Undo beside what a save or ticked rows said,
+or on its card in the bell. It is a change of its own, `proposeStoreAction` with
+`undo_of` (Luke and their AI ask the same way), built from the row, never from the
+caller: the registry's `undo` on the lines that really changed (tags off for tags on; a
+stock count back to its `from`, from the count it set, so Shopify refuses it if a sale
+or a delivery moved the count since). It goes through the same gates and the same
+straight-or-wait rule; an undo of an undo is a redo. A note has no undo: its old words
+are not kept.
+
 ## Validation and repair
 
 Parsing removes code fences and normalizes a small set of known aliases, then validates

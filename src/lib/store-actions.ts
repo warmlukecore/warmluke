@@ -364,11 +364,17 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
             "The count in Shopify changed after this was asked for, so nothing was changed. Ask again to set it from the count it has now.",
           ]
         : userErrors(data),
-    // The count it had is in Warmluke, but it is a copy that may be
-    // minutes old, and writing a stale number back is how a correction
-    // becomes a second mistake.
-    undo: null,
-    undoNote: "The count before this is only a copy here, and may have moved since.",
+    // Back to the count it changed from, from the count it set: each line
+    // carries both, so Shopify puts the old one back only while its count
+    // is still the one this change left. A sale or a delivery since, and
+    // the undo is refused rather than written over it.
+    undo: (targets) => ({
+      action: "set_stock",
+      targets: targets
+        .filter((t) => typeof t.from === "number" && typeof t.quantity === "number")
+        .map((t) => ({ id: t.id, locationId: t.locationId, quantity: t.from, from: t.quantity })),
+      params: {},
+    }),
   },
 };
 

@@ -409,7 +409,7 @@ test("stock edited in place: typed into its cell, waits for the owner's yes, sav
     await page.getByRole("button", { name: "Edit", exact: true }).click();
     await cells.nth(0).fill("42");
     await bar.getByRole("button", { name: "Save to Shopify" }).click();
-    await expect(bar.getByText(/updated in Shopify|not done/)).toBeVisible({ timeout: 30_000 });
+    await expect(bar.getByText(/updated in Shopify|not done/i)).toBeVisible({ timeout: 30_000 });
     const second = await asked();
     expect(["done", "partly_done", "failed"]).toContain(second[0]?.status);
     expect(second[0]?.approved_by).toBe(shop.userId);
@@ -428,6 +428,148 @@ test("stock edited in place: typed into its cell, waits for the owner's yes, sav
     await shop.admin
       .from("stores")
       .update({ auto_send: [], granted_scopes: grant?.granted_scopes ?? null })
+      .eq("id", shop.storeId);
+    await shop.admin
+      .from("account_settings")
+      .upsert({ user_id: shop.userId, store_actions_enabled: was?.store_actions_enabled ?? false });
+    await shop.admin.from("modules").delete().eq("id", id);
+  }
+});
+
+test("a stock count that went through is put back with Undo, asked for as any change is", async ({
+  signedIn: page,
+  shop,
+}) => {
+  const { data: was } = await shop.admin
+    .from("account_settings")
+    .select("store_actions_enabled")
+    .eq("user_id", shop.userId)
+    .maybeSingle();
+  await shop.admin.from("account_settings").upsert({ user_id: shop.userId, store_actions_enabled: true });
+  const { data: grant } = await shop.admin.from("stores").select("granted_scopes").eq("id", shop.storeId).single();
+  await shop.admin
+    .from("stores")
+    .update({ granted_scopes: [...((grant?.granted_scopes as string[] | null) ?? []), "write_inventory"] })
+    .eq("id", shop.storeId);
+  const headers = { Authorization: `Bearer ${(shop.session as { access_token: string }).access_token}` };
+  const made = await page.request.post("/api/apply", {
+    headers,
+    data: {
+      projectId: shop.projectId,
+      plans: [
+        {
+          changeType: "NEW_MODULE",
+          targetModuleId: null,
+          newModule: { name: "e2e-counts-undo", nav_label: "Counts", icon: "table", source_table: "inventory_levels" },
+          newSchema: null,
+          newRecords: null,
+          explanation: "The store's stock, to count in place.",
+        },
+      ],
+    },
+  });
+  expect(made.ok(), `the section was built: ${await made.text()}`).toBe(true);
+  const { data: mod } = await shop.admin
+    .from("modules")
+    .select("id")
+    .eq("project_id", shop.projectId)
+    .eq("name", "e2e-counts-undo")
+    .single();
+  const id = mod!.id as string;
+  const since = new Date().toISOString();
+  // The check store has no Shopify behind it: the save is answered as a
+  // real store answers one that went through, and kept as it would be.
+  await page.route("**/api/store-actions", async (route) => {
+    const body = route.request().postDataJSON() as {
+      do?: string;
+      action?: string;
+      targets?: Array<{ id: string } & Record<string, unknown>>;
+      params?: Record<string, unknown>;
+    };
+    if (body.do !== "ask") return route.continue();
+    const targets = (body.targets ?? []).map((t) => ({ ...t, from: 3 }));
+    const now = new Date().toISOString();
+    const { data: row, error } = await shop.admin
+      .from("store_actions")
+      .insert({
+        project_id: shop.projectId,
+        store_id: shop.storeId,
+        requested_by: shop.userId,
+        action: body.action,
+        targets,
+        params: body.params ?? {},
+        summary: "Sets the count of one item",
+        status: "done",
+        approved_by: shop.userId,
+        approved_at: now,
+        ran_at: now,
+        resolved_at: now,
+        outcome: { done: targets.map((t) => t.id), errors: [] },
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    return route.fulfill({
+      json: { status: "done", done: targets.map((t) => t.id), errors: [], actionId: row!.id, summary: "" },
+    });
+  });
+  try {
+    await page.goto(`/app/${shop.projectId}?section=${id}`);
+    await expect(page.getByRole("heading", { level: 1, name: "Counts" })).toBeVisible();
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    const bar = page.getByRole("region", { name: "Editing in place" });
+    await page
+      .getByRole("textbox", { name: /^Available of this row/ })
+      .nth(0)
+      .fill("41");
+    await bar.getByRole("button", { name: "Save, for your yes" }).click();
+    await expect(bar.getByText(/updated in Shopify on 1/i)).toBeVisible();
+
+    // Undo asks for the opposite: the count it had, from the count it was set to,
+    // so Shopify refuses it if a sale moved it since. Off, it waits for their yes.
+    await bar.getByRole("button", { name: "Undo" }).click();
+    await expect(bar.getByText(/putting it back waits in the bell for your yes/i)).toBeVisible();
+    const { data: back } = await shop.admin
+      .from("store_actions")
+      .select("id, action, status, targets")
+      .eq("project_id", shop.projectId)
+      .eq("status", "pending")
+      .gte("created_at", since);
+    expect(back?.length).toBe(1);
+    const line = (back![0].targets as Array<{ quantity: number; from: number }>)[0];
+    expect([back![0].action, line.quantity, line.from]).toEqual(["set_stock", 3, 41]);
+
+    // Only what went through is put back, and only by someone who can see it.
+    const pending = await page.request.post("/api/store-actions", {
+      headers,
+      data: { do: "undo", actionId: back![0].id },
+    });
+    expect(pending.status()).toBe(400);
+    const stranger = await page.request.post("/api/store-actions", {
+      headers,
+      data: { do: "undo", actionId: "00000000-0000-0000-0000-000000000000" },
+    });
+    expect(stranger.status()).toBe(404);
+
+    // In the bell too, whoever asked for it: a change that went through puts back from its card.
+    if ((page.viewportSize()?.width ?? 0) < 1024) await page.getByRole("button", { name: /^Luke/ }).first().click();
+    const panel = page.getByRole("complementary", { name: "Luke" });
+    await panel.getByRole("button", { name: /want your attention/ }).click();
+    await panel.getByRole("tab", { name: /Asked for/ }).click();
+    await panel.getByRole("button", { name: "Undo" }).click();
+    await expect(panel.getByText("Putting it back is waiting for a yes, here.")).toBeVisible();
+    const { count } = await shop.admin
+      .from("store_actions")
+      .select("id", { count: "exact", head: true })
+      .eq("project_id", shop.projectId)
+      .eq("status", "pending")
+      .gte("created_at", since);
+    expect(count).toBe(2);
+  } finally {
+    await shop.admin.from("store_actions").delete().eq("project_id", shop.projectId).gte("created_at", since);
+    await shop.admin
+      .from("stores")
+      .update({ granted_scopes: grant?.granted_scopes ?? null })
       .eq("id", shop.storeId);
     await shop.admin
       .from("account_settings")

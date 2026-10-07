@@ -56,7 +56,7 @@ export type CellEdits = {
   columns: Record<string, { goes: ShopChangeKind["goes"]; why?: string }>;
   onSave: (
     changes: Array<{ rec: RecordRow; field: string; value: string }>
-  ) => Promise<{ said: string; keep: string[] }>;
+  ) => Promise<{ said: string; keep: string[]; undo?: string[] }>;
   /** Opens Settings → Store, where sending straight is turned on. */
   onSettings?: () => void;
 };
@@ -108,7 +108,7 @@ import {
   type PeriodRange,
   type PeriodSpec,
 } from "@/lib/period";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Pencil, Plus } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Pencil, Plus, Redo2, Undo2 } from "lucide-react";
 import { Select } from "@/components/ui/Select";
 import { DateField } from "@/components/ui/DateField";
 import { PAGE_SIZES, keptPageSize, pageSizeKey, type TableState } from "@/lib/store-read";
@@ -463,6 +463,7 @@ export default function GenericRenderer({
   ownFields,
   shopChanges,
   onShopChange,
+  onShopUndo,
   cellEdits,
 }: {
   schema: UiSchema;
@@ -537,12 +538,14 @@ export default function GenericRenderer({
   shopChanges?: ShopChangeKind[];
   /** The list edited in place, cell by cell (7 Oct). */
   cellEdits?: CellEdits;
-  /** Makes one on the ticked rows; says what happened, and which rows to keep ticked. */
+  /** Makes one on the ticked rows; says what happened, which rows to keep ticked, and what Undo puts back. */
   onShopChange?: (
     action: string,
     rows: RecordRow[],
     input: ShopChangeInput
-  ) => Promise<{ said: string; keep: string[] }>;
+  ) => Promise<{ said: string; keep: string[]; undo?: string[] }>;
+  /** Puts back changes to the store that went through; what went back can be put back again (a redo). */
+  onShopUndo?: (ids: string[]) => Promise<{ said: string; again: string[] }>;
 }) {
   const fmt = useFormat();
   const total = totalRecords ?? records.length;
@@ -1021,11 +1024,13 @@ export default function GenericRenderer({
     if (!onShopChange) return;
     const rows = tickedRows;
     setBulkSaid(null);
+    setBulkUndo(null);
     setBulkWork({ doing: kind.label, done: 0, of: rows.length });
     try {
-      const { said, keep } = await onShopChange(kind.action, rows, input);
+      const { said, keep, undo } = await onShopChange(kind.action, rows, input);
       setPicked(new Set(keep));
       setBulkSaid(said);
+      setBulkUndo(onShopUndo && undo?.length ? { ids: undo, redo: false } : null);
     } catch (e) {
       // It may have gone before the answer was lost: the bell says what did.
       setBulkSaid(
@@ -1042,6 +1047,23 @@ export default function GenericRenderer({
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [editWork, setEditWork] = useState(false);
   const [editSaid, setEditSaid] = useState<string | null>(null);
+  // What the last change to the store can put back: Undo after it, Redo after an undo (7 Oct).
+  const [editUndo, setEditUndo] = useState<ShopUndo | null>(null);
+  const [bulkUndo, setBulkUndo] = useState<ShopUndo | null>(null);
+  async function putBack(was: ShopUndo, set: (u: ShopUndo | null) => void, say: (s: string) => void) {
+    if (!onShopUndo) return;
+    set({ ...was, busy: true });
+    try {
+      const { said, again } = await onShopUndo(was.ids);
+      say(said);
+      set(again.length ? { ids: again, redo: !was.redo } : null);
+    } catch (e) {
+      say(
+        `Warmluke didn't answer (${e instanceof Error ? e.message : "no connection"}). The bell shows anything that went.`
+      );
+      set(null);
+    }
+  }
   const draftKey = (id: string, field: string) => `${id}\u0000${field}`;
   const asNow = (v: unknown) => (Array.isArray(v) ? v.join(", ") : v === null || v === undefined ? "" : String(v));
   const changes = Object.entries(drafts).flatMap(([k, value]) => {
@@ -1054,8 +1076,10 @@ export default function GenericRenderer({
     if (!cellEdits || !changes.length) return;
     setEditWork(true);
     setEditSaid(null);
+    setEditUndo(null);
     try {
-      const { said, keep } = await cellEdits.onSave(changes);
+      const { said, keep, undo } = await cellEdits.onSave(changes);
+      setEditUndo(onShopUndo && undo?.length ? { ids: undo, redo: false } : null);
       // What did not go stays typed in, to try again.
       setDrafts((was) => Object.fromEntries(Object.entries(was).filter(([k]) => keep.includes(k.split("\u0000")[0]))));
       setEditSaid(said);
@@ -1381,8 +1405,13 @@ export default function GenericRenderer({
             className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-subdued px-4 py-2 text-[13px]"
           >
             {editSaid && (
-              <span role="status" className="w-full text-fg-muted">
-                {editSaid}
+              <span className="flex w-full flex-wrap items-center gap-2">
+                <span role="status" className="text-fg-muted">
+                  {editSaid}
+                </span>
+                {editUndo && (
+                  <UndoButton undo={editUndo} onPress={() => void putBack(editUndo, setEditUndo, setEditSaid)} />
+                )}
               </span>
             )}
             <span className="font-medium text-fg tabular-nums">
@@ -1460,11 +1489,14 @@ export default function GenericRenderer({
             locale={fmt.locale}
             working={bulkWork}
             said={bulkSaid}
+            undo={bulkUndo}
+            onUndo={() => bulkUndo && void putBack(bulkUndo, setBulkUndo, setBulkSaid)}
             onAction={bulkAction}
             onSet={bulkSet}
             onClear={() => {
               setPicked(new Set());
               setBulkSaid(null);
+              setBulkUndo(null);
             }}
           />
         )}
@@ -1723,6 +1755,19 @@ function ShopChange({
   );
 }
 
+/** Changes to the store that went through and can be put back; `redo` once they have been. */
+type ShopUndo = { ids: string[]; redo: boolean; busy?: boolean };
+
+function UndoButton({ undo, onPress }: { undo: ShopUndo; onPress: () => void }) {
+  const Icon = undo.redo ? Redo2 : Undo2;
+  return (
+    <button type="button" disabled={undo.busy} onClick={onPress} className={button("secondary", "sm")}>
+      <Icon aria-hidden size={12} strokeWidth={2} />
+      {undo.busy ? (undo.redo ? "Redoing…" : "Undoing…") : undo.redo ? "Redo" : "Undo"}
+    </button>
+  );
+}
+
 function BulkBar({
   count,
   actions,
@@ -1735,6 +1780,8 @@ function BulkBar({
   locale,
   working,
   said,
+  undo,
+  onUndo,
   onAction,
   onSet,
   onClear,
@@ -1751,6 +1798,9 @@ function BulkBar({
   locale: string;
   working: { doing: string; done: number; of: number } | null;
   said: string | null;
+  /** The last change to the store, to put back (or forward again). */
+  undo: ShopUndo | null;
+  onUndo: () => void;
   onAction: (a: NonNullable<FeatureSchema["actions"]>[number]) => void;
   onSet: (c: SchemaColumn, value: unknown) => void;
   onClear: () => void;
@@ -1785,8 +1835,11 @@ function BulkBar({
         <>
           {/* What the last went on to say, when rows are still ticked: those it could not do, kept to try again. */}
           {said && (
-            <span className="w-full text-fg-muted" role="status">
-              {said}
+            <span className="flex w-full flex-wrap items-center gap-2">
+              <span className="text-fg-muted" role="status">
+                {said}
+              </span>
+              {undo && <UndoButton undo={undo} onPress={onUndo} />}
             </span>
           )}
           <span className="font-medium text-fg tabular-nums">{count} ticked</span>
@@ -1868,6 +1921,7 @@ function BulkBar({
           <span className="text-fg-muted" role="status">
             {said}
           </span>
+          {undo && <UndoButton undo={undo} onPress={onUndo} />}
           <button type="button" onClick={onClear} className={button("plain", "sm")}>
             Done
           </button>

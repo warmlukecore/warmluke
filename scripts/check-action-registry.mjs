@@ -51,7 +51,8 @@ const SAMPLES = {
     params: { note: "Customer asked for delivery after 6pm" },
   },
   set_stock: {
-    targets: [{ id: "gid://shopify/InventoryItem/1", locationId: "gid://shopify/Location/1", quantity: 40 }],
+    // As the server keeps it: with the count it changes from.
+    targets: [{ id: "gid://shopify/InventoryItem/1", locationId: "gid://shopify/Location/1", quantity: 40, from: 12 }],
     params: {},
   },
 };
@@ -109,9 +110,19 @@ for (const name of ACTIONS) {
   if (spec.undo) {
     const back = spec.undo(sample.targets, sample.params);
     check("its undo names a real action", !!actionSpec(back.action));
-    check("and is not itself", back.action !== name);
+    // Itself only when it sets each line back to what it was (a stock count).
+    check(
+      "and is not itself, unless it sets the lines back",
+      back.action !== name || JSON.stringify(back.targets) !== JSON.stringify(sample.targets)
+    );
     const other = actionSpec(back.action);
-    check("and that one undoes it in turn", other?.undo?.(back.targets, back.params)?.action === name);
+    const again = other?.undo?.(back.targets, back.params);
+    check("and that one undoes it in turn", again?.action === name);
+    check(
+      "back where it began",
+      JSON.stringify(again?.targets.map((t) => [t.id, t.quantity])) ===
+        JSON.stringify(sample.targets.map((t) => [t.id, t.quantity]))
+    );
   } else {
     check("no undo, and it says why", typeof spec.undoNote === "string" && spec.undoNote.length > 20);
   }
@@ -284,6 +295,33 @@ console.log("\nand a list's own screen offers what its rows can be aimed at (019
   );
   for (const [name, spec] of Object.entries(STORE_ACTIONS))
     if (spec.edits) check(`${name} edits as set, add or remove`, ["set", "add", "remove"].includes(spec.edits.as));
+
+  // Undo (7 Oct): a count goes back to what it was, from what this change left,
+  // so Shopify refuses it if anything moved the count since.
+  const back = STORE_ACTIONS.set_stock.undo(
+    [
+      { id: "gid://shopify/InventoryItem/1", locationId: "gid://shopify/Location/2", quantity: 41, from: 5 },
+      { id: "gid://shopify/InventoryItem/3", locationId: "gid://shopify/Location/2", quantity: 7 },
+    ],
+    {}
+  );
+  check(
+    "a stock count is put back to what it was, from what it was set to",
+    back.action === "set_stock" &&
+      back.targets.length === 1 &&
+      back.targets[0].quantity === 5 &&
+      back.targets[0].from === 41
+  );
+  check("a line with no count it changed from is not put back", !back.targets.some((t) => t.id.endsWith("/3")));
+  check(
+    "a tag added is taken off, and one taken off is added",
+    STORE_ACTIONS.add_tags.undo([], { tags: ["x"] }).action === "remove_tags" &&
+      STORE_ACTIONS.remove_tags.undo([], { tags: ["x"] }).action === "add_tags"
+  );
+  check(
+    "a note, with nothing kept of the old one, says why it cannot be",
+    !STORE_ACTIONS.set_order_note.undo && !!STORE_ACTIONS.set_order_note.undoNote
+  );
 }
 
 console.log(fails.length === 0 ? "\nthe fifth entry will cost what the first did" : `\n${fails.length} FAILED`);

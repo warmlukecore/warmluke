@@ -1835,11 +1835,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       asks: Array<{ action: string; targets: ActionTarget[]; params: Record<string, unknown> }>,
       rowsOf: Map<string, string[]>,
       left: string[] = []
-    ): Promise<{ said: string; keep: string[] }> => {
+    ): Promise<{ said: string; keep: string[]; undo: string[] }> => {
       let sent = 0;
       let waiting = 0;
       const errors: string[] = [];
       const keep = new Set<string>();
+      // The changes that went through and have an opposite: what Undo puts back.
+      const undo: string[] = [];
       for (const { action, targets, params } of asks)
         for (let i = 0; i < targets.length; i += MOST_TARGETS) {
           const piece = targets.slice(i, i + MOST_TARGETS);
@@ -1859,7 +1861,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             waiting += piece.length;
             continue;
           }
-          sent += ((data.done as string[] | undefined) ?? []).length;
+          const went = ((data.done as string[] | undefined) ?? []).length;
+          sent += went;
+          if (went && STORE_ACTIONS[action]?.undo && typeof data.actionId === "string") undo.push(data.actionId);
           for (const e of (data.errors as string[] | undefined) ?? []) {
             const id = /^(gid:\/\/shopify\/[A-Za-z]+\/\d+): /.exec(e)?.[1];
             errors.push(id ? e.slice(id.length + 2) : e);
@@ -1882,9 +1886,56 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         ...left,
       ].filter(Boolean);
       // One full stop, whatever Shopify's own words ended with.
-      return { said: `${parts.join("; ").replace(/\.+$/, "")}.`, keep: [...keep] };
+      return { said: `${parts.join("; ").replace(/\.+$/, "")}.`, keep: [...keep], undo };
     },
     [projectId, isOwner, selectedModuleId, reloadMoved]
+  );
+
+  /**
+   * Puts back changes that went through (7 Oct): each one's opposite,
+   * asked for through the same gates, so it goes now or waits as any
+   * change of its kind would. What went back can itself be put back: a redo.
+   */
+  const undoShop = useCallback(
+    async (ids: string[]): Promise<{ said: string; again: string[] }> => {
+      let back = 0;
+      let waiting = 0;
+      const errors: string[] = [];
+      const again: string[] = [];
+      for (const actionId of ids) {
+        const { ok, data } = await apiFetch("/api/store-actions", { do: "undo", actionId });
+        if (!ok) {
+          errors.push(String(data.error ?? "It was refused."));
+          continue;
+        }
+        if (data.status === "waiting") {
+          waiting++;
+          continue;
+        }
+        const went = ((data.done as string[] | undefined) ?? []).length;
+        back += went;
+        if (went && typeof data.actionId === "string") again.push(data.actionId);
+        for (const e of (data.errors as string[] | undefined) ?? [])
+          errors.push(e.replace(/^gid:\/\/shopify\/[A-Za-z]+\/\d+: /, ""));
+      }
+      if (back && selectedModuleId) {
+        const id = selectedModuleId;
+        setTimeout(() => void reloadMoved(id), 3000);
+        setTimeout(() => void reloadMoved(id), 10000);
+      }
+      const parts = [
+        back ? `put back in Shopify on ${back}, and the list catches up in a moment` : "",
+        waiting
+          ? isOwner
+            ? `putting it back waits in the bell for your yes`
+            : `putting it back was sent to the owner for their yes`
+          : "",
+        errors.length ? `${errors.length === 1 ? "one" : errors.length} not put back: ${errors[0]}` : "",
+      ].filter(Boolean);
+      const said = `${parts.join("; ").replace(/\.+$/, "")}.`;
+      return { said: said.charAt(0).toUpperCase() + said.slice(1), again };
+    },
+    [isOwner, selectedModuleId, reloadMoved]
   );
 
   /**
@@ -1976,8 +2027,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         ].filter(Boolean);
         const held = [...notCount, ...unaimed];
         if (!asks.size) return { said: `${left.join("; ") || "Nothing to save"}.`, keep: held };
-        const { said, keep } = await askShop([...asks.values()], rowsOf, left);
-        return { said, keep: [...keep, ...held] };
+        const { said, keep, undo } = await askShop([...asks.values()], rowsOf, left);
+        return { said: said.charAt(0).toUpperCase() + said.slice(1), keep: [...keep, ...held], undo };
       },
     };
   }, [loadedSource, store, storeActionsOn, isOwner, askShop]);
@@ -1992,7 +2043,11 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
    * come in.
    */
   const shopChange = useCallback(
-    async (action: string, rows: RecordRow[], input: ShopChangeInput): Promise<{ said: string; keep: string[] }> => {
+    async (
+      action: string,
+      rows: RecordRow[],
+      input: ShopChangeInput
+    ): Promise<{ said: string; keep: string[]; undo?: string[] }> => {
       const spec = STORE_ACTIONS[action];
       if (!spec || !isStoreTable(loadedSource))
         return { said: "That can't be changed here.", keep: rows.map((r) => r.id) };
@@ -2050,8 +2105,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       if (targets.length === 0)
         return { said: `${spec.label}: nothing to change${left.length ? ` (${left.join(", ")})` : ""}.`, keep: [] };
 
-      const { said, keep } = await askShop([{ action, targets, params }], rowsOf, left);
-      return { said: `${spec.label}: ${said}`, keep };
+      const { said, keep, undo } = await askShop([{ action, targets, params }], rowsOf, left);
+      return { said: `${spec.label}: ${said}`, keep, undo };
     },
     [loadedSource, askShop]
   );
@@ -4537,6 +4592,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                           ...(shopKinds.length > 0 ? { shopChanges: shopKinds, onShopChange: shopChange } : {}),
                           // The list edited in place, cell by cell (7 Oct).
                           ...(cellEdits ? { cellEdits } : {}),
+                          ...(shopKinds.length > 0 || cellEdits ? { onShopUndo: undoShop } : {}),
                           // Their own fields beside each row: row actions and
                           // scans set them; the store's columns stay the import's.
                           ...(myColumns.length > 0

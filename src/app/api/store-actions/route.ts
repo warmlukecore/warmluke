@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { getUserClient } from "@/lib/supabase-server";
 import { runAction } from "@/lib/run-action";
-import { proposeStoreAction } from "@/lib/store-action-propose";
+import { proposeStoreAction, type Proposal } from "@/lib/store-action-propose";
 import type { StoreBrief } from "@/lib/store-read";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
 /**
- * POST /api/store-actions — body: { actionId, do: "run" | "dismiss" },
+ * POST /api/store-actions — body: { actionId, do: "run" | "dismiss" | "undo" },
  * or { do: "ask", projectId, action, targets, params } from a list's screen
  *
  * The merchant's yes, and the change going out.
@@ -25,8 +26,25 @@ export const runtime = "nodejs";
  * would get anywhere else — the rule lives in one place, and this is
  * not that place.
  *
- * Callers: src/components/ChatPanel.tsx (run, dismiss), src/components/AppShell.tsx (ask).
+ * Callers: src/components/ChatPanel.tsx (run, dismiss), src/components/AppShell.tsx (ask, undo).
  */
+
+const BRIEF = "id, project_id, shop_domain, timezone, currency, last_synced_at";
+
+/**
+ * Asked, then sent now when the database takes it as the owner's yes (the
+ * owner's own, fresh, of a kind they turned on for that store); otherwise
+ * it waits in the bell, the owner's yes being the only way out.
+ */
+async function askedThenSent(client: SupabaseClient, asked: Proposal) {
+  if (!asked.ok) return NextResponse.json(asked.answer, { status: 400 });
+  const { data: now } = await client.rpc("abo_action_send_now", { p_action: asked.id });
+  if (!(now as { approved?: boolean } | null)?.approved) {
+    return NextResponse.json({ status: "waiting", actionId: asked.id, summary: asked.summary });
+  }
+  const run = await runAction(client, asked.id);
+  return NextResponse.json({ ...run, actionId: asked.id, summary: asked.summary });
+}
 export async function POST(req: Request) {
   try {
     const auth = await getUserClient(req);
@@ -54,7 +72,7 @@ export async function POST(req: Request) {
       if (!projectId) return NextResponse.json({ error: "projectId is required" }, { status: 400 });
       const { data: store } = await client
         .from("stores")
-        .select("id, project_id, shop_domain, timezone, currency, last_synced_at")
+        .select(BRIEF)
         .eq("project_id", projectId)
         .eq("status", "connected")
         .limit(1)
@@ -65,17 +83,29 @@ export async function POST(req: Request) {
         targets: body?.targets,
         params: body?.params,
       });
-      if (!asked.ok) return NextResponse.json(asked.answer, { status: 400 });
-      const { data: now } = await client.rpc("abo_action_send_now", { p_action: asked.id });
-      if (!(now as { approved?: boolean } | null)?.approved) {
-        return NextResponse.json({ status: "waiting", actionId: asked.id, summary: asked.summary });
-      }
-      const run = await runAction(client, asked.id);
-      return NextResponse.json({ ...run, actionId: asked.id, summary: asked.summary });
+      return askedThenSent(client, asked);
     }
 
     if (!actionId) {
       return NextResponse.json({ error: "actionId is required" }, { status: 400 });
+    }
+
+    // Put back (7 Oct): the opposite of a change that went through, on the
+    // lines it really changed, asked for as any change is, through the same
+    // gates. Built here from the row, never from what the caller says it
+    // was. A stock count goes back only while Shopify's is still the one
+    // this change left; an undo of an undo is a redo.
+    if (what === "undo") {
+      const { data: was } = await client.from("store_actions").select("store_id").eq("id", actionId).maybeSingle();
+      if (!was) return NextResponse.json({ error: "That change is not one you can see." }, { status: 404 });
+      const { data: store } = await client
+        .from("stores")
+        .select(BRIEF)
+        .eq("id", was.store_id as string)
+        .eq("status", "connected")
+        .maybeSingle();
+      if (!store) return NextResponse.json({ error: "That store is not connected any more." }, { status: 400 });
+      return askedThenSent(client, await proposeStoreAction(client, store as StoreBrief, { undo_of: actionId }));
     }
     if (what !== "run" && what !== "dismiss") {
       return NextResponse.json({ error: `There is no "${what}" to do here.` }, { status: 400 });

@@ -147,6 +147,59 @@ console.log("\nMCP asks the same way");
   );
 }
 
+console.log("\nput back: the opposite of what went through, built from the row, asked as any change is");
+{
+  // The database as it holds a change: the row, the store's grant, and
+  // whether Warmluke's copy of the stock was read (it must not be, for an undo).
+  const read = [];
+  const held = (row) => ({
+    ...db(),
+    from: (table) => {
+      read.push(table);
+      const one = table === "store_actions" ? row : { granted_scopes: null, available: 9 };
+      const chain = { eq: () => chain, maybeSingle: async () => ({ data: one }) };
+      return { select: () => chain };
+    },
+  });
+  const item = "gid://shopify/InventoryItem/7";
+  const place = "gid://shopify/Location/1";
+  const went = {
+    store_id: "s1",
+    action: "set_stock",
+    status: "done",
+    params: {},
+    targets: [
+      { id: item, locationId: place, quantity: 41, from: 5 },
+      { id: "gid://shopify/InventoryItem/8", locationId: place, quantity: 2, from: 6 },
+    ],
+    outcome: { done: [item], errors: ["gid://shopify/InventoryItem/8: refused"] },
+  };
+  const before = proposed.length;
+  const back = await proposeStoreAction(held(went), store, { undo_of: "act-9" });
+  const asked = proposed[before];
+  check(
+    "a count goes back to what it was, from what it was set to",
+    back.ok && asked?.p_action === "set_stock" && asked.p_targets[0].quantity === 5 && asked.p_targets[0].from === 41
+  );
+  check("only the lines that really changed", asked?.p_targets.length === 1);
+  check("and the copy is not read again over what the change left", !read.includes("store_inventory"));
+  const waiting = await proposeStoreAction(held({ ...went, status: "pending" }), store, { undo_of: "act-9" });
+  check("a change that has not gone through is not put back", !waiting.ok && /went through/.test(waiting.answer.error));
+  const elsewhere = await proposeStoreAction(held({ ...went, store_id: "s2" }), store, { undo_of: "act-9" });
+  check("nor one made in another store", !elsewhere.ok && /another store/.test(elsewhere.answer.error));
+  const note = await proposeStoreAction(held({ ...went, action: "set_order_note", params: { note: "x" } }), store, {
+    undo_of: "act-9",
+  });
+  check(
+    "nor one that cannot be, which says why",
+    !note.ok && /does not keep what the note said/.test(note.answer.error)
+  );
+  const unseen = await proposeStoreAction(held(null), store, { undo_of: "act-9" });
+  check("nor one the asker cannot see", !unseen.ok && /not one you can see/.test(unseen.answer.error));
+  const offAgain = await proposeStoreAction({ ...held(went), ...db({ on: false }) }, store, { undo_of: "act-9" });
+  check("and the account's switch still holds", !offAgain.ok && /not turned on/.test(offAgain.answer.error));
+}
+
 console.log(
   fails.length === 0 ? "\na change to the shop is asked one way, and only asked" : `\n${fails.length} FAILED`
 );

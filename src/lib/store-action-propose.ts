@@ -25,6 +25,7 @@ import {
   MOST_TARGETS,
   STORE_ACTIONS,
   actionSpec,
+  type ActionParams,
   type ActionTarget,
   type StoreActionSpec,
 } from "@/lib/store-actions";
@@ -100,8 +101,12 @@ export const PROPOSE_INPUT: JSONSchema7 & { type: "object"; properties: Record<s
       type: "object",
       description: 'What to set, the same for every target: { "tags": ["rush"] } or { "note": "…" }.',
     },
+    undo_of: {
+      type: "string",
+      description:
+        "Instead of action and targets: the action_id of a change that went through, to ask for it to be put back. Warmluke builds the opposite from what it really changed (a stock count goes back only while Shopify's is still the one that change left). It waits for the merchant's yes like any other.",
+    },
   },
-  required: ["action", "targets"],
 };
 
 export type Proposal =
@@ -110,6 +115,42 @@ export type Proposal =
   | { ok: false; answer: Record<string, unknown>; reconnect?: boolean };
 
 /** Asks for one change, as the caller, on one store. Never changes the shop itself. */
+/**
+ * The opposite of a change that went through (7 Oct), as a change to ask
+ * for: on the lines it really changed, as its registry entry puts them
+ * back. Read from the row, never from what the caller says it was. An
+ * undo of an undo is a redo.
+ */
+async function undoArgs(
+  db: SupabaseClient,
+  storeId: string,
+  actionId: string
+): Promise<{ args: { action: string; targets: ActionTarget[]; params: ActionParams } } | { error: string }> {
+  const { data: was } = await db
+    .from("store_actions")
+    .select("store_id, action, status, targets, params, outcome")
+    .eq("id", actionId)
+    .maybeSingle();
+  if (!was) return { error: "That change is not one you can see." };
+  if (was.store_id !== storeId) return { error: "That change was made in another store." };
+  if (was.status !== "done" && was.status !== "partly_done") {
+    return { error: "Only a change that went through can be put back." };
+  }
+  const spec = actionSpec(String(was.action));
+  if (!spec?.undo) return { error: spec?.undoNote ?? "This change cannot be undone." };
+  // The lines it changed: each id as often as it went through.
+  const went = [...((was.outcome as { done?: string[] } | null)?.done ?? [])];
+  const changed = ((was.targets ?? []) as ActionTarget[]).filter((t) => {
+    const at = went.indexOf(t.id);
+    if (at < 0) return false;
+    went.splice(at, 1);
+    return true;
+  });
+  const back = spec.undo(changed, (was.params ?? {}) as ActionParams);
+  if (!back.targets.length) return { error: "Nothing it changed can be put back." };
+  return { args: back };
+}
+
 export async function proposeStoreAction(
   db: SupabaseClient,
   store: StoreBrief,
@@ -129,6 +170,16 @@ export async function proposeStoreAction(
         note: "Reading everything still works, and designs can still be proposed and built. Ask Warmluke to turn this on for them.",
       },
     };
+  }
+
+  // Put back: built here, so its targets already say what each line
+  // changes from (what that change left), and are not read again from
+  // Warmluke's copy, which may not have caught up yet.
+  const undoing = typeof args.undo_of === "string" && args.undo_of.trim() !== "";
+  if (undoing) {
+    const back = await undoArgs(db, store.id, String(args.undo_of).trim());
+    if ("error" in back) return { ok: false, answer: { error: back.error } };
+    args = back.args;
   }
 
   const wantedAction = String(args.action ?? "").trim();
@@ -200,7 +251,7 @@ export async function proposeStoreAction(
   // asked: the count a stock line changes from, read from Warmluke's
   // copy. It replaces anything the caller sent under the same name.
   let prepared = targets;
-  if (spec.prepare) {
+  if (spec.prepare && !undoing) {
     const got = await spec.prepare(db, store.id, targets);
     if ("error" in got) return { ok: false, answer: { error: got.error } };
     prepared = got.targets;
