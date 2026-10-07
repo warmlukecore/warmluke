@@ -139,8 +139,10 @@ jobs:
     # and the e2e project they left made the next run's store tools ask
     # "which store?". Room, not a cure: a check that grows slow says so.
     # 4 Oct: the live tier alone took 30 minutes on a slow database day,
-    # and 45 cut the browser specs off twice, with no deploy; 60 now.
-    timeout-minutes: 60
+    # and 45 cut the browser specs off twice, with no deploy; 60 then.
+    # 7 Oct: 106 live checks took 44 minutes and the 113 browser specs
+    # need 20 more; 60 cut them off half way, with no deploy. 90 now.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
