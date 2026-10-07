@@ -262,7 +262,8 @@ over every order on the server. It answers with the windows it used (`days`,
 - customer and product counts.
 
 Days are the store's own, in its timezone, falling back to UTC for a zone Postgres does
-not know. Cancelled orders count towards nothing. A window outside 1 to 365 days, or a
+not know (`abo_tz`, 0197: it tries the zone rather than reading `pg_timezone_names`, which
+took seconds under load). Cancelled orders count towards nothing. A window outside 1 to 365 days, or a
 chart outside 1 to 90, is refused. `check-overview` builds rows to break each rule.
 
 ## Disconnect and compliance

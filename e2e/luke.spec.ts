@@ -559,7 +559,8 @@ test("a design that does not fit says which part, and leaves nothing half built"
     await page.goto(`/app/${shop.projectId}`);
     const { panel } = await luke(page);
     await panel.getByRole("button", { name: "Build 2 sections" }).click();
-    await expect(panel.locator('[data-status="refused"]')).toContainText("Did not fit");
+    // A refused build is a build first, then put back: it has a build's time (20s once, 7 Oct).
+    await expect(panel.locator('[data-status="refused"]')).toContainText("Did not fit", { timeout: BUILD_MS });
     await expect(panel.locator('[data-status="put-back"]')).toContainText("Put back");
     expect(await sectionsNamed(shop, ["e2e-twice"])).toEqual([]);
     // Nor in the sidebar, which heard the section made and not put back.
