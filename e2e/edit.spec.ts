@@ -125,7 +125,8 @@ test("every column the store lets be changed is typed into, on any list over it,
     await bar.getByRole("button", { name: "Save, for your yes" }).click();
     await expect(bar.getByText(/1 waiting in the bell for your yes/i)).toBeVisible();
     const products = await asked("update_product");
-    expect((products[0]?.targets as Array<{ set: Record<string, string> }>)[0].set).toEqual({ status: "DRAFT" });
+    expect(products).toHaveLength(1);
+    expect((products[0].targets as Array<{ set: Record<string, string> }>)[0].set).toEqual({ status: "DRAFT" });
 
     // Variants: a price, the merchant's own typing, aimed through its product.
     await page.goto(`/app/${shop.projectId}?section=${prices}`);
@@ -137,7 +138,9 @@ test("every column the store lets be changed is typed into, on any list over it,
       .fill("499.50");
     await bar.getByRole("button", { name: "Save, for your yes" }).click();
     await expect(bar.getByText(/1 waiting in the bell for your yes/i)).toBeVisible();
-    const priced = (await asked("update_variant"))[0]?.targets as Array<Record<string, unknown>>;
+    const variants = await asked("update_variant");
+    expect(variants).toHaveLength(1);
+    const priced = variants[0].targets as Array<Record<string, unknown>>;
     expect(priced[0].set).toEqual({ price: "499.50" });
     expect(String(priced[0].productId)).toMatch(/^gid:\/\/shopify\/Product\//);
 
