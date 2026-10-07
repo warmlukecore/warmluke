@@ -60,7 +60,7 @@ test("Customize renames, hides, moves, filters and orders a section, with no mod
     await page.getByRole("button", { name: "Customize" }).click();
     const sheet = page.getByRole("dialog", { name: "Customize Returns" });
     await sheet.getByRole("textbox", { name: "Name of Customer" }).fill("Buyer");
-    await sheet.getByRole("switch", { name: "Show Amount on the table" }).click();
+    await sheet.getByRole("button", { name: "Show Amount on the table" }).click();
     await sheet.getByRole("button", { name: "Move Reason up" }).click();
     // A filter is offered where the rows give it choices, the reasons; an amount by its lowest and highest.
     await expect(sheet.getByRole("switch", { name: "Filter by Amount" })).toBeVisible();
@@ -105,8 +105,8 @@ test("Customize renames, hides, moves, filters and orders a section, with no mod
     await page.reload();
     await expect(page.getByRole("columnheader", { name: /Buyer/ })).toBeVisible({ timeout: 30_000 });
     await page.getByRole("button", { name: "Customize" }).click();
-    await expect(page.getByRole("switch", { name: "Show Amount on the table" })).toHaveAttribute(
-      "aria-checked",
+    await expect(page.getByRole("button", { name: "Show Amount on the table" })).toHaveAttribute(
+      "aria-pressed",
       "false"
     );
     await expect(page.getByRole("switch", { name: "Filter by Reason" })).toHaveAttribute("aria-checked", "true");

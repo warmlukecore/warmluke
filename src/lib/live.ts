@@ -79,7 +79,17 @@ export function watchRows(channelName: string, watches: Watch[]): () => void {
     );
   }
 
-  channel.subscribe();
+  // A channel that drops (the network, a laptop asleep) joins again by
+  // itself, but what changed while it was away is never sent: an answer
+  // Luke finished and the sections he built stayed off the screen until a
+  // refresh (7 Oct). Joined again, each watcher reads afresh, as for a
+  // burst of rows.
+  let joined = false;
+  channel.subscribe((status) => {
+    if (status !== "SUBSCRIBED") return;
+    if (joined) for (const w of watches) coalesce(w.onChange, undefined);
+    joined = true;
+  });
 
   return () => {
     for (const t of pending.values()) clearTimeout(t.timer);

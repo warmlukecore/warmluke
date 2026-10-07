@@ -160,6 +160,37 @@ test("a question left mid-answer is there on coming back, and its answer lands i
   }
 });
 
+test("a connection that drops mid-answer: the answer lands where it was asked, with no reload", async ({
+  signedIn: page,
+  shop,
+}) => {
+  const before = await threadIds(shop);
+  try {
+    await page.goto(`/app/${shop.projectId}`);
+    const { panel, box } = await luke(page);
+    const fresh = panel.getByRole("button", { name: "New conversation" });
+    if (await fresh.count()) await fresh.click();
+    // The server answers in full and the browser never hears it, as a dropped network leaves it:
+    // the answer showed only after a refresh (7 Oct).
+    await page.route(
+      "**/api/chat",
+      async (route) => {
+        if (route.request().method() !== "POST") return route.continue();
+        await (await route.fetch()).body();
+        await route.abort("connectionreset");
+      },
+      { times: 1 }
+    );
+    await box.fill("Which orders are still waiting for payment?");
+    await box.press("Enter");
+    await expect(panel.getByText(/The connection dropped/)).toBeVisible({ timeout: TURN_MS });
+    await expect(panel.getByText(/#1006/).last()).toBeVisible({ timeout: 30_000 });
+    await expect(panel.getByText("Which orders are still waiting for payment?")).toHaveCount(1);
+  } finally {
+    for (const id of await madeSince(shop, before)) await shop.admin.from("conversations").delete().eq("id", id);
+  }
+});
+
 test("an answer stays in the thread it was asked in, when the owner goes to another", async ({
   signedIn: page,
   shop,

@@ -272,19 +272,26 @@ const railItem = (here: boolean) =>
   }`;
 
 /**
- * The name of what the pointer or the keyboard is on in the icon rail,
- * beside it. Drawn outside the sidebar, which clips what leaves it, and
- * read from each control's own label, so a name is never said twice.
+ * The name of a control that shows only its icon, while the pointer or the
+ * keyboard is on it: beside it in the icon rail, under it in a section's
+ * tools. Drawn outside what holds it, which clips what leaves it, and read
+ * from the control's own words (data-tip, else its label), so a name is
+ * never said twice.
  */
-function RailTip({ rail }: { rail: React.RefObject<HTMLElement | null> }) {
+function RailTip({ rail, below = false }: { rail: React.RefObject<HTMLElement | null>; below?: boolean }) {
   const [tip, setTip] = useState<{ text: string; top: number; left: number } | null>(null);
   useEffect(() => {
     const on = (e: Event) => {
       const el = (e.target as Element | null)?.closest?.("a[aria-label], button[aria-label]");
-      // A phone's drawer is never the rail: a tap there is not a hover.
-      if (!el || !rail.current?.contains(el) || !window.matchMedia("(min-width: 1024px)").matches) return setTip(null);
+      // Where a pointer hovers: a phone's drawer is never the rail, and a tap is not a hover.
+      const hovers = window.matchMedia(below ? "(hover: hover)" : "(min-width: 1024px)").matches;
+      if (!el || !rail.current?.contains(el) || !hovers) return setTip(null);
       const r = el.getBoundingClientRect();
-      setTip({ text: el.getAttribute("aria-label") ?? "", top: r.top + r.height / 2, left: r.right + 10 });
+      const text = el.getAttribute("data-tip") ?? el.getAttribute("aria-label") ?? "";
+      // Under a tool its right edge meets the tool's, so the last one at the window's edge stays inside it.
+      setTip(
+        below ? { text, top: r.bottom + 6, left: r.right } : { text, top: r.top + r.height / 2, left: r.right + 10 }
+      );
     };
     const off = () => setTip(null);
     document.addEventListener("pointerover", on);
@@ -297,13 +304,13 @@ function RailTip({ rail }: { rail: React.RefObject<HTMLElement | null> }) {
       document.removeEventListener("focusout", off);
       document.removeEventListener("scroll", off, true);
     };
-  }, [rail]);
+  }, [rail, below]);
   if (!tip?.text) return null;
   return (
     <div
       aria-hidden
       style={{ top: tip.top, left: tip.left }}
-      className="pop pointer-events-none fixed z-50 -translate-y-1/2 rounded-control bg-primary px-2 py-1 text-xs font-medium whitespace-nowrap text-on-primary shadow-popover"
+      className={`pop pointer-events-none fixed z-50 ${below ? "-translate-x-full" : "-translate-y-1/2"} rounded-control bg-primary px-2 py-1 text-xs font-medium whitespace-nowrap text-on-primary shadow-popover`}
     >
       {tip.text}
     </div>
@@ -502,6 +509,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   const railOn = rail && navDocked;
   const lukeDocked = focus === "luke" || (focus === null && !lukeShut);
   const navRef = useRef<HTMLElement>(null);
+  // A section's own tools, at the end of its header: icons, named under them on hover.
+  const toolsRef = useRef<HTMLDivElement>(null);
   const navSearch = useRef<HTMLInputElement>(null);
   // Finding a section by name, from the sidebar's search box.
   const [navQuery, setNavQuery] = useState("");
@@ -1886,8 +1895,16 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           // Their own turn, mid-flight: the panel is already showing
           // it, and reloading under a stream would replace what is
           // being written with what happens to be saved.
-          if (!id || busyRef.current) return;
+          if (busyRef.current) return;
           const open = conversationIdRef.current;
+          // Several threads at once, or the channel back after a drop
+          // (lib/live): which moved is not known, so the one open is read
+          // again. An answer that landed while the network was down showed
+          // only after a refresh (7 Oct).
+          if (!id) {
+            if (open) loadThread(open).catch(() => {});
+            return;
+          }
           if (id === open) {
             loadThread(id).catch(() => {});
             return;
@@ -2236,6 +2253,46 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // The assistant may answer three ways: with questions, with a
   // blueprint to approve, or with plans to apply. Only the last one
   // ever touches data.
+  /**
+   * A turn whose connection dropped goes on on the server (a durable
+   * turn) and its answer lands in the thread. Looked for every few
+   * seconds for two minutes and shown once it is there: the realtime
+   * word that it landed travels the same network that just dropped, and
+   * the answer showed only after a refresh (7 Oct). Stops when they ask
+   * something else or open another thread.
+   */
+  const waitForAnswer = useCallback(
+    // No thread when it dropped before the server named the new one: the newest is read for the question.
+    (thread: string | null, question: string) => {
+      let tries = 0;
+      const look = async () => {
+        if (busyRef.current || conversationIdRef.current !== thread) return;
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        const res = await fetch(
+          `/api/chat?${new URLSearchParams({ projectId, ...(thread ? { id: thread } : { latest: "1" }) })}`,
+          { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+        ).catch(() => null);
+        const saved = res?.ok
+          ? ((await res.json().catch(() => null)) as {
+              conversationId?: string | null;
+              messages?: Array<{ role: string; payload: { text?: string } | null }>;
+            } | null)
+          : null;
+        const msgs = saved?.messages ?? [];
+        const at = msgs.findLastIndex((m) => m.role === "user" && (m.payload?.text ?? "").trim() === question.trim());
+        const found = thread ?? saved?.conversationId ?? null;
+        if (found && at >= 0 && msgs.slice(at + 1).some((m) => m.role !== "user")) {
+          if (!busyRef.current && conversationIdRef.current === thread) loadThread(found).catch(() => {});
+          return;
+        }
+        if (++tries < 24) setTimeout(look, 5000);
+      };
+      setTimeout(look, 3000);
+    },
+    [projectId, loadThread]
+  );
+
   const runPrompt = useCallback(
     async (text: string, opts?: { silent?: boolean; alertId?: string; moduleId?: string }) => {
       if (!text.trim() || chatBusy || building) return;
@@ -2485,6 +2542,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         // writing it and the response arriving. Re-listing the threads
         // means it shows up in the picker instead of vanishing.
         loadThread().catch(() => {});
+        // Its answer, shown where it was asked when it lands.
+        if (!aborted) waitForAnswer(turnRef.current.thread, text);
       } finally {
         chatAbort.current = null;
         turnRef.current = { thread: null, turn: null };
@@ -2497,7 +2556,17 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         setChatPhase(null);
       }
     },
-    [chatBusy, building, projectId, selectedModuleId, loadThread, rememberConversation, pickedModel, showOnScreen]
+    [
+      chatBusy,
+      building,
+      projectId,
+      selectedModuleId,
+      loadThread,
+      rememberConversation,
+      pickedModel,
+      showOnScreen,
+      waitForAnswer,
+    ]
   );
 
   /**
@@ -3399,26 +3468,43 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     const n = id === selectedModuleId ? undefined : news?.[id];
     return n?.fresh ? "new" : n?.changed ? "changed" : null;
   };
-  const newsSaid = (id: string) => {
-    const n = newsOf(id);
-    return n === "new" ? "New, not opened yet" : n === "changed" ? "Changed since you last looked" : undefined;
+  /**
+   * A section with others inside, folded (or in the icon rail, which shows
+   * no inner rows): its own mark, else what is inside it. Two sections
+   * Luke built inside Orders left Orders' dot alone, and nothing said
+   * they were there (7 Oct). How many are new is said; a change, as a dot.
+   */
+  const newsWithin = (id: string, folded: boolean): { kind: "new" | "changed"; count: number } | null => {
+    const itself = newsOf(id);
+    if (itself === "new" || !folded) return itself ? { kind: itself, count: 0 } : null;
+    const kids = childrenOf.get(id) ?? [];
+    const fresh = kids.filter((k) => newsOf(k.id) === "new").length;
+    if (fresh) return { kind: "new", count: fresh };
+    return itself || kids.some((k) => newsOf(k.id)) ? { kind: "changed", count: 0 } : null;
+  };
+  const newsSaid = (id: string, folded = false) => {
+    const n = newsWithin(id, folded);
+    if (!n) return undefined;
+    if (n.count) return `${n.count} new ${n.count === 1 ? "section" : "sections"} inside, not opened yet`;
+    if (n.kind === "new") return "New, not opened yet";
+    return newsOf(id) ? "Changed since you last looked" : "Something inside changed since you last looked";
   };
   /**
    * The mark itself, at the end of a menu row: a word when it is new, a dot
    * when it changed. Laid over where the row's own buttons appear, and gone
    * while they show, so the name keeps its room.
    */
-  const newsMark = (id: string) => {
-    const n = newsOf(id);
+  const newsMark = (id: string, folded = false) => {
+    const n = newsWithin(id, folded);
     if (!n) return null;
     const at =
-      "pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 transition-opacity group-focus-within:opacity-0 group-hover:opacity-0";
-    return n === "new" ? (
+      "pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 transition-opacity group-hover:opacity-0 group-has-[:focus-visible]:opacity-0";
+    return n.kind === "new" ? (
       <span
         aria-hidden
         className={`${at} rounded-full bg-tone-info px-1.5 py-px text-[10px] leading-4 font-medium text-tone-info-fg`}
       >
-        New
+        {n.count ? `${n.count} new` : "New"}
       </span>
     ) : (
       <span aria-hidden className={`${at} mr-1 size-1.5 rounded-full bg-signal-info`} />
@@ -3432,13 +3518,15 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       href={sectionHref(m.id)}
       draggable={false}
       aria-label={m.nav_label}
-      aria-description={newsSaid(m.id)}
+      aria-description={newsSaid(m.id, true)}
       aria-current={m.id === selectedModuleId ? "page" : undefined}
       onClick={(e) => openHere(e, () => setSelectedModuleId(m.id))}
       className={`relative ${railItem(m.id === selectedModuleId || selectedModule?.parent_id === m.id)}`}
     >
       <Icon name={m.icon} />
-      {newsOf(m.id) && <span aria-hidden className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-signal-info" />}
+      {newsWithin(m.id, true) && (
+        <span aria-hidden className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-signal-info" />
+      )}
     </a>
   );
   const railBuilding = (inStore: boolean) =>
@@ -3513,13 +3601,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 setNavOpen(false);
               })
             }
-            aria-description={newsSaid(m.id)}
+            aria-description={newsSaid(m.id, !isOpen)}
             className="flex min-w-0 flex-1 items-center gap-2.5 py-2 text-left text-sm"
           >
             <Icon name={m.icon} />
             <span className="truncate">{m.nav_label}</span>
           </a>
-          {newsMark(m.id)}
+          {newsMark(m.id, !isOpen)}
           {mine(m) && (
             <>
               <button
@@ -3917,6 +4005,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             </div>
           )}
           {railOn && <RailTip rail={navRef} />}
+          <RailTip rail={toolsRef} below />
 
           {/* ── Main area ── */}
           <main
@@ -3934,20 +4023,15 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 <h1 className="truncate text-base font-semibold text-fg sm:text-lg">
                   {showOverview && store ? "Overview" : (selectedModule?.nav_label ?? project?.name ?? "Your app")}
                 </h1>
-                {schema && (
-                  <span className="hidden shrink-0 rounded-full bg-tone-neutral px-2 py-px text-[11px] font-medium text-tone-neutral-fg sm:inline">
-                    schema v{schema.version}
-                    {schema.created_by === "ai" && " · AI"}
-                  </span>
-                )}
               </div>
-              <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+              {/* Icons, each named under it on hover (RailTip) and to a screen reader by its label;
+                  which version this is, and who made it, is History's to say. */}
+              <div ref={toolsRef} className="flex shrink-0 items-center gap-0.5">
                 {/* Wide screens only: a phone already shows one pane at a time. */}
                 <span className="hidden lg:inline-flex">
                   <button
                     onClick={() => focusOn(focus === "section" ? null : "section")}
                     aria-label={focus === "section" ? "Show the side panels" : "Show only this section"}
-                    title={focus === "section" ? "Show the side panels" : "Show only this section"}
                     className={iconButton}
                   >
                     {focus === "section" ? (
@@ -3961,21 +4045,19 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 {selectedModule && mine(selectedModule) && !selectedModule.parent_id && (
                   <button
                     onClick={() => setShareOpen(true)}
-                    // On a phone only the icon shows; this is its name.
                     aria-label="Share"
-                    title={
+                    data-tip={
                       selectedModule.shared_with_team === false
-                        ? "Only you and the people you pick can see this"
-                        : "Everyone on your team can see this"
+                        ? "Share · only you and the people you pick see it"
+                        : "Share · everyone on your team sees it"
                     }
-                    className={button("secondary")}
+                    className={iconButton}
                   >
                     {selectedModule.shared_with_team === false ? (
-                      <Lock aria-hidden size={15} strokeWidth={1.75} />
+                      <Lock aria-hidden size={16} strokeWidth={1.75} />
                     ) : (
-                      <Users aria-hidden size={15} strokeWidth={1.75} />
+                      <Users aria-hidden size={16} strokeWidth={1.75} />
                     )}
-                    <span className="hidden sm:inline">Share</span>
                   </button>
                 )}
                 {selectedModule && mine(selectedModule) && schema && loadedFor === selectedModule.id && (
@@ -3988,23 +4070,25 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                       setCustomizing(true);
                     }}
                     aria-label="Customize"
-                    title="Rename, hide or move columns, and choose filters and order"
-                    className={button("secondary")}
+                    data-tip="Customize · columns, filters and order"
+                    className={iconButton}
                   >
-                    <SlidersHorizontal aria-hidden size={15} strokeWidth={1.75} />
-                    <span className="hidden sm:inline">Customize</span>
+                    <SlidersHorizontal aria-hidden size={16} strokeWidth={1.75} />
                   </button>
                 )}
                 {(isOwner || mine(selectedModule)) && (
-                  <button onClick={() => setRulesOpen(true)} title="Rules" className={button("secondary")}>
-                    <Zap aria-hidden size={15} strokeWidth={1.75} />
-                    <span className="hidden sm:inline">Rules</span>
+                  <button onClick={() => setRulesOpen(true)} aria-label="Rules" className={iconButton}>
+                    <Zap aria-hidden size={16} strokeWidth={1.75} />
                   </button>
                 )}
                 {selectedModule && mine(selectedModule) && (
-                  <button onClick={() => setHistoryOpen(true)} title="Version history" className={button("secondary")}>
-                    <History aria-hidden size={15} strokeWidth={1.75} />
-                    <span className="hidden sm:inline">History</span>
+                  <button
+                    onClick={() => setHistoryOpen(true)}
+                    aria-label="History"
+                    data-tip="Version history"
+                    className={iconButton}
+                  >
+                    <History aria-hidden size={16} strokeWidth={1.75} />
                   </button>
                 )}
               </div>

@@ -10,7 +10,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowUp, Eye, EyeOff } from "lucide-react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Group } from "@/components/ui/Group";
 import { Select } from "@/components/ui/Select";
@@ -171,14 +171,22 @@ export default function ViewEditor({
                     maxLength={60}
                     className={`${fieldOf("sm")} min-w-0 flex-1`}
                   />
-                  <span className="w-12 shrink-0 text-right text-xs text-fg-muted">
-                    {c.hidden ? "Hidden" : "Shown"}
-                  </span>
-                  <Switch
-                    checked={!c.hidden}
-                    onChange={(on) => set(i, { hidden: !on })}
-                    label={`Show ${was.label} on the table`}
-                  />
+                  {/* An eye: open while it is on the table, struck through while it is not, and the word then. */}
+                  {c.hidden && <span className="shrink-0 text-xs text-fg-muted">Hidden</span>}
+                  <button
+                    type="button"
+                    onClick={() => set(i, { hidden: !c.hidden })}
+                    aria-pressed={!c.hidden}
+                    aria-label={`Show ${was.label} on the table`}
+                    title={c.hidden ? "Hidden from the table: show it" : "On the table: hide it"}
+                    className={iconButton}
+                  >
+                    {c.hidden ? (
+                      <EyeOff aria-hidden size={16} strokeWidth={1.75} />
+                    ) : (
+                      <Eye aria-hidden size={16} strokeWidth={1.75} />
+                    )}
+                  </button>
                 </li>
               );
             })}
