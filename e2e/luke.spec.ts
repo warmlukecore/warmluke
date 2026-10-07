@@ -15,8 +15,12 @@ import { TAPE, expect, test } from "./shop";
  */
 const BUILD_MS = 30_000;
 
-/** How long a turn may take: a second played back, minutes recorded against busy models. */
-const TURN_MS = TAPE === "record" ? 600_000 : 30_000;
+/**
+ * How long a turn may take: seconds played back, minutes recorded against
+ * busy models. Played back, a turn takes 12 to 25 seconds on a laptop, and
+ * near 50 late in CI's run (7 Oct, a shop change on the phone): room for that.
+ */
+const TURN_MS = TAPE === "record" ? 600_000 : 60_000;
 
 /** Luke's panel, opened: below the wide layout (lg, 1024px) it is a drawer behind a button. */
 async function luke(page: Page) {
