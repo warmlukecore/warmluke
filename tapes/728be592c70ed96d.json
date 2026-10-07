@@ -1,0 +1,17 @@
+{
+  "label": "anthropic",
+  "asked": "is already here; to change a rule, remove it and add the new one. none USER REQUEST: When the courier picks up, I want to scan each order's number again and mark it handed over, with the time it went.",
+  "parts": {
+    "system": "7657bc4501421a4a",
+    "tools": "4af7ff3618c201a0",
+    "conversation": "5e687ccac521ae13",
+    "tag": "talk"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "text/event-stream; charset=utf-8",
+      "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-haiku-4-5-20251001\",\"id\":\"msg_011CfoEXZ4iZt5y3khfrQSZ6\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"container\":null,\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":7667,\"cache_creation_input_tokens\":5305,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":5305,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":23,\"service_tier\":\"standard\",\"inference_geo\":\"not_available\"},\"diagnostics\":null}  }\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_01BjDT8RaMg7Yx9CtxJALwyy\",\"name\":\"store_overview\",\"input\":{},\"caller\":{\"type\":\"direct\"}}         }\n\nevent: ping\ndata: {\"type\": \"ping\"}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"\"}               }\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0             }\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null,\"stop_details\":null,\"container\":null},\"usage\":{\"input_tokens\":7667,\"cache_creation_input_tokens\":5305,\"cache_read_input_tokens\":0,\"output_tokens\":37} }\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"      }\n\n"
+    }
+  ]
+}

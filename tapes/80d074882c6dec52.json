@@ -1,0 +1,17 @@
+{
+  "label": "jev",
+  "asked": "Should the courier handover scan go into Packing, or into its own section? → In Packing: the same scan packs first, then marks it handed over with the time",
+  "parts": {
+    "system": "74234e98afe7498f",
+    "tools": "74234e98afe7498f",
+    "conversation": "221517e05d801253",
+    "tag": "reply"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"jev-1.13.0\",\"answers\":{\"window\":{\"type\":\"choice\",\"choice\":\"all\",\"confidence\":1.0,\"probabilities\":{\"named_month\":0.0,\"this_week\":0.0,\"yesterday\":0.0,\"all\":1.0,\"today\":0.0,\"last_month\":0.0,\"this_month\":0.0}},\"month\":{\"type\":\"choice\",\"choice\":\"none\",\"confidence\":1.0,\"probabilities\":{\"aug\":0.0,\"jun\":0.0,\"mar\":0.0,\"jan\":0.0,\"jul\":0.0,\"oct\":0.0,\"sep\":0.0,\"feb\":0.0,\"may\":0.0,\"dec\":0.0,\"none\":1.0,\"nov\":0.0,\"apr\":0.0}},\"kind\":{\"type\":\"choice\",\"choice\":\"unclear\",\"confidence\":0.35,\"probabilities\":{\"lookup\":0.15,\"total\":0.0,\"build\":0.36,\"unclear\":0.48,\"ranking\":0.01}},\"list\":{\"type\":\"choice\",\"choice\":\"none\",\"confidence\":1.0,\"probabilities\":{\"sales\":0.0,\"orders\":0.0,\"products\":0.0,\"none\":1.0,\"stock\":0.0,\"customers\":0.0}}},\"usage\":{\"input_tokens\":1787,\"output_tokens\":284}}"
+    }
+  ]
+}
