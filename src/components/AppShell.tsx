@@ -17,12 +17,13 @@ import { supabase } from "@/lib/supabase-client";
 import { describePlan } from "@/lib/describe";
 import { apiFetch, apiStream, takePendingPrompt } from "@/lib/auth";
 import GenericRenderer, {
+  type CellEdits,
   type ShopChangeInput,
   type ShopChangeKind,
   type StatRequest,
   type StatResult,
 } from "@/components/GenericRenderer";
-import { MOST_TARGETS, STORE_ACTIONS, actionsFor, targetFrom, type ActionTarget } from "@/lib/store-actions";
+import { MOST_TARGETS, STORE_ACTIONS, actionsFor, editsFor, targetFrom, type ActionTarget } from "@/lib/store-actions";
 import { hasScope } from "@/lib/shopify-resources";
 import ChatPanel, { type BuildRecord, type ChatMessage, type InrRate, nextChatId } from "@/components/ChatPanel";
 import type { OfferedModel } from "@/lib/luke-models";
@@ -588,7 +589,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     if (new URLSearchParams(window.location.search).get("waiting")) setChatOpen(true);
   }, []);
   // "people" opens it on the team, from the share dialog's "Add people".
-  const [settingsOpen, setSettingsOpen] = useState<boolean | "people">(false);
+  const [settingsOpen, setSettingsOpen] = useState<boolean | "people" | "store">(false);
   const [shareOpen, setShareOpen] = useState(false);
   // Bumped when a member's own seat changes, so the store is read again.
   const [seatTick, setSeatTick] = useState(0);
@@ -1823,6 +1824,165 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   }, [loadedSource, store, storeActionsOn, isOwner]);
 
   /**
+   * Changes to the store, asked as Luke's and their AI's are (POST
+   * /api/store-actions, ask), in pieces of at most MOST_TARGETS: what went,
+   * what waits and what did not, in one sentence, and the rows of what did
+   * not, to keep. What went is read again a moment later, once Shopify's own
+   * word on it has come in. Shared by ticked rows and editing in place.
+   */
+  const askShop = useCallback(
+    async (
+      asks: Array<{ action: string; targets: ActionTarget[]; params: Record<string, unknown> }>,
+      rowsOf: Map<string, string[]>,
+      left: string[] = []
+    ): Promise<{ said: string; keep: string[] }> => {
+      let sent = 0;
+      let waiting = 0;
+      const errors: string[] = [];
+      const keep = new Set<string>();
+      for (const { action, targets, params } of asks)
+        for (let i = 0; i < targets.length; i += MOST_TARGETS) {
+          const piece = targets.slice(i, i + MOST_TARGETS);
+          const { ok, data } = await apiFetch("/api/store-actions", {
+            do: "ask",
+            projectId,
+            action,
+            targets: piece,
+            params,
+          });
+          if (!ok) {
+            errors.push(String(data.error ?? "It was refused."));
+            for (const t of piece) for (const r of rowsOf.get(t.id) ?? []) keep.add(r);
+            continue;
+          }
+          if (data.status === "waiting") {
+            waiting += piece.length;
+            continue;
+          }
+          sent += ((data.done as string[] | undefined) ?? []).length;
+          for (const e of (data.errors as string[] | undefined) ?? []) {
+            const id = /^(gid:\/\/shopify\/[A-Za-z]+\/\d+): /.exec(e)?.[1];
+            errors.push(id ? e.slice(id.length + 2) : e);
+            for (const r of (id && rowsOf.get(id)) || []) keep.add(r);
+          }
+        }
+      if (sent && selectedModuleId) {
+        const id = selectedModuleId;
+        setTimeout(() => void reloadMoved(id), 3000);
+        setTimeout(() => void reloadMoved(id), 10000);
+      }
+      const parts = [
+        sent ? `updated in Shopify on ${sent}, and the list catches up in a moment` : "",
+        waiting
+          ? isOwner
+            ? `${waiting} waiting in the bell for your yes`
+            : `${waiting} sent to the owner for their yes`
+          : "",
+        errors.length ? `${errors.length === 1 ? "one" : errors.length} not done: ${errors[0]}` : "",
+        ...left,
+      ].filter(Boolean);
+      // One full stop, whatever Shopify's own words ended with.
+      return { said: `${parts.join("; ").replace(/\.+$/, "")}.`, keep: [...keep] };
+    },
+    [projectId, isOwner, selectedModuleId, reloadMoved]
+  );
+
+  /**
+   * A list of the store's edited in place (7 Oct): its columns some change
+   * writes (store-actions editsFor), how each goes, and the saving of what
+   * was typed. A count is set to it; a list of words is compared with what
+   * it held, and what was added and taken goes as the two changes.
+   */
+  const cellEdits = useMemo<CellEdits | undefined>(() => {
+    if (!isStoreTable(loadedSource) || !store?.connected || !storeActionsOn) return undefined;
+    const spec = STORE_TABLES[loadedSource];
+    const gives = spec.gives ?? {};
+    const edits = editsFor(
+      gives,
+      spec.columns.map((c) => c.field)
+    );
+    const columns = Object.fromEntries(
+      Object.entries(edits).map(([field, e]) => {
+        const actions = [e.set, e.add, e.remove].filter((a): a is string => !!a);
+        const short = store.granted
+          ? actions.flatMap((a) => STORE_ACTIONS[a].scopes.filter((sc) => !hasScope(store.granted!, sc)))
+          : [];
+        const straight = actions.every((a) => store.autoSend.includes(a));
+        return [
+          field,
+          {
+            goes: isOwner ? (straight ? "straight" : "yours") : "owner",
+            ...(short.length
+              ? { why: "Shopify has not allowed this yet: reconnect the store in Settings → Store." }
+              : {}),
+          },
+        ];
+      })
+    ) as CellEdits["columns"];
+    if (!Object.keys(columns).length) return undefined;
+    const words = (v: unknown) =>
+      (Array.isArray(v) ? v.map(String) : String(v ?? "").split(",")).map((w) => w.trim()).filter(Boolean);
+    return {
+      columns,
+      onSettings: isOwner ? () => setSettingsOpen("store") : undefined,
+      onSave: async (changes) => {
+        const asks = new Map<string, { action: string; targets: ActionTarget[]; params: Record<string, unknown> }>();
+        const rowsOf = new Map<string, string[]>();
+        // Kept typed in, with why: a count that is not one, a row Shopify can't be pointed at.
+        const notCount: string[] = [];
+        const unaimed: string[] = [];
+        const add = (action: string, target: ActionTarget, params: Record<string, unknown>, rowId: string) => {
+          const key = `${action}\u0000${JSON.stringify(params)}`;
+          const at = asks.get(key) ?? { action, targets: [], params };
+          at.targets.push(target);
+          asks.set(key, at);
+          rowsOf.set(target.id, [...(rowsOf.get(target.id) ?? []), rowId]);
+        };
+        for (const { rec, field, value } of changes) {
+          const e = edits[field];
+          const data = (rec.data ?? {}) as Record<string, unknown>;
+          if (e?.set) {
+            const set = STORE_ACTIONS[e.set];
+            const target = targetFrom(set, gives, data);
+            if (!target) {
+              unaimed.push(rec.id);
+              continue;
+            }
+            if (set.ask.kind === "count") {
+              if (!/^\d+$/.test(value.trim())) {
+                notCount.push(rec.id);
+                continue;
+              }
+              target[set.ask.each] = Number(value.trim());
+              add(e.set, target, {}, rec.id);
+            } else add(e.set, target, { [set.ask.param]: value.trim() }, rec.id);
+          } else if (e?.add && e.remove) {
+            const was = words(data[field]);
+            const now = words(value);
+            const target = targetFrom(STORE_ACTIONS[e.add], gives, data);
+            if (!target) {
+              unaimed.push(rec.id);
+              continue;
+            }
+            const added = now.filter((w) => !was.some((x) => x.toLowerCase() === w.toLowerCase()));
+            const taken = was.filter((w) => !now.some((x) => x.toLowerCase() === w.toLowerCase()));
+            if (added.length) add(e.add, target, { tags: added }, rec.id);
+            if (taken.length) add(e.remove, { ...target }, { tags: taken }, rec.id);
+          }
+        }
+        const left = [
+          notCount.length ? `${notCount.length} not a whole number of 0 or more, so left as typed` : "",
+          unaimed.length ? `${unaimed.length} without what Shopify needs to find them` : "",
+        ].filter(Boolean);
+        const held = [...notCount, ...unaimed];
+        if (!asks.size) return { said: `${left.join("; ") || "Nothing to save"}.`, keep: held };
+        const { said, keep } = await askShop([...asks.values()], rowsOf, left);
+        return { said, keep: [...keep, ...held] };
+      },
+    };
+  }, [loadedSource, store, storeActionsOn, isOwner, askShop]);
+
+  /**
    * A change to the store on ticked rows (0195): each row aimed by the ids
    * its list gives, a count set or moved from what the row holds now, and
    * asked for as Luke's and their AI's are (POST /api/store-actions, ask),
@@ -1890,55 +2050,10 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       if (targets.length === 0)
         return { said: `${spec.label}: nothing to change${left.length ? ` (${left.join(", ")})` : ""}.`, keep: [] };
 
-      let sent = 0;
-      let waiting = 0;
-      const errors: string[] = [];
-      const keep = new Set<string>();
-      for (let i = 0; i < targets.length; i += MOST_TARGETS) {
-        const piece = targets.slice(i, i + MOST_TARGETS);
-        const { ok, data } = await apiFetch("/api/store-actions", {
-          do: "ask",
-          projectId,
-          action,
-          targets: piece,
-          params,
-        });
-        if (!ok) {
-          errors.push(String(data.error ?? "It was refused."));
-          for (const t of piece) for (const r of rowsOf.get(t.id) ?? []) keep.add(r);
-          continue;
-        }
-        if (data.status === "waiting") {
-          waiting += piece.length;
-          continue;
-        }
-        sent += ((data.done as string[] | undefined) ?? []).length;
-        for (const e of (data.errors as string[] | undefined) ?? []) {
-          const id = /^(gid:\/\/shopify\/[A-Za-z]+\/\d+): /.exec(e)?.[1];
-          errors.push(id ? e.slice(id.length + 2) : e);
-          for (const r of (id && rowsOf.get(id)) || []) keep.add(r);
-        }
-      }
-      // Shopify's word on it comes back as a webhook, in a moment or a few.
-      if (sent && selectedModuleId) {
-        const id = selectedModuleId;
-        setTimeout(() => void reloadMoved(id), 3000);
-        setTimeout(() => void reloadMoved(id), 10000);
-      }
-      const parts = [
-        sent ? `sent to Shopify on ${sent}, and the list catches up in a moment` : "",
-        waiting
-          ? isOwner
-            ? `${waiting} waiting in the bell for your yes`
-            : `${waiting} sent to the owner for their yes`
-          : "",
-        errors.length ? `${errors.length === 1 ? "one" : errors.length} not done: ${errors[0]}` : "",
-        ...left,
-      ].filter(Boolean);
-      // One full stop, whatever Shopify's own words ended with.
-      return { said: `${spec.label}: ${parts.join("; ").replace(/\.+$/, "")}.`, keep: [...keep] };
+      const { said, keep } = await askShop([{ action, targets, params }], rowsOf, left);
+      return { said: `${spec.label}: ${said}`, keep };
     },
-    [loadedSource, projectId, isOwner, selectedModuleId, reloadMoved]
+    [loadedSource, askShop]
   );
 
   // Stat cards counted over the whole section, not the page. The
@@ -4420,6 +4535,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                             }),
                           // Changes to the store itself, on ticked rows (0195).
                           ...(shopKinds.length > 0 ? { shopChanges: shopKinds, onShopChange: shopChange } : {}),
+                          // The list edited in place, cell by cell (7 Oct).
+                          ...(cellEdits ? { cellEdits } : {}),
                           // Their own fields beside each row: row actions and
                           // scans set them; the store's columns stay the import's.
                           ...(myColumns.length > 0
@@ -4629,7 +4746,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           {settingsOpen && project && isOwner && (
             <ProjectSettings
               project={project}
-              initialTab={settingsOpen === "people" ? "people" : undefined}
+              initialTab={settingsOpen === "people" || settingsOpen === "store" ? settingsOpen : undefined}
               onSaved={setProject}
               onDeleted={() => router.replace("/dashboard")}
               onClose={() => setSettingsOpen(false)}

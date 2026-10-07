@@ -405,6 +405,14 @@ that kind as the yes. What Luke or their own AI asks for, and what a teammate ch
 teammate who can open the store may now ask), always waits for the owner; their AI can
 neither flip the switch nor send.
 
+Or they press Edit on the list and type into a cell. A column is editable when a change
+in the registry names it in `edits` (`set_stock` sets `available`; `add_tags` and
+`remove_tags` together edit `tags`; `set_order_note` sets `note`), read by `editsFor`, so
+a new change with `edits` makes its column editable with no screen code. Save sends the
+typed values through the same ask, grouped by change and value: a stock count is set to
+what was typed, a list of tags becomes what was added and what was taken. Nothing is
+written in Warmluke itself; the row shows Shopify's value once the change lands.
+
 ## Validation and repair
 
 Parsing removes code fences and normalizes a small set of known aliases, then validates

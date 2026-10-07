@@ -22,6 +22,7 @@ import {
   STORE_ACTIONS,
   actionSpec,
   actionsFor,
+  editsFor,
   sendNowSaid,
   targetFrom,
   whatCanChange,
@@ -261,6 +262,28 @@ console.log("\nand a list's own screen offers what its rows can be aimed at (019
     "what the owner agrees to is said from the change",
     /without asking you again/.test(sendNowSaid(STORE_ACTIONS.set_stock, "x.myshopify.com"))
   );
+  // Edit mode: a column is typed into only where a change writes it whole,
+  // or both adds to it and takes from it; read from the registry, not listed.
+  const editable = (t) =>
+    editsFor(
+      STORE_TABLES[t]?.gives,
+      STORE_TABLES[t].columns.map((c) => c.field)
+    );
+  check(
+    "stock: its available count is set",
+    JSON.stringify(editable("inventory_levels")) === '{"available":{"set":"set_stock"}}'
+  );
+  check(
+    "a list of words is edited by adding and taking",
+    JSON.stringify(editsFor(STORE_TABLES.orders.gives, ["tags"])) ===
+      '{"tags":{"add":"add_tags","remove":"remove_tags"}}'
+  );
+  check(
+    "a column the list does not show is not edited",
+    Object.keys(editsFor(STORE_TABLES.orders.gives, [])).length === 0
+  );
+  for (const [name, spec] of Object.entries(STORE_ACTIONS))
+    if (spec.edits) check(`${name} edits as set, add or remove`, ["set", "add", "remove"].includes(spec.edits.as));
 }
 
 console.log(fails.length === 0 ? "\nthe fifth entry will cost what the first did" : `\n${fails.length} FAILED`);

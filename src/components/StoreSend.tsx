@@ -127,7 +127,7 @@ export function StoreSend({
                 </div>
                 <div className="mt-0.5 text-xs text-fg-muted">
                   {isOn
-                    ? `Goes straight to Shopify${since[a] ? `, on since ${day(since[a])}` : ""}.`
+                    ? `Goes straight to Shopify${since[a] ? `, on since ${day(since[a])}` : ""}. Change it on the list: press Edit and type into the cell, or tick rows.`
                     : "Waits in the bell for your yes."}
                   {short.length > 0 &&
                     ` Shopify has not allowed this yet (${short.join(", ")}): reconnect the store to allow it.`}

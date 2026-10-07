@@ -111,15 +111,12 @@ for (const spec of Object.values(STORE_ACTIONS)) {
   check(`Luke knows it can ${said}`, design.includes(said) && talk.includes(said));
 }
 check(
-  "from the chat or a list's ticked rows, each with the owner's yes unless they let that kind go straight (0195), never Luke's ask",
-  /Asked for in this chat \(a card each\) or made by the owner on a list's ticked rows; each waits for their yes unless Settings → Store sends that kind straight, never what you ask/.test(
+  "from the chat or a list (ticked rows, or Edit and a cell), each with the owner's yes unless they let that kind go straight (0195), never Luke's ask",
+  /Asked for in this chat \(a card each\) or made by the owner on a list \(ticked rows, or Edit and type in a cell\); each waits for their yes unless Settings → Store sends that kind straight, never what you ask/.test(
     design
   )
 );
-check(
-  "never from a rule, a button, a scan or a screen",
-  /cannot be started by a rule, a button, a scan or a screen/.test(design)
-);
+check("never from a rule, a button, a scan or a screen", /No rule, button, scan or screen starts one/.test(design));
 check("with the permissions it needs named", design.includes("write_inventory"));
 check(
   "and 'not possible' no longer reads as 'cannot change Shopify'",

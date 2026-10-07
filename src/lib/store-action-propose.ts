@@ -235,7 +235,7 @@ export function aiProposeTool(
   const asked = new Map<string, Record<string, unknown>>();
   return tool({
     description:
-      "Ask for a change IN the merchant's Shopify shop itself: a tag on some orders, a note, a stock count. Only when they ask for one. Find the Shopify ids first with search_store: orders, products and customers carry shopify_id, stock carries inventory_item_id and location_id. Warmluke writes the sentence they will read, from the change, not from you. Nothing happens until they agree to it on the card that appears below this conversation, and you cannot agree for them, even for a kind they send straight to Shopify from their own lists (Settings → Store), which covers only changes they make themselves; for many rows, they can also tick them on the store list and change them there. What can be asked for: " +
+      "Ask for a change IN the merchant's Shopify shop itself: a tag on some orders, a note, a stock count. Only when they ask for one. Find the Shopify ids first with search_store: orders, products and customers carry shopify_id, stock carries inventory_item_id and location_id. Warmluke writes the sentence they will read, from the change, not from you. Nothing happens until they agree to it on the card that appears below this conversation, and you cannot agree for them, even for a kind they send straight to Shopify from their own lists (Settings → Store), which covers only changes they make themselves; for many rows, they can also tick them on the store list, or press Edit and type into the cells, and change them there. What can be asked for: " +
       ACTION_CATALOGUE.map((c) => `${c.action} (${c.does})`).join(", ") +
       ".",
     inputSchema: jsonSchema<Record<string, unknown>>(PROPOSE_INPUT),

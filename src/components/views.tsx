@@ -16,7 +16,7 @@ import { useFormat, type Formatting } from "@/lib/format";
 import { isId, looksLikeCode } from "@/lib/no-ids";
 import { isYes } from "@/lib/filters";
 import { useLinkLabel } from "@/components/LinkContext";
-import { button, type ButtonTone } from "@/components/ui/controls";
+import { button, fieldOf, type ButtonTone } from "@/components/ui/controls";
 import { ArrowDown, ArrowUp, ArrowUpDown, Check, Clock, Copy, Inbox, Plus, SearchX } from "lucide-react";
 
 /**
@@ -307,6 +307,141 @@ export interface ViewProps {
   onSelect?: (ids: string[], on: boolean) => void;
   /** Columns added since this person last looked (0191), marked New in the table's head for this visit. */
   newFields?: ReadonlySet<string>;
+  /** Which section this is, to keep the widths its columns were dragged to on this device. */
+  widthKey?: string;
+  /**
+   * Edited in place (7 Oct): these columns' cells are typed into, each
+   * change kept as a draft until it is saved or let go.
+   */
+  editing?: {
+    fields: ReadonlySet<string>;
+    draft: (rec: RecordRow, field: string) => string | undefined;
+    onDraft: (rec: RecordRow, field: string, value: string) => void;
+  };
+}
+
+/** A cell being edited: what it holds now, typed over; changed, it says so. */
+function EditCell({
+  col,
+  rec,
+  editing,
+}: {
+  col: SchemaColumn;
+  rec: RecordRow;
+  editing: NonNullable<ViewProps["editing"]>;
+}) {
+  const was = rec.data?.[col.field];
+  const now = Array.isArray(was) ? was.join(", ") : was === null || was === undefined ? "" : String(was);
+  const typed = editing.draft(rec, col.field);
+  const changed = typed !== undefined && typed.trim() !== now.trim();
+  const counted = NUMERIC.has(col.type);
+  // Changed is a dot beside the box, not a second ring on it: the field's own ring is its focus.
+  return (
+    <span className="relative inline-flex w-full items-center justify-end">
+      {changed && <span aria-hidden className="absolute -left-2.5 size-1.5 rounded-full bg-signal-info" />}
+      <input
+        value={typed ?? now}
+        onChange={(e) => editing.onDraft(rec, col.field, e.target.value)}
+        onClick={(e) => e.stopPropagation()}
+        // As in a spreadsheet: Enter goes down the column (Shift+Enter up), Escape puts the cell back.
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && changed) {
+            e.stopPropagation();
+            editing.onDraft(rec, col.field, now);
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            const row = e.currentTarget.closest("tr");
+            const next = (
+              e.shiftKey ? row?.previousElementSibling : row?.nextElementSibling
+            )?.querySelector<HTMLInputElement>(`input[data-edit="${CSS.escape(col.field)}"]`);
+            next?.focus();
+            next?.select();
+          }
+        }}
+        data-edit={col.field}
+        inputMode={counted ? "numeric" : undefined}
+        aria-label={`${col.label} of this row${changed ? ", changed" : ""}`}
+        aria-invalid={counted && changed && !/^\d+$/.test((typed ?? "").trim()) ? true : undefined}
+        className={`${fieldOf("sm")} ${counted ? "w-20 text-right" : "w-full min-w-40"} tabular-nums`}
+      />
+    </span>
+  );
+}
+
+/** A column with no width of its own stops here: a long name is cut, and said whole on hover. */
+const CELL_CAP = 320;
+const CELL_MIN = 64;
+const widthsAt = (key: string) => `abo_widths:${key}`;
+/** A cell's words for its hover, when it is words or a number: what a cut cell holds in full. */
+const plainOf = (v: unknown) => (typeof v === "string" || typeof v === "number" ? String(v) : undefined);
+function keptWidths(key: string | undefined): Record<string, number> {
+  if (!key) return {};
+  try {
+    const kept = JSON.parse(localStorage.getItem(widthsAt(key)) ?? "{}") as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(kept).filter(([, w]) => typeof w === "number" && w >= CELL_MIN)) as Record<
+      string,
+      number
+    >;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * A column's edge, dragged to make it wider or narrower, as in a
+ * spreadsheet (7 Oct): arrows move it by a step, a double press gives it
+ * back its own width. Kept per section on this device.
+ */
+function ColumnEdge({
+  label,
+  width,
+  onWidth,
+}: {
+  label: string;
+  width: number | undefined;
+  onWidth: (w: number | undefined, done: boolean) => void;
+}) {
+  const start = (e: React.PointerEvent<HTMLSpanElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const th = e.currentTarget.parentElement;
+    const from = e.clientX;
+    const was = th?.getBoundingClientRect().width ?? width ?? CELL_CAP;
+    let last = was;
+    const move = (m: PointerEvent) => {
+      last = Math.min(800, Math.max(CELL_MIN, Math.round(was + m.clientX - from)));
+      onWidth(last, false);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      onWidth(last, true);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  return (
+    <span
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={`Width of ${label}`}
+      aria-valuenow={width}
+      tabIndex={0}
+      onPointerDown={start}
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        onWidth(undefined, true);
+      }}
+      onKeyDown={(e) => {
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault();
+        const at = width ?? e.currentTarget.parentElement?.getBoundingClientRect().width ?? CELL_CAP;
+        onWidth(Math.min(800, Math.max(CELL_MIN, Math.round(at + (e.key === "ArrowRight" ? 24 : -24)))), true);
+      }}
+      className="absolute top-1.5 right-0 bottom-1.5 z-10 w-1.5 cursor-col-resize rounded-full transition-colors hover:bg-line-strong focus-visible:bg-focus focus-visible:outline-none"
+    />
+  );
 }
 
 /**
@@ -414,11 +549,30 @@ export function TableView({
   selected,
   onSelect,
   newFields,
+  widthKey,
+  editing,
 }: ViewProps & {
   sort: { field: string; dir: "asc" | "desc" } | null;
   onSort: (field: string) => void;
 }) {
   const hasActions = (actions?.length ?? 0) > 0 && !!onAction;
+  const [widths, setWidths] = useState<Record<string, number>>(() => keptWidths(widthKey));
+  useEffect(() => setWidths(keptWidths(widthKey)), [widthKey]);
+  const setWidth = (field: string, w: number | undefined, done: boolean) =>
+    setWidths((was) => {
+      const next = { ...was };
+      if (w === undefined) delete next[field];
+      else next[field] = w;
+      if (done && widthKey)
+        try {
+          localStorage.setItem(widthsAt(widthKey), JSON.stringify(next));
+        } catch {
+          // A browser that keeps nothing still resizes for this visit.
+        }
+      return next;
+    });
+  // What a cell may take: its column's own width, else the cap, less the cell's padding.
+  const room = (field: string) => (widths[field] ?? CELL_CAP) - 24;
   // The rows to act on together: ticked in the first column, every one shown from its head.
   const ids = records.map((r) => r.id);
   const allTicked = ids.length > 0 && ids.every((id) => selected?.has(id));
@@ -446,6 +600,7 @@ export function TableView({
                 <th
                   key={col.field}
                   scope="col"
+                  style={widths[col.field] ? { width: widths[col.field], minWidth: widths[col.field] } : undefined}
                   aria-sort={dir ? (dir === "asc" ? "ascending" : "descending") : undefined}
                   className={`sticky -top-1.5 bg-surface-subdued p-0 text-xs font-medium whitespace-nowrap text-fg-muted first:rounded-l-lg last:rounded-r-lg ${
                     i === 0
@@ -466,6 +621,11 @@ export function TableView({
                   ) : (
                     <SortButton col={col} dir={dir} onSort={onSort} fresh={newFields?.has(col.field)} />
                   )}
+                  <ColumnEdge
+                    label={col.label}
+                    width={widths[col.field]}
+                    onWidth={(w, done) => setWidth(col.field, w, done)}
+                  />
                 </th>
               );
             })}
@@ -505,6 +665,27 @@ export function TableView({
                           checked={!!selected?.has(rec.id)}
                           onChange={(on) => onSelect([rec.id], on)}
                         />
+                        <div
+                          className="min-w-0 truncate"
+                          style={{ maxWidth: room(col.field) - 32 }}
+                          title={plainOf(rec.data?.[col.field])}
+                        >
+                          <Cell
+                            col={col}
+                            value={rec.data?.[col.field]}
+                            currency={amountCurrency(col, rec)}
+                            was={wasOf(col, rec)}
+                          />
+                        </div>
+                      </div>
+                    ) : editing?.fields.has(col.field) ? (
+                      <EditCell col={col} rec={rec} editing={editing} />
+                    ) : (
+                      <div
+                        className="truncate"
+                        style={{ maxWidth: room(col.field) }}
+                        title={plainOf(rec.data?.[col.field])}
+                      >
                         <Cell
                           col={col}
                           value={rec.data?.[col.field]}
@@ -512,13 +693,6 @@ export function TableView({
                           was={wasOf(col, rec)}
                         />
                       </div>
-                    ) : (
-                      <Cell
-                        col={col}
-                        value={rec.data?.[col.field]}
-                        currency={amountCurrency(col, rec)}
-                        was={wasOf(col, rec)}
-                      />
                     )}
                   </td>
                 ))}

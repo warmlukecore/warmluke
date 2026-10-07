@@ -293,13 +293,138 @@ test("stock changed on ticked rows waits for the owner's yes, and goes straight 
     await ticks.nth(0).click();
     await bar.getByRole("textbox", { name: "Count" }).fill("38");
     await bar.getByRole("button", { name: "Send to Shopify (1)" }).click();
-    await expect(bar.getByText(/^Set a stock count: (sent to Shopify|one not done)/)).toBeVisible({ timeout: 30_000 });
+    await expect(bar.getByText(/^Set a stock count: (updated in Shopify|one not done)/)).toBeVisible({
+      timeout: 30_000,
+    });
     const second = await asked();
     expect(["done", "partly_done", "failed"]).toContain(second[0]?.status);
     expect(second[0]?.approved_by).toBe(shop.userId);
   } finally {
     await shop.admin.from("store_actions").delete().eq("project_id", shop.projectId).gte("created_at", since);
     await shop.admin.from("store_send_consents").delete().eq("project_id", shop.projectId);
+    await shop.admin
+      .from("stores")
+      .update({ auto_send: [], granted_scopes: grant?.granted_scopes ?? null })
+      .eq("id", shop.storeId);
+    await shop.admin
+      .from("account_settings")
+      .upsert({ user_id: shop.userId, store_actions_enabled: was?.store_actions_enabled ?? false });
+    await shop.admin.from("modules").delete().eq("id", id);
+  }
+});
+
+test("stock edited in place: typed into its cell, waits for the owner's yes, saved straight once that is on; a column keeps the width it was given", async ({
+  signedIn: page,
+  shop,
+}) => {
+  const { data: was } = await shop.admin
+    .from("account_settings")
+    .select("store_actions_enabled")
+    .eq("user_id", shop.userId)
+    .maybeSingle();
+  await shop.admin.from("account_settings").upsert({ user_id: shop.userId, store_actions_enabled: true });
+  const { data: grant } = await shop.admin.from("stores").select("granted_scopes").eq("id", shop.storeId).single();
+  await shop.admin
+    .from("stores")
+    .update({ granted_scopes: [...((grant?.granted_scopes as string[] | null) ?? []), "write_inventory"] })
+    .eq("id", shop.storeId);
+  const made = await page.request.post("/api/apply", {
+    headers: { Authorization: `Bearer ${(shop.session as { access_token: string }).access_token}` },
+    data: {
+      projectId: shop.projectId,
+      plans: [
+        {
+          changeType: "NEW_MODULE",
+          targetModuleId: null,
+          newModule: { name: "e2e-counts-edit", nav_label: "Counts", icon: "table", source_table: "inventory_levels" },
+          newSchema: null,
+          newRecords: null,
+          explanation: "The store's stock, to count in place.",
+        },
+      ],
+    },
+  });
+  expect(made.ok(), `the section was built: ${await made.text()}`).toBe(true);
+  const { data: mod } = await shop.admin
+    .from("modules")
+    .select("id")
+    .eq("project_id", shop.projectId)
+    .eq("name", "e2e-counts-edit")
+    .single();
+  const id = mod!.id as string;
+  const since = new Date().toISOString();
+  const asked = async () =>
+    (
+      await shop.admin
+        .from("store_actions")
+        .select("status, targets, approved_by")
+        .eq("project_id", shop.projectId)
+        .gte("created_at", since)
+        .order("created_at", { ascending: false })
+    ).data ?? [];
+  try {
+    await page.goto(`/app/${shop.projectId}?section=${id}`);
+    await expect(page.getByRole("heading", { level: 1, name: "Counts" })).toBeVisible();
+
+    // A column given a width keeps it, on this device.
+    const edge = page.getByRole("separator", { name: "Width of Product" });
+    const head = page.getByRole("columnheader", { name: /Product/ });
+    const before = (await head.boundingBox())!.width;
+    await edge.focus();
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await expect.poll(async () => (await head.boundingBox())!.width).toBeGreaterThan(before + 30);
+
+    // Typed into its cell: off until the owner turns it on, so it waits for their yes.
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    const bar = page.getByRole("region", { name: "Editing in place" });
+    const cells = page.getByRole("textbox", { name: /^Available of this row/ });
+    // Enter goes down the column, Escape puts a cell back.
+    await cells.nth(0).fill("7");
+    await cells.nth(0).press("Enter");
+    await expect(cells.nth(1)).toBeFocused();
+    await cells.nth(0).focus();
+    await cells.nth(0).press("Escape");
+    await expect(bar.getByText("Type into a cell to change it")).toBeVisible();
+    await cells.nth(0).fill("41");
+    await expect(bar.getByText("1 change")).toBeVisible();
+    await bar.getByRole("button", { name: "Save, for your yes" }).click();
+    await expect(bar.getByText(/1 waiting in the bell for your yes/)).toBeVisible();
+    const first = await asked();
+    expect(first[0]?.status).toBe("pending");
+    expect(((first[0]?.targets ?? []) as Array<{ quantity: number }>)[0]?.quantity).toBe(41);
+    // The way to send straight is one press away.
+    await bar.getByRole("button", { name: "Save straight to Shopify instead" }).click();
+    await expect(page.getByRole("tab", { name: "Store" })).toHaveAttribute("aria-selected", "true");
+    await page.keyboard.press("Escape");
+
+    // On (as Settings turns it on): the owner's edit goes now, and is tried on Shopify.
+    await shop.admin
+      .from("stores")
+      .update({ auto_send: ["set_stock"] })
+      .eq("id", shop.storeId);
+    await page.reload();
+    await expect(head).toBeVisible();
+    expect((await head.boundingBox())!.width).toBeGreaterThan(before + 30);
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await cells.nth(0).fill("42");
+    await bar.getByRole("button", { name: "Save to Shopify" }).click();
+    await expect(bar.getByText(/updated in Shopify|not done/)).toBeVisible({ timeout: 30_000 });
+    const second = await asked();
+    expect(["done", "partly_done", "failed"]).toContain(second[0]?.status);
+    expect(second[0]?.approved_by).toBe(shop.userId);
+
+    // A count that is not one is never sent: it stays typed in, and says why.
+    // (A change Shopify refused stays typed in too: put it away first.)
+    const discard = bar.getByRole("button", { name: "Discard" });
+    if (await discard.isVisible()) await discard.click();
+    await cells.nth(1).fill("-3");
+    await bar.getByRole("button", { name: "Save to Shopify" }).click();
+    await expect(bar.getByText(/1 not a whole number of 0 or more, so left as typed/)).toBeVisible();
+    await expect(cells.nth(1)).toHaveValue("-3");
+    expect((await asked()).length).toBe(second.length);
+  } finally {
+    await shop.admin.from("store_actions").delete().eq("project_id", shop.projectId).gte("created_at", since);
     await shop.admin
       .from("stores")
       .update({ auto_send: [], granted_scopes: grant?.granted_scopes ?? null })

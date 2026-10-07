@@ -93,6 +93,13 @@ export interface StoreActionSpec {
   ask:
     | { param: string; kind: "tags" | "text"; label: string }
     | { each: string; kind: "count"; label: string; current: string };
+  /**
+   * The column of a list this change writes when it is typed into, in a
+   * list's edit mode (7 Oct): set to what was typed, or the words added to
+   * or taken from a list of them (tags). A list without that column has
+   * nothing of this change to edit in place.
+   */
+  edits?: { column: string; as: "set" | "add" | "remove" };
   confirm: ConfirmLevel;
   /** One sentence for the card, built from the real numbers. */
   say: (targets: ActionTarget[], params: ActionParams) => string;
@@ -210,6 +217,7 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
     needs: ["Order", "Product", "Customer"],
     aims: { id: ["Order", "Product", "Customer"] },
     ask: { param: "tags", kind: "tags", label: "Tag" },
+    edits: { column: "tags", as: "add" },
     confirm: "list",
     say: (targets, params) => `Tags ${kinds(targets)} "${tagsOf(params).join('", "')}"`,
     check: (targets, params) =>
@@ -229,6 +237,7 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
     needs: ["Order", "Product", "Customer"],
     aims: { id: ["Order", "Product", "Customer"] },
     ask: { param: "tags", kind: "tags", label: "Tag" },
+    edits: { column: "tags", as: "remove" },
     confirm: "list",
     say: (targets, params) => `Takes "${tagsOf(params).join('", "')}" off ${kinds(targets)}`,
     check: (targets, params) =>
@@ -249,6 +258,7 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
     needs: ["Order"],
     aims: { id: ["Order"] },
     ask: { param: "note", kind: "text", label: "Note" },
+    edits: { column: "note", as: "set" },
     confirm: "list",
     say: (targets, params) =>
       `Writes a note on ${count(targets.length, "order")}: "${String(params.note ?? "").slice(0, 60)}"`,
@@ -284,6 +294,7 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
     aims: { id: ["InventoryItem"], locationId: ["Location"] },
     // The count on the row now, to move it by a number as well as set it.
     ask: { each: "quantity", kind: "count", label: "Count", current: "available" },
+    edits: { column: "available", as: "set" },
     confirm: "list",
     say: (targets) =>
       targets.length === 1
@@ -467,4 +478,24 @@ export function sendNowSaid(spec: StoreActionSpec, shop: string): string {
   const what = spec.label.charAt(0).toLowerCase() + spec.label.slice(1);
   const back = spec.undo ? "It can be put back with the opposite change." : (spec.undoNote ?? "It cannot be undone.");
   return `When you ${what} on a list in Warmluke, it is sent to ${shop} at once, without asking you again. It changes your live Shopify store. ${back} What Luke or your own AI asks for, and what your teammates change, still waits for your yes. You can turn this off at any time.`;
+}
+
+/**
+ * What a list can be edited in place (7 Oct): each of its columns some
+ * change writes, with the change that sets it, or the two that add to and
+ * take from it. Off the registry and the list's own ids and columns.
+ */
+export function editsFor(
+  gives: Readonly<Record<string, string>> | undefined,
+  columns: readonly string[]
+): Record<string, { set?: string; add?: string; remove?: string }> {
+  const out: Record<string, { set?: string; add?: string; remove?: string }> = {};
+  for (const a of actionsFor(gives)) {
+    const e = STORE_ACTIONS[a].edits;
+    if (!e || !columns.includes(e.column)) continue;
+    (out[e.column] ??= {})[e.as] = a;
+  }
+  // A list of words is edited only when both its adding and its taking are there.
+  for (const [c, e] of Object.entries(out)) if (!e.set && !(e.add && e.remove)) delete out[c];
+  return out;
 }

@@ -48,6 +48,19 @@ export type ShopChangeKind = {
   goes: "straight" | "yours" | "owner";
   why?: string;
 };
+/**
+ * A list of the store's edited in place (7 Oct): its columns a change can
+ * write, how each goes, and the saving of what was typed.
+ */
+export type CellEdits = {
+  columns: Record<string, { goes: ShopChangeKind["goes"]; why?: string }>;
+  onSave: (
+    changes: Array<{ rec: RecordRow; field: string; value: string }>
+  ) => Promise<{ said: string; keep: string[] }>;
+  /** Opens Settings → Store, where sending straight is turned on. */
+  onSettings?: () => void;
+};
+
 /** What was typed for it: a tag or a note, or a count and whether it is set, added or taken away. */
 export type ShopChangeInput = { value: string; mode: "set" | "add" | "remove" };
 
@@ -95,7 +108,7 @@ import {
   type PeriodRange,
   type PeriodSpec,
 } from "@/lib/period";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Plus } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Pencil, Plus } from "lucide-react";
 import { Select } from "@/components/ui/Select";
 import { DateField } from "@/components/ui/DateField";
 import { PAGE_SIZES, keptPageSize, pageSizeKey, type TableState } from "@/lib/store-read";
@@ -450,6 +463,7 @@ export default function GenericRenderer({
   ownFields,
   shopChanges,
   onShopChange,
+  cellEdits,
 }: {
   schema: UiSchema;
   records: RecordRow[];
@@ -521,6 +535,8 @@ export default function GenericRenderer({
   ownFields?: string[];
   /** Changes to the store these rows come from, offered on ticked rows (0195). */
   shopChanges?: ShopChangeKind[];
+  /** The list edited in place, cell by cell (7 Oct). */
+  cellEdits?: CellEdits;
   /** Makes one on the ticked rows; says what happened, and which rows to keep ticked. */
   onShopChange?: (
     action: string,
@@ -1020,6 +1036,38 @@ export default function GenericRenderer({
     }
   }
 
+  // Edited in place (7 Oct): what was typed, by row and column, until it is saved or let go.
+  const editFields = Object.keys(cellEdits?.columns ?? {});
+  const [editMode, setEditMode] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [editWork, setEditWork] = useState(false);
+  const [editSaid, setEditSaid] = useState<string | null>(null);
+  const draftKey = (id: string, field: string) => `${id}\u0000${field}`;
+  const asNow = (v: unknown) => (Array.isArray(v) ? v.join(", ") : v === null || v === undefined ? "" : String(v));
+  const changes = Object.entries(drafts).flatMap(([k, value]) => {
+    const [id, field] = k.split("\u0000");
+    const rec = records.find((r) => r.id === id);
+    return rec && value.trim() !== asNow(rec.data?.[field]).trim() ? [{ rec, field, value }] : [];
+  });
+  const editGoes = [...new Set(changes.map((c) => cellEdits?.columns[c.field]?.goes))];
+  const saveEdits = async () => {
+    if (!cellEdits || !changes.length) return;
+    setEditWork(true);
+    setEditSaid(null);
+    try {
+      const { said, keep } = await cellEdits.onSave(changes);
+      // What did not go stays typed in, to try again.
+      setDrafts((was) => Object.fromEntries(Object.entries(was).filter(([k]) => keep.includes(k.split("\u0000")[0]))));
+      setEditSaid(said);
+    } catch (e) {
+      setEditSaid(
+        `Warmluke didn't answer (${e instanceof Error ? e.message : "no connection"}). The bell shows anything that went.`
+      );
+    } finally {
+      setEditWork(false);
+    }
+  };
+
   // A hidden column is the row's, when it is opened, not the view's.
   const shown = columns.filter((c) => !c.hidden);
   const viewProps = {
@@ -1040,6 +1088,18 @@ export default function GenericRenderer({
       : undefined,
     busyRecordId,
     newFields,
+    // Widths a person dragged its columns to, kept for this section on this device.
+    widthKey: periodKey,
+    ...(editMode && editFields.length > 0
+      ? {
+          editing: {
+            fields: new Set(editFields),
+            draft: (rec: RecordRow, field: string) => drafts[draftKey(rec.id, field)],
+            onDraft: (rec: RecordRow, field: string, value: string) =>
+              setDrafts((was) => ({ ...was, [draftKey(rec.id, field)]: value })),
+          },
+        }
+      : {}),
     ...(bulkable
       ? {
           selected: picked,
@@ -1281,8 +1341,24 @@ export default function GenericRenderer({
                 />
               )
             )}
+            {editFields.length > 0 && view.type === "table" && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditMode((on) => !on);
+                  setEditSaid(null);
+                }}
+                aria-pressed={editMode}
+                className={`${button(editMode ? "primary" : "secondary", "sm")} ml-auto`}
+              >
+                <Pencil aria-hidden size={13} strokeWidth={1.75} />
+                {editMode ? "Done editing" : "Edit"}
+              </button>
+            )}
             {views.length === 1 && (
-              <span className="ml-auto hidden rounded-full bg-tone-neutral px-2 py-0.5 text-xs text-tone-neutral-fg sm:inline">
+              <span
+                className={`${editFields.length > 0 && view.type === "table" ? "" : "ml-auto"} hidden rounded-full bg-tone-neutral px-2 py-0.5 text-xs text-tone-neutral-fg sm:inline`}
+              >
                 {VIEW_NAMES[view.type]}
               </span>
             )}
@@ -1295,6 +1371,71 @@ export default function GenericRenderer({
                 Add
               </button>
             )}
+          </div>
+        )}
+
+        {editMode && cellEdits && (
+          <div
+            role="region"
+            aria-label="Editing in place"
+            className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-subdued px-4 py-2 text-[13px]"
+          >
+            {editSaid && (
+              <span role="status" className="w-full text-fg-muted">
+                {editSaid}
+              </span>
+            )}
+            <span className="font-medium text-fg tabular-nums">
+              {changes.length
+                ? `${changes.length} ${changes.length === 1 ? "change" : "changes"}`
+                : "Type into a cell to change it"}
+            </span>
+            {changes.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  disabled={editWork}
+                  onClick={() => void saveEdits()}
+                  className={button("primary", "sm")}
+                >
+                  {editWork
+                    ? "Saving…"
+                    : editGoes.every((g) => g === "straight")
+                      ? "Save to Shopify"
+                      : editGoes.every((g) => g === "owner")
+                        ? "Ask the owner"
+                        : "Save, for your yes"}
+                </button>
+                <button
+                  type="button"
+                  disabled={editWork}
+                  onClick={() => setDrafts({})}
+                  className={button("plain", "sm")}
+                >
+                  Discard
+                </button>
+              </>
+            )}
+            <span className="text-xs text-fg-muted">
+              {Object.values(cellEdits.columns).find((c) => c.why)?.why ??
+                (Object.values(cellEdits.columns).every((c) => c.goes === "straight")
+                  ? "Saved straight to Shopify too."
+                  : Object.values(cellEdits.columns).every((c) => c.goes === "owner")
+                    ? "Your changes wait for the owner's yes before they reach Shopify."
+                    : "These wait in the bell for your yes before they reach Shopify.")}
+              {cellEdits.onSettings && Object.values(cellEdits.columns).some((c) => c.goes === "yours") && (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    onClick={cellEdits.onSettings}
+                    className="font-medium text-fg underline decoration-line-strong underline-offset-2 hover:decoration-current"
+                  >
+                    Save straight to Shopify instead
+                  </button>
+                </>
+              )}
+            </span>
           </div>
         )}
 
