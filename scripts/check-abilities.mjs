@@ -106,13 +106,17 @@ check("and that a Shopify change does not fire a rule", /does not fire a rule/.t
 check("the old 'not seen the moment it happens' is gone", !/not seen the moment it happens/.test(design));
 
 console.log("\nchanging the shop: which changes, where, and with what");
+// Each change said once, briefly: a change of fields by its noun among "the details of …" (7 Oct).
 for (const spec of Object.values(STORE_ACTIONS)) {
-  const said = spec.label.charAt(0).toLowerCase() + spec.label.slice(1);
-  check(`Luke knows it can ${said}`, design.includes(said) && talk.includes(said));
+  const label = spec.label.charAt(0).toLowerCase() + spec.label.slice(1);
+  const details = (p) => /change the details of [^;)]*/.exec(p)?.[0] ?? "";
+  const knows = (p) =>
+    spec.ask.kind === "fields" ? details(p).includes(`${spec.ask.noun}s`) : p.includes(spec.brief ?? label);
+  check(`Luke knows it can ${label}`, knows(design) && knows(talk));
 }
 check(
   "from the chat or a list (ticked rows, or Edit and a cell), each with the owner's yes unless they let that kind go straight (0195), never Luke's ask",
-  /Asked for in this chat \(a card each\) or made by the owner on a list \(ticked rows, or Edit and type in a cell\); each waits for their yes unless Settings → Store sends that kind straight, never what you ask/.test(
+  /Asked for in this chat or made by the owner on a list \(ticked rows, or Edit and type in a cell\); each waits for their yes unless Settings → Store sends that kind straight, never what you ask/.test(
     design
   )
 );

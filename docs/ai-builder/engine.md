@@ -405,21 +405,42 @@ that kind as the yes. What Luke or their own AI asks for, and what a teammate ch
 teammate who can open the store may now ask), always waits for the owner; their AI can
 neither flip the switch nor send.
 
-Or they press Edit on the list and type into a cell. A column is editable when a change
-in the registry names it in `edits` (`set_stock` sets `available`; `add_tags` and
-`remove_tags` together edit `tags`; `set_order_note` sets `note`), read by `editsFor`, so
-a new change with `edits` makes its column editable with no screen code. Save sends the
-typed values through the same ask, grouped by change and value: a stock count is set to
-what was typed, a list of tags becomes what was added and what was taken. Nothing is
-written in Warmluke itself; the row shows Shopify's value once the change lands.
+Or they press Edit on any table and type into a cell, on every section whoever built it
+(the owner, Luke or their AI). Two kinds of column take typing:
+
+- **The section's own fields**, for anyone who may set them: saved in Warmluke as a row
+  button would set them, a tick as a tick box, a day, a choice or a linked row picked with
+  the row form's own `Field`.
+- **The store's columns a change writes**, read off the registry by `editsFor`, so a new
+  change makes its columns editable with no screen code: `set_stock` sets `available`;
+  `add_tags`/`remove_tags` together edit `tags`; and a change of fields (`fieldsChange`)
+  sets several columns of one thing in one call. `update_customer` covers name, email and
+  phone. `update_product` covers title, type, vendor, status and handle. `update_variant`
+  covers price and barcode. `update_item` covers SKU and cost. Each target carries its own
+  `set`, and the server adds what each `was` from Warmluke's copy, plus any id the call
+  needs (a variant's product), never taken from the caller. What Shopify keeps as a record
+  (an order's money, number, dates, statuses) or works out itself stays read-only.
+
+Every cell is checked on its own before anything is sent (`fieldProblem`, a count, a
+number of theirs): a bad one stays typed, red, with why, and the good ones go. Typing is
+kept with the row it was typed on, per section in the browser's session, so paging, a
+fresh read or looking at another section loses none; leaving edit mode or the page with
+typing unsaved asks first.
+
+A price and a product's status are the merchant's own hand (`byHand` fields, NEVER_DOES
+`publish` and `reprice`): only the app's own screen, with a person's session (no
+`client_id`), may set them. Luke's tool and MCP are refused and never offered them, and
+the never-list they read keeps "publish or reprice"; the Terms say so.
 
 A change that went through can be put back: Undo beside what a save or ticked rows said,
 or on its card in the bell. It is a change of its own, `proposeStoreAction` with
 `undo_of` (Luke and their AI ask the same way), built from the row, never from the
 caller: the registry's `undo` on the lines that really changed (tags off for tags on; a
 stock count back to its `from`, from the count it set, so Shopify refuses it if a sale
-or a delivery moved the count since). It goes through the same gates and the same
-straight-or-wait rule; an undo of an undo is a redo. A note has no undo: its old words
+or a delivery moved the count since; a field goes back only while the copy still says what
+the change left, or what it replaced if the copy has not caught up). It goes through the
+same gates and the same straight-or-wait rule; an undo of an undo is a redo. Their own
+fields go back as they were, in Warmluke. A note has no undo: its old words
 are not kept.
 
 ## Validation and repair

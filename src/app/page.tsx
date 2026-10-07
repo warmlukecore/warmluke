@@ -372,7 +372,7 @@ const BYO: Array<{ head: string; body: string; icon: LucideIcon }> = [
 const BYO_LIMITS: Array<[string, string, LucideIcon]> = [
   [
     "It cannot change your shop without you",
-    `Your assistant can look at orders, stock and customers, and ask to ${whatCanChange()}. Each change waits for your yes, and it cannot give one for you. It cannot ${whatNeverChanges()} anything at all.`,
+    `Your assistant can look at orders, stock and customers, and ask to ${whatCanChange()}. Each change waits for your yes, and it cannot give one for you. It cannot ${whatNeverChanges("ai")} anything at all.`,
     Lock,
   ],
   [

@@ -32,6 +32,22 @@ export const runtime = "nodejs";
 const BRIEF = "id, project_id, shop_domain, timezone, currency, last_synced_at";
 
 /**
+ * A person signed in to Warmluke, not an assistant they connected: the
+ * token an assistant holds carries its client_id. Only a person's typing
+ * may set what only the merchant's hand changes (a price, a status), and
+ * an unreadable token is not taken for one.
+ */
+function typedByPerson(req: Request): boolean {
+  const body = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").split(".")[1];
+  if (!body) return false;
+  try {
+    return !(JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as { client_id?: string }).client_id;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Asked, then sent now when the database takes it as the owner's yes (the
  * owner's own, fresh, of a kind they turned on for that store); otherwise
  * it waits in the bell, the owner's yes being the only way out.
@@ -78,11 +94,12 @@ export async function POST(req: Request) {
         .limit(1)
         .maybeSingle();
       if (!store) return NextResponse.json({ error: "There is no connected store to change." }, { status: 400 });
-      const asked = await proposeStoreAction(client, store as StoreBrief, {
-        action: body?.action,
-        targets: body?.targets,
-        params: body?.params,
-      });
+      const asked = await proposeStoreAction(
+        client,
+        store as StoreBrief,
+        { action: body?.action, targets: body?.targets, params: body?.params },
+        { byHand: typedByPerson(req) }
+      );
       return askedThenSent(client, asked);
     }
 
@@ -105,7 +122,10 @@ export async function POST(req: Request) {
         .eq("status", "connected")
         .maybeSingle();
       if (!store) return NextResponse.json({ error: "That store is not connected any more." }, { status: 400 });
-      return askedThenSent(client, await proposeStoreAction(client, store as StoreBrief, { undo_of: actionId }));
+      return askedThenSent(
+        client,
+        await proposeStoreAction(client, store as StoreBrief, { undo_of: actionId }, { byHand: typedByPerson(req) })
+      );
     }
     if (what !== "run" && what !== "dismiss") {
       return NextResponse.json({ error: `There is no "${what}" to do here.` }, { status: 400 });

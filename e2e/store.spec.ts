@@ -419,8 +419,10 @@ test("stock edited in place: typed into its cell, waits for the owner's yes, sav
     const discard = bar.getByRole("button", { name: "Discard" });
     if (await discard.isVisible()) await discard.click();
     await cells.nth(1).fill("-3");
-    await bar.getByRole("button", { name: "Save to Shopify" }).click();
-    await expect(bar.getByText(/1 not a whole number of 0 or more, so left as typed/)).toBeVisible();
+    await expect(cells.nth(1)).toHaveAttribute("aria-invalid", "true");
+    await expect(bar.getByText("1 change, 1 to fix")).toBeVisible();
+    await bar.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(bar.getByText(/1 can't be saved yet: A count is a whole number of 0 or more/)).toBeVisible();
     await expect(cells.nth(1)).toHaveValue("-3");
     expect((await asked()).length).toBe(second.length);
   } finally {

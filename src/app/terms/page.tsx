@@ -12,7 +12,7 @@ import Link from "next/link";
 // What the store can have changed, and what it never will, come off
 // the registry — the same words the connect box and the landing page
 // use. A list written here by hand was already wrong once.
-import { whatCanChange, whatNeverChanges } from "@/lib/store-actions";
+import { whatCanChange, whatNeverChanges, whatOnlyByHand, whatOnlyTheMerchantDoes } from "@/lib/store-actions";
 import { Logo } from "@/components/ui/Logo";
 
 export const metadata = {
@@ -30,6 +30,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 export default function Terms() {
+  const byHand = whatOnlyByHand();
   return (
     <div className="font-ui flex min-h-screen flex-col bg-white text-ink">
       {/* The same way in and out as every other page. A legal page
@@ -72,6 +73,10 @@ export default function Terms() {
           <p>
             Anything else in your store, Warmluke does not touch. It has no way to {whatNeverChanges()} anything: those
             changes do not exist in the app, so there is nothing to ask for and nothing to agree to.
+          </p>
+          <p>
+            {byHand.charAt(0).toUpperCase() + byHand.slice(1)} change only when you type them yourself on a list in
+            Warmluke. Luke and an assistant you have connected can never {whatOnlyTheMerchantDoes()} anything.
           </p>
           <p>You keep ownership of your data. Disconnecting the store deletes our copy.</p>
         </Section>

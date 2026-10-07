@@ -17,7 +17,9 @@ import { isId, looksLikeCode } from "@/lib/no-ids";
 import { isYes } from "@/lib/filters";
 import { useLinkLabel } from "@/components/LinkContext";
 import { button, fieldOf, type ButtonTone } from "@/components/ui/controls";
-import { ArrowDown, ArrowUp, ArrowUpDown, Check, Clock, Copy, Inbox, Plus, SearchX } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, Clock, Copy, Inbox, Pencil, Plus, SearchX } from "lucide-react";
+import { Field } from "@/components/RecordModal";
+import { Select } from "@/components/ui/Select";
 
 /**
  * The first column stays put while the rest scroll under it: a line at its
@@ -315,12 +317,36 @@ export interface ViewProps {
    */
   editing?: {
     fields: ReadonlySet<string>;
+    /** How each column is typed into: the section's own field, or a store column a change writes. */
+    kindOf: (field: string) => EditKind;
+    /** Why what was typed cannot be saved, or null. */
+    problem: (field: string, value: string) => string | null;
+    /** A choice field's choices, for the section's own. */
+    options: (col: SchemaColumn) => string[];
     draft: (rec: RecordRow, field: string) => string | undefined;
     onDraft: (rec: RecordRow, field: string, value: string) => void;
   };
 }
 
-/** A cell being edited: what it holds now, typed over; changed, it says so. */
+/** How a column is typed into in edit mode: a field of the section's own, or a store column a change writes. */
+export type EditKind =
+  | { input: "own" }
+  | { input: "count" | "money" | "text" | "email" | "phone" | "tags" }
+  | { input: "choice"; choices: readonly string[] };
+
+/** Whether what was typed differs from what the row holds, as this column reads it: a tick, a number, words. */
+export function differs(col: SchemaColumn, raw: unknown, typed: string): boolean {
+  if (col.type === "boolean") return isYes(typed) !== isYes(raw);
+  const now = Array.isArray(raw) ? raw.join(", ") : raw === null || raw === undefined ? "" : String(raw);
+  const t = typed.trim();
+  if (NUMERIC.has(col.type) && t !== "" && now !== "" && Number.isFinite(Number(t))) return Number(t) !== Number(now);
+  return t !== now.trim();
+}
+
+/** Own fields picked rather than typed: a day, a choice, a row of another section (a tick is a tick box). */
+const PICKED: ReadonlySet<SchemaColumn["type"]> = new Set(["date", "badge", "dropdown", "link"]);
+
+/** A cell being edited: what it holds now, typed over or picked; changed, it says so, and red when it cannot be saved. */
 function EditCell({
   col,
   rec,
@@ -330,24 +356,74 @@ function EditCell({
   rec: RecordRow;
   editing: NonNullable<ViewProps["editing"]>;
 }) {
-  const was = rec.data?.[col.field];
-  const now = Array.isArray(was) ? was.join(", ") : was === null || was === undefined ? "" : String(was);
+  const raw = rec.data?.[col.field];
+  const now = Array.isArray(raw) ? raw.join(", ") : raw === null || raw === undefined ? "" : String(raw);
   const typed = editing.draft(rec, col.field);
-  const changed = typed !== undefined && typed.trim() !== now.trim();
-  const counted = NUMERIC.has(col.type);
+  const kind = editing.kindOf(col.field);
+  const changed = typed !== undefined && differs(col, raw, typed);
+  const wrong = changed ? editing.problem(col.field, typed) : null;
+  const put = (v: string) => editing.onDraft(rec, col.field, v);
   // Changed is a dot beside the box, not a second ring on it: the field's own ring is its focus.
+  const dot = changed && (
+    <span
+      aria-hidden
+      className={`absolute top-1/2 -left-2.5 size-1.5 -translate-y-1/2 rounded-full ${wrong ? "bg-signal-critical" : "bg-signal-info"}`}
+    />
+  );
+  const said = `${col.label} of this row${changed ? ", changed" : ""}`;
+
+  if (kind.input === "own" && col.type === "boolean") {
+    return (
+      <span className="relative inline-flex items-center">
+        {dot}
+        <TickBox label={said} checked={isYes(typed ?? raw)} onChange={(on) => put(on ? "true" : "false")} />
+      </span>
+    );
+  }
+
+  if (kind.input === "choice" || (kind.input === "own" && PICKED.has(col.type))) {
+    return (
+      <span className="relative block min-w-36" onClick={(e) => e.stopPropagation()}>
+        {dot}
+        {kind.input === "choice" ? (
+          <Select
+            label={said}
+            value={typed ?? now}
+            onChange={put}
+            options={[
+              ...kind.choices,
+              ...(now && !kind.choices.some((c) => c.toLowerCase() === now.toLowerCase()) ? [now] : []),
+            ].map((c) => ({ value: c, label: badgeLabel(c) }))}
+          />
+        ) : (
+          <Field col={{ ...col, label: said }} value={typed ?? raw} options={editing.options(col)} onChange={put} />
+        )}
+      </span>
+    );
+  }
+
+  const counted = kind.input === "count" || kind.input === "money" || (kind.input === "own" && NUMERIC.has(col.type));
+  const type =
+    kind.input === "email" || col.type === "email"
+      ? "email"
+      : kind.input === "phone" || col.type === "phone"
+        ? "tel"
+        : col.type === "url"
+          ? "url"
+          : "text";
   return (
     <span className="relative inline-flex w-full items-center justify-end">
-      {changed && <span aria-hidden className="absolute -left-2.5 size-1.5 rounded-full bg-signal-info" />}
+      {dot}
       <input
+        type={type}
         value={typed ?? now}
-        onChange={(e) => editing.onDraft(rec, col.field, e.target.value)}
+        onChange={(e) => put(e.target.value)}
         onClick={(e) => e.stopPropagation()}
         // As in a spreadsheet: Enter goes down the column (Shift+Enter up), Escape puts the cell back.
         onKeyDown={(e) => {
           if (e.key === "Escape" && changed) {
             e.stopPropagation();
-            editing.onDraft(rec, col.field, now);
+            put(now);
           } else if (e.key === "Enter") {
             e.preventDefault();
             const row = e.currentTarget.closest("tr");
@@ -359,10 +435,11 @@ function EditCell({
           }
         }}
         data-edit={col.field}
-        inputMode={counted ? "numeric" : undefined}
-        aria-label={`${col.label} of this row${changed ? ", changed" : ""}`}
-        aria-invalid={counted && changed && !/^\d+$/.test((typed ?? "").trim()) ? true : undefined}
-        className={`${fieldOf("sm")} ${counted ? "w-20 text-right" : "w-full min-w-40"} tabular-nums`}
+        inputMode={counted ? "decimal" : undefined}
+        aria-label={said}
+        aria-invalid={wrong ? true : undefined}
+        title={wrong ?? undefined}
+        className={`${fieldOf("sm")} ${counted ? "w-24 text-right" : "w-full min-w-40"} tabular-nums`}
       />
     </span>
   );
@@ -616,10 +693,22 @@ export function TableView({
                         mixed={someTicked}
                         onChange={(on) => onSelect(ids, on)}
                       />
-                      <SortButton col={col} dir={dir} onSort={onSort} fresh={newFields?.has(col.field)} />
+                      <SortButton
+                        col={col}
+                        dir={dir}
+                        onSort={onSort}
+                        fresh={newFields?.has(col.field)}
+                        editable={!!editing?.fields.has(col.field)}
+                      />
                     </div>
                   ) : (
-                    <SortButton col={col} dir={dir} onSort={onSort} fresh={newFields?.has(col.field)} />
+                    <SortButton
+                      col={col}
+                      dir={dir}
+                      onSort={onSort}
+                      fresh={newFields?.has(col.field)}
+                      editable={!!editing?.fields.has(col.field)}
+                    />
                   )}
                   <ColumnEdge
                     label={col.label}
@@ -665,18 +754,23 @@ export function TableView({
                           checked={!!selected?.has(rec.id)}
                           onChange={(on) => onSelect([rec.id], on)}
                         />
-                        <div
-                          className="min-w-0 truncate"
-                          style={{ maxWidth: room(col.field) - 32 }}
-                          title={plainOf(rec.data?.[col.field])}
-                        >
-                          <Cell
-                            col={col}
-                            value={rec.data?.[col.field]}
-                            currency={amountCurrency(col, rec)}
-                            was={wasOf(col, rec)}
-                          />
-                        </div>
+                        {/* The first column is edited too: a customer's name, a product's title. */}
+                        {editing?.fields.has(col.field) ? (
+                          <EditCell col={col} rec={rec} editing={editing} />
+                        ) : (
+                          <div
+                            className="min-w-0 truncate"
+                            style={{ maxWidth: room(col.field) - 32 }}
+                            title={plainOf(rec.data?.[col.field])}
+                          >
+                            <Cell
+                              col={col}
+                              value={rec.data?.[col.field]}
+                              currency={amountCurrency(col, rec)}
+                              was={wasOf(col, rec)}
+                            />
+                          </div>
+                        )}
                       </div>
                     ) : editing?.fields.has(col.field) ? (
                       <EditCell col={col} rec={rec} editing={editing} />
@@ -723,12 +817,15 @@ function SortButton({
   dir,
   onSort,
   fresh = false,
+  editable = false,
 }: {
   col: SchemaColumn;
   dir: "asc" | "desc" | null;
   onSort: (field: string) => void;
   /** Added since they last looked: marked New. */
   fresh?: boolean;
+  /** Typed into in edit mode: marked with a pencil. */
+  editable?: boolean;
 }) {
   return (
     <button
@@ -739,6 +836,7 @@ function SortButton({
         NUMERIC.has(col.type) ? "justify-end" : ""
       } ${dir ? "text-fg" : ""}`}
     >
+      {editable && <Pencil aria-hidden size={11} strokeWidth={2} className="shrink-0 text-signal-info" />}
       {col.label}
       {fresh && (
         <span

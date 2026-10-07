@@ -59,6 +59,12 @@ export type ConfirmLevel = "list" | "typed";
 export interface StoreActionSpec {
   /** What it is called where a person reads it. */
   label: string;
+  /**
+   * What it does in a few words, for the one sentence that lists every
+   * change ("add or remove tags"): two entries saying the same are said
+   * once. A change of fields is said by its noun instead.
+   */
+  brief?: string;
   /** Which connected system this belongs to. */
   connector: "shopify";
   /** What the token must be allowed to do. */
@@ -92,7 +98,9 @@ export interface StoreActionSpec {
    */
   ask:
     | { param: string; kind: "tags" | "text"; label: string }
-    | { each: string; kind: "count"; label: string; current: string };
+    | { each: string; kind: "count"; label: string; current: string }
+    /** Fields of one thing, each target its own values (`set`), keyed by the list's columns. */
+    | { kind: "fields"; label: string; noun: string; fields: Readonly<Record<string, FieldSpec>> };
   /**
    * The column of a list this change writes when it is typed into, in a
    * list's edit mode (7 Oct): set to what was typed, or the words added to
@@ -141,6 +149,26 @@ export interface StoreActionSpec {
     | null;
   /** Why there is no undo, when there is none. Read by the card. */
   undoNote?: string;
+}
+
+/**
+ * One field a change sets, as a list's column (7 Oct): what it is called,
+ * what may be typed for it, and whether it may be emptied. The column's
+ * name is the key, so the list that shows it can be typed into.
+ */
+export interface FieldSpec {
+  label: string;
+  input: "text" | "email" | "phone" | "money" | "choice";
+  /** For a choice: Shopify's own words, as the copy keeps them. */
+  choices?: readonly string[];
+  /** May be left empty. */
+  blank?: boolean;
+  /**
+   * Changed only by the merchant typing it on a list: never asked for by
+   * Luke or their own AI, nor agreed to on their behalf (a price, a status:
+   * NEVER_DOES says which promise it keeps).
+   */
+  byHand?: boolean;
 }
 
 /** userErrors, wherever in the answer Shopify put them. */
@@ -204,6 +232,148 @@ const kinds = (targets: ActionTarget[]): string => {
   return seen.length === 1 ? count(targets.length, seen[0]) : count(targets.length, "thing");
 };
 
+/** What a fields change sets on a target, and what the copy said each was. */
+export const setOf = (t: ActionTarget): Record<string, string> =>
+  t.set && typeof t.set === "object" ? (t.set as Record<string, string>) : {};
+export const wasOf = (t: ActionTarget): Record<string, string> =>
+  t.was && typeof t.was === "object" ? (t.was as Record<string, string>) : {};
+
+/** The same value, as a field of this kind reads it: 899 is 899.00, "Active" is "ACTIVE". */
+export function sameValue(f: FieldSpec | undefined, a: unknown, b: unknown): boolean {
+  const x = a === null || a === undefined ? "" : String(a).trim();
+  const y = b === null || b === undefined ? "" : String(b).trim();
+  if (f?.input === "money" && x !== "" && y !== "") return Number(x) === Number(y);
+  return f?.input === "choice" || f?.input === "email" ? x.toLowerCase() === y.toLowerCase() : x === y;
+}
+
+/** Why a value cannot go in this field, or null: checked by the server, and on each cell before it is sent. */
+export function fieldProblem(f: FieldSpec, noun: string, raw: unknown): string | null {
+  const v = raw === null || raw === undefined ? "" : String(raw).trim();
+  if (!v) return f.blank ? null : `A ${noun}'s ${f.label.toLowerCase()} can't be left empty.`;
+  if (v.length > 255) return `${f.label} is too long: 255 characters at most.`;
+  if (f.input === "money" && !/^\d+(\.\d{1,2})?$/.test(v))
+    return `${f.label} has to be an amount of 0 or more, like 499 or 499.50: "${v}" is not one.`;
+  if (f.input === "email" && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return `"${v}" is not an email address.`;
+  if (f.input === "phone" && !/^\+?[\d\s()-]{6,20}$/.test(v)) return `"${v}" is not a phone number.`;
+  if (f.input === "choice" && !(f.choices ?? []).some((c) => c.toLowerCase() === v.toLowerCase()))
+    return `${f.label} is one of: ${(f.choices ?? []).map((c) => c.charAt(0) + c.slice(1).toLowerCase()).join(", ")}.`;
+  return null;
+}
+
+const andList = (xs: string[]) =>
+  xs.length < 2 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`;
+
+/**
+ * A change that sets fields of one kind of thing in one call (7 Oct). Each
+ * target carries what it sets (`set`, column → value as the list shows
+ * it); the server adds what each was from Warmluke's copy (`was`), and any
+ * other id the call needs (`also`), never taken from whoever asked. Its
+ * fields are columns, so every list showing one can be typed into, and a
+ * field added here is editable wherever it is shown. Put back by setting
+ * what was, while the copy still says what this change left.
+ */
+function fieldsChange(o: {
+  name: string;
+  label: string;
+  noun: string;
+  scopes: readonly string[];
+  needs: readonly string[];
+  aims: Readonly<Record<string, readonly string[]>>;
+  fields: Readonly<Record<string, FieldSpec>>;
+  /** Where the copy keeps it: the list's view, the column holding the target's id, and ids read with it. */
+  copy: { view: string; key: string; also?: Readonly<Record<string, string>> };
+  mutation: string;
+  variables: (target: ActionTarget, set: Record<string, string>, key: string) => Record<string, unknown>;
+}): StoreActionSpec {
+  const labelOf = (f: string) => o.fields[f]?.label.toLowerCase() ?? f;
+  return {
+    label: o.label,
+    connector: "shopify",
+    scopes: o.scopes,
+    needs: o.needs,
+    aims: o.aims,
+    ask: { kind: "fields", label: o.label, noun: o.noun, fields: o.fields },
+    confirm: "list",
+    say: (targets) => {
+      const changed = [...new Set(targets.flatMap((t) => Object.keys(setOf(t))))];
+      if (targets.length === 1 && changed.length === 1) {
+        const f = changed[0];
+        const was = wasOf(targets[0])[f];
+        return `Changes one ${o.noun}'s ${labelOf(f)}${was !== undefined ? ` from "${was}"` : ""} to "${setOf(targets[0])[f]}"`;
+      }
+      return `Changes the ${andList(changed.map(labelOf))} of ${count(targets.length, o.noun)}`;
+    },
+    check: (targets) => {
+      if (targets.length === 0) return `No ${o.noun} was named.`;
+      for (const t of targets) {
+        const set = Object.entries(setOf(t));
+        if (set.length === 0)
+          return `Nothing to change was given for a ${o.noun}: { "set": { "${Object.keys(o.fields)[0]}": "…" } }.`;
+        for (const [f, v] of set) {
+          const spec = o.fields[f];
+          if (!spec)
+            return `A ${o.noun}'s "${f}" is not something Warmluke changes. It can change: ${Object.keys(o.fields).join(", ")}.`;
+          const wrong = fieldProblem(spec, o.noun, v);
+          if (wrong) return wrong;
+        }
+      }
+      return null;
+    },
+    prepare: async (db, storeId, targets) => {
+      const extra = Object.values(o.copy.also ?? {});
+      const read = [o.copy.key, ...Object.keys(o.fields), ...extra].join(", ");
+      const out: ActionTarget[] = [];
+      for (const t of targets) {
+        const { data } = await db
+          .from(o.copy.view)
+          .select(read)
+          .eq("store_id", storeId)
+          .eq(o.copy.key, t.id)
+          .limit(1)
+          .maybeSingle();
+        const row = data as Record<string, unknown> | null;
+        if (!row) {
+          return {
+            error: `One of those is not a ${o.noun} in Warmluke's copy of the store, so what it is now is not known. Nothing was asked for; look it up again with search_store.`,
+          };
+        }
+        const was = Object.fromEntries(
+          Object.keys(setOf(t)).map((f) => [f, row[f] === null || row[f] === undefined ? "" : String(row[f])])
+        );
+        const also: Record<string, unknown> = {};
+        for (const [k, col] of Object.entries(o.copy.also ?? {})) {
+          if (typeof row[col] !== "string" || !row[col])
+            return { error: `Warmluke's copy does not say which ${k} this ${o.noun} is in.` };
+          also[k] = row[col];
+        }
+        out.push({ ...t, ...also, was });
+      }
+      return { targets: out };
+    },
+    mutation: o.mutation,
+    variables: (target, _params, { key }) => o.variables(target, setOf(target), key),
+    errors: userErrors,
+    undo: (targets) => ({
+      action: o.name,
+      targets: targets
+        .filter((t) => Object.keys(setOf(t)).every((f) => f in wasOf(t)))
+        .map((t) => ({
+          ...t,
+          set: Object.fromEntries(Object.keys(setOf(t)).map((f) => [f, wasOf(t)[f]])),
+          was: setOf(t),
+        })),
+      params: {},
+    }),
+  };
+}
+
+/** "Aarav Kumar Sharma": first name Aarav, last name Kumar Sharma, as Shopify keeps a name in two. */
+const nameParts = (v: string) => {
+  const [first = "", ...rest] = v.trim().split(/\s+/);
+  return { firstName: first, lastName: rest.join(" ") };
+};
+const blankToNull = (v: string) => (v.trim() === "" ? null : v.trim());
+
 export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
   // ── Tags ──────────────────────────────────────────────────────
   //
@@ -212,6 +382,7 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
   // for an undo — which is why this is the first one built.
   add_tags: {
     label: "Add a tag",
+    brief: "add or remove tags",
     connector: "shopify",
     scopes: ["write_orders", "write_customers", "write_products"],
     needs: ["Order", "Product", "Customer"],
@@ -232,6 +403,7 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
 
   remove_tags: {
     label: "Remove a tag",
+    brief: "add or remove tags",
     connector: "shopify",
     scopes: ["write_orders", "write_customers", "write_products"],
     needs: ["Order", "Product", "Customer"],
@@ -253,6 +425,7 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
   // ── A note on an order ────────────────────────────────────────
   set_order_note: {
     label: "Write a note on an order",
+    brief: "write an order's note",
     connector: "shopify",
     scopes: ["write_orders"],
     needs: ["Order"],
@@ -288,6 +461,7 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
   // each target carries its own quantity.
   set_stock: {
     label: "Set a stock count",
+    brief: "set stock counts",
     connector: "shopify",
     scopes: ["write_inventory"],
     needs: ["InventoryItem", "Location"],
@@ -376,6 +550,120 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
       params: {},
     }),
   },
+
+  // ── Fields of one thing (7 Oct) ───────────────────────────────
+  //
+  // Every column of a store list that Shopify lets be changed in one
+  // call, typed into in a list's edit mode. What stays out is what
+  // Shopify keeps as a record (an order's money, number, dates and
+  // statuses) or works out itself (counts, totals, margins).
+  update_customer: fieldsChange({
+    name: "update_customer",
+    label: "Change a customer's details",
+    noun: "customer",
+    scopes: ["write_customers"],
+    needs: ["Customer"],
+    aims: { id: ["Customer"] },
+    fields: {
+      name: { label: "Name", input: "text" },
+      email: { label: "Email", input: "email", blank: true },
+      phone: { label: "Phone", input: "phone", blank: true },
+    },
+    copy: { view: "store_customers", key: "shopify_id" },
+    mutation: `mutation UpdateCustomer($input: CustomerInput!) {
+      customerUpdate(input: $input) { customer { id } userErrors { field message } }
+    }`,
+    variables: (t, set) => ({
+      input: {
+        id: t.id,
+        ...("name" in set ? nameParts(set.name) : {}),
+        ...("email" in set ? { email: blankToNull(set.email) } : {}),
+        ...("phone" in set ? { phone: blankToNull(set.phone)?.replace(/[\s()-]/g, "") ?? null } : {}),
+      },
+    }),
+  }),
+
+  update_product: fieldsChange({
+    name: "update_product",
+    label: "Change a product's details",
+    noun: "product",
+    scopes: ["write_products"],
+    needs: ["Product"],
+    aims: { id: ["Product"] },
+    fields: {
+      title: { label: "Title", input: "text" },
+      product_type: { label: "Type", input: "text", blank: true },
+      vendor: { label: "Vendor", input: "text", blank: true },
+      status: { label: "Status", input: "choice", choices: ["ACTIVE", "DRAFT", "ARCHIVED"], byHand: true },
+      handle: { label: "Handle", input: "text" },
+    },
+    copy: { view: "store_products", key: "shopify_id" },
+    mutation: `mutation UpdateProduct($product: ProductUpdateInput!) {
+      productUpdate(product: $product) { product { id } userErrors { field message } }
+    }`,
+    variables: (t, set) => ({
+      product: {
+        id: t.id,
+        ...("title" in set ? { title: set.title.trim() } : {}),
+        ...("product_type" in set ? { productType: set.product_type.trim() } : {}),
+        ...("vendor" in set ? { vendor: set.vendor.trim() } : {}),
+        ...("status" in set ? { status: set.status.trim().toUpperCase() } : {}),
+        ...("handle" in set ? { handle: set.handle.trim() } : {}),
+      },
+    }),
+  }),
+
+  update_variant: fieldsChange({
+    name: "update_variant",
+    label: "Change a variant's price or barcode",
+    noun: "variant",
+    scopes: ["write_products"],
+    needs: ["ProductVariant"],
+    aims: { id: ["ProductVariant"] },
+    fields: {
+      price: { label: "Price", input: "money", byHand: true },
+      barcode: { label: "Barcode", input: "text", blank: true },
+    },
+    // Shopify changes a variant through its product, whose id the copy keeps.
+    copy: { view: "store_variants", key: "shopify_id", also: { productId: "product_shopify_id" } },
+    mutation: `mutation UpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+      productVariantsBulkUpdate(productId: $productId, variants: $variants) { productVariants { id } userErrors { field message } }
+    }`,
+    variables: (t, set) => ({
+      productId: t.productId,
+      variants: [
+        {
+          id: t.id,
+          ...("price" in set ? { price: Number(set.price).toFixed(2) } : {}),
+          ...("barcode" in set ? { barcode: set.barcode.trim() } : {}),
+        },
+      ],
+    }),
+  }),
+
+  update_item: fieldsChange({
+    name: "update_item",
+    label: "Change an item's SKU or cost",
+    noun: "item",
+    scopes: ["write_inventory"],
+    needs: ["InventoryItem"],
+    aims: { id: ["InventoryItem"] },
+    fields: {
+      sku: { label: "SKU", input: "text", blank: true },
+      cost: { label: "Cost", input: "money", blank: true },
+    },
+    copy: { view: "store_variants", key: "inventory_item_id" },
+    mutation: `mutation UpdateItem($id: ID!, $input: InventoryItemInput!) {
+      inventoryItemUpdate(id: $id, input: $input) { inventoryItem { id } userErrors { field message } }
+    }`,
+    variables: (t, set) => ({
+      id: t.id,
+      input: {
+        ...("sku" in set ? { sku: set.sku.trim() } : {}),
+        ...("cost" in set ? { cost: set.cost.trim() === "" ? null : Number(set.cost) } : {}),
+      },
+    }),
+  }),
 };
 
 export const ACTIONS: readonly string[] = Object.keys(STORE_ACTIONS);
@@ -397,12 +685,18 @@ export const ACTION_SCOPES: readonly string[] = [...new Set(ACTIONS.flatMap((a) 
  * wrong in three of them the next time anything changes.
  */
 export function whatCanChange(connector: StoreActionSpec["connector"] = "shopify"): string {
-  const said = ACTIONS.map((a) => STORE_ACTIONS[a])
-    .filter((spec) => spec.connector === connector)
-    .map((spec) => spec.label.charAt(0).toLowerCase() + spec.label.slice(1));
-  if (said.length === 0) return "";
-  if (said.length === 1) return said[0];
-  return `${said.slice(0, -1).join(", ")} and ${said[said.length - 1]}`;
+  const specs = ACTIONS.map((a) => STORE_ACTIONS[a]).filter((spec) => spec.connector === connector);
+  const said = [
+    ...new Set(
+      specs
+        .filter((spec) => spec.ask.kind !== "fields")
+        .map((spec) => spec.brief ?? spec.label.charAt(0).toLowerCase() + spec.label.slice(1))
+    ),
+  ];
+  // Every change of fields as one phrase, by what it changes: a new one adds its noun.
+  const nouns = [...new Set(specs.flatMap((spec) => (spec.ask.kind === "fields" ? [`${spec.ask.noun}s`] : [])))];
+  if (nouns.length) said.push(`change the details of ${andList(nouns)}`);
+  return andList(said);
 }
 
 /**
@@ -419,18 +713,45 @@ export function whatCanChange(connector: StoreActionSpec["connector"] = "shopify
  * `stem` is what gives an action away ("price" catches set_price),
  * `say` is how the sentence puts it.
  */
-export const NEVER_DOES = [
+export const NEVER_DOES: ReadonlyArray<{ say: string; stem: string; byHand?: readonly string[] }> = [
   { say: "cancel", stem: "cancel" },
   { say: "refund", stem: "refund" },
   { say: "fulfil", stem: "fulfil" },
-  { say: "publish", stem: "publish" },
-  { say: "reprice", stem: "price" },
-] as const;
+  // The merchant may, typing it on a list (7 Oct); Luke and their AI never:
+  // each field named here is marked byHand wherever a change sets it.
+  { say: "publish", stem: "publish", byHand: ["status"] },
+  { say: "reprice", stem: "price", byHand: ["price"] },
+];
 
-/** "cancel, refund, fulfil, publish or reprice" — the same words everywhere. */
-export function whatNeverChanges(): string {
-  const said = NEVER_DOES.map((n) => n.say);
+/**
+ * What is never done: "cancel, refund or fulfil" by anyone, and for Luke
+ * and an assistant also what only the merchant's own hand changes
+ * ("cancel, refund, fulfil, publish or reprice"). The same words everywhere.
+ */
+export function whatNeverChanges(who: "anyone" | "ai" = "anyone"): string {
+  const said = NEVER_DOES.filter((n) => who === "ai" || !n.byHand).map((n) => n.say);
   return said.length > 1 ? `${said.slice(0, -1).join(", ")} or ${said[said.length - 1]}` : (said[0] ?? "");
+}
+
+/** What Luke and an assistant never do, though the merchant may by hand: "publish or reprice". */
+export function whatOnlyTheMerchantDoes(): string {
+  return NEVER_DOES.filter((n) => n.byHand?.length)
+    .map((n) => n.say)
+    .join(" or ");
+}
+
+/** What only the merchant changes, by typing it: "a variant's price and a product's status". */
+export function whatOnlyByHand(): string {
+  return andList(
+    ACTIONS.flatMap((a) => {
+      const ask = STORE_ACTIONS[a].ask;
+      return ask.kind === "fields"
+        ? Object.values(ask.fields)
+            .filter((f) => f.byHand)
+            .map((f) => `a ${ask.noun}'s ${f.label.toLowerCase()}`)
+        : [];
+    })
+  );
 }
 
 /** The spec, or null for a name nobody declared. */
@@ -491,16 +812,21 @@ export function sendNowSaid(spec: StoreActionSpec, shop: string): string {
  * change writes, with the change that sets it, or the two that add to and
  * take from it. Off the registry and the list's own ids and columns.
  */
+/** The columns a change writes when typed into: its fields, or the one column it names. */
+export const editsOf = (spec: StoreActionSpec): Array<{ column: string; as: "set" | "add" | "remove" }> =>
+  spec.ask.kind === "fields"
+    ? Object.keys(spec.ask.fields).map((column) => ({ column, as: "set" as const }))
+    : spec.edits
+      ? [spec.edits]
+      : [];
+
 export function editsFor(
   gives: Readonly<Record<string, string>> | undefined,
   columns: readonly string[]
 ): Record<string, { set?: string; add?: string; remove?: string }> {
   const out: Record<string, { set?: string; add?: string; remove?: string }> = {};
-  for (const a of actionsFor(gives)) {
-    const e = STORE_ACTIONS[a].edits;
-    if (!e || !columns.includes(e.column)) continue;
-    (out[e.column] ??= {})[e.as] = a;
-  }
+  for (const a of actionsFor(gives))
+    for (const e of editsOf(STORE_ACTIONS[a])) if (columns.includes(e.column)) (out[e.column] ??= {})[e.as] = a;
   // A list of words is edited only when both its adding and its taking are there.
   for (const [c, e] of Object.entries(out)) if (!e.set && !(e.add && e.remove)) delete out[c];
   return out;

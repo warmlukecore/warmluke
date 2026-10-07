@@ -30,7 +30,7 @@ if (env.CHECK_PROJECT !== "1") {
 /** How the server is expected to answer for its models: what the specs were recorded against. */
 export const TAPE = process.env.MODEL_TAPE ?? "replay";
 
-type Shop = {
+export type Shop = {
   admin: SupabaseClient;
   userId: string;
   projectId: string;

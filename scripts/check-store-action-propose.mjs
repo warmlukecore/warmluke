@@ -200,6 +200,109 @@ console.log("\nput back: the opposite of what went through, built from the row, 
   check("and the account's switch still holds", !offAgain.ok && /not turned on/.test(offAgain.answer.error));
 }
 
+console.log("\nfields of one thing (7 Oct): each its own value, the merchant's hand for a price or a status");
+{
+  const asked0 = proposed.length;
+  // The copy, as each view keeps it; store_actions for an undo.
+  const shop = (copy, row = null) => ({
+    ...db(),
+    from: (table) => {
+      const one = table === "store_actions" ? row : table === "stores" ? { granted_scopes: null } : copy;
+      const chain = { eq: () => chain, limit: () => chain, maybeSingle: async () => ({ data: one }) };
+      return { select: () => chain };
+    },
+  });
+  const variant = "gid://shopify/ProductVariant/81001";
+  const copy = { shopify_id: variant, price: 899, barcode: "", product_shopify_id: "gid://shopify/Product/80001" };
+  const priced = { action: "update_variant", targets: [{ id: variant, set: { price: "499.50" } }] };
+  const ai = await proposeStoreAction(shop(copy), store, priced);
+  check(
+    "Luke or their AI asking for a price: refused, and told where the merchant does it",
+    !ai.ok && /typing it on the list/.test(ai.answer.error) && /never publish or reprice/.test(ai.answer.error)
+  );
+  const hand = await proposeStoreAction(shop(copy), store, priced, { byHand: true });
+  const sent = proposed[proposed.length - 1];
+  check(
+    "the merchant's own typing goes, with what it was and the product it belongs to, from the copy",
+    hand.ok && sent.p_targets[0].was.price === "899" && sent.p_targets[0].productId === "gid://shopify/Product/80001"
+  );
+  check("and the card says it from the change", /from "899" to "499.50"/.test(sent.p_summary));
+  const barcode = await proposeStoreAction(shop(copy), store, {
+    action: "update_variant",
+    targets: [{ id: variant, set: { barcode: "890123" } }],
+  });
+  check("a barcode their AI may ask for", barcode.ok);
+  const listed = (await import("../src/lib/store-action-propose.ts")).ACTION_CATALOGUE.find(
+    (c) => c.action === "update_variant"
+  );
+  check(
+    "and their AI is offered the barcode, never the price",
+    "barcode" in listed.each_target_sets && !("price" in listed.each_target_sets)
+  );
+  const person = "gid://shopify/Customer/1";
+  const badEmail = await proposeStoreAction(shop({ shopify_id: person, email: "" }), store, {
+    action: "update_customer",
+    targets: [{ id: person, set: { email: "not-an-email" } }],
+  });
+  check(
+    "what cannot go in a field is said before anything is asked",
+    !badEmail.ok && /not an email address/.test(badEmail.answer.error)
+  );
+  const unknownField = await proposeStoreAction(shop({ shopify_id: person }), store, {
+    action: "update_customer",
+    targets: [{ id: person, set: { total_spent: "5" } }],
+  });
+  check(
+    "a field Shopify keeps for itself is named back",
+    !unknownField.ok && /not something Warmluke changes/.test(unknownField.answer.error)
+  );
+
+  // Put back: only while the copy says what the change left (or, behind, what it replaced).
+  const renamed = {
+    store_id: "s1",
+    action: "update_customer",
+    status: "done",
+    params: {},
+    outcome: { done: [person], errors: [] },
+    targets: [{ id: person, set: { name: "Aarav S" }, was: { name: "Aarav Sharma" } }],
+  };
+  const back = await proposeStoreAction(shop({ shopify_id: person, name: "Aarav S" }, renamed), store, {
+    undo_of: "act-1",
+  });
+  const undone = proposed[proposed.length - 1];
+  check(
+    "a name goes back to what it was",
+    back.ok && undone.p_targets[0].set.name === "Aarav Sharma" && undone.p_targets[0].was.name === "Aarav S"
+  );
+  const behind = await proposeStoreAction(shop({ shopify_id: person, name: "Aarav Sharma" }, renamed), store, {
+    undo_of: "act-1",
+  });
+  check("a copy not caught up yet still lets it go back", behind.ok);
+  const moved = await proposeStoreAction(shop({ shopify_id: person, name: "Aarav Kumar" }, renamed), store, {
+    undo_of: "act-1",
+  });
+  check(
+    "one changed again since is refused, not written over",
+    !moved.ok && /changed again since/.test(moved.answer.error)
+  );
+  const repriced = {
+    store_id: "s1",
+    action: "update_variant",
+    status: "done",
+    params: {},
+    outcome: { done: [variant], errors: [] },
+    targets: [
+      { id: variant, productId: "gid://shopify/Product/80001", set: { price: "499.50" }, was: { price: "899" } },
+    ],
+  };
+  const aiBack = await proposeStoreAction(shop({ ...copy, price: 499.5 }, repriced), store, { undo_of: "act-2" });
+  check(
+    "and their AI cannot put a price back either: that is repricing too",
+    !aiBack.ok && /typing it on the list/.test(aiBack.answer.error)
+  );
+  check("nothing was asked for beyond the ones that went", proposed.length - asked0 === 4);
+}
+
 console.log(
   fails.length === 0 ? "\na change to the shop is asked one way, and only asked" : `\n${fails.length} FAILED`
 );

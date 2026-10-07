@@ -25,6 +25,10 @@ import {
   MOST_TARGETS,
   STORE_ACTIONS,
   actionSpec,
+  sameValue,
+  setOf,
+  wasOf,
+  whatOnlyTheMerchantDoes,
   type ActionParams,
   type ActionTarget,
   type StoreActionSpec,
@@ -46,6 +50,21 @@ export const ACTION_CATALOGUE = ACTIONS.map((a) => {
     action: a,
     does: spec.label,
     store_must_allow: spec.scopes,
+    // A change of fields: what each target may set, by the name its list reads it as.
+    ...(spec.ask.kind === "fields"
+      ? {
+          each_target_sets: Object.fromEntries(
+            Object.entries(spec.ask.fields)
+              .filter(([, d]) => !d.byHand)
+              .map(([f, d]) => [
+                f,
+                d.choices
+                  ? `${d.label}: one of ${d.choices.join(", ")}`
+                  : `${d.label}${d.blank ? " (may be emptied)" : ""}`,
+              ])
+          ),
+        }
+      : {}),
     ...(spec.undo
       ? { can_be_taken_back: true }
       : { cannot_be_taken_back: spec.undoNote ?? "This one cannot be undone." }),
@@ -95,7 +114,7 @@ export const PROPOSE_INPUT: JSONSchema7 & { type: "object"; properties: Record<s
       type: "array",
       items: { type: "object" },
       description:
-        'What it changes. Each carries Shopify\'s own id — { "id": "gid://shopify/Order/1234" } — plus whatever that change needs for that one line, such as a quantity.',
+        'What it changes. Each carries Shopify\'s own id — { "id": "gid://shopify/Order/1234" } — plus whatever that change needs for that one line: a quantity, or for a change of fields what it sets, { "set": { "email": "…" } }.',
     },
     params: {
       type: "object",
@@ -154,7 +173,9 @@ async function undoArgs(
 export async function proposeStoreAction(
   db: SupabaseClient,
   store: StoreBrief,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  /** Typed by the merchant on a list in Warmluke: never set for Luke or their AI. */
+  opts: { byHand?: boolean } = {}
 ): Promise<Proposal> {
   // Refused here as well as in SQL. The database is what makes it
   // true; this is what makes it a sentence the assistant can read
@@ -220,6 +241,21 @@ export async function proposeStoreAction(
     };
   }
 
+  // A price or a status is the merchant's own hand, never an assistant's ask (NEVER_DOES).
+  if (spec.ask.kind === "fields" && !opts.byHand) {
+    const ask = spec.ask;
+    const hand = [...new Set(targets.flatMap((t) => Object.keys(setOf(t)).filter((f) => ask.fields[f]?.byHand)))];
+    if (hand.length) {
+      return {
+        ok: false,
+        answer: {
+          error: `Only the merchant changes ${hand.map((f) => `a ${ask.noun}'s ${ask.fields[f].label.toLowerCase()}`).join(" or ")}, by typing it on the list in Warmluke: Luke and their own AI never ${whatOnlyTheMerchantDoes()} anything.`,
+          note: "Nothing was asked for. Tell them where: the list, Edit, then type it in.",
+        },
+      };
+    }
+  }
+
   const params = (args.params && typeof args.params === "object" ? args.params : {}) as Record<string, unknown>;
   const wrongHow = spec.check(targets, params);
   if (wrongHow) {
@@ -255,6 +291,27 @@ export async function proposeStoreAction(
     const got = await spec.prepare(db, store.id, targets);
     if ("error" in got) return { ok: false, answer: { error: got.error } };
     prepared = got.targets;
+  } else if (spec.prepare && undoing && spec.ask.kind === "fields") {
+    // Put back only what nobody has changed since: the copy says what the
+    // change left (or, not caught up yet, what it replaced), else it is refused.
+    const fields = spec.ask.fields;
+    const now = await spec.prepare(db, store.id, targets);
+    if ("error" in now) return { ok: false, answer: { error: now.error } };
+    const moved = targets.filter((t, i) =>
+      Object.entries(wasOf(t)).some(([f, left]) => {
+        const there = wasOf(now.targets[i])[f];
+        return !sameValue(fields[f], there, left) && !sameValue(fields[f], there, setOf(t)[f]);
+      })
+    );
+    if (moved.length) {
+      return {
+        ok: false,
+        answer: {
+          error: `${moved.length === 1 ? "It was" : `${moved.length} of them were`} changed again since, in Shopify or here, so nothing was put back.`,
+        },
+      };
+    }
+    prepared = targets.map((t, i) => ({ ...now.targets[i], set: setOf(t), was: wasOf(t) }));
   }
 
   // The sentence on the card is written from the change itself,

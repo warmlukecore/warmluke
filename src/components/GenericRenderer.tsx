@@ -10,7 +10,7 @@
 
 import { InfoTip } from "@/components/ui/InfoTip";
 import { explainStat } from "@/lib/describe";
-import { filterKind, filterOptions, matchesFilter, rangeText, readRange, type Range } from "@/lib/filters";
+import { filterKind, filterOptions, matchesFilter, optionsFor, rangeText, readRange, type Range } from "@/lib/filters";
 import type { StoreActionSpec } from "@/lib/store-actions";
 import { filterChoices, filterIsOff } from "@/lib/view-edit";
 import type { ScreenAsk } from "@/lib/screen";
@@ -53,7 +53,11 @@ export type ShopChangeKind = {
  * write, how each goes, and the saving of what was typed.
  */
 export type CellEdits = {
-  columns: Record<string, { goes: ShopChangeKind["goes"]; why?: string }>;
+  /** Each store column a change writes: where it goes, how it is typed into, and what cannot go in it. */
+  columns: Record<
+    string,
+    { goes: ShopChangeKind["goes"]; why?: string; kind: EditKind; problem?: (value: string) => string | null }
+  >;
   onSave: (
     changes: Array<{ rec: RecordRow; field: string; value: string }>
   ) => Promise<{ said: string; keep: string[]; undo?: string[] }>;
@@ -85,6 +89,8 @@ import {
   TableView,
   actionChange,
   compare,
+  differs,
+  type EditKind,
 } from "@/components/views";
 import { useFormat } from "@/lib/format";
 import { evalExpr, truthy, withComputed } from "@/lib/expr";
@@ -1030,7 +1036,7 @@ export default function GenericRenderer({
       const { said, keep, undo } = await onShopChange(kind.action, rows, input);
       setPicked(new Set(keep));
       setBulkSaid(said);
-      setBulkUndo(onShopUndo && undo?.length ? { ids: undo, redo: false } : null);
+      setBulkUndo(onShopUndo && undo?.length ? { ids: undo, own: [], redo: false } : null);
     } catch (e) {
       // It may have gone before the answer was lost: the bell says what did.
       setBulkSaid(
@@ -1041,22 +1047,126 @@ export default function GenericRenderer({
     }
   }
 
-  // Edited in place (7 Oct): what was typed, by row and column, until it is saved or let go.
-  const editFields = Object.keys(cellEdits?.columns ?? {});
+  // Edited in place (7 Oct): the store's columns a change writes (cellEdits), and
+  // every field of the section's own for anyone who may set them, whoever built
+  // the section (the owner, Luke or their AI). A typed change is kept with the row
+  // it was typed on, so paging or a fresh read loses none, and for this section
+  // on this device until it is saved or let go: never sent from another section.
+  const ownEdits =
+    canSet && !preview
+      ? columns.filter(
+          (c) => !c.compute && !c.hidden && (!ownFields || ownFields.includes(c.field)) && !cellEdits?.columns[c.field]
+        )
+      : [];
+  const editFields = [...Object.keys(cellEdits?.columns ?? {}), ...ownEdits.map((c) => c.field)];
+  const draftsAt = `abo_drafts:${periodKey ?? ""}`;
   const [editMode, setEditMode] = useState(false);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [draftState, setDraftState] = useState<{ at: string; items: Record<string, Draft> }>({ at: "", items: {} });
+  const drafts = draftState.at === draftsAt ? draftState.items : {};
+  const setDrafts = (next: (was: Record<string, Draft>) => Record<string, Draft>) =>
+    setDraftState((st) => ({ at: draftsAt, items: next(st.at === draftsAt ? st.items : {}) }));
   const [editWork, setEditWork] = useState(false);
   const [editSaid, setEditSaid] = useState<string | null>(null);
-  // What the last change to the store can put back: Undo after it, Redo after an undo (7 Oct).
+  // What the last change can put back: Undo after it, Redo after an undo (7 Oct).
   const [editUndo, setEditUndo] = useState<ShopUndo | null>(null);
   const [bulkUndo, setBulkUndo] = useState<ShopUndo | null>(null);
-  async function putBack(was: ShopUndo, set: (u: ShopUndo | null) => void, say: (s: string) => void) {
-    if (!onShopUndo) return;
-    set({ ...was, busy: true });
+  // A section opened: what was typed here and not yet saved, if anything, and edit mode with it.
+  useEffect(() => {
+    let kept: Record<string, Draft> = {};
     try {
-      const { said, again } = await onShopUndo(was.ids);
-      say(said);
-      set(again.length ? { ids: again, redo: !was.redo } : null);
+      kept = JSON.parse(sessionStorage.getItem(draftsAt) ?? "{}") as Record<string, Draft>;
+    } catch {
+      kept = {};
+    }
+    setDraftState({ at: draftsAt, items: kept });
+    setEditMode(Object.keys(kept).length > 0);
+    setEditSaid(null);
+    setEditUndo(null);
+  }, [draftsAt]);
+  useEffect(() => {
+    if (draftState.at !== draftsAt) return;
+    try {
+      if (Object.keys(draftState.items).length) sessionStorage.setItem(draftsAt, JSON.stringify(draftState.items));
+      else sessionStorage.removeItem(draftsAt);
+    } catch {
+      // Private windows refuse; the typing stays on screen all the same.
+    }
+  }, [draftState, draftsAt]);
+
+  const draftKey = (id: string, field: string) => `${id}\u0000${field}`;
+  const colOf = (field: string) => columns.find((c) => c.field === field);
+  // Why what was typed cannot be saved: the store's rules for its columns, a number for a number of their own.
+  const problemOf = (field: string, value: string): string | null => {
+    const store = cellEdits?.columns[field];
+    if (store) return store.problem?.(value) ?? null;
+    const col = colOf(field);
+    if (col && NUMBERS.has(col.type) && value.trim() !== "" && !Number.isFinite(Number(value.trim())))
+      return `${col.label} has to be a number: "${value.trim()}" is not one.`;
+    return null;
+  };
+  const changes = Object.entries(drafts).flatMap(([key, d]) => {
+    const field = key.split("\u0000")[1];
+    const col = colOf(field);
+    const rec = records.find((r) => r.id === d.rec.id) ?? d.rec;
+    return col && editFields.includes(field) && differs(col, rec.data?.[field], d.value)
+      ? [{ key, rec, field, value: d.value }]
+      : [];
+  });
+  const held = changes.filter((c) => problemOf(c.field, c.value));
+  const ready = changes.filter((c) => !problemOf(c.field, c.value));
+  const storeReady = ready.filter((c) => cellEdits?.columns[c.field]);
+  const ownReady = ready.filter((c) => !cellEdits?.columns[c.field]);
+  const editGoes = [...new Set(storeReady.map((c) => cellEdits?.columns[c.field]?.goes))];
+  // Where what is typed goes: their own columns here; the store's to Shopify, now or for a yes.
+  const storeCols = Object.values(cellEdits?.columns ?? {});
+  const theStore = ownEdits.length ? "The store's columns" : "These";
+  const editHelp = !storeCols.length
+    ? "Columns with a pencil can be typed into; Save keeps them here."
+    : `${ownEdits.length ? "Your own columns save here. " : ""}${
+        storeCols.find((c) => c.why)?.why ??
+        (storeCols.every((c) => c.goes === "straight")
+          ? `${theStore} save straight to Shopify too.`
+          : storeCols.every((c) => c.goes === "owner")
+            ? `${theStore} wait for the owner's yes before they reach Shopify.`
+            : `${theStore} wait in the bell for your yes before they reach Shopify.`)
+      }`;
+  // Leaving the page with typing unsaved: the browser asks first.
+  const unsaved = changes.length > 0;
+  useEffect(() => {
+    if (!unsaved) return;
+    const stay = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", stay);
+    return () => window.removeEventListener("beforeunload", stay);
+  }, [unsaved]);
+
+  async function putBack(was: ShopUndo, set: (u: ShopUndo | null) => void, say: (s: string) => void) {
+    set({ ...was, busy: true });
+    const parts: string[] = [];
+    const ownAgain: OwnUndo[] = [];
+    let missed = 0;
+    let again: string[] = [];
+    try {
+      // Their own fields: what each was, written back (or, for a redo, what it was set to).
+      for (const o of was.own) {
+        try {
+          await onUpdate!(o.id, o.before);
+          ownAgain.push({ id: o.id, before: o.after, after: o.before });
+        } catch {
+          missed++;
+        }
+      }
+      if (ownAgain.length)
+        parts.push(
+          `${was.redo ? "Done again" : "Put back"} on ${ownAgain.length} ${ownAgain.length === 1 ? "row" : "rows"}.`
+        );
+      if (missed) parts.push(`${missed} not ${was.redo ? "done again" : "put back"}.`);
+      if (was.ids.length && onShopUndo) {
+        const back = await onShopUndo(was.ids);
+        parts.push(back.said);
+        again = back.again;
+      }
+      say(parts.join(" "));
+      set(again.length || ownAgain.length ? { ids: again, own: ownAgain, redo: !was.redo } : null);
     } catch (e) {
       say(
         `Warmluke didn't answer (${e instanceof Error ? e.message : "no connection"}). The bell shows anything that went.`
@@ -1064,30 +1174,73 @@ export default function GenericRenderer({
       set(null);
     }
   }
-  const draftKey = (id: string, field: string) => `${id}\u0000${field}`;
-  const asNow = (v: unknown) => (Array.isArray(v) ? v.join(", ") : v === null || v === undefined ? "" : String(v));
-  const changes = Object.entries(drafts).flatMap(([k, value]) => {
-    const [id, field] = k.split("\u0000");
-    const rec = records.find((r) => r.id === id);
-    return rec && value.trim() !== asNow(rec.data?.[field]).trim() ? [{ rec, field, value }] : [];
-  });
-  const editGoes = [...new Set(changes.map((c) => cellEdits?.columns[c.field]?.goes))];
+
   const saveEdits = async () => {
-    if (!cellEdits || !changes.length) return;
+    if (!ready.length) {
+      if (held.length) setEditSaid(`${held.length} can't be saved yet: ${problemOf(held[0].field, held[0].value)}`);
+      return;
+    }
     setEditWork(true);
     setEditSaid(null);
     setEditUndo(null);
+    const parts: string[] = [];
+    const keep = new Set(held.map((c) => c.key));
+    const own: OwnUndo[] = [];
+    let undoIds: string[] = [];
     try {
-      const { said, keep, undo } = await cellEdits.onSave(changes);
-      setEditUndo(onShopUndo && undo?.length ? { ids: undo, redo: false } : null);
-      // What did not go stays typed in, to try again.
-      setDrafts((was) => Object.fromEntries(Object.entries(was).filter(([k]) => keep.includes(k.split("\u0000")[0]))));
-      setEditSaid(said);
-    } catch (e) {
-      setEditSaid(
-        `Warmluke didn't answer (${e instanceof Error ? e.message : "no connection"}). The bell shows anything that went.`
-      );
+      // The section's own fields: written here, a row at a time, a few at once.
+      const rows = new Map<string, { rec: RecordRow; set: Record<string, string>; keys: string[] }>();
+      for (const c of ownReady) {
+        const row = rows.get(c.rec.id) ?? { rec: c.rec, set: {}, keys: [] };
+        row.set[c.field] = c.value;
+        row.keys.push(c.key);
+        rows.set(c.rec.id, row);
+      }
+      const failed: string[] = [];
+      const list = [...rows.values()];
+      for (let i = 0; i < list.length; i += 4) {
+        await Promise.all(
+          list.slice(i, i + 4).map(async ({ rec, set, keys }) => {
+            try {
+              await onUpdate!(rec.id, set);
+              own.push({
+                id: rec.id,
+                before: Object.fromEntries(Object.keys(set).map((f) => [f, rec.data?.[f] ?? null])),
+                after: set,
+              });
+            } catch (e) {
+              failed.push(e instanceof Error ? e.message : "That didn't save.");
+              for (const k of keys) keep.add(k);
+            }
+          })
+        );
+      }
+      if (own.length) parts.push(`Saved on ${own.length} ${own.length === 1 ? "row" : "rows"}.`);
+      if (failed.length)
+        parts.push(
+          `${failed.length === 1 ? "One row" : `${failed.length} rows`} not saved: ${failed[0].replace(/\.$/, "")}.`
+        );
+      // The store's columns: asked for as any change to the store is.
+      if (storeReady.length && cellEdits) {
+        try {
+          const { said, keep: rowsKept, undo } = await cellEdits.onSave(storeReady);
+          parts.push(said);
+          for (const c of storeReady) if (rowsKept.includes(c.rec.id)) keep.add(c.key);
+          undoIds = undo ?? [];
+        } catch (e) {
+          for (const c of storeReady) keep.add(c.key);
+          parts.push(
+            `Warmluke didn't answer (${e instanceof Error ? e.message : "no connection"}). The bell shows anything that went.`
+          );
+        }
+      }
+      if (held.length) parts.push(`${held.length} left as typed: ${problemOf(held[0].field, held[0].value)}`);
     } finally {
+      // What went is let go; what did not stays typed in, to try again.
+      setDrafts((was) => Object.fromEntries(Object.entries(was).filter(([k]) => keep.has(k))));
+      const ids = onShopUndo ? undoIds : [];
+      setEditUndo(own.length || ids.length ? { ids, own, redo: false } : null);
+      setEditSaid(parts.join(" "));
       setEditWork(false);
     }
   };
@@ -1118,9 +1271,12 @@ export default function GenericRenderer({
       ? {
           editing: {
             fields: new Set(editFields),
-            draft: (rec: RecordRow, field: string) => drafts[draftKey(rec.id, field)],
+            kindOf: (field: string): EditKind => cellEdits?.columns[field]?.kind ?? { input: "own" },
+            problem: problemOf,
+            options: (col: SchemaColumn) => optionsFor(col.field, features ?? null, records),
+            draft: (rec: RecordRow, field: string) => drafts[draftKey(rec.id, field)]?.value,
             onDraft: (rec: RecordRow, field: string, value: string) =>
-              setDrafts((was) => ({ ...was, [draftKey(rec.id, field)]: value })),
+              setDrafts((was) => ({ ...was, [draftKey(rec.id, field)]: { rec, value } })),
           },
         }
       : {}),
@@ -1365,12 +1521,20 @@ export default function GenericRenderer({
                 />
               )
             )}
-            {editFields.length > 0 && view.type === "table" && (
+            {editFields.length > 0 && view.type === "table" && !preview && (
               <button
                 type="button"
                 onClick={() => {
+                  // Typing is never dropped by leaving: saved or let go first.
+                  if (editMode && changes.length) {
+                    setEditSaid(
+                      `Save or discard the ${changes.length} ${changes.length === 1 ? "change" : "changes"} first.`
+                    );
+                    return;
+                  }
                   setEditMode((on) => !on);
                   setEditSaid(null);
+                  setEditUndo(null);
                 }}
                 aria-pressed={editMode}
                 className={`${button(editMode ? "primary" : "secondary", "sm")} ml-auto`}
@@ -1381,7 +1545,7 @@ export default function GenericRenderer({
             )}
             {views.length === 1 && (
               <span
-                className={`${editFields.length > 0 && view.type === "table" ? "" : "ml-auto"} hidden rounded-full bg-tone-neutral px-2 py-0.5 text-xs text-tone-neutral-fg sm:inline`}
+                className={`${editFields.length > 0 && view.type === "table" && !preview ? "" : "ml-auto"} hidden rounded-full bg-tone-neutral px-2 py-0.5 text-xs text-tone-neutral-fg sm:inline`}
               >
                 {VIEW_NAMES[view.type]}
               </span>
@@ -1398,7 +1562,7 @@ export default function GenericRenderer({
           </div>
         )}
 
-        {editMode && cellEdits && (
+        {editMode && editFields.length > 0 && (
           <div
             role="region"
             aria-label="Editing in place"
@@ -1416,7 +1580,7 @@ export default function GenericRenderer({
             )}
             <span className="font-medium text-fg tabular-nums">
               {changes.length
-                ? `${changes.length} ${changes.length === 1 ? "change" : "changes"}`
+                ? `${changes.length} ${changes.length === 1 ? "change" : "changes"}${held.length ? `, ${held.length} to fix` : ""}`
                 : "Type into a cell to change it"}
             </span>
             {changes.length > 0 && (
@@ -1429,16 +1593,18 @@ export default function GenericRenderer({
                 >
                   {editWork
                     ? "Saving…"
-                    : editGoes.every((g) => g === "straight")
-                      ? "Save to Shopify"
-                      : editGoes.every((g) => g === "owner")
-                        ? "Ask the owner"
-                        : "Save, for your yes"}
+                    : !storeReady.length
+                      ? "Save"
+                      : editGoes.every((g) => g === "straight")
+                        ? "Save to Shopify"
+                        : editGoes.every((g) => g === "owner")
+                          ? "Ask the owner"
+                          : "Save, for your yes"}
                 </button>
                 <button
                   type="button"
                   disabled={editWork}
-                  onClick={() => setDrafts({})}
+                  onClick={() => setDrafts(() => ({}))}
                   className={button("plain", "sm")}
                 >
                   Discard
@@ -1446,13 +1612,8 @@ export default function GenericRenderer({
               </>
             )}
             <span className="text-xs text-fg-muted">
-              {Object.values(cellEdits.columns).find((c) => c.why)?.why ??
-                (Object.values(cellEdits.columns).every((c) => c.goes === "straight")
-                  ? "Saved straight to Shopify too."
-                  : Object.values(cellEdits.columns).every((c) => c.goes === "owner")
-                    ? "Your changes wait for the owner's yes before they reach Shopify."
-                    : "These wait in the bell for your yes before they reach Shopify.")}
-              {cellEdits.onSettings && Object.values(cellEdits.columns).some((c) => c.goes === "yours") && (
+              {editHelp}
+              {cellEdits?.onSettings && Object.values(cellEdits.columns).some((c) => c.goes === "yours") && (
                 <>
                   {" "}
                   <button
@@ -1755,8 +1916,14 @@ function ShopChange({
   );
 }
 
-/** Changes to the store that went through and can be put back; `redo` once they have been. */
-type ShopUndo = { ids: string[]; redo: boolean; busy?: boolean };
+/** A row of their own as it was and as it was set, to put back (or forward again). */
+type OwnUndo = { id: string; before: Record<string, unknown>; after: Record<string, unknown> };
+/** What went through and can be put back: changes to the store, and rows of their own; `redo` once they have been. */
+type ShopUndo = { ids: string[]; own: OwnUndo[]; redo: boolean; busy?: boolean };
+/** A cell typed into, with the row it was typed on. */
+type Draft = { rec: RecordRow; value: string };
+/** Their own fields that hold a number. */
+const NUMBERS: ReadonlySet<SchemaColumn["type"]> = new Set(["number", "currency", "percent"]);
 
 function UndoButton({ undo, onPress }: { undo: ShopUndo; onPress: () => void }) {
   const Icon = undo.redo ? Redo2 : Undo2;

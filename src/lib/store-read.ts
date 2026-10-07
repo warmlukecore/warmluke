@@ -470,6 +470,8 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "ship_state", label: "State", type: "text" },
       { field: "discount_codes", label: "Discounts", type: "text" },
       { field: "shipments", label: "Shipments", type: "number" },
+      // Shopify's own tags on the order: read here, and typed into in edit mode (7 Oct).
+      { field: "tags", label: "Tags", type: "text" },
     ],
   },
   customers: {
@@ -615,6 +617,8 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     view: "store_variants",
     order: { field: "product", ascending: true },
     select: "id, product_id, product, variant, sku, barcode, price, currency, cost, margin, margin_pct, tracked",
+    // Its own id and its item's (0198): a variant's price and barcode, an item's SKU and cost, are changed from here.
+    gives: { ProductVariant: "shopify_id", InventoryItem: "inventory_item_id" },
     advice:
       'Cost is what the merchant paid, straight from Shopify, and is EMPTY until they enter it there — null is "unknown", never zero. Profit per unit = margin (price - cost); margin_pct is the same as a percentage of price. Only count rows where cost is not empty, and say how many were left out, because averaging a margin over rows with no cost reports a profit nobody made. tracked = false means Shopify does not count stock for it, so its zeroes are not shortages.',
     what: 'one row per variant of a product — product, variant, SKU, barcode, price, cost and margin; what "price list", "variants", "barcodes", "what did it cost us" and "profit per item" mean',

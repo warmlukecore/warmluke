@@ -55,6 +55,38 @@ const SAMPLES = {
     targets: [{ id: "gid://shopify/InventoryItem/1", locationId: "gid://shopify/Location/1", quantity: 40, from: 12 }],
     params: {},
   },
+  // Changes of fields (7 Oct): what each sets, and what the copy said it was.
+  update_customer: {
+    targets: [
+      {
+        id: "gid://shopify/Customer/1",
+        set: { name: "Aarav S", email: "aarav@shop.in" },
+        was: { name: "Aarav Sharma", email: "" },
+      },
+    ],
+    params: {},
+  },
+  update_product: {
+    targets: [{ id: "gid://shopify/Product/1", set: { status: "DRAFT" }, was: { status: "ACTIVE" } }],
+    params: {},
+  },
+  update_variant: {
+    targets: [
+      {
+        id: "gid://shopify/ProductVariant/1",
+        productId: "gid://shopify/Product/1",
+        set: { price: "499.50" },
+        was: { price: "899" },
+      },
+    ],
+    params: {},
+  },
+  update_item: {
+    targets: [
+      { id: "gid://shopify/InventoryItem/1", set: { sku: "SS-1", cost: "" }, was: { sku: "SS-111", cost: "420" } },
+    ],
+    params: {},
+  },
 };
 
 console.log("every action has an example to be checked against");
@@ -205,21 +237,37 @@ console.log("\nand every id an action needs, some list gives");
 // it says it never does is no action there is.
 console.log("\nand what the pages promise is what the registry holds");
 {
+  // Said briefly (7 Oct): each change by its few words, a change of fields by its noun.
   const can = whatCanChange();
+  const details = /change the details of .*/.exec(can)?.[0] ?? "";
   for (const name of ACTIONS) {
     const spec = STORE_ACTIONS[name];
     if (spec.connector !== "shopify") continue;
-    const said = spec.label.charAt(0).toLowerCase() + spec.label.slice(1);
-    check(`what it can change names ${name}`, can.includes(said));
+    const label = spec.label.charAt(0).toLowerCase() + spec.label.slice(1);
+    check(
+      `what it can change names ${name}`,
+      spec.ask.kind === "fields" ? details.includes(`${spec.ask.noun}s`) : can.includes(spec.brief ?? label)
+    );
   }
 
+  // Never, by anyone: no change does it. Only by the merchant's hand (a price,
+  // a status): every field that does it is marked so, and Luke and their AI are told never.
   const never = whatNeverChanges();
-  for (const { say, stem } of NEVER_DOES) {
-    check(`what it never does says "${say}"`, never.includes(say));
+  const aiNever = whatNeverChanges("ai");
+  for (const { say, stem, byHand } of NEVER_DOES) {
+    check(`what Luke and their AI never do says "${say}"`, aiNever.includes(say));
+    check(`and what nobody does ${byHand ? "leaves out" : "says"} "${say}"`, never.includes(say) === !byHand);
     for (const name of ACTIONS) {
       const spec = STORE_ACTIONS[name];
       const said = `${name} ${spec.label} ${spec.mutation}`.toLowerCase();
-      check(`${name} does not ${say}`, !said.includes(stem));
+      const fields = spec.ask.kind === "fields" ? spec.ask.fields : {};
+      if (!byHand) check(`${name} does not ${say}`, !said.includes(stem));
+      else
+        check(
+          `${name} lets only the merchant ${say}`,
+          byHand.every((f) => !fields[f] || fields[f].byHand === true) &&
+            (!said.includes(stem) || byHand.some((f) => fields[f]?.byHand))
+        );
     }
   }
 
@@ -234,7 +282,7 @@ console.log("\nand what the pages promise is what the registry holds");
   };
   for (const [file, uses] of Object.entries(SURFACES)) {
     const src = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
-    for (const fn of uses) check(`${file} says it with ${fn}()`, src.includes(`${fn}()`));
+    for (const fn of uses) check(`${file} says it with ${fn}()`, src.includes(`${fn}(`));
     // Comments may quote the old line to say why it went; copy may not.
     const copy = src
       .split("\n")
@@ -251,11 +299,19 @@ console.log("\nand a list's own screen offers what its rows can be aimed at (019
     const spec = STORE_ACTIONS[name];
     const aimed = Object.values(spec.aims ?? {}).flat();
     check(`${name} aims only at kinds it needs`, aimed.length > 0 && aimed.every((k) => spec.needs.includes(k)));
-    check(`${name} says what is typed for it`, !!spec.ask && ["tags", "text", "count"].includes(spec.ask.kind));
+    check(
+      `${name} says what is typed for it`,
+      !!spec.ask && ["tags", "text", "count", "fields"].includes(spec.ask.kind)
+    );
   }
   const offered = (t) => actionsFor(STORE_TABLES[t]?.gives).join();
   check("orders: a tag on and off, and a note", offered("orders") === "add_tags,remove_tags,set_order_note");
-  check("stock: its count", offered("inventory_levels") === "set_stock");
+  check("stock: its count, and its item's SKU", offered("inventory_levels") === "set_stock,update_item");
+  check("customers: their details", offered("customers").includes("update_customer"));
+  check(
+    "variants: a price or barcode, and an item's SKU or cost",
+    offered("variants") === "update_variant,update_item"
+  );
   check("a list with no Shopify id of its own: nothing", offered("fulfillments") === "");
   const stock = targetFrom(STORE_ACTIONS.set_stock, STORE_TABLES.inventory_levels.gives, {
     inventory_item_id: "gid://shopify/InventoryItem/1",
@@ -281,8 +337,19 @@ console.log("\nand a list's own screen offers what its rows can be aimed at (019
       STORE_TABLES[t].columns.map((c) => c.field)
     );
   check(
-    "stock: its available count is set",
-    JSON.stringify(editable("inventory_levels")) === '{"available":{"set":"set_stock"}}'
+    "stock: its available count is set, and its SKU",
+    JSON.stringify(editable("inventory_levels")) === '{"available":{"set":"set_stock"},"sku":{"set":"update_item"}}'
+  );
+  check("customers: name, email and phone", Object.keys(editable("customers")).join() === "name,email,phone");
+  check(
+    "orders: their tags",
+    JSON.stringify(editable("orders")) === '{"tags":{"add":"add_tags","remove":"remove_tags"}}'
+  );
+  check(
+    "a column is set by one change on a list, never two",
+    ["orders", "customers", "products", "inventory_levels", "variants"].every((t) =>
+      Object.values(editable(t)).every((e) => (e.set ? !e.add && !e.remove : e.add && e.remove))
+    )
   );
   check(
     "a list of words is edited by adding and taking",

@@ -23,7 +23,16 @@ import GenericRenderer, {
   type StatRequest,
   type StatResult,
 } from "@/components/GenericRenderer";
-import { MOST_TARGETS, STORE_ACTIONS, actionsFor, editsFor, targetFrom, type ActionTarget } from "@/lib/store-actions";
+import {
+  MOST_TARGETS,
+  STORE_ACTIONS,
+  actionsFor,
+  editsFor,
+  fieldProblem,
+  targetFrom,
+  type ActionTarget,
+} from "@/lib/store-actions";
+import type { EditKind } from "@/components/views";
 import { hasScope } from "@/lib/shopify-resources";
 import ChatPanel, { type BuildRecord, type ChatMessage, type InrRate, nextChatId } from "@/components/ChatPanel";
 import type { OfferedModel } from "@/lib/luke-models";
@@ -1810,17 +1819,22 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // Store), or waits in their bell; a teammate's waits for the owner.
   const shopKinds = useMemo<ShopChangeKind[]>(() => {
     if (!isStoreTable(loadedSource) || !store?.connected || !storeActionsOn) return [];
-    return actionsFor(STORE_TABLES[loadedSource].gives).map((a) => {
-      const spec = STORE_ACTIONS[a];
-      const short = store.granted ? spec.scopes.filter((sc) => !hasScope(store.granted!, sc)) : [];
-      return {
-        action: a,
-        label: spec.label,
-        ask: spec.ask,
-        goes: isOwner ? (store.autoSend.includes(a) ? "straight" : "yours") : "owner",
-        ...(short.length ? { why: "Shopify has not allowed this yet: reconnect the store in Settings → Store." } : {}),
-      };
-    });
+    // Ticked rows set one value on all of them: a change of fields is typed per row, in edit mode.
+    return actionsFor(STORE_TABLES[loadedSource].gives)
+      .filter((a) => STORE_ACTIONS[a].ask.kind !== "fields")
+      .map((a) => {
+        const spec = STORE_ACTIONS[a];
+        const short = store.granted ? spec.scopes.filter((sc) => !hasScope(store.granted!, sc)) : [];
+        return {
+          action: a,
+          label: spec.label,
+          ask: spec.ask,
+          goes: isOwner ? (store.autoSend.includes(a) ? "straight" : "yours") : "owner",
+          ...(short.length
+            ? { why: "Shopify has not allowed this yet: reconnect the store in Settings → Store." }
+            : {}),
+        };
+      });
   }, [loadedSource, store, storeActionsOn, isOwner]);
 
   /**
@@ -1959,9 +1973,27 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           ? actions.flatMap((a) => STORE_ACTIONS[a].scopes.filter((sc) => !hasScope(store.granted!, sc)))
           : [];
         const straight = actions.every((a) => store.autoSend.includes(a));
+        // How it is typed into, and what cannot go in it, from the change that writes it.
+        const ask = e.set ? STORE_ACTIONS[e.set].ask : null;
+        const f = ask?.kind === "fields" ? ask.fields[field] : undefined;
+        const kind: EditKind = !e.set
+          ? { input: "tags" }
+          : ask?.kind === "count"
+            ? { input: "count" }
+            : f?.input === "choice"
+              ? { input: "choice", choices: f.choices ?? [] }
+              : { input: f?.input ?? "text" };
+        const problem =
+          ask?.kind === "count"
+            ? (v: string) => (/^\d+$/.test(v.trim()) ? null : "A count is a whole number of 0 or more.")
+            : f && ask?.kind === "fields"
+              ? (v: string) => fieldProblem(f, ask.noun, v)
+              : undefined;
         return [
           field,
           {
+            kind,
+            ...(problem ? { problem } : {}),
             goes: isOwner ? (straight ? "straight" : "yours") : "owner",
             ...(short.length
               ? { why: "Shopify has not allowed this yet: reconnect the store in Settings → Store." }
@@ -1989,6 +2021,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           asks.set(key, at);
           rowsOf.set(target.id, [...(rowsOf.get(target.id) ?? []), rowId]);
         };
+        // A change of fields: one target a row, carrying every field typed on it.
+        const fieldsOf = new Map<string, ActionTarget>();
         for (const { rec, field, value } of changes) {
           const e = edits[field];
           const data = (rec.data ?? {}) as Record<string, unknown>;
@@ -1999,7 +2033,15 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               unaimed.push(rec.id);
               continue;
             }
-            if (set.ask.kind === "count") {
+            if (set.ask.kind === "fields") {
+              const at = `${e.set}\u0000${rec.id}`;
+              const row = fieldsOf.get(at) ?? { ...target, set: {} };
+              if (!fieldsOf.has(at)) {
+                fieldsOf.set(at, row);
+                add(e.set, row, {}, rec.id);
+              }
+              (row.set as Record<string, string>)[field] = value.trim();
+            } else if (set.ask.kind === "count") {
               if (!/^\d+$/.test(value.trim())) {
                 notCount.push(rec.id);
                 continue;
