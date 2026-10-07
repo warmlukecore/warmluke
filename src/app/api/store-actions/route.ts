@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { getUserClient } from "@/lib/supabase-server";
 import { runAction } from "@/lib/run-action";
+import { proposeStoreAction } from "@/lib/store-action-propose";
+import type { StoreBrief } from "@/lib/store-read";
 
 export const runtime = "nodejs";
 
 /**
- * POST /api/store-actions — body: { actionId, do: "run" | "dismiss" }
+ * POST /api/store-actions — body: { actionId, do: "run" | "dismiss" },
+ * or { do: "ask", projectId, action, targets, params } from a list's screen
  *
  * The merchant's yes, and the change going out.
  *
@@ -22,7 +25,7 @@ export const runtime = "nodejs";
  * would get anywhere else — the rule lives in one place, and this is
  * not that place.
  *
- * Callers: src/components/ChatPanel.tsx.
+ * Callers: src/components/ChatPanel.tsx (run, dismiss), src/components/AppShell.tsx (ask).
  */
 export async function POST(req: Request) {
   try {
@@ -33,9 +36,44 @@ export async function POST(req: Request) {
     const body = (await req.json().catch(() => null)) as {
       actionId?: string;
       do?: string;
+      projectId?: string;
+      action?: string;
+      targets?: unknown;
+      params?: unknown;
     } | null;
     const actionId = body?.actionId?.trim();
     const what = body?.do ?? "run";
+
+    // Asked from a list's screen (0195): ticked rows, one change. Asked as
+    // Luke and their own AI ask, through the same gates; then, when it is
+    // the owner's own, of a kind they turned on for that store, the
+    // database takes it as their yes and it goes out now. Otherwise it
+    // waits in the bell, the owner's yes being the only way out.
+    if (what === "ask") {
+      const projectId = body?.projectId?.trim();
+      if (!projectId) return NextResponse.json({ error: "projectId is required" }, { status: 400 });
+      const { data: store } = await client
+        .from("stores")
+        .select("id, project_id, shop_domain, timezone, currency, last_synced_at")
+        .eq("project_id", projectId)
+        .eq("status", "connected")
+        .limit(1)
+        .maybeSingle();
+      if (!store) return NextResponse.json({ error: "There is no connected store to change." }, { status: 400 });
+      const asked = await proposeStoreAction(client, store as StoreBrief, {
+        action: body?.action,
+        targets: body?.targets,
+        params: body?.params,
+      });
+      if (!asked.ok) return NextResponse.json(asked.answer, { status: 400 });
+      const { data: now } = await client.rpc("abo_action_send_now", { p_action: asked.id });
+      if (!(now as { approved?: boolean } | null)?.approved) {
+        return NextResponse.json({ status: "waiting", actionId: asked.id, summary: asked.summary });
+      }
+      const run = await runAction(client, asked.id);
+      return NextResponse.json({ ...run, actionId: asked.id, summary: asked.summary });
+    }
+
     if (!actionId) {
       return NextResponse.json({ error: "actionId is required" }, { status: 400 });
     }

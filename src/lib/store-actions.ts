@@ -77,6 +77,22 @@ export interface StoreActionSpec {
    * Shopify's own tags mutations accept.
    */
   needs: readonly string[];
+  /**
+   * How a target is aimed from a row of a store list: each key of the
+   * target and the kinds of Shopify id it may take, the first a list
+   * gives (lib/store-read STORE_TABLES gives). A list whose rows give
+   * every key can be changed from its own screen (actionsFor); no list
+   * is named here, so a new list or a new change needs nothing else.
+   */
+  aims: Readonly<Record<string, readonly string[]>>;
+  /**
+   * What the merchant types for it on a list's screen: one value every
+   * target shares (`param`), or a number per target (`each`), set or
+   * moved from `current`, the row's column holding it now.
+   */
+  ask:
+    | { param: string; kind: "tags" | "text"; label: string }
+    | { each: string; kind: "count"; label: string; current: string };
   confirm: ConfirmLevel;
   /** One sentence for the card, built from the real numbers. */
   say: (targets: ActionTarget[], params: ActionParams) => string;
@@ -192,6 +208,8 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
     connector: "shopify",
     scopes: ["write_orders", "write_customers", "write_products"],
     needs: ["Order", "Product", "Customer"],
+    aims: { id: ["Order", "Product", "Customer"] },
+    ask: { param: "tags", kind: "tags", label: "Tag" },
     confirm: "list",
     say: (targets, params) => `Tags ${kinds(targets)} "${tagsOf(params).join('", "')}"`,
     check: (targets, params) =>
@@ -209,6 +227,8 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
     connector: "shopify",
     scopes: ["write_orders", "write_customers", "write_products"],
     needs: ["Order", "Product", "Customer"],
+    aims: { id: ["Order", "Product", "Customer"] },
+    ask: { param: "tags", kind: "tags", label: "Tag" },
     confirm: "list",
     say: (targets, params) => `Takes "${tagsOf(params).join('", "')}" off ${kinds(targets)}`,
     check: (targets, params) =>
@@ -227,6 +247,8 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
     connector: "shopify",
     scopes: ["write_orders"],
     needs: ["Order"],
+    aims: { id: ["Order"] },
+    ask: { param: "note", kind: "text", label: "Note" },
     confirm: "list",
     say: (targets, params) =>
       `Writes a note on ${count(targets.length, "order")}: "${String(params.note ?? "").slice(0, 60)}"`,
@@ -259,6 +281,9 @@ export const STORE_ACTIONS: Record<string, StoreActionSpec> = {
     connector: "shopify",
     scopes: ["write_inventory"],
     needs: ["InventoryItem", "Location"],
+    aims: { id: ["InventoryItem"], locationId: ["Location"] },
+    // The count on the row now, to move it by a number as well as set it.
+    ask: { each: "quantity", kind: "count", label: "Count", current: "available" },
     confirm: "list",
     say: (targets) =>
       targets.length === 1
@@ -405,3 +430,41 @@ export function actionSpec(name: string): StoreActionSpec | null {
  * mistake becomes expensive to undo.
  */
 export const MOST_TARGETS = 200;
+
+/**
+ * The changes a store list's rows can be aimed at, off the registry and
+ * the ids the list gives (STORE_TABLES gives): Orders' tags and note,
+ * Stock's count. Nothing per list: a list or a change added later is
+ * offered on its screen without a line here.
+ */
+export function actionsFor(gives: Readonly<Record<string, string>> | undefined): string[] {
+  if (!gives) return [];
+  return ACTIONS.filter((a) => Object.values(STORE_ACTIONS[a].aims).every((kinds) => kinds.some((k) => k in gives)));
+}
+
+/** One row as a target of a change, each key from the column its list gives; null when the row lacks one. */
+export function targetFrom(
+  spec: StoreActionSpec,
+  gives: Readonly<Record<string, string>>,
+  data: Record<string, unknown>
+): ActionTarget | null {
+  const target: ActionTarget = { id: "" };
+  for (const [key, kinds] of Object.entries(spec.aims)) {
+    const kind = kinds.find((k) => k in gives);
+    const value = kind ? data[gives[kind]] : undefined;
+    if (typeof value !== "string" || !value) return null;
+    target[key] = value;
+  }
+  return target.id ? target : null;
+}
+
+/**
+ * What the owner agrees to when they let one kind of change go straight
+ * to their store (0195): written from the change itself, and kept word
+ * for word with their yes, so what they agreed to can be read back.
+ */
+export function sendNowSaid(spec: StoreActionSpec, shop: string): string {
+  const what = spec.label.charAt(0).toLowerCase() + spec.label.slice(1);
+  const back = spec.undo ? "It can be put back with the opposite change." : (spec.undoNote ?? "It cannot be undone.");
+  return `When you ${what} on a list in Warmluke, it is sent to ${shop} at once, without asking you again. It changes your live Shopify store. ${back} What Luke or your own AI asks for, and what your teammates change, still waits for your yes. You can turn this off at any time.`;
+}

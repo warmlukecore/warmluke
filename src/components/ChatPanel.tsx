@@ -5071,7 +5071,8 @@ export default function ChatPanel({
               {pendingCount > 0 && !bellOpen && waitingKey !== noticeCleared && (
                 <div className="flex items-center gap-2 border-t border-tone-attention/70 bg-tone-attention/25 px-3 py-1.5 text-[11px] text-tone-attention-fg">
                   <span className="min-w-0 flex-1 truncate">
-                    Your AI asked for {pendingCount} {pendingCount === 1 ? "change" : "changes"}
+                    {/* Not "your AI asked": a change of theirs from a list, a teammate's and a follow-up wait here too (0195). */}
+                    {pendingCount} waiting for your yes
                   </span>
                   <button
                     onClick={() => setBellOpen(true)}

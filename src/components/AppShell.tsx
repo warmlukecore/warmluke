@@ -16,7 +16,14 @@ import { NavSkeleton, SectionSkeleton } from "@/components/ui/Skeleton";
 import { supabase } from "@/lib/supabase-client";
 import { describePlan } from "@/lib/describe";
 import { apiFetch, apiStream, takePendingPrompt } from "@/lib/auth";
-import GenericRenderer, { type StatRequest, type StatResult } from "@/components/GenericRenderer";
+import GenericRenderer, {
+  type ShopChangeInput,
+  type ShopChangeKind,
+  type StatRequest,
+  type StatResult,
+} from "@/components/GenericRenderer";
+import { MOST_TARGETS, STORE_ACTIONS, actionsFor, targetFrom, type ActionTarget } from "@/lib/store-actions";
+import { hasScope } from "@/lib/shopify-resources";
 import ChatPanel, { type BuildRecord, type ChatMessage, type InrRate, nextChatId } from "@/components/ChatPanel";
 import type { OfferedModel } from "@/lib/luke-models";
 import { undoableFrom } from "@/lib/undo";
@@ -354,7 +361,16 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     country: string | null;
     /** The shop's own zone: whose days "the last 15 days" on its sections are. */
     timezone: string | null;
+    /** Changes can be sent to it: connected, not taken off Shopify. */
+    connected: boolean;
+    /** The changes the owner sends straight to it (0195), and what Shopify allowed (null: not read since the grant). */
+    autoSend: string[];
+    granted: string[] | null;
   } | null>(null);
+  // Read the store again when the owner changes what goes straight to it (Settings, 0195).
+  const [sendTick, setSendTick] = useState(0);
+  // Whether the owner's account may change the store at all (0107): an administrator's switch.
+  const [storeActionsOn, setStoreActionsOn] = useState(false);
   // A rate, only ever used to annotate. Imported amounts are rendered
   // in the currency Shopify recorded them in; this is the rough second
   // line underneath, for a merchant who thinks in their own money.
@@ -1787,6 +1803,144 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     [loadModuleData]
   );
 
+  // What a list of the store's offers to change in Shopify on ticked rows
+  // (0195): off the registry and the ids its rows give, nothing per list.
+  // The owner's goes now when they let that kind go straight (Settings →
+  // Store), or waits in their bell; a teammate's waits for the owner.
+  const shopKinds = useMemo<ShopChangeKind[]>(() => {
+    if (!isStoreTable(loadedSource) || !store?.connected || !storeActionsOn) return [];
+    return actionsFor(STORE_TABLES[loadedSource].gives).map((a) => {
+      const spec = STORE_ACTIONS[a];
+      const short = store.granted ? spec.scopes.filter((sc) => !hasScope(store.granted!, sc)) : [];
+      return {
+        action: a,
+        label: spec.label,
+        ask: spec.ask,
+        goes: isOwner ? (store.autoSend.includes(a) ? "straight" : "yours") : "owner",
+        ...(short.length ? { why: "Shopify has not allowed this yet: reconnect the store in Settings → Store." } : {}),
+      };
+    });
+  }, [loadedSource, store, storeActionsOn, isOwner]);
+
+  /**
+   * A change to the store on ticked rows (0195): each row aimed by the ids
+   * its list gives, a count set or moved from what the row holds now, and
+   * asked for as Luke's and their AI's are (POST /api/store-actions, ask),
+   * in pieces of at most MOST_TARGETS. A row already as asked is left
+   * alone, and a count that would go below nought is not asked for. What
+   * went is read again a moment later, once Shopify's own word on it has
+   * come in.
+   */
+  const shopChange = useCallback(
+    async (action: string, rows: RecordRow[], input: ShopChangeInput): Promise<{ said: string; keep: string[] }> => {
+      const spec = STORE_ACTIONS[action];
+      if (!spec || !isStoreTable(loadedSource))
+        return { said: "That can't be changed here.", keep: rows.map((r) => r.id) };
+      const gives = STORE_TABLES[loadedSource].gives ?? {};
+      const ask = spec.ask;
+      const params: Record<string, unknown> =
+        ask.kind === "tags"
+          ? {
+              [ask.param]: input.value
+                .split(",")
+                .map((t) => t.trim())
+                .filter(Boolean),
+            }
+          : ask.kind === "text"
+            ? { [ask.param]: input.value.trim() }
+            : {};
+      const n = Number(input.value);
+      const rowsOf = new Map<string, string[]>();
+      const targets: ActionTarget[] = [];
+      let same = 0;
+      let below = 0;
+      let unaimed = 0;
+      for (const rec of rows) {
+        const data = (rec.data ?? {}) as Record<string, unknown>;
+        const target = targetFrom(spec, gives, data);
+        if (!target) {
+          unaimed++;
+          continue;
+        }
+        if (ask.kind === "count") {
+          const now = Number(data[ask.current]);
+          const to = input.mode === "set" ? n : now + (input.mode === "add" ? n : -n);
+          if (!Number.isInteger(to)) {
+            unaimed++;
+            continue;
+          }
+          if (to < 0) {
+            below++;
+            continue;
+          }
+          if (to === now) {
+            same++;
+            continue;
+          }
+          target[ask.each] = to;
+        }
+        targets.push(target);
+        rowsOf.set(target.id, [...(rowsOf.get(target.id) ?? []), rec.id]);
+      }
+      const left = [
+        same ? `${same} already at that count` : "",
+        below ? `${below} would go below 0, so left as they were` : "",
+        unaimed ? `${unaimed} without what Shopify needs to find them` : "",
+      ].filter(Boolean);
+      if (targets.length === 0)
+        return { said: `${spec.label}: nothing to change${left.length ? ` (${left.join(", ")})` : ""}.`, keep: [] };
+
+      let sent = 0;
+      let waiting = 0;
+      const errors: string[] = [];
+      const keep = new Set<string>();
+      for (let i = 0; i < targets.length; i += MOST_TARGETS) {
+        const piece = targets.slice(i, i + MOST_TARGETS);
+        const { ok, data } = await apiFetch("/api/store-actions", {
+          do: "ask",
+          projectId,
+          action,
+          targets: piece,
+          params,
+        });
+        if (!ok) {
+          errors.push(String(data.error ?? "It was refused."));
+          for (const t of piece) for (const r of rowsOf.get(t.id) ?? []) keep.add(r);
+          continue;
+        }
+        if (data.status === "waiting") {
+          waiting += piece.length;
+          continue;
+        }
+        sent += ((data.done as string[] | undefined) ?? []).length;
+        for (const e of (data.errors as string[] | undefined) ?? []) {
+          const id = /^(gid:\/\/shopify\/[A-Za-z]+\/\d+): /.exec(e)?.[1];
+          errors.push(id ? e.slice(id.length + 2) : e);
+          for (const r of (id && rowsOf.get(id)) || []) keep.add(r);
+        }
+      }
+      // Shopify's word on it comes back as a webhook, in a moment or a few.
+      if (sent && selectedModuleId) {
+        const id = selectedModuleId;
+        setTimeout(() => void reloadMoved(id), 3000);
+        setTimeout(() => void reloadMoved(id), 10000);
+      }
+      const parts = [
+        sent ? `sent to Shopify on ${sent}, and the list catches up in a moment` : "",
+        waiting
+          ? isOwner
+            ? `${waiting} waiting in the bell for your yes`
+            : `${waiting} sent to the owner for their yes`
+          : "",
+        errors.length ? `${errors.length === 1 ? "one" : errors.length} not done: ${errors[0]}` : "",
+        ...left,
+      ].filter(Boolean);
+      // One full stop, whatever Shopify's own words ended with.
+      return { said: `${spec.label}: ${parts.join("; ").replace(/\.+$/, "")}.`, keep: [...keep] };
+    },
+    [loadedSource, projectId, isOwner, selectedModuleId, reloadMoved]
+  );
+
   // Stat cards counted over the whole section, not the page. The
   // function evaluates the same expressions the browser would, over
   // every row, and narrows by the same search and filters.
@@ -2048,7 +2202,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     // came back from Shopify has nothing to show.
     supabase
       .from("stores")
-      .select("id, currency, country, timezone")
+      .select("id, currency, country, timezone, status, auto_send, granted_scopes")
       .eq("project_id", projectId)
       .in("status", ["connected", "uninstalled"])
       .maybeSingle()
@@ -2060,12 +2214,18 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 currency: data.currency as string,
                 country: (data.country as string | null) ?? null,
                 timezone: (data.timezone as string | null) ?? null,
+                connected: data.status === "connected",
+                autoSend: (data.auto_send as string[] | null) ?? [],
+                granted: (data.granted_scopes as string[] | null) ?? null,
               }
             : null
         )
       );
+    void supabase
+      .rpc("abo_store_actions_on", { p_project: projectId })
+      .then(({ data }) => setStoreActionsOn(data === true));
     // seatTick: read again when their seat changes (the store let in or taken away, 0145).
-  }, [projectId, seatTick]);
+  }, [projectId, seatTick, sendTick]);
 
   // "Today" in the browser is the shop's, as it is on the server (0162).
   useEffect(() => {
@@ -3959,7 +4119,11 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             >
               {project && (
                 <button
-                  onClick={() => setSettingsOpen(true)}
+                  onClick={() => {
+                    setSettingsOpen(true);
+                    // As every other way out of the drawer does: closing settings left it over the list on a phone.
+                    setNavOpen(false);
+                  }}
                   aria-label={isOwner ? "Project settings" : "Settings"}
                   className={`flex items-center gap-2.5 rounded-control px-2 py-1.5 text-[13px] text-frame-fg-muted transition-colors hover:bg-frame-raised hover:text-white ${
                     railOn ? "lg:h-10 lg:w-10 lg:justify-center lg:px-0" : ""
@@ -4254,6 +4418,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                               row: { id: rec.id, data: (rec.data ?? {}) as Record<string, unknown> },
                               columns: (narrowed(schema.schema_json) ?? schema.schema_json).columns,
                             }),
+                          // Changes to the store itself, on ticked rows (0195).
+                          ...(shopKinds.length > 0 ? { shopChanges: shopKinds, onShopChange: shopChange } : {}),
                           // Their own fields beside each row: row actions and
                           // scans set them; the store's columns stay the import's.
                           ...(myColumns.length > 0
@@ -4469,6 +4635,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               onClose={() => setSettingsOpen(false)}
               // The shell reads its store once, when it opens; a fresh one is the honest picture.
               onStoreChanged={() => window.location.reload()}
+              onSendChanged={() => setSendTick((n) => n + 1)}
             />
           )}
           {rulesOpen && (

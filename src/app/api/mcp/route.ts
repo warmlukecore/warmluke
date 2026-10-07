@@ -408,7 +408,7 @@ const TOOLS = [
   {
     name: "propose_store_action",
     description:
-      "Ask for something to be changed IN the merchant's Shopify shop itself — a tag on some orders, a note, a stock count. Warmluke writes the sentence they will read, from the change, not from you. Nothing happens until they agree to it in Warmluke, and you cannot agree for them: a change to a live shop is theirs alone, whatever the app's auto-build setting says. Call it once per kind of change; the answer says what they have to do next. What can be asked for: " +
+      "Ask for something to be changed IN the merchant's Shopify shop itself — a tag on some orders, a note, a stock count. Warmluke writes the sentence they will read, from the change, not from you. Nothing happens until they agree to it in Warmluke, and you cannot agree for them: a change to a live shop is theirs alone, whatever the app's auto-build setting says, and even for a kind they send straight to Shopify from their own lists (Settings → Store), which covers only changes they make themselves. Call it once per kind of change; the answer says what they have to do next. What can be asked for: " +
       ACTION_CATALOGUE.map((c) => `${c.action} (${c.does})`).join(", ") +
       ".",
     inputSchema: {

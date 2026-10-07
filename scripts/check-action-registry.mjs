@@ -21,6 +21,9 @@ import {
   NEVER_DOES,
   STORE_ACTIONS,
   actionSpec,
+  actionsFor,
+  sendNowSaid,
+  targetFrom,
   whatCanChange,
   whatNeverChanges,
 } from "../src/lib/store-actions.ts";
@@ -228,6 +231,36 @@ console.log("\nand what the pages promise is what the registry holds");
     check(`${file} no longer says it never writes`, !/never write/i.test(copy));
     check(`${file} no longer calls the store read-only`, !/store data is read-only/i.test(copy));
   }
+}
+
+console.log("\nand a list's own screen offers what its rows can be aimed at (0195)");
+{
+  for (const name of ACTIONS) {
+    const spec = STORE_ACTIONS[name];
+    const aimed = Object.values(spec.aims ?? {}).flat();
+    check(`${name} aims only at kinds it needs`, aimed.length > 0 && aimed.every((k) => spec.needs.includes(k)));
+    check(`${name} says what is typed for it`, !!spec.ask && ["tags", "text", "count"].includes(spec.ask.kind));
+  }
+  const offered = (t) => actionsFor(STORE_TABLES[t]?.gives).join();
+  check("orders: a tag on and off, and a note", offered("orders") === "add_tags,remove_tags,set_order_note");
+  check("stock: its count", offered("inventory_levels") === "set_stock");
+  check("a list with no Shopify id of its own: nothing", offered("fulfillments") === "");
+  const stock = targetFrom(STORE_ACTIONS.set_stock, STORE_TABLES.inventory_levels.gives, {
+    inventory_item_id: "gid://shopify/InventoryItem/1",
+    location_id: "gid://shopify/Location/2",
+  });
+  check(
+    "a stock row aims at its item and its place",
+    stock?.id === "gid://shopify/InventoryItem/1" && stock?.locationId === "gid://shopify/Location/2"
+  );
+  check(
+    "a row without its id is not aimed",
+    targetFrom(STORE_ACTIONS.add_tags, STORE_TABLES.orders.gives, {}) === null
+  );
+  check(
+    "what the owner agrees to is said from the change",
+    /without asking you again/.test(sendNowSaid(STORE_ACTIONS.set_stock, "x.myshopify.com"))
+  );
 }
 
 console.log(fails.length === 0 ? "\nthe fifth entry will cost what the first did" : `\n${fails.length} FAILED`);

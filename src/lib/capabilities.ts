@@ -339,5 +339,6 @@ export function capabilitySummary(): string {
 - A screen written for their own flow when none of the views above draws it, and a rule's own code for logic the expressions cannot say.
 - Rules that run when a row is ${on.join(" or ")}, or on a schedule, and then ${does.join(" or ")}.
 - Sections over the connected store's own lists (orders, products, customers, stock and the rest), with the owner's fields kept beside each row.
+- Shopify changes from a list's ticked rows (Settings → Store says which go straight).
 NOT POSSIBLE — never promise these, never describe a workaround: ${NOT_SUPPORTED.map((n) => n.label).join("; ")}.`;
 }

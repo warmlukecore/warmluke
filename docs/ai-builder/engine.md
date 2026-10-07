@@ -396,6 +396,15 @@ waits on the card under the conversation, and the merchant's yes runs it
 (`POST /api/store-actions`). The same change asked twice in one turn is one request. With
 the switch off the tool is not offered and the prompt does not mention changing the shop.
 
+The merchant can also make those changes themselves, on ticked rows of a store list
+(`POST /api/store-actions` with `do: "ask"`, through the same gates). Each kind waits in the
+bell for their yes until the owner lets it go straight to Shopify in Settings → Store (0195,
+`stores.auto_send`): turning one on shows the words kept with their yes in
+`store_send_consents`, and `abo_action_send_now` then takes the owner's own fresh change of
+that kind as the yes. What Luke or their own AI asks for, and what a teammate changes (a
+teammate who can open the store may now ask), always waits for the owner; their AI can
+neither flip the switch nor send.
+
 ## Validation and repair
 
 Parsing removes code fences and normalizes a small set of known aliases, then validates

@@ -24,7 +24,8 @@ const check = (name, cond) => {
 const proposed = [];
 const db = ({ on = true, scopes = null, refuse = null } = {}) => ({
   rpc: async (name, args) => {
-    if (name === "abo_feature") return { data: on, error: null };
+    // The owner's account switch, read for the project whoever asks (0195).
+    if (name === "abo_store_actions_on") return { data: on, error: null };
     if (name === "abo_action_propose") {
       proposed.push(args);
       return refuse ? { data: null, error: { message: refuse } } : { data: `act-${proposed.length}`, error: null };

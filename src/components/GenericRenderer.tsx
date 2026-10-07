@@ -11,6 +11,7 @@
 import { InfoTip } from "@/components/ui/InfoTip";
 import { explainStat } from "@/lib/describe";
 import { filterKind, filterOptions, matchesFilter, rangeText, readRange, type Range } from "@/lib/filters";
+import type { StoreActionSpec } from "@/lib/store-actions";
 import { filterChoices, filterIsOff } from "@/lib/view-edit";
 import type { ScreenAsk } from "@/lib/screen";
 import ErrorNote from "@/components/ErrorNote";
@@ -34,6 +35,22 @@ export type StatRequest = {
     period?: { field: string; from_day: string; to_day: string; from: string; to: string } | null;
   };
 };
+/**
+ * A change to the store these rows come from (0195), as a list's screen
+ * offers it on ticked rows: off the registry (lib/store-actions), with
+ * how it goes and why it cannot, when it cannot.
+ */
+export type ShopChangeKind = {
+  action: string;
+  label: string;
+  ask: StoreActionSpec["ask"];
+  /** straight: to Shopify now; yours: waits in the bell for the owner's yes; owner: waits for the owner. */
+  goes: "straight" | "yours" | "owner";
+  why?: string;
+};
+/** What was typed for it: a tag or a note, or a count and whether it is set, added or taken away. */
+export type ShopChangeInput = { value: string; mode: "set" | "add" | "remove" };
+
 /** One per stat: counted, not formatted. */
 export type StatResult = {
   count: number;
@@ -431,6 +448,8 @@ export default function GenericRenderer({
   onApprovalButton,
   waitsForOwner = false,
   ownFields,
+  shopChanges,
+  onShopChange,
 }: {
   schema: UiSchema;
   records: RecordRow[];
@@ -500,6 +519,14 @@ export default function GenericRenderer({
   waitsForOwner?: boolean;
   /** On a section over the store, the fields that are the owner's own: the only ones a bulk "Set" may write. */
   ownFields?: string[];
+  /** Changes to the store these rows come from, offered on ticked rows (0195). */
+  shopChanges?: ShopChangeKind[];
+  /** Makes one on the ticked rows; says what happened, and which rows to keep ticked. */
+  onShopChange?: (
+    action: string,
+    rows: RecordRow[],
+    input: ShopChangeInput
+  ) => Promise<{ said: string; keep: string[] }>;
 }) {
   const fmt = useFormat();
   const total = totalRecords ?? records.length;
@@ -917,11 +944,13 @@ export default function GenericRenderer({
   // Act on many rows at once: a table the person can write to. Each row goes
   // the way one press on it would (actionChange, onApprovalButton, onUpdate),
   // so a guard, an approval and the store's own fields hold row by row.
-  const bulkable = canSet && !preview && view.type === "table";
+  // A list of the store's is ticked for a change to the store itself too (0195), with or without fields of its own.
+  const shopKinds = onShopChange ? (shopChanges ?? []) : [];
+  const bulkable = (canSet || shopKinds.length > 0) && !preview && view.type === "table";
   const tickedRows = filteredRecords.filter((r) => picked.has(r.id));
-  const settable = columns.filter(
-    (c) => !c.compute && (!ownFields || ownFields.includes(c.field)) && SETTABLE.has(c.type)
-  );
+  const settable = canSet
+    ? columns.filter((c) => !c.compute && (!ownFields || ownFields.includes(c.field)) && SETTABLE.has(c.type))
+    : [];
   async function runBulk(doing: string, one: (rec: RecordRow) => Promise<"done" | "skipped" | "waits">) {
     const rows = tickedRows;
     const tally = { done: 0, skipped: 0, waits: 0, failed: [] as string[] };
@@ -970,6 +999,26 @@ export default function GenericRenderer({
       await onUpdate!(rec.id, { [col.field]: value });
       return "done";
     });
+  // One change to the store over every ticked row, as one request: what
+  // went, what waits and what did not are the caller's to say (0195).
+  async function shopSend(kind: ShopChangeKind, input: ShopChangeInput) {
+    if (!onShopChange) return;
+    const rows = tickedRows;
+    setBulkSaid(null);
+    setBulkWork({ doing: kind.label, done: 0, of: rows.length });
+    try {
+      const { said, keep } = await onShopChange(kind.action, rows, input);
+      setPicked(new Set(keep));
+      setBulkSaid(said);
+    } catch (e) {
+      // It may have gone before the answer was lost: the bell says what did.
+      setBulkSaid(
+        `${kind.label}: Warmluke didn't answer (${e instanceof Error ? e.message : "no connection"}). The bell shows anything that went.`
+      );
+    } finally {
+      setBulkWork(null);
+    }
+  }
 
   // A hidden column is the row's, when it is opened, not the view's.
   const shown = columns.filter((c) => !c.hidden);
@@ -1252,7 +1301,10 @@ export default function GenericRenderer({
         {bulkable && (picked.size > 0 || bulkWork || bulkSaid) && (
           <BulkBar
             count={tickedRows.length}
-            actions={features?.actions ?? []}
+            actions={canSet ? (features?.actions ?? []) : []}
+            shop={shopKinds}
+            hasCurrent={(field) => tickedRows.some((r) => Number.isFinite(Number(r.data?.[field])))}
+            onShop={shopSend}
             waits={waitsForOwner}
             fields={settable}
             choicesOf={(c) => {
@@ -1418,9 +1470,124 @@ const SETTABLE: ReadonlySet<SchemaColumn["type"]> = new Set(["boolean", "badge",
  * and what came of it after: done, left as they were, waiting for a yes, or
  * not saved.
  */
+/**
+ * A change to the store on the ticked rows (0195): which one, what to
+ * set, and a button saying where it goes: to Shopify now, to the owner's
+ * bell, or to the owner. A count is set, or moved by a number from what
+ * each row holds now.
+ */
+function ShopChange({
+  count,
+  kinds,
+  hasCurrent,
+  onSend,
+}: {
+  count: number;
+  kinds: ShopChangeKind[];
+  hasCurrent: (field: string) => boolean;
+  onSend: (kind: ShopChangeKind, input: ShopChangeInput) => void;
+}) {
+  const [action, setAction] = useState(kinds.length === 1 ? kinds[0].action : "");
+  const [value, setValue] = useState("");
+  const [mode, setMode] = useState<ShopChangeInput["mode"]>("set");
+  const kind = kinds.find((k) => k.action === action);
+  const ask = kind?.ask;
+  // Moved by a number only where the rows say what they hold now.
+  const moves = ask?.kind === "count" && hasCurrent(ask.current);
+  const n = Number(value);
+  const ready =
+    !!kind &&
+    !kind.why &&
+    (ask?.kind === "count" ? value.trim() !== "" && Number.isInteger(n) && n >= 0 : value.trim() !== "");
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {kinds.length > 1 && (
+        <div className="w-44 max-w-full">
+          <Select
+            label="Change in Shopify"
+            value={action}
+            options={kinds.map((k) => ({ value: k.action, label: k.label }))}
+            empty="Change in Shopify…"
+            onChange={(v) => {
+              setAction(v);
+              setValue("");
+              setMode("set");
+            }}
+          />
+        </div>
+      )}
+      {kinds.length === 1 && <span className="text-fg-muted">{kind?.label} in Shopify</span>}
+      {ask?.kind === "count" && moves && (
+        <div className="w-32">
+          <Select
+            label={`${ask.label}: how`}
+            value={mode}
+            clearable={false}
+            options={[
+              { value: "set", label: "Set to" },
+              { value: "add", label: "Add" },
+              { value: "remove", label: "Take away" },
+            ]}
+            onChange={(v) => setMode(v as ShopChangeInput["mode"])}
+          />
+        </div>
+      )}
+      {ask && (
+        <input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && ready && kind) onSend(kind, { value, mode: moves ? mode : "set" });
+          }}
+          inputMode={ask.kind === "count" ? "numeric" : undefined}
+          aria-label={
+            ask.kind === "count"
+              ? mode === "set" || !moves
+                ? ask.label
+                : `${ask.label} to ${mode === "add" ? "add" : "take away"}`
+              : ask.label
+          }
+          placeholder={ask.kind === "tags" ? "Tag, or several with commas" : ask.label}
+          aria-invalid={
+            ask.kind === "count" && value.trim() !== "" && !(Number.isInteger(n) && n >= 0) ? true : undefined
+          }
+          className={`${fieldOf("sm")} ${ask.kind === "count" ? "w-24" : "w-48"} tabular-nums`}
+        />
+      )}
+      {kind && (
+        <button
+          type="button"
+          disabled={!ready}
+          onClick={() => ready && onSend(kind, { value, mode: moves ? mode : "set" })}
+          className={button(kind.goes === "straight" ? "primary" : "secondary", "sm")}
+        >
+          {kind.goes === "straight"
+            ? `Send to Shopify (${count})`
+            : kind.goes === "yours"
+              ? `Ask for your yes (${count})`
+              : `Ask the owner (${count})`}
+        </button>
+      )}
+      {kind && (
+        <span className="text-xs text-fg-muted">
+          {kind.why ??
+            (kind.goes === "straight"
+              ? "Goes to Shopify now."
+              : kind.goes === "yours"
+                ? "Waits in the bell until you send it. Settings → Store lets it go straight."
+                : "Waits for the owner's yes.")}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function BulkBar({
   count,
   actions,
+  shop,
+  hasCurrent,
+  onShop,
   waits,
   fields,
   choicesOf,
@@ -1433,6 +1600,10 @@ function BulkBar({
 }: {
   count: number;
   actions: NonNullable<FeatureSchema["actions"]>;
+  /** Changes to the store these rows come from (0195). */
+  shop: ShopChangeKind[];
+  hasCurrent: (field: string) => boolean;
+  onShop: (kind: ShopChangeKind, input: ShopChangeInput) => void;
   waits: boolean;
   fields: SchemaColumn[];
   choicesOf: (c: SchemaColumn) => string[];
@@ -1471,6 +1642,12 @@ function BulkBar({
         </span>
       ) : count > 0 ? (
         <>
+          {/* What the last went on to say, when rows are still ticked: those it could not do, kept to try again. */}
+          {said && (
+            <span className="w-full text-fg-muted" role="status">
+              {said}
+            </span>
+          )}
           <span className="font-medium text-fg tabular-nums">{count} ticked</span>
           {actions.map((a) => (
             <button key={a.label} type="button" onClick={() => onAction(a)} className={button("secondary", "sm")}>
@@ -1478,6 +1655,7 @@ function BulkBar({
               {a.label}
             </button>
           ))}
+          {shop.length > 0 && <ShopChange count={count} kinds={shop} hasCurrent={hasCurrent} onSend={onShop} />}
           {fields.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
               <div className="w-44 max-w-full">

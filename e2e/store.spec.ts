@@ -198,3 +198,115 @@ test("a price between two: Min and Max narrow the whole list, and its cards with
     await shop.admin.from("modules").delete().eq("id", id);
   }
 });
+
+test("stock changed on ticked rows waits for the owner's yes, and goes straight once they turn it on, their yes kept", async ({
+  signedIn: page,
+  shop,
+}) => {
+  const wide = (page.viewportSize()?.width ?? 0) >= 1024;
+  // Changing a store at all is an administrator's switch per account (0107).
+  const { data: was } = await shop.admin
+    .from("account_settings")
+    .select("store_actions_enabled")
+    .eq("user_id", shop.userId)
+    .maybeSingle();
+  await shop.admin.from("account_settings").upsert({ user_id: shop.userId, store_actions_enabled: true });
+  // And Shopify has allowed it, as a store reconnected with stock writes has.
+  const { data: grant } = await shop.admin.from("stores").select("granted_scopes").eq("id", shop.storeId).single();
+  await shop.admin
+    .from("stores")
+    .update({ granted_scopes: [...((grant?.granted_scopes as string[] | null) ?? []), "write_inventory"] })
+    .eq("id", shop.storeId);
+  const made = await page.request.post("/api/apply", {
+    headers: { Authorization: `Bearer ${(shop.session as { access_token: string }).access_token}` },
+    data: {
+      projectId: shop.projectId,
+      plans: [
+        {
+          changeType: "NEW_MODULE",
+          targetModuleId: null,
+          newModule: { name: "e2e-counts", nav_label: "Counts", icon: "table", source_table: "inventory_levels" },
+          newSchema: null,
+          newRecords: null,
+          explanation: "The store's stock, to count.",
+        },
+      ],
+    },
+  });
+  expect(made.ok(), `the section was built: ${await made.text()}`).toBe(true);
+  const { data: mod } = await shop.admin
+    .from("modules")
+    .select("id")
+    .eq("project_id", shop.projectId)
+    .eq("name", "e2e-counts")
+    .single();
+  const id = mod!.id as string;
+  const since = new Date().toISOString();
+  const asked = async () =>
+    (
+      await shop.admin
+        .from("store_actions")
+        .select("status, targets, approved_by")
+        .eq("project_id", shop.projectId)
+        .gte("created_at", since)
+        .order("created_at", { ascending: false })
+    ).data ?? [];
+  try {
+    await page.goto(`/app/${shop.projectId}?section=${id}`);
+    await expect(page.getByRole("heading", { level: 1, name: "Counts" })).toBeVisible();
+    const ticks = page.getByRole("checkbox", { name: "Tick this row" });
+    await ticks.nth(0).click();
+    await ticks.nth(1).click();
+    const bar = page.getByRole("region", { name: "Act on the ticked rows" });
+    await expect(bar.getByText("Set a stock count in Shopify")).toBeVisible();
+    await bar.getByRole("textbox", { name: "Count" }).fill("37");
+    // Off until the owner turns it on: their change waits in the bell.
+    await bar.getByRole("button", { name: "Ask for your yes (2)" }).click();
+    await expect(bar.getByText(/2 waiting in the bell for your yes/)).toBeVisible();
+    const first = await asked();
+    expect(first[0]?.status).toBe("pending");
+    expect(((first[0]?.targets ?? []) as Array<{ quantity: number }>).map((t) => t.quantity)).toEqual([37, 37]);
+    await bar.getByRole("button", { name: "Done" }).click();
+
+    // Turned on in Settings, having read what it means; the words kept with the yes.
+    if (!wide) await page.getByRole("button", { name: "Open sections" }).click();
+    await page.getByRole("button", { name: "Project settings" }).click();
+    await page.getByRole("tab", { name: "Store" }).click();
+    const counts = page.getByRole("switch", { name: 'Send "Set a stock count" straight to Shopify' });
+    await expect(counts).toHaveAttribute("aria-checked", "false");
+    await counts.click();
+    const sure = page.getByRole("dialog", { name: "Send straight to Shopify?" });
+    await expect(sure.getByText(/at once, without asking you again/)).toBeVisible();
+    await sure.getByRole("button", { name: "Turn on" }).click();
+    await expect(counts).toHaveAttribute("aria-checked", "true");
+    const { data: kept } = await shop.admin
+      .from("store_send_consents")
+      .select("action, turned_on, said, user_id")
+      .eq("project_id", shop.projectId);
+    expect(kept).toHaveLength(1);
+    expect(kept![0]).toMatchObject({ action: "set_stock", turned_on: true, user_id: shop.userId });
+    expect(kept![0].said).toMatch(/without asking you again/);
+    await page.keyboard.press("Escape");
+
+    // Now theirs goes straight: approved as their yes and tried on Shopify
+    // (this store is not a real one, so the try is said, not dropped).
+    await ticks.nth(0).click();
+    await bar.getByRole("textbox", { name: "Count" }).fill("38");
+    await bar.getByRole("button", { name: "Send to Shopify (1)" }).click();
+    await expect(bar.getByText(/^Set a stock count: (sent to Shopify|one not done)/)).toBeVisible({ timeout: 30_000 });
+    const second = await asked();
+    expect(["done", "partly_done", "failed"]).toContain(second[0]?.status);
+    expect(second[0]?.approved_by).toBe(shop.userId);
+  } finally {
+    await shop.admin.from("store_actions").delete().eq("project_id", shop.projectId).gte("created_at", since);
+    await shop.admin.from("store_send_consents").delete().eq("project_id", shop.projectId);
+    await shop.admin
+      .from("stores")
+      .update({ auto_send: [], granted_scopes: grant?.granted_scopes ?? null })
+      .eq("id", shop.storeId);
+    await shop.admin
+      .from("account_settings")
+      .upsert({ user_id: shop.userId, store_actions_enabled: was?.store_actions_enabled ?? false });
+    await shop.admin.from("modules").delete().eq("id", id);
+  }
+});

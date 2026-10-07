@@ -22,6 +22,7 @@ import { button, field, hint, iconButton, iconButtonCritical, label, note } from
 import { Check, Copy, ExternalLink, Link2, Trash2, UserPlus } from "lucide-react";
 import ConnectShopify from "@/components/ConnectShopify";
 import HistoryPicker from "@/components/HistoryPicker";
+import { StoreSend } from "@/components/StoreSend";
 import { storeStanding } from "@/lib/store-standing";
 import { ago } from "@/lib/when";
 import { MEMBER_ROLE_OPTIONS, labelOf } from "@/lib/onboarding";
@@ -57,6 +58,9 @@ type ShopRow = {
   history_days: number | null;
   history_from: string | null;
   history_set_at: string | null;
+  /** What Shopify allowed, and the changes the owner sends straight to it (0195). */
+  granted_scopes: string[] | null;
+  auto_send: string[] | null;
 };
 
 /** A seat; the name and role are what the person who took it said when they joined (0118). */
@@ -99,6 +103,7 @@ export default function ProjectSettings({
   onDeleted,
   onClose,
   onStoreChanged,
+  onSendChanged,
   initialTab = "general",
 }: {
   project: ProjectRow;
@@ -109,6 +114,8 @@ export default function ProjectSettings({
   onClose: () => void;
   /** The store was disconnected here; whatever shows it has to read it again. */
   onStoreChanged?: () => void;
+  /** What goes straight to the store changed (0195): the shell reads its store again. */
+  onSendChanged?: () => void;
 }) {
   const [name, setName] = useState(project.name);
   const [locale, setLocale] = useState(project.locale ?? "en-IN");
@@ -166,7 +173,7 @@ export default function ProjectSettings({
     supabase
       .from("stores")
       .select(
-        "id, shop_domain, status, connected_at, last_synced_at, currency, timezone, webhook_error, token_expires_at, refresh_token_expires_at, history_days, history_from, history_set_at"
+        "id, shop_domain, status, connected_at, last_synced_at, currency, timezone, webhook_error, token_expires_at, refresh_token_expires_at, history_days, history_from, history_set_at, granted_scopes, auto_send"
       )
       .eq("project_id", project.id)
       .maybeSingle()
@@ -684,6 +691,10 @@ export default function ProjectSettings({
                   </div>
                 )}
               </Group>
+
+              {shop.status === "connected" && (
+                <StoreSend projectId={project.id} store={shop} onChanged={() => onSendChanged?.()} />
+              )}
 
               <Group title="Disconnect this store" danger>
                 {!confirmingDisconnect ? (
