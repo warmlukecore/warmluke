@@ -2448,11 +2448,17 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // whenever one opens, gets worse or closes.
   const [alerts, setAlerts] = useState<Alert[] | null>(null);
   const [alertsAt, setAlertsAt] = useState(0);
+  // Put away here, as it was then: a read that left before the put-away
+  // landed brought it back (8 Oct). Kept off until it changes, as the
+  // database keeps it off until it gets worse.
+  const putAway = useRef(new Map<string, string>());
   const loadAlerts = useCallback(async () => {
     const { data, error } = await supabase.rpc("abo_alerts", { p_project: projectId });
     if (error) return;
     // Not one worked out from a store column this account is not shown (0192).
-    setAlerts(((data as Alert[] | null) ?? []).filter(alertShown));
+    setAlerts(
+      ((data as Alert[] | null) ?? []).filter(alertShown).filter((a) => putAway.current.get(a.id) !== a.changed_at)
+    );
     setAlertsAt(Date.now());
   }, [projectId]);
   // Not only with a store: a rule of their own tells about their own sections too (0164).
@@ -2468,17 +2474,16 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     ]);
   }, [projectId, loadAlerts]);
   /** Seen takes them off the bell's count; put away takes them off the list until they get worse. */
-  const seeAlerts = useCallback((ids: string[], putAway = false) => {
+  const seeAlerts = useCallback((ids: string[], dismiss = false) => {
     if (ids.length === 0) return;
-    setAlerts(
-      (prev) =>
-        prev &&
-        (putAway
-          ? prev.filter((a) => !ids.includes(a.id))
-          : prev.map((a) => (ids.includes(a.id) ? { ...a, read: true } : a)))
-    );
+    setAlerts((prev) => {
+      if (!prev) return prev;
+      if (!dismiss) return prev.map((a) => (ids.includes(a.id) ? { ...a, read: true } : a));
+      for (const a of prev) if (ids.includes(a.id)) putAway.current.set(a.id, a.changed_at);
+      return prev.filter((a) => !ids.includes(a.id));
+    });
     // A query is only sent once something waits on it.
-    supabase.rpc("abo_alerts_seen", { p_alerts: ids, p_dismiss: putAway }).then(() => {});
+    supabase.rpc("abo_alerts_seen", { p_alerts: ids, p_dismiss: dismiss }).then(() => {});
   }, []);
 
   // Their seat's switch, read again whenever the seat changes (seatTick).
@@ -4501,7 +4506,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                         onAsk={canBuild ? askAboutAlert : undefined}
                         onDismiss={(a) => seeAlerts([a.id], true)}
                         busy={chatBusy || building}
-                        choose={canBuild ? { projectId, onAskLuke: askLukeToWatch } : undefined}
+                        choose={canBuild ? { projectId, onAskLuke: askLukeToWatch, onChosen: loadAlerts } : undefined}
                       />
                     }
                   />

@@ -131,6 +131,23 @@ delete from public.alert_dirty where store_id = '${S}';
 insert into public.import_runs (store_id, resource, status) values
   ('${S}', 'orders', 'done'), ('${S}', 'inventory', 'done'), ('${S}', 'fulfillments', 'done'), ('${S}', 'returns', 'done');
 select pg_temp.say('dirty_after_import', (select count(*)::text from public.alert_dirty where store_id = '${S}'));
+
+-- Nothing is watched until the merchant turns it on and gives its numbers (0199).
+${run}
+select pg_temp.say('off_by_default', coalesce(${open}, 'none'));
+select pg_temp.as('${OWNER}');
+select pg_temp.say('listed_off', (select string_agg((s ->> 'kind') || ':' || (s ->> 'enabled') || ':' || (s ->> 'set') || ':' || (s ->> 'settings'), ',')
+  from jsonb_array_elements(public.abo_alert_settings('${P}')) s));
+select public.abo_set_alert_setting('${P}', 'low_stock', true, '{}');
+reset role;
+select pg_temp.say('on_without_numbers', coalesce(${open}, 'none'));
+-- Their numbers given, each watches: the ones this check was written for.
+select pg_temp.as('${OWNER}');
+select public.abo_set_alert_setting('${P}', 'low_stock', true, '{"days_left": 7, "sales_days": 14}');
+select public.abo_set_alert_setting('${P}', 'dispatch_late', true, '{"hours": 48, "since_days": 30}');
+select public.abo_set_alert_setting('${P}', 'returns_spike', true, '{"min": 3, "times": 2}');
+select public.abo_set_alert_setting('${P}', 'return_reason', true, '{"min": 3, "days": 14}');
+reset role;
 ${run}
 select pg_temp.say('found', ${open});
 select pg_temp.say('dirty_after_run', (select count(*)::text from public.alert_dirty where store_id = '${S}'));
@@ -218,8 +235,11 @@ select pg_temp.as('${OWNER}');
 select pg_temp.say('unknown_setting', pg_temp.try($q$select public.abo_set_alert_setting('${P}', 'low_stock', true, '{"colour": 1}')::text$q$));
 select pg_temp.say('not_number', pg_temp.try($q$select public.abo_set_alert_setting('${P}', 'low_stock', true, '{"days_left": "7"}')::text$q$));
 select pg_temp.say('no_kind', pg_temp.try($q$select public.abo_set_alert_setting('${P}', 'weather', true, '{}')::text$q$));
-select pg_temp.say('threshold', (select s ->> 'settings' from jsonb_array_elements(
+select pg_temp.say('one_left_out', (select (s ->> 'set') || '|' || (s ->> 'settings') from jsonb_array_elements(
   public.abo_set_alert_setting('${P}', 'return_reason', true, '{"min": 4}')) s where s ->> 'kind' = 'return_reason'));
+select pg_temp.say('left_out_closed', (select status from public.alerts where store_id = '${S}' and kind = 'return_reason'));
+select pg_temp.say('threshold', (select s ->> 'settings' from jsonb_array_elements(
+  public.abo_set_alert_setting('${P}', 'return_reason', true, '{"min": 4, "days": 14}')) s where s ->> 'kind' = 'return_reason'));
 select pg_temp.say('threshold_closed', (select status from public.alerts where store_id = '${S}' and kind = 'return_reason'));
 select public.abo_set_alert_setting('${P}', 'returns_spike', false, '{}');
 select pg_temp.say('switched_off', (select status from public.alerts where store_id = '${S}' and kind = 'returns_spike'));
@@ -292,6 +312,17 @@ check("a check that breaks leaves its alerts as they were", r.broken_kept === "o
 check("and the others still run", r.others_ran === "resolved");
 
 console.log("\nwhat is watched");
+check("nothing is watched until the merchant turns it on", r.off_by_default === "none");
+check(
+  "each kind listed off, with no numbers of its own",
+  r.listed_off ===
+    "low_stock:false:false:{},dispatch_late:false:false:{},returns_spike:false:false:{},return_reason:false:false:{}"
+);
+check("turned on without its numbers, it waits", r.on_without_numbers === "none");
+check(
+  "a number left out is not filled in: it waits, and closes what it had",
+  r.one_left_out === 'false|{"min": 4}' && r.left_out_closed === "resolved"
+);
 check("a setting it does not have is refused", r.unknown_setting?.includes("not a setting"));
 check("a setting is a number", r.not_number?.includes("is a number"));
 check("a kind that does not exist is refused", r.no_kind?.includes("No such kind"));

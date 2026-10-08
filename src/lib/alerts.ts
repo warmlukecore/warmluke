@@ -32,8 +32,12 @@ export type AlertSetting = {
   area: string;
   needs: string[];
   enabled: boolean;
-  defaults: Record<string, number>;
+  /** The settings this kind takes, by name; no numbers (0199): each is the merchant's to give. */
+  defaults: Record<string, number | null>;
+  /** The numbers the merchant gave; one missing and the kind waits. */
   settings: Record<string, number>;
+  /** Every number it takes is given: on, it runs. */
+  set?: boolean;
   /** Every import it needs is done. */
   ready: boolean;
   /** The project has said whether it wants this one (0164): the picker is not asked again. */

@@ -181,11 +181,14 @@ What Luke noticed in a store (0163), worked out in the database from the canonic
 model is called to find one.
 
 - `alert_kinds`: what can be noticed, the imports each needs (`needs`), the function that
-  finds it (`check_fn`, returning `subject`, `severity`, `facts`), and its default settings.
+  finds it (`check_fn`, returning `subject`, `severity`, `facts`), and the names of the settings it
+  takes (`defaults`), with no numbers: each is the merchant's to give (0199).
   A kind raises nothing until every import it needs is `done`; a new source is a row and a
   function.
-- `alert_settings`: a project's own switch and numbers per kind, over the defaults, changed
-  by a builder through `abo_set_alert_setting`.
+- `alert_settings`: a project's own switch and numbers per kind, changed by a builder through
+  `abo_set_alert_setting`. Nothing is watched until a builder turns a kind on and gives every
+  number it takes: no row is off, and on with a number missing it waits (`set` in
+  `abo_alert_settings`). The checks read the numbers as given, with none of their own.
 - `alerts`: one row per `(store, kind, subject)`. It opens, its facts move without ringing
   again, `changed_at` moves when it opens again or turns critical, it resolves when its check
   no longer finds it, and opens fresh (with no thread) if it comes back. `conversation_id` is

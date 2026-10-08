@@ -100,10 +100,20 @@ export function AlertsPanel({
   alerts,
   choose,
   ...rest
-}: Handlers & { alerts: Alert[] | null; choose?: { projectId: string; onAskLuke: (text: string) => void } }) {
+}: Handlers & {
+  alerts: Alert[] | null;
+  /** onChosen: what was just turned on may have found something already; read it again. */
+  choose?: { projectId: string; onAskLuke: (text: string) => void; onChosen?: () => void };
+}) {
   const [picking, setPicking] = useState(false);
   const picker = choose && (
-    <AlertPicker projectId={choose.projectId} onAskLuke={choose.onAskLuke} busy={rest.busy} onOpen={setPicking} />
+    <AlertPicker
+      projectId={choose.projectId}
+      onAskLuke={choose.onAskLuke}
+      onChosen={choose.onChosen}
+      busy={rest.busy}
+      onOpen={setPicking}
+    />
   );
   if (alerts === null) return picker ?? null;
   return (
@@ -143,16 +153,20 @@ export function AlertsPanel({
 function AlertPicker({
   projectId,
   onAskLuke,
+  onChosen,
   busy,
   onOpen,
 }: {
   projectId: string;
   onAskLuke: (text: string) => void;
+  onChosen?: () => void;
   busy?: boolean;
   onOpen: (open: boolean) => void;
 }) {
   const [kinds, setKinds] = useState<AlertSetting[] | null>(null);
   const [on, setOn] = useState<Record<string, boolean>>({});
+  // The numbers given for each kind ticked: none until the merchant gives them (0199).
+  const [nums, setNums] = useState<Record<string, Record<string, number>>>({});
   const [own, setOwn] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -163,14 +177,19 @@ function AlertPicker({
       const list = (data as AlertSetting[] | null) ?? [];
       setKinds(list);
       setOn(Object.fromEntries(list.map((k) => [k.kind, k.enabled])));
+      setNums(Object.fromEntries(list.map((k) => [k.kind, k.settings ?? {}])));
     });
   }, [projectId]);
   const open = !!kinds && kinds.length > 0 && !kinds.some((k) => k.chosen);
   useEffect(() => onOpen(open), [open, onOpen]);
   if (!open) return null;
 
+  // What is ticked, and the numbers each still needs before it can watch.
+  const ticked = kinds.filter((k) => on[k.kind]);
+  const unnumbered = ticked.filter((k) => wordsOf(k.kind).settings.some((s) => nums[k.kind]?.[s.key] === undefined));
+
   // Each kept as chosen, so the question is not asked again; then what
-  // they wrote goes to Luke.
+  // they wrote goes to Luke. Nothing ticked is nothing watched.
   const keep = async (ask?: string) => {
     setSaving(true);
     setError(null);
@@ -179,8 +198,8 @@ function AlertPicker({
       const { data, error: e } = await supabase.rpc("abo_set_alert_setting", {
         p_project: projectId,
         p_kind: k.kind,
-        p_enabled: on[k.kind] ?? true,
-        p_settings: k.settings,
+        p_enabled: on[k.kind] ?? false,
+        p_settings: nums[k.kind] ?? k.settings ?? {},
       });
       if (e) {
         setSaving(false);
@@ -190,6 +209,7 @@ function AlertPicker({
       kept = data as AlertSetting[];
     }
     setSaving(false);
+    onChosen?.();
     if (ask) onAskLuke(ask);
     setKinds(kept);
   };
@@ -199,7 +219,7 @@ function AlertPicker({
       <div className="flex items-center gap-2 px-1 text-xs text-fg-muted">
         <LukeMark size="xs" />
         <p className="min-w-0 flex-1">
-          Luke watches your stock, shipping and returns.
+          Luke can watch your stock, shipping and returns. Nothing is watched until you choose.
           {error && !choosing && <span className="ml-1 text-tone-critical-fg">{error}</span>}
         </p>
         <button onClick={() => setChoosing(true)} className={button("plain", "sm")}>
@@ -208,8 +228,8 @@ function AlertPicker({
         <button
           onClick={() => void keep()}
           disabled={saving}
-          aria-label="Keep these and hide"
-          title="Keep these. Change them any time in Settings → Alerts."
+          aria-label="Not now"
+          title="Nothing is watched. Turn any on, with your own numbers, in Settings → Alerts."
           className={`${iconButton} h-7 w-7`}
         >
           <X aria-hidden size={14} strokeWidth={2} />
@@ -222,8 +242,18 @@ function AlertPicker({
           onClose={() => setChoosing(false)}
           footer={
             <>
-              {error && <span className="mr-auto text-xs text-tone-critical-fg">{error}</span>}
-              <button onClick={() => void keep()} disabled={saving} className={`${button("primary", "sm")} ml-auto`}>
+              {error ? (
+                <span className="mr-auto text-xs text-tone-critical-fg">{error}</span>
+              ) : (
+                unnumbered.length > 0 && (
+                  <span className="mr-auto text-xs text-fg-muted">Give each one you ticked its numbers.</span>
+                )
+              )}
+              <button
+                onClick={() => void keep()}
+                disabled={saving || unnumbered.length > 0}
+                className={`${button("primary", "sm")} ml-auto`}
+              >
                 {saving ? "Saving…" : "Watch these"}
               </button>
             </>
@@ -238,7 +268,7 @@ function AlertPicker({
                   icon={w.icon}
                   name={w.name}
                   about={w.about}
-                  checked={on[k.kind] ?? true}
+                  checked={on[k.kind] ?? false}
                   onChange={(v) => setOn((p) => ({ ...p, [k.kind]: v }))}
                 />
               );
@@ -247,6 +277,30 @@ function AlertPicker({
               <Choice key={c.name} icon={c.icon} name={c.name} about={c.about} checked={false} soon />
             ))}
           </div>
+          {/* Each one ticked, with its numbers: the merchant's, none filled in for them. */}
+          {ticked.some((k) => wordsOf(k.kind).settings.length > 0) && (
+            <div className="mt-4 space-y-3">
+              {ticked.map((k) => {
+                const w = wordsOf(k.kind);
+                if (!w.settings.length) return null;
+                return (
+                  <div key={k.kind} role="group" aria-label={`${w.name}: its numbers`} className="space-y-1.5">
+                    <div className="text-xs font-medium text-fg">{w.name}</div>
+                    {w.settings.map((st) => (
+                      <NumberLine
+                        key={st.key}
+                        before={st.before}
+                        after={st.after}
+                        value={nums[k.kind]?.[st.key]}
+                        disabled={saving}
+                        onCommit={(v) => setNums((p) => ({ ...p, [k.kind]: { ...p[k.kind], [st.key]: v } }))}
+                      />
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <form
             className="mt-4"
             onSubmit={(e) => {
@@ -423,13 +477,14 @@ export function AlertSettings({ projectId }: { projectId: string }) {
                         key={s.key}
                         before={s.before}
                         after={s.after}
-                        value={k.settings[s.key] ?? k.defaults[s.key]}
+                        value={k.settings[s.key]}
                         disabled={saving !== null}
                         onCommit={(v) => save(k, true, { ...k.settings, [s.key]: v })}
                       />
                     ))}
                   </div>
                 )}
+                {k.enabled && k.set === false && <p className={hint}>Give it its numbers to start.</p>}
                 {!k.ready && <p className={hint}>Starts once your {waiting.join(" and ")} have finished coming in.</p>}
               </div>
             </div>
@@ -467,20 +522,22 @@ function NumberLine({
 }: {
   before: string;
   after: string;
-  value: number;
+  /** None until the merchant gives one: the field is empty, never filled in for them. */
+  value: number | undefined;
   disabled: boolean;
   onCommit: (v: number) => void;
 }) {
-  const [text, setText] = useState(String(value));
+  const shown = value === undefined ? "" : String(value);
+  const [text, setText] = useState(shown);
   const [was, setWas] = useState(value);
   // Read back after a save: the field shows what was kept.
   if (was !== value) {
     setWas(value);
-    setText(String(value));
+    setText(shown);
   }
   const commit = () => {
     const n = Number(text);
-    if (text.trim() === "" || !Number.isFinite(n) || n < 0 || n > 10000) setText(String(value));
+    if (text.trim() === "" || !Number.isFinite(n) || n < 0 || n > 10000) setText(shown);
     else if (n !== value) onCommit(n);
   };
   return (
@@ -492,6 +549,8 @@ function NumberLine({
         min={0}
         max={10000}
         value={text}
+        placeholder="–"
+        aria-label={`${before} … ${after}`}
         disabled={disabled}
         onChange={(e) => setText(e.target.value)}
         onBlur={commit}

@@ -20,15 +20,24 @@ test("an order not sent is noticed, told in the bell and the overview, put away,
   await page.goto(`/app/${shop.projectId}`);
   const wide = (page.viewportSize()?.width ?? 0) >= 1024;
 
-  // Asked once what to watch, in a line at the foot: all of it ticked,
-  // what is coming shown and not offered.
+  // Asked once what to watch, in a line at the foot: nothing ticked and no
+  // numbers given for them (0199); what is coming shown and not offered.
   const choose = page.getByRole("button", { name: "Choose what" });
   await choose.click();
   const picker = page.getByRole("dialog", { name: "What should Luke keep an eye on?" });
-  await expect(picker.getByRole("checkbox", { name: /Running low/ })).toHaveAttribute("aria-checked", "true");
+  await expect(picker.getByRole("checkbox", { name: /Running low/ })).toHaveAttribute("aria-checked", "false");
   await expect(picker.getByRole("checkbox", { name: /Conversion changes/ })).toBeDisabled();
-  await picker.getByRole("checkbox", { name: /Returns rising/ }).click();
-  await picker.getByRole("button", { name: "Watch these" }).click();
+  // Ticked, it asks for its numbers, and waits for them.
+  await picker.getByRole("checkbox", { name: /Late to send/ }).click();
+  const numbers = picker.getByRole("group", { name: "Late to send: its numbers" });
+  const watch = picker.getByRole("button", { name: "Watch these" });
+  await expect(numbers.getByRole("spinbutton").first()).toHaveValue("");
+  await expect(watch).toBeDisabled();
+  await numbers.getByRole("spinbutton").nth(0).fill("48");
+  await numbers.getByRole("spinbutton").nth(0).press("Tab");
+  await numbers.getByRole("spinbutton").nth(1).fill("30");
+  await numbers.getByRole("spinbutton").nth(1).press("Tab");
+  await watch.click();
   await expect(picker).toHaveCount(0);
   await expect(choose).toHaveCount(0);
   const { data: chosen } = await shop.admin
@@ -38,8 +47,8 @@ test("an order not sent is noticed, told in the bell and the overview, put away,
     .order("kind");
   expect(chosen?.map((c) => `${c.kind}:${c.enabled}`)).toEqual([
     "dispatch_late:true",
-    "low_stock:true",
-    "return_reason:true",
+    "low_stock:false",
+    "return_reason:false",
     "returns_spike:false",
   ]);
 
@@ -80,6 +89,9 @@ test("an order not sent is noticed, told in the bell and the overview, put away,
   await expect(page.getByRole("spinbutton").first()).toBeVisible();
   await late.click();
   await expect(late).toHaveAttribute("aria-checked", "false");
+  // Turned on with no numbers of its own, it says what it waits for.
+  await page.getByRole("switch", { name: "Running low" }).click();
+  await expect(page.getByText("Give it its numbers to start.")).toBeVisible();
   const { data: kept } = await shop.admin
     .from("alert_settings")
     .select("enabled")
@@ -112,14 +124,11 @@ test("anything else to watch goes to Luke in the merchant's own words", async ({
   expect(count).toBe(4);
 });
 
-test("the cross keeps what Luke watches as it is, and the question is not asked again", async ({
-  signedIn: page,
-  shop,
-}) => {
+test("the cross watches nothing, and the question is not asked again", async ({ signedIn: page, shop }) => {
   await page.goto(`/app/${shop.projectId}`);
   const choose = page.getByRole("button", { name: "Choose what" });
   await expect(choose).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Keep these and hide" }).click();
+  await page.getByRole("button", { name: "Not now" }).click();
   await expect(choose).toHaveCount(0);
   const { data: chosen } = await shop.admin
     .from("alert_settings")
@@ -127,10 +136,10 @@ test("the cross keeps what Luke watches as it is, and the question is not asked 
     .eq("project_id", shop.projectId)
     .order("kind");
   expect(chosen?.map((c) => `${c.kind}:${c.enabled}`)).toEqual([
-    "dispatch_late:true",
-    "low_stock:true",
-    "return_reason:true",
-    "returns_spike:true",
+    "dispatch_late:false",
+    "low_stock:false",
+    "return_reason:false",
+    "returns_spike:false",
   ]);
   await page.reload();
   await expect(page.getByText("Orders today")).toBeVisible({ timeout: 30_000 });
