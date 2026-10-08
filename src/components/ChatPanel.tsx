@@ -2147,12 +2147,15 @@ function ModelPicker({
 function KnownNotes({ projectId }: { projectId: string }) {
   const [notes, setNotes] = useState<Array<{ id: string; note: string }>>([]);
   const [open, setOpen] = useState(false);
+  // Lines struck here: a read that left as the list opened and landed
+  // after the strike put the line back (CI 37783438522, phone, 8 Oct).
+  const struck = useRef(new Set<string>());
   useEffect(() => {
     let live = true;
     apiFetch(`/api/luke-notes?projectId=${encodeURIComponent(projectId)}`, null, "GET").then(({ ok, data }) => {
       if (!live || !ok) return;
       const list = Array.isArray(data.notes) ? (data.notes as Array<{ id: string; note: string }>) : [];
-      setNotes(list);
+      setNotes(list.filter((n) => !struck.current.has(n.id)));
     });
     return () => {
       live = false;
@@ -2160,6 +2163,7 @@ function KnownNotes({ projectId }: { projectId: string }) {
   }, [projectId, open]);
   if (notes.length === 0) return null;
   const strike = async (id: string) => {
+    struck.current.add(id);
     setNotes((all) => all.filter((n) => n.id !== id));
     await apiFetch("/api/luke-notes", { id }, "DELETE");
   };
