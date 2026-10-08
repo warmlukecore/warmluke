@@ -247,8 +247,11 @@ test("scan the order's label, then its items, and it moves on to the next order 
     await scan("cf-0002-1");
     await scan("CF-0002-1");
 
-    // Every line done: said, and straight back to the label, no tap.
-    await expect(page.getByText("2001 is done: every line checks out. Scan the next.")).toBeVisible();
+    // Every line done: said, and straight back to the label, no tap. Two
+    // scans saved and read back first: past 15s on a slow check database (8 Oct).
+    await expect(page.getByText("2001 is done: every line checks out. Scan the next.")).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.getByPlaceholder("Scan the label…")).toBeVisible();
     await expect(page.getByPlaceholder("Scan the label…")).toBeFocused();
     await scan("#2002");
