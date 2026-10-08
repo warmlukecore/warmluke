@@ -114,8 +114,12 @@ const owner = { jwt: signed.access_token, id: signed.user.id };
 const O = rest(owner.jwt);
 
 try {
-  const [proj] = (await O("projects", { method: "POST", body: JSON.stringify({ owner_id: owner.id, name: "Guards" }) }))
-    .json;
+  // Named "check …", as every throwaway app is: a run cut off before its
+  // clean-up left this store connected, and the import and webhook checks
+  // took it for a real one (8 Oct). realStores skips them by that name.
+  const [proj] = (
+    await O("projects", { method: "POST", body: JSON.stringify({ owner_id: owner.id, name: "check guards" }) })
+  ).json;
   const section = async (name) =>
     (
       await O("modules", {

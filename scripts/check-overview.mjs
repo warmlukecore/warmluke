@@ -48,8 +48,13 @@ try {
   const owner = await person("owner");
   const stranger = await person("stranger");
 
+  // "check …", so a run cut off before its clean-up leaves no store another check takes for a real one.
   const project = async (name) => {
-    const { data } = await admin.from("projects").insert({ name, owner_id: owner.id }).select("id").single();
+    const { data } = await admin
+      .from("projects")
+      .insert({ name: `check ${name}`, owner_id: owner.id })
+      .select("id")
+      .single();
     projects.push(data.id);
     return data.id;
   };
