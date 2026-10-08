@@ -199,6 +199,101 @@ test("a price between two: Min and Max narrow the whole list, and its cards with
   }
 });
 
+test("coming back from another window leaves a section as it was, and brings what changed meanwhile", async ({
+  signedIn: page,
+  shop,
+}) => {
+  const made = await page.request.post("/api/apply", {
+    headers: { Authorization: `Bearer ${(shop.session as { access_token: string }).access_token}` },
+    data: {
+      projectId: shop.projectId,
+      plans: [
+        {
+          changeType: "NEW_MODULE",
+          targetModuleId: null,
+          newModule: { name: "e2e-back", nav_label: "Back", icon: "table", source_table: "orders" },
+          newSchema: null,
+          features: { stats: [{ label: "Orders in view", op: "count" }] },
+          newRecords: null,
+          explanation: "The store's orders, counted.",
+        },
+      ],
+    },
+  });
+  expect(made.ok(), `the section was built: ${await made.text()}`).toBe(true);
+  const { data: mod } = await shop.admin
+    .from("modules")
+    .select("id")
+    .eq("project_id", shop.projectId)
+    .eq("name", "e2e-back")
+    .single();
+  const id = mod!.id as string;
+  const external = `e2e-back-${shop.storeId.slice(0, 8)}`;
+  // Away and back as the browser says it: hidden, then visible and focus
+  // together. Supabase hears it too and signs the same person in again.
+  const turn = (state: "hidden" | "visible") =>
+    page.evaluate((st) => {
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => st });
+      document.dispatchEvent(new Event("visibilitychange", { bubbles: true }));
+      window.dispatchEvent(new Event(st === "hidden" ? "blur" : "focus"));
+    }, state);
+  const reads = { rows: 0, design: 0 };
+  page.on("request", (r) => {
+    if (/abo_store_page/.test(r.url())) reads.rows++;
+    if (/\/ui_schemas\?/.test(r.url())) reads.design++;
+  });
+  try {
+    await page.goto(`/app/${shop.projectId}?section=${id}`);
+    await expect(page.getByRole("heading", { level: 1, name: "Back" })).toBeVisible();
+    const rows = page.getByRole("row").filter({ hasText: /#\d+/ });
+    const card = page.locator("div.shadow-card").filter({
+      has: page.getByRole("button", { name: "How Orders in view is worked out" }),
+    });
+    await expect(page.getByRole("status", { name: /^Counting/ })).toHaveCount(0);
+    const n = await rows.count();
+    await expect(card).toContainText(String(n));
+    // Anything that turns to loading from here on.
+    await page.evaluate(() => {
+      const w = window as unknown as { __flashed: number };
+      w.__flashed = 0;
+      setInterval(() => {
+        w.__flashed += document.querySelectorAll("[aria-label^='Counting'], [aria-label^='Loading']").length;
+      }, 16);
+    });
+    const flashed = () => page.evaluate(() => (window as unknown as { __flashed: number }).__flashed);
+
+    // Nothing changed meanwhile: the rows read once, the design not at all, nothing on screen moves.
+    Object.assign(reads, { rows: 0, design: 0 });
+    await turn("hidden");
+    await turn("visible");
+    await expect.poll(() => reads.rows).toBe(1);
+    await page.waitForTimeout(2000);
+    expect(reads).toEqual({ rows: 1, design: 0 });
+    expect(await flashed()).toBe(0);
+    await expect(card).toContainText(String(n));
+
+    // An order came in while they were away: there on return, counted in place.
+    await turn("hidden");
+    const { error } = await shop.admin.from("orders").insert({
+      store_id: shop.storeId,
+      external_id: external,
+      order_number: "#E2E-BACK",
+      placed_at: new Date(Date.now() - 60_000).toISOString(),
+      total: 100,
+      currency: "INR",
+      financial_status: "PAID",
+    });
+    expect(error).toBeNull();
+    await turn("visible");
+    await expect(page.getByRole("row").filter({ hasText: "#E2E-BACK" })).toBeVisible();
+    await expect(card).toContainText(String(n + 1));
+    expect(await flashed()).toBe(0);
+  } finally {
+    await shop.admin.from("orders").delete().eq("store_id", shop.storeId).eq("external_id", external);
+    await shop.admin.from("modules").delete().eq("id", id);
+  }
+});
+
 test("stock changed on ticked rows waits for the owner's yes, and goes straight once they turn it on, their yes kept", async ({
   signedIn: page,
   shop,

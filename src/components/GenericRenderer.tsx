@@ -846,13 +846,28 @@ export default function GenericRenderer({
   // the new ones land (Tanish, 6 Oct: "they just change after 2 seconds").
   const [statsCounting, setStatsCounting] = useState(false);
   const statsKey = JSON.stringify(features?.stats ?? null);
+  // What the cards counted last. Only a change to that (a pick, a search, a
+  // column) shows them counting; rows that moved under the same view (a
+  // save, a webhook, the tab come back into view) keep the figures until
+  // the new ones land: every card went back to counting each time the
+  // merchant came back from another window, and it looked like a reload (8 Oct).
+  const countedFor = useRef<string | null>(null);
   useEffect(() => {
     if (!onStats || !features?.stats?.length) {
       setServerStats(null);
       return;
     }
     let live = true;
-    setStatsCounting(true);
+    const view = JSON.stringify([
+      statsKey,
+      search,
+      filterValues,
+      rangeKey,
+      rowCurrencyFields,
+      columns.map((c) => [c.field, c.compute]),
+    ]);
+    if (countedFor.current !== view) setStatsCounting(true);
+    countedFor.current = view;
     const searchFields = features.search?.enabled
       ? (features.search.fields?.filter((f) => columns.some((c) => c.field === f)) ?? columns.map((c) => c.field))
       : [];

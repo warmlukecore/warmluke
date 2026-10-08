@@ -423,6 +423,11 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     Array<{ name: string; label: string; icon: string; store: boolean }>
   >([]);
   const [records, setRecords] = useState<RecordRow[]>([]);
+  // The rows on screen, for what runs outside a render: a save checks
+  // against them (0149), and a read again that found the same rows
+  // leaves the screen as it is.
+  const shownRows = useRef(records);
+  shownRows.current = records;
   const [loadedSource, setLoadedSource] = useState<string | null>(null);
   // A section over a list of events, with no choice of dates of its own,
   // opens on its last 30 days (store-read defaultPeriod); the design is
@@ -1293,6 +1298,14 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         }
         return { ...first, data: rows };
       };
+      // Rows read again and found as they were are left as they are: a new
+      // list of the same rows redrew the table for nothing.
+      const show = (rows: RecordRow[]) => {
+        const was = shownRows.current;
+        if (rows.length === was.length && JSON.stringify(rows) === JSON.stringify(was)) return false;
+        setRecords(rows);
+        return true;
+      };
       const readPage = async (pageSchema: UiSchemaRow | null, pageTable: string | null | undefined) => {
         // One page of the whole list, from the server (0167): the page,
         // the search, the filters and the sort the table holds now.
@@ -1322,15 +1335,16 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               : null,
             askFacets ? (features?.filters ?? []).map((f) => f.field) : []
           );
-          if (seq !== loadSeq.current[moduleId]) return;
-          setRecords(page.rows as unknown as RecordRow[]);
+          if (seq !== loadSeq.current[moduleId]) return false;
           setRecordTotal(page.total);
           if (askFacets) {
             facetsFor.current = moduleId;
             setFacets(page.facets);
           }
+          return show(page.rows as unknown as RecordRow[]);
         } catch (e) {
           setLoadError(e instanceof Error ? e.message : "Couldn't read the store.");
+          return false;
         }
       };
       // A pick on the section already shown (dates, a search, a page) reads
@@ -1341,14 +1355,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       if (known) {
         if (isStoreTable(known.source) && storeId) return readPage(known.schema, known.source);
         const own = await readOwn();
-        if (seq !== loadSeq.current[moduleId]) return;
+        if (seq !== loadSeq.current[moduleId]) return false;
         if (own.error) {
           setLoadError(own.error.message);
-          return;
+          return false;
         }
-        setRecords(own.data as RecordRow[]);
         setRecordTotal(own.count ?? (own.data as RecordRow[]).length);
-        return;
+        return show(own.data as RecordRow[]);
       }
       // The module is fetched rather than looked up in state: a section
       // created a moment ago is selected before the list has reloaded,
@@ -1425,7 +1438,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       setLoadedSource(sourceTable ?? null);
       if (isStoreTable(sourceTable) && storeId) await readPage(loadedSchema, sourceTable);
       else {
-        setRecords(recordsRes.data as RecordRow[]);
+        show(recordsRes.data as RecordRow[]);
         setRecordTotal(recordsRes.count ?? (recordsRes.data as RecordRow[]).length);
       }
       if (seq !== loadSeq.current[moduleId]) return;
@@ -2315,10 +2328,24 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // stays as it was. Publish the store tables to realtime if that ever
   // turns out to be how somebody works — it costs an event per webhook
   // row, which on a large catalogue is not free.
+  //
+  // Only the rows, read once: coming back fires focus and visibilitychange
+  // together, and each read the whole section again, schema and all, so
+  // every stat card went back to counting and the screen looked reloaded
+  // each time the merchant came back from another window (8 Oct). Rows
+  // that came back as they were change nothing; rows that moved count
+  // the cards again.
+  //
+  // ponytail: a change off the page on screen (a product's stock on page
+  // three) leaves the cards as they were until the next change they see;
+  // count them on every return if that is ever wrong for somebody.
   useEffect(() => {
     if (!selectedModuleId || !isStoreTable(loadedSource)) return;
-    const refresh = () => {
-      if (document.visibilityState === "visible") loadModuleData(selectedModuleId);
+    let last = 0;
+    const refresh = async () => {
+      if (document.visibilityState !== "visible" || Date.now() - last < 2000) return;
+      last = Date.now();
+      if (await loadModuleData(selectedModuleId, undefined, true)) setRowsMoved((n) => n + 1);
     };
     document.addEventListener("visibilitychange", refresh);
     window.addEventListener("focus", refresh);
@@ -3195,8 +3222,6 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
 
   // What each changed field showed when it was changed: a save lands only
   // on the row as it was seen (0149), whichever screen or button it came from.
-  const shownRows = useRef(records);
-  shownRows.current = records;
   const updateRecord = useCallback(
     (recordId: string, data: Record<string, unknown>, given?: Record<string, unknown>) => {
       // What the caller knows is there (an undo: what it wrote), else what the screen shows.

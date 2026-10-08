@@ -10,12 +10,19 @@ export function useUser() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Supabase says SIGNED_IN again every time the tab comes back into
+    // view, with the same person read afresh from storage: a new object,
+    // and every screen keyed on it read itself again, so coming back from
+    // another window looked like a reload (8 Oct). The same person keeps
+    // the same object.
+    const keep = (next: User | null) =>
+      setUser((was) => (was && next && JSON.stringify(was) === JSON.stringify(next) ? was : next));
     supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user ?? null);
+      keep(data.user ?? null);
       setLoading(false);
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      keep(session?.user ?? null);
       setLoading(false);
     });
     return () => sub.subscription.unsubscribe();
