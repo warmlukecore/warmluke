@@ -3182,12 +3182,14 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         return;
       }
       if (!patchRow(rec, selectedModuleId)) await reloadMoved(selectedModuleId);
+      // The row as stored: what a put-back expects to find there, whatever the screen shows by then.
+      return rec;
     },
     [projectId, selectedModuleId, reloadMoved, patchRow]
   );
 
   const createRecord = useCallback(
-    (data: Record<string, unknown>) => writeRecord({ action: "create", data }),
+    async (data: Record<string, unknown>) => void (await writeRecord({ action: "create", data })),
     [writeRecord]
   );
 
@@ -3196,15 +3198,19 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   const shownRows = useRef(records);
   shownRows.current = records;
   const updateRecord = useCallback(
-    (recordId: string, data: Record<string, unknown>) => {
-      const seen = (shownRows.current.find((r) => r.id === recordId)?.data ?? {}) as Record<string, unknown>;
+    (recordId: string, data: Record<string, unknown>, given?: Record<string, unknown>) => {
+      // What the caller knows is there (an undo: what it wrote), else what the screen shows.
+      const seen = given ?? ((shownRows.current.find((r) => r.id === recordId)?.data ?? {}) as Record<string, unknown>);
       const expected = Object.fromEntries(Object.keys(data).map((f) => [f, seen[f] ?? null]));
       return writeRecord({ action: "update", recordId, data, expected });
     },
     [writeRecord]
   );
 
-  const deleteRecord = useCallback((recordId: string) => writeRecord({ action: "delete", recordId }), [writeRecord]);
+  const deleteRecord = useCallback(
+    async (recordId: string) => void (await writeRecord({ action: "delete", recordId })),
+    [writeRecord]
+  );
 
   /** The merchant's own fields beside one of the store's rows (0128). */
   const updateStoreRow = useCallback(
@@ -4886,7 +4892,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 {...(myColumns.length > 0 && inspecting.table === loadedSource
                   ? {
                       mine: myColumns,
-                      onSaveMine: (data: Record<string, unknown>) => updateStoreRow(inspecting.row.id, data),
+                      onSaveMine: async (data: Record<string, unknown>) =>
+                        void (await updateStoreRow(inspecting.row.id, data)),
                     }
                   : {})}
               />

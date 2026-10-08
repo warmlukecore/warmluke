@@ -495,7 +495,8 @@ export default function GenericRenderer({
   preview?: boolean;
   /** Omitted in previews, which are read-only by design. */
   onCreate?: (data: Record<string, unknown>) => Promise<void>;
-  onUpdate?: (recordId: string, data: Record<string, unknown>) => Promise<void>;
+  /** Saves fields of a row; `expected`, what the caller knows is there. Hands back the row as stored, when it has it. */
+  onUpdate?: (recordId: string, data: Record<string, unknown>, expected?: Record<string, unknown>) => Promise<unknown>;
   onDelete?: (recordId: string) => Promise<void>;
   /**
    * Counts the stat cards on the server, over every row of the section
@@ -929,7 +930,7 @@ export default function GenericRenderer({
     );
   }
 
-  async function runWrite(fn: () => Promise<void>, recordId?: string) {
+  async function runWrite(fn: () => Promise<unknown>, recordId?: string) {
     setWriteError(null);
     setSaving(true);
     if (recordId) setBusyRecordId(recordId);
@@ -1147,10 +1148,12 @@ export default function GenericRenderer({
     let again: string[] = [];
     try {
       // Their own fields: what each was, written back (or, for a redo, what it was set to).
+      // Each expects what the last save left there, as stored: a screen
+      // read again late must not make it refuse its own undo (8 Oct).
       for (const o of was.own) {
         try {
-          await onUpdate!(o.id, o.before);
-          ownAgain.push({ id: o.id, before: o.after, after: o.before });
+          const stored = storedOf(await onUpdate!(o.id, o.before, o.after), Object.keys(o.before));
+          ownAgain.push({ id: o.id, before: o.after, after: stored ?? o.before });
         } catch {
           missed++;
         }
@@ -1202,11 +1205,11 @@ export default function GenericRenderer({
         await Promise.all(
           list.slice(i, i + 4).map(async ({ rec, set, keys }) => {
             try {
-              await onUpdate!(rec.id, set);
+              const stored = storedOf(await onUpdate!(rec.id, set), Object.keys(set));
               own.push({
                 id: rec.id,
                 before: Object.fromEntries(Object.keys(set).map((f) => [f, rec.data?.[f] ?? null])),
-                after: set,
+                after: stored ?? set,
               });
             } catch (e) {
               failed.push(e instanceof Error ? e.message : "That didn't save.");
@@ -1315,7 +1318,7 @@ export default function GenericRenderer({
             columns={columns}
             records={filteredRecords}
             // Straight to the handlers: a refused write is the screen's to say, not a note above it.
-            onSet={canSet ? (id, set) => onUpdate!(id, set) : undefined}
+            onSet={canSet ? async (id, set) => void (await onUpdate!(id, set)) : undefined}
             onAdd={editable ? onCreate : undefined}
             onFind={preview ? undefined : onScanGroup}
             onRead={onReadSection}
@@ -1366,7 +1369,7 @@ export default function GenericRenderer({
           // meant a barcode belonging to a DIFFERENT order silently
           // matched and updated that one, which is worse than no check.
           records={filteredRecords}
-          onApply={(rec, set) => onUpdate!(rec.id, set)}
+          onApply={async (rec, set) => void (await onUpdate!(rec.id, set))}
           onCreate={onCreate}
           group={scanGroup}
           onGroup={(g) => {
@@ -1915,6 +1918,12 @@ function ShopChange({
     </div>
   );
 }
+
+/** Those fields of a row as the server stored them, when a save handed the row back. */
+const storedOf = (row: unknown, fields: string[]): Record<string, unknown> | null => {
+  const data = (row as { data?: Record<string, unknown> } | undefined)?.data;
+  return data ? Object.fromEntries(fields.map((f) => [f, data[f] ?? null])) : null;
+};
 
 /** A row of their own as it was and as it was set, to put back (or forward again). */
 type OwnUndo = { id: string; before: Record<string, unknown>; after: Record<string, unknown> };
