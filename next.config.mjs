@@ -25,7 +25,10 @@ const dev = process.env.NODE_ENV !== "production";
 
 const supabase = process.env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL ?? "";
 const supabaseOrigin = supabase ? new URL(supabase).origin : "";
-const supabaseSocket = supabaseOrigin.replace(/^https:/, "wss:");
+// Its live updates' socket: wss for https, and ws for a Supabase on
+// plain http (the one CI starts on its runner), which wss never matched,
+// so the browser refused the socket and nothing live arrived (8 Oct).
+const supabaseSocket = supabaseOrigin.replace(/^http(s?):/, "ws$1:");
 
 /**
  * Headers every response carries.

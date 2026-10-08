@@ -89,11 +89,16 @@ to cross environments.
 `.github/workflows/checks.yml` contains two jobs:
 
 - **static**: install, dependency audit, typecheck, production build, pure checks;
-- **live**: migrate and seed the check project, build/start the server, run live checks.
+- **live**: start a Supabase of the run's own on the runner (`supabase start`, configured by
+  `supabase/config.toml`), apply every migration to it from empty and seed it, build/start
+  the server, run the live checks and the browser specs; then **deploy**.
 
-Fork pull requests do not receive the live-project secrets. Checks needing the
-account-wide Supabase management token are deliberately skipped in CI and run by the
-local pre-push hook against the check project.
+The live job's database is thrown away with the runner (8 Oct): nothing is shared between
+runs, nothing a cut-off run left behind can reach the next, and CI holds no Supabase secret.
+It replaced the shared check project, which slowed and timed out under the suite on heavy
+days. The whole job takes about 10 minutes. Checks needing the account-wide Supabase
+management token are deliberately skipped in CI and run by the local pre-push hook against
+the check project, which now serves local runs only.
 
 Model-tier checks are paid and non-deterministic, so they are not push gates.
 

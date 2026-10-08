@@ -90,7 +90,8 @@ node scripts/run-checks.mjs --tier model --env .env.check.local
 ## CI and pre-push split
 
 CI runs dependency audit, typecheck, lint, build, pure checks, zizmor over its own workflow,
-migrations/seeding, the live tier against the check project, and the browser specs. The
+migrations/seeding onto a Supabase of the run's own (started on the runner, thrown away
+with it), the live tier, and the browser specs. The
 pre-push hook repeats pure checks and adds PAT-only security checks that CI must not hold
 credentials for.
 
@@ -99,7 +100,7 @@ advice. `pnpm format` is oxfmt (`.oxfmtrc.json`, 120 columns); CI fails on anyth
 change, so run it before committing. A rule silenced on one line says why on the line above. The workflow's actions are
 pinned to commit hashes, and Dependabot (`.github/dependabot.yml`) proposes updates weekly:
 npm minor and patch as one pull request, majors alone, actions together. Its pull requests
-run the static job only; the live job needs secrets Dependabot is not given.
+run the static job only.
 
 Install the hook once:
 

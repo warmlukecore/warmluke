@@ -144,9 +144,10 @@ jobs:
     # need 20 more; 60 cut them off half way, with no deploy. 90 then.
     # 8 Oct: the shared check database ran slow all day (connections at
     # 1-2s): the live tier alone took 60+ minutes, and 90 cut it off three
-    # times with nothing failing. 150 now; the lasting fix is a database
-    # CI does not share (or more compute for the check project).
-    timeout-minutes: 150
+    # times with nothing failing. Then the lasting fix: a database of the
+    # run's own (below). On it the whole job took 10 minutes (live tier 2,
+    # browser specs 4); 40 is room for a slow runner, not for a database.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -163,28 +164,36 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # The check project's, and only these three. The build inlines
-      # the two public ones, so the built app points at the check
-      # project; the scripts read the third.
-      - name: .env.local for the check project
-        env:
-          SUPABASE_URL: ${{ secrets.CHECK_SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.CHECK_SUPABASE_ANON_KEY }}
-          SERVICE_ROLE_KEY: ${{ secrets.CHECK_SUPABASE_SERVICE_ROLE_KEY }}
-          DATABASE_URL: ${{ secrets.CHECK_DATABASE_URL }}
-        run: |
-          printf 'NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL=%s\nNEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY=%s\nADAPTIVE_OS_SERVICE_ROLE_KEY=%s\nDATABASE_URL=%s\nCHECK_PROJECT=1\n' \
-            "$SUPABASE_URL" "$SUPABASE_ANON_KEY" "$SERVICE_ROLE_KEY" "$DATABASE_URL" > .env.local
+      # A Supabase of this run's own (8 Oct): the whole stack in Docker on
+      # this runner (supabase/config.toml), thrown away with it, as
+      # Supabase's CI guide does. The shared check project slowed and
+      # timed out under the suite on a heavy day, runs on it waited on
+      # each other, and a run cut off left its throwaway rows for the
+      # next. Here nothing is shared, nothing is left, and no secret is read.
+      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
+        with:
+          version: 2.120.0
 
-      # The check project is brought up to the repo before anything
-      # reads it: a migration committed with the change it serves is
-      # applied here, in order, once, with the ledger — so a new one
-      # needs no hand on it. Then the seed the checks assume: the
-      # check user as an administrator, and a shop to read.
+      - name: local supabase
+        run: supabase start
+
+      # The same five lines the check project's secrets used to fill, from
+      # the local stack. The build inlines the two public ones, so the
+      # built app points at it; the scripts read the rest.
+      - name: .env.local for the local stack
+        run: |
+          eval "$(supabase status -o env)"
+          printf 'NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL=%s\nNEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY=%s\nADAPTIVE_OS_SERVICE_ROLE_KEY=%s\nDATABASE_URL=%s\nCHECK_PROJECT=1\n' \
+            "$API_URL" "$ANON_KEY" "$SERVICE_ROLE_KEY" "$DB_URL" > .env.local
+
+      # Every migration from the first, in order, with the ledger, onto an
+      # empty database: a migration that only works on top of history
+      # fails here, before any project sees it. Then the seed the checks
+      # assume: the check user as an administrator, and a shop to read.
       - name: psql
         run: command -v psql >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client)
 
-      - name: migrations, onto the check project
+      - name: migrations, onto the local stack
         run: node scripts/apply-migrations.mjs --env .env.local
 
       - name: seed
