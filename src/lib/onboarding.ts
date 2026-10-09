@@ -6,8 +6,10 @@
 // there fails before it can fail at save time.
 //
 // Where someone is comes from what is true, not from a step number the
-// page kept: answers saved, a store connected, an assistant set up. A
-// person who leaves halfway comes back to the first thing still missing.
+// page kept: answers saved, a store connected and read. A person who
+// leaves halfway comes back to the first thing still missing. Their own
+// AI is no longer a step here (9 Oct): it is offered in the app, under
+// "Use your own AI".
 //
 // No imports, so the checks run it as the page does.
 // ─────────────────────────────────────────────────────────────
@@ -166,8 +168,8 @@ export function returnsToOnboarding(stored: string | null, now: number): boolean
   return Number.isFinite(at) && at > 0 && now - at >= 0 && now - at < RETURN_WITHIN_MS;
 }
 
-export type Step = "about" | "store" | "assistant" | "preparing" | "done";
-export const STEPS: Step[] = ["about", "store", "assistant", "preparing", "done"];
+export type Step = "about" | "store" | "preparing" | "done";
+export const STEPS: Step[] = ["about", "store", "preparing", "done"];
 
 export type Signals = {
   /** Their answers are saved. */
@@ -178,10 +180,6 @@ export type Signals = {
   storeSkipped: boolean;
   /** Connected, and not yet asked how far back its orders go (0154). */
   historyAwaiting: boolean;
-  /** Their own AI is offered to this account at all. */
-  assistantOffered: boolean;
-  /** It is connected, or they chose later, this visit. */
-  assistantDone: boolean;
   /** The connected store's import is still running. */
   importing: boolean;
   /** They chose not to wait for it. */
@@ -195,7 +193,6 @@ export function currentStep(s: Signals): Step {
   // Asked on the store step, right after Shopify says yes: the counts
   // are real by then, and orders wait for the answer.
   if (s.storeConnected && s.historyAwaiting) return "store";
-  if (s.assistantOffered && !s.assistantDone) return "assistant";
   if (s.storeConnected && s.importing && !s.preparingSkipped) return "preparing";
   return "done";
 }

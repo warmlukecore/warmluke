@@ -255,11 +255,11 @@ error's own words. The
 landing-page prompt waits until onboarding is done, then opens in their project with the
 assistant.
 
-`/onboarding` has four visible steps: about you (name, business, role, orders a month,
+`/onboarding` has three visible steps: about you (name, business, role, orders a month,
 platform, and optionally website, team size and where they heard of Warmluke); the store
-(one-tap connect, typed address or a link for another browser, or later); their own AI
-(the MCP address, noticed automatically when it connects, or later; shown only when the
-account has it switched on); and ready. While a newly connected store imports, a
+(one-tap connect, typed address or a link for another browser, or later); and ready.
+Their own AI is not asked about here (9 Oct): the app offers it under "Use your own AI".
+While a newly connected store imports, a
 "preparing" state shows its progress. Which step is shown is computed from what is true
 (`src/lib/onboarding.ts`), so leaving midway resumes at the first missing thing. Saving
 the answers creates a project named for the business if the person has none. Leaving for

@@ -130,8 +130,6 @@ const at = (o) =>
     storeConnected: false,
     storeSkipped: false,
     historyAwaiting: false,
-    assistantOffered: true,
-    assistantDone: false,
     importing: false,
     preparingSkipped: false,
     ...o,
@@ -142,27 +140,18 @@ check(
   "connected, how far back not answered yet: still the store",
   at({ profile: true, storeConnected: true, historyAwaiting: true, importing: true }) === "store"
 );
-check("the store left for later: their AI", at({ profile: true, storeSkipped: true }) === "assistant");
+// Their own AI is not a step any more (9 Oct): the app offers it.
+check("the store left for later: straight on", at({ profile: true, storeSkipped: true }) === "done");
 check(
-  "their AI not offered to this account: straight on",
-  at({ profile: true, storeSkipped: true, assistantOffered: false }) === "done"
-);
-check(
-  "store connected, AI done, import running: preparing",
-  at({ profile: true, storeConnected: true, assistantDone: true, importing: true }) === "preparing"
+  "store connected, import running: preparing",
+  at({ profile: true, storeConnected: true, importing: true }) === "preparing"
 );
 check(
   "and not waiting for it when they said so",
-  at({ profile: true, storeConnected: true, assistantDone: true, importing: true, preparingSkipped: true }) === "done"
+  at({ profile: true, storeConnected: true, importing: true, preparingSkipped: true }) === "done"
 );
-check(
-  "no store means no import to wait on",
-  at({ profile: true, storeSkipped: true, assistantDone: true, importing: true }) === "done"
-);
-check(
-  "an answer saved is never asked again",
-  at({ profile: true, storeConnected: true, assistantDone: true }) !== "about"
-);
+check("no store means no import to wait on", at({ profile: true, storeSkipped: true, importing: true }) === "done");
+check("an answer saved is never asked again", at({ profile: true, storeConnected: true }) !== "about");
 
 console.log("\nwho is sent to it");
 check("a new account is", needsOnboarding({ onboarded: false, ownProjects: 0, sharedWithMe: 0 }));

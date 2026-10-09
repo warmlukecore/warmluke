@@ -20,13 +20,13 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, Check, ChevronRight, Copy, LoaderCircle, LogOut, Plug } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, LoaderCircle, LogOut } from "lucide-react";
 import { apiFetch, signOut, takePendingPrompt, useUser } from "@/lib/auth";
 import { supabase } from "@/lib/supabase-client";
 import ConnectShopify from "@/components/ConnectShopify";
 import HistoryPicker from "@/components/HistoryPicker";
 import { LukeMark } from "@/components/ui/LukeMark";
-import { button, field, fieldOf, label, note } from "@/components/ui/controls";
+import { button, field, label, note } from "@/components/ui/controls";
 import {
   BUSINESS_MAX,
   HEARD_OPTIONS,
@@ -47,7 +47,6 @@ import {
 } from "@/lib/onboarding";
 import { Logo } from "@/components/ui/Logo";
 import { InviteOnly } from "@/components/InviteOnly";
-import { ASSISTANTS } from "@/lib/connect-assistants";
 
 const WATCH_MS = 3000;
 
@@ -75,7 +74,7 @@ const EMPTY: Answers = {
 const LATER = "I’ll do this later";
 
 /** The steps in the order they come. */
-const ORDER: Step[] = ["about", "store", "preparing", "assistant", "done"];
+const ORDER: Step[] = ["about", "store", "preparing", "done"];
 
 export default function Onboarding() {
   const { user, loading } = useUser();
@@ -87,13 +86,11 @@ export default function Onboarding() {
   const [answers, setAnswers] = useState<Answers>(EMPTY);
   const [profileSaved, setProfileSaved] = useState(false);
   const [owned, setOwned] = useState<Owned[]>([]);
-  const [assistantOffered, setAssistantOffered] = useState(false);
-  const [assistants, setAssistants] = useState<string[]>([]);
   // Unknown until the import route has answered once; unknown counts as
   // still going, so the steps do not flick to "ready" and back.
   const [importing, setImporting] = useState<boolean | null>(null);
   const [progress, setProgress] = useState<Progress>({});
-  const [skipped, setSkipped] = useState({ store: false, assistant: false, preparing: false });
+  const [skipped, setSkipped] = useState({ store: false, preparing: false });
   // Chosen on this visit: the row read at load still says not chosen.
   const [historyChosen, setHistoryChosen] = useState(false);
   // Whether merchants are asked at all (history_settings): off, nobody is.
@@ -116,15 +113,13 @@ export default function Onboarding() {
 
   const load = useCallback(async () => {
     if (!user) return;
-    const [profile, projects, settings, clients, may, asking] = await Promise.all([
+    const [profile, projects, may, asking] = await Promise.all([
       supabase.from("profiles").select("*").eq("user_id", user.id).maybeSingle(),
       supabase
         .from("projects")
         .select("id, name, owner_id, created_at, stores(shop_domain, status, history_set_at)")
         .eq("owner_id", user.id)
         .order("created_at", { ascending: true }),
-      supabase.rpc("abo_my_settings"),
-      supabase.rpc("abo_oauth_clients"),
       supabase.rpc("abo_may_start_app"),
       supabase.from("history_settings").select("enabled").maybeSingle(),
     ]);
@@ -176,8 +171,6 @@ export default function Onboarding() {
         store: p.stores?.[0] ?? null,
       }))
     );
-    setAssistantOffered(!!settings.data?.[0]?.mcp_enabled);
-    setAssistants(((clients.data ?? []) as Array<{ name: string }>).map((c) => c.name));
     setReady(true);
   }, [user, router]);
 
@@ -190,8 +183,6 @@ export default function Onboarding() {
     storeConnected: !!connected,
     storeSkipped: skipped.store,
     historyAwaiting: historyOn && !!connected && !connected.store?.history_set_at && !historyChosen,
-    assistantOffered,
-    assistantDone: assistants.length > 0 || skipped.assistant,
     importing: importing !== false,
     preparingSkipped: skipped.preparing,
   });
@@ -218,16 +209,6 @@ export default function Onboarding() {
     };
   }, [connectedId]);
 
-  // Their AI, noticed the moment it connects.
-  useEffect(() => {
-    if (shown !== "assistant") return;
-    const t = setInterval(async () => {
-      const { data } = await supabase.rpc("abo_oauth_clients");
-      setAssistants(((data ?? []) as Array<{ name: string }>).map((c) => c.name));
-    }, WATCH_MS);
-    return () => clearInterval(t);
-  }, [shown]);
-
   // Leaving for Shopify from the store step comes back here, not to the app.
   useEffect(() => {
     if (shown !== "store") return;
@@ -244,7 +225,6 @@ export default function Onboarding() {
     setDir(ORDER.indexOf(to) < ORDER.indexOf(shown) ? "from-left" : "from-right");
     // A step opened again that its skip had closed is open again.
     if (to === "store") setSkipped((s) => ({ ...s, store: false }));
-    if (to === "assistant") setSkipped((s) => ({ ...s, assistant: false }));
     setViewing(to === step ? null : to);
   }
 
@@ -279,12 +259,10 @@ export default function Onboarding() {
       email={user.email}
       shown={shown}
       step={step}
-      assistantOffered={assistantOffered}
       answers={answers}
       draft={draft}
       shop={connected?.store?.shop_domain ?? null}
       skipped={skipped}
-      assistants={assistants}
       reading={reading}
       syncing={syncing}
       onRevisit={revisit}
@@ -375,12 +353,6 @@ export default function Onboarding() {
               </div>
             )}
           </Screen>
-        ) : shown === "assistant" ? (
-          <Assistant
-            connected={assistants}
-            onBack={() => revisit("store")}
-            onDone={() => onward({ assistant: true })}
-          />
         ) : shown === "preparing" ? (
           <Screen
             eyebrow="Your store"
@@ -403,8 +375,6 @@ export default function Onboarding() {
             business={answers.business_name}
             shop={connected?.store?.shop_domain ?? null}
             syncing={syncing}
-            assistants={assistants}
-            assistantOffered={assistantOffered}
             onChange={revisit}
             onOpen={async () => {
               const { error } = await supabase
@@ -443,12 +413,10 @@ function Frame({
   email,
   shown,
   step,
-  assistantOffered,
   answers,
   draft,
   shop,
   skipped,
-  assistants,
   reading,
   syncing,
   onRevisit,
@@ -457,12 +425,10 @@ function Frame({
   email: string | null | undefined;
   shown: Step;
   step: Step;
-  assistantOffered: boolean;
   answers: Answers;
   draft: Answers;
   shop: string | null;
-  skipped: { store: boolean; assistant: boolean; preparing: boolean };
-  assistants: string[];
+  skipped: { store: boolean; preparing: boolean };
   reading?: string;
   syncing: boolean;
   onRevisit: (to: Step) => void;
@@ -472,18 +438,14 @@ function Frame({
   const trail: TrailItem[] = [
     { key: "about", steps: ["about"], text: "About you" },
     { key: "store", steps: ["store", "preparing"], text: "Your store" },
-    ...(assistantOffered ? [{ key: "assistant" as Step, steps: ["assistant"] as Step[], text: "Your AI" }] : []),
     { key: "done", steps: ["done"], text: "Ready" },
   ];
   const at = trail.findIndex((t) => t.steps.includes(shown));
   const reached = trail.findIndex((t) => t.steps.includes(step));
-  const names = [...new Set(assistants)];
-
   /** What was answered in a step, said under it. */
   const said = (key: Step): string | null => {
     if (key === "about") return answers.business_name ? `${answers.full_name} · ${answers.business_name}` : null;
     if (key === "store") return shop ? (syncing ? `${shop} · syncing` : shop) : skipped.store ? "Later" : null;
-    if (key === "assistant") return names.length ? names.join(", ") : skipped.assistant ? "Later" : null;
     return null;
   };
 
@@ -503,9 +465,7 @@ function Frame({
           ? reading
             ? `Reading ${reading.toLowerCase()}.`
             : "Starting on your store."
-          : shown === "assistant"
-            ? "If you already use Claude or ChatGPT, I can work alongside it."
-            : `That’s everything${first ? `, ${first}` : ""}. Let’s build something.`;
+          : `That’s everything${first ? `, ${first}` : ""}. Let’s build something.`;
 
   return (
     <div className="font-ui grid min-h-dvh bg-canvas text-fg lg:grid-cols-[20rem_minmax(0,1fr)]">
@@ -1135,176 +1095,6 @@ function Pick({
   );
 }
 
-// ── Their own AI ───────────────────────────────────────────────
-//
-// Warmluke cannot add itself to someone's Claude or ChatGPT: they add it
-// there. So this shows where the buttons are in theirs, from the same
-// list the app's "Use your own AI" draws (lib/connect-assistants), and
-// says plainly that it turns green when they allow it. It used to wait
-// under a spinner, which read as Warmluke doing the connecting.
-
-/**
- * A step as the list writes it, "Apps → Advanced settings: turn on
- * Developer mode.", drawn the way it is followed: the menu path in bold
- * with a chevron between names, and what to do there on the line below.
- */
-function StepText({ text }: { text: string }) {
-  const parts = text.split(" → ");
-  if (parts.length === 1) return <span className="text-fg">{text}</span>;
-  const last = parts.pop() ?? "";
-  const cut = last.search(/[:.](\s|$)/);
-  const path = [...parts, cut < 0 ? last : last.slice(0, cut)];
-  const rest = cut < 0 ? "" : last.slice(cut + 1).trim();
-  return (
-    <span className="block">
-      <span className="flex flex-wrap items-center gap-x-1 font-medium text-fg">
-        {path.map((p, i) => (
-          <Fragment key={i}>
-            {i > 0 && (
-              <>
-                <ChevronRight aria-hidden size={13} strokeWidth={2} className="text-fg-faint" />
-                <span className="sr-only">, then </span>
-              </>
-            )}
-            <span>{p}</span>
-          </Fragment>
-        ))}
-      </span>
-      {rest && <span className="mt-0.5 block text-fg-muted">{rest.charAt(0).toUpperCase() + rest.slice(1)}</span>}
-    </span>
-  );
-}
-
-/** One of the two parts, numbered, with a line down to the next. */
-function Part({ n, title, last, children }: { n: number; title: string; last?: boolean; children: React.ReactNode }) {
-  return (
-    <section className="relative pl-10">
-      {!last && <span aria-hidden className="absolute top-8 bottom-1 left-3 w-px bg-line" />}
-      <span className="absolute top-0 left-0 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-on-primary tabular-nums">
-        {n}
-      </span>
-      <h2 className="text-[15px] leading-6 font-semibold text-fg">{title}</h2>
-      <div className={`mt-3 ${last ? "" : "pb-8"}`}>{children}</div>
-    </section>
-  );
-}
-
-function Assistant({ connected, onBack, onDone }: { connected: string[]; onBack: () => void; onDone: () => void }) {
-  const [copied, setCopied] = useState<string | null>(null);
-  const [which, setWhich] = useState(ASSISTANTS[0].id);
-  const url = typeof window === "undefined" ? "" : `${window.location.origin}/api/mcp`;
-  const names = [...new Set(connected)];
-  const chosen = ASSISTANTS.find((a) => a.id === which) ?? ASSISTANTS[0];
-  const where = chosen.id === "any" ? "your AI" : chosen.name;
-
-  async function copy(text: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(text);
-      setTimeout(() => setCopied(null), 1500);
-    } catch {
-      setCopied(null);
-    }
-  }
-
-  const copyButton = (text: string) => (
-    <button onClick={() => copy(text)} className={button("secondary")}>
-      {copied === text ? (
-        <Check aria-hidden size={15} strokeWidth={2} className="text-signal-success" />
-      ) : (
-        <Copy aria-hidden size={15} strokeWidth={1.75} />
-      )}
-      {copied === text ? "Copied" : "Copy"}
-    </button>
-  );
-
-  return (
-    <Screen
-      eyebrow="Your AI · optional"
-      title="Use Claude or ChatGPT with your store"
-      lede="Add Warmluke inside the AI you already use. It can then read your store, and anything it wants to build or change waits here for your yes."
-    >
-      <Part n={1} title="Copy this address">
-        <div className="flex gap-2">
-          <input
-            readOnly
-            value={url}
-            onFocus={(e) => e.currentTarget.select()}
-            aria-label="Connector address"
-            className={`${fieldOf("md")} w-full min-w-0 font-mono`}
-          />
-          {copyButton(url)}
-        </div>
-      </Part>
-
-      <Part n={2} title="Add it in your AI" last>
-        <div role="group" aria-label="Your AI" className="grid grid-cols-3 gap-1.5">
-          {ASSISTANTS.map((a) => (
-            <button
-              key={a.id}
-              onClick={() => setWhich(a.id)}
-              aria-pressed={which === a.id}
-              className={button(which === a.id ? "secondary" : "plain", "sm")}
-            >
-              {a.logo ? (
-                // eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise
-                <img src={a.logo} alt="" width={14} height={14} className="h-3.5 w-3.5 shrink-0 object-contain" />
-              ) : (
-                <Plug aria-hidden size={14} strokeWidth={1.75} className="shrink-0" />
-              )}
-              {a.name}
-            </button>
-          ))}
-        </div>
-        <ol className="mt-5 space-y-4 text-sm leading-relaxed">
-          {chosen.steps(url).map((s, i) => (
-            <li key={`${chosen.id}-${i}`} className="flex gap-3">
-              <span className="w-4 shrink-0 pt-px text-right text-xs font-medium text-fg-faint tabular-nums">
-                {i + 1}
-              </span>
-              <span className="min-w-0 flex-1 space-y-2">
-                <StepText text={s.text} />
-                {s.copy && (
-                  <span className="flex gap-2">
-                    <code className="min-w-0 flex-1 rounded-control bg-surface-subdued px-2.5 py-2 font-mono text-xs break-all text-fg">
-                      {s.copy}
-                    </code>
-                    {copyButton(s.copy)}
-                  </span>
-                )}
-              </span>
-            </li>
-          ))}
-        </ol>
-        {chosen.plan && <p className="mt-3 pl-7 text-xs text-fg-faint">{chosen.plan}</p>}
-      </Part>
-
-      <div
-        role="status"
-        className={`mt-8 flex items-center gap-2.5 rounded-control px-3 py-2.5 text-[13px] ${
-          names.length ? "bg-tone-success/30 text-tone-success-fg" : "bg-surface-subdued text-fg-muted"
-        }`}
-      >
-        {names.length ? (
-          <>
-            <Check aria-hidden size={15} strokeWidth={2} />
-            {names.join(", ")} connected
-          </>
-        ) : (
-          <>
-            <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-line-strong" />
-            Not connected yet. When you allow Warmluke in {where}, this turns green.
-          </>
-        )}
-      </div>
-
-      <div className="mt-8">
-        <Actions onBack={onBack} onNext={onDone} next={names.length ? "Continue" : LATER} quiet={!names.length} />
-      </div>
-    </Screen>
-  );
-}
-
 // ── The import ──────────────────────────────────────────────────
 
 function ImportList({ progress }: { progress: Progress }) {
@@ -1344,8 +1134,6 @@ function Done({
   business,
   shop,
   syncing,
-  assistants,
-  assistantOffered,
   onChange,
   onOpen,
 }: {
@@ -1353,15 +1141,12 @@ function Done({
   business: string;
   shop: string | null;
   syncing: boolean;
-  assistants: string[];
-  assistantOffered: boolean;
   onChange: (to: Step) => void;
   onOpen: () => Promise<string | null | undefined>;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const first = name.trim().split(/\s+/)[0];
-  const names = [...new Set(assistants)];
   // What was set up, each with a way back to it.
   const summary: Array<{ to: Step; what: string; value: string; set: boolean }> = [
     { to: "about", what: "About you", value: business ? `${name} · ${business}` : name, set: true },
@@ -1371,16 +1156,6 @@ function Done({
       value: shop ? (syncing ? `${shop} · syncing` : shop) : "Not connected yet",
       set: !!shop,
     },
-    ...(assistantOffered
-      ? [
-          {
-            to: "assistant" as Step,
-            what: "Your AI",
-            value: names.length ? names.join(", ") : "Not connected yet",
-            set: names.length > 0,
-          },
-        ]
-      : []),
   ];
   return (
     <Screen
