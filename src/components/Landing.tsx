@@ -17,7 +17,8 @@
 // Callers: src/app/page.tsx.
 // ─────────────────────────────────────────────────────────────
 
-import { useActionState, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import Link from "next/link";
+import { useActionState, useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import {
   ArrowRight,
   CalendarDays,
@@ -35,6 +36,9 @@ import { useCaptcha } from "@/components/Captcha";
 import { supabase } from "@/lib/supabase-client";
 import { UTM_KEYS, type Utm } from "@/lib/landing";
 import { bookDemo, type BookingState } from "@/app/actions";
+import { followMeasureChoice, metaTrackingAllowed, trackMetaLead } from "@/lib/meta-pixel";
+import { chooseMeasure, measureUnasked, onMeasureChange } from "@/lib/consent";
+import { followAnalyticsChoice } from "@/lib/google-analytics";
 import { Logo } from "@/components/ui/Logo";
 import { HEARD_OPTIONS, ORDER_OPTIONS, TEAM_OPTIONS, heardDetailPrompt, type Option } from "@/lib/onboarding";
 import { FIGURES, FOLLOW_UP, LOW, LOW_STOCK, RETURNS, money, variantName } from "@/lib/sample-store";
@@ -113,6 +117,15 @@ async function record(
  * the attribute rather than by somebody remembering to wire it up.
  */
 export function LandingTracker({ variant }: { variant: string }) {
+  // Meta's Pixel runs only on the visitor's yes, and follows them when they change it.
+  useEffect(() => {
+    const follow = () => {
+      followMeasureChoice();
+      followAnalyticsChoice();
+    };
+    follow();
+    return onMeasureChange(follow);
+  }, []);
   useEffect(() => {
     void record("view", variant);
 
@@ -129,7 +142,67 @@ export function LandingTracker({ variant }: { variant: string }) {
     return () => document.removeEventListener("click", onClick);
   }, [variant]);
 
-  return null;
+  return <MeasureAsk />;
+}
+
+/** Whether anything here measures at all: nothing to ask about until something does. */
+const META = !!process.env.NEXT_PUBLIC_META_PIXEL_ID;
+const GOOGLE = !!process.env.NEXT_PUBLIC_GA_ID;
+const MEASURES = META || GOOGLE;
+// Who measures, said as the question names them.
+const MEASURED_BY = [GOOGLE && "Google", META && "Meta"].filter(Boolean).join(" and ");
+
+/**
+ * Asked once, at the foot of the page, before anything measures our ads
+ * or visits (9 Oct): nothing runs before Allow, No thanks is kept, and
+ * the footer's "Ad measurement" asks again.
+ */
+function MeasureAsk() {
+  const ask = useSyncExternalStore(onMeasureChange, measureUnasked, () => false);
+  if (!MEASURES || !ask) return null;
+  return (
+    <div
+      role="region"
+      aria-label="Measuring our ads"
+      className="fixed inset-x-0 bottom-0 z-50 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4"
+    >
+      <div className="mx-auto flex max-w-2xl flex-col gap-3 rounded-2xl border border-hair bg-white/95 px-4 py-3 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:gap-4">
+        <p className="flex-1 text-[13px] leading-snug text-quiet">
+          May we measure visits{META ? " and our Facebook and Instagram ads" : ""}? Cookies from {MEASURED_BY} do it,
+          only if you allow.{" "}
+          <Link href="/privacy" className="underline underline-offset-2 hover:text-ink">
+            Privacy
+          </Link>
+        </p>
+        <div className="flex shrink-0 gap-2">
+          <button
+            type="button"
+            onClick={() => chooseMeasure("no")}
+            className="rounded-full border border-hair px-4 py-1.5 text-[13px] font-medium text-ink transition-colors hover:bg-neutral-50"
+          >
+            No thanks
+          </button>
+          <button
+            type="button"
+            onClick={() => chooseMeasure("yes")}
+            className="rounded-full bg-ink px-4 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90"
+          >
+            Allow
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The footer's way back to the question, once it has been answered. */
+export function MeasureChoiceLink() {
+  if (!MEASURES) return null;
+  return (
+    <button type="button" onClick={() => chooseMeasure(null)} className="transition-colors duration-200 hover:text-ink">
+      Ad measurement
+    </button>
+  );
 }
 
 /** The landing's text box, one look for every field of the form. */
@@ -320,6 +393,9 @@ export function DemoForm({ variant }: { variant: string }) {
   const captcha = useCaptcha();
   const { renew } = captcha;
   useEffect(() => {
+    if (state.ok && state.eventId) trackMetaLead(state.eventId);
+  }, [state.ok, state.eventId]);
+  useEffect(() => {
     if (state.message) renew();
   }, [state, renew]);
   const started = useRef(false);
@@ -331,18 +407,30 @@ export function DemoForm({ variant }: { variant: string }) {
   // below: it used to be made in render, so every re-render of the form
   // (typing a name) wrote a new key, and the server and the browser each
   // rendered their own.
-  const [ctx, setCtx] = useState<{ session: string; path: string; utm: Utm; idem: string }>({
+  const [ctx, setCtx] = useState<{
+    session: string;
+    path: string;
+    utm: Utm;
+    idem: string;
+    fbc: string;
+  }>({
     session: "",
     path: "",
     utm: {},
     idem: "",
+    fbc: "",
   });
+  // Their yes to measuring, as it stands when they send: given after the
+  // form opened counts too. Without script it is never said, so never sent.
+  const measured = useSyncExternalStore(onMeasureChange, metaTrackingAllowed, () => false);
 
   // Filled after mount, because none of it exists on the server. With
   // JavaScript off these stay empty and the action makes its own — the
   // booking still arrives, it just is not joined to the earlier events.
   useEffect(() => {
+    const click = new URLSearchParams(window.location.search).get("fbclid");
     setCtx({
+      fbc: click && /^[A-Za-z0-9_-]{1,400}$/.test(click) ? `fb.1.${Date.now()}.${click}` : "",
       session: sessionId(),
       path: landingPath(),
       utm: utmFromUrl(),
@@ -385,6 +473,8 @@ export function DemoForm({ variant }: { variant: string }) {
       className="grid gap-3 sm:grid-cols-2"
     >
       <input type="hidden" name="variant" value={variant} />
+      <input type="hidden" name="meta_fbc" value={ctx.fbc} />
+      <input type="hidden" name="meta_consent" value={measured ? "1" : ""} />
       <input type="hidden" name="idem" value={ctx.idem} />
       <input type="hidden" name="session_id" value={ctx.session} />
       <input type="hidden" name="landing_path" value={ctx.path} />

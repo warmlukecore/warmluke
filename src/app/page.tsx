@@ -59,7 +59,15 @@ import {
   Undo2,
   type LucideIcon,
 } from "lucide-react";
-import { AskLuke, DemoForm, FloatingNav, LandingTracker, NavLinks, type Ask } from "@/components/Landing";
+import {
+  AskLuke,
+  DemoForm,
+  FloatingNav,
+  LandingTracker,
+  MeasureChoiceLink,
+  NavLinks,
+  type Ask,
+} from "@/components/Landing";
 import { whatCanChange, whatNeverChanges } from "@/lib/store-actions";
 import { Logo } from "@/components/ui/Logo";
 import { StorePreview } from "@/components/StorePreview";
@@ -1117,6 +1125,7 @@ export default async function Landing({
                   {label}
                 </Link>
               ))}
+              <MeasureChoiceLink />
             </nav>
           </div>
           <p className="relative z-10 text-center text-sm text-quiet md:text-left">

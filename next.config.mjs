@@ -29,6 +29,10 @@ const supabaseOrigin = supabase ? new URL(supabase).origin : "";
 // plain http (the one CI starts on its runner), which wss never matched,
 // so the browser refused the socket and nothing live arrived (8 Oct).
 const supabaseSocket = supabaseOrigin.replace(/^http(s?):/, "ws$1:");
+// Google Analytics on the landing page (lib/google-analytics): its tag from
+// googletagmanager, its hits to the hosts Google lists for GA4. Opened only
+// while an ID is set, as Meta's are; the images it sends fall under https:.
+const ga = !!process.env.NEXT_PUBLIC_GA_ID;
 
 /**
  * Headers every response carries.
@@ -63,9 +67,9 @@ const securityHeaders = [
             "default-src 'self'",
             // Cloudflare Turnstile: its script, and the frame it runs the
             // check in (src/components/Captcha.tsx).
-            `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""} https://challenges.cloudflare.com`,
+            `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""} https://challenges.cloudflare.com${process.env.NEXT_PUBLIC_META_PIXEL_ID ? " https://connect.facebook.net" : ""}${ga ? " https://*.googletagmanager.com" : ""}`,
             "frame-src https://challenges.cloudflare.com",
-            `connect-src 'self' ${supabaseOrigin} ${supabaseSocket}`.trim(),
+            `connect-src 'self' ${supabaseOrigin} ${supabaseSocket}${process.env.NEXT_PUBLIC_META_PIXEL_ID ? " https://www.facebook.com" : ""}${ga ? " https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com" : ""}`.trim(),
             "img-src 'self' data: blob: https:",
             // The landing hero's film, which is served from here. Worth
             // saying why the line exists at all: with no media-src this

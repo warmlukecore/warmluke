@@ -29,10 +29,13 @@
 // ─────────────────────────────────────────────────────────────
 
 import { createClient } from "@supabase/supabase-js";
+import { cookies, headers } from "next/headers";
+import { after } from "next/server";
+import { leadEventId, sendMetaLead } from "@/lib/meta-conversions";
 import { UTM_KEYS } from "@/lib/landing";
 import { HEARD_OPTIONS, ORDER_OPTIONS, TEAM_OPTIONS, heardDetailPrompt, type Option } from "@/lib/onboarding";
 
-export type BookingState = { ok: boolean; message?: string };
+export type BookingState = { ok: boolean; message?: string; eventId?: string };
 
 const text = (v: FormDataEntryValue | null, max: number) =>
   String(v ?? "")
@@ -109,17 +112,21 @@ export async function bookDemo(_prev: BookingState, form: FormData): Promise<Boo
     if (v) utm[k] = v;
   }
 
+  const session = text(form.get("session_id"), 64) || crypto.randomUUID().replace(/-/g, "");
+  const idem = text(form.get("idem"), 64) || crypto.randomUUID().replace(/-/g, "");
+  const eventId = leadEventId(session, idem);
+  const eventTime = Math.floor(Date.now() / 1000);
   const { error } = await createClient(url, anon).rpc("abo_book_demo", {
     p_key: key,
     p_booking: {
-      session_id: text(form.get("session_id"), 64) || crypto.randomUUID().replace(/-/g, ""),
+      session_id: session,
       variant: text(form.get("variant"), 64) || null,
       ...utm,
       // Capped here as well as at the column: a query string long enough
       // to fail the check would have failed the booking, which is the one
       // event that must not be lost over a detail nobody reads.
       landing_path: text(form.get("landing_path"), 500) || null,
-      idem: text(form.get("idem"), 64) || null,
+      idem,
       payload: {
         name,
         email,
@@ -137,8 +144,38 @@ export async function bookDemo(_prev: BookingState, form: FormData): Promise<Boo
   if (error) {
     // The same submission arriving twice is the unique index doing its
     // job, and the person has already been heard.
-    if (error.code === "23505") return { ok: true };
+    if (error.code === "23505") return { ok: true, eventId };
     return { ok: false, message: "That didn't send — please try again in a moment." };
   }
-  return { ok: true };
+  after(async () => {
+    try {
+      const h = await headers();
+      // Sent only on the visitor's yes, said by the form (lib/consent): a
+      // form without it (script off, never asked, a request made by hand)
+      // is a no, never a silent yes.
+      if (h.get("sec-gpc") === "1" || h.get("dnt") === "1" || form.get("meta_consent") !== "1") return;
+      // Configured canonical URL, not a client-supplied URL or store address.
+      const source = process.env.META_EVENT_SOURCE_URL;
+      if (!source) return;
+      const sourceUrl = new URL(source);
+      if (sourceUrl.protocol !== "https:" && sourceUrl.hostname !== "localhost") return;
+      sourceUrl.search = "";
+      sourceUrl.hash = "";
+      const c = await cookies();
+      await sendMetaLead({
+        eventId,
+        eventTime,
+        email,
+        sourceUrl: sourceUrl.href,
+        fbp: c.get("_fbp")?.value,
+        fbc: c.get("_fbc")?.value || text(form.get("meta_fbc"), 512),
+        // Vercel replaces this header; do not trust arbitrary forwarded IPs.
+        ip: h.get("x-vercel-forwarded-for")?.split(",")[0]?.trim(),
+        userAgent: h.get("user-agent") ?? undefined,
+      });
+    } catch {
+      console.warn("Meta Lead: configuration or delivery failure");
+    }
+  });
+  return { ok: true, eventId };
 }

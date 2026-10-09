@@ -26,10 +26,11 @@ remain authoritative; the documents explain how those sources fit together.
 ### Commerce/integration engineer
 
 1. [Shopify integration](integrations/shopify.md)
-2. [Domain and data model](domain/data-model.md)
-3. [HTTP API reference](reference/http-api.md)
-4. [Environment reference](reference/environment.md)
-5. [Operations](operations/development-and-deployment.md)
+2. [Meta website lead tracking](integrations/meta-conversions.md)
+3. [Domain and data model](domain/data-model.md)
+4. [HTTP API reference](reference/http-api.md)
+5. [Environment reference](reference/environment.md)
+6. [Operations](operations/development-and-deployment.md)
 
 ### Security reviewer
 

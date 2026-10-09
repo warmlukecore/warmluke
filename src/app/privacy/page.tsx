@@ -47,7 +47,7 @@ export default function Privacy() {
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-14 sm:px-6">
         <h1 className="font-serif text-2xl font-bold tracking-tight">Privacy</h1>
-        <p className="mt-2 text-sm text-quiet">Last updated 1 October 2026.</p>
+        <p className="mt-2 text-sm text-quiet">Last updated 9 October 2026.</p>
 
         <Section title="What we store">
           <p>
@@ -74,7 +74,28 @@ export default function Privacy() {
             of question it is, and whether a design does what was asked. It is sent the request and a description of the
             design &mdash; never store rows.
           </p>
-          <p>We do not sell data, and we do not use it to advertise to anyone.</p>
+          <p>We do not sell store data or use connected stores&rsquo; customer records for advertising.</p>
+        </Section>
+
+        <Section title="Website advertising measurement">
+          <p>
+            Only if you allow it, our public landing page uses Meta Pixel to measure visits and successful early-access
+            requests. The page asks first, and nothing is measured before you choose Allow. After a request is saved, we
+            also send Meta a Lead event through its Conversions API, with a hashed email address, event time, page
+            address, and available advertising cookies, IP address and browser information. This helps measure and
+            improve our Facebook and Instagram ads. Hashing allows Meta to match an email; it does not make the event
+            anonymous.
+          </p>
+          <p>
+            On the same yes, the landing page also uses Google Analytics to count visits and see which parts of the page
+            people read. Google receives the page address, the page you came from, a cookie identifier and browser
+            information; it is not sent your email or anything you type into the form.
+          </p>
+          <p>
+            This tracking does not run inside your business app or send your store&rsquo;s orders or customer records.
+            We skip it when your browser sends Do Not Track or Global Privacy Control. You can change your answer at any
+            time from &ldquo;Ad measurement&rdquo; at the foot of the landing page.
+          </p>
         </Section>
 
         <Section title="Who can see it">
