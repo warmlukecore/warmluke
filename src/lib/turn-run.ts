@@ -52,6 +52,8 @@ export type TurnJob = {
   client?: { origin: string };
   /** A design their AI drew itself (submit_design), read as the turn's first attempt (lib/engine.ts givenDesign). */
   design?: string;
+  /** The owner's first conversation (0200, lib/meet): Luke runs it by the first-meeting brief. */
+  meeting?: boolean;
 };
 
 /** Life a token needs left for a durable turn: several legs, with room. */

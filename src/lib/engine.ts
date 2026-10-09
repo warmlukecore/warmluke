@@ -69,6 +69,7 @@ import {
 } from "@/lib/plan";
 import { asJob } from "@/lib/usage";
 import { describeMerchant, type ProfileRow } from "@/lib/onboarding";
+import { MEET_BRIEF, MEET_OPENER } from "@/lib/meet";
 import {
   describeFeaturesFull,
   describePlan,
@@ -247,6 +248,8 @@ export type TurnInput = {
   modules: ModuleRow[];
   /** What the owner actually asked for. */
   message: string;
+  /** The owner's first conversation (0200): run by the first-meeting brief (lib/meet). */
+  meeting?: boolean;
   /** Earlier turns of the same conversation, oldest first. */
   history?: ChatTurn[];
   currentSchema?: UiSchema | null;
@@ -706,9 +709,17 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
   // step and the design call alone: the talk road answers, it does not design.
   const examples = examplesFor(message, approvedEx);
   const examplesBlock = describeExamples(examples);
+  // The first conversation reads its brief beside who they are; no other
+  // turn does, so every recorded turn replays unchanged.
   const merchant =
-    [describeMerchant(profile as ProfileRow | null), describeKnown(known), learnedBlock].filter(Boolean).join("\n") ||
-    null;
+    [
+      describeMerchant(profile as ProfileRow | null),
+      describeKnown(known),
+      learnedBlock,
+      input.meeting ? MEET_BRIEF : null,
+    ]
+      .filter(Boolean)
+      .join("\n") || null;
   const rules = describeRules((ruleRows ?? []) as RuleRow[], modules);
 
   // Every section's columns, so a design that touches one the caller
@@ -800,6 +811,8 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
   let road: Road =
     resume?.road ??
     (givenDesign ? "design" : null) ??
+    // Luke speaking first, in the first conversation: words, never a design.
+    (input.meeting && message === MEET_OPENER ? "talk" : null) ??
     // After a plan in words, an answer to its questions is more of the
     // design, not a follow-up question: it plans again.
     (agreed && (goAhead || !isQuestion(message))

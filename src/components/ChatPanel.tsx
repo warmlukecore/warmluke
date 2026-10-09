@@ -44,6 +44,7 @@ import { changeShown } from "@/lib/change-preview";
 import { Icon } from "@/components/ui/Icon";
 import {
   ArrowDown,
+  ArrowRight,
   ArrowUp,
   Bell,
   Check,
@@ -165,6 +166,8 @@ export interface ChatMessage {
   walked?: Array<{ name: string; tried: number; breaks: string[] }>;
   /** What Luke did on the screen open as he said this (lib/screen.ts), in the code's words. */
   show?: ScreenShown;
+  /** Answered from their store's own rows (the reply's kind "store"): help the first conversation waits for (0200). */
+  fromStore?: boolean;
   /**
    * What the design offered to do next, on the receipt of its build.
    * Shown only while this is the last thing in the thread: once
@@ -2322,6 +2325,7 @@ export default function ChatPanel({
   docked = true,
   tucked = false,
   wide = false,
+  meeting,
   onWide,
   onHide,
   modules,
@@ -2396,6 +2400,13 @@ export default function ChatPanel({
   docked?: boolean;
   /** Luke alone, across the whole screen. */
   wide?: boolean;
+  /**
+   * The owner's first conversation (0200): Luke alone, with nothing of the
+   * app around him and no way past him until he has helped (`ready`), when
+   * the store is offered (`onEnter`). `reading` names their shop while he
+   * reads it, before his first words.
+   */
+  meeting?: { ready: boolean; onEnter: () => void; reading?: string | null };
   /** Luke alone, or back to the three panes. */
   onWide?: () => void;
   /** Shuts the docked panel on a wide screen; Ask Luke then floats over the page. */
@@ -3379,7 +3390,7 @@ export default function ChatPanel({
       <aside
         aria-label="Luke"
         style={{ ["--chat-w" as string]: `${width}px` }}
-        className={`fixed inset-y-0 right-0 z-40 flex w-full max-w-[420px] shrink-0 flex-col overflow-hidden border-l border-line bg-surface ${
+        className={`fixed inset-y-0 right-0 z-40 flex w-full ${meeting ? "max-w-none border-l-0" : "max-w-[420px] border-l"} shrink-0 flex-col overflow-hidden border-line bg-surface ${
           docked
             ? // Its edge does not clip, so the resize handle in the gap beside it shows and can be taken hold of.
               `lg:relative lg:max-w-none lg:translate-x-0 lg:overflow-visible lg:rounded-pane lg:border-l-0 lg:shadow-card ${
@@ -3418,13 +3429,20 @@ export default function ChatPanel({
             {/* The header holds the bell's and History's popovers, so they open
                 inside the panel's edges, however narrow it is dragged. */}
             <div className="relative border-b border-line px-4 py-3">
-              <div className="flex items-center gap-2">
+              <div className={`flex items-center gap-2 ${meeting ? "mx-auto w-full max-w-3xl" : ""}`}>
                 <LukeMark state={busy ? "thinking" : "idle"} />
                 <div className="min-w-0">
                   <div className="text-sm font-semibold text-fg">Luke</div>
-                  <div className="truncate text-[11px] text-fg-faint">{LUKE_COPY.tagline}</div>
+                  <div className="truncate text-[11px] text-fg-faint">
+                    {meeting
+                      ? meeting.reading
+                        ? `Getting to know ${meeting.reading}`
+                        : "Getting to know you"
+                      : LUKE_COPY.tagline}
+                  </div>
                 </div>
-                <div ref={menus} className="ml-auto flex items-center gap-1">
+                {/* The first conversation has no history, bell or way out yet: only Luke. */}
+                <div ref={menus} className={`ml-auto flex items-center gap-1 ${meeting ? "hidden" : ""}`}>
                   {/* What their own AI asked for is a notification, not a
                 turn in the conversation. It lived in the stream and
                 sat there through every reload, taller than the chat
@@ -4151,7 +4169,7 @@ export default function ChatPanel({
                 <button
                   onClick={onClose}
                   aria-label="Close Luke"
-                  className={`rounded-lg px-2 py-1 text-fg-faint transition-colors hover:bg-surface-hover hover:text-fg-muted ${docked ? "lg:hidden" : ""}`}
+                  className={`rounded-lg px-2 py-1 text-fg-faint transition-colors hover:bg-surface-hover hover:text-fg-muted ${docked ? "lg:hidden" : ""} ${meeting ? "hidden" : ""}`}
                 >
                   <X aria-hidden size={14} strokeWidth={2} />
                 </button>
@@ -4191,7 +4209,20 @@ export default function ChatPanel({
                     <div className="h-3 w-1/2 rounded bg-surface-subdued motion-safe:animate-pulse" />
                   </div>
                 )}
-                {messages.length === 0 && !threadOpening && (
+                {/* The first conversation, before his first words: Luke reading their store. */}
+                {messages.length === 0 && !threadOpening && meeting && (
+                  <div
+                    role="status"
+                    aria-label="Luke is reading your store"
+                    className="rise flex min-h-[60%] flex-col items-center justify-center px-4 text-center"
+                  >
+                    <LukeMark size="lg" state="thinking" />
+                    <p className="shimmer mt-5 text-[15px]">
+                      {meeting.reading ? `Reading ${meeting.reading}` : "Getting ready to meet you"}
+                    </p>
+                  </div>
+                )}
+                {messages.length === 0 && !threadOpening && !meeting && (
                   <div className="rise flex min-h-[55%] flex-col items-center justify-center px-4 text-center">
                     <LukeMark size="lg" />
                     <h2 className="mt-4 text-lg font-semibold text-fg">{LUKE_COPY.emptyTitle}</h2>
@@ -4734,7 +4765,7 @@ export default function ChatPanel({
                       </button>
                     </div>
                   )}
-                  {busy && !turnElsewhere && (
+                  {busy && !turnElsewhere && !(meeting && messages.length === 0) && (
                     <div className="text-[11px] text-fg-faint">
                       {/* One line: the step the server is on right now, with the
                 seconds climbing beside it, and the steps already taken
@@ -4791,6 +4822,25 @@ export default function ChatPanel({
                     </div>
                   )}
                 </div>
+                {/* Once Luke has helped (an answer from their own store, or a build),
+            the store is theirs to open; never before, and never mid-reply. */}
+                {meeting?.ready && !busy && (
+                  <div
+                    role="region"
+                    aria-label="Your store is ready"
+                    className="rise mt-6 flex flex-col items-center gap-4 rounded-card border border-line bg-surface-subdued px-5 py-5 text-center sm:flex-row sm:text-left"
+                    style={RISE}
+                  >
+                    <LukeMark />
+                    <p className="min-w-0 flex-1 text-sm leading-relaxed text-fg-muted">
+                      Your store is ready. I&rsquo;ll be right beside it, whenever you need me.
+                    </p>
+                    <button onClick={meeting.onEnter} className={`${button("primary")} shrink-0`}>
+                      Open my store
+                      <ArrowRight aria-hidden size={15} strokeWidth={2} />
+                    </button>
+                  </div>
+                )}
                 {/* The room kept below a sent message for its reply (see pin). */}
                 <div ref={spacerRef} aria-hidden />
                 {/* Held at the foot of the list while the newest is out of view;
@@ -4891,8 +4941,9 @@ export default function ChatPanel({
 
               {/* Their own AI. Shown alongside the chat rather than instead of
           it: both can be on, and a merchant who has connected Claude
-          still uses this panel to read and approve what it asked for. */}
-              {features.mcp && (
+          still uses this panel to read and approve what it asked for.
+          Not in the first conversation, which is Luke's alone. */}
+              {features.mcp && !meeting && (
                 <details
                   className="group/ai border-t border-line px-3 py-2.5"
                   open={ownAiOpen || !features.chat}
@@ -5218,7 +5269,7 @@ export default function ChatPanel({
                         }
                       }}
                       rows={1}
-                      placeholder={LUKE_COPY.placeholder}
+                      placeholder={meeting ? "Reply to Luke, in your own words" : LUKE_COPY.placeholder}
                       className="max-h-40 flex-1 resize-none bg-transparent py-0.5 text-[13px] leading-6 text-fg outline-none placeholder:text-fg-faint"
                     />
                     <button
@@ -5235,7 +5286,9 @@ export default function ChatPanel({
                       )}
                     </button>
                   </div>
-                  <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 text-[10px] text-fg-faint">
+                  <div
+                    className={`mt-1.5 flex flex-wrap items-baseline gap-x-3 text-[10px] text-fg-faint ${meeting ? "hidden" : ""}`}
+                  >
                     {/* Only with a choice to make: one model allowed is no picker. */}
                     {luke && luke.models.length > 1 && onModel && (
                       <ModelPicker

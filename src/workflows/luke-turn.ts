@@ -142,6 +142,7 @@ async function turnLeg(job: DurableTurn, state: TurnState | null): Promise<Leg> 
         project: proj,
         modules: ctx.moduleList,
         message: job.message,
+        meeting: job.meeting,
         history: ctx.history,
         currentSchema: ctx.currentSchema,
         currentFeatures: ctx.currentFeatures,

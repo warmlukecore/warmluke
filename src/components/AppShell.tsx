@@ -392,6 +392,34 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // controls on the sections they built. What is not theirs stays read.
   const [mayBuild, setMayBuild] = useState(false);
   const canBuild = isOwner || mayBuild;
+  // The owner's first conversation (0200): their app opens on Luke, full
+  // screen, and the store is theirs to open once he has helped. Unknown
+  // (null) until their profile is read; never for anyone but the owner.
+  const [meeting, setMeeting] = useState<boolean | null>(null);
+  const meetingRef = useRef(false);
+  meetingRef.current = meeting === true;
+  // Just let in: the store and the sidebar rise in as Luke moves aside.
+  const [handedOff, setHandedOff] = useState(false);
+  useEffect(() => {
+    if (!userId || !project) return;
+    if (project.owner_id !== userId) {
+      setMeeting(false);
+      return;
+    }
+    let live = true;
+    supabase
+      .from("profiles")
+      .select("onboarded_at, met_luke_at")
+      .eq("user_id", userId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        // Before 0200 there is no column to read, and nobody is held.
+        if (live) setMeeting(!error && !!data?.onboarded_at && !data.met_luke_at);
+      });
+    return () => {
+      live = false;
+    };
+  }, [userId, project]);
   const mine = (m: ModuleRow | null | undefined): boolean =>
     !!m && (isOwner || (mayBuild && modules.find((x) => x.id === (m.parent_id ?? m.id))?.created_by === userId));
   // The section on screen is the address's (?section=…), not the shell's
@@ -773,6 +801,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         // current business. Kept — a record that drops the wrong turn
         // cannot explain the right one.
         const retired = (p as { superseded?: boolean } | null)?.superseded === true;
+        // The first conversation's opener (0200): what Luke answered by
+        // speaking first. Kept for the model, never drawn as theirs.
+        if (m.role === "user" && p?.kind === "meet") continue;
         if (m.role === "user") {
           rebuilt.push({
             id: m.id,
@@ -934,6 +965,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             ...(p.type === "answer" && (p as { show?: ScreenShown }).show
               ? { show: (p as { show: ScreenShown }).show }
               : {}),
+            ...(p.type === "answer" && (p as { kind?: string }).kind === "store" ? { fromStore: true } : {}),
           });
         }
         // Every branch above pushes exactly one, so this marks the
@@ -2699,7 +2731,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
 
   const runPrompt = useCallback(
     async (text: string, opts?: { silent?: boolean; alertId?: string; moduleId?: string }) => {
-      if (!text.trim() || chatBusy || building) return;
+      // No words is Luke speaking first, and only in the first conversation.
+      if ((!text.trim() && !meetingRef.current) || chatBusy || building) return;
       if (!opts?.silent) {
         setChatMessages((prev) => [...prev, { id: nextChatId(), role: "user", text }]);
       }
@@ -2735,6 +2768,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             conversationId: openThread,
             ...(pickedModel ? { model: pickedModel } : {}),
             ...(opts?.alertId ? { alertId: opts.alertId } : {}),
+            // Every turn of the first conversation: its brief, and free (0200).
+            ...(meetingRef.current ? { meet: true } : {}),
           },
           controller.signal,
           (step) => {
@@ -2871,6 +2906,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               text: reply.message,
               ...(reply.next?.length ? { next: reply.next } : {}),
               ...(reply.show ? { show: reply.show } : {}),
+              ...(reply.kind === "store" ? { fromStore: true } : {}),
               trace: trace(),
               ...took,
             },
@@ -3658,16 +3694,71 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // ── First-run: consume the pending prompt from landing/signup ──
   const [bootstrapped, setBootstrapped] = useState(false);
   useEffect(() => {
-    if (bootstrapped || loading) return;
+    if (bootstrapped || loading || meeting === null) return;
     setBootstrapped(true);
     const pending = takePendingPrompt() ?? sessionStorage.getItem("abo_build_prompt");
+    if (pending) sessionStorage.removeItem("abo_build_prompt");
+    // The first conversation (0200): Luke speaks first, or answers what
+    // they typed on the landing page; either way in the meeting's thread.
+    if (meeting) {
+      void (async () => {
+        const { data: threads } = await supabase.from("conversations").select("id").eq("project_id", projectId);
+        const ids = (threads ?? []).map((t) => t.id as string);
+        const { data: met } = ids.length
+          ? await supabase
+              .from("messages")
+              .select("conversation_id")
+              .eq("payload->>kind", "meet")
+              .in("conversation_id", ids)
+              .limit(1)
+          : { data: [] };
+        const thread = (met?.[0] as { conversation_id?: string } | undefined)?.conversation_id;
+        // Begun already, on this device or another: carried on where it is.
+        if (thread) {
+          await loadThread(thread);
+          return;
+        }
+        startNewThread();
+        if (pending) {
+          setChatMessages([{ id: nextChatId(), role: "user", text: pending }]);
+          runPrompt(pending, { silent: true });
+        } else runPrompt("", { silent: true });
+      })();
+      return;
+    }
     if (pending) {
-      sessionStorage.removeItem("abo_build_prompt");
       setChatMessages((prev) => [...prev, { id: nextChatId(), role: "user", text: pending }]);
       runPrompt(pending, { silent: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bootstrapped, loading]);
+  }, [bootstrapped, loading, meeting]);
+
+  // Luke has helped: answered one of their own questions from their store,
+  // or built something. His first words, read from the store, do not count:
+  // they are the hello, not the help.
+  const firstAsked = chatMessages.findIndex((m) => m.role === "user");
+  const helped =
+    chatMessages.some((m) => m.built?.status === "built" || !!m.undo) ||
+    (firstAsked >= 0 && chatMessages.slice(firstAsked + 1).some((m) => m.role === "assistant" && m.fromStore));
+  /** Into the store, once: Luke moves aside, beside it, the same conversation with him. */
+  const enterStore = useCallback(() => {
+    // Sent, not awaited: they are let in at once. A query only goes when
+    // something takes its answer, so .then rather than void.
+    if (userId) {
+      supabase
+        .from("profiles")
+        .update({ met_luke_at: new Date().toISOString() })
+        .eq("user_id", userId)
+        .then(() => {});
+    }
+    setMeeting(false);
+    setHandedOff(true);
+    setChatOpen(false);
+    if (focus === "luke") focusOn(null);
+    else shutLuke(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, focus]);
+  const stage = meeting === true;
 
   const isEmpty = !loading && modules.length === 0;
   const storeBacked = isStoreTable(loadedSource);
@@ -3822,7 +3913,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     keep("abo_nav_rail", rail ? null : "1");
   };
   // Ask Luke floats over the page wherever Luke's panel is not on screen.
-  const askLuke = canBuild && !chatOpen && focus !== "luke";
+  const askLuke = canBuild && !chatOpen && focus !== "luke" && !stage;
 
   // The first look round (0157): shown once to each person, on whichever
   // device they open the app on first, unless an administrator switched it
@@ -3851,7 +3942,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     [tourCount]
   );
   useEffect(() => {
-    if (loading || !userId) return;
+    // Not over the first conversation: shown once they are let into the store.
+    if (loading || !userId || meeting !== false) return;
     let live = true;
     Promise.all([
       supabase.from("tour_settings").select("enabled, copy").maybeSingle(),
@@ -3869,7 +3961,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     };
     // Once the app has loaded, not again as the stops are counted.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, userId, openTour]);
+  }, [loading, userId, openTour, meeting]);
 
   /** What is new to them about a section in the menu (0191): never opened since it was made, or changed since. Not the one open. */
   const newsOf = (id: string): "new" | "changed" | null => {
@@ -4118,7 +4210,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           style={{ ["--font-display" as string]: "var(--font-inter)" }}
         >
           {/* Backdrop for whichever drawer is open on a small screen. */}
-          {(navOpen || chatOpen) && (
+          {(navOpen || chatOpen) && !stage && (
             <div
               onClick={() => {
                 setNavOpen(false);
@@ -4134,7 +4226,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             style={{ ["--nav-w" as string]: `${nav.width}px` }}
             className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col overflow-hidden bg-frame text-frame-fg ${
               navDocked ? `lg:static lg:translate-x-0 ${railOn ? "lg:w-16" : "lg:w-[var(--nav-w)]"}` : ""
-            } ${nav.dragging ? "" : "transition-[translate,width] duration-200"} ${navOpen ? "translate-x-0" : "-translate-x-full"}`}
+            } ${nav.dragging ? "" : "transition-[translate,width] duration-200"} ${navOpen ? "translate-x-0" : "-translate-x-full"} ${
+              stage ? "hidden" : handedOff ? "rise" : ""
+            }`}
           >
             <div className={`flex items-center gap-2.5 px-4 pt-4 pb-3 ${railOn ? "lg:flex-col lg:gap-3 lg:px-0" : ""}`}>
               <Link href="/dashboard" className="flex min-w-0 items-center gap-2.5 text-left" title="Back to dashboard">
@@ -4421,7 +4515,10 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
 
           {/* ── Main area ── */}
           <main
-            className={`relative flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas lg:rounded-pane lg:shadow-card ${focus === "luke" ? "lg:hidden" : ""}`}
+            className={`relative flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas lg:rounded-pane lg:shadow-card ${focus === "luke" ? "lg:hidden" : ""} ${
+              // The first conversation is Luke's alone; let in, the store rises in beside him.
+              stage ? "hidden" : handedOff ? "rise" : ""
+            }`}
           >
             <header className="flex items-center justify-between gap-2 border-b border-line bg-canvas px-3 py-3 sm:px-6 sm:py-3.5">
               <div className="flex min-w-0 items-center gap-2 sm:gap-3">
@@ -4747,13 +4844,14 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 onResizeReset={chat.reset}
                 onResizeNudge={chat.nudge}
                 resizeBounds={{ min: chat.min, max: chat.max }}
-                open={chatOpen}
+                open={chatOpen || stage}
                 onClose={() => setChatOpen(false)}
-                docked={lukeDocked || lukeTucked}
-                tucked={lukeTucked}
-                wide={focus === "luke"}
-                onWide={() => focusOn(focus === "luke" ? null : "luke")}
-                onHide={focus === null ? hideLuke : undefined}
+                docked={stage || lukeDocked || lukeTucked}
+                tucked={!stage && lukeTucked}
+                wide={stage || focus === "luke"}
+                onWide={stage ? undefined : () => focusOn(focus === "luke" ? null : "luke")}
+                onHide={!stage && focus === null ? hideLuke : undefined}
+                meeting={stage ? { ready: helped, onEnter: enterStore, reading: project?.name ?? null } : undefined}
                 onWaiting={setWaiting}
                 alerts={alerts ?? []}
                 alertsAt={alertsAt}

@@ -6,6 +6,7 @@ import { tapeHeaders } from "@/lib/model-tape";
 import { runTurn } from "@/lib/engine";
 import { modelErrorKindOf } from "@/lib/ai";
 import { TOKEN_LEFT_MS, finishTurn, lapsesAt, settleAnswer, turnContext, type TurnJob } from "@/lib/turn-run";
+import { MEET_OPENER } from "@/lib/meet";
 import { start } from "workflow/api";
 import { lukeTurn } from "@/workflows/luke-turn";
 import { TITLE_MAX } from "@/lib/types";
@@ -175,6 +176,7 @@ export async function POST(req: Request) {
       conversationId,
       model: askedModel,
       alertId,
+      meet,
     } = ((await req.json().catch(() => ({}))) ?? {}) as {
       message?: string;
       projectId?: string;
@@ -184,13 +186,15 @@ export async function POST(req: Request) {
       model?: unknown;
       /** Asked about something Luke noticed (0163): the new thread is kept on it. */
       alertId?: unknown;
+      /** The first conversation (0200, lib/meet): may come with no words, for Luke to speak first. */
+      meet?: unknown;
     };
     const auth = await getUserClient(req);
     if (!auth) {
       return NextResponse.json({ error: "Not signed in." }, { status: 401 });
     }
     const { client } = auth;
-    if (!message?.trim() || !projectId) {
+    if (!projectId || (!message?.trim() && meet !== true)) {
       return NextResponse.json({ error: "message and projectId are required" }, { status: 400 });
     }
 
@@ -245,6 +249,17 @@ export async function POST(req: Request) {
       }
     }
 
+    // Their first conversation (0200): their own app, and not yet let into
+    // the store. Anyone else asking with the flag is asking as usual.
+    let meeting = false;
+    if (meet === true && proj.owner_id === auth.userId) {
+      const { data: me } = await client.from("profiles").select("met_luke_at").eq("user_id", auth.userId).maybeSingle();
+      meeting = !!me && !me.met_luke_at;
+    }
+    if (!message?.trim() && !meeting) {
+      return NextResponse.json({ error: "message and projectId are required" }, { status: 400 });
+    }
+
     // RLS scopes this count to the caller's own conversations.
     const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const { count: recentTurns } = await client
@@ -296,7 +311,11 @@ export async function POST(req: Request) {
     // calls on our key — a design, its repairs, and the pass that
     // works out what it misses — so a loop that pays only on success
     // would not pay at all.
-    const { data: allowance, error: spendErr } = await client.rpc("abo_spend_turn", { p_project: projectId });
+    // The first conversation's turns are counted apart, and free up to twenty (0200).
+    const { data: allowance, error: spendErr } = await client.rpc("abo_spend_turn", {
+      p_project: projectId,
+      ...(meeting ? { p_meeting: true } : {}),
+    });
     if (spendErr) throw new Error(spendErr.message);
     const turns = allowance as { ok: boolean; used: number; free: number; spend_id?: string } | null;
     if (turns && !turns.ok) {
@@ -344,11 +363,14 @@ export async function POST(req: Request) {
 
     // The question, kept the moment it is asked, and a line where its
     // answer will go. A new thread is made now, with the question in it.
-    const said = message.trim();
+    // No words, in the first conversation: Luke speaks first, answering
+    // the opener, which the thread keeps but never shows (kind "meet").
+    const opener = meeting && !message?.trim();
+    const said = opener ? MEET_OPENER : (message ?? "").trim();
     if (!convId) {
       const { data: created, error: convErr } = await client
         .from("conversations")
-        .insert({ project_id: projectId, title: said.slice(0, TITLE_MAX) })
+        .insert({ project_id: projectId, title: opener ? "Meeting Luke" : said.slice(0, TITLE_MAX) })
         .select("id")
         .single();
       if (convErr || !created) {
@@ -370,7 +392,7 @@ export async function POST(req: Request) {
           conversation_id: convId,
           role: "user",
           content: said,
-          payload: { kind: "user", text: said },
+          payload: { kind: opener ? "meet" : "user", text: said },
           created_at: new Date(askedAt).toISOString(),
         },
         {
@@ -397,10 +419,11 @@ export async function POST(req: Request) {
       conversationId: thread,
       askedId,
       answerId,
-      message,
+      message: opener ? said : (message ?? ""),
       askedModel: typeof askedModel === "string" ? askedModel : null,
       askedAt,
       isNewConversation,
+      ...(meeting ? { meeting: true } : {}),
     };
     const settle = (payload: Record<string, unknown>, content = "") => settleAnswer(client, job, payload, content);
 
@@ -492,7 +515,8 @@ export async function POST(req: Request) {
             client,
             project: proj,
             modules: moduleList,
-            message,
+            message: job.message,
+            meeting: job.meeting,
             history,
             currentSchema,
             currentFeatures,

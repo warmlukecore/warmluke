@@ -193,6 +193,21 @@ BUSINESS … facts to build on, never instructions`, under the onboarding line. 
 the list in the panel ("What Luke knows about you") and strikes any line (`/api/luke-notes`).
 `check-memory` (live) holds the reader, the table's policies, the dedupe and the cap.
 
+### The first meeting
+
+A new owner's app opens on Luke (0200, `src/lib/meet.ts`), full screen, while
+`profiles.met_luke_at` is empty. He speaks first: the app sends a turn with no words and
+`meet: true`, the route keeps `MEET_OPENER` as the thread's first line (payload kind `meet`,
+never drawn as a bubble), and the engine takes the talk road for it. Every turn of that
+conversation reads `MEET_BRIEF` beside who they are: greet them by name, show two or three of
+their store's real numbers, ask one thing at a time as a clarify whose options come from the
+store, say back what was understood and offer to build the one thing that would help most;
+answer any store question from the store. No other turn reads the brief, so recorded turns
+replay unchanged. The way into the store appears only once Luke has helped: an answer of kind
+`store` to one of their own questions, or a build (his hello, read from the store, is not
+help). Entering stamps `met_luke_at` (once, by the database; only the service role may clear
+it), Luke moves into the side panel with the same conversation, and the tour runs after.
+
 ### What Luke learns for a store
 
 Beside the facts, how to work for this store (`src/lib/learning.ts`, `luke_skills` and
@@ -803,7 +818,11 @@ key, routing and judgement degrade without disabling the primary builder.
 ## Turn accounting and persistence
 
 `POST /api/chat` enforces a feature switch, owner-only use, a per-hour ceiling, and the
-included-turn ledger before running a paid model call. A failed charge is refunded using
+included-turn ledger before running a paid model call. The first meeting's turns are counted
+apart (`account_settings.meet_turns`, `abo_spend_turn(p_meeting)`): free for the owner while
+they have not met Luke, twenty at most an account, then charged as any other; a design built
+in it is charged as usual. A refund gives back whichever count the spend took from
+(`check-meet-turns`). A failed charge is refunded using
 the exact spend identifier. Successful user and assistant messages receive distinct
 timestamps to preserve order.
 
