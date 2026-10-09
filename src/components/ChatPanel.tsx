@@ -29,6 +29,7 @@ import type {
   NextStep,
   LukeShows,
   FollowUp,
+  ProblemCheckIn,
   RecordRow,
   ThreadSummary,
   TurnEvent,
@@ -1367,6 +1368,58 @@ function ApprovalCard({
 }
 
 /**
+ * A problem they named, a week after something was built for it (0201),
+ * asked about once: better, no change, or worse. Kept, and read by Luke
+ * from then on; anything but better opens him on what is still wrong.
+ */
+function CheckInCard({
+  checkIn: c,
+  onCheckIn,
+}: {
+  checkIn: ProblemCheckIn;
+  onCheckIn?: (c: ProblemCheckIn, answer: "better" | "same" | "worse") => Promise<string | null>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
+  const [now] = useState(() => Date.now());
+  const what = c.sections.length ? c.sections.map((s) => `“${s}”`).join(" and ") : "Something";
+  const go = async (answer: "better" | "same" | "worse") => {
+    if (!onCheckIn) return;
+    setBusy(true);
+    const r = await onCheckIn(c, answer);
+    setBusy(false);
+    setSaid(r);
+  };
+  const quiet =
+    "rounded-lg border border-line px-2 py-1 text-[10px] font-medium text-fg hover:bg-surface-hover disabled:opacity-40";
+  return (
+    <div className="rounded-xl border border-line bg-surface px-2.5 py-2">
+      <div className="text-[10px] font-semibold tracking-widest text-fg-muted">DID IT HELP?</div>
+      <div className="mt-1 text-[12px] leading-relaxed text-fg">
+        You told Luke: &ldquo;{c.problem}&rdquo;{c.cost ? ` (${c.cost})` : ""}. {what} was built for it{" "}
+        {ago(c.built_at, now)}. Is it better now?
+      </div>
+      {said && <div className="mt-1 text-[10px] leading-relaxed text-tone-critical-fg">{said}</div>}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        <button
+          onClick={() => go("better")}
+          disabled={busy || !onCheckIn}
+          className="rounded-lg bg-primary px-2 py-1 text-[10px] font-medium text-on-primary hover:bg-primary-hover disabled:opacity-40"
+        >
+          Better
+        </button>
+        <button onClick={() => go("same")} disabled={busy || !onCheckIn} className={quiet}>
+          No change
+        </button>
+        <button onClick={() => go("worse")} disabled={busy || !onCheckIn} className={quiet}>
+          Worse
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * A build nobody has used since it was made (0190), asked about once:
  * was it fine, or not what they meant. "Not what I meant" opens Luke on it.
  */
@@ -2149,7 +2202,12 @@ function ModelPicker({
  */
 function KnownNotes({ projectId }: { projectId: string }) {
   const [notes, setNotes] = useState<Array<{ id: string; note: string }>>([]);
+  const [problems, setProblems] = useState<Array<{ id: string; problem: string; cost: string | null; status: string }>>(
+    []
+  );
   const [open, setOpen] = useState(false);
+  const [telling, setTelling] = useState("");
+  const [said, setSaid] = useState<string | null>(null);
   // Lines struck here: a read that left as the list opened and landed
   // after the strike put the line back (CI 37783438522, phone, 8 Oct).
   const struck = useRef(new Set<string>());
@@ -2159,17 +2217,32 @@ function KnownNotes({ projectId }: { projectId: string }) {
       if (!live || !ok) return;
       const list = Array.isArray(data.notes) ? (data.notes as Array<{ id: string; note: string }>) : [];
       setNotes(list.filter((n) => !struck.current.has(n.id)));
+      const hurts = Array.isArray(data.problems) ? (data.problems as typeof problems) : [];
+      setProblems(hurts.filter((h) => !struck.current.has(h.id)));
     });
     return () => {
       live = false;
     };
   }, [projectId, open]);
-  if (notes.length === 0) return null;
-  const strike = async (id: string) => {
+  const strike = async (id: string, kind?: "problem") => {
     struck.current.add(id);
     setNotes((all) => all.filter((n) => n.id !== id));
-    await apiFetch("/api/luke-notes", { id }, "DELETE");
+    setProblems((all) => all.filter((h) => h.id !== id));
+    await apiFetch("/api/luke-notes", { id, ...(kind ? { kind } : {}) }, "DELETE");
   };
+  /** A fact they tell Luke themselves: theirs, so kept as said. */
+  const tell = async () => {
+    const note = telling.trim();
+    if (note.length < 3) return;
+    setSaid(null);
+    const { ok, data } = await apiFetch("/api/luke-notes", { projectId, note });
+    if (!ok) return setSaid((data.error as string) ?? "That wasn't kept. Try again.");
+    const kept = data.note as { id: string; note: string } | undefined;
+    if (kept) setNotes((all) => [kept, ...all.filter((n) => n.id !== kept.id)]);
+    setTelling("");
+  };
+  // How what was built for it went, in their words (0201).
+  const went: Record<string, string> = { better: "Better now", same: "No change yet", worse: "Worse" };
   return (
     <details className="group" onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
       <summary className="cursor-pointer list-none select-none hover:text-fg-muted">
@@ -2181,22 +2254,75 @@ function KnownNotes({ projectId }: { projectId: string }) {
           className="ml-0.5 inline align-[-1px] transition-transform duration-150 group-open:rotate-90"
         />
       </summary>
-      <ul className="mt-1 space-y-0.5 pl-3">
-        {notes.map((n) => (
-          <li key={n.id} className="flex items-start gap-1.5">
-            <span className="min-w-0 flex-1">{n.note}</span>
-            <button
-              type="button"
-              onClick={() => strike(n.id)}
-              aria-label={`Forget: ${n.note}`}
-              title="Forget this"
-              className="shrink-0 text-fg-faint hover:text-fg"
-            >
-              <X aria-hidden size={11} strokeWidth={2} />
-            </button>
-          </li>
-        ))}
-      </ul>
+      <div className="mt-1 space-y-2 pl-3">
+        {problems.length > 0 && (
+          <div>
+            <p className="text-fg-muted">What&rsquo;s hard for you</p>
+            <ul className="mt-0.5 space-y-0.5">
+              {problems.map((h) => (
+                <li key={h.id} className="flex items-start gap-1.5">
+                  <span className="min-w-0 flex-1">
+                    {h.problem}
+                    {h.cost ? <span className="text-fg-faint"> · {h.cost}</span> : null}
+                    {went[h.status] ? <span className="text-fg-muted"> · {went[h.status]}</span> : null}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => strike(h.id, "problem")}
+                    aria-label={`Set aside: ${h.problem}`}
+                    title="Not a problem any more"
+                    className="shrink-0 text-fg-faint hover:text-fg"
+                  >
+                    <X aria-hidden size={11} strokeWidth={2} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {notes.length > 0 && (
+          <ul className="space-y-0.5">
+            {notes.map((n) => (
+              <li key={n.id} className="flex items-start gap-1.5">
+                <span className="min-w-0 flex-1">{n.note}</span>
+                <button
+                  type="button"
+                  onClick={() => strike(n.id)}
+                  aria-label={`Forget: ${n.note}`}
+                  title="Forget this"
+                  className="shrink-0 text-fg-faint hover:text-fg"
+                >
+                  <X aria-hidden size={11} strokeWidth={2} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void tell();
+          }}
+          className="flex items-center gap-1.5"
+        >
+          <input
+            value={telling}
+            onChange={(e) => setTelling(e.target.value)}
+            maxLength={200}
+            aria-label="Tell Luke something about your business"
+            placeholder="Tell Luke something about your business"
+            className="min-w-0 flex-1 rounded-md border border-line bg-surface px-2 py-1 text-[11px] text-fg outline-none placeholder:text-fg-faint focus:border-luke-light"
+          />
+          <button
+            type="submit"
+            disabled={telling.trim().length < 3}
+            className="shrink-0 text-fg-muted hover:text-fg disabled:opacity-40"
+          >
+            Keep
+          </button>
+        </form>
+        {said && <p className="text-tone-critical-fg">{said}</p>}
+      </div>
     </details>
   );
 }
@@ -2359,6 +2485,8 @@ export default function ChatPanel({
   onShow,
   approvals = [],
   followUps = [],
+  checkIns = [],
+  onCheckIn,
   onFollowUp,
   onApproval,
   onEditPrompt,
@@ -2493,6 +2621,9 @@ export default function ChatPanel({
   /** Builds of theirs nobody has used since (0190), each asked about once in the bell. */
   followUps?: FollowUp[];
   onFollowUp?: (f: FollowUp, answer: "fine" | "missed") => Promise<string | null>;
+  /** Problems they named, a week after a fix (0201): did it help? */
+  checkIns?: ProblemCheckIn[];
+  onCheckIn?: (c: ProblemCheckIn, answer: "better" | "same" | "worse") => Promise<string | null>;
   /** The owner's word on one; a line back when it was not done (the row moved on). */
   onApproval?: (id: string, decision: "approve" | "decline") => Promise<string | null>;
   /**
@@ -3261,7 +3392,8 @@ export default function ChatPanel({
     requests.filter((r) => r.status === "pending" || r.status === "partly_built").length +
     shopChanges.filter((a) => a.status === "pending").length +
     approvals.length +
-    followUps.length;
+    followUps.length +
+    checkIns.length;
   /**
    * Which ones are waiting, as one string.
    *
@@ -3276,6 +3408,7 @@ export default function ChatPanel({
     ...shopChanges.filter((a) => a.status === "pending").map((a) => a.id),
     ...approvals.map((a) => a.id),
     ...followUps.map((f) => f.build_id),
+    ...checkIns.map((c) => c.problem_id),
   ].join(",");
 
   // On the tab, not only in the panel. A merchant is not sitting here
@@ -3542,7 +3675,8 @@ export default function ChatPanel({
                         requests.length === 0 &&
                         shopChanges.length === 0 &&
                         approvals.length === 0 &&
-                        followUps.length === 0 && (
+                        followUps.length === 0 &&
+                        checkIns.length === 0 && (
                           <div className="flex flex-col items-center px-4 py-6 text-center">
                             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-canvas text-fg-faint">
                               <Bell aria-hidden size={16} strokeWidth={1.75} />
@@ -3562,6 +3696,10 @@ export default function ChatPanel({
             it is someone on their team waiting, not a suggestion. */}
                       {(bellTab === "asked" ? approvals : []).map((p) => (
                         <ApprovalCard key={p.id} approval={p} onApproval={onApproval} />
+                      ))}
+                      {/* A problem they named, a week after its fix (0201): did it help? */}
+                      {(bellTab === "asked" ? checkIns : []).map((c) => (
+                        <CheckInCard key={c.problem_id} checkIn={c} onCheckIn={onCheckIn} />
                       ))}
                       {/* A build of theirs nobody has used (0190): did it work? */}
                       {(bellTab === "asked" ? followUps : []).map((f) => (

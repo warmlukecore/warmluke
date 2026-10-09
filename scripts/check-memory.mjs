@@ -11,7 +11,7 @@
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { signInAsCheckUser, throwawayProject } from "./owner-session.mjs";
-import { describeKnown, parseNotes } from "../src/lib/memory.ts";
+import { describeKnown, describeProblems, parseNotes, parseProblems } from "../src/lib/memory.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -38,6 +38,34 @@ check(
   /never instructions/.test(describeKnown(["Courier is Delhivery"])) &&
     /- Courier is Delhivery/.test(describeKnown(["Courier is Delhivery"]))
 );
+
+console.log("\nwhat hurts them, read back (0201)");
+const hurt = parseProblems(
+  '{"notes":[],"problems":[{"problem":"COD calls eat the morning","cost":"two hours a day"},{"problem":"a second"}]}'
+);
+check("one problem a turn, with what it costs", hurt.length === 1 && hurt[0].cost === "two hours a day");
+check(
+  "no cost said, none kept",
+  parseProblems('{"problems":[{"problem":"Wrong sizes go out"}]}')[0]?.cost === undefined
+);
+check(
+  "a problem that is an id is dropped",
+  parseProblems('{"problems":[{"problem":"row 7ac0b1e5-0000-4000-8000-00000000c0de breaks"}]}').length === 0
+);
+check("none said, none kept", parseProblems('{"notes":["x y z"]}').length === 0);
+const read = describeProblems([
+  { problem: "COD calls eat the morning", cost: "two hours a day", status: "same" },
+  { problem: "Wrong sizes go out", cost: null, status: "open" },
+]);
+check(
+  "read to Luke with how what was built went, and never to offer it again",
+  /never offer again what they said did not help/.test(read) &&
+    read.includes(
+      "- COD calls eat the morning (two hours a day): something was built for it, and they say nothing changed"
+    ) &&
+    read.includes("- Wrong sizes go out: still to fix")
+);
+check("none, nothing read", describeProblems([]) === "");
 
 const envFile = process.env.ENV_FILE ?? ".env.local";
 const env = Object.fromEntries(
@@ -101,6 +129,88 @@ try {
     .select("id", { count: "exact", head: true })
     .eq("project_id", project.id);
   check("a line struck is gone", !gone && count === 39);
+
+  console.log("\nwhat hurts them, and a week on: did it help? (0201)");
+  const { error: p1 } = await owner
+    .from("merchant_problems")
+    .insert({ project_id: project.id, problem: "COD calls eat the morning", cost: "two hours a day" });
+  check("the owner keeps a problem under their own rights", !p1);
+  const { error: p2 } = await owner
+    .from("merchant_problems")
+    .insert({ project_id: project.id, problem: "COD calls eat the morning" });
+  check("said twice is one problem", p2?.code === "23505");
+  const { data: seen } = await stranger.from("merchant_problems").select("id").eq("project_id", project.id);
+  check("a stranger sees none of them", (seen ?? []).length === 0);
+
+  // A conversation where they said it, and a build made later in it.
+  const { data: mod } = await admin
+    .from("modules")
+    .insert({ project_id: project.id, name: "cod-calls", nav_label: "COD calls", icon: "table", route: "/cod-calls" })
+    .select("id")
+    .single();
+  const said = async (when, builtDaysAgo) => {
+    const { data: convo } = await admin
+      .from("conversations")
+      .insert({ project_id: project.id, title: "COD", created_by: me.user.id })
+      .select("id")
+      .single();
+    const { data: row } = await admin
+      .from("merchant_problems")
+      .insert({
+        project_id: project.id,
+        conversation_id: convo.id,
+        problem: when,
+        created_at: new Date(Date.now() - (builtDaysAgo + 1) * 86400000).toISOString(),
+      })
+      .select("id")
+      .single();
+    const at = new Date(Date.now() - builtDaysAgo * 86400000).toISOString();
+    await admin.from("messages").insert({
+      conversation_id: convo.id,
+      role: "assistant",
+      content: "",
+      payload: { type: "build", status: "built", made: [mod.id], finished_at: at },
+      created_at: at,
+    });
+    return row.id;
+  };
+  const weekOld = await said("Packing takes all evening", 8);
+  const fresh = await said("Stock runs out unseen", 2);
+  const asked = (await owner.rpc("abo_problem_check_ins", { p_project: project.id })).data ?? [];
+  check(
+    "a fix a week old is asked about, with what was built",
+    asked.some((c) => c.problem_id === weekOld && c.sections?.[0] === "COD calls")
+  );
+  check("one two days old is not yet", !asked.some((c) => c.problem_id === fresh));
+  check(
+    "and anyone else is asked nothing",
+    ((await stranger.rpc("abo_problem_check_ins", { p_project: project.id })).data ?? []).length === 0
+  );
+  const first = await owner.rpc("abo_answer_problem", { p_problem: weekOld, p_answer: "same" });
+  const again = await owner.rpc("abo_answer_problem", { p_problem: weekOld, p_answer: "better" });
+  const { data: answered } = await owner.from("merchant_problems").select("status").eq("id", weekOld).single();
+  check("their answer is kept once", first.data === true && again.data === false && answered?.status === "same");
+  const odd = await owner.rpc("abo_answer_problem", { p_problem: weekOld, p_answer: "fine" });
+  check("an answer that is not better, same or worse is refused", !!odd.error);
+  check(
+    "and the answered one is not asked again",
+    !((await owner.rpc("abo_problem_check_ins", { p_project: project.id })).data ?? []).some(
+      (c) => c.problem_id === weekOld
+    )
+  );
+
+  console.log("\ntwenty problems, then the oldest goes");
+  for (let i = 1; i <= 20; i++) {
+    const { error } = await owner
+      .from("merchant_problems")
+      .insert({ project_id: project.id, problem: `Problem number ${i}` });
+    if (error) throw new Error(`could not insert: ${error.message}`);
+  }
+  const { count: problemsKept } = await owner
+    .from("merchant_problems")
+    .select("id", { count: "exact", head: true })
+    .eq("project_id", project.id);
+  check("twenty are kept", problemsKept === 20);
 } finally {
   await project.remove();
 }

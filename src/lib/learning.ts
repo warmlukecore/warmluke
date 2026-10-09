@@ -606,7 +606,13 @@ export async function afterOwnerTurn(
   const built =
     t.reply.type === "blueprint" ? t.reply.blueprint.plans.length : t.reply.type === "plans" ? t.reply.plans.length : 0;
   await Promise.all([
-    learn(db, { projectId: t.projectId, message: t.message, reply: t.reply, known: t.known }),
+    learn(db, {
+      projectId: t.projectId,
+      conversationId: t.conversationId,
+      message: t.message,
+      reply: t.reply,
+      known: t.known,
+    }),
     (async () => {
       await recordUse(db, { ...where, used: t.learned.used });
       await reflect(db, {

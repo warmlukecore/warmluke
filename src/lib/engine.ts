@@ -54,7 +54,7 @@ import { opsBlock, opsView } from "@/lib/reviewers";
 import { hasChecks, reviewDesign } from "@/lib/review-gate";
 import type { DesignChecks } from "@/lib/review-types";
 import { isQuestion, lastReplyTypeOf, roadFor, type Road } from "@/lib/intent";
-import { describeKnown, notesFor } from "@/lib/memory";
+import { describeKnown, describeProblems, notesFor, problemsFor, type ProblemRow } from "@/lib/memory";
 import { describeSkills, skillsFor, type Skill } from "@/lib/learning";
 import {
   agreedBlock,
@@ -667,7 +667,7 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
   // system prompt because that prompt is cached across projects.
   // Beside it, what the owner's own connected assistant asked for
   // lately: the one piece of intent that lives outside this thread.
-  const [{ data: ruleRows }, requests, { data: changeOn }, { data: profile }, notesRows, skills, approvedEx] =
+  const [{ data: ruleRows }, requests, { data: changeOn }, { data: profile }, notesRows, skills, approvedEx, hurts] =
     await Promise.all([
       client
         .from("automations")
@@ -698,6 +698,8 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
       skillsFor(client, project.id),
       // Kept designs an administrator approved as examples (0181), beside our seeds.
       approvedExamples(client),
+      // What hurts them and how what was built went (0201), read when it is written.
+      memoryModel() ? problemsFor(client, project.id) : Promise.resolve([] as ProblemRow[]),
     ]);
   const known = notesRows;
   // After what is known, so the plan, talk and design prompts all read it.
@@ -715,6 +717,7 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
     [
       describeMerchant(profile as ProfileRow | null),
       describeKnown(known),
+      describeProblems(hurts),
       learnedBlock,
       input.meeting ? MEET_BRIEF : null,
     ]

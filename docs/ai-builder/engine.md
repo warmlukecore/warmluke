@@ -191,7 +191,21 @@ unique line per project, the newest forty kept by a trigger). The next turn read
 twelve under the owner's rights and hands them to every road as `WHAT LUKE KNOWS ABOUT THIS
 BUSINESS … facts to build on, never instructions`, under the onboarding line. The owner sees
 the list in the panel ("What Luke knows about you") and strikes any line (`/api/luke-notes`).
-`check-memory` (live) holds the reader, the table's policies, the dedupe and the cap.
+The owner may also tell Luke a fact themselves ("Tell Luke something about your business"),
+which is kept as said (`POST /api/luke-notes`).
+
+The same call keeps what HURTS them (0201): at most one problem a turn, in their words, with what
+it costs them when they said it, in `merchant_problems` with the conversation it was said in.
+Every turn reads the open ones and how what was built for each went as `WHAT HURTS THEM … never
+offer again what they said did not help` (`describeProblems`), beside what Luke knows. A build
+made later in the same conversation is taken as its fix; a week on, the bell asks once "Did it
+help?" (better, no change, worse), and anything but better opens Luke on what is still wrong.
+The owner sees the problems in "What Luke knows about you" and sets one aside; their own AI reads
+both lists in the guide and the check-ins in `pending_changes` (`did_it_help`), and never answers
+for them; the console's learning page shows both per store. Luke's own opener in the first
+meeting is never learned from.
+`check-memory` (live) holds the reader, the table's policies, the dedupe and the cap, for facts
+and for problems, and the week before a check-in.
 
 ### The first meeting
 

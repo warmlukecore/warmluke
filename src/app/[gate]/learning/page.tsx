@@ -98,6 +98,27 @@ type Store = {
     message_id: string;
     conversation_id: string | null;
   }>;
+  /** What hurts them, and how what was built went (0201); absent before it. */
+  problems?: Array<{
+    id: string;
+    problem: string;
+    cost: string | null;
+    status: "open" | "better" | "same" | "worse" | "dropped";
+    answered_at: string | null;
+    created_at: string;
+    conversation_id: string | null;
+  }>;
+  /** What Luke knows about the business (0131). */
+  notes?: Array<{ note: string; created_at: string }>;
+};
+
+/** How a problem's fix went, as the owner said it. */
+const WENT: Record<string, { label: string; tone: string }> = {
+  open: { label: "Open", tone: "bg-surface-subdued text-fg-muted" },
+  better: { label: "Better", tone: "bg-tone-success text-tone-success-fg" },
+  same: { label: "No change", tone: "bg-tone-attention text-tone-attention-fg" },
+  worse: { label: "Worse", tone: "bg-tone-critical text-tone-critical-fg" },
+  dropped: { label: "Set aside", tone: "bg-surface-subdued text-fg-faint" },
 };
 
 const DAYS: Array<[number, string]> = [
@@ -577,6 +598,51 @@ function StoreLearning({
                         {thread(f.conversation_id)}
                       </p>
                     </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className={`${card} mt-4 overflow-hidden`}>
+            <h2 className="px-5 pt-5 text-[13px] font-medium text-fg">What hurts them</h2>
+            {(s.problems ?? []).length === 0 ? (
+              <p className="px-5 py-4 text-[13px] text-fg-muted">Nothing they have named yet.</p>
+            ) : (
+              <ul className={`${scrollList} mt-2 divide-y divide-line`}>
+                {(s.problems ?? []).map((p) => (
+                  <li key={p.id} className="flex items-start gap-3 px-5 py-2.5">
+                    <span className={`${badge} mt-px ${WENT[p.status]?.tone ?? WENT.open.tone}`}>
+                      {WENT[p.status]?.label ?? "Open"}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] text-fg">
+                        &ldquo;{p.problem}&rdquo;{p.cost ? <span className="text-fg-muted"> · {p.cost}</span> : null}
+                      </p>
+                      <p className="mt-0.5 flex flex-wrap gap-x-1.5 text-xs text-fg-faint">
+                        <span title={new Date(p.created_at).toLocaleString()}>said {ago(p.created_at, now)}</span>
+                        {p.answered_at && <span>· answered {ago(p.answered_at, now)}</span>}
+                        {thread(p.conversation_id)}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className={`${card} mt-4 overflow-hidden`}>
+            <h2 className="px-5 pt-5 text-[13px] font-medium text-fg">What Luke knows about them</h2>
+            {(s.notes ?? []).length === 0 ? (
+              <p className="px-5 py-4 text-[13px] text-fg-muted">No facts kept yet.</p>
+            ) : (
+              <ul className={`${scrollList} mt-2 divide-y divide-line`}>
+                {(s.notes ?? []).map((n, i) => (
+                  <li key={`${n.created_at}-${i}`} className="flex items-baseline gap-3 px-5 py-2">
+                    <span className="min-w-0 flex-1 text-[13px] text-fg">{n.note}</span>
+                    <span className="shrink-0 text-xs text-fg-faint" title={new Date(n.created_at).toLocaleString()}>
+                      {ago(n.created_at, now)}
+                    </span>
                   </li>
                 ))}
               </ul>

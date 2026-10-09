@@ -1417,6 +1417,24 @@ async function handle(req: Request, seen: Seen) {
           })
         )
       ).flat();
+      // Problems they named, a week after something was built for each (0201):
+      // listed so their AI can ask how it went, never answered here.
+      const askHowItWent = (
+        await Promise.all(
+          (wanted ? [wanted] : projectList.map((p) => p.id)).slice(0, 5).map(async (pid) => {
+            const { data } = await db.rpc("abo_problem_check_ins", { p_project: pid });
+            return (
+              (data ?? []) as Array<{ problem: string; cost: string | null; sections: string[]; built_at: string }>
+            ).map((c) => ({
+              app: projectList.find((p) => p.id === pid)?.name ?? null,
+              problem: c.problem,
+              cost: c.cost,
+              built_for_it: c.sections,
+              built_at: c.built_at,
+            }));
+          })
+        )
+      ).flat();
       const buttonPresses = (pressRows ?? []).map((p) => ({
         button: p.action,
         row: p.row_label || null,
@@ -1504,6 +1522,13 @@ async function handle(req: Request, seen: Seen) {
                 waiting_button_presses: buttonPresses,
                 button_presses_note:
                   "A teammate pressed a button the owner approves (a refund, a discount). Only the owner decides, in Warmluke: tell them it waits, never approve it.",
+              }
+            : {}),
+          ...(askHowItWent.length
+            ? {
+                did_it_help: askHowItWent,
+                did_it_help_note:
+                  "Problems they told Luke about, with what was built for each a week or more ago. Ask how it is going; if it has not helped, hear what is still wrong and propose the fix with propose_change. They answer it themselves, in Warmluke's bell.",
               }
             : {}),
           ...(notUsed.length

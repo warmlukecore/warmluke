@@ -99,6 +99,7 @@ import type {
   UiSchema,
   UiSchemaRow,
   FollowUp,
+  ProblemCheckIn,
 } from "@/lib/types";
 import { TITLE_MAX } from "@/lib/types";
 import { Icon } from "@/components/ui/Icon";
@@ -1052,10 +1053,21 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // Until the last conversation is back, the panel shows its shape
   // rather than the welcome of an empty one.
   const [threadOpening, setThreadOpening] = useState(true);
+  // Once it is known whether this is the first conversation (0200): that
+  // one opens its own thread, and an older thread opened over it (one their
+  // AI started, say) left Luke never saying hello (9 Oct). Not again after
+  // it either: its thread is the one on screen.
+  const latestOpened = useRef(false);
   useEffect(() => {
+    if (meeting === null || latestOpened.current) return;
+    latestOpened.current = true;
+    if (meeting) {
+      setThreadOpening(false);
+      return;
+    }
     setThreadOpening(true);
     loadThread(undefined, true).finally(() => setThreadOpening(false));
-  }, [loadThread]);
+  }, [loadThread, meeting]);
 
   /**
    * Records that a change was applied, in the thread itself.
@@ -3311,9 +3323,15 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
 
   // Builds of theirs nobody has used since, asked about once (0190): read on opening the app.
   const [followUps, setFollowUps] = useState<FollowUp[]>([]);
+  // Problems they named, a week after something was built for each (0201).
+  const [checkIns, setCheckIns] = useState<ProblemCheckIn[]>([]);
   useEffect(() => {
     void supabase.rpc("abo_follow_ups", { p_project: projectId }).then(({ data, error }) => {
       if (!error) setFollowUps((data ?? []) as FollowUp[]);
+    });
+    // Before 0201 there is no such function, and nothing is asked.
+    void supabase.rpc("abo_problem_check_ins", { p_project: projectId }).then(({ data, error }) => {
+      if (!error) setCheckIns((data ?? []) as ProblemCheckIn[]);
     });
   }, [projectId]);
 
@@ -3902,6 +3920,23 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       const what = f.sections.length ? f.sections.join(" and ") : (f.title ?? "what you built");
       askLukeToWatch(
         `The ${what} you built for me on ${new Date(f.built_at).toLocaleDateString(undefined, { day: "numeric", month: "short" })} isn't what I meant. Ask me what's off, then fix it.`
+      );
+    }
+    return null;
+  };
+  /**
+   * How what was built for a problem went, in their words (0201): kept,
+   * and read by Luke from then on. Anything but better opens him on what
+   * is still wrong, rather than leaving the answer as a mark on a chart.
+   */
+  const answerCheckIn = async (c: ProblemCheckIn, answer: "better" | "same" | "worse"): Promise<string | null> => {
+    const { error } = await supabase.rpc("abo_answer_problem", { p_problem: c.problem_id, p_answer: answer });
+    if (error) return error.code === "PGRST202" ? "This app cannot keep that answer yet." : "That didn't go through.";
+    setCheckIns((prev) => prev.filter((x) => x.problem_id !== c.problem_id));
+    if (answer !== "better") {
+      const what = c.sections.length ? c.sections.join(" and ") : "what you built";
+      askLukeToWatch(
+        `The ${what} you built for "${c.problem}" ${answer === "worse" ? "made it worse" : "hasn't changed it"}. Ask me what's still going wrong, then fix it.`
       );
     }
     return null;
@@ -4827,6 +4862,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 }))}
                 onApproval={decideApproval}
                 followUps={followUps}
+                checkIns={checkIns}
+                onCheckIn={answerCheckIn}
                 onFollowUp={answerFollowUp}
                 onEmpty={countSignals}
                 onReadSection={readSection}

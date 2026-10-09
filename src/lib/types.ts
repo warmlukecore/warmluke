@@ -628,6 +628,17 @@ export type UsageJob =
   | "fill";
 
 /** A build nobody has used since, asked about once (abo_follow_ups, 0190). */
+/** A problem they named, a week after something was built for it (0201): did it help? */
+export type ProblemCheckIn = {
+  problem_id: string;
+  problem: string;
+  cost: string | null;
+  built_at: string;
+  conversation_id: string;
+  /** The sections the fix made, as the sidebar names them. */
+  sections: string[];
+};
+
 export type FollowUp = {
   build_id: string;
   built_at: string;

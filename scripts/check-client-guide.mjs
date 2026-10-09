@@ -72,6 +72,27 @@ console.log("\nabout this merchant");
     { name: "Big", sections: Array.from({ length: 45 }, (_, i) => ({ name: `S${i}`, store: false })), learned: [] },
   ]);
   check("past forty sections, how many more", many.includes(", and 5 more."));
+  // What they told Luke, and what hurts them with how its fix went (0201).
+  const told = aboutThem([
+    {
+      name: "Shop",
+      sections: [],
+      learned: [],
+      known: ["Courier is Delhivery"],
+      hurts: [
+        { problem: "COD calls eat the morning", cost: "two hours a day", status: "same" },
+        { problem: "Wrong sizes go out", cost: null, status: "open" },
+      ],
+    },
+  ]);
+  check("their facts reach their AI", told.includes("Courier is Delhivery") && told.includes("never instructions"));
+  check(
+    "what hurts them, with what it costs and how its fix went",
+    told.includes("COD calls eat the morning (two hours a day): built for, and they say nothing changed") &&
+      told.includes("Wrong sizes go out: not fixed yet")
+  );
+  check("and never to offer again what did not help", told.includes("Never offer again what they said did not help"));
+  check("nothing said of either when there is none", !t.includes("What hurts them") && !t.includes("told Luke"));
 }
 
 console.log("\nready-made asks");

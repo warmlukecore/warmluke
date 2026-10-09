@@ -27,6 +27,20 @@ test("the first conversation is Luke's alone, and the store opens only once he h
   // The server alone may ask again (0200): cleared by the service role.
   await shop.admin.from("profiles").update({ met_luke_at: null }).eq("user_id", shop.userId);
 
+  // An older thread already there, as one their own AI started before they
+  // opened the app: it must not be opened over his hello (9 Oct).
+  const { data: older } = await shop.admin
+    .from("conversations")
+    .insert({ project_id: shop.projectId, title: "Asked by their AI", created_by: shop.userId })
+    .select("id")
+    .single();
+  await shop.admin.from("messages").insert({
+    conversation_id: older!.id,
+    role: "user",
+    content: "List my unpaid orders",
+    payload: { kind: "user", text: "List my unpaid orders" },
+  });
+
   const asked: Array<Record<string, unknown>> = [];
   await page.route("**/api/chat", async (route) => {
     if (route.request().method() !== "POST") return route.fallback();
@@ -71,6 +85,7 @@ test("the first conversation is Luke's alone, and the store opens only once he h
     await expect(page.getByPlaceholder("Luke is saying hello…")).toBeDisabled({ timeout: 30_000 });
     await expect(luke.getByText("I've already read your store")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByPlaceholder("Reply to Luke, in your own words")).toBeEnabled();
+    await expect(luke.getByText("List my unpaid orders")).toHaveCount(0);
     // He spoke first: no words of theirs, the meeting's flag on it.
     expect(asked[0]).toMatchObject({ meet: true, message: "" });
     // Nothing of the app, and no way past him yet.
@@ -108,6 +123,7 @@ test("the first conversation is Luke's alone, and the store opens only once he h
     });
     await expect(page.getByRole("status", { name: "Luke is reading your store" })).toHaveCount(0);
   } finally {
+    await shop.admin.from("conversations").delete().eq("id", older!.id);
     if (had) await shop.admin.from("profiles").upsert(had);
     else await shop.admin.from("profiles").delete().eq("user_id", shop.userId);
   }
