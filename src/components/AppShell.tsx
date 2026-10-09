@@ -3718,6 +3718,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           await loadThread(thread);
           return;
         }
+        // Anything already on screen is theirs: never cleared for his hello.
+        if (conversationIdRef.current) return;
         startNewThread();
         if (pending) {
           setChatMessages([{ id: nextChatId(), role: "user", text: pending }]);

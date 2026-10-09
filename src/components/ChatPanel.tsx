@@ -5251,6 +5251,10 @@ export default function ChatPanel({
                     <textarea
                       ref={inputRef}
                       value={input}
+                      // The first conversation: Luke speaks first. Typed into
+                      // before his first words, it raced his opener into a
+                      // second thread (9 Oct); an error line opens it again.
+                      disabled={!!meeting && !messages.some((m) => m.role !== "user")}
                       onChange={(e) => {
                         setInput(e.target.value);
                         setStrokes((n) => n + 1);
@@ -5269,7 +5273,13 @@ export default function ChatPanel({
                         }
                       }}
                       rows={1}
-                      placeholder={meeting ? "Reply to Luke, in your own words" : LUKE_COPY.placeholder}
+                      placeholder={
+                        meeting
+                          ? messages.some((m) => m.role !== "user")
+                            ? "Reply to Luke, in your own words"
+                            : "Luke is saying hello…"
+                          : LUKE_COPY.placeholder
+                      }
                       className="max-h-40 flex-1 resize-none bg-transparent py-0.5 text-[13px] leading-6 text-fg outline-none placeholder:text-fg-faint"
                     />
                     <button

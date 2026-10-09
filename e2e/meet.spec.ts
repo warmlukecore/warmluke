@@ -31,6 +31,8 @@ test("the first conversation is Luke's alone, and the store opens only once he h
   await page.route("**/api/chat", async (route) => {
     if (route.request().method() !== "POST") return route.fallback();
     asked.push(route.request().postDataJSON() as Record<string, unknown>);
+    // His first words take a moment, as they do: long enough to be seen waiting.
+    if (asked.length === 1) await new Promise((r) => setTimeout(r, 1500));
     const reply =
       asked.length === 1
         ? {
@@ -65,7 +67,10 @@ test("the first conversation is Luke's alone, and the store opens only once he h
   try {
     await page.goto(`/app/${shop.projectId}`);
     const luke = page.getByRole("complementary", { name: "Luke" });
+    // Nothing to type into before he has spoken: typed into, it raced his hello into a second thread.
+    await expect(page.getByPlaceholder("Luke is saying hello…")).toBeDisabled({ timeout: 30_000 });
     await expect(luke.getByText("I've already read your store")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByPlaceholder("Reply to Luke, in your own words")).toBeEnabled();
     // He spoke first: no words of theirs, the meeting's flag on it.
     expect(asked[0]).toMatchObject({ meet: true, message: "" });
     // Nothing of the app, and no way past him yet.
