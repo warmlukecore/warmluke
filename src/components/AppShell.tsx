@@ -752,9 +752,14 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
    * can still be approved.
    */
   const loadThread = useCallback(
-    async (id?: string, openLatest = false) => {
+    async (id?: string, openLatest = false, asChoice = true) => {
       // Opening one by name is itself a choice; the rest only follow one.
-      const chosen = id ? ++threadChosen.current : threadChosen.current;
+      // A refresh of the one open, or a thread opened for them, is not a
+      // choice: counted as one, the open thread's refresh as an answer
+      // landed overtook the thread they had just opened, still loading,
+      // and put them back in the one they had left (CI, 10 Oct).
+      const chosen = id && asChoice ? ++threadChosen.current : threadChosen.current;
+      const was = conversationIdRef.current;
       const { data } = await supabase.auth.getSession();
       const token = data.session?.access_token;
       // Opening the app used to list the threads and leave the panel
@@ -790,6 +795,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       // land after it on a slow load and wipe it from view mid-turn.
       if (!id && chatMessagesRef.current.length > 0) return;
       if (threadChosen.current !== chosen) return;
+      // Not theirs to choose: only while they are still where it found them.
+      if (!asChoice && conversationIdRef.current !== was) return;
       rememberConversation(json.conversationId);
 
       const rebuilt: ChatMessage[] = [];
@@ -1063,7 +1070,11 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   useEffect(() => {
     if (meeting === null || latestOpened.current) return;
     latestOpened.current = true;
-    if (meeting) {
+    // Nor when they have already said where they are while it was being
+    // known: a thread opened, a new one, something sent. Set out after
+    // that, the newest thread came back over the one they had just opened
+    // (CI, 10 Oct); the stale-load guard only catches loads set out before.
+    if (meeting || threadChosen.current > 0) {
       setThreadOpening(false);
       return;
     }
@@ -2327,11 +2338,11 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           // again. An answer that landed while the network was down showed
           // only after a refresh (7 Oct).
           if (!id) {
-            if (open) loadThread(open).catch(() => {});
+            if (open) loadThread(open, false, false).catch(() => {});
             return;
           }
           if (id === open) {
-            loadThread(id).catch(() => {});
+            loadThread(id, false, false).catch(() => {});
             return;
           }
           // Renamed, not written in: its time did not move, so there is
@@ -2349,7 +2360,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           // and its answer waits there, in the list.
           if (ownThreads.current.has(id)) return;
           if (!awaitingAnswer(chatMessagesRef.current)) {
-            loadThread(id).catch(() => {});
+            loadThread(id, false, false).catch(() => {});
           }
         },
       },
@@ -2733,7 +2744,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         const at = msgs.findLastIndex((m) => m.role === "user" && (m.payload?.text ?? "").trim() === question.trim());
         const found = thread ?? saved?.conversationId ?? null;
         if (found && at >= 0 && msgs.slice(at + 1).some((m) => m.role !== "user")) {
-          if (!busyRef.current && conversationIdRef.current === thread) loadThread(found).catch(() => {});
+          if (!busyRef.current && conversationIdRef.current === thread) loadThread(found, false, false).catch(() => {});
           return;
         }
         if (++tries < 24) setTimeout(look, 5000);

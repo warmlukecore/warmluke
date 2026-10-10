@@ -206,6 +206,17 @@ test("an answer stays in the thread it was asked in, when the owner goes to anot
     "hello there"
   );
   const asked = "Which orders are still waiting for payment?";
+  // Going back to the other thread is slow on purpose: the answer lands
+  // first, and the open thread's refresh must not overtake the one they
+  // chose (CI, 10 Oct: it put them back in the thread they had left).
+  let opens = 0;
+  await page.route(
+    (u) => u.pathname === "/api/chat" && u.searchParams.get("id") === other,
+    async (r) => {
+      if (++opens === 2) await new Promise((s) => setTimeout(s, 4000));
+      await r.continue();
+    }
+  );
   try {
     await page.goto(`/app/${shop.projectId}`);
     const { panel, box } = await luke(page);
