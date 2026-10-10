@@ -17,7 +17,8 @@
 //
 // Callers: src/app/api/chat/route.ts.
 
-import { getWritable } from "workflow";
+import { FatalError, getWritable } from "workflow";
+import { ModelError } from "@/lib/ai";
 import { runTurn, type TurnResult, type TurnState } from "@/lib/engine";
 import { lukeSettings, modelFor } from "@/lib/luke-models";
 import { clientForToken } from "@/lib/supabase-server";
@@ -75,6 +76,15 @@ async function projectOf(job: DurableTurn) {
   if (error || !data) throw new Error(error?.message ?? "The project is not there.");
   return { client, proj: data as ProjectRow };
 }
+
+/**
+ * What a leg throws. The model refused or not there (a key, the account,
+ * busy) is said once, as itself: retried, the runtime tried it four times
+ * and handed on only "Step exceeded max retries", so the owner read
+ * "kept failing its own checks" for a refused key (10 Oct). Anything
+ * else is retried as before.
+ */
+export const stepError = (e: unknown) => (e instanceof ModelError ? new FatalError(e.message) : e);
 
 /** One leg: the turn from where it stood, until it ends or has to hand on. */
 async function turnLeg(job: DurableTurn, state: TurnState | null): Promise<Leg> {
@@ -165,6 +175,8 @@ async function turnLeg(job: DurableTurn, state: TurnState | null): Promise<Leg> 
       })
     );
     return { turn, usage: took(), steps };
+  } catch (e) {
+    throw stepError(e);
   } finally {
     clearInterval(watch);
     // The draft still waiting goes out: the reply comes in a later step,

@@ -669,6 +669,22 @@ try {
   console.error = realError;
 }
 
+// A durable turn's leg (workflows/luke-turn.ts): retried, the runtime
+// handed on only "Step exceeded max retries" and the owner read "kept
+// failing its own checks" for a refused key (10 Oct). Said once, as itself.
+{
+  const { stepError } = await import("../src/workflows/luke-turn.ts");
+  const { FatalError } = await import("workflow");
+  const refused = new ModelError("auth", "anthropic", 401, "invalid x-api-key");
+  const out = stepError(refused);
+  check(
+    "a refused key leaves a durable leg at once, saying so",
+    FatalError.is(out) && out.message === refused.message && modelErrorKindOf(out.message) === "auth"
+  );
+  const other = new Error("socket hang up");
+  check("anything else is still retried", stepError(other) === other);
+}
+
 console.log(
   fails.length === 0 ? "\nwhen the model is not there, the merchant reads one sentence" : `\n${fails.length} FAILED`
 );
