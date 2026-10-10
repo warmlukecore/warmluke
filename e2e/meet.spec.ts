@@ -1,13 +1,14 @@
 // Luke meets them first (0200, 9 Oct): a new owner's app opens on Luke,
 // full screen, before anything else. He speaks first, nothing of the app
-// is there and there is no way past him until he has helped; once he has,
-// the store is theirs to open and he moves aside, beside it. His replies
-// are stood in here: what is checked is the screen, not his words.
+// is there and no button leads out; once he has helped he asks whether to
+// open their store, and their yes ("open_store" on his answer) lets them
+// in, Luke beside it. His replies are stood in here: what is checked is
+// the screen, not his words.
 import { expect, test } from "./shop";
 
 const THREAD = "00000000-0000-4000-8000-00000000c0de";
 
-test("the first conversation is Luke's alone, and the store opens only once he has helped", async ({
+test("the first conversation is Luke's alone, and the store opens on their yes to his offer", async ({
   signedIn: page,
   shop,
 }) => {
@@ -60,11 +61,14 @@ test("the first conversation is Luke's alone, and the store opens only once he h
               },
             ],
           }
-        : {
-            type: "answer",
-            kind: "store",
-            message: "That fits what I see: **2** of your 10 orders are cash on delivery and still unpaid.",
-          };
+        : asked.length === 2
+          ? {
+              type: "answer",
+              kind: "store",
+              message:
+                "That fits what I see: **2** of your 10 orders are cash on delivery and still unpaid. Want to see your store now?",
+            }
+          : { type: "answer", kind: "conversation", message: "Here it is.", open_store: true };
     await route.fulfill({
       status: 200,
       headers: { "content-type": "application/x-ndjson" },
@@ -88,23 +92,23 @@ test("the first conversation is Luke's alone, and the store opens only once he h
     await expect(luke.getByText("List my unpaid orders")).toHaveCount(0);
     // He spoke first: no words of theirs, the meeting's flag on it.
     expect(asked[0]).toMatchObject({ meet: true, message: "" });
-    // Nothing of the app, and no way past him yet.
+    // Nothing of the app, and no way past him but him.
     await expect(page.getByRole("link", { name: "Overview" })).toBeHidden();
-    await expect(page.getByRole("button", { name: "Open my store" })).toHaveCount(0);
     for (const name of [/History/, /New conversation/, "Close Luke", "Hide Luke's panel", /Luke full width/])
       await expect(luke.getByRole("button", { name })).toHaveCount(0);
 
-    // His hello read from the store is not help; an answer from it, to their own question, is.
+    // Having helped, he asks in words whether to open their store: no button
+    // out (10 Oct), and still nothing of the app until they say yes.
     await luke.getByText("Calling COD customers").click();
     await luke.getByRole("button", { name: /Send answer/ }).click();
-    await expect(luke.getByText("That fits what I see")).toBeVisible();
+    await expect(luke.getByText("Want to see your store now?")).toBeVisible();
     expect(asked[1]).toMatchObject({ meet: true });
-    const open = page.getByRole("button", { name: "Open my store" });
-    await expect(open).toBeVisible();
+    await expect(page.getByRole("link", { name: "Overview" })).toBeHidden();
+    await expect(page.getByRole("button", { name: /Open my store/ })).toHaveCount(0);
 
-    // In: Luke beside the store, and never asked again.
-    await open.click();
-    await expect(open).toHaveCount(0);
+    // Their yes, his "open_store": in, Luke beside the store, and never asked again.
+    await page.getByPlaceholder("Reply to Luke, in your own words").fill("haan dikhao");
+    await page.keyboard.press("Enter");
     // The Overview's counts, as luke.spec waits for them on a busy check database.
     await expect(page.getByRole("heading", { name: /Good (morning|afternoon|evening), Asha/ })).toBeVisible({
       timeout: 30_000,

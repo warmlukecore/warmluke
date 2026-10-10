@@ -557,6 +557,8 @@ export type AssistantReply =
         next?: NextStep[];
         /** Done on the section open as this is said (lib/screen.ts): read by code, never saved. */
         show?: ScreenShown;
+        /** The first meeting only: they said yes to seeing their store, and the app lets them in (lib/meet). */
+        open_store?: boolean;
         /** On a proposal, what was understood, so their yes builds exactly that (lib/plan DesignIntent). */
         understood?: unknown;
         grounding?: {

@@ -45,7 +45,6 @@ import { changeShown } from "@/lib/change-preview";
 import { Icon } from "@/components/ui/Icon";
 import {
   ArrowDown,
-  ArrowRight,
   ArrowUp,
   Bell,
   Check,
@@ -2530,11 +2529,11 @@ export default function ChatPanel({
   wide?: boolean;
   /**
    * The owner's first conversation (0200): Luke alone, with nothing of the
-   * app around him and no way past him until he has helped (`ready`), when
-   * the store is offered (`onEnter`). `reading` names their shop while he
-   * reads it, before his first words.
+   * app around him. No button out: once he has helped he asks, in words,
+   * whether to open their store, and their yes opens it (10 Oct, AppShell).
+   * `reading` names their shop while he reads it, before his first words.
    */
-  meeting?: { ready: boolean; onEnter: () => void; reading?: string | null };
+  meeting?: { reading?: string | null };
   /** Luke alone, or back to the three panes. */
   onWide?: () => void;
   /** Shuts the docked panel on a wide screen; Ask Luke then floats over the page. */
@@ -4961,25 +4960,6 @@ export default function ChatPanel({
                     </div>
                   )}
                 </div>
-                {/* Once Luke has helped (an answer from their own store, or a build),
-            the store is theirs to open; never before, and never mid-reply. */}
-                {meeting?.ready && !busy && (
-                  <div
-                    role="region"
-                    aria-label="Your store is ready"
-                    className="rise mt-6 flex flex-col items-center gap-4 rounded-card border border-line bg-surface-subdued px-5 py-5 text-center sm:flex-row sm:text-left"
-                    style={RISE}
-                  >
-                    <LukeMark />
-                    <p className="min-w-0 flex-1 text-sm leading-relaxed text-fg-muted">
-                      Your store is ready. I&rsquo;ll be right beside it, whenever you need me.
-                    </p>
-                    <button onClick={meeting.onEnter} className={`${button("primary")} shrink-0`}>
-                      Open my store
-                      <ArrowRight aria-hidden size={15} strokeWidth={2} />
-                    </button>
-                  </div>
-                )}
                 {/* The room kept below a sent message for its reply (see pin). */}
                 <div ref={spacerRef} aria-hidden />
                 {/* Held at the foot of the list while the newest is out of view;

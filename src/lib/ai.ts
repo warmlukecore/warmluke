@@ -3236,7 +3236,9 @@ function parseShape(
       // More to offer after a question about the store than after a hello.
       const next = asNextSteps(parsed.next, [], kind === "store" ? 4 : 2);
       // grounding is attached by the caller, which knows what it read.
-      return { ok: true, reply: { type: "answer", kind, message, ...(next ? { next } : {}) } };
+      // Their yes to seeing their store, in the first meeting (lib/meet): the app lets them in.
+      const open = parsed.open_store === true ? { open_store: true } : {};
+      return { ok: true, reply: { type: "answer", kind, message, ...(next ? { next } : {}), ...open } };
     }
     case "clarify":
       return parseClarify(parsed);

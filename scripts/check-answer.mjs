@@ -80,6 +80,15 @@ console.log("a reply that is an answer");
     null
   );
   check("and so is a greeting", hello.ok && hello.reply.kind === "conversation");
+  // The first meeting's way out is their yes to his offer (lib/meet, 10 Oct).
+  const yes = parseReply(
+    JSON.stringify({ type: "answer", kind: "conversation", message: "Here it is.", open_store: true }),
+    [],
+    null,
+    null
+  );
+  check("their yes to seeing the store is kept on the answer", yes.ok && yes.reply.open_store === true);
+  check("and an answer says nothing of it unless asked", hello.ok && !("open_store" in hello.reply));
   const made = parseReply(JSON.stringify({ type: "answer", kind: "oracle", message: "..." }), [], null, null);
   check("a kind the contract does not name is refused", made.ok === false);
 }

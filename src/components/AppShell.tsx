@@ -399,6 +399,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   const [meeting, setMeeting] = useState<boolean | null>(null);
   const meetingRef = useRef(false);
   meetingRef.current = meeting === true;
+  /** Into the store (enterStore, below), for a reply that arrives before it is defined. */
+  const enterStoreRef = useRef<() => void>(() => {});
   // Just let in: the store and the sidebar rise in as Luke moves aside.
   const [handedOff, setHandedOff] = useState(false);
   useEffect(() => {
@@ -2925,6 +2927,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           ]);
           // Done on their screen as it is said (lib/screen.ts).
           if (reply.show?.said) showOnScreen(reply.show);
+          // The first meeting: Luke asked whether to open their store and
+          // they said yes (lib/meet). No button out; his words, then in.
+          if (reply.open_store && meetingRef.current) setTimeout(() => enterStoreRef.current(), 1200);
           return;
         }
 
@@ -3753,15 +3758,6 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bootstrapped, loading, meeting]);
 
-  // Luke has helped: answered them from their store, or built something,
-  // after they said something back to his hello. The hello is his first
-  // answer, whatever it answered: a failed opener left it to their "hi",
-  // and the store's door showed before they had said a word (10 Oct).
-  const hello = chatMessages.findIndex((m) => m.role === "assistant" && !m.answering);
-  const answered = hello < 0 ? -1 : chatMessages.findIndex((m, i) => i > hello && m.role === "user");
-  const helped =
-    chatMessages.some((m) => m.built?.status === "built" || !!m.undo) ||
-    (answered >= 0 && chatMessages.slice(answered + 1).some((m) => m.role === "assistant" && m.fromStore));
   /** Into the store, once: Luke moves aside, beside it, the same conversation with him. */
   const enterStore = useCallback(() => {
     // Sent, not awaited: they are let in at once. A query only goes when
@@ -3780,6 +3776,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     else shutLuke(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, focus]);
+  enterStoreRef.current = enterStore;
   const stage = meeting === true;
 
   const isEmpty = !loading && modules.length === 0;
@@ -4893,7 +4890,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 wide={stage || focus === "luke"}
                 onWide={stage ? undefined : () => focusOn(focus === "luke" ? null : "luke")}
                 onHide={!stage && focus === null ? hideLuke : undefined}
-                meeting={stage ? { ready: helped, onEnter: enterStore, reading: project?.name ?? null } : undefined}
+                meeting={stage ? { reading: project?.name ?? null } : undefined}
                 onWaiting={setWaiting}
                 alerts={alerts ?? []}
                 alertsAt={alertsAt}
