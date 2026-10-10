@@ -1908,6 +1908,14 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   }, [loadedSource, store, storeActionsOn, isOwner]);
 
   /**
+   * Bumped as each batch of store changes is asked for here (a section's
+   * ticked rows, editing in place, Undo), so the bell reads them at once:
+   * left to the realtime channel, a put-back waiting for their yes never
+   * reached it on CI's runner (10 Oct), as a dropped connection would.
+   */
+  const [shopAsked, setShopAsked] = useState(0);
+
+  /**
    * Changes to the store, asked as Luke's and their AI's are (POST
    * /api/store-actions, ask), in pieces of at most MOST_TARGETS: what went,
    * what waits and what did not, in one sentence, and the rows of what did
@@ -1969,6 +1977,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         errors.length ? `${errors.length === 1 ? "one" : errors.length} not done: ${errors[0]}` : "",
         ...left,
       ].filter(Boolean);
+      // The bell reads what was just asked now, not when realtime says.
+      setShopAsked((n) => n + 1);
       // One full stop, whatever Shopify's own words ended with.
       return { said: `${parts.join("; ").replace(/\.+$/, "")}.`, keep: [...keep], undo };
     },
@@ -2016,6 +2026,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           : "",
         errors.length ? `${errors.length === 1 ? "one" : errors.length} not put back: ${errors[0]}` : "",
       ].filter(Boolean);
+      setShopAsked((n) => n + 1);
       const said = `${parts.join("; ").replace(/\.+$/, "")}.`;
       return { said: said.charAt(0).toUpperCase() + said.slice(1), again };
     },
@@ -4903,6 +4914,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 onHide={!stage && focus === null ? hideLuke : undefined}
                 meeting={stage ? { reading: project?.name ?? null } : undefined}
                 onWaiting={setWaiting}
+                shopAsked={shopAsked}
                 alerts={alerts ?? []}
                 alertsAt={alertsAt}
                 onAskAlert={askAboutAlert}

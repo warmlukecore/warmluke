@@ -2498,6 +2498,7 @@ export default function ChatPanel({
   onFix,
   autoBuild,
   onWaiting,
+  shopAsked = 0,
   alerts,
   alertsAt,
   onAskAlert,
@@ -2553,6 +2554,8 @@ export default function ChatPanel({
    * behind a drawer nobody has a reason to open.
    */
   onWaiting?: (count: number) => void;
+  /** Bumped as store changes are asked for from a section: the bell reads them at once. */
+  shopAsked?: number;
   /** What Luke noticed in the store (0163), the worst first. */
   alerts: Alert[];
   /** When they were read, for "since 2 h ago". */
@@ -2873,6 +2876,10 @@ export default function ChatPanel({
   useEffect(() => {
     if (proposedNow > 0) loadShopChanges();
   }, [proposedNow, loadShopChanges]);
+  // Asked for from a section, ticked rows or Undo: the same, read now.
+  useEffect(() => {
+    if (shopAsked > 0) loadShopChanges();
+  }, [shopAsked, loadShopChanges]);
   useEffect(
     () =>
       watchRows(`shop-changes:${projectId}`, [

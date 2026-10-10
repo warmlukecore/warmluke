@@ -187,7 +187,9 @@ test("a connection that drops mid-answer: the answer lands where it was asked, w
     );
     await box.fill("Which orders are still waiting for payment?");
     await box.press("Enter");
-    await expect(panel.getByText(/The connection dropped/)).toBeVisible({ timeout: TURN_MS });
+    // Said, or already overtaken by the answer itself: on a fast runner the
+    // thread's refresh replaced the line within 25ms of it (CI, 10 Oct).
+    await expect(panel.getByText(/The connection dropped|#1006/).first()).toBeVisible({ timeout: TURN_MS });
     await expect(panel.getByText(/#1006/).last()).toBeVisible({ timeout: 30_000 });
     await expect(panel.getByText("Which orders are still waiting for payment?")).toHaveCount(1);
   } finally {
