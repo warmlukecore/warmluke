@@ -8,7 +8,8 @@
 // does not: all a turn needs travels as a TurnJob, plain data.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { modelErrorKindOf, type ChatTurn } from "@/lib/ai";
+import { FatalError } from "workflow";
+import { ModelError, modelErrorKindOf, type ChatTurn } from "@/lib/ai";
 import { NOT_ANSWERED, answeredTurns, type TurnResult } from "@/lib/engine";
 import { noteJudgement } from "@/lib/judge";
 import { afterOwnerTurn } from "@/lib/learning";
@@ -211,6 +212,15 @@ export async function settleAnswer(
  * checks failed, not their words: "ask again, in other words" told them it
  * was theirs (Carefone, 6 Oct). Read by the MCP road too (client-turn).
  */
+/**
+ * What a durable turn's leg throws (workflows/luke-turn.ts). The model
+ * refused or not there (a key, the account, busy) is said once, as itself:
+ * retried, the runtime tried it four times and handed on only "Step
+ * exceeded max retries", so the owner read "kept failing its own checks"
+ * for a refused key (10 Oct). Anything else is retried as before.
+ */
+export const stepError = (e: unknown) => (e instanceof ModelError ? new FatalError(e.message) : e);
+
 export const UNFINISHED =
   "Luke couldn't finish this one: it kept failing its own checks, so nothing was changed. Ask again; if it fails a second time, say it another way.";
 

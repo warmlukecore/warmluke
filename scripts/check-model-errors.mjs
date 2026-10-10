@@ -673,7 +673,7 @@ try {
 // handed on only "Step exceeded max retries" and the owner read "kept
 // failing its own checks" for a refused key (10 Oct). Said once, as itself.
 {
-  const { stepError } = await import("../src/workflows/luke-turn.ts");
+  const { stepError } = await import("../src/lib/turn-run.ts");
   const { FatalError } = await import("workflow");
   const refused = new ModelError("auth", "anthropic", 401, "invalid x-api-key");
   const out = stepError(refused);
