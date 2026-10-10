@@ -222,8 +222,8 @@ brief lets the talk road describe what could be built but hand a build back only
 owner asks for one, in any words (a yes to an idea, "bana do"). Their problem, a wish or an
 answer is not that. No other turn reads the brief, so recorded turns
 replay unchanged. The way into the store appears only once Luke has helped: an answer of kind
-`store` to one of their own questions, or a build (his hello, read from the store, is not
-help). Entering stamps `met_luke_at` (once, by the database; only the service role may clear
+`store` after they have said something back to his hello, or a build (his hello, his first
+answer whatever it answered, is not help). Entering stamps `met_luke_at` (once, by the database; only the service role may clear
 it), Luke moves into the side panel with the same conversation, and the tour runs after.
 
 Luke test (0202, temporary): an administrator turns it on for an account in the console's

@@ -3753,13 +3753,15 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bootstrapped, loading, meeting]);
 
-  // Luke has helped: answered one of their own questions from their store,
-  // or built something. His first words, read from the store, do not count:
-  // they are the hello, not the help.
-  const firstAsked = chatMessages.findIndex((m) => m.role === "user");
+  // Luke has helped: answered them from their store, or built something,
+  // after they said something back to his hello. The hello is his first
+  // answer, whatever it answered: a failed opener left it to their "hi",
+  // and the store's door showed before they had said a word (10 Oct).
+  const hello = chatMessages.findIndex((m) => m.role === "assistant" && !m.answering);
+  const answered = hello < 0 ? -1 : chatMessages.findIndex((m, i) => i > hello && m.role === "user");
   const helped =
     chatMessages.some((m) => m.built?.status === "built" || !!m.undo) ||
-    (firstAsked >= 0 && chatMessages.slice(firstAsked + 1).some((m) => m.role === "assistant" && m.fromStore));
+    (answered >= 0 && chatMessages.slice(answered + 1).some((m) => m.role === "assistant" && m.fromStore));
   /** Into the store, once: Luke moves aside, beside it, the same conversation with him. */
   const enterStore = useCallback(() => {
     // Sent, not awaited: they are let in at once. A query only goes when

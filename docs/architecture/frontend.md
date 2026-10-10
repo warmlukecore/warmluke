@@ -263,8 +263,8 @@ After "Open Warmluke", a new owner's app opens on the first conversation with Lu
 `AppShell` reads `profiles.met_luke_at` and, while it is empty, shows `ChatPanel` alone and
 edge to edge (`meeting`: no frame, pane corners or dividers, the box at the foot as a chat
 app's), with no sidebar, section, panel controls or way past him. Luke
-speaks first; "Open my store" appears once he has answered from their store or built
-something, and entering moves him into the side panel with the same thread, the store rising
+speaks first; "Open my store" appears once they have said something back to his hello (his
+first answer, whatever it answered) and he has answered from their store or built something, and entering moves him into the side panel with the same thread, the store rising
 in beside him, the tour after. A refresh or another device resumes the same thread.
 While a newly connected store imports, a
 "preparing" state shows its progress. Which step is shown is computed from what is true
