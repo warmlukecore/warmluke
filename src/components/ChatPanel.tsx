@@ -3526,7 +3526,8 @@ export default function ChatPanel({
         className={`fixed inset-y-0 right-0 z-40 flex w-full ${meeting ? "max-w-none border-l-0" : "max-w-[420px] border-l"} shrink-0 flex-col overflow-hidden border-line bg-surface ${
           docked
             ? // Its edge does not clip, so the resize handle in the gap beside it shows and can be taken hold of.
-              `lg:relative lg:max-w-none lg:translate-x-0 lg:overflow-visible lg:rounded-pane lg:border-l-0 lg:shadow-card ${
+              // The first meeting fills the screen: no pane's corners or shadow.
+              `lg:relative lg:max-w-none lg:translate-x-0 lg:overflow-visible lg:border-l-0 ${meeting ? "" : "lg:rounded-pane lg:shadow-card"} ${
                 tucked
                   ? // The gap beside it given back too, so the section reaches the edge.
                     "lg:invisible lg:-ml-2 lg:w-0 lg:opacity-0 lg:shadow-none"
@@ -3561,7 +3562,7 @@ export default function ChatPanel({
           <div className={`flex min-h-0 flex-1 flex-col ${docked && !wide ? "lg:w-[var(--chat-w)] lg:shrink-0" : ""}`}>
             {/* The header holds the bell's and History's popovers, so they open
                 inside the panel's edges, however narrow it is dragged. */}
-            <div className="relative border-b border-line px-4 py-3">
+            <div className={`relative px-4 py-3 ${meeting ? "" : "border-b border-line"}`}>
               <div className={`flex items-center gap-2 ${meeting ? "mx-auto w-full max-w-3xl" : ""}`}>
                 <LukeMark state={busy ? "thinking" : "idle"} />
                 <div className="min-w-0">
@@ -5373,7 +5374,8 @@ export default function ChatPanel({
                     : "Ask us to turn Luke on for you."}
                 </div>
               ) : (
-                <div className="border-t border-line p-3">
+                // In the first meeting the box floats at the foot, no line above it, as a chat app's does.
+                <div className={meeting ? "px-3 pt-1 pb-4" : "border-t border-line p-3"}>
                   {/* One quiet box: the words inside it, the send inside it. A
             thick ring and a labelled button made the composer the
             loudest thing on the panel, and the conversation should be. */}

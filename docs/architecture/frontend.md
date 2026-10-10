@@ -261,7 +261,8 @@ platform, and optionally website, team size and where they heard of Warmluke); t
 Their own AI is not asked about here (9 Oct): the app offers it under "Use your own AI".
 After "Open Warmluke", a new owner's app opens on the first conversation with Luke (0200):
 `AppShell` reads `profiles.met_luke_at` and, while it is empty, shows `ChatPanel` alone and
-full width (`meeting`), with no sidebar, section, panel controls or way past him. Luke
+edge to edge (`meeting`: no frame, pane corners or dividers, the box at the foot as a chat
+app's), with no sidebar, section, panel controls or way past him. Luke
 speaks first; "Open my store" appears once he has answered from their store or built
 something, and entering moves him into the side panel with the same thread, the store rising
 in beside him, the tour after. A refresh or another device resumes the same thread.

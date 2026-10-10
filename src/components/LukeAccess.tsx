@@ -33,7 +33,7 @@ export const SHOWS_WORDS: Array<[LukeShows, string]> = [
   ["cost", "Model, tokens and cost"],
 ];
 
-type Held = { models: string[] | null; shows: LukeShows; tester: boolean };
+type Held = { models: string[] | null; shows: LukeShows; tester: boolean; luke_test: boolean };
 
 export function LukeAccess({ userId, email, onClose }: { userId: string; email: string; onClose: () => void }) {
   const [offered, setOffered] = useState<OfferedModel[] | null>(null);
@@ -42,6 +42,8 @@ export function LukeAccess({ userId, email, onClose }: { userId: string; email: 
   const [shows, setShows] = useState<LukeShows>("nothing");
   // Warmluke's own testing team (0158): every reply's cost and ids, whatever "shows" says.
   const [tester, setTester] = useState(false);
+  // Luke test (0202, temporary): may meet Luke again from the start at /luke-convo.
+  const [lukeTest, setLukeTest] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -59,11 +61,16 @@ export function LukeAccess({ userId, email, onClose }: { userId: string; email: 
           );
           return;
         }
-        const h = { ...(data as Held), tester: (data as Partial<Held>).tester === true };
+        const h = {
+          ...(data as Held),
+          tester: (data as Partial<Held>).tester === true,
+          luke_test: (data as Partial<Held>).luke_test === true,
+        };
         setHeld(h);
         setModels(h.models);
         setShows(h.shows);
         setTester(h.tester);
+        setLukeTest(h.luke_test);
         setOffered((list.data.offered as OfferedModel[] | undefined) ?? []);
       }
     );
@@ -85,6 +92,7 @@ export function LukeAccess({ userId, email, onClose }: { userId: string; email: 
     !!held &&
     (held.shows !== shows ||
       held.tester !== tester ||
+      held.luke_test !== lukeTest ||
       JSON.stringify(held.models ?? null) !== JSON.stringify(models ?? null));
   const empty = !every && (models?.length ?? 0) === 0;
 
@@ -101,12 +109,16 @@ export function LukeAccess({ userId, email, onClose }: { userId: string; email: 
       !err && held && held.tester !== tester
         ? await supabase.rpc("abo_admin_set_tester", { p_user: userId, p_on: tester })
         : { error: null };
+    const test =
+      !err && !team.error && held && held.luke_test !== lukeTest
+        ? await supabase.rpc("abo_admin_set_luke_test", { p_user: userId, p_on: lukeTest })
+        : { error: null };
     setSaving(false);
-    if (err || team.error) {
-      setError((err ?? team.error)!.message);
+    if (err || team.error || test.error) {
+      setError((err ?? team.error ?? test.error)!.message);
       return;
     }
-    setHeld({ models, shows, tester });
+    setHeld({ models, shows, tester, luke_test: lukeTest });
     setSaved(true);
   }
 
@@ -200,6 +212,16 @@ export function LukeAccess({ userId, email, onClose }: { userId: string; email: 
               </p>
             </div>
             <Switch checked={tester} onChange={setTester} label={`${email} is on the testing team`} />
+          </section>
+          <section className="flex items-start justify-between gap-4 border-t border-line pt-4">
+            <div>
+              <h3 className="text-[13px] font-medium text-fg">Luke test</h3>
+              <p className="mt-0.5 text-xs leading-relaxed text-fg-muted">
+                At /luke-convo they meet Luke from the start again, full screen, as often as they like. For testing the
+                first meeting; it goes once that is done.
+              </p>
+            </div>
+            <Switch checked={lukeTest} onChange={setLukeTest} label={`${email} may use Luke test`} />
           </section>
         </div>
       )}

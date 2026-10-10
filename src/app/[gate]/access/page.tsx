@@ -48,6 +48,7 @@ const ACTIONS: Record<string, string> = {
   delete: "deleted the account",
   set_luke: "changed Luke's models",
   set_tester: "changed the testing team",
+  set_luke_test: "changed Luke test",
   view_conversation: "read a conversation",
   rename: "renamed",
 };

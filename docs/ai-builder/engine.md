@@ -215,12 +215,22 @@ A new owner's app opens on Luke (0200, `src/lib/meet.ts`), full screen, while
 never drawn as a bubble), and the engine takes the talk road for it. Every turn of that
 conversation reads `MEET_BRIEF` beside who they are: greet them by name, show two or three of
 their store's real numbers, ask one thing at a time as a clarify whose options come from the
-store, say back what was understood and offer to build the one thing that would help most;
-answer any store question from the store. No other turn reads the brief, so recorded turns
+store, say back what was understood and offer two or three ideas in words, asking which
+would help most; answer any store question from the store. The conversation is talk (10 Oct):
+every turn of it takes the talk road unless a plan Luke already said is pending, and the
+brief lets the talk road describe what could be built but hand a build back only once the
+owner asks for one, in any words (a yes to an idea, "bana do"). Their problem, a wish or an
+answer is not that. No other turn reads the brief, so recorded turns
 replay unchanged. The way into the store appears only once Luke has helped: an answer of kind
 `store` to one of their own questions, or a build (his hello, read from the store, is not
 help). Entering stamps `met_luke_at` (once, by the database; only the service role may clear
 it), Luke moves into the side panel with the same conversation, and the tour runs after.
+
+Luke test (0202, temporary): an administrator turns it on for an account in the console's
+Luke dialog; that account can open `/luke-convo`, whose `abo_meet_luke_again()` deletes its
+meeting threads, clears `met_luke_at` (the one update past 0200's trigger, by a
+transaction-local setting only that function sets) and resets `meet_turns`, then opens its
+first app on the meeting. It goes once the meeting is tested.
 
 ### What Luke learns for a store
 

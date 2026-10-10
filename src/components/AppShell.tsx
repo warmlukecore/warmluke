@@ -4241,7 +4241,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     <FormatProvider locale={project?.locale} currency={project?.currency}>
       <LinkProvider options={linkOptions} source={linkSource}>
         <div
-          className="font-ui flex h-[100dvh] gap-0 overflow-hidden bg-frame text-fg lg:gap-2 lg:p-2 lg:pl-0"
+          // The first meeting is the whole screen, edge to edge, as a chat app is.
+          className={`font-ui flex h-[100dvh] gap-0 overflow-hidden bg-frame text-fg ${stage ? "" : "lg:gap-2 lg:p-2 lg:pl-0"}`}
           // Headings inside the app are set in the same face as the rest;
           // the display face belongs to the landing page.
           style={{ ["--font-display" as string]: "var(--font-inter)" }}

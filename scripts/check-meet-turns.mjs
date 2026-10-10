@@ -100,6 +100,40 @@ try {
   await admin.from("profiles").update({ met_luke_at: null }).eq("user_id", userId);
   const cleared = (await admin.from("profiles").select("met_luke_at").eq("user_id", userId).single()).data;
   check("the server can, to show it again", cleared?.met_luke_at === null);
+
+  // TEMPORARY with 0202: goes when Luke test does.
+  console.log("\nLuke test (0202): meeting him again, for the ones let in");
+  const metAt = async () =>
+    (await admin.from("profiles").select("met_luke_at").eq("user_id", userId).single()).data?.met_luke_at;
+  await admin.from("profiles").update({ met_luke_at: new Date().toISOString() }).eq("user_id", userId);
+  const { data: thread } = await admin
+    .from("conversations")
+    .insert({ project_id: projectId, title: "Meeting Luke", created_by: userId })
+    .select("id")
+    .single();
+  await admin
+    .from("messages")
+    .insert({ conversation_id: thread.id, role: "user", content: "(opener)", payload: { kind: "meet" } });
+  await admin.from("account_settings").update({ meet_turns: 7 }).eq("user_id", userId);
+  const refused = await merchant.rpc("abo_meet_luke_again");
+  check("an account not let in cannot", refused.error?.code === "42501" && !!(await metAt()));
+  const self = await merchant.rpc("abo_admin_set_luke_test", { p_user: userId, p_on: true });
+  await merchant.from("account_settings").update({ luke_test: true }).eq("user_id", userId);
+  const held = (await admin.from("account_settings").select("luke_test").eq("user_id", userId).single()).data;
+  check("nor let itself in", self.error?.code === "42501" && held?.luke_test === false);
+  const guc = await merchant.rpc("set_config", { setting_name: "abo.meet_again", new_value: "on", is_local: true });
+  check("nor reach the setting that lets the function past", !!guc.error);
+  await admin.from("account_settings").update({ luke_test: true }).eq("user_id", userId);
+  const again = await merchant.rpc("abo_meet_luke_again");
+  const gone = (await admin.from("conversations").select("id").eq("id", thread.id)).data ?? [];
+  c = await counts();
+  check(
+    "let in, it meets him again: in its own app, the old meeting gone, the free turns back",
+    again.data === projectId && (await metAt()) === null && gone.length === 0 && c?.meet_turns === 0
+  );
+  await admin.from("profiles").update({ met_luke_at: new Date().toISOString() }).eq("user_id", userId);
+  await merchant.from("profiles").update({ met_luke_at: null }).eq("user_id", userId);
+  check("and a browser still cannot clear it by itself after", !!(await metAt()));
 } finally {
   if (projectId) await admin.from("projects").delete().eq("id", projectId);
   await admin.auth.admin.deleteUser(userId);

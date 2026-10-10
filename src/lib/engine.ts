@@ -814,8 +814,10 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
   let road: Road =
     resume?.road ??
     (givenDesign ? "design" : null) ??
-    // Luke speaking first, in the first conversation: words, never a design.
-    (input.meeting && message === MEET_OPENER ? "talk" : null) ??
+    // The first conversation is talk (10 Oct): ideas in words, built only
+    // once they ask, which the talk road hands back (FIRST MEETING says
+    // when). A plan already said goes on as anywhere else.
+    (input.meeting && (message === MEET_OPENER || !agreed) ? "talk" : null) ??
     // After a plan in words, an answer to its questions is more of the
     // design, not a follow-up question: it plans again.
     (agreed && (goAhead || !isQuestion(message))
