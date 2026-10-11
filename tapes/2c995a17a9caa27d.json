@@ -1,0 +1,17 @@
+{
+  "label": "jev",
+  "asked": "Where should the courier handover scan go? → In Packing: first scan packs, second scan hands over",
+  "parts": {
+    "system": "74234e98afe7498f",
+    "tools": "74234e98afe7498f",
+    "conversation": "0c874dcc223f36cd",
+    "tag": "reply"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"jev-1.13.0\",\"answers\":{\"list\":{\"type\":\"choice\",\"choice\":\"none\",\"confidence\":0.96,\"probabilities\":{\"orders\":0.03,\"customers\":0.0,\"products\":0.0,\"stock\":0.0,\"sales\":0.0,\"none\":0.97}},\"window\":{\"type\":\"choice\",\"choice\":\"all\",\"confidence\":1.0,\"probabilities\":{\"today\":0.0,\"yesterday\":0.0,\"this_week\":0.0,\"this_month\":0.0,\"last_month\":0.0,\"named_month\":0.0,\"all\":1.0}},\"month\":{\"type\":\"choice\",\"choice\":\"none\",\"confidence\":1.0,\"probabilities\":{\"jan\":0.0,\"feb\":0.0,\"mar\":0.0,\"apr\":0.0,\"may\":0.0,\"jun\":0.0,\"jul\":0.0,\"aug\":0.0,\"sep\":0.0,\"oct\":0.0,\"nov\":0.0,\"dec\":0.0,\"none\":1.0}},\"kind\":{\"type\":\"choice\",\"choice\":\"unclear\",\"confidence\":0.57,\"probabilities\":{\"ranking\":0.01,\"lookup\":0.31,\"total\":0.0,\"build\":0.02,\"unclear\":0.66}}},\"usage\":{\"input_tokens\":1774,\"output_tokens\":284}}"
+    }
+  ]
+}

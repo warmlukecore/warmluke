@@ -1,0 +1,17 @@
+{
+  "label": "anthropic",
+  "asked": "day if packed_on is filled in, otherwise handed_over_on, handed_over_time = handed_over_time if handed_over_time is filled in, otherwise right now if packed_on is filled in, otherwise handed_over_time",
+  "parts": {
+    "system": "c3bf90d97ed87dde",
+    "tools": "74234e98afe7498f",
+    "conversation": "79b2c3381bd67e8d",
+    "tag": "gap"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"claude-haiku-4-5-20251001\",\"id\":\"msg_011CfvQoPXNXJrWSHvWq6v4v\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"```json\\n{\\n  \\\"unmet\\\": [\\n    \\\"second scan hands over\\\"\\n  ]\\n}\\n```\\n\\nThe owner said there should be two scans in Packing—first scan packs, second scan hands over. The build has one scan bar that sets both `packed_on` and `handed_over_on` together based on conditional logic, not two separate scans.\"}],\"container\":null,\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":638,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":88,\"service_tier\":\"standard\",\"inference_geo\":\"not_available\"},\"diagnostics\":null}"
+    }
+  ]
+}

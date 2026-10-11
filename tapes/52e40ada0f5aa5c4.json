@@ -1,0 +1,17 @@
+{
+  "label": "anthropic",
+  "asked": "figured) CONTEXT — rules already running on this app. Do not propose one that is already here; to change a rule, remove it and add the new one. none USER REQUEST: What was my most recent order number?",
+  "parts": {
+    "system": "09e1b92980810db2",
+    "tools": "144871e80ecbc493",
+    "conversation": "d1183bf7e656d7a3",
+    "tag": "talk"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "text/event-stream; charset=utf-8",
+      "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-sonnet-5\",\"id\":\"msg_011CfvR3X3hcaZGdiPhuy77V\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"container\":null,\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":6090,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":6958,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":4,\"service_tier\":\"standard\",\"inference_geo\":\"global\"},\"diagnostics\":null}             }\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}           }\n\nevent: ping\ndata: {\"type\": \"ping\"}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"\"}          }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"EswDCsoCCBIYAipAZXkW5D6Q0QCBzT9DEld4axaVNmgIcZkYxOMSudcjUmjc2jso+EprptVHsTfoCJPNfn4GlI7oZMR0k6ktJtOMCTIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQzNGIzYjBkMC01YmYxLTQ2NjktOGQ3Yi1mMzAxOTIyODliNmWaAREKD2NsYXVkZS1zb25uZXQtNagBxfWt1gbCAUAIBhAAGhIBG+YBQr8CQKgDTzcFq1kEJq0gAzIEEnHPJToEver8akIEaW8Z9UoE1aVaUVAGWgTZBeFWYAJoAXAC2gFgChZwcmVmaXhfYmVmb3JlX2Jsb2NrX3YxEiDOMg+EkGdIRCGEjYkdUyihAmEjMW4a/yEUMK/xTHYV+SIAMiDCwBPIapyS4i+Wbz2GF3aPi3pEyQKtzAl7+h4JivtOH0gDEgy51PjEUc1/+wTRvfIaDCfcZiDltD2lTElDsyIwYLqvFsuM7lhF8qrj+V2y7DD24DsZjO1WN5qpuOLcE4QgF0qzFb6zK7IfU78k0IX3Ki/XjWyxPp0BJ6lWDi47buMO74PQEkLoINLNt6BkMvlE2wa7NoDQQiYG33FxXAPScBgB\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0              }\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_01T4R2au2KeH7seqRi5FoKTP\",\"name\":\"search_orders\",\"input\":{},\"caller\":{\"type\":\"direct\"}}   }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"\"}              }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"limit\\\": 1\"}           }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"}\"}       }\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1     }\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null,\"stop_details\":null,\"container\":null},\"usage\":{\"input_tokens\":6090,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":6958,\"output_tokens\":69,\"output_tokens_details\":{\"thinking_tokens\":18}}   }\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"      }\n\n"
+    }
+  ]
+}

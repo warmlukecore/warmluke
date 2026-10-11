@@ -1,0 +1,17 @@
+{
+  "label": "anthropic",
+  "asked": "",
+  "parts": {
+    "system": "09e1b92980810db2",
+    "tools": "5d86012522b06e25",
+    "conversation": "527bf799a9289039",
+    "tag": "talk"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"claude-sonnet-5\",\"id\":\"msg_011CfvR32gsrUm7QuhgqkBrH\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Order #1001 is **not paid yet** — its status is PENDING, for a total of **₹777**.\\n\\nThis is as read from the store just now (fields like fulfilment status aren't filled in on this order).\"}],\"container\":null,\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":6291,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":6958,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":65,\"output_tokens_details\":{\"thinking_tokens\":0},\"service_tier\":\"standard\",\"inference_geo\":\"global\"},\"diagnostics\":null}"
+    }
+  ]
+}

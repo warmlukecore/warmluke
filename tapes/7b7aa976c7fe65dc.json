@@ -1,0 +1,17 @@
+{
+  "label": "anthropic",
+  "asked": "figured) CONTEXT — rules already running on this app. Do not propose one that is already here; to change a rule, remove it and add the new one. none USER REQUEST: Is order #1001 paid? How much was it?",
+  "parts": {
+    "system": "09e1b92980810db2",
+    "tools": "5d86012522b06e25",
+    "conversation": "c112428c83029b00",
+    "tag": "talk"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "type": "application/json",
+      "body": "{\"model\":\"claude-sonnet-5\",\"id\":\"msg_011CfvR2rdPKpo8WGq3nrNV1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"ErgECsoCCBIYAipAgod5PBw3XpeMvJkwprImAdFeK2AC13Oi09IXiN0UjJWt37TFlPCcyggODP206RVxkEtD9Lx7fh4Ml3NHcFLjoDIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQzNGIzYjBkMC01YmYxLTQ2NjktOGQ3Yi1mMzAxOTIyODliNmWaAREKD2NsYXVkZS1zb25uZXQtNagBvPWt1gbCAUAIBhAAGhIBG+YBQr8Ci4sDTzcFjIcEJq0gAzIEEnHPJToEver8akIEIW/OSEoE1aVaUVAGWgTZBeFWYAJoAXAC2gFgChZwcmVmaXhfYmVmb3JlX2Jsb2NrX3YxEiA7SPSwutXpjPzSAWTnrUltHVlx66ZbDhdvl2Is+lOa6CIAMiDCwBPIapyS4i+Wbz2GF3aPi3pEyQKtzAl7+h4JivtOH0gDEgzq4B48ttGrHy6qobwaDJMFPwhFRCTpYPZPYCIwpD4UlYkZI+adBfLGSVod1jn8s87Cy/usoWK+Rwbby1B2uX0TCzYNdYLLdIsdVjKGKpoBya41Y38CU+Uk52k6Qi10OyI46GjPTXPd7pMSHhzIROmJFFgWKKyUZ7yVWnbR2P+g52UhvnStj7g30USyGKt1IwH3pYsEwAZlwSmJdPcnNej6yJyACAz7bUZMN5IeQOO+c9puqiP4fNJqZ0P/9KlAMp//6R8LWQXSvmJIbfDJy3uT76Ep+Drkh+U/ChnmgzI5ZRPmN6DCgw+n1hgB\"},{\"type\":\"tool_use\",\"id\":\"toolu_01UpWh4ZiryzGPE1Kj9GT7bA\",\"name\":\"get_order\",\"input\":{\"order_number\":\"1001\"},\"caller\":{\"type\":\"direct\"}}],\"container\":null,\"stop_reason\":\"tool_use\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":6096,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":6958,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":107,\"output_tokens_details\":{\"thinking_tokens\":55},\"service_tier\":\"standard\",\"inference_geo\":\"global\"},\"diagnostics\":null}"
+    }
+  ]
+}
