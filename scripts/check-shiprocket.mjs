@@ -7,14 +7,8 @@
 // lapses and once more when it is turned away, and a 429 as "later".
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-shiprocket.mjs
-import {
-  ConnectorBusy,
-  ConnectorRefused,
-  login,
-  shiprocketDate,
-  shipmentsOf,
-  sync,
-} from "../src/lib/connectors/shiprocket.ts";
+import { ConnectorBusy, ConnectorRefused } from "../src/lib/connectors/kit.ts";
+import { login, shiprocketDate, shipmentsOf, sync } from "../src/lib/connectors/shiprocket.ts";
 
 const fails = [];
 const check = (name, cond) => {

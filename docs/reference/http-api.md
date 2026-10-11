@@ -77,6 +77,7 @@ cursors for a new full pass. Ordinary calls advance the first unfinished resourc
 | `PATCH /api/connectors`          | Owner's "sync now" for a connection (`abo_connector_kick`)                                  |
 | `DELETE /api/connectors`         | Owner disconnects: the credential goes, the rows brought stay (`abo_connector_disconnect`)  |
 | `POST /api/connectors/worker`    | A connection's background sync, called by the database with a per-connection ticket        |
+| `POST /api/connectors/[provider]/hook/[token]` | A provider's delivery (GoSwift): the address's token names one connection, resolved by the database (`abo_connector_hook`) |
 
 See [Connectors](../integrations/connectors.md). The route checks the store's owner before any
 login leaves the server, so it is never a way to try passwords against a provider.

@@ -57,11 +57,21 @@ test("the owner connects a courier in Settings, sees where it stands, and discon
     // Every connector, and what the ones not ready wait for.
     await expect(dialog.getByText("Couriers", { exact: true })).toBeVisible();
     await expect(dialog.getByText("Shiprocket", { exact: true })).toBeVisible();
+    await expect(dialog.getByText("GoSwift", { exact: true })).toBeVisible();
     await expect(dialog.getByText("Coming soon: waiting on Meta's app review")).toBeVisible();
     await expect(dialog.getByText("Coming soon: waiting on Google's API approval")).toBeVisible();
 
+    // GoSwift asks for what it gives on request, and says where to ask.
+    const goswift = dialog.getByRole("listitem").filter({ hasText: "GoSwift" });
+    await goswift.getByRole("button", { name: "Connect", exact: true }).click();
+    await expect(goswift.getByText(/tech-integrations@goswift\.in/)).toBeVisible();
+    await expect(goswift.getByLabel("Client ID")).toBeVisible();
+    await expect(goswift.getByLabel("API password")).toHaveAttribute("type", "password");
+    await goswift.getByRole("button", { name: "Cancel" }).click();
+
     // A login the provider refuses is said in its words, and nothing is kept.
-    await dialog.getByRole("button", { name: "Connect", exact: true }).click();
+    const shiprocket = dialog.getByRole("listitem").filter({ hasText: "Shiprocket" });
+    await shiprocket.getByRole("button", { name: "Connect", exact: true }).click();
     await expect(dialog.getByText(/Use an API user, not your own login/)).toBeVisible();
     await dialog.getByLabel("API user email").fill("api@shop.in");
     await dialog.getByLabel("API user password").fill("wrong");
@@ -82,7 +92,7 @@ test("the owner connects a courier in Settings, sees where it stands, and discon
     await dialog.getByRole("button", { name: "Disconnect" }).click();
     await expect(dialog.getByText("Stop syncing? What it brought stays.")).toBeVisible();
     await dialog.getByRole("button", { name: "Disconnect" }).click();
-    await expect(dialog.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
+    await expect(shiprocket.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
   } finally {
     await shop.admin.from("store_connections").delete().eq("store_id", shop.storeId);
   }

@@ -2,7 +2,7 @@ import { after, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { connectorTicketClient } from "@/lib/supabase-server";
 import { ADAPTERS } from "@/lib/connectors/adapters";
-import { ConnectorBusy, ConnectorRefused, type Job, type ShipmentRow } from "@/lib/connectors/shiprocket";
+import { ConnectorBusy, ConnectorRefused, type Job, type ShipmentRow } from "@/lib/connectors/kit";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -38,7 +38,9 @@ export async function POST(req: Request) {
   if (!job || job.id !== connection) {
     return NextResponse.json({ error: "No such sync job." }, { status: 401 });
   }
-  after(() => work(db, job));
+  // Where a provider that pushes posts to us: this deployment's own address.
+  const hookBase = `${new URL(req.url).origin}/api/connectors/${job.provider}/hook/`;
+  after(() => work(db, job, hookBase));
   return NextResponse.json({ accepted: true }, { status: 202 });
 }
 
@@ -52,7 +54,7 @@ async function heldJob(db: SupabaseClient): Promise<HeldJob | null> {
   return job?.secret ? job : null;
 }
 
-async function work(db: SupabaseClient, job: HeldJob) {
+async function work(db: SupabaseClient, job: HeldJob, hookBase: string) {
   const adapter = ADAPTERS[job.provider as keyof typeof ADAPTERS];
   try {
     if (!adapter) {
@@ -78,6 +80,16 @@ async function work(db: SupabaseClient, job: HeldJob) {
       putSecret: async (secret: string) => {
         const { error } = await db.rpc("abo_connector_put_secret", { p_secret: secret });
         if (error) throw new Error(error.message);
+      },
+      hookBase,
+      putHook: async (token: string) => {
+        const { error } = await db.rpc("abo_connector_put_hook", { p_token: token });
+        if (error) throw new Error(error.message);
+      },
+      openShipments: async (settled: string[], limit: number) => {
+        const { data, error } = await db.rpc("abo_connector_open_shipments", { p_settled: settled, p_limit: limit });
+        if (error) throw new Error(error.message);
+        return (data ?? []) as string[];
       },
     };
     const { nextMinutes } = await adapter.sync(job, io);

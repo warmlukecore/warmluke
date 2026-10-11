@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getUserClient } from "@/lib/supabase-server";
 import { connectorById } from "@/lib/connectors";
 import { ADAPTERS } from "@/lib/connectors/adapters";
-import { ConnectorBusy, ConnectorRefused } from "@/lib/connectors/shiprocket";
+import { ConnectorBusy, ConnectorRefused } from "@/lib/connectors/kit";
 
 export const runtime = "nodejs";
 

@@ -17,6 +17,8 @@
 // seen, rather than from a guess at their names.
 // ─────────────────────────────────────────────────────────────
 
+import { ConnectorBusy, ConnectorRefused, type Fetch, type Job, type ShipmentRow, type SyncIO } from "./kit";
+
 export const SHIPROCKET_API = "https://apiv2.shiprocket.in/v1/external";
 /** Renewed a day before Shiprocket's 240 hours run out. */
 const TOKEN_HOURS = 216;
@@ -24,38 +26,7 @@ const PAGE = 100;
 /** A sync that has walked back past what it already has, by this much, stops. */
 const OVERLAP_DAYS = 14;
 
-/** The provider turned the credential down: the owner must connect again. */
-export class ConnectorRefused extends Error {}
-/** The provider asked us to slow down: come back later, nothing is wrong. */
-export class ConnectorBusy extends Error {}
-
 export type Secret = { email: string; password: string; token?: string; token_at?: string };
-
-export type ShipmentRow = {
-  shipment_ref: string;
-  awb: string | null;
-  order_ref: string | null;
-  courier: string | null;
-  status: string | null;
-  payment_mode: string | null;
-  cod_amount: number | null;
-  track_url: string | null;
-};
-
-export type Job = {
-  secret: string;
-  cursors: Record<string, { cursor: string | null; synced_through: string | null }>;
-};
-
-export type SyncIO = {
-  putShipments(rows: ShipmentRow[]): Promise<void>;
-  putCursor(resource: string, cursor: string | null, through?: string | null): Promise<void>;
-  putSecret(secret: string): Promise<void>;
-  /** Stop starting pages after this (ms since epoch); the next run carries on. */
-  deadline: number;
-};
-
-type Fetch = typeof fetch;
 
 /** Proves an API user's login and returns what to keep. */
 export async function login(

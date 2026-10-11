@@ -61,11 +61,22 @@ export const CONNECTORS: Connector[] = [
     id: "goswift",
     label: "GoSwift",
     kind: "courier",
-    gives: "Shipments and COD remittance from GoSwift.",
-    auth: { kind: "oauth" },
+    gives: "Every shipment's courier, AWB and status as it moves, matched to its Shopify order.",
+    auth: {
+      kind: "login",
+      // GoSwift gives API access on request: a client ID and a login for it
+      // (its API docs, v3.8.8, 11 Oct). Shipments then come to us as they move.
+      fields: [
+        { key: "client_id", label: "Client ID", type: "text" },
+        { key: "username", label: "API username", type: "text" },
+        { key: "password", label: "API password", type: "password" },
+      ],
+      how: "GoSwift gives these on request: write to tech-integrations@goswift.in for API access to your account. Shipments show here from the day you connect, and older ones as they next move.",
+      where: "https://app.goswift.in",
+    },
     brings: ["courier_shipments"],
     every: 30,
-    ready: { waits: "API access from GoSwift" },
+    ready: true,
   },
   {
     id: "meta_ads",

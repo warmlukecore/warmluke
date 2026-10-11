@@ -1,7 +1,7 @@
 # Connectors: couriers and ad accounts beside the store
 
-Status: design, agreed 11 Oct 2026. Phase 1 is being built; the rest waits on the approvals
-listed under [Phases](#phases).
+Status: design, agreed 11 Oct 2026. Phases 1 to 3 are built; each waits on what is listed
+under [Phases](#phases).
 
 ## Scope
 
@@ -151,14 +151,19 @@ The connection row keeps who connected and who disconnected, and when.
 - **Freshness per kind:**
   - Ad spend: hourly for today and the last 3 days (platforms revise them), daily further
     back.
-  - Shipments: every 15 minutes while any is moving, and pushed by webhook where the
-    provider offers it (Shiprocket).
+  - Shipments: pulled every 30 minutes where the provider has a list (Shiprocket), and
+    pushed by webhook where it has none (GoSwift, 0205), with the quiet ones asked after.
   - Remittances: daily.
-- **Webhooks:**
-  - `/api/connectors/[provider]/hook/[token]`, with a per-connection token in the path that
-    is kept hashed, as Shopify's webhook route does.
-  - A delivery is verified, written through a function, and never trusted for anything but
-    its own rows.
+- **Webhooks (0205):**
+  - `/api/connectors/[provider]/hook/[token]`. The connection's sync registers that address
+    with the provider. The token is 256 random bits, kept in the connection's vault credential
+    and as a hash on `store_connections.hook_hash`, as Shopify's webhook addresses are.
+  - A delivery is resolved by the database from the token (`abo_connector_hook`), for a
+    connection of that provider that is still connected, and writes that connection's rows
+    alone. Disconnecting clears the hash, so the address is refused from then.
+  - The sync keeps the address registered and listening, making it again in place when the
+    provider no longer has it as ours, and asks after shipments that have been quiet for six
+    hours (`abo_connector_open_shipments`), in case a delivery was missed.
 - **Limits:** each adapter honours its provider's rate limits and backs off as the import
   step does; a 429 sets the next try, it does not loop.
 
@@ -227,8 +232,17 @@ The connection row keeps who connected and who disconnected, and when.
    - Tables, registry, vault save, ticket, worker, tick, and Settings → Connections.
    - Shiprocket: shipments with tracking, NDR, RTO, freight, and COD remittance.
    - Needs: an API user on a Shiprocket account to test with.
-3. **GoSwift.** Shipments and COD remittance.
-   - Needs: API access from GoSwift (tech-integrations@goswift.in).
+3. **GoSwift.** Built (0205, 11 Oct): the adapter (`src/lib/connectors/goswift.ts`), the hook
+   route, and the address's half in the database, under [Webhooks](#sync). Checked by
+   `check-goswift` (GoSwift stood in for, from its API v3.8.8), `check-connectors` (the
+   address's walls) and the Connections walk.
+   - Its API has no list of shipments and no COD remittance: shipments come as GoSwift posts
+     them (made, made again, every tracking step), from the day a store connects. Older ones
+     join the next time they move.
+   - The login is a client ID and an API username and password, which GoSwift gives on request
+     (tech-integrations@goswift.in). The token lasts about a day and is renewed near its end.
+   - Waiting on a live account: the header GoSwift signs a delivery with is not in its docs.
+     The address's token is the proof until a live delivery shows it.
 4. **Meta Ads.** Spend and results by campaign and day.
    - Needs: a Meta Business app with Facebook Login for Business, Business Verification,
      and Advanced Access to `ads_read` through App Review.

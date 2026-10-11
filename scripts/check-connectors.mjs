@@ -5,10 +5,13 @@
 // stranger sees nothing; rows are written only by the ticket's
 // functions, and a ticket reaches its own connection for minutes and
 // nothing else; a shipment lands on the Shopify order it names; a
-// refused credential asks for the owner; disconnecting takes the
-// credential and keeps the rows.
+// refused credential asks for the owner; a provider that posts to us
+// reaches its own connection by the token in its address, and nothing
+// else (0205); disconnecting takes the credential and the address, and
+// keeps the rows.
 //
 //   ENV_FILE=.env.check.local node scripts/check-connectors.mjs
+import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 
@@ -21,6 +24,7 @@ const env = Object.fromEntries(
 const URL_ = env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL;
 const ANON = env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY;
 const admin = createClient(URL_, env.ADAPTIVE_OS_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+const anon = createClient(URL_, ANON, { auth: { persistSession: false } });
 const worker = (ticket) =>
   createClient(URL_, ANON, { global: { headers: { "x-connector-ticket": ticket } }, auth: { persistSession: false } });
 
@@ -187,6 +191,63 @@ try {
     .single();
   check("connecting again clears it", back?.status === "connected" && back?.last_error === null);
 
+  console.log("\na provider that tells us itself");
+  const hookToken = randomBytes(32).toString("hex");
+  const unheld = await nobody.rpc("abo_connector_put_hook", { p_token: hookToken });
+  check("no address is kept without a ticket", unheld.error?.code === "42501");
+  await admin.from("connector_leases").delete().eq("connection_id", id);
+  const { data: t5 } = await admin.rpc("abo_connector_mint", { p_connection: id });
+  const w5 = worker(t5);
+  const { error: hookError } = await w5.rpc("abo_connector_put_hook", { p_token: hookToken });
+  check("its sync keeps the address's token", !hookError);
+  if (hookError) console.log("     →", hookError.message);
+  const { data: shown } = await owner.client.from("store_connections").select("*").eq("id", id);
+  check("as a hash nobody can post with", !JSON.stringify(shown ?? []).includes(hookToken));
+  const post = (token, delivered, provider = "shiprocket") =>
+    anon.rpc("abo_connector_hook", { p_provider: provider, p_token: token, p_rows: delivered });
+  const guessed = await post(randomBytes(32).toString("hex"), [{ shipment_ref: "SR-X", status: "DELIVERED" }]);
+  check("an address we never made is refused", guessed.error?.code === "42501");
+  const crossed = await post(hookToken, [{ shipment_ref: "SR-X" }], "goswift");
+  check("and so is the right token for another provider", crossed.error?.code === "42501");
+  const { data: told, error: toldError } = await post(hookToken, [
+    { shipment_ref: "SR-3", awb: "AWB3", order_ref: "1042", status: "Undelivered", ndr_reason: "Customer Unavailable" },
+  ]);
+  check("the right one writes its rows", !toldError && told === 1);
+  if (toldError) console.log("     →", toldError.message);
+  const { data: three } = await owner.client
+    .from("store_courier_shipments")
+    .select("order_number, status, ndr_reason")
+    .eq("store_id", store.id)
+    .eq("awb", "AWB3")
+    .single();
+  check("on the order it names", three?.order_number === "#1042" && three?.ndr_reason === "Customer Unavailable");
+  await post(hookToken, [{ shipment_ref: "SR-3", courier: "BLUEDART" }]);
+  const { data: kept3 } = await admin
+    .from("courier_shipments")
+    .select("ndr_reason, courier")
+    .eq("shipment_ref", "SR-3")
+    .single();
+  check(
+    "a delivery with no status leaves the NDR as it was",
+    kept3?.ndr_reason === "Customer Unavailable" && kept3?.courier === "BLUEDART"
+  );
+  await post(hookToken, [{ shipment_ref: "SR-3", status: "In Transit" }]);
+  const { data: moved3 } = await admin
+    .from("courier_shipments")
+    .select("ndr_reason")
+    .eq("shipment_ref", "SR-3")
+    .single();
+  check("and a new status clears it", moved3?.ndr_reason === null);
+  await admin
+    .from("courier_shipments")
+    .update({ updated_at: new Date(Date.now() - 7 * 3600_000).toISOString() })
+    .eq("connection_id", id);
+  const { data: quiet } = await w5.rpc("abo_connector_open_shipments", { p_settled: ["DELIVERED"], p_limit: 10 });
+  check("its sync is told which have gone quiet, not the settled", JSON.stringify(quiet) === JSON.stringify(["SR-3"]));
+  const { data: quietBlind } = await nobody.rpc("abo_connector_open_shipments", { p_settled: [], p_limit: 10 });
+  check("and nobody else is told anything", Array.isArray(quietBlind) && quietBlind.length === 0);
+  await w5.rpc("abo_connector_release");
+
   console.log("\ndisconnecting");
   const theirOff = await stranger.client.rpc("abo_connector_disconnect", { p_connection: id });
   check("a stranger cannot", theirOff.error?.code === "42501");
@@ -198,7 +259,9 @@ try {
     .single();
   check("the owner can", !offError && off?.status === "disconnected" && !!off?.disconnected_at);
   const { data: kept } = await owner.client.from("store_courier_shipments").select("awb").eq("store_id", store.id);
-  check("and the rows already brought stay", kept?.length === 2);
+  check("and the rows already brought stay", kept?.length === 3);
+  const late = await post(hookToken, [{ shipment_ref: "SR-3", status: "Delivered" }]);
+  check("its address is refused from then", late.error?.code === "42501");
   await admin.from("connector_leases").delete().eq("connection_id", id);
   const { data: t4 } = await admin.rpc("abo_connector_mint", { p_connection: id });
   check("with nothing left to sync", t4 === null);

@@ -47,7 +47,7 @@ export default function Privacy() {
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-14 sm:px-6">
         <h1 className="font-serif text-2xl font-bold tracking-tight">Privacy</h1>
-        <p className="mt-2 text-sm text-quiet">Last updated 9 October 2026.</p>
+        <p className="mt-2 text-sm text-quiet">Last updated 11 October 2026.</p>
 
         <Section title="What we store">
           <p>
@@ -60,6 +60,11 @@ export default function Privacy() {
             packing an order, finding a shipment or calling a buyer about a COD order, cannot be done without them.
           </p>
           <p>We also store the store&rsquo;s access token, its timezone and its currency.</p>
+          <p>
+            If a merchant connects a courier account (Shiprocket or GoSwift), we keep its API login, encrypted, to fetch
+            their shipments, and copy each shipment&rsquo;s AWB, courier, status and the order it belongs to.
+            Disconnecting the courier deletes the login; the shipments already copied stay with the store.
+          </p>
         </Section>
 
         <Section title="What we do not do">
