@@ -1,0 +1,212 @@
+// A store connects its courier (0204, docs/integrations/connectors.md).
+//
+// Only the owner connects, from Warmluke and not from their AI's token;
+// the credential goes to the vault and no browser reads it back; a
+// stranger sees nothing; rows are written only by the ticket's
+// functions, and a ticket reaches its own connection for minutes and
+// nothing else; a shipment lands on the Shopify order it names; a
+// refused credential asks for the owner; disconnecting takes the
+// credential and keeps the rows.
+//
+//   ENV_FILE=.env.check.local node scripts/check-connectors.mjs
+import { readFileSync } from "node:fs";
+import { createClient } from "@supabase/supabase-js";
+
+const env = Object.fromEntries(
+  readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
+    .split("\n")
+    .filter((l) => l.includes("=") && !l.trim().startsWith("#"))
+    .map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()])
+);
+const URL_ = env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL;
+const ANON = env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_ANON_KEY;
+const admin = createClient(URL_, env.ADAPTIVE_OS_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+const worker = (ticket) =>
+  createClient(URL_, ANON, { global: { headers: { "x-connector-ticket": ticket } }, auth: { persistSession: false } });
+
+let failed = 0;
+const check = (what, ok) => {
+  console.log(`${ok ? "  ok  " : "  FAIL"}  ${what}`);
+  if (!ok) failed++;
+};
+
+const stamp = Date.now();
+async function person(tag) {
+  const email = `connectors_${tag}_${stamp}@example.com`;
+  const password = `pw_${stamp}_aA1!`;
+  const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true });
+  if (!data.user) throw new Error(`could not create ${tag}: ${error?.message}`);
+  const client = createClient(URL_, ANON, { auth: { persistSession: false } });
+  const { error: signIn } = await client.auth.signInWithPassword({ email, password });
+  if (signIn) throw new Error(`could not sign in ${tag}: ${signIn.message}`);
+  return { id: data.user.id, client };
+}
+
+const owner = await person("owner");
+const stranger = await person("stranger");
+let projectId = null;
+try {
+  const { data: project, error: pe } = await admin
+    .from("projects")
+    .insert({ owner_id: owner.id, name: `connectors-check ${stamp}` })
+    .select("id")
+    .single();
+  if (pe) throw new Error(`could not make the project: ${pe.message}`);
+  projectId = project.id;
+  const { data: store, error: se } = await admin
+    .from("stores")
+    .insert({ project_id: projectId, shop_domain: `connectors-${stamp}.myshopify.com`, status: "connected" })
+    .select("id")
+    .single();
+  if (se) throw new Error(`could not make the store: ${se.message}`);
+  const { data: order } = await admin
+    .from("orders")
+    .insert({ store_id: store.id, external_id: "gid://shopify/Order/7001", order_number: "#1042", source: "shopify" })
+    .select("id")
+    .single();
+  const secret = JSON.stringify({ email: "api@example.com", password: "not-real", token: "tok-1" });
+  const save = (client, extra = {}) =>
+    client.rpc("abo_connector_save", {
+      p_store: store.id,
+      p_provider: "shiprocket",
+      p_account_ref: "api@example.com",
+      p_account_label: "Shiprocket · api@example.com",
+      p_secret: secret,
+      ...extra,
+    });
+
+  console.log("\nonly the owner connects");
+  const refused = await save(stranger.client);
+  check("a stranger cannot", refused.error?.code === "42501");
+  const { data: id, error: saveError } = await save(owner.client);
+  check("the owner can", !saveError && typeof id === "string");
+  if (saveError) console.log("     →", saveError.message);
+
+  console.log("\nwho sees what");
+  const { data: mine } = await owner.client.from("store_connections").select("*").eq("id", id);
+  check("the owner sees the connection", mine?.length === 1 && mine[0].status === "connected");
+  check("with no credential on it", !JSON.stringify(mine ?? []).includes("not-real"));
+  const { data: theirs } = await stranger.client.from("store_connections").select("id").eq("id", id);
+  check("a stranger sees nothing", (theirs ?? []).length === 0);
+  const forged = await owner.client.from("courier_shipments").insert({
+    project_id: projectId,
+    store_id: store.id,
+    connection_id: id,
+    provider: "shiprocket",
+    shipment_ref: "forged",
+  });
+  check("no browser writes a shipment straight", !!forged.error);
+  const bumped = await owner.client.from("store_connections").update({ status: "disconnected" }).eq("id", id);
+  const { data: still } = await admin.from("store_connections").select("status").eq("id", id).single();
+  check("nor changes the connection straight", !!bumped.error || still?.status === "connected");
+
+  console.log("\na ticket reaches its own connection, for minutes");
+  const nobody = worker("x".repeat(64));
+  const { data: noJob } = await nobody.rpc("abo_connector_job");
+  check("a made-up ticket gets nothing", noJob === null);
+  const blind = await nobody.rpc("abo_connector_put_shipments", { p_rows: [] });
+  check("and writes nothing", blind.error?.code === "42501");
+  const { data: ticket } = await admin.rpc("abo_connector_mint", { p_connection: id });
+  check("a ticket is minted", typeof ticket === "string" && ticket.length >= 32);
+  const { data: second } = await admin.rpc("abo_connector_mint", { p_connection: id });
+  check("and only one at a time", second === null);
+  const w = worker(ticket);
+  const { data: job } = await w.rpc("abo_connector_job");
+  check("its worker reads the credential", job?.id === id && job?.secret === secret && job?.provider === "shiprocket");
+  const { data: put, error: putError } = await w.rpc("abo_connector_put_shipments", {
+    p_rows: [
+      {
+        shipment_ref: "SR-1",
+        awb: "AWB1",
+        order_ref: "1042",
+        courier: "Delhivery",
+        status: "DELIVERED",
+        delivered_at: "2026-10-10T09:00:00Z",
+        cod_amount: 899,
+        payment_mode: "cod",
+      },
+      { shipment_ref: "SR-2", awb: "AWB2", order_ref: "9999", status: "IN TRANSIT" },
+    ],
+  });
+  check("a page of shipments is written", !putError && put === 2);
+  if (putError) console.log("     →", putError.message);
+  const { data: rows } = await owner.client
+    .from("store_courier_shipments")
+    .select("awb, order_number, status, delivered_at, cod_amount")
+    .eq("store_id", store.id)
+    .order("awb");
+  check("the owner reads them as a list", rows?.length === 2);
+  check(
+    "a shipment lands on the Shopify order it names",
+    rows?.[0]?.order_number === "#1042" && Number(rows?.[0]?.cod_amount) === 899
+  );
+  const { data: matched } = await admin
+    .from("courier_shipments")
+    .select("order_id")
+    .eq("shipment_ref", "SR-1")
+    .single();
+  check("by the order's own row", matched?.order_id === order.id);
+  check("and one it cannot find keeps the courier's own reference", rows?.[1]?.order_number === "9999");
+  await w.rpc("abo_connector_put_shipments", { p_rows: [{ shipment_ref: "SR-2", status: "DELIVERED" }] });
+  const { data: moved } = await admin
+    .from("courier_shipments")
+    .select("status, awb")
+    .eq("shipment_ref", "SR-2")
+    .single();
+  check(
+    "a later page moves it on, keeping what it did not say",
+    moved?.status === "DELIVERED" && moved?.awb === "AWB2"
+  );
+  await w.rpc("abo_connector_put_cursor", { p_resource: "orders", p_cursor: "page:2" });
+  const { data: again } = await w.rpc("abo_connector_job");
+  check("its place is kept", again?.cursors?.orders?.cursor === "page:2");
+  await admin
+    .from("connector_leases")
+    .update({ expires_at: new Date(Date.now() - 1000).toISOString() })
+    .eq("connection_id", id);
+  const { data: lapsed } = await w.rpc("abo_connector_job");
+  check("a lapsed ticket gets nothing", lapsed === null);
+
+  console.log("\na refused credential asks for the owner");
+  await admin.from("connector_leases").delete().eq("connection_id", id);
+  const { data: t2 } = await admin.rpc("abo_connector_mint", { p_connection: id });
+  await worker(t2).rpc("abo_connector_done", { p_error: "Shiprocket refused the login.", p_refused: true });
+  const { data: attention } = await owner.client
+    .from("store_connections")
+    .select("status, last_error")
+    .eq("id", id)
+    .single();
+  check("it is marked for their attention", attention?.status === "needs_attention" && !!attention?.last_error);
+  const { data: t3 } = await admin.rpc("abo_connector_mint", { p_connection: id });
+  check("and no sync runs until they connect again", t3 === null);
+  await save(owner.client);
+  const { data: back } = await owner.client
+    .from("store_connections")
+    .select("status, last_error")
+    .eq("id", id)
+    .single();
+  check("connecting again clears it", back?.status === "connected" && back?.last_error === null);
+
+  console.log("\ndisconnecting");
+  const theirOff = await stranger.client.rpc("abo_connector_disconnect", { p_connection: id });
+  check("a stranger cannot", theirOff.error?.code === "42501");
+  const { error: offError } = await owner.client.rpc("abo_connector_disconnect", { p_connection: id });
+  const { data: off } = await owner.client
+    .from("store_connections")
+    .select("status, disconnected_at")
+    .eq("id", id)
+    .single();
+  check("the owner can", !offError && off?.status === "disconnected" && !!off?.disconnected_at);
+  const { data: kept } = await owner.client.from("store_courier_shipments").select("awb").eq("store_id", store.id);
+  check("and the rows already brought stay", kept?.length === 2);
+  await admin.from("connector_leases").delete().eq("connection_id", id);
+  const { data: t4 } = await admin.rpc("abo_connector_mint", { p_connection: id });
+  check("with nothing left to sync", t4 === null);
+} finally {
+  if (projectId) await admin.from("projects").delete().eq("id", projectId);
+  await admin.auth.admin.deleteUser(owner.id);
+  await admin.auth.admin.deleteUser(stranger.id);
+}
+
+console.log(failed ? `\n${failed} failed` : "\na store connects its courier, and only its owner does");
+process.exit(failed ? 1 : 0);

@@ -243,6 +243,28 @@ const SHIPPING = 60;
 const TAX = 0.05;
 
 /** Every resource's nodes, as Shopify would send them on `now`'s day. */
+/** Where the seeded orders came from (0203), in turn: a Facebook ad, a Google search, not known yet. */
+const VISITS: GqlOrder["customerJourneySummary"][] = [
+  {
+    lastVisit: {
+      source: "Facebook",
+      landingPage:
+        "https://seed-shop.myshopify.com/products/kurta?utm_source=facebook&utm_medium=cpc&utm_campaign=diwali-sale",
+      referrerUrl: "https://l.facebook.com/",
+      utmParameters: { source: "facebook", medium: "cpc", campaign: "diwali-sale" },
+    },
+  },
+  {
+    lastVisit: {
+      source: "Google",
+      landingPage: "https://seed-shop.myshopify.com/?utm_source=google&utm_medium=cpc&utm_campaign=brand",
+      referrerUrl: "https://www.google.com/",
+      utmParameters: { source: "google", medium: "cpc", campaign: "brand" },
+    },
+  },
+  { lastVisit: null },
+];
+
 export function seedNodes(now = Date.now()): Record<Resource, unknown[]> {
   // Midday in India, so a day back is always the calendar day before.
   const noon = Math.floor(now / 86_400_000) * 86_400_000 + 6.5 * 3_600_000;
@@ -340,6 +362,9 @@ export function seedNodes(now = Date.now()): Record<Resource, unknown[]> {
       paymentGatewayNames: [o.gateway],
       discountCodes: o.code ? [o.code] : [],
       shippingAddress: { city: c?.city ?? "Pune", provinceCode: c ? "DL" : "MH", countryCode: "IN" },
+      // Where it came from (0203): an ad, a search, or not known yet.
+      sourceName: "web",
+      customerJourneySummary: VISITS[oi % VISITS.length],
       lineItems: {
         nodes: o.lines.map(([v, qty], li) => ({
           id: lineId(oi, li),

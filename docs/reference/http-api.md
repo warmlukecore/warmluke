@@ -69,6 +69,18 @@ Import request body:
 `status` reads progress without contacting Shopify. `recheck` resets completed resource
 cursors for a new full pass. Ordinary calls advance the first unfinished resource.
 
+## Connectors
+
+| Method and path                  | Purpose                                                                                     |
+| -------------------------------- | ------------------------------------------------------------------------------------------- |
+| `POST /api/connectors`           | Owner connects a provider for a store: the login is proved with the provider, then kept in the vault (`abo_connector_save`) |
+| `PATCH /api/connectors`          | Owner's "sync now" for a connection (`abo_connector_kick`)                                  |
+| `DELETE /api/connectors`         | Owner disconnects: the credential goes, the rows brought stay (`abo_connector_disconnect`)  |
+| `POST /api/connectors/worker`    | A connection's background sync, called by the database with a per-connection ticket        |
+
+See [Connectors](../integrations/connectors.md). The route checks the store's owner before any
+login leaves the server, so it is never a way to try passwords against a provider.
+
 ## Store support
 
 | Method and path                  | Purpose                                                         |

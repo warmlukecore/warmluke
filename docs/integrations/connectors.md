@@ -131,7 +131,7 @@ Nothing outside the adapter knows a provider's field names.
     report.
   - Deleting the store, or the app, deletes everything (cascade).
 
-The connect and disconnect go on the account's audit trail with who did it.
+The connection row keeps who connected and who disconnected, and when.
 
 ## Sync
 
@@ -216,7 +216,14 @@ The connect and disconnect go on the account's audit trail with who did it.
    - Shopify fills the journey a little after the order: empty means not known yet, not
      "direct".
    - This is half of ROAS, and "orders by campaign" on its own.
-2. **The framework, and Shiprocket.**
+2. **The framework, and Shiprocket.** Built (0204, 11 Oct): `store_connections`,
+   `courier_shipments`, the vault save, the ticket and worker, the five-minute tick,
+   `src/lib/connectors.ts`, the Shiprocket adapter (login, token renewal, orders and their
+   shipments), `/api/connectors`, and Settings → Connections. Checked by `check-connectors`
+   (walls and ticket), `check-shiprocket` (the adapter, Shiprocket stood in for) and
+   `e2e/connections.spec.ts`. Waiting on a live account: NDR, RTO dates, freight and COD
+   remittance (not in Shiprocket's published collection), and the `STORE_TABLES` entry that
+   puts shipments before Luke and sections, so no store shows an empty list before it has one.
    - Tables, registry, vault save, ticket, worker, tick, and Settings → Connections.
    - Shiprocket: shipments with tracking, NDR, RTO, freight, and COD remittance.
    - Needs: an API user on a Shiprocket account to test with.

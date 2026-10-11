@@ -24,6 +24,18 @@ export function ticketClient(ticket: string): SupabaseClient {
 }
 
 /**
+ * The same, for a store connection's sync (0204): anon to the database,
+ * which accepts x-connector-ticket for that one connection's credential,
+ * cursors and rows while the ticket lives — and nothing else.
+ */
+export function connectorTicketClient(ticket: string): SupabaseClient {
+  return createClient(url, anonKey, {
+    global: { headers: { "x-connector-ticket": ticket } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+/**
  * The same, for a project's queued code (0134): anon to the database,
  * which accepts x-code-ticket for that one project's sections, rules,
  * records and store rows while the ticket lives — and nothing else.

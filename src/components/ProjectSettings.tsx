@@ -18,6 +18,7 @@ import type { ProjectRow } from "@/lib/types";
 import { Dialog } from "@/components/ui/Dialog";
 import { Switch } from "@/components/ui/Switch";
 import { Group } from "@/components/ui/Group";
+import { ConnectionsSettings } from "@/components/ConnectionsSettings";
 import { button, field, hint, iconButton, iconButtonCritical, label, note } from "@/components/ui/controls";
 import { Check, Copy, ExternalLink, Link2, Trash2, UserPlus } from "lucide-react";
 import ConnectShopify from "@/components/ConnectShopify";
@@ -31,7 +32,7 @@ import { sees, setSees, type Access } from "@/lib/sharing";
 import { Tabs } from "@/components/ui/Tabs";
 import { AlertSettings } from "@/components/Alerts";
 
-type Tab = "general" | "store" | "alerts" | "ai" | "people";
+type Tab = "general" | "store" | "connections" | "alerts" | "ai" | "people";
 
 /** Common choices; any valid code can still be typed in. */
 const LOCALES = [
@@ -169,7 +170,8 @@ export default function ProjectSettings({
 
   // Read when the tab is first opened; not every visit to settings is about the store.
   useEffect(() => {
-    if (tab !== "store" || shop !== undefined) return;
+    // The store, for its own tab and for what connects beside it.
+    if ((tab !== "store" && tab !== "connections") || shop !== undefined) return;
     supabase
       .from("stores")
       .select(
@@ -413,6 +415,7 @@ export default function ProjectSettings({
   const tabs: Array<{ id: Tab; text: string; count?: number }> = [
     { id: "general", text: "General" },
     { id: "store", text: "Store" },
+    { id: "connections", text: "Connections" },
     { id: "alerts", text: "Alerts" },
     { id: "ai", text: "Your own AI" },
     { id: "people", text: "People", count: seats?.length },
@@ -427,7 +430,7 @@ export default function ProjectSettings({
       footer={
         // The store and people act at once; only the name, currency and
         // AI setting wait for Save.
-        tab === "store" || tab === "alerts" || tab === "people" ? (
+        tab === "store" || tab === "connections" || tab === "alerts" || tab === "people" ? (
           <>
             <span className="text-xs text-fg-muted">{dirty ? "Unsaved changes on General or Your own AI" : ""}</span>
             <button onClick={onClose} className={`${button("secondary")} ml-auto`}>
@@ -730,6 +733,13 @@ export default function ProjectSettings({
           )}
         </div>
       )}
+
+      {tab === "connections" &&
+        (shop === undefined ? (
+          <div className="h-40 animate-pulse rounded-card bg-surface-hover" aria-busy />
+        ) : (
+          <ConnectionsSettings storeId={shop && shop.status === "connected" ? shop.id : null} />
+        ))}
 
       {tab === "alerts" && <AlertSettings projectId={project.id} />}
 
