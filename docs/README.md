@@ -26,11 +26,12 @@ remain authoritative; the documents explain how those sources fit together.
 ### Commerce/integration engineer
 
 1. [Shopify integration](integrations/shopify.md)
-2. [Meta website lead tracking](integrations/meta-conversions.md)
-3. [Domain and data model](domain/data-model.md)
-4. [HTTP API reference](reference/http-api.md)
-5. [Environment reference](reference/environment.md)
-6. [Operations](operations/development-and-deployment.md)
+2. [Connectors: couriers and ad accounts](integrations/connectors.md)
+3. [Meta website lead tracking](integrations/meta-conversions.md)
+4. [Domain and data model](domain/data-model.md)
+5. [HTTP API reference](reference/http-api.md)
+6. [Environment reference](reference/environment.md)
+7. [Operations](operations/development-and-deployment.md)
 
 ### Security reviewer
 
@@ -52,6 +53,7 @@ remain authoritative; the documents explain how those sources fit together.
 | AI design contract               | [AI builder](ai-builder/engine.md)                                 | `ai.ts`, `engine.ts`, `capabilities.ts`              |
 | Authentication and authorization | [Security](security/security-model.md)                             | RLS migrations, auth helpers, build RPCs             |
 | Shopify                          | [Shopify](integrations/shopify.md)                                 | Shopify libraries, routes, commerce migrations       |
+| Couriers and ad accounts         | [Connectors](integrations/connectors.md)                           | `connectors.ts`, connector routes and migrations     |
 | External assistants              | [MCP](integrations/mcp.md)                                         | `/api/mcp`, OAuth migrations                         |
 | HTTP surface                     | [HTTP API](reference/http-api.md)                                  | `src/app/**/route.ts`                                |
 | Configuration                    | [Environment](reference/environment.md)                            | `.env.example`, runtime lookups                      |

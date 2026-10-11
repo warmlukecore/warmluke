@@ -77,8 +77,10 @@ export const STORE_METRICS = {
     status: "per payment status (paid, pending, refunded, cancelled)",
     fulfilment: "per fulfilment status",
     customer: "per customer, biggest first",
+    source: "per where the order's last visit came from (Facebook, Google, direct…; — where not known)",
+    campaign: "per UTM campaign of that visit (— where it carried none)",
   },
-  filters: ["status", "gateway", "fulfilment", "city", "state", "product", "include_cancelled"],
+  filters: ["status", "gateway", "fulfilment", "city", "state", "source", "campaign", "product", "include_cancelled"],
 } as const;
 /**
  * The orders column each measure, dimension and filter reads, and a window
@@ -99,6 +101,8 @@ export const STORE_METRIC_READS: Record<string, string> = {
   status: "status",
   fulfilment: "fulfilment_status",
   customer: "customer_name",
+  source: "visit_source",
+  campaign: "utm_campaign",
 };
 export type StoreMeasure = keyof typeof STORE_METRICS.measures;
 export type StoreDimension = keyof typeof STORE_METRICS.dimensions;
@@ -423,7 +427,7 @@ const one = <T>(v: T | T[] | null | undefined): T | null => (Array.isArray(v) ? 
 export const STORE_TABLES: Record<StoreTable, TableSpec> = {
   orders: {
     label: "Shopify orders",
-    what: 'one row per order — number, customer, total and what it is made of (goods, shipping, tax, discount), paid / pending / cancelled, fulfilment, what paid (COD or the gateway), discount codes, shipping city and state, where it is (its latest shipment: status, courier, tracking number, shipped and delivered day) and what was refunded; what "our orders", "revenue", "COD pending", "how much did we sell", "how much was tax", "what did we charge for delivery" and "orders by city" mean',
+    what: 'one row per order — number, customer, total and what it is made of (goods, shipping, tax, discount), paid / pending / cancelled, fulfilment, what paid (COD or the gateway), discount codes, shipping city and state, where it is (its latest shipment: status, courier, tracking number, shipped and delivered day), what was refunded, and where it came from (the visit before it: the source, the UTM source, medium and campaign, the landing page and referrer, and the sales channel); what "our orders", "revenue", "COD pending", "how much did we sell", "how much was tax", "what did we charge for delivery", "orders by city", "orders from Facebook", "which campaign sold" and "where do our orders come from" mean',
     section: { label: "Orders", icon: "shopping-cart", importedWith: "orders" },
     // What a stat over these rows should be, said once and read by both
     // doors — Luke's prompt and design_format. A merchant's "revenue"
@@ -431,7 +435,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     // refunds, all in. On a four-order store that is $4,942 where the
     // money actually collected is $0.
     advice:
-      'Money: `total` is what the order comes to today, after refunds; `total_original` is what it came to when placed. Do not sum `total` over every row and call it revenue — most of it may be unpaid. Revenue collected = sum(total) where financial_status = "PAID". Awaiting payment (COD) = sum(total) where financial_status = "PENDING". Cancelled = count where cancelled_at is not empty, kept out of both. Average order value = avg(total_original). When a merchant asks for one revenue number, show these apart and say which is which. COD vs prepaid: `gateway` is what paid — "Cash on Delivery (COD)" for COD, otherwise the payment provider. Orders by place = group by ship_city or ship_state. What the total is made of: total = subtotal + shipping + tax, with discount already taken off subtotal. `tax` is owed to a tax authority and is NEVER the merchant\'s income; `shipping` is what the customer was charged for delivery, usually paid straight out again; `subtotal` is the goods. So "what did we actually earn on goods" is sum(subtotal), not sum(total). Any of these can be empty on an order imported before they were read — that means unknown, not zero, so leave those rows out of a total and say how many. Fulfilment (FULFILLED / UNFULFILLED) only says whether it was handed to a courier; where the parcel is (in transit, out for delivery, attempted, delivered) is shipment_status, from the order\'s latest shipment, with its carrier, tracking_number, shipped_at and delivered_at beside it; shipments says how many it went in (the shipments list has each). Shopify has no RTO status: a parcel returned to origin is marked by the merchant, in a field of theirs. A cancelled or fully refunded order\'s total is 0, Shopify\'s figure for it now: what it was worth is total_original, and what was given back is refunded (all its refunds). Asked how much was cancelled or refunded, sum total_original where cancelled_at is not empty, or sum refunded: never total, which says 0.',
+      'Money: `total` is what the order comes to today, after refunds; `total_original` is what it came to when placed. Do not sum `total` over every row and call it revenue — most of it may be unpaid. Revenue collected = sum(total) where financial_status = "PAID". Awaiting payment (COD) = sum(total) where financial_status = "PENDING". Cancelled = count where cancelled_at is not empty, kept out of both. Average order value = avg(total_original). When a merchant asks for one revenue number, show these apart and say which is which. COD vs prepaid: `gateway` is what paid — "Cash on Delivery (COD)" for COD, otherwise the payment provider. Orders by place = group by ship_city or ship_state. What the total is made of: total = subtotal + shipping + tax, with discount already taken off subtotal. `tax` is owed to a tax authority and is NEVER the merchant\'s income; `shipping` is what the customer was charged for delivery, usually paid straight out again; `subtotal` is the goods. So "what did we actually earn on goods" is sum(subtotal), not sum(total). Any of these can be empty on an order imported before they were read — that means unknown, not zero, so leave those rows out of a total and say how many. Fulfilment (FULFILLED / UNFULFILLED) only says whether it was handed to a courier; where the parcel is (in transit, out for delivery, attempted, delivered) is shipment_status, from the order\'s latest shipment, with its carrier, tracking_number, shipped_at and delivered_at beside it; shipments says how many it went in (the shipments list has each). Shopify has no RTO status: a parcel returned to origin is marked by the merchant, in a field of theirs. A cancelled or fully refunded order\'s total is 0, Shopify\'s figure for it now: what it was worth is total_original, and what was given back is refunded (all its refunds). Asked how much was cancelled or refunded, sum total_original where cancelled_at is not empty, or sum refunded: never total, which says 0. Where an order came from: visit_source is where its last visit came from as Shopify names it (Facebook, Google, direct, a site); utm_source, utm_medium and utm_campaign are the tags the ad link carried, and utm_campaign is what matches an ad campaign; landing_page and referrer are the page they arrived on and the site that sent them; channel is the sales channel (web, pos, an app). Shopify fills these a little after an order, and only for visits it could follow: empty means not known, never direct, so leave those orders out of a split by source and say how many.',
     view: "store_orders",
     dated: "placed_at",
     // A change to the shop is aimed with Shopify's own id (0121).
@@ -440,7 +444,7 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
     // a day too, and on the orders index rather than a sort of them all.
     order: { field: "placed_ts", ascending: false },
     select:
-      "id, order_number, placed_at, customer_name, customer_phone, total, total_original, refunded, currency, status, fulfilment_status, financial_status, cancelled_at, tags, gateway, discount_codes, ship_city, ship_state, ship_country, subtotal, tax, shipping, discount, shipment_status, carrier, tracking_number, shipped_at, delivered_at, shipments",
+      "id, order_number, placed_at, customer_name, customer_phone, total, total_original, refunded, currency, status, fulfilment_status, financial_status, cancelled_at, tags, gateway, discount_codes, ship_city, ship_state, ship_country, subtotal, tax, shipping, discount, shipment_status, carrier, tracking_number, shipped_at, delivered_at, shipments, visit_source, utm_source, utm_medium, utm_campaign, landing_page, referrer, channel",
     columns: [
       { field: "order_number", label: "Order", type: "text" },
       { field: "placed_at", label: "Placed", type: "date" },
@@ -472,6 +476,14 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "shipments", label: "Shipments", type: "number" },
       // Shopify's own tags on the order: read here, and typed into in edit mode (7 Oct).
       { field: "tags", label: "Tags", type: "text" },
+      // Where it came from: the visit before it, and the channel (0203).
+      { field: "visit_source", label: "Came from", type: "badge" },
+      { field: "utm_source", label: "UTM source", type: "text" },
+      { field: "utm_medium", label: "UTM medium", type: "text" },
+      { field: "utm_campaign", label: "Campaign", type: "text" },
+      { field: "landing_page", label: "Landing page", type: "text" },
+      { field: "referrer", label: "Referrer", type: "text" },
+      { field: "channel", label: "Channel", type: "badge" },
     ],
   },
   customers: {

@@ -475,6 +475,10 @@ export const SHOPIFY_RESOURCES = {
     phone
     shippingAddress { city provinceCode countryCode phone }
     billingAddress { phone }
+    sourceName
+    customerJourneySummary {
+      lastVisit { source landingPage referrerUrl utmParameters { source medium campaign } }
+    }
     lineItems { edges { node {
       id title variantTitle quantity sku
       variant { id }

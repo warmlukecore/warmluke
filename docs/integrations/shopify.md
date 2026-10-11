@@ -139,6 +139,14 @@ updates both expiry timestamps.
 
 ## Import strategy
 
+Where an order came from (0203) is read on both roads. The import asks for the order's
+`customerJourneySummary.lastVisit` (source, UTM source, medium and campaign, landing page,
+referrer) and `sourceName`; the webhook payload has no journey, so `abo_shopify_upsert_order`
+reads `landing_site`'s `utm_` parameters (`abo_url_param`, decoded), `referring_site` and
+`source_name`. Shopify fills the journey a little after the order, and a trigger keeps what
+one road knew when a later one carries nothing. Orders imported before 0203 fill in as they
+are next updated or re-imported. Store metrics split and filter by `source` and `campaign`.
+
 The import runs on the server, with no tab open. `lib/import-step.ts` advances one
 bounded piece of work and updates `import_runs`; a serverless request never attempts the
 whole store. Two callers run that same step:

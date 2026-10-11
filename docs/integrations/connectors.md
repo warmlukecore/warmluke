@@ -1,0 +1,236 @@
+# Connectors: couriers and ad accounts beside the store
+
+Status: design, agreed 11 Oct 2026. Phase 1 is being built; the rest waits on the approvals
+listed under [Phases](#phases).
+
+## Scope
+
+A Warmluke app is built on one Shopify store. Its owner's day also runs through a courier
+aggregator (Shiprocket, GoSwift) and ad accounts (Meta, Google). This document is how those
+connect, what they bring, and how that becomes something a section, Luke, the owner's own
+AI and the Overview can read, the way Shopify's lists already are.
+
+It is not a general integration platform. Each connector is a few hundred lines that know
+one provider; everything around them (who may connect, where secrets live, how a sync runs,
+how rows are read) is shared and written once.
+
+## Decisions
+
+| Question | Decision | Why |
+| --- | --- | --- |
+| Whose is a connection? | **The store's** (`store_id`), not the account's | Two stores of one owner use different couriers and ad accounts; a store's sections and Luke read that store's rows only, as they read its orders. |
+| Who connects? | The **owner**, in Warmluke | A connection holds credentials that act for the business. A member, or the owner's own AI over MCP, can see that one exists and when it last synced, never connect or read its secret. |
+| Tables | **By kind of data**, not by provider: `ad_spend`, `courier_shipments`, `cod_remittances` | "What did ads cost this week" is one question whether the money went to Meta or Google. A provider column says where a row came from. |
+| Secrets | **The vault**, named `connector:<connection id>`, never read back to a browser | As Shopify app secrets are (0150). A browser that could read one could act as the business from anywhere. |
+| Background sync | **A ticket per connection**, minted by the database and posted to a worker with pg_net | As the store import (0110): production holds no service-role key, and a leaked ticket opens one connection for minutes. |
+| Description of connectors | **One registry**, `src/lib/connectors.ts` | As `shopify-resources.ts`: adding a provider is one entry plus its adapter; screens, checks and docs read the list. |
+| Matching to orders | By the **Shopify order** a shipment names, resolved in the database | Couriers carry the store's order number or id; resolving once, on write, lets every list join shipments to orders without each reader guessing. |
+
+## Shape
+
+```
+Settings → Connections (owner)          their AI / members
+   │ connect (OAuth or login form)          │ read status only
+   ▼                                        ▼
+/api/connectors/[provider]/connect ──► abo_connector_save (vault, store_connections)
+                                             │
+pg_cron abo-connector-tick ── mints ticket ──┤
+   │ pg_net POST                              ▼
+/api/connectors/worker  ── x-connector-ticket ──► abo_connector_job (secret, cursor)
+   │ adapter.pull(page)                       │
+   ▼                                          ▼
+provider API  ─────────── rows ──► ad_spend · courier_shipments · cod_remittances
+                                             │ store_* views, STORE_TABLES
+                                             ▼
+                          sections · Luke · MCP · Overview · alerts
+```
+
+## Data model
+
+All new tables carry `project_id` and `store_id`, have the member read policy
+(`abo_can_use(project_id)`), and get the three restrictive OAuth-client policies every table
+gets. Writes come only from functions or a ticket's policies.
+
+- **`store_connections`**: one row per store, provider and remote account.
+  - `provider` (`shiprocket`, `goswift`, `meta_ads`, `google_ads`).
+  - `account_ref`: the remote account (an ad account id, the login email shown masked).
+  - `account_label` and `status`. `status` is `connected`, `needs_attention` (a refused
+    credential or a revoked grant, said in `last_error`) or `disconnected`.
+  - `scopes`, `connected_by`, `connected_at`, `last_synced_at`, `next_sync_at`.
+  - Unique on `(store_id, provider, account_ref)`.
+  - No secret is a column.
+- **`connector_cursors`**: where each resource of a connection got to (`resource`,
+  `cursor`, `synced_through`), so a sync resumes rather than starts over.
+- **`connector_leases`**: the per-connection claim and the hash of its live ticket, as
+  `import_leases`.
+- **`ad_spend`**: one row per connection, campaign and day.
+  - Columns: `campaign_id`, `campaign_name`, `day` (in the ad account's timezone), `spend`,
+    `currency`, `impressions`, `clicks`, and `purchases` and `purchase_value` as the ad
+    platform counts them.
+  - `purchases` and `purchase_value` are the platform's own claim, kept apart from the
+    store's orders.
+  - Unique on `(connection_id, campaign_id, day)`. A day is rewritten while the platform
+    still revises it (the last few days).
+- **`courier_shipments`**: one row per connection and AWB.
+  - Columns: `courier`, `status` and `status_at`, `ndr_reason` and `ndr_attempts`, `rto`,
+    `shipped_at`, `delivered_at`, `freight`, `cod_amount`, `payment_mode`.
+  - `order_ref` is what the courier called the order. `order_id` is the Shopify order it
+    resolves to, set by a trigger matching the order's number or Shopify id.
+- **`cod_remittances`**: one row per connection, remittance and AWB, with `amount`,
+  `remitted_on`, `utr` and the resolved `order_id`.
+
+Each data table gets a `store_*` view and a `STORE_TABLES` entry, so sections are built over
+it, Luke reads it, the owner's own AI reads it through MCP, and `abo_store_view` serves it,
+with no reader of its own. Store metrics gain `ad_spend` and ROAS (revenue ÷ spend, by day or
+campaign) once there is spend to divide by.
+
+## Registry
+
+`src/lib/connectors.ts` declares each provider once:
+
+- `id`, `label`, `logo` (official mark, unaltered), `kind` (`courier` or `ads`).
+- `auth`:
+  - `{ kind: "oauth", authorize, token, scopes }` for Meta and Google;
+  - `{ kind: "login", fields }` for Shiprocket and GoSwift, whose APIs are reached with an
+    API user's login.
+- `brings`: the tables it writes.
+- `every`: how often it is pulled.
+- `resources`: what one pull walks, each with its page size and how far back a first pull
+  goes.
+- `webhooks`: what it can push (Shiprocket tracking updates), if anything.
+- `needs`: what has to exist before a store can connect (an approved Meta app; a Google
+  Ads developer token). With that missing, the connector shows as "coming soon" rather
+  than failing at the end of a login.
+
+Each provider's code lives in `src/lib/connectors/<provider>.ts`:
+
+- `login` or the OAuth exchange: proves the credential and returns `account_ref` and label;
+- `refresh`: renews a token before it lapses;
+- `pull(resource, cursor)`: one page of rows, mapped to the table's columns, and the next
+  cursor.
+
+Nothing outside the adapter knows a provider's field names.
+
+## Connecting
+
+- **OAuth (Meta, Google):**
+  1. "Connect" asks `/api/connectors/[provider]/start` for an authorize URL, with a `state`
+     bound to the store and the owner, kept hashed with an expiry like the Shopify install
+     state.
+  2. The callback exchanges the code on the server.
+  3. If the grant holds several ad accounts, the owner picks one (or several) in the app.
+  4. `abo_connector_save` writes the tokens to the vault and the connection row.
+- **Login (Shiprocket, GoSwift):**
+  1. A form in the app takes the API user's credentials.
+  2. The server tries them once against the provider.
+  3. On success it saves them, with the token it got and its expiry; on failure it says
+     the provider's reason in plain words, and saves nothing.
+- **Disconnect:**
+  - Deletes the vault secret and marks the row `disconnected`.
+  - Keeps the rows already brought: they are the business's history, still useful in a
+    report.
+  - Deleting the store, or the app, deletes everything (cascade).
+
+The connect and disconnect go on the account's audit trail with who did it.
+
+## Sync
+
+- **Schedule:** `abo-connector-tick` runs every five minutes where pg_cron exists.
+  - It picks connections whose `next_sync_at` has passed, mints each a ticket and posts it
+    to `/api/connectors/worker`.
+  - The switch is a vault entry, `connector_worker_url`, as `import_worker_url` is. With none
+    (the check project), nothing is dispatched.
+  - **The check project must never get this entry**, for the same reason it must never get
+    `import_worker_url`.
+- **Worker:** presents the ticket and gets back, through `abo_connector_job`, only that
+  connection's secret, cursors and tables. It walks resources page by page within a time
+  budget, writes rows, saves cursors, and hands on to the next tick when time runs out.
+- **Tokens:** renewed by the adapter before expiry and saved back through the ticket. A
+  refused credential sets `needs_attention` and stops pulling until the owner reconnects.
+  The bell says so: a connection needing attention is something waiting on them.
+- **Freshness per kind:**
+  - Ad spend: hourly for today and the last 3 days (platforms revise them), daily further
+    back.
+  - Shipments: every 15 minutes while any is moving, and pushed by webhook where the
+    provider offers it (Shiprocket).
+  - Remittances: daily.
+- **Webhooks:**
+  - `/api/connectors/[provider]/hook/[token]`, with a per-connection token in the path that
+    is kept hashed, as Shopify's webhook route does.
+  - A delivery is verified, written through a function, and never trusted for anything but
+    its own rows.
+- **Limits:** each adapter honours its provider's rate limits and backs off as the import
+  step does; a 429 sets the next try, it does not loop.
+
+## Who reads what
+
+| Reader | Sees | How |
+| --- | --- | --- |
+| Owner | Connections, status, the data | Settings → Connections; sections and the Overview over the store lists |
+| Member | Status and the data, as for orders | The same lists, no connect or disconnect |
+| Luke | The data | `STORE_TABLES`, store metrics (ROAS) |
+| Their own AI (MCP) | The data, and which connections exist with their last sync | The store tools that already list `STORE_TABLES`; connecting stays in Warmluke |
+| Alerts | The data | The alert rules over store lists (an NDR not acted on in a day, ad spend with no orders) start off, as every alert does (0199) |
+
+## Security
+
+- **Secrets:**
+  - Credentials and tokens live only in the vault. Functions read them for one connection,
+    and only with a live ticket for that connection or within the owner's own connect
+    request.
+  - No secret is a table column, so column privileges have nothing to leak; new tables are
+    added to the grants check like any other.
+  - Meta's and Google's app secrets are server environment settings, never in the database,
+    and never in a response.
+- **OAuth `state`:** single-use, ten minutes, bound to store and owner.
+- **Login credentials:** Shiprocket's API user is a separate user the merchant creates for
+  integrations, not their own login. The connect form says so and links to where they make
+  one.
+- **Privacy:** the privacy page lists each provider as a processor before its connector
+  ships. Data deletion covers connector rows (store deletion cascades).
+
+## Testing
+
+- **Pure checks, one per adapter:**
+  - The provider is stood in for with recorded responses, as `check-model-errors` stands in
+    for the model.
+  - They prove the mapping to columns, cursors, token renewal, refused credentials and rate
+    limits.
+- **A database check** (`check-connectors`) proves the walls and the ticket's reach:
+  - a member cannot connect, and an OAuth client cannot write;
+  - a ticket reaches one connection's secret and tables, and nothing after it lapses.
+- **Browser walks** of Settings → Connections at desktop and phone width, with the provider
+  stood in.
+- **Live checks** against a real account run only on the user's word, against a test
+  account they name.
+
+## Phases
+
+1. **Campaign data on Shopify orders.** Built (0203, 11 Oct). No outside approval;
+   `read_orders` is already held.
+   - Each order gains where it came from, from Shopify's `customerJourneySummary` (last
+     visit): `visit_source`, `utm_source`, `utm_medium`, `utm_campaign`, `landing_page`,
+     `referrer`. It also gains `channel` (Shopify's `sourceName`: web, pos, an app).
+   - The webhook road reads the same from the order payload (`landing_site`, its `utm_`
+     query parameters, `referring_site`, `source_name`).
+   - Shopify fills the journey a little after the order: empty means not known yet, not
+     "direct".
+   - This is half of ROAS, and "orders by campaign" on its own.
+2. **The framework, and Shiprocket.**
+   - Tables, registry, vault save, ticket, worker, tick, and Settings → Connections.
+   - Shiprocket: shipments with tracking, NDR, RTO, freight, and COD remittance.
+   - Needs: an API user on a Shiprocket account to test with.
+3. **GoSwift.** Shipments and COD remittance.
+   - Needs: API access from GoSwift (tech-integrations@goswift.in).
+4. **Meta Ads.** Spend and results by campaign and day.
+   - Needs: a Meta Business app with Facebook Login for Business, Business Verification,
+     and Advanced Access to `ads_read` through App Review.
+   - Until then it works for the app's own testers.
+5. **Google Ads.** Spend and results by campaign and day.
+   - Needs: a Google Cloud project with the Google Ads API, a verified consent screen, and
+     API access approved for production.
+6. **ROAS across both:** revenue from phase 1 divided by spend from phases 4 and 5, by
+   campaign where the UTM campaign matches.
+
+Provider facts (token lifetimes, rate limits, review steps) were researched on 9 Oct. Each
+phase checks them against the provider's current documentation before it is built.

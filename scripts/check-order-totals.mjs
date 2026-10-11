@@ -396,6 +396,102 @@ try {
     Number(legacy?.total) === 149 && Number(legacy?.total_original) === 149
   );
 
+  // Where an order came from (0203): the import reads the journey, the
+  // webhook the landing URL, and a road that carries neither keeps them.
+  console.log("\nwhere an order came from, by both roads");
+  const came = async (ext) =>
+    (
+      await admin
+        .from("store_orders")
+        .select("visit_source, utm_source, utm_medium, utm_campaign, landing_page, referrer, channel")
+        .eq("store_id", store.id)
+        .eq("shopify_id", ext)
+        .single()
+    ).data;
+  await saveOrders(admin, store.id, [
+    {
+      id: `gid://shopify/Order/${stamp}5`,
+      name: "#9005",
+      createdAt: "2026-09-14T10:00:00Z",
+      updatedAt: "2026-09-14T10:00:00Z",
+      cancelledAt: null,
+      tags: [],
+      displayFinancialStatus: "PAID",
+      displayFulfillmentStatus: "UNFULFILLED",
+      totalPriceSet: money("899.00"),
+      currentTotalPriceSet: money("899.00"),
+      customer: null,
+      lineItems: { nodes: [] },
+      refunds: [],
+      sourceName: "web",
+      customerJourneySummary: {
+        lastVisit: {
+          source: "Facebook",
+          landingPage: "https://shop.example/?utm_campaign=diwali",
+          referrerUrl: "https://l.facebook.com/",
+          utmParameters: { source: "facebook", medium: "cpc", campaign: "diwali" },
+        },
+      },
+    },
+  ]);
+  let from = await came(`gid://shopify/Order/${stamp}5`);
+  check(
+    "the import reads the visit before it",
+    from?.visit_source === "Facebook" &&
+      from?.utm_source === "facebook" &&
+      from?.utm_medium === "cpc" &&
+      from?.utm_campaign === "diwali" &&
+      from?.referrer === "https://l.facebook.com/" &&
+      from?.channel === "web"
+  );
+  const { error: quiet } = await admin.rpc("abo_shopify_upsert_order", {
+    p_shop: shop,
+    p_order: {
+      id: `${stamp}5`,
+      name: "#9005",
+      created_at: "2026-09-14T10:00:00Z",
+      updated_at: "2026-09-15T10:00:00Z",
+      financial_status: "paid",
+      total_price: "899.00",
+      currency: "INR",
+      tags: "",
+      line_items: [],
+    },
+  });
+  from = await came(`gid://shopify/Order/${stamp}5`);
+  check(
+    "a webhook that says nothing of it keeps it",
+    !quiet && from?.visit_source === "Facebook" && from?.utm_campaign === "diwali" && from?.channel === "web"
+  );
+  const { error: landed } = await admin.rpc("abo_shopify_upsert_order", {
+    p_shop: shop,
+    p_order: {
+      id: `${stamp}6`,
+      name: "#9006",
+      created_at: "2026-09-14T10:00:00Z",
+      updated_at: "2026-09-14T10:00:00Z",
+      financial_status: "pending",
+      total_price: "450.00",
+      currency: "INR",
+      tags: "",
+      line_items: [],
+      source_name: "web",
+      landing_site: "/products/kurta?utm_source=google&utm_medium=cpc&utm_campaign=summer%20sale+2&gclid=x",
+      referring_site: "https://www.google.com/",
+    },
+  });
+  from = await came(`gid://shopify/Order/${stamp}6`);
+  check(
+    "the webhook reads the landing URL's own tags, decoded",
+    !landed && from?.utm_source === "google" && from?.utm_medium === "cpc" && from?.utm_campaign === "summer sale 2"
+  );
+  check(
+    "with the page, the site that sent them, and no source it was not told",
+    from?.landing_page?.startsWith("/products/kurta") === true &&
+      from?.referrer === "https://www.google.com/" &&
+      from?.visit_source === null
+  );
+
   console.log("\nand what a designer is told");
   const advice = STORE_TABLES.orders.advice ?? "";
   check(

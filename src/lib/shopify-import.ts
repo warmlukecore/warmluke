@@ -560,6 +560,10 @@ query($n: Int!, $after: String) {
       phone
       shippingAddress { city provinceCode countryCode phone }
       billingAddress { phone }
+      sourceName
+      customerJourneySummary {
+        lastVisit { source landingPage referrerUrl utmParameters { source medium campaign } }
+      }
       lineItems(first: 100) {
         nodes {
           id title variantTitle quantity sku
@@ -625,6 +629,21 @@ export type GqlOrder = {
   /** The order's own phone, typed at checkout. */
   phone?: string | null;
   billingAddress?: { phone?: string | null } | null;
+  /** The sales channel: web, pos, an app's name (0203). */
+  sourceName?: string | null;
+  /**
+   * Where the order came from: the visit before it (0203). Shopify fills
+   * it a little after the order, so null now is "not known yet", and a
+   * later pass, or the webhook's landing URL, fills it in.
+   */
+  customerJourneySummary?: {
+    lastVisit?: {
+      source?: string | null;
+      landingPage?: string | null;
+      referrerUrl?: string | null;
+      utmParameters?: { source?: string | null; medium?: string | null; campaign?: string | null } | null;
+    } | null;
+  } | null;
   lineItems: {
     nodes: Array<{
       id: string;
@@ -712,6 +731,15 @@ export async function saveOrders(db: SupabaseClient, storeId: string, nodes: Gql
         phone: o.phone?.trim() || null,
         ship_phone: o.shippingAddress?.phone?.trim() || null,
         bill_phone: o.billingAddress?.phone?.trim() || null,
+        // Where it came from (0203): null is "not known yet", and the
+        // database keeps what another road already knew.
+        channel: o.sourceName ?? null,
+        visit_source: o.customerJourneySummary?.lastVisit?.source ?? null,
+        utm_source: o.customerJourneySummary?.lastVisit?.utmParameters?.source ?? null,
+        utm_medium: o.customerJourneySummary?.lastVisit?.utmParameters?.medium ?? null,
+        utm_campaign: o.customerJourneySummary?.lastVisit?.utmParameters?.campaign ?? null,
+        landing_page: o.customerJourneySummary?.lastVisit?.landingPage ?? null,
+        referrer: o.customerJourneySummary?.lastVisit?.referrerUrl ?? null,
       })),
       { onConflict: "store_id,external_id" }
     )
