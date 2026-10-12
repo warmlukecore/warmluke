@@ -47,7 +47,7 @@ export default function Privacy() {
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-14 sm:px-6">
         <h1 className="font-serif text-2xl font-bold tracking-tight">Privacy</h1>
-        <p className="mt-2 text-sm text-quiet">Last updated 11 October 2026.</p>
+        <p className="mt-2 text-sm text-quiet">Last updated 12 October 2026.</p>
 
         <Section title="What we store">
           <p>
@@ -84,12 +84,15 @@ export default function Privacy() {
 
         <Section title="Website advertising measurement">
           <p>
-            Only if you allow it, our public landing page uses Meta Pixel to measure visits and successful early-access
-            requests. The page asks first, and nothing is measured before you choose Allow. After a request is saved, we
-            also send Meta a Lead event through its Conversions API, with a hashed email address, event time, page
-            address, and available advertising cookies, IP address and browser information. This helps measure and
-            improve our Facebook and Instagram ads. Hashing allows Meta to match an email; it does not make the event
-            anonymous.
+            When you send the early-access form, we tell Meta about that sign-up as a Lead event through its Conversions
+            API, as the form says under its button: a hashed email address, the event time, the page address, the ad you
+            came from if you came from one, your IP address and browser information, and Meta&rsquo;s advertising
+            cookies if the page has set them. This measures and improves our Facebook and Instagram ads. Hashing lets
+            Meta match an email; it does not make the event anonymous.
+          </p>
+          <p>
+            Separately, and only if you allow it, the landing page runs Meta Pixel in your browser to measure visits.
+            The page asks first, and the Pixel and its cookies are never loaded before you choose Allow.
           </p>
           <p>
             On the same yes, the landing page also uses Google Analytics to count visits and see which parts of the page
@@ -98,8 +101,9 @@ export default function Privacy() {
           </p>
           <p>
             This tracking does not run inside your business app or send your store&rsquo;s orders or customer records.
-            We skip it when your browser sends Do Not Track or Global Privacy Control. You can change your answer at any
-            time from &ldquo;Ad measurement&rdquo; at the foot of the landing page.
+            When your browser sends Global Privacy Control, we send Meta nothing, the sign-up&rsquo;s Lead included. You
+            can change your answer about the Pixel and Google Analytics at any time from &ldquo;Ad measurement&rdquo; at
+            the foot of the landing page.
           </p>
         </Section>
 

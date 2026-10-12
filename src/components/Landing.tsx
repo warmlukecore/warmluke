@@ -36,7 +36,7 @@ import { useCaptcha } from "@/components/Captcha";
 import { supabase } from "@/lib/supabase-client";
 import { UTM_KEYS, type Utm } from "@/lib/landing";
 import { bookDemo, type BookingState } from "@/app/actions";
-import { followMeasureChoice, metaTrackingAllowed, trackMetaLead } from "@/lib/meta-pixel";
+import { followMeasureChoice, trackMetaLead } from "@/lib/meta-pixel";
 import { chooseMeasure, measureUnasked, onMeasureChange } from "@/lib/consent";
 import { followAnalyticsChoice } from "@/lib/google-analytics";
 import { Logo } from "@/components/ui/Logo";
@@ -413,23 +413,26 @@ export function DemoForm({ variant }: { variant: string }) {
     utm: Utm;
     idem: string;
     fbc: string;
+    test: string;
   }>({
     session: "",
     path: "",
     utm: {},
     idem: "",
     fbc: "",
+    test: "",
   });
-  // Their yes to measuring, as it stands when they send: given after the
-  // form opened counts too. Without script it is never said, so never sent.
-  const measured = useSyncExternalStore(onMeasureChange, metaTrackingAllowed, () => false);
 
   // Filled after mount, because none of it exists on the server. With
   // JavaScript off these stay empty and the action makes its own — the
   // booking still arrives, it just is not joined to the earlier events.
   useEffect(() => {
-    const click = new URLSearchParams(window.location.search).get("fbclid");
+    const query = new URLSearchParams(window.location.search);
+    const click = query.get("fbclid");
+    // ?meta_test=TEST… from Events Manager: this one visit's Lead shows as a test.
+    const test = query.get("meta_test") ?? "";
     setCtx({
+      test: /^TEST[A-Za-z0-9]{1,20}$/.test(test) ? test : "",
       fbc: click && /^[A-Za-z0-9_-]{1,400}$/.test(click) ? `fb.1.${Date.now()}.${click}` : "",
       session: sessionId(),
       path: landingPath(),
@@ -474,7 +477,7 @@ export function DemoForm({ variant }: { variant: string }) {
     >
       <input type="hidden" name="variant" value={variant} />
       <input type="hidden" name="meta_fbc" value={ctx.fbc} />
-      <input type="hidden" name="meta_consent" value={measured ? "1" : ""} />
+      <input type="hidden" name="meta_test" value={ctx.test} />
       <input type="hidden" name="idem" value={ctx.idem} />
       <input type="hidden" name="session_id" value={ctx.session} />
       <input type="hidden" name="landing_path" value={ctx.path} />
@@ -537,6 +540,12 @@ export function DemoForm({ variant }: { variant: string }) {
           </span>
         )}
       </div>
+      <p className="text-xs text-quiet sm:col-span-2">
+        Sending this shares your sign-up with Meta so we can measure our ads.{" "}
+        <Link href="/privacy" className="underline underline-offset-2 hover:text-ink">
+          Privacy
+        </Link>
+      </p>
     </form>
   );
 }

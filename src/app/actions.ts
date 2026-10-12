@@ -31,7 +31,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { cookies, headers } from "next/headers";
 import { after } from "next/server";
-import { leadEventId, sendMetaLead } from "@/lib/meta-conversions";
+import { leadEventId, sendMetaLead, testCodeOf, type MetaOutcome } from "@/lib/meta-conversions";
 import { UTM_KEYS } from "@/lib/landing";
 import { HEARD_OPTIONS, ORDER_OPTIONS, TEAM_OPTIONS, heardDetailPrompt, type Option } from "@/lib/onboarding";
 
@@ -148,21 +148,39 @@ export async function bookDemo(_prev: BookingState, form: FormData): Promise<Boo
     return { ok: false, message: "That didn't send — please try again in a moment." };
   }
   after(async () => {
+    // What became of this Lead, kept on the booking (0212) so the Early
+    // access list can be matched against Ads Manager.
+    const keep = async (meta: MetaOutcome) => {
+      const { error: kept } = await createClient(url, anon).rpc("abo_book_demo_meta", {
+        p_key: key,
+        p_session: session,
+        p_idem: idem,
+        p_meta: meta,
+      });
+      if (kept) console.warn("Meta Lead: outcome not kept", kept.code);
+    };
+    const testCode = testCodeOf(text(form.get("meta_test"), 40));
     try {
       const h = await headers();
-      // Sent only on the visitor's yes, said by the form (lib/consent): a
-      // form without it (script off, never asked, a request made by hand)
-      // is a no, never a silent yes.
-      if (h.get("sec-gpc") === "1" || h.get("dnt") === "1" || form.get("meta_consent") !== "1") return;
+      // Every booking goes to Meta as a Lead (the owner's call, 12 Oct): the
+      // measurement prompt governs the browser's Pixel and cookies only, and
+      // the form says under its button that a sign-up is shared with Meta.
+      // A browser sending Global Privacy Control has asked not to be, and isn't.
+      if (h.get("sec-gpc") === "1") {
+        await keep({ sent: false, why: "their browser asked not to be tracked (Global Privacy Control)", test: false });
+        return;
+      }
       // Configured canonical URL, not a client-supplied URL or store address.
       const source = process.env.META_EVENT_SOURCE_URL;
-      if (!source) return;
-      const sourceUrl = new URL(source);
-      if (sourceUrl.protocol !== "https:" && sourceUrl.hostname !== "localhost") return;
+      const sourceUrl = source ? new URL(source) : null;
+      if (!sourceUrl || (sourceUrl.protocol !== "https:" && sourceUrl.hostname !== "localhost")) {
+        await keep({ sent: false, why: "META_EVENT_SOURCE_URL is not set on this server", test: false });
+        return;
+      }
       sourceUrl.search = "";
       sourceUrl.hash = "";
       const c = await cookies();
-      await sendMetaLead({
+      const outcome = await sendMetaLead({
         eventId,
         eventTime,
         email,
@@ -172,9 +190,12 @@ export async function bookDemo(_prev: BookingState, form: FormData): Promise<Boo
         // Vercel replaces this header; do not trust arbitrary forwarded IPs.
         ip: h.get("x-vercel-forwarded-for")?.split(",")[0]?.trim(),
         userAgent: h.get("user-agent") ?? undefined,
+        testCode,
       });
+      await keep(outcome);
     } catch {
       console.warn("Meta Lead: configuration or delivery failure");
+      await keep({ sent: false, why: "the server failed before Meta was asked", test: !!testCode }).catch(() => {});
     }
   });
   return { ok: true, eventId };

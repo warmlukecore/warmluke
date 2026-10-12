@@ -65,6 +65,8 @@ type Lead = {
   // 0141: the business they named, and when an invite was last made for their email.
   business?: string | null;
   invited_at?: string | null;
+  // 0212: what became of its Lead to Meta. Absent before 12 Oct.
+  meta?: { sent: boolean; why?: string | null; test?: boolean } | null;
 };
 
 /** The invite form, filled in with what the request told us (0141). */
@@ -416,6 +418,16 @@ export default function DemoRequests() {
                                 </div>
                               )}
                               {r.variant && <div className="text-fg-faint">saw the {r.variant} hero</div>}
+                              {r.meta && (
+                                <div
+                                  className={`mt-1 ${r.meta.sent ? "text-signal-success" : "text-signal-attention"}`}
+                                  title={r.meta.why ?? undefined}
+                                >
+                                  {r.meta.sent
+                                    ? `Meta Lead sent${r.meta.test ? " (as a test)" : ""}`
+                                    : `Meta Lead not sent: ${r.meta.why ?? "no reason kept"}`}
+                                </div>
+                              )}
                             </div>
                           </td>
                           <td className="px-3 py-3 first:pl-4">

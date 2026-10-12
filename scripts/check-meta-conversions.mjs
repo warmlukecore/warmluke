@@ -42,17 +42,33 @@ try {
     calls.push(args);
     return Response.json({ events_received: 1 });
   };
-  await sendMetaLead(lead);
+  const unset = await sendMetaLead(lead);
   assert.equal(calls.length, 0);
+  assert.equal(unset.sent, false);
+  assert.match(unset.why, /not set up/);
   process.env.NEXT_PUBLIC_META_PIXEL_ID = "123456";
   process.env.META_CAPI_ACCESS_TOKEN = "private-token";
   process.env.META_CAPI_TEST_EVENT_CODE = "TEST123";
   delete process.env.META_GRAPH_API_VERSION;
-  await sendMetaLead(lead);
+  const tested = await sendMetaLead(lead);
   assert.equal(calls.length, 1);
   assert.equal(calls[0][0], "https://graph.facebook.com/v26.0/123456/events");
   assert.equal(calls[0][1].headers.Authorization, "Bearer private-token");
   assert.equal(JSON.parse(calls[0][1].body).test_event_code, "TEST123");
+  assert.deepEqual(tested, { sent: true, test: true });
+  // A visit's own Test Events code wins over the server's, and only a code
+  // shaped as Meta prints one is ever sent.
+  calls.length = 0;
+  await sendMetaLead({ ...lead, testCode: "TESTVISIT9" });
+  assert.equal(JSON.parse(calls[0][1].body).test_event_code, "TESTVISIT9");
+  calls.length = 0;
+  await sendMetaLead({ ...lead, testCode: "drop table x" });
+  assert.equal(JSON.parse(calls[0][1].body).test_event_code, "TEST123");
+  delete process.env.META_CAPI_TEST_EVENT_CODE;
+  calls.length = 0;
+  const real = await sendMetaLead(lead);
+  assert.equal(JSON.parse(calls[0][1].body).test_event_code, undefined, "no code: a real Lead");
+  assert.deepEqual(real, { sent: true, test: false });
   calls.length = 0;
   globalThis.fetch = async (...args) => {
     calls.push(args);
@@ -68,12 +84,14 @@ try {
     calls.push(args);
     return Response.json({ error: { code: 190 } }, { status: 400 });
   };
-  await sendMetaLead(lead);
+  const refused = await sendMetaLead(lead);
   assert.equal(calls.length, 1);
+  assert.deepEqual(refused, { sent: false, why: "Meta refused it (400, code 190)", test: false });
   globalThis.fetch = async () => {
     throw Error("private-token owner@example.com");
   };
-  await sendMetaLead(lead);
+  const silent = await sendMetaLead(lead);
+  assert.deepEqual(silent, { sent: false, why: "Meta didn't answer, twice", test: false });
   assert.ok(warnings.length);
   assert.ok(!warnings.join().includes("private-token"));
   assert.ok(!warnings.join().includes("owner@example.com"));
@@ -153,22 +171,47 @@ try {
   assert.equal(delivered.event_source_url, "https://example.com/");
   assert.equal(delivered.event_id, lead.eventId);
   assert.equal(delivered.user_data.fbp, lead.fbp);
-  for (const header of ["dnt", "sec-gpc"]) {
-    harness.headers.set(header, "1");
-    await bookDemo({ ok: false }, form);
-    await harness.after.pop()();
-    harness.headers.delete(header);
-    assert.equal(calls.length, 1);
-  }
-  // Opt-in: a form that does not carry the visitor's yes sends nothing,
-  // whether they said no, were never asked, or had no script.
+  // What became of it is kept on the booking (0212), with the server's key.
+  const keptOf = () => harness.rpc.filter(([fn]) => fn === "abo_book_demo_meta").at(-1)?.[1];
+  assert.deepEqual(keptOf(), {
+    p_key: "mock-booking",
+    p_session: "session",
+    p_idem: "submission",
+    p_meta: { sent: true, test: false },
+  });
+  // Every booking is a Lead (12 Oct): the measurement prompt's answer, or
+  // none at all, does not hold it back. Do Not Track does not either.
   for (const given of ["", "0", null]) {
     if (given === null) form.delete("meta_consent");
     else form.set("meta_consent", given);
+    calls.length = 0;
     await bookDemo({ ok: false }, form);
     await harness.after.pop()();
-    assert.equal(calls.length, 1, `no Lead without a yes (meta_consent=${given})`);
+    assert.equal(calls.length, 1, `a Lead whatever the prompt said (meta_consent=${given})`);
   }
+  harness.headers.set("dnt", "1");
+  calls.length = 0;
+  await bookDemo({ ok: false }, form);
+  await harness.after.pop()();
+  harness.headers.delete("dnt");
+  assert.equal(calls.length, 1, "Do Not Track does not hold back a sign-up's Lead");
+  // A browser sending Global Privacy Control is left out, and the booking says why.
+  harness.headers.set("sec-gpc", "1");
+  calls.length = 0;
+  await bookDemo({ ok: false }, form);
+  await harness.after.pop()();
+  harness.headers.delete("sec-gpc");
+  assert.equal(calls.length, 0, "no Lead for a GPC browser");
+  assert.equal(keptOf().p_meta.sent, false);
+  assert.match(keptOf().p_meta.why, /Global Privacy Control/);
+  // A visit opened with ?meta_test=… sends its one Lead as a test.
+  form.set("meta_test", "TESTVISIT9");
+  calls.length = 0;
+  await bookDemo({ ok: false }, form);
+  await harness.after.pop()();
+  form.delete("meta_test");
+  assert.equal(JSON.parse(calls[0][1].body).test_event_code, "TESTVISIT9");
+  assert.equal(keptOf().p_meta.test, true);
   delete globalThis.metaTestHarness;
 
   // Browser queue and deduplication, including delayed/blocked script loading.
