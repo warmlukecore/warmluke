@@ -152,6 +152,25 @@ const GROW_MS = 6000;
  * it was created, so adding a column to the importer reaches every
  * section that already exists.
  */
+/**
+ * Whether row a is an older version than row b, by when each was last
+ * changed. Compared as times: a live event and an API read can spell the
+ * same moment differently ("2026-10-12 13:11:00+00" against "…T13:11:00+00:00").
+ * Unknown times are never older, so nothing is held back on a guess.
+ */
+function olderThan(a: { updated_at?: string | null }, b: { updated_at?: string | null }): boolean {
+  // "+00" as Postgres writes a zone is "+00:00" to a parser.
+  const at = (r: { updated_at?: string | null }) =>
+    Date.parse(
+      String(r.updated_at ?? "")
+        .replace(" ", "T")
+        .replace(/([+-]\d\d)$/, "$1:00")
+    );
+  const ta = at(a);
+  const tb = at(b);
+  return Number.isFinite(ta) && Number.isFinite(tb) && ta < tb;
+}
+
 function withStoreColumns(row: UiSchemaRow, sourceTable: string | null | undefined): UiSchemaRow {
   if (!isStoreTable(sourceTable)) return row;
   const sj = row.schema_json as UiSchema & { features?: unknown };
@@ -1333,6 +1352,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   const writeEpoch = useRef(0);
   const ownWrites = useRef(new Map<string, { at: number; row: RecordRow | null }>());
   const noteWrite = useCallback((id: string, row: RecordRow | null) => {
+    const was = ownWrites.current.get(id)?.row;
+    // A late echo of an earlier write is not the latest write.
+    if (row && was && olderThan(row, was)) return;
     ownWrites.current.set(id, { at: ++writeEpoch.current, row });
   }, []);
 
@@ -1388,8 +1410,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             if (!w.row) rows = rows.filter((r) => r.id !== id);
             else if (!got) {
               if (w.row.module_id === moduleId) rows = [w.row, ...rows];
-            } else if (String(got.updated_at ?? "") < String(w.row.updated_at ?? ""))
-              rows = rows.map((r) => (r.id === id ? (w.row as RecordRow) : r));
+            } else if (olderThan(got, w.row)) rows = rows.map((r) => (r.id === id ? (w.row as RecordRow) : r));
           }
           // What a read that began after a write brings already holds it.
           for (const [id, w] of ownWrites.current) if (w.at <= readFrom) ownWrites.current.delete(id);
@@ -1906,7 +1927,12 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       setRecords((prev) => {
         if (beside) return prev.map((r) => (r.id === beside ? { ...r, data: { ...r.data, ...data } } : r));
         const rec = row as unknown as RecordRow;
-        return prev.some((r) => r.id === id) ? prev.map((r) => (r.id === id ? rec : r)) : [...prev, rec];
+        // Never back to an older version of a row: a live event of an Undo
+        // that arrives after the Redo's answer put the old value back, and
+        // the next save was refused as someone else's change (CI, 12 Oct).
+        const held = prev.find((r) => r.id === id);
+        if (held && olderThan(rec, held)) return prev;
+        return held ? prev.map((r) => (r.id === id ? rec : r)) : [...prev, rec];
       });
       setRowsMoved((n) => n + 1);
       return true;
