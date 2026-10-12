@@ -1,0 +1,362 @@
+{
+  "label": "smoke-rest2-12oct",
+  "started": "2026-10-12T13:14:56.026Z",
+  "design_model": "claude-sonnet-5",
+  "sim_model": "claude-haiku-4-5",
+  "grade_model": "claude-haiku-4-5",
+  "cap": 1,
+  "spent": 0.4647,
+  "partial": false,
+  "cases": [
+    {
+      "id": "o-repeat-cod",
+      "title": "Flag repeat COD orders by phone",
+      "kind": "build",
+      "shop": "snacks",
+      "turns": 3,
+      "built": true,
+      "signs": {
+        "workarounds": [],
+        "jargon": [],
+        "proposed_first": true
+      },
+      "checks": [
+        {
+          "name": "effect",
+          "ok": false,
+          "detail": "nothing marks exactly #1003, #1005, #1009, #1011 (looked at COD Call List)"
+        },
+        {
+          "name": "capable",
+          "ok": true,
+          "detail": "never said it can't"
+        }
+      ],
+      "criteria": [
+        {
+          "text": "the repeat COD orders are marked in the orders list",
+          "met": false,
+          "said": false,
+          "evidence": "The app shows a manual checkbox 'To Call' that the owner ticks themselves, but does not show repeat COD orders already marked. Luke said 'aap khud tick karenge' (you will tick yourself), and the owner confirmed 'haan bana do' (yes, build it), but the built app does not flag repeat customers automati"
+        },
+        {
+          "text": "the plan is said in plain words before anything is built, with no field names or types",
+          "met": true,
+          "said": true,
+          "evidence": "Luke said in step 2: 'aapko woh orders chahiye jahan customer pehle bhi order kar chuka ho AUR is baar COD pe order kiya ho, taaki aap unhe call karke confirm kar sakein' (you want orders where the customer ordered before AND this time on COD, so you can call to confirm). Step 3 owner said 'nahin — "
+        },
+        {
+          "text": "ends by asking whether to build",
+          "met": false,
+          "said": false,
+          "evidence": "Luke offered an auto-rule in step 2: 'Ek rule har ghante yeh dobara check karega' (a rule every hour will check this again). The owner rejected it in step 3: 'nahin — mujhe sirf tick chahiye jo main manually laga sakoon. Aap auto set mat karo har ghante' (no — I want only a tick I can manually add. "
+        }
+      ],
+      "must_not": [
+        {
+          "text": "a rule that writes a value into every row",
+          "hit": true,
+          "evidence": "Luke said in step 2: 'Ek rule har ghante yeh dobara check karega, taaki naya COD order aane ke thodi der baad hi flag lag jaaye' (a rule every hour will check this again, so a new COD order gets flagged soon after). This is a rule that writes a value into every row. The owner rejected it in step 3, "
+        },
+        {
+          "text": "jargon such as \"boolean\" or \"set_fields\" in what the owner reads",
+          "hit": false,
+          "evidence": "Luke used 'tick', 'checkbox', 'filter', 'counter', 'search' — plain words for an owner. The built app also lists 'To Call [to_call] (boolean)' in the technical description for the reviewer, not shown to the owner in the app interface. The owner sees 'To Call' as a checkbox, not the word 'boolean'. N"
+        }
+      ],
+      "scores": {
+        "discussed": 4,
+        "plain": 5,
+        "better_idea": 2,
+        "simplest": 1
+      },
+      "cost": 0.3336,
+      "ms": 98762,
+      "transcript": [
+        {
+          "who": "owner",
+          "text": "jo customer pehle bhi order kar chuka hai aur ab COD pe order kiya hai, un orders ko mark kar do taaki main call kar saku"
+        },
+        {
+          "who": "luke",
+          "text": "Samajh gaya — aapko woh orders chahiye jahan customer pehle bhi order kar chuka ho AUR is baar COD pe order kiya ho, taaki aap unhe call karke confirm kar sakein.\n\nYeh bana sakta hoon:\n\n### Nayi section: \"COD Confirmation Calls\"\nAapke Shopify orders ke upar hi ek section, jisme ek apna field hoga — **Call status**, jo khud-ba-khud set hoga:\n- **\"Call to confirm\"** — jab order ka gateway \"Cash on Delivery (COD)\" hai AUR us customer ka koi aur order bhi store mein hai (naya customer nahi)\n- **\"Not needed\"** — baaki sab orders ke liye\n\nEk rule har ghante yeh dobara check karega, taaki naya COD order aane ke thodi der baad hi flag lag jaaye — aur agar kisi wajah se dubara prepaid ho jaaye to flag apne aap hat jaayega.\n\nSaath mein: order number/customer/phone se search, \"Call status\" par filter, aur \"To call\" ka ek counter.\n\nEk baat note kar loon — repeat customer ka check Customer se ho raha hai (store mein customer ka ek fixed ID field nahi aata sab orders par), toh agar do alag customers ka naam same hai woh bhi match ho sakte hain — iss store mein abhi aisa koi case nahi dikh raha.\n\nTheek hai, bana doon?"
+        },
+        {
+          "who": "owner",
+          "text": "Luke, nahin — mujhe sirf tick chahiye jo main manually laga sakoon. Aap auto set mat karo har ghante. Aur yeh 'Call status' likha mat rakh, bas ek checkbox de do 'To Call' ka. Baaki sab theek hai — search, filter, counter sab theek hai."
+        },
+        {
+          "who": "luke",
+          "text": "Theek hai — samajh gaya. Toh yeh banega:\\n\\n### Nayi section: \\\"COD Call List\\\"\\nAapke Shopify orders ke upar, bina kisi auto rule ke:\\n- **To Call** — ek simple checkbox, jo aap khud tick karenge jin orders ko call karna hai\\n- Order number / customer / phone se search\\n- Filter: Payment (COD / razorpay) aur To Call (Yes/No)\\n- Counter: \\\"To call\\\" — kitne abhi tick kiye hue hain\\n\\nKoi auto-set nahi, koi ghante wala rule nahi — bas aap manually tick karenge.\\n\\nBuild kar doon?"
+        },
+        {
+          "who": "owner",
+          "text": "haan bana do"
+        },
+        {
+          "who": "luke",
+          "text": "Ban gaya — **COD Call List** section, Orders ke upar:\n\n- **To Call** — ek checkbox, jo aap manually tick karenge\n- Search: order number, customer naam ya phone se\n- Filters: Payment (COD / razorpay) aur To Call (Yes/No)\n- Counter: **\"To call\"** — abhi kitne tick hue hain\n\nKoi auto rule nahi hai, kuch bhi apne aap set nahi hoga — poora control aapke haath mein hai. Approve kar denge to turant use kar sakte hain.\n[The design, built on the owner's yes:]\n- NEW_MODULE \"COD Call List\": A section over Shopify orders with a manual 'To Call' checkbox, search by order/customer/phone, a Payment filter, a Yes/No filter on To Call, and a counter of how many are ticked.\n  fields: Order (text) · Placed (date) · Customer (text) · Phone (phone) · Total (currency) · Before refunds (currency) · Refunded (currency) · Goods (currency) · Shipping (currency) · Tax (currency) · Discount (currency) · Currency (text) · Status (badge) · Fulfilment (badge) · Shipment (badge) · Courier (text) · Tracking (text) · Shipped (date) · Delivered (date) · Payment (badge) · City (text) · State (text) · Discounts (text) · Shipments (number) · Tags (text) · Came from (badge) · UTM source (text) · UTM medium (text) · Campaign (text) · Landing page (text) · Referrer (text) · Channel (badge) · To Call (boolean)"
+        },
+        {
+          "who": "app",
+          "text": "Built."
+        }
+      ],
+      "trace": [
+        {
+          "turn": 1,
+          "repairs": 0,
+          "refused": [],
+          "steps": [
+            "accepted",
+            "store",
+            "scout",
+            "context",
+            "road design",
+            "model 1/3",
+            "checked"
+          ]
+        },
+        {
+          "turn": 2,
+          "repairs": 0,
+          "refused": [],
+          "steps": [
+            "accepted",
+            "store",
+            "scout",
+            "context",
+            "road design",
+            "model 1/3",
+            "checked"
+          ]
+        },
+        {
+          "turn": 3,
+          "repairs": 0,
+          "refused": [],
+          "steps": [
+            "accepted",
+            "store",
+            "scout",
+            "context",
+            "road design",
+            "plan",
+            "model 1/3",
+            "checked",
+            "dryrun",
+            "checked",
+            "gaps"
+          ]
+        }
+      ],
+      "score10": 4.3
+    },
+    {
+      "id": "q-big-cod",
+      "title": "High-value cash on delivery this month",
+      "kind": "question",
+      "shop": "gadgets",
+      "turns": 1,
+      "built": false,
+      "signs": {
+        "workarounds": [],
+        "jargon": [],
+        "proposed_first": false
+      },
+      "checks": [
+        {
+          "name": "answer: COD orders over 5,000",
+          "ok": true,
+          "detail": "said 4"
+        },
+        {
+          "name": "answer: their total",
+          "ok": true,
+          "detail": "said 31735"
+        },
+        {
+          "name": "capable",
+          "ok": true,
+          "detail": "never said it can't"
+        }
+      ],
+      "criteria": [],
+      "must_not": [],
+      "scores": {
+        "discussed": 1,
+        "plain": 5,
+        "better_idea": 5,
+        "simplest": 1
+      },
+      "cost": 0.045,
+      "ms": 18434,
+      "transcript": [
+        {
+          "who": "owner",
+          "text": "In the last 30 days, how many COD orders were above ₹5,000, and what do they add up to?"
+        },
+        {
+          "who": "luke",
+          "text": "Looking at the last 30 days (2026‑09‑13 to 2026‑10‑12), all 10 orders placed in that window, filtering to Cash on Delivery orders above ₹5,000:\n\n**4 COD orders** above ₹5,000, adding up to **₹31,735**:\n- #1001 – ₹6,359 (Karan Malhotra, Delhi, still PENDING)\n- #1002 – ₹9,509 (Divya Shetty, Mangaluru, PENDING)\n- #1004 – ₹6,358 (Meghna Paul, Kolkata, PENDING)\n- #1007 – ₹9,509 (Divya Shetty, Mangaluru, PAID)\n\nOne more COD order in this window, **#1011** (₹6,359 original value), was cancelled — its current total is ₹0, so I've left it out of the sum above since it's no money actually owed. If you'd rather count it (as a lost COD sale worth >₹5,000), the total would be ₹38,094 across 5 orders."
+        }
+      ],
+      "trace": [
+        {
+          "turn": 1,
+          "repairs": 0,
+          "refused": [],
+          "steps": [
+            "accepted",
+            "store",
+            "scout",
+            "context",
+            "road talk",
+            "model 1/3",
+            "checked"
+          ]
+        }
+      ],
+      "score10": 10
+    },
+    {
+      "id": "q-cod-pending",
+      "title": "COD still to collect from the last week",
+      "kind": "question",
+      "shop": "seed",
+      "turns": 1,
+      "built": false,
+      "signs": {
+        "workarounds": [],
+        "jargon": [],
+        "proposed_first": false
+      },
+      "checks": [
+        {
+          "name": "answer: COD still to collect from the last 7 days",
+          "ok": true,
+          "detail": "said 1528"
+        },
+        {
+          "name": "capable",
+          "ok": true,
+          "detail": "never said it can't"
+        }
+      ],
+      "criteria": [],
+      "must_not": [],
+      "scores": {
+        "discussed": 1,
+        "plain": 1,
+        "better_idea": 1,
+        "simplest": 1
+      },
+      "cost": 0.0468,
+      "ms": 11715,
+      "transcript": [
+        {
+          "who": "owner",
+          "text": "pichle 7 din ke COD orders ka kitna paisa abhi pending hai?"
+        },
+        {
+          "who": "luke",
+          "text": "Pichle 7 din (6 Oct – 12 Oct) mein COD ka **₹1,528 abhi pending** hai — sirf 1 order:\n\n- **#1008** · Rohan Gupta · Mumbai · ₹1,528 · status PENDING (cash abhi collect nahi hua)\n\nBaaki is window ke orders razorpay se PAID aa chuke hain, isliye COD-pending sirf isi ek order mein hai. Data last synced 2026-10-12 13:17 IST."
+        }
+      ],
+      "trace": [
+        {
+          "turn": 1,
+          "repairs": 0,
+          "refused": [],
+          "steps": [
+            "accepted",
+            "store",
+            "scout",
+            "context",
+            "road talk",
+            "model 1/3",
+            "lookup",
+            "checked"
+          ]
+        }
+      ],
+      "score10": 10
+    },
+    {
+      "id": "v-warranty",
+      "title": "Help with warranty claims",
+      "kind": "vague",
+      "shop": "gadgets",
+      "turns": 1,
+      "built": false,
+      "signs": {
+        "workarounds": [],
+        "jargon": [],
+        "proposed_first": true
+      },
+      "checks": [
+        {
+          "name": "asks first",
+          "ok": true,
+          "detail": "asked first"
+        },
+        {
+          "name": "capable",
+          "ok": true,
+          "detail": "never said it can't"
+        }
+      ],
+      "criteria": [],
+      "must_not": [],
+      "scores": {
+        "discussed": 3,
+        "plain": 4,
+        "better_idea": 4,
+        "simplest": 3
+      },
+      "cost": 0.0392,
+      "ms": 16331,
+      "transcript": [
+        {
+          "who": "owner",
+          "text": "Help me manage warranty claims."
+        },
+        {
+          "who": "luke",
+          "text": "Shopify has no idea of \"warranty\" — it's not in any of your synced lists — so this needs a section of your own, linked to the order/product/customer it's about so nothing gets typed twice.\n\nHere's how I'd set it up:\n\n### Warranty Claims (your own section)\n- **Order** — link to Orders (pulls in the customer, order date, product bought)\n- **Product / SKU** — link to Products, or picked off the order's line item\n- **Issue** — what's wrong (long text)\n- **Claim date** — when they reported it\n- **Status** — a board: Reported → Under review → Approved → Replaced/Repaired/Refunded → Rejected (closed)\n- **Resolution notes** — what was done\n- **Resolution date**\n\nBoard view so your team can drag a claim across stages. I'd add a stat card for \"open claims\" and one for \"claims stuck over 7 days\" (days since claim date, still not closed) so nothing sits forgotten — and an alert when a claim crosses that.\n\nTwo things I need from you to get this right:\n\n1. Should every claim be tied to a **Shopify order number** (so I can link it), or do some come in without one (lost receipt, gift, etc.)?\n2. What are your real resolution outcomes — is it always one of Replace / Repair / Refund / Reject, or do you do something else (store credit, send part, etc.)?\n\nWant me to build it once you confirm?"
+        }
+      ],
+      "trace": [
+        {
+          "turn": 1,
+          "repairs": 0,
+          "refused": [],
+          "steps": [
+            "accepted",
+            "store",
+            "scout",
+            "context",
+            "road design",
+            "model 1/3",
+            "checked"
+          ]
+        }
+      ],
+      "score10": 10
+    }
+  ],
+  "summary": {
+    "pass_rate": 0.75,
+    "score10": 8.6,
+    "said_rate": 0.333,
+    "avg_scores": {
+      "discussed": 2.25,
+      "plain": 3.75,
+      "better_idea": 3,
+      "simplest": 1.5
+    },
+    "signs_total": 0,
+    "cost": 0.4646,
+    "avg_ms": 36311
+  }
+}

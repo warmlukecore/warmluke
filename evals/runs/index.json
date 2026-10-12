@@ -215,5 +215,43 @@
       "cost": 0.7103,
       "avg_ms": 98797
     }
+  },
+  {
+    "file": "20261012-1304-smoke-rest-12oct.json",
+    "label": "smoke-rest-12oct",
+    "started": "2026-10-12T13:04:36.438Z",
+    "summary": {
+      "pass_rate": 0.5,
+      "score10": 7.3,
+      "said_rate": 0,
+      "avg_scores": {
+        "discussed": 1.25,
+        "plain": 3,
+        "better_idea": 2.5,
+        "simplest": 1
+      },
+      "signs_total": 0,
+      "cost": 0.3626,
+      "avg_ms": 33228
+    }
+  },
+  {
+    "file": "20261012-1314-smoke-rest2-12oct.json",
+    "label": "smoke-rest2-12oct",
+    "started": "2026-10-12T13:14:56.026Z",
+    "summary": {
+      "pass_rate": 0.75,
+      "score10": 8.6,
+      "said_rate": 0.333,
+      "avg_scores": {
+        "discussed": 2.25,
+        "plain": 3.75,
+        "better_idea": 3,
+        "simplest": 1.5
+      },
+      "signs_total": 0,
+      "cost": 0.4646,
+      "avg_ms": 36311
+    }
   }
 ]

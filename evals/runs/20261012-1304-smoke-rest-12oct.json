@@ -1,0 +1,327 @@
+{
+  "label": "smoke-rest-12oct",
+  "started": "2026-10-12T13:04:36.438Z",
+  "design_model": "claude-sonnet-5",
+  "sim_model": "claude-haiku-4-5",
+  "grade_model": "claude-haiku-4-5",
+  "cap": 1.5,
+  "spent": 0.3626,
+  "partial": false,
+  "cases": [
+    {
+      "id": "o-repeat-cod",
+      "title": "Flag repeat COD orders by phone",
+      "kind": "build",
+      "shop": "snacks",
+      "turns": 1,
+      "built": false,
+      "signs": {
+        "workarounds": [],
+        "jargon": [],
+        "proposed_first": false
+      },
+      "checks": [
+        {
+          "name": "effect",
+          "ok": false,
+          "detail": "nothing marks exactly #1003, #1005, #1009, #1011 (no section over those rows)"
+        },
+        {
+          "name": "capable",
+          "ok": true,
+          "detail": "never said it can't"
+        }
+      ],
+      "criteria": [
+        {
+          "text": "the repeat COD orders are marked in the orders list",
+          "met": false,
+          "said": false,
+          "evidence": "WHAT IS IN THE APP NOW: (nothing)"
+        },
+        {
+          "text": "the plan is said in plain words before anything is built, with no field names or types",
+          "met": false,
+          "said": false,
+          "evidence": "Luke did not answer: Luke couldn't finish this one"
+        },
+        {
+          "text": "ends by asking whether to build",
+          "met": false,
+          "said": false,
+          "evidence": "Luke did not answer: Luke couldn't finish this one"
+        }
+      ],
+      "must_not": [
+        {
+          "text": "a rule that writes a value into every row",
+          "hit": false,
+          "evidence": "Nothing was built, so no rule was added"
+        },
+        {
+          "text": "jargon such as \"boolean\" or \"set_fields\" in what the owner reads",
+          "hit": false,
+          "evidence": "No conversation reached the owner; Luke failed before speaking to them"
+        }
+      ],
+      "scores": {
+        "discussed": 1,
+        "plain": 1,
+        "better_idea": 1,
+        "simplest": 1
+      },
+      "cost": 0.1648,
+      "ms": 58311,
+      "transcript": [
+        {
+          "who": "owner",
+          "text": "jo customer pehle bhi order kar chuka hai aur ab COD pe order kiya hai, un orders ko mark kar do taaki main call kar saku"
+        },
+        {
+          "who": "luke",
+          "text": "(Luke did not answer: Luke couldn't finish this one: it kept failing its own checks, so nothing was changed. Ask again; if it fails a second time, say it another way.)"
+        }
+      ],
+      "trace": [
+        {
+          "turn": 1,
+          "repairs": 3,
+          "refused": [
+            "An answer must say which \"kind\" it is: \"store\", \"product_help\" or \"conversation\".",
+            "An answer must say which \"kind\" it is: \"store\", \"product_help\" or \"conversation\".",
+            "An answer must say which \"kind\" it is: \"store\", \"product_help\" or \"conversation\"."
+          ],
+          "steps": [
+            "accepted",
+            "store",
+            "scout",
+            "context",
+            "road design",
+            "model 1/3",
+            "checked 1 problems",
+            "model 2/3",
+            "checked 1 problems",
+            "model 3/3",
+            "checked 1 problems"
+          ]
+        }
+      ],
+      "score10": 4.3
+    },
+    {
+      "id": "q-big-cod",
+      "title": "High-value cash on delivery this month",
+      "kind": "question",
+      "shop": "gadgets",
+      "turns": 1,
+      "built": false,
+      "signs": {
+        "workarounds": [],
+        "jargon": [],
+        "proposed_first": false
+      },
+      "checks": [
+        {
+          "name": "answer: COD orders over 5,000",
+          "ok": true,
+          "detail": "said 4"
+        },
+        {
+          "name": "answer: their total",
+          "ok": true,
+          "detail": "said 31735"
+        },
+        {
+          "name": "capable",
+          "ok": true,
+          "detail": "never said it can't"
+        }
+      ],
+      "criteria": [],
+      "must_not": [],
+      "scores": {
+        "discussed": 1,
+        "plain": 5,
+        "better_idea": 4,
+        "simplest": 1
+      },
+      "cost": 0.0443,
+      "ms": 10959,
+      "transcript": [
+        {
+          "who": "owner",
+          "text": "In the last 30 days, how many COD orders were above ₹5,000, and what do they add up to?"
+        },
+        {
+          "who": "luke",
+          "text": "Looking at the last 30 days of orders (2026‑09‑13 to 2026‑10‑12, all 10 orders in that window, last synced 2026-10-12 13:05 UTC):\n\n**4 COD orders above ₹5,000**, adding up to **₹31,735**:\n- #1001 – Karan Malhotra – ₹6,359 (PENDING)\n- #1002 – Divya Shetty – ₹9,509 (PENDING)\n- #1004 – Meghna Paul – ₹6,358 (PENDING)\n- #1007 – Divya Shetty – ₹9,509 (PAID)\n\nNote: #1011 was a COD order over ₹5,000 (₹6,359) but it was **cancelled**, so its current total shows as ₹0 and it's excluded here. Also, all 4 counted are still PENDING/PAID financial status as shown — three of them (₹1001, ₹1002, ₹1004) are PENDING, meaning that money hasn't actually been collected yet since it's cash-on-delivery awaiting courier collection."
+        }
+      ],
+      "trace": [
+        {
+          "turn": 1,
+          "repairs": 0,
+          "refused": [],
+          "steps": [
+            "accepted",
+            "store",
+            "scout",
+            "context",
+            "road talk",
+            "model 1/3",
+            "checked"
+          ]
+        }
+      ],
+      "score10": 10
+    },
+    {
+      "id": "q-cod-pending",
+      "title": "COD still to collect from the last week",
+      "kind": "question",
+      "shop": "seed",
+      "turns": 1,
+      "built": false,
+      "signs": {
+        "workarounds": [],
+        "jargon": [],
+        "proposed_first": false
+      },
+      "checks": [
+        {
+          "name": "answer: COD still to collect from the last 7 days",
+          "ok": true,
+          "detail": "said 1528"
+        },
+        {
+          "name": "capable",
+          "ok": true,
+          "detail": "never said it can't"
+        }
+      ],
+      "criteria": [],
+      "must_not": [],
+      "scores": {
+        "discussed": 2,
+        "plain": 5,
+        "better_idea": 4,
+        "simplest": 1
+      },
+      "cost": 0.049,
+      "ms": 11580,
+      "transcript": [
+        {
+          "who": "owner",
+          "text": "pichle 7 din ke COD orders ka kitna paisa abhi pending hai?"
+        },
+        {
+          "who": "luke",
+          "text": "Pichle 7 din (6–12 Oct 2026, store ke Asia/Kolkata time) mein COD orders ka **₹1,528 abhi pending** hai — yeh sirf **1 order** hai: #1008 (Rohan Gupta, Mumbai, placed 9 Oct, status PENDING).\n\nStore last synced 2026-10-12 13:06 UTC se yeh figures liye hain.\n\n- Baaki COD/prepaid orders is window mein saare PAID hain, isliye koi aur amount pending nahi.\n- Yeh sirf \"financial status PENDING\" wale COD orders ka total hai — tax/shipping included (order ka total figure), na ki sirf product ka subtotal."
+        }
+      ],
+      "trace": [
+        {
+          "turn": 1,
+          "repairs": 0,
+          "refused": [],
+          "steps": [
+            "accepted",
+            "store",
+            "scout",
+            "context",
+            "road talk",
+            "model 1/3",
+            "lookup",
+            "lookup",
+            "checked"
+          ]
+        }
+      ],
+      "score10": 10
+    },
+    {
+      "id": "v-warranty",
+      "title": "Help with warranty claims",
+      "kind": "vague",
+      "shop": "gadgets",
+      "turns": 1,
+      "built": false,
+      "signs": {
+        "workarounds": [],
+        "jargon": [],
+        "proposed_first": false
+      },
+      "checks": [
+        {
+          "name": "asks first",
+          "ok": false,
+          "detail": "neither asked nor drew"
+        },
+        {
+          "name": "capable",
+          "ok": true,
+          "detail": "never said it can't"
+        }
+      ],
+      "criteria": [],
+      "must_not": [],
+      "scores": {
+        "discussed": 1,
+        "plain": 1,
+        "better_idea": 1,
+        "simplest": 1
+      },
+      "cost": 0.1045,
+      "ms": 52061,
+      "transcript": [
+        {
+          "who": "owner",
+          "text": "Help me manage warranty claims."
+        },
+        {
+          "who": "luke",
+          "text": "(Luke did not answer: Luke couldn't finish this one: it kept failing its own checks, so nothing was changed. Ask again; if it fails a second time, say it another way.)"
+        }
+      ],
+      "trace": [
+        {
+          "turn": 1,
+          "repairs": 3,
+          "refused": [
+            "An answer must say which \"kind\" it is: \"store\", \"product_help\" or \"conversation\".",
+            "An answer must say which \"kind\" it is: \"store\", \"product_help\" or \"conversation\".",
+            "An answer must say which \"kind\" it is: \"store\", \"product_help\" or \"conversation\"."
+          ],
+          "steps": [
+            "accepted",
+            "store",
+            "scout",
+            "context",
+            "road design",
+            "model 1/3",
+            "checked 1 problems",
+            "model 2/3",
+            "checked 1 problems",
+            "model 3/3",
+            "checked 1 problems"
+          ]
+        }
+      ],
+      "score10": 5
+    }
+  ],
+  "summary": {
+    "pass_rate": 0.5,
+    "score10": 7.3,
+    "said_rate": 0,
+    "avg_scores": {
+      "discussed": 1.25,
+      "plain": 3,
+      "better_idea": 2.5,
+      "simplest": 1
+    },
+    "signs_total": 0,
+    "cost": 0.3626,
+    "avg_ms": 33228
+  }
+}
