@@ -167,6 +167,7 @@ export const DOORS: Door[] = [
   { door: "rpc abo_admin_*", does: "the admin console", why: CONSOLE },
   { door: "POST /api/console", does: "the admin console", why: CONSOLE },
   { door: "rpc abo_book_demo", does: "book a demo from the landing page", why: PLUMBING },
+  { door: "rpc abo_book_demo_meta", does: "keep whether Meta heard a booking's Lead (0212)", why: PLUMBING },
   { door: "write landing_events", does: "the landing page's own counts", why: PLUMBING },
   { door: "write screen_errors", does: "a written screen's error, kept for a fix", why: PLUMBING },
   // ── Workers and webhooks ──────────────────────────────────
