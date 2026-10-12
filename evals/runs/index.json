@@ -196,5 +196,24 @@
       "cost": 0.4893,
       "avg_ms": 184526
     }
+  },
+  {
+    "file": "20261012-1238-smoke-agent-12oct.json",
+    "label": "smoke-agent-12oct",
+    "started": "2026-10-12T12:38:45.004Z",
+    "summary": {
+      "pass_rate": 0.5,
+      "score10": 8.2,
+      "said_rate": 0.667,
+      "avg_scores": {
+        "discussed": 3.5,
+        "plain": 3.5,
+        "better_idea": 4,
+        "simplest": 1.5
+      },
+      "signs_total": 2,
+      "cost": 0.7103,
+      "avg_ms": 98797
+    }
   }
 ]
