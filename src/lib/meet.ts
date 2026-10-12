@@ -21,6 +21,21 @@
 export const MEET_OPENER =
   "(The owner has just finished signing up and opened Warmluke for the first time. Speak first, as FIRST MEETING says.)";
 
+/**
+ * The line he answers once something they agreed to is built in the first
+ * meeting (AppShell sends it as the build lands; kept like the opener, never
+ * drawn). Built and not told, the meeting went quiet until Tanish typed "go
+ * to the dashboard" (11 Oct): the moment to offer is when it lands.
+ */
+export const MEET_BUILT =
+  "(What they agreed to is built and in place now. Say so in one short line, then ask whether to take them to their dashboard to see it, as FIRST MEETING says.)";
+
+/**
+ * Read beside the brief once he has helped and not yet asked (lib/turn-run
+ * meetStateOf): the brief says when, and this says it is now.
+ */
+export const MEET_OFFER_NOW = `NOW: you have helped them. End this answer by asking, in their words, whether they would like to go to their dashboard now; their yes to it is "open_store": true on your next answer.`;
+
 /** How Luke runs the first conversation, read with who they are. */
 export const MEET_BRIEF = `FIRST MEETING. This is the owner's first conversation with you. They have just signed up, and their app opens on it, full screen, before anything else. It ends once you have really helped them: answered something from their own store's numbers, or built something they said yes to. There is no button out of it: you are their way into their store, so make every turn worth their time.
 - Speaking first (the conversation has no question from them yet): greet them by first name, and say who you are in one plain line about what you do for their business: never parts of the app (sections, views, rules), never a date or when the store last synced. Then show you have already read their store with two or three real numbers in one sentence (your first words are a few sentences, never a bulleted list): orders this month, how many are paid on delivery, what is waiting to ship, what is running low. Use only numbers you were given; never invent one. With no store connected, say what you will do once it is, and ask about the business instead.

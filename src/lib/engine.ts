@@ -69,7 +69,8 @@ import {
 } from "@/lib/plan";
 import { asJob } from "@/lib/usage";
 import { describeMerchant, type ProfileRow } from "@/lib/onboarding";
-import { MEET_BRIEF, MEET_OPENER } from "@/lib/meet";
+import { MEET_BRIEF, MEET_BUILT, MEET_OFFER_NOW, MEET_OPENER } from "@/lib/meet";
+import { appTools, READ_THE_APP } from "@/lib/section-read";
 import {
   describeFeaturesFull,
   describePlan,
@@ -250,6 +251,8 @@ export type TurnInput = {
   message: string;
   /** The owner's first conversation (0200): run by the first-meeting brief (lib/meet). */
   meeting?: boolean;
+  /** Where the first meeting stands (lib/turn-run meetStateOf): whether he has helped, and asked to open their store. */
+  meetState?: MeetState;
   /** Earlier turns of the same conversation, oldest first. */
   history?: ChatTurn[];
   currentSchema?: UiSchema | null;
@@ -587,6 +590,67 @@ export const NOT_ANSWERED =
  * it, it is history and left out, and one still being answered
  * elsewhere is not this turn's to read.
  */
+/** Where the first meeting stands, read off its thread (lib/turn-run meetStateOf). */
+export type MeetState = {
+  /** He has helped: built something they agreed to, or answered from their store's numbers. */
+  helped: boolean;
+  /** He has asked whether to open their store. */
+  offered: boolean;
+  /** And his last reply was that question, so a yes now is the yes to it. */
+  lastOffered: boolean;
+};
+
+/**
+ * A reply as later turns are told it. The last one is told whole: the
+ * owner may be answering it ("yes", "change the second one"). An older
+ * design is told as what was said and what each change was, not its
+ * schemas, fields and rules: what was built is in the turn's CONTEXT as
+ * it is now, and a stale copy of a design was paid for again on every
+ * later call, and disagreed with it (Carefone, 11 Oct: five old designs
+ * were 30k of the thread's 37k characters).
+ */
+export function pastReply(content: string): string {
+  if (!/"type"\s*:\s*"(blueprint|plans)"/.test(content)) return content;
+  let r: Record<string, unknown>;
+  try {
+    r = JSON.parse(stripFences(content)) as Record<string, unknown>;
+  } catch {
+    return content;
+  }
+  if (!r || typeof r !== "object" || (r.type !== "blueprint" && r.type !== "plans")) return content;
+  const bp = r.blueprint && typeof r.blueprint === "object" ? (r.blueprint as Record<string, unknown>) : null;
+  const plans = (Array.isArray(r.plans) ? r.plans : Array.isArray(bp?.plans) ? bp.plans : []) as Array<Record<
+    string,
+    unknown
+  > | null>;
+  const said = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  return JSON.stringify({
+    type: r.type,
+    ...(said(r.title) ? { title: said(r.title) } : {}),
+    ...(said(r.message) ? { message: said(r.message) } : {}),
+    ...(said(bp?.summary) ? { summary: said(bp?.summary) } : {}),
+    changes: plans.map((p) => [said(p?.changeType), said(p?.explanation)].filter(Boolean).join(": ")).filter(Boolean),
+  });
+}
+
+/**
+ * A first-meeting turn's part in letting them in (lib/meet): whether this
+ * answer is the one that asks to open their store (it was just built, or he
+ * has helped and not asked), and whether this message is the yes to his
+ * asking, which opens it whatever the model wrote.
+ */
+export function meetTurn(
+  meeting: boolean,
+  state: MeetState | undefined,
+  message: string
+): { offerDue: boolean; opens: boolean } {
+  if (!meeting) return { offerDue: false, opens: false };
+  return {
+    offerDue: message === MEET_BUILT || (!!state?.helped && !state.offered && message !== MEET_OPENER),
+    opens: !!state?.lastOffered && isGoAhead(message),
+  };
+}
+
 export function answeredTurns<T extends { role: string; ptype: string | null }>(rows: T[]): T[] {
   const lastAnswer = rows.findLastIndex((m) => m.role === "assistant" && !UNANSWERED.has(m.ptype ?? ""));
   return rows.filter((m, i) => {
@@ -702,6 +766,9 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
       memoryModel() ? problemsFor(client, project.id) : Promise.resolve([] as ProblemRow[]),
     ]);
   const known = notesRows;
+  // The first meeting's way out (lib/meet), decided here rather than left to
+  // the brief alone: once he has helped and not yet asked, this turn asks.
+  const { offerDue, opens } = meetTurn(!!input.meeting, input.meetState, message);
   // After what is known, so the plan, talk and design prompts all read it.
   // Only a project that has learned something has a block, and no
   // recorded turn's project has, so the tapes replay unchanged.
@@ -720,6 +787,7 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
       describeProblems(hurts),
       learnedBlock,
       input.meeting ? MEET_BRIEF : null,
+      offerDue && message !== MEET_BUILT ? MEET_OFFER_NOW : null,
     ]
       .filter(Boolean)
       .join("\n") || null;
@@ -764,16 +832,21 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
         }
       : null;
   const canChange = !!toolStore && changeOn === true;
-  const tools = toolStore
-    ? {
-        ...aiStoreTools(toolStore, { only: LUKE_TOOLS, observe: hear }),
-        // Asking for a change in the shop, when the account allows it.
-        // It only ever makes a request the merchant agrees to or not.
-        ...(canChange
-          ? { propose_store_action: aiProposeTool(toolStore, ({ summary }) => tell({ step: "proposed", summary })) }
-          : {}),
-      }
-    : null;
+  // The app's own rows and what its rules did (lib/section-read): read the
+  // way their own AI reads them, with or without a store.
+  const appReads = lookups ? appTools({ db: client, projectId: project.id }, hear) : null;
+  const tools =
+    toolStore || appReads
+      ? {
+          ...(toolStore ? aiStoreTools(toolStore, { only: LUKE_TOOLS, observe: hear }) : {}),
+          ...appReads,
+          // Asking for a change in the shop, when the account allows it.
+          // It only ever makes a request the merchant agrees to or not.
+          ...(canChange && toolStore
+            ? { propose_store_action: aiProposeTool(toolStore, ({ summary }) => tell({ step: "proposed", summary })) }
+            : {}),
+        }
+      : null;
   // The draft, told only when it changes: a stream of the same words
   // over and over would be a stream of nothing.
   // What is being written once the words are done ("questions"), told
@@ -797,7 +870,7 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
 
   // Before the prompt is written: it offers only what the tools can do.
   if (store) {
-    store.canLookUp = !!tools;
+    store.canLookUp = !!toolStore;
     store.canChange = canChange;
   }
 
@@ -817,7 +890,7 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
     // The first conversation is talk (10 Oct): ideas in words, built only
     // once they ask, which the talk road hands back (FIRST MEETING says
     // when). A plan already said goes on as anywhere else.
-    (input.meeting && (message === MEET_OPENER || !agreed) ? "talk" : null) ??
+    (input.meeting && (message === MEET_OPENER || message === MEET_BUILT || !agreed) ? "talk" : null) ??
     // After a plan in words, an answer to its questions is more of the
     // design, not a follow-up question: it plans again.
     (agreed && (goAhead || !isQuestion(message))
@@ -831,11 +904,13 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
   if (!resume) tell({ step: "road", road });
   // Money as the owner chose it, else as their shop keeps it: Luke writes the same currency the app shows.
   const money = projectFormat(project, store);
+  // Told to look before answering about their own rows and rules, when he can (lib/section-read).
+  const withApp = (s: [string, string]): [string, string] => (appReads ? [s[0], `${s[1]}\n\n${READ_THE_APP}`] : s);
   const designSystem = () =>
-    buildSystemPrompt(modules, project.name, money.locale, money.currency, store, merchant, examplesBlock);
+    withApp(buildSystemPrompt(modules, project.name, money.locale, money.currency, store, merchant, examplesBlock));
   let system =
     road === "talk"
-      ? buildTalkPrompt(modules, project.name, money.locale, money.currency, store, merchant)
+      ? withApp(buildTalkPrompt(modules, project.name, money.locale, money.currency, store, merchant))
       : designSystem();
   // Every section as the designer is told it: the simplicity reviewer reads the same lines.
   const sectionLines = columnLines(modules, schemas);
@@ -1059,6 +1134,9 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
           // The one they picked wins on both roads; otherwise each road's own.
           model: model ?? (road === "talk" ? talkModel() : undefined),
           lookups: attempt === 0 && tools ? { tools } : undefined,
+          // A turn is several calls on one prefix (lookups, repairs, a redo):
+          // the thread so far is written to the cache once and read after.
+          cacheTurns: true,
           onText: draft,
           // How hard a design is thought through: a deploy setting, measured (designEffort).
           effort: road === "design" ? designEffort() : undefined,
@@ -1412,6 +1490,13 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
   // exactly what it was before the gate.
   if (hasChecks(checks) && (parsed.reply.type === "plans" || parsed.reply.type === "blueprint")) {
     parsed.reply.checks = checks;
+  }
+  // The first meeting's way out (lib/meet), held by the code: the answer that
+  // asks is marked, so the yes after it opens their store whatever the model
+  // wrote, and a turn that should ask is marked as having asked.
+  if (input.meeting && parsed.reply.type === "answer") {
+    if (offerDue) parsed.reply.offered_store = true;
+    if (opens) parsed.reply.open_store = true;
   }
   // Which designs that worked it was shown, so what stuck can be counted by them (4c).
   delete (parsed.reply as { examples?: unknown }).examples;

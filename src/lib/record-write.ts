@@ -44,11 +44,16 @@ function cleanData(columns: SchemaColumn[], input: unknown): Record<string, unkn
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** The most rows one "delete_many" takes: a page of ticked rows, never a whole section by accident. */
+export const DELETE_MANY_MAX = 500;
+
 export type WriteInput = {
-  action?: "create" | "update" | "delete" | "update_store_row";
+  action?: "create" | "update" | "delete" | "delete_many" | "update_store_row";
   projectId?: string;
   moduleId?: string;
   recordId?: string;
+  /** On "delete_many": the rows, all of this section, at most DELETE_MANY_MAX. */
+  recordIds?: string[];
   storeRowId?: string;
   data?: Record<string, unknown>;
   /** On an update: the fields being changed, as the person saw them (0149). */
@@ -135,6 +140,24 @@ export async function writeRecord(
     const { error } = await client.from("records").delete().eq("id", recordId);
     if (error) throw writeError(error);
     return reply({ ok: true, deleted: recordId });
+  }
+
+  // Ticked rows taken away together (12 Oct): one statement, held to this
+  // section and to what the caller's rights reach, and it says which went.
+  if (action === "delete_many") {
+    const ids = Array.isArray(input.recordIds) ? [...new Set(input.recordIds)] : [];
+    if (!ids.length || ids.length > DELETE_MANY_MAX || !ids.every((id) => typeof id === "string" && UUID.test(id))) {
+      return reply({ error: `recordIds: 1 to ${DELETE_MANY_MAX} row ids` }, { status: 400 });
+    }
+    const { data: gone, error } = await client
+      .from("records")
+      .delete()
+      .in("id", ids)
+      .eq("module_id", moduleId)
+      .is("store_row_id", null)
+      .select("id");
+    if (error) throw writeError(error);
+    return reply({ ok: true, deleted: (gone ?? []).map((r) => r.id as string) });
   }
 
   const { data: schemaRows } = await client

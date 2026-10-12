@@ -352,11 +352,15 @@ test("stock changed on ticked rows waits for the owner's yes, and goes straight 
     const ticks = page.getByRole("checkbox", { name: "Tick this row" });
     await ticks.nth(0).click();
     await ticks.nth(1).click();
-    const bar = page.getByRole("region", { name: "Act on the ticked rows" });
-    await expect(bar.getByText("Set a stock count in Shopify")).toBeVisible();
-    await bar.getByRole("textbox", { name: "Count" }).fill("37");
+    // From Actions beside Edit, in its own dialog (12 Oct).
+    await page.getByRole("button", { name: "Actions on 2 ticked rows" }).click();
+    await page.getByRole("menuitem", { name: "Set a stock count in Shopify…" }).click();
+    const step = page.getByRole("dialog", { name: "Set a stock count in Shopify" });
+    await expect(step.getByText(/Waits in the bell until you send it/)).toBeVisible();
+    await step.getByRole("textbox", { name: "Count" }).fill("37");
     // Off until the owner turns it on: their change waits in the bell.
-    await bar.getByRole("button", { name: "Ask for your yes (2)" }).click();
+    await step.getByRole("button", { name: "Ask for your yes (2)" }).click();
+    const bar = page.getByRole("region", { name: "What was done" });
     await expect(bar.getByText(/2 waiting in the bell for your yes/)).toBeVisible();
     const first = await asked();
     expect(first[0]?.status).toBe("pending");
@@ -386,8 +390,10 @@ test("stock changed on ticked rows waits for the owner's yes, and goes straight 
     // Now theirs goes straight: approved as their yes and tried on Shopify
     // (this store is not a real one, so the try is said, not dropped).
     await ticks.nth(0).click();
-    await bar.getByRole("textbox", { name: "Count" }).fill("38");
-    await bar.getByRole("button", { name: "Send to Shopify (1)" }).click();
+    await page.getByRole("button", { name: "Actions on 1 ticked row" }).click();
+    await page.getByRole("menuitem", { name: "Set a stock count in Shopify…" }).click();
+    await step.getByRole("textbox", { name: "Count" }).fill("38");
+    await step.getByRole("button", { name: "Send to Shopify (1)" }).click();
     await expect(bar.getByText(/^Set a stock count: (updated in Shopify|one not done)/)).toBeVisible({
       timeout: 30_000,
     });

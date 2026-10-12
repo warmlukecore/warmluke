@@ -6,7 +6,7 @@ import { tapeHeaders } from "@/lib/model-tape";
 import { runTurn } from "@/lib/engine";
 import { modelErrorKindOf } from "@/lib/ai";
 import { TOKEN_LEFT_MS, finishTurn, lapsesAt, settleAnswer, turnContext, type TurnJob } from "@/lib/turn-run";
-import { MEET_OPENER } from "@/lib/meet";
+import { MEET_BUILT, MEET_OPENER } from "@/lib/meet";
 import { start } from "workflow/api";
 import { lukeTurn } from "@/workflows/luke-turn";
 import { TITLE_MAX } from "@/lib/types";
@@ -177,6 +177,7 @@ export async function POST(req: Request) {
       model: askedModel,
       alertId,
       meet,
+      built,
     } = ((await req.json().catch(() => ({}))) ?? {}) as {
       message?: string;
       projectId?: string;
@@ -188,6 +189,8 @@ export async function POST(req: Request) {
       alertId?: unknown;
       /** The first conversation (0200, lib/meet): may come with no words, for Luke to speak first. */
       meet?: unknown;
+      /** With meet and no words: what they agreed to has just been built, and Luke says so and offers their store (lib/meet MEET_BUILT). */
+      built?: unknown;
     };
     const auth = await getUserClient(req);
     if (!auth) {
@@ -366,7 +369,7 @@ export async function POST(req: Request) {
     // No words, in the first conversation: Luke speaks first, answering
     // the opener, which the thread keeps but never shows (kind "meet").
     const opener = meeting && !message?.trim();
-    const said = opener ? MEET_OPENER : (message ?? "").trim();
+    const said = opener ? (built === true ? MEET_BUILT : MEET_OPENER) : (message ?? "").trim();
     if (!convId) {
       const { data: created, error: convErr } = await client
         .from("conversations")
@@ -517,6 +520,7 @@ export async function POST(req: Request) {
             modules: moduleList,
             message: job.message,
             meeting: job.meeting,
+            meetState: ctx.meetState,
             history,
             currentSchema,
             currentFeatures,

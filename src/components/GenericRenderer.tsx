@@ -97,7 +97,8 @@ import { evalExpr, truthy, withComputed } from "@/lib/expr";
 import { sameCode } from "@/lib/scan";
 import { PREVIEW_ROWS } from "@/lib/change-preview";
 import { badgeLabel } from "@/lib/tone";
-import { button, fieldOf, iconButtonRound, menu, menuItem } from "@/components/ui/controls";
+import { button, fieldOf, iconButtonRound, label as fieldLabel, menu, menuItem, note } from "@/components/ui/controls";
+import { Dialog } from "@/components/ui/Dialog";
 import { DateRange } from "@/components/ui/DateRange";
 import { Tabs } from "@/components/ui/Tabs";
 import { VIEW_NAMES, sectionTabs, tabName } from "@/lib/tabs";
@@ -114,7 +115,7 @@ import {
   type PeriodRange,
   type PeriodSpec,
 } from "@/lib/period";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Pencil, Plus, Redo2, Undo2 } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Pencil, Plus, Redo2, Trash2, Undo2 } from "lucide-react";
 import { Select } from "@/components/ui/Select";
 import { DateField } from "@/components/ui/DateField";
 import { PAGE_SIZES, keptPageSize, pageSizeKey, type TableState } from "@/lib/store-read";
@@ -450,6 +451,8 @@ export default function GenericRenderer({
   onCreate,
   onUpdate,
   onDelete,
+  onDeleteMany,
+  readBy,
   onStats,
   onInspect,
   onScanGroup,
@@ -498,6 +501,10 @@ export default function GenericRenderer({
   /** Saves fields of a row; `expected`, what the caller knows is there. Hands back the row as stored, when it has it. */
   onUpdate?: (recordId: string, data: Record<string, unknown>, expected?: Record<string, unknown>) => Promise<unknown>;
   onDelete?: (recordId: string) => Promise<void>;
+  /** Takes ticked rows of their own away together; hands back the ids that went. */
+  onDeleteMany?: (recordIds: string[]) => Promise<string[]>;
+  /** The rules of other sections that read this one: said before its rows are deleted. */
+  readBy?: () => Promise<string[]>;
   /**
    * Counts the stat cards on the server, over every row of the section
    * rather than the page that loaded. Absent in previews, which have
@@ -571,6 +578,8 @@ export default function GenericRenderer({
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [bulkWork, setBulkWork] = useState<{ doing: string; done: number; of: number } | null>(null);
   const [bulkSaid, setBulkSaid] = useState<string | null>(null);
+  // The Actions menu's choice that needs a value or a yes, open in its dialog.
+  const [step, setStep] = useState<BulkStep | null>(null);
   const [writeError, setWriteError] = useState<string | null>(null);
   const columns = useMemo(() => schema?.columns ?? [], [schema]);
   // A yes/no column filters as a tick: Yes, or every row not ticked.
@@ -1040,6 +1049,28 @@ export default function GenericRenderer({
       await onUpdate!(rec.id, { [col.field]: value });
       return "done";
     });
+  // Ticked rows of their own taken away in one request (12 Oct); the store's never are.
+  async function bulkDelete() {
+    if (!onDeleteMany) return;
+    const ids = tickedRows.map((r) => r.id);
+    setBulkSaid(null);
+    setBulkUndo(null);
+    setBulkWork({ doing: `Deleting ${ids.length} ${ids.length === 1 ? "row" : "rows"}`, done: 0, of: 0 });
+    try {
+      const gone = new Set(await onDeleteMany(ids));
+      const left = ids.filter((id) => !gone.has(id));
+      setPicked(new Set(left));
+      setBulkSaid(
+        `Deleted ${gone.size} ${gone.size === 1 ? "row" : "rows"}${
+          left.length ? `; ${left.length} could not be, and stay ticked` : ""
+        }.`
+      );
+    } catch (e) {
+      setBulkSaid(`Nothing deleted: ${e instanceof Error ? e.message : "that didn't go through"}.`);
+    } finally {
+      setBulkWork(null);
+    }
+  }
   // One change to the store over every ticked row, as one request: what
   // went, what waits and what did not are the caller's to say (0195).
   async function shopSend(kind: ShopChangeKind, input: ShopChangeInput) {
@@ -1075,6 +1106,7 @@ export default function GenericRenderer({
         )
       : [];
   const editFields = [...Object.keys(cellEdits?.columns ?? {}), ...ownEdits.map((c) => c.field)];
+  const editShown = editFields.length > 0 && view.type === "table" && !preview;
   const draftsAt = `abo_drafts:${periodKey ?? ""}`;
   const [editMode, setEditMode] = useState(false);
   const [draftState, setDraftState] = useState<{ at: string; items: Record<string, Draft> }>({ at: "", items: {} });
@@ -1086,6 +1118,14 @@ export default function GenericRenderer({
   // What the last change can put back: Undo after it, Redo after an undo (7 Oct).
   const [editUndo, setEditUndo] = useState<ShopUndo | null>(null);
   const [bulkUndo, setBulkUndo] = useState<ShopUndo | null>(null);
+  const clearTicks = () => {
+    setPicked(new Set());
+    setBulkSaid(null);
+    setBulkUndo(null);
+  };
+  // Done editing pressed with typing unsaved: asked, in the bar, until it is saved or let go.
+  const [leaving, setLeaving] = useState(false);
+  const leaveSave = useRef<HTMLButtonElement>(null);
   // A section opened: what was typed here and not yet saved, if anything, and edit mode with it.
   useEffect(() => {
     let kept: Record<string, Draft> = {};
@@ -1098,6 +1138,7 @@ export default function GenericRenderer({
     setEditMode(Object.keys(kept).length > 0);
     setEditSaid(null);
     setEditUndo(null);
+    setLeaving(false);
   }, [draftsAt]);
   useEffect(() => {
     if (draftState.at !== draftsAt) return;
@@ -1193,10 +1234,12 @@ export default function GenericRenderer({
     }
   }
 
-  const saveEdits = async () => {
+  /** Saves what was typed; hands back how many changes are still unsaved, what was said, and its Undo. */
+  const saveEdits = async (): Promise<{ left: number; said: string; undo: ShopUndo | null }> => {
     if (!ready.length) {
-      if (held.length) setEditSaid(`${held.length} can't be saved yet: ${problemOf(held[0].field, held[0].value)}`);
-      return;
+      const said = held.length ? `${held.length} can't be saved yet: ${problemOf(held[0].field, held[0].value)}` : "";
+      if (said) setEditSaid(said);
+      return { left: changes.length, said, undo: null };
     }
     setEditWork(true);
     setEditSaid(null);
@@ -1261,7 +1304,32 @@ export default function GenericRenderer({
       setEditSaid(parts.join(" "));
       setEditWork(false);
     }
+    const ids = onShopUndo ? undoIds : [];
+    return {
+      left: keep.size,
+      said: parts.join(" "),
+      undo: own.length || ids.length ? { ids, own, redo: false } : null,
+    };
   };
+  // Leaving edit mode with typing unsaved, decided in one press: saved (what
+  // went, and its Undo, said under the table) or let go, then finished.
+  const finish = async (how: "save" | "discard") => {
+    if (how === "save") {
+      const out = await saveEdits();
+      // What did not save stays typed, said in the bar, and edit mode with it.
+      if (out.left) return;
+      setBulkSaid(out.said || null);
+      setBulkUndo(out.undo);
+    } else setDrafts(() => ({}));
+    setLeaving(false);
+    setEditMode(false);
+    setEditSaid(null);
+    setEditUndo(null);
+  };
+  const asking = leaving && editMode && changes.length > 0;
+  useEffect(() => {
+    if (asking) leaveSave.current?.focus();
+  }, [asking]);
 
   // A hidden column is the row's, when it is opened, not the view's.
   const shown = columns.filter((c) => !c.hidden);
@@ -1539,15 +1607,47 @@ export default function GenericRenderer({
                 />
               )
             )}
-            {editFields.length > 0 && view.type === "table" && !preview && (
+            {bulkable && (
+              <div className="ml-auto">
+                <ActionsMenu
+                  count={tickedRows.length}
+                  busy={!!bulkWork}
+                  items={[
+                    [
+                      ...(canSet ? (features?.actions ?? []) : []).map((a) => ({
+                        label: a.label,
+                        waits: waitsForOwner && !!a.approval,
+                        run: () => void bulkAction(a),
+                      })),
+                      ...shopKinds.map((k) => ({
+                        label: `${k.label} in Shopify…`,
+                        run: () => setStep({ kind: "shop", action: k.action }),
+                      })),
+                      ...(settable.length ? [{ label: "Set a field…", run: () => setStep({ kind: "set" }) }] : []),
+                    ],
+                    ...(editable && onDeleteMany
+                      ? [
+                          [
+                            {
+                              label: `Delete ${tickedRows.length} ${tickedRows.length === 1 ? "row" : "rows"}…`,
+                              critical: true,
+                              run: () => setStep({ kind: "delete" }),
+                            },
+                          ],
+                        ]
+                      : []),
+                    [{ label: "Untick all", run: clearTicks }],
+                  ].filter((g) => g.length)}
+                />
+              </div>
+            )}
+            {editShown && (
               <button
                 type="button"
                 onClick={() => {
-                  // Typing is never dropped by leaving: saved or let go first.
+                  // Typing is never dropped by leaving: saved or let go first, and asked plainly (Tanish, 12 Oct).
                   if (editMode && changes.length) {
-                    setEditSaid(
-                      `Save or discard the ${changes.length} ${changes.length === 1 ? "change" : "changes"} first.`
-                    );
+                    setLeaving(true);
                     return;
                   }
                   setEditMode((on) => !on);
@@ -1555,7 +1655,7 @@ export default function GenericRenderer({
                   setEditUndo(null);
                 }}
                 aria-pressed={editMode}
-                className={`${button(editMode ? "primary" : "secondary", "sm")} ml-auto`}
+                className={`${button(editMode ? "primary" : "secondary", "sm")} ${bulkable ? "" : "ml-auto"}`}
               >
                 <Pencil aria-hidden size={13} strokeWidth={1.75} />
                 {editMode ? "Done editing" : "Edit"}
@@ -1563,7 +1663,7 @@ export default function GenericRenderer({
             )}
             {views.length === 1 && (
               <span
-                className={`${editFields.length > 0 && view.type === "table" && !preview ? "" : "ml-auto"} hidden rounded-full bg-tone-neutral px-2 py-0.5 text-xs text-tone-neutral-fg sm:inline`}
+                className={`${bulkable || editShown ? "" : "ml-auto"} hidden rounded-full bg-tone-neutral px-2 py-0.5 text-xs text-tone-neutral-fg sm:inline`}
               >
                 {VIEW_NAMES[view.type]}
               </span>
@@ -1571,7 +1671,7 @@ export default function GenericRenderer({
             {editable && (
               <button
                 onClick={() => setAdding(true)}
-                className={`${button("primary", "sm")} ${views.length > 1 ? "ml-auto" : ""}`}
+                className={`${button("primary", "sm")} ${views.length > 1 && !bulkable && !editShown ? "ml-auto" : ""}`}
               >
                 <Plus aria-hidden size={14} strokeWidth={2} />
                 Add
@@ -1586,6 +1686,35 @@ export default function GenericRenderer({
             aria-label="Editing in place"
             className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-subdued px-4 py-2 text-[13px]"
           >
+            {asking && (
+              <div role="alert" className={`${note.attention} flex w-full flex-wrap items-center gap-2 text-[13px]`}>
+                {/* The words a line of their own on a phone, the choices under them. */}
+                <span className="w-full min-w-0 sm:w-auto sm:flex-1">
+                  {changes.length === 1 ? "1 change isn't saved." : `${changes.length} changes aren't saved.`} Save or
+                  discard {changes.length === 1 ? "it" : "them"} to finish editing.
+                </span>
+                <button
+                  ref={leaveSave}
+                  type="button"
+                  disabled={editWork}
+                  onClick={() => void finish("save")}
+                  className={button("primary", "sm")}
+                >
+                  {editWork ? "Saving…" : "Save and finish"}
+                </button>
+                <button
+                  type="button"
+                  disabled={editWork}
+                  onClick={() => void finish("discard")}
+                  className={button("secondary", "sm")}
+                >
+                  Discard and finish
+                </button>
+                <button type="button" onClick={() => setLeaving(false)} className={button("plain", "sm")}>
+                  Keep editing
+                </button>
+              </div>
+            )}
             {editSaid && (
               <span className="flex w-full flex-wrap items-center gap-2">
                 <span role="status" className="text-fg-muted">
@@ -1647,39 +1776,6 @@ export default function GenericRenderer({
           </div>
         )}
 
-        {bulkable && (picked.size > 0 || bulkWork || bulkSaid) && (
-          <BulkBar
-            count={tickedRows.length}
-            actions={canSet ? (features?.actions ?? []) : []}
-            shop={shopKinds}
-            hasCurrent={(field) => tickedRows.some((r) => Number.isFinite(Number(r.data?.[field])))}
-            onShop={shopSend}
-            waits={waitsForOwner}
-            fields={settable}
-            choicesOf={(c) => {
-              const kept = features?.filters?.find((f) => f.field === c.field)?.options;
-              const got = filterChoices(
-                c,
-                kept,
-                filteredRecords.map((r) => String(r.data?.[c.field] ?? ""))
-              );
-              return "options" in got ? got.options : [];
-            }}
-            locale={fmt.locale}
-            working={bulkWork}
-            said={bulkSaid}
-            undo={bulkUndo}
-            onUndo={() => bulkUndo && void putBack(bulkUndo, setBulkUndo, setBulkSaid)}
-            onAction={bulkAction}
-            onSet={bulkSet}
-            onClear={() => {
-              setPicked(new Set());
-              setBulkSaid(null);
-              setBulkUndo(null);
-            }}
-          />
-        )}
-
         {writeError && (
           <div className="border-b border-tone-critical/70 px-4 py-2">
             <ErrorNote error={asError(writeError, "That didn't save.")} compact onDismiss={() => setWriteError(null)} />
@@ -1696,6 +1792,33 @@ export default function GenericRenderer({
           />
         ) : (
           renderView()
+        )}
+
+        {/* What the last action on many rows did, under the table, so nothing above the rows moves (12 Oct). */}
+        {!custom && (bulkWork || bulkSaid) && (
+          <div
+            role="region"
+            aria-label="What was done"
+            className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line bg-surface-subdued px-3 py-1.5 text-[13px]"
+          >
+            {bulkWork ? (
+              <span role="status" className="text-fg-muted tabular-nums">
+                {bulkWork.of ? `${bulkWork.doing}: ${bulkWork.done} of ${bulkWork.of}…` : `${bulkWork.doing}…`}
+              </span>
+            ) : (
+              <>
+                <span role="status" className="min-w-0 flex-1 text-fg">
+                  {bulkSaid}
+                </span>
+                {bulkUndo && (
+                  <UndoButton undo={bulkUndo} onPress={() => void putBack(bulkUndo, setBulkUndo, setBulkSaid)} />
+                )}
+                <button type="button" onClick={clearTicks} className={button("plain", "sm")}>
+                  Done
+                </button>
+              </>
+            )}
+          </div>
         )}
 
         {!custom && (
@@ -1789,6 +1912,40 @@ export default function GenericRenderer({
         )}
       </div>
 
+      {step && (
+        <BulkStepDialog
+          step={step}
+          count={tickedRows.length}
+          fields={settable}
+          choicesOf={(c) => {
+            const kept = features?.filters?.find((f) => f.field === c.field)?.options;
+            const got = filterChoices(
+              c,
+              kept,
+              filteredRecords.map((r) => String(r.data?.[c.field] ?? ""))
+            );
+            return "options" in got ? got.options : [];
+          }}
+          locale={fmt.locale}
+          shop={shopKinds}
+          hasCurrent={(field) => tickedRows.some((r) => Number.isFinite(Number(r.data?.[field])))}
+          readBy={readBy}
+          onClose={() => setStep(null)}
+          onSet={(c, v) => {
+            setStep(null);
+            void bulkSet(c, v);
+          }}
+          onShop={(k, input) => {
+            setStep(null);
+            void shopSend(k, input);
+          }}
+          onDelete={() => {
+            setStep(null);
+            void bulkDelete();
+          }}
+        />
+      )}
+
       {(adding || editing) && editable && (
         <RecordModal
           // A row filled in again while the form is open starts the form again.
@@ -1815,122 +1972,415 @@ export default function GenericRenderer({
 /** What a bulk "Set" can write the same into many rows: a tick, a status or choice, a date, a word or a number. */
 const SETTABLE: ReadonlySet<SchemaColumn["type"]> = new Set(["boolean", "badge", "dropdown", "date", "text", "number"]);
 
+/** What the Actions menu opened: a field to set, a change to the store, or the ticked rows to delete. */
+type BulkStep = { kind: "set" } | { kind: "shop"; action: string } | { kind: "delete" };
+/** A row of the Actions menu. */
+type BulkItem = { label: string; run: () => void; waits?: boolean; critical?: boolean };
+
 /**
- * The ticked rows, and what to do to all of them: one of the section's own
- * row buttons, pressed on each (its guard decides row by row), or one of the
- * owner's fields set to the same value. Says how far it got while it works,
- * and what came of it after: done, left as they were, waiting for a yes, or
- * not saved.
+ * What can be done to the ticked rows, behind one button beside Edit (Tanish,
+ * 12 Oct: "a button next to the edit button … a menu"), so ticking a row moves
+ * nothing on the page. A row button is pressed on each row at once; a choice
+ * that needs a value opens its own dialog. Always there where rows can be
+ * ticked, and waiting for a tick until there is one.
  */
+function ActionsMenu({ count, busy, items }: { count: number; busy: boolean; items: BulkItem[][] }) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const [fromRight, setFromRight] = useState(true);
+  const box = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLUListElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const id = useId();
+  const all = items.flat();
+
+  useEffect(() => {
+    if (!open) return;
+    list.current?.focus({ preventScroll: true });
+    const away = (e: MouseEvent) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [open]);
+  // No rows ticked, or the work begun: nothing left to choose.
+  useEffect(() => {
+    if (!count || busy) setOpen(false);
+  }, [count, busy]);
+
+  const show = () => {
+    const at = trigger.current?.getBoundingClientRect();
+    // Under the button, from its right edge unless that would run off the window's left.
+    setFromRight(!at || at.right - 240 >= 8);
+    setActive(0);
+    setOpen(true);
+  };
+  const choose = (i: number) => {
+    setOpen(false);
+    trigger.current?.focus();
+    all[i]?.run();
+  };
+  const keys = (e: React.KeyboardEvent) => {
+    const last = all.length - 1;
+    if (e.key === "ArrowDown") setActive((a) => Math.min(last, a + 1));
+    else if (e.key === "ArrowUp") setActive((a) => Math.max(0, a - 1));
+    else if (e.key === "Home") setActive(0);
+    else if (e.key === "End") setActive(last);
+    else if (e.key === "Enter" || e.key === " ") choose(active);
+    else if (e.key === "Escape") {
+      setOpen(false);
+      trigger.current?.focus();
+    } else if (e.key === "Tab") return setOpen(false);
+    else return;
+    e.preventDefault();
+  };
+
+  let n = -1;
+  return (
+    <div ref={box} className="relative">
+      <button
+        ref={trigger}
+        type="button"
+        disabled={!count || busy}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={`${id}-menu`}
+        aria-label={count ? `Actions on ${count} ticked ${count === 1 ? "row" : "rows"}` : "Actions: tick rows first"}
+        onClick={() => (open ? setOpen(false) : show())}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            show();
+          }
+        }}
+        className={button("secondary", "sm")}
+      >
+        Actions
+        {count > 0 && (
+          <span className="rounded-full bg-tone-neutral px-1.5 text-[11px] leading-4 text-tone-neutral-fg tabular-nums">
+            {count}
+          </span>
+        )}
+        <ChevronDown
+          aria-hidden
+          size={13}
+          strokeWidth={2}
+          className={`text-fg-faint transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open && (
+        <div className={`${menu} absolute top-full mt-1 w-60 ${fromRight ? "right-0" : "left-0"}`}>
+          <ul
+            ref={list}
+            id={`${id}-menu`}
+            role="menu"
+            tabIndex={-1}
+            aria-label={`Actions on ${count} ticked ${count === 1 ? "row" : "rows"}`}
+            aria-activedescendant={`${id}-${active}`}
+            onKeyDown={keys}
+            className="max-h-80 overflow-y-auto outline-none thin-scroll"
+          >
+            {items.map((group, g) => (
+              <li key={g} role="none" className={g > 0 ? "mt-1 border-t border-line pt-1" : ""}>
+                <ul role="none">
+                  {group.map((it) => {
+                    const i = ++n;
+                    return (
+                      <li
+                        key={it.label}
+                        id={`${id}-${i}`}
+                        role="menuitem"
+                        onClick={() => choose(i)}
+                        onMouseEnter={() => setActive(i)}
+                        className={`${menuItem} cursor-pointer ${i === active ? "bg-surface-hover" : ""} ${
+                          it.critical ? "text-tone-critical-fg" : ""
+                        }`}
+                      >
+                        {it.critical && <Trash2 aria-hidden size={13} strokeWidth={1.75} className="shrink-0" />}
+                        <span className="min-w-0 flex-1 truncate">{it.label}</span>
+                        {it.waits && (
+                          <Clock
+                            aria-label="Waits for the owner's yes"
+                            size={12}
+                            strokeWidth={2}
+                            className="shrink-0 text-fg-muted"
+                          />
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
- * A change to the store on the ticked rows (0195): which one, what to
- * set, and a button saying where it goes: to Shopify now, to the owner's
- * bell, or to the owner. A count is set, or moved by a number from what
- * each row holds now.
+ * One choice from the Actions menu, in its own dialog: a field set the same
+ * on every ticked row, a change to the store (0195), or the ticked rows taken
+ * away. Each opens empty and is gone once it is done, so nothing typed for one
+ * is still there the next time (Tanish, 12 Oct).
  */
-function ShopChange({
+function BulkStepDialog({
+  step,
   count,
-  kinds,
+  fields,
+  choicesOf,
+  locale,
+  shop,
   hasCurrent,
-  onSend,
+  readBy,
+  onClose,
+  onSet,
+  onShop,
+  onDelete,
 }: {
+  step: BulkStep;
   count: number;
-  kinds: ShopChangeKind[];
+  fields: SchemaColumn[];
+  choicesOf: (c: SchemaColumn) => string[];
+  locale: string;
+  shop: ShopChangeKind[];
   hasCurrent: (field: string) => boolean;
-  onSend: (kind: ShopChangeKind, input: ShopChangeInput) => void;
+  readBy?: () => Promise<string[]>;
+  onClose: () => void;
+  onSet: (c: SchemaColumn, value: unknown) => void;
+  onShop: (kind: ShopChangeKind, input: ShopChangeInput) => void;
+  onDelete: () => void;
 }) {
-  const [action, setAction] = useState(kinds.length === 1 ? kinds[0].action : "");
+  const rows = `${count} ${count === 1 ? "row" : "rows"}`;
+  const [field, setField] = useState("");
   const [value, setValue] = useState("");
   const [mode, setMode] = useState<ShopChangeInput["mode"]>("set");
-  const kind = kinds.find((k) => k.action === action);
-  const ask = kind?.ask;
-  // Moved by a number only where the rows say what they hold now.
-  const moves = ask?.kind === "count" && hasCurrent(ask.current);
-  const n = Number(value);
-  const ready =
-    !!kind &&
-    !kind.why &&
-    (ask?.kind === "count" ? value.trim() !== "" && Number.isInteger(n) && n >= 0 : value.trim() !== "");
+  // The rules that read this section, asked once the delete is opened: null while asking.
+  const [rules, setRules] = useState<string[] | null>(step.kind === "delete" && readBy ? null : []);
+  useEffect(() => {
+    if (step.kind !== "delete" || !readBy) return;
+    let live = true;
+    readBy()
+      .then((r) => live && setRules(r))
+      .catch(() => live && setRules([]));
+    return () => {
+      live = false;
+    };
+  }, [step.kind, readBy]);
+
+  const cancel = (
+    <button type="button" onClick={onClose} className={`${button("plain")} ml-auto`}>
+      Cancel
+    </button>
+  );
+
+  if (step.kind === "delete") {
+    return (
+      <Dialog
+        title={`Delete ${rows}?`}
+        onClose={onClose}
+        footer={
+          <>
+            {cancel}
+            <button type="button" disabled={rules === null} onClick={onDelete} className={button("critical")}>
+              Delete {rows}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3 text-[13px] text-fg">
+          <p>
+            The {count === 1 ? "row you ticked goes" : `${count} rows you ticked go`} for good. This can&rsquo;t be
+            undone.
+          </p>
+          {rules === null ? (
+            <p className="text-xs text-fg-muted" role="status">
+              Checking which rules read this section…
+            </p>
+          ) : (
+            rules.length > 0 && (
+              <p className={note.attention}>
+                {rules.length === 1 ? "This rule reads" : "These rules read"} this section: {rules.join(", ")}. They
+                won&rsquo;t find the rows you delete.
+              </p>
+            )
+          )}
+        </div>
+      </Dialog>
+    );
+  }
+
+  if (step.kind === "shop") {
+    const kind = shop.find((k) => k.action === step.action);
+    if (!kind) return null;
+    const ask = kind.ask;
+    // Moved by a number only where the rows say what they hold now.
+    const moves = ask?.kind === "count" && hasCurrent(ask.current);
+    const n = Number(value);
+    const ready =
+      !kind.why && (ask?.kind === "count" ? value.trim() !== "" && Number.isInteger(n) && n >= 0 : value.trim() !== "");
+    const send = () => ready && onShop(kind, { value, mode: moves ? mode : "set" });
+    return (
+      <Dialog
+        title={`${kind.label} in Shopify`}
+        description={`On the ${rows} you ticked`}
+        onClose={onClose}
+        footer={
+          <>
+            {cancel}
+            <button
+              type="button"
+              disabled={!ready}
+              onClick={send}
+              className={button(kind.goes === "straight" ? "primary" : "secondary")}
+            >
+              {kind.goes === "straight"
+                ? `Send to Shopify (${count})`
+                : kind.goes === "yours"
+                  ? `Ask for your yes (${count})`
+                  : `Ask the owner (${count})`}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          {ask && (
+            <div className="flex flex-wrap items-end gap-2">
+              {ask.kind === "count" && moves && (
+                <div className="w-36">
+                  <Select
+                    label={`${ask.label}: how`}
+                    value={mode}
+                    clearable={false}
+                    options={[
+                      { value: "set", label: "Set to" },
+                      { value: "add", label: "Add" },
+                      { value: "remove", label: "Take away" },
+                    ]}
+                    onChange={(v) => setMode(v as ShopChangeInput["mode"])}
+                  />
+                </div>
+              )}
+              <input
+                data-autofocus
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") send();
+                }}
+                inputMode={ask.kind === "count" ? "numeric" : undefined}
+                aria-label={
+                  ask.kind === "count"
+                    ? mode === "set" || !moves
+                      ? ask.label
+                      : `${ask.label} to ${mode === "add" ? "add" : "take away"}`
+                    : ask.label
+                }
+                placeholder={ask.kind === "tags" ? "Tag, or several with commas" : ask.label}
+                aria-invalid={
+                  ask.kind === "count" && value.trim() !== "" && !(Number.isInteger(n) && n >= 0) ? true : undefined
+                }
+                className={`${fieldOf("md")} ${ask.kind === "count" ? "w-32" : "w-full"} tabular-nums`}
+              />
+            </div>
+          )}
+          <p className="text-xs leading-relaxed text-fg-muted">
+            {kind.why ??
+              (kind.goes === "straight"
+                ? "Goes to Shopify now."
+                : kind.goes === "yours"
+                  ? "Waits in the bell until you send it. Settings → Store lets it go straight."
+                  : "Waits for the owner's yes.")}
+          </p>
+        </div>
+      </Dialog>
+    );
+  }
+
+  const col = fields.find((f) => f.field === field);
+  const typed = !col
+    ? null
+    : col.type === "boolean"
+      ? value === "yes"
+        ? true
+        : value === "no"
+          ? false
+          : null
+      : col.type === "number"
+        ? value.trim() === "" || !Number.isFinite(Number(value))
+          ? null
+          : Number(value)
+        : value.trim() || null;
+  const set = () => col && typed !== null && onSet(col, typed);
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {kinds.length > 1 && (
-        <div className="w-44 max-w-full">
+    <Dialog
+      title={`Set a field on ${rows}`}
+      onClose={onClose}
+      footer={
+        <>
+          {cancel}
+          <button type="button" disabled={typed === null} onClick={set} className={button("primary")}>
+            Set on {count}
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div>
+          <span className={fieldLabel}>Field</span>
           <Select
-            label="Change in Shopify"
-            value={action}
-            options={kinds.map((k) => ({ value: k.action, label: k.label }))}
-            empty="Change in Shopify…"
+            label="Field to set"
+            value={field}
+            options={fields.map((f) => ({ value: f.field, label: f.label }))}
+            empty="Choose a field…"
             onChange={(v) => {
-              setAction(v);
+              setField(v);
               setValue("");
-              setMode("set");
             }}
           />
         </div>
-      )}
-      {kinds.length === 1 && <span className="text-fg-muted">{kind?.label} in Shopify</span>}
-      {ask?.kind === "count" && moves && (
-        <div className="w-32">
-          <Select
-            label={`${ask.label}: how`}
-            value={mode}
-            clearable={false}
-            options={[
-              { value: "set", label: "Set to" },
-              { value: "add", label: "Add" },
-              { value: "remove", label: "Take away" },
-            ]}
-            onChange={(v) => setMode(v as ShopChangeInput["mode"])}
-          />
-        </div>
-      )}
-      {ask && (
-        <input
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && ready && kind) onSend(kind, { value, mode: moves ? mode : "set" });
-          }}
-          inputMode={ask.kind === "count" ? "numeric" : undefined}
-          aria-label={
-            ask.kind === "count"
-              ? mode === "set" || !moves
-                ? ask.label
-                : `${ask.label} to ${mode === "add" ? "add" : "take away"}`
-              : ask.label
-          }
-          placeholder={ask.kind === "tags" ? "Tag, or several with commas" : ask.label}
-          aria-invalid={
-            ask.kind === "count" && value.trim() !== "" && !(Number.isInteger(n) && n >= 0) ? true : undefined
-          }
-          className={`${fieldOf("sm")} ${ask.kind === "count" ? "w-24" : "w-48"} tabular-nums`}
-        />
-      )}
-      {kind && (
-        <button
-          type="button"
-          disabled={!ready}
-          onClick={() => ready && onSend(kind, { value, mode: moves ? mode : "set" })}
-          className={button(kind.goes === "straight" ? "primary" : "secondary", "sm")}
-        >
-          {kind.goes === "straight"
-            ? `Send to Shopify (${count})`
-            : kind.goes === "yours"
-              ? `Ask for your yes (${count})`
-              : `Ask the owner (${count})`}
-        </button>
-      )}
-      {kind && (
-        <span className="text-xs text-fg-muted">
-          {kind.why ??
-            (kind.goes === "straight"
-              ? "Goes to Shopify now."
-              : kind.goes === "yours"
-                ? "Waits in the bell until you send it. Settings → Store lets it go straight."
-                : "Waits for the owner's yes.")}
-        </span>
-      )}
-    </div>
+        {col && (
+          <div>
+            <span className={fieldLabel}>{col.label}</span>
+            {col.type === "boolean" ? (
+              <Select
+                label={`${col.label}: ticked or not`}
+                value={value}
+                options={[
+                  { value: "yes", label: "Ticked" },
+                  { value: "no", label: "Not ticked" },
+                ]}
+                empty="Choose…"
+                onChange={setValue}
+              />
+            ) : col.type === "badge" || col.type === "dropdown" ? (
+              <Select
+                label={`${col.label}: which`}
+                value={value}
+                options={choicesOf(col).map((o) => ({ value: o, label: o }))}
+                empty="Choose…"
+                onChange={setValue}
+              />
+            ) : col.type === "date" ? (
+              <DateField value={value} onChange={setValue} label={col.label} locale={locale} />
+            ) : (
+              <input
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") set();
+                }}
+                inputMode={col.type === "number" ? "decimal" : undefined}
+                aria-label={col.label}
+                placeholder={col.label}
+                className={fieldOf("md")}
+              />
+            )}
+          </div>
+        )}
+      </div>
+    </Dialog>
   );
 }
 
@@ -1956,168 +2406,5 @@ function UndoButton({ undo, onPress }: { undo: ShopUndo; onPress: () => void }) 
       <Icon aria-hidden size={12} strokeWidth={2} />
       {undo.busy ? (undo.redo ? "Redoing…" : "Undoing…") : undo.redo ? "Redo" : "Undo"}
     </button>
-  );
-}
-
-function BulkBar({
-  count,
-  actions,
-  shop,
-  hasCurrent,
-  onShop,
-  waits,
-  fields,
-  choicesOf,
-  locale,
-  working,
-  said,
-  undo,
-  onUndo,
-  onAction,
-  onSet,
-  onClear,
-}: {
-  count: number;
-  actions: NonNullable<FeatureSchema["actions"]>;
-  /** Changes to the store these rows come from (0195). */
-  shop: ShopChangeKind[];
-  hasCurrent: (field: string) => boolean;
-  onShop: (kind: ShopChangeKind, input: ShopChangeInput) => void;
-  waits: boolean;
-  fields: SchemaColumn[];
-  choicesOf: (c: SchemaColumn) => string[];
-  locale: string;
-  working: { doing: string; done: number; of: number } | null;
-  said: string | null;
-  /** The last change to the store, to put back (or forward again). */
-  undo: ShopUndo | null;
-  onUndo: () => void;
-  onAction: (a: NonNullable<FeatureSchema["actions"]>[number]) => void;
-  onSet: (c: SchemaColumn, value: unknown) => void;
-  onClear: () => void;
-}) {
-  const [field, setField] = useState("");
-  const [value, setValue] = useState("");
-  const col = fields.find((f) => f.field === field);
-  const typed = !col
-    ? null
-    : col.type === "boolean"
-      ? value === "yes"
-        ? true
-        : value === "no"
-          ? false
-          : null
-      : col.type === "number"
-        ? value.trim() === "" || !Number.isFinite(Number(value))
-          ? null
-          : Number(value)
-        : value.trim() || null;
-  return (
-    <div
-      role="region"
-      aria-label="Act on the ticked rows"
-      className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-subdued px-4 py-2 text-[13px]"
-    >
-      {working ? (
-        <span className="text-fg-muted tabular-nums" role="status">
-          {working.doing}: {working.done} of {working.of}…
-        </span>
-      ) : count > 0 ? (
-        <>
-          {/* What the last went on to say, when rows are still ticked: those it could not do, kept to try again. */}
-          {said && (
-            <span className="flex w-full flex-wrap items-center gap-2">
-              <span className="text-fg-muted" role="status">
-                {said}
-              </span>
-              {undo && <UndoButton undo={undo} onPress={onUndo} />}
-            </span>
-          )}
-          <span className="font-medium text-fg tabular-nums">{count} ticked</span>
-          {actions.map((a) => (
-            <button key={a.label} type="button" onClick={() => onAction(a)} className={button("secondary", "sm")}>
-              {waits && a.approval && <Clock aria-hidden size={12} strokeWidth={2} />}
-              {a.label}
-            </button>
-          ))}
-          {shop.length > 0 && <ShopChange count={count} kinds={shop} hasCurrent={hasCurrent} onSend={onShop} />}
-          {fields.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <div className="w-44 max-w-full">
-                <Select
-                  label="Set a field on the ticked rows"
-                  value={field}
-                  options={fields.map((f) => ({ value: f.field, label: f.label }))}
-                  empty="Set a field…"
-                  onChange={(v) => {
-                    setField(v);
-                    setValue("");
-                  }}
-                />
-              </div>
-              {col &&
-                (col.type === "boolean" ? (
-                  <div className="w-36">
-                    <Select
-                      label={`${col.label}: ticked or not`}
-                      value={value}
-                      options={[
-                        { value: "yes", label: "Ticked" },
-                        { value: "no", label: "Not ticked" },
-                      ]}
-                      empty="Choose…"
-                      onChange={setValue}
-                    />
-                  </div>
-                ) : col.type === "badge" || col.type === "dropdown" ? (
-                  <div className="w-40">
-                    <Select
-                      label={`${col.label}: which`}
-                      value={value}
-                      options={choicesOf(col).map((o) => ({ value: o, label: o }))}
-                      empty="Choose…"
-                      onChange={setValue}
-                    />
-                  </div>
-                ) : col.type === "date" ? (
-                  <DateField value={value} onChange={setValue} label={col.label} locale={locale} />
-                ) : (
-                  <input
-                    value={value}
-                    onChange={(e) => setValue(e.target.value)}
-                    inputMode={col.type === "number" ? "decimal" : undefined}
-                    aria-label={col.label}
-                    placeholder={col.label}
-                    className={`${fieldOf("sm")} w-36`}
-                  />
-                ))}
-              {col && (
-                <button
-                  type="button"
-                  disabled={typed === null}
-                  onClick={() => typed !== null && onSet(col, typed)}
-                  className={button("primary", "sm")}
-                >
-                  Set on {count}
-                </button>
-              )}
-            </div>
-          )}
-          <button type="button" onClick={onClear} className={button("plain", "sm")}>
-            Clear
-          </button>
-        </>
-      ) : (
-        <>
-          <span className="text-fg-muted" role="status">
-            {said}
-          </span>
-          {undo && <UndoButton undo={undo} onPress={onUndo} />}
-          <button type="button" onClick={onClear} className={button("plain", "sm")}>
-            Done
-          </button>
-        </>
-      )}
-    </div>
   );
 }

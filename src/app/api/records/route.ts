@@ -6,7 +6,10 @@ import { runCodeRules } from "@/lib/code-rules";
 export const runtime = "nodejs";
 
 /**
- * POST /api/records — body: { action, projectId, moduleId, recordId?, storeRowId?, data? }
+ * POST /api/records — body: { action, projectId, moduleId, recordId?, recordIds?, storeRowId?, data? }
+ *
+ * "delete_many" takes up to 500 ticked rows of one section of the owner's
+ * own at once, and answers with the ids that went.
  *
  * The owner's own writes, through the one door every write uses
  * (lib/record-write.ts). A row written runs the section's code rules

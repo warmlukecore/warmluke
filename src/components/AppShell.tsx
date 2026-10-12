@@ -744,6 +744,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     threadsRef.current = threads;
   }, [threads]);
   const [building, setBuilding] = useState(false);
+  // The first meeting: something they agreed to was built, and Luke has yet to say so (lib/meet MEET_BUILT).
+  const meetBuiltPending = useRef(false);
+  const [meetBuiltTick, setMeetBuiltTick] = useState(0);
 
   /**
    * Rebuilds the chat panel from a stored thread. Assistant turns are
@@ -2766,7 +2769,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   );
 
   const runPrompt = useCallback(
-    async (text: string, opts?: { silent?: boolean; alertId?: string; moduleId?: string }) => {
+    async (text: string, opts?: { silent?: boolean; alertId?: string; moduleId?: string; built?: boolean }) => {
       // No words is Luke speaking first, and only in the first conversation.
       if ((!text.trim() && !meetingRef.current) || chatBusy || building) return;
       if (!opts?.silent) {
@@ -2805,7 +2808,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             ...(pickedModel ? { model: pickedModel } : {}),
             ...(opts?.alertId ? { alertId: opts.alertId } : {}),
             // Every turn of the first conversation: its brief, and free (0200).
-            ...(meetingRef.current ? { meet: true } : {}),
+            ...(meetingRef.current ? { meet: true, ...(opts?.built ? { built: true } : {}) } : {}),
           },
           controller.signal,
           (step) => {
@@ -3154,6 +3157,19 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     [modules, selectedModuleId, schema]
   );
 
+  // Said once the build is done and Luke is free: it is built, and would
+  // they like to see their store. His words, their yes opens it (lib/engine).
+  useEffect(() => {
+    if (!meetBuiltPending.current || building || chatBusy || !meetingRef.current) return;
+    meetBuiltPending.current = false;
+    void runPrompt("", { silent: true, built: true });
+  }, [meetBuiltTick, building, chatBusy, runPrompt]);
+  const builtInMeeting = useCallback(() => {
+    if (!meetingRef.current) return;
+    meetBuiltPending.current = true;
+    setMeetBuiltTick((n) => n + 1);
+  }, []);
+
   const applyPlan = useCallback(
     async (plan: AssistantPlan, planId: string, next?: NextStep[]) => {
       // Written into the thread by the server, as buildApproved does, so
@@ -3181,6 +3197,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         if (plan.changeType === "MODULE_DELETE") setSelectedModuleId(null);
         loadModules();
         if (selectedModuleId && plan.targetModuleId === selectedModuleId) loadModuleData(selectedModuleId);
+        builtInMeeting();
         return;
       }
       if (!ok || !data.applied) {
@@ -3248,6 +3265,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       repairFailedApply,
       recordOutcome,
       planTitle,
+      builtInMeeting,
     ]
   );
 
@@ -3275,6 +3293,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         setRecordTotal((t) => Math.max(0, t - 1));
         setRowsMoved((n) => n + 1);
         return;
+      }
+      if (body.action === "delete_many") {
+        const gone = new Set((data.deleted as string[] | undefined) ?? []);
+        setRecords((prev) => prev.filter((r) => !gone.has(r.id)));
+        setRecordTotal((t) => Math.max(0, t - gone.size));
+        setRowsMoved((n) => n + 1);
+        return [...gone];
       }
       const rec = data.record as Record<string, unknown> | undefined;
       if (body.action === "create" && typeof rec?.id === "string") {
@@ -3311,6 +3336,19 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     async (recordId: string) => void (await writeRecord({ action: "delete", recordId })),
     [writeRecord]
   );
+
+  /** Ticked rows of their own, taken away in one request: the ids that went. */
+  const deleteRecords = useCallback(
+    async (recordIds: string[]) => ((await writeRecord({ action: "delete_many", recordIds })) as string[]) ?? [],
+    [writeRecord]
+  );
+
+  /** The rules of other sections that read the open one, as deleting it says (/api/modules GET). */
+  const rulesReadingSection = useCallback(async () => {
+    if (!selectedModuleId) return [];
+    const { ok, data } = await apiFetch(`/api/modules?projectId=${projectId}&id=${selectedModuleId}`, null, "GET");
+    return ok ? ((data.readBy as string[] | undefined) ?? []) : [];
+  }, [projectId, selectedModuleId]);
 
   /** The merchant's own fields beside one of the store's rows (0128). */
   const updateStoreRow = useCallback(
@@ -3495,6 +3533,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           const first = results.find((r) => r.changeType === "NEW_MODULE");
           if (first?.moduleId) setSelectedModuleId(first.moduleId as string);
           else if (selectedModuleId) await loadModuleData(selectedModuleId);
+          builtInMeeting();
           return { applied: results, errors: (data.errors as string[]) ?? [] };
         }
         if (!ok && recorded) {
@@ -3568,6 +3607,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           const first = results.find((r) => r.changeType === "NEW_MODULE");
           if (first?.moduleId) setSelectedModuleId(first.moduleId as string);
           else if (selectedModuleId) await loadModuleData(selectedModuleId);
+          builtInMeeting();
           return { applied: results, errors: (data.errors as string[]) ?? [] };
         } else {
           const errors = (data.errors as string[] | undefined) ?? [];
@@ -3620,6 +3660,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       setSelectedModuleId,
       recordOutcome,
       planTitle,
+      builtInMeeting,
     ]
   );
   useEffect(() => {
@@ -4833,7 +4874,13 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                             ? { onUpdate: updateStoreRow, ownFields: myColumns.map((c) => c.field) }
                             : {}),
                         }
-                      : { onCreate: createRecord, onUpdate: updateRecord, onDelete: deleteRecord })}
+                      : {
+                          onCreate: createRecord,
+                          onUpdate: updateRecord,
+                          onDelete: deleteRecord,
+                          onDeleteMany: deleteRecords,
+                          readBy: rulesReadingSection,
+                        })}
                   />
                 </FormatProvider>
               ) : loading || (selectedModuleId && loadedFor !== selectedModuleId) ? (

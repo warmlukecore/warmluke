@@ -105,6 +105,16 @@ writes the part itself instead of refusing or squeezing the owner's flow into a 
   its list. The database queues those runs and a worker takes them on a ticket for one
   project (see [Code with nobody watching](#code-with-nobody-watching)). Measured locally: about 2 s to make the machine, 2 s to hand it the files,
   1.3 s to run, 7.5 s from a write to its result on screen.
+  - **What it is handed (0206):** every row of each section it reads, a thousand per ask,
+    up to 50,000; past that its run says the read was cut short. The sections every input
+    shares go into the machine once, each input getting its own copy. When the whole would
+    not fit (8 MB), rows go with only the fields the code names, unless the code reads rows
+    whole (keys, spread, stringify), when it is asked to read less. Before 0206 it was the
+    newest 500, and a sync over 2,058 stock rows never saw the 34 it was for.
+  - **Every run is kept** (`abo_rule_ran`, after a write and from the queue alike): what it
+    read of each section and whether that was cut short, rows written, writes refused and
+    why, writes past the 500 a run may make. Luke and the owner's own AI read them
+    (`lib/rule-runs.ts`, MCP `rule_runs`) instead of asking the owner to check.
 - **A rule that tells** (rule action `alert`, 0164): "tell me when a COD order over ₹5,000
   comes in" is a rule whose action is `{ type: "alert", title, show, severity }`. It raises
   an alert in the bell and on the Overview, beside what Luke watches on its own (0163): the
@@ -224,7 +234,12 @@ answer is not that. No other turn reads the brief, so recorded turns
 replay unchanged. There is no button out (10 Oct): once Luke has helped (answered from their
 store, or built what they asked for) the brief has him ask, in words, whether to open their
 store, and on their yes his answer carries `"open_store": true` (kept by the answer parser;
-the app acts on it only in the meeting). Entering stamps `met_luke_at` (once, by the
+the app acts on it only in the meeting). The code holds the moment, not only the brief (12 Oct,
+after a meeting that went quiet once a build landed): a build applied in the meeting has the
+app send the hidden line `MEET_BUILT`, which Luke answers by saying so and asking; once he has
+helped and not asked, the turn reads `MEET_OFFER_NOW` beside the brief; the answer that asks is
+kept with `offered_store`, and a plain yes after it (`isGoAhead`) sets `open_store` whatever the
+model wrote (`meetTurn`, `meetStateOf`, `check-lean-turns`). Entering stamps `met_luke_at` (once, by the
 database; only the service role may clear it), Luke moves into the side panel with the same
 conversation, and the tour runs after.
 
@@ -355,7 +370,10 @@ For each turn, the engine reads:
 - current module context, when present;
 - up to 40 existing automation rules;
 - recent external-assistant build requests;
-- conversation history supplied by the caller. A question whose answer never came (failed or
+- conversation history supplied by the caller (`historyOf`): the owner's own words, never the
+  context sent with them; the last reply whole, since they may be answering it; an older design
+  as what it said and what each change was (`pastReply`), since what was built is in the
+  turn's context as it is now (a thread on 11 Oct halved, 14,996 to 7,453 tokens). A question whose answer never came (failed or
   stopped) is kept while it is the latest thing asked, its stand-in said as `NOT_ANSWERED`, so
   "try again" means it (`answeredTurns`); once an answer has come after it, it is left out. A
   turn that fails because the model was not there (`ModelError`: an empty account, a refused
@@ -380,9 +398,19 @@ filters, import completeness, and last sync time. A Jev question router may addi
 select a list, time window, and question kind; `fetchSlice` then retrieves up to 50 rows
 for that specific question.
 
+Luke's calls on a turn share one prefix (a lookup's next step, a repair, a redo), so the
+thread is cached at its last turn (`cacheTurns`, beside the contract's own cache); before, every
+one of those sent the whole thread again at full price (57,360 uncached tokens for a
+one-lookup answer, 11 Oct). Where the cache ends is left out of a tape's key.
+
 Most questions are answered from that read in one model call. In the chat (`lookups: true`)
 the model may also look up what the snapshot does not hold with six read-only store tools
-(`LUKE_TOOLS`), one of them `store_metrics`: a total, an average, a count or a breakdown
+(`LUKE_TOOLS`), and read the app itself with or without a store (`appTools`,
+`src/lib/section-read.ts`): `read_section`, a section's own rows and the fields kept beside the
+store's, found by a word or a field's value wherever they sit (the same reader MCP's
+`read_section` uses), and `rule_runs`, what each rule did. He is told to look before answering
+about them, and never to ask the owner to check or to type a value again to fire a rule.
+One store tool is `store_metrics`: a total, an average, a count or a breakdown
 over the whole store, counted in the database (`abo_store_metrics`, 0129) by one measure
 and one dimension in a window, so an answer about the shop's numbers is never the model's
 arithmetic over a page of rows. The measures and dimensions are declared once

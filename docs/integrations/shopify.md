@@ -33,7 +33,7 @@ Current resources:
 | `customers`    | Customer profile and spend                   | Page or bulk | Customer create/update/delete                             |
 | `orders`       | Orders, lines, totals, refunds, transactions | Page or bulk | Order create/update/cancel/pay/fulfil, transaction create |
 | `locations`    | Places the shop stocks or ships from         | Page or bulk | Location create/update/activate/deactivate/delete         |
-| `inventory`    | Variant/location stock                       | Page or bulk | Inventory level update/connect                            |
+| `inventory`    | Variant/location stock                       | Page or bulk | Inventory level update/connect, then counted whole (below) |
 | `refunds`      | Refund amount and units                      | Paged        | Carried by order updates                                  |
 | `fulfillments` | Shipments and tracking                       | Page or bulk | Fulfillment create/update plus order payloads             |
 
@@ -229,6 +229,36 @@ and upsert/delete only the expected resource.
 Webhook processing handles data arriving in unexpected order and prevents redacted
 customer data from being recreated. A successful commerce webhook advances the store's
 freshness timestamp.
+
+### Stock is counted whole (0207)
+
+Shopify's stock webhook carries `available` alone, and a sale, a cancel, a fulfilment or
+a restock moves `on_hand` and `committed` too. A fulfilment moves them without touching
+`available`, so no stock webhook comes at all. Left to the webhook, the two froze at the
+last import and drifted apart, some rows going below zero.
+
+- **Marking.** Before handing the body on, `abo_shopify_webhook` marks the variants a
+  delivery may have moved (`abo_stock_mark` → `stock_refresh_due`):
+  - stock levels, by inventory item;
+  - every orders topic, by its lines (a refund's restock arrives as `orders/updated`);
+  - fulfilments, by their lines.
+- **Counting.** The import worker reads each due variant's whole count (`refreshStock` in
+  `src/lib/shopify-import.ts`): 25 at a time through `nodes(ids:)`, in the shape of the
+  stock import, written by `saveInventory`. It runs on the worker's own ticket, token
+  handling and throttle-aware `graphql()`. The import tick sends any store with stock due.
+- **Races and refusals.** A row is settled only if nothing marked it again after it was
+  read, so a webhook landing mid-count is counted next round. A page Shopify refuses
+  waits fifteen minutes.
+- **`updated_at`** on a stock row is when its numbers were last read whole. The stock
+  webhook moves `available` alone and leaves it.
+- **The nightly sweep** marks up to 2,000 variants a store counted longest ago
+  (`abo_stock_recount`). That catches what no webhook says, such as a transfer's
+  `incoming` or a delivery Shopify never made, at a cost a large store's API budget can
+  carry.
+
+A deployment with no worker address (the browser-driven import) does not count marked
+stock; production has a worker. `check-stock-refresh` holds the marking, the count, the
+race, the refusal and the walls.
 
 ## Store-backed sections
 

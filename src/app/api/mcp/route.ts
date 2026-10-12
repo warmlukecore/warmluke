@@ -8,16 +8,15 @@ import {
   listStores,
   ownColumns,
   readStorePage,
-  readStoreRows,
   storeSectionColumns,
   storeSignals,
   storeTableSchema,
-  withOwnFields,
   withoutHidden,
   hiddenColumns,
   adviceOf,
   type StoreTable,
 } from "@/lib/store-read";
+import { readSectionRows } from "@/lib/section-read";
 import { enterStoreShown, narrowedLists, storeShownFor } from "@/lib/store-columns";
 import { asksFromStore } from "@/lib/suggest";
 import { viewEditPlans, type ViewEdit } from "@/lib/view-edit";
@@ -53,6 +52,7 @@ import { TOKEN_LEFT_MS, finishTurn, lapsesAt, settleAnswer, turnContext, type Tu
 import { start } from "workflow/api";
 import { lukeTurn } from "@/workflows/luke-turn";
 import { ACTION_CATALOGUE, PROPOSE_INPUT, proposeStoreAction } from "@/lib/store-action-propose";
+import { readRuleRuns } from "@/lib/rule-runs";
 import { ALLOWED_ICONS } from "@/lib/types";
 import type {
   AssistantPlan,
@@ -155,6 +155,12 @@ const TOOLS = [
           description:
             'Return how this section has changed instead of its rows: every version, newest first, with when it was made, who by, and the fields it held. Use it to answer "what did this look like before?" and to propose putting it back.',
         },
+        search: {
+          type: "string",
+          description: "Words to look for in the section's text fields: a SKU, a name, a code.",
+        },
+        field: { type: "string", description: "A field to match exactly, with value: one of theirs or the store's." },
+        value: { type: "string", description: "The value that field must hold." },
         limit: { type: "number", description: "Up to 200. Defaults to 50." },
         project_id: { type: "string", description: "Which app, when they have more than one." },
       },
@@ -430,6 +436,19 @@ const TOOLS = [
         request_id: { type: "string", description: "The id propose_change returned." },
       },
       required: ["request_id"],
+    },
+  },
+  {
+    name: "rule_runs",
+    description:
+      "What the merchant's rules actually did, run by run, newest first: when each ran, what set it off, how many rows of each section it read (and whether that was cut short), how many rows it wrote, and the error when it failed. Use this to answer whether a rule ran or why it changed nothing, instead of asking them to check.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        rule: { type: "string", description: "One rule's name; left out, every rule's runs together." },
+        limit: { type: "number", description: "Up to 200. Defaults to 20." },
+        project_id: { type: "string", description: "Which app, when they have more than one." },
+      },
     },
   },
 ] as const;
@@ -1252,32 +1271,25 @@ async function handle(req: Request, seen: Seen) {
         rules: sectionRules.length ? sectionRules : "none on this section",
       };
 
-      const limit = Math.min(Math.max(Number(args.limit ?? 50) || 50, 1), 200);
+      // Its rows, read as Luke reads them (lib/section-read): the newest,
+      // or the ones holding a word, or the ones whose field is a value,
+      // looked for in the database wherever they sit in the list.
+      const sort = (sj.features as FeatureSchema | null)?.defaultSort ?? null;
       if (section.source_table) {
         const src = section.source_table;
-        const searching = `Its rows are the store's ${src} — search them with search_store, table "${src}".`;
-        const { data: st } = await db
-          .from("stores")
-          .select("id")
-          .eq("project_id", project.id)
-          .in("status", ["connected", "uninstalled"])
-          .maybeSingle();
-        if (!isStoreTable(src) || !st) return ok(id, text({ ...setup, note: searching }));
+        const searching = `Its rows are the store's ${src} — search_store, table "${src}", searches the store's own columns too.`;
+        if (!isStoreTable(src)) return ok(id, text({ ...setup, note: searching }));
         // The section as the merchant sees it: the store's rows, in the
         // section's order, with what they keep beside each (0128).
         const columns = storeSectionColumns(src, sj.columns as SchemaColumn[] | undefined);
-        const sort = (sj.features as { defaultSort?: { field: string; dir: "asc" | "desc" } } | null)?.defaultSort;
-        const { rows, total } = await readStoreRows(db, st.id as string, src, limit, undefined, sort ?? null);
-        const laid = await withOwnFields(db, section.id, rows);
+        const read = await readSectionRows(db, project.id, section, columns, args, sort);
         const theirs = ownColumns(src, columns).filter((c) => !c.compute);
         return ok(
           id,
           text({
             ...setup,
             fields: columns.map((c) => ({ field: c.field, label: c.label, type: c.type })),
-            total,
-            showing: laid.length,
-            rows: laid.map((r) => r.data),
+            ...read,
             note: `${searching} The merchant's own fields, kept here beside each row where no import reaches: ${
               theirs.map((c) => c.field).join(", ") || "none yet"
             }.`,
@@ -1285,24 +1297,8 @@ async function handle(req: Request, seen: Seen) {
         );
       }
 
-      const { data: rows, count } = await db
-        .from("records")
-        .select("data", { count: "exact" })
-        .eq("module_id", section.id)
-        // Fields kept beside a store row are not rows of the section's own.
-        .is("store_row_id", null)
-        .order("created_at", { ascending: false })
-        .limit(limit);
-
-      return ok(
-        id,
-        text({
-          ...setup,
-          total: count ?? 0,
-          showing: rows?.length ?? 0,
-          rows: (rows ?? []).map((r) => r.data),
-        })
-      );
+      const read = await readSectionRows(db, project.id, section, (sj.columns ?? []) as SchemaColumn[], args, sort);
+      return ok(id, text({ ...setup, ...read }));
     }
 
     if (name === "pending_changes") {
@@ -1826,6 +1822,35 @@ async function handle(req: Request, seen: Seen) {
           code_rules: CODE_RULE_GUIDE,
           context_means:
             "Where these guides say CONTEXT, they mean the app's sections: call read_section to list them and their fields.",
+        })
+      );
+    }
+
+    if (name === "rule_runs") {
+      // Their own app's log (0206), read as them: a rule they cannot see is not in it.
+      const { data: projects } = await db.from("projects").select("id, name");
+      const list = projects ?? [];
+      const wanted = (args.project_id as string | undefined)?.trim();
+      const project = wanted ? list.find((p) => p.id === wanted) : list.length === 1 ? list[0] : null;
+      if (!project) {
+        return ok(
+          id,
+          text({
+            error: list.length ? "Which app? Pass project_id." : "This account has no app yet.",
+            projects: list.map((p) => ({ id: p.id, name: p.name })),
+          })
+        );
+      }
+      const rule = typeof args.rule === "string" ? args.rule : undefined;
+      const runs = await readRuleRuns(db, project.id as string, { rule, limit: Number(args.limit) || 20 });
+      return ok(
+        id,
+        text({
+          app: project.name,
+          ...(rule && !runs.length
+            ? { said: `No run of a rule called "${rule}" is kept: it has not run yet, or no rule has that name.` }
+            : {}),
+          runs,
         })
       );
     }

@@ -10,7 +10,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { FatalError } from "workflow";
 import { ModelError, modelErrorKindOf, type ChatTurn } from "@/lib/ai";
-import { NOT_ANSWERED, answeredTurns, type TurnResult } from "@/lib/engine";
+import { NOT_ANSWERED, answeredTurns, pastReply, type MeetState, type TurnResult } from "@/lib/engine";
 import { noteJudgement } from "@/lib/judge";
 import { afterOwnerTurn } from "@/lib/learning";
 import { traceTurn } from "@/lib/trace";
@@ -77,6 +77,8 @@ export type TurnContext = {
   currentFeatures: FeatureSchema | null;
   history: ChatTurn[];
   blueprintShown: boolean;
+  /** Where the first meeting stands, for a turn of it (lib/engine MeetState). */
+  meetState: MeetState;
 };
 
 /**
@@ -138,7 +140,9 @@ export async function turnContext(
   const { data: historyRows, error: histErr } = convId
     ? await client
         .from("messages")
-        .select("role, content, ptype:payload->>type, said:payload->>text")
+        .select(
+          "role, content, ptype:payload->>type, said:payload->>text, kind:payload->>kind, offered:payload->>offered_store"
+        )
         .eq("conversation_id", convId)
         .lt("created_at", before ?? "infinity")
         // Newest first, then turned back round below. Ascending with a
@@ -155,6 +159,8 @@ export async function turnContext(
   type HistoryRow = Pick<MessageRow, "role" | "content"> & {
     ptype: string | null;
     said: string | null;
+    kind: string | null;
+    offered: string | null;
   };
   // Back into the order they were said in; a model reading a
   // conversation backwards is worse than one reading half of it.
@@ -166,21 +172,56 @@ export async function turnContext(
   // the fresh one on the newest turn.
   // A question whose answer never came is replayed only while it is the
   // latest thing asked, its stand-in said as NOT_ANSWERED (answeredTurns).
-  const history = answeredTurns(rows).map((m): ChatTurn => ({
+  const history = historyOf(rows);
+
+  // Has the owner already seen a design for this thread? New sections may
+  // only be built after one — otherwise the assistant can skip straight to
+  // creating things the owner never agreed to.
+  const blueprintShown = rows.some((m) => m.ptype === "blueprint");
+  return { proj, moduleList, currentSchema, currentFeatures, history, blueprintShown, meetState: meetStateOf(rows) };
+}
+
+/**
+ * A thread's rows as the model is told them: the owner's own words, never
+ * the CONTEXT-wrapped turn sent at the time (a stale snapshot of the app
+ * that costs tokens and contradicts the fresh one); a question never
+ * answered as NOT_ANSWERED while it is the latest (answeredTurns); the
+ * last reply whole, since the owner may be answering it; an older design
+ * as what was said and changed (lib/engine pastReply).
+ */
+export function historyOf(
+  rows: Array<{ role: "user" | "assistant"; content: string; ptype: string | null; said: string | null }>
+): ChatTurn[] {
+  const kept = answeredTurns(rows);
+  const lastReply = kept.findLastIndex((m) => m.role === "assistant");
+  return kept.map((m, i): ChatTurn => ({
     role: m.role,
     content:
       m.role === "user"
         ? (m.said ?? m.content)
         : m.ptype === "unanswered" || m.ptype === "stopped"
           ? NOT_ANSWERED
-          : m.content,
+          : i === lastReply
+            ? m.content
+            : pastReply(m.content),
   }));
+}
 
-  // Has the owner already seen a design for this thread? New sections may
-  // only be built after one — otherwise the assistant can skip straight to
-  // creating things the owner never agreed to.
-  const blueprintShown = rows.some((m) => m.ptype === "blueprint");
-  return { proj, moduleList, currentSchema, currentFeatures, history, blueprintShown };
+/**
+ * Where the first meeting stands, from its thread: whether Luke has helped
+ * (a build they agreed to landed, or he answered from their store's
+ * numbers), and whether he has asked to open their store, last of all or
+ * at any time. Read off the rows' payloads, never off the words.
+ */
+export function meetStateOf(
+  rows: Array<{ role: string; ptype: string | null; kind: string | null; offered: string | null }>
+): MeetState {
+  const replies = rows.filter((m) => m.role === "assistant" && m.ptype !== "answering");
+  return {
+    helped: replies.some((m) => m.ptype === "build" || (m.ptype === "answer" && m.kind === "store")),
+    offered: replies.some((m) => m.offered === "true"),
+    lastOffered: replies.at(-1)?.offered === "true",
+  };
 }
 
 /** The answer's line, filled once; a line already stopped is left as it is. */

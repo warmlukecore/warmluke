@@ -14,6 +14,8 @@ export interface SchemaColumn {
   field: string;
   label: string;
   type: ColumnType;
+  /** What the column means, in a sentence or two, shown behind an ⓘ: the label stays short. */
+  about?: string;
   /** For money imported with a per-row ISO currency code. */
   currencyField?: string;
   /**
@@ -559,6 +561,8 @@ export type AssistantReply =
         show?: ScreenShown;
         /** The first meeting only: they said yes to seeing their store, and the app lets them in (lib/meet). */
         open_store?: boolean;
+        /** The first meeting only: this answer asked whether to open their store, so a yes after it does (lib/engine). */
+        offered_store?: boolean;
         /** On a proposal, what was understood, so their yes builds exactly that (lib/plan DesignIntent). */
         understood?: unknown;
         grounding?: {

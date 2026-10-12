@@ -19,8 +19,16 @@ import { Switch } from "@/components/ui/Switch";
 import { Select } from "@/components/ui/Select";
 import { readsSection } from "@/lib/section-ref";
 
-/** What a rule has done (abo_rule_log, 0172): its runs of either kind, counted in the database. */
-type RunSummary = { runs: number; failed: number; last: { at: string; ok: boolean; error: string | null } | null };
+/**
+ * What a rule has done (abo_rule_log, 0172; 0206): its runs of every kind,
+ * counted in the database, and what its last one wrote and whether a list
+ * it read was longer than it could be handed.
+ */
+type RunSummary = {
+  runs: number;
+  failed: number;
+  last: { at: string; ok: boolean; error: string | null; wrote: number | null; cut: boolean } | null;
+};
 
 export default function AutomationsPanel({
   projectId,
@@ -202,8 +210,23 @@ export default function AutomationsPanel({
                       hour: "numeric",
                       minute: "2-digit",
                     })}{" "}
+                    {run.last.ok && run.last.wrote !== null && (
+                      <>
+                        {" "}
+                        ·{" "}
+                        {run.last.wrote === 0
+                          ? "changed no rows"
+                          : `changed ${run.last.wrote.toLocaleString()} ${run.last.wrote === 1 ? "row" : "rows"}`}
+                      </>
+                    )}{" "}
                     · {run.failed === 0 ? "no errors" : `${run.failed.toLocaleString()} failed`}
                     {!run.last.ok && " · the last one failed"}
+                    {run.last.cut && (
+                      <span className="text-signal-attention">
+                        {" "}
+                        · the last one read only part of a list, past what one run is handed
+                      </span>
+                    )}
                   </>
                 ) : (
                   "Hasn't run yet"

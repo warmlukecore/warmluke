@@ -10,7 +10,8 @@
 // (7 Oct). Under the "i", as wide as a few lines read well, kept inside
 // the window, and above it when there is more room there.
 //
-// Callers: src/components/GenericRenderer.tsx (stat cards).
+// Callers: src/components/GenericRenderer.tsx (stat cards), src/components/views.tsx,
+// RecordModal.tsx and StoreRecordDetail.tsx (what a column means, SchemaColumn.about).
 
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Info } from "lucide-react";

@@ -2,6 +2,8 @@ import { after, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ticketClient } from "@/lib/supabase-server";
 import { importStep } from "@/lib/import-step";
+import { refreshStock } from "@/lib/shopify-import";
+import { RESOURCES } from "@/lib/shopify-resources";
 
 export const runtime = "nodejs";
 // The work runs in after(), which lives as long as this does: several
@@ -40,6 +42,9 @@ type HeldStore = {
  * reach that store's commerce rows until it lapses. A made-up ticket,
  * a stale one, or one for another store is turned away before any
  * work is scheduled, and could not have done anything anyway.
+ *
+ * Once the import is settled, the work left is stock a webhook said
+ * moved (0207): each due variant's whole count, read from Shopify.
  */
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as { store?: unknown; ticket?: unknown } | null;
@@ -62,6 +67,25 @@ export async function POST(req: Request) {
   return NextResponse.json({ accepted: true }, { status: 202 });
 }
 
+/**
+ * Whether the import has walked everything and its finish is stamped:
+ * then a dispatch is for stock alone, and the walk (with its finish and
+ * drift counts) is not run again for it. A finish not stamped yet — the
+ * pass ended in the last request, or its stamp failed — walks once more.
+ */
+async function settled(db: SupabaseClient, store: HeldStore): Promise<boolean> {
+  const { data, error } = await db.from("import_runs").select("resource, status, finished_at").eq("store_id", store.id);
+  if (error) return false;
+  const runs = (data ?? []) as Array<{ resource: string; status: string; finished_at: string | null }>;
+  if (!RESOURCES.every((r) => runs.some((x) => x.resource === r && x.status === "done"))) return false;
+  const last = runs
+    .map((r) => r.finished_at)
+    .filter((f): f is string => !!f)
+    .map((f) => Date.parse(f))
+    .reduce((a, b) => Math.max(a, b), 0);
+  return !last || (!!store.last_synced_at && last <= Date.parse(store.last_synced_at));
+}
+
 /** The store this ticket is for, with its token — or null once it lapses. */
 async function heldStore(db: SupabaseClient): Promise<HeldStore | null> {
   const { data, error } = await db.rpc("abo_import_store");
@@ -82,11 +106,18 @@ async function work(db: SupabaseClient, storeId: string) {
       const store = await heldStore(db);
       if (!store || store.id !== storeId) return;
 
-      const step = await importStep(db, store, { honourBackoff: true });
-      // Finished; waiting on Shopify's export; waiting out a failure;
-      // or failed just now, with when to try again already recorded.
-      // Each is picked up by the next tick when there is something to do.
-      if (step.status !== 200 || step.body.done || step.body.waiting || step.body.held) return;
+      if (!(await settled(db, store))) {
+        const step = await importStep(db, store, { honourBackoff: true });
+        // Waiting on Shopify's export; waiting out a failure; or failed
+        // just now, with when to try again already recorded. Each is
+        // picked up by the next tick when there is something to do.
+        if (step.status !== 200 || step.body.waiting || step.body.held) return;
+        // Finished just now: the stock below is what is left, if any.
+        if (step.body.done && !(await refreshStock(db, store, deadline))) return;
+      } else if (!(await refreshStock(db, store, deadline))) {
+        // Imported, and no stock due.
+        return;
+      }
 
       // More to do. Past the budget, or past what one ticket may be
       // renewed for, the rest goes to a fresh ticket and request.

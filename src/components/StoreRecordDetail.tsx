@@ -30,6 +30,7 @@ import {
 import type { SchemaColumn } from "@/lib/types";
 import { Dialog } from "@/components/ui/Dialog";
 import { Group } from "@/components/ui/Group";
+import { InfoTip } from "@/components/ui/InfoTip";
 import { button, note } from "@/components/ui/controls";
 import { Field, optionsFor } from "@/components/RecordModal";
 import { Badge, Cell } from "@/components/views";
@@ -215,7 +216,12 @@ export default function StoreRecordDetail({
             <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
               {details.map((c) => (
                 <div key={c.field} className="min-w-0">
-                  <dt className="text-[11px] text-fg-muted">{c.label}</dt>
+                  <dt className="flex items-center gap-1 text-[11px] text-fg-muted">
+                    {c.label}
+                    {c.about?.trim() && (
+                      <InfoTip label={`What ${c.label} means`} title={c.label} lines={[c.about.trim()]} />
+                    )}
+                  </dt>
                   <dd className="mt-0.5 truncate text-[13px] text-fg">
                     <Cell
                       col={c}
@@ -360,7 +366,10 @@ function YourFields({
       <div className="space-y-3">
         {columns.map((c) => (
           <label key={c.field} className="block space-y-1">
-            <span className="text-[11px] text-fg-muted">{c.label}</span>
+            <span className="flex items-center gap-1 text-[11px] text-fg-muted">
+              {c.label}
+              {c.about?.trim() && <InfoTip label={`What ${c.label} means`} title={c.label} lines={[c.about.trim()]} />}
+            </span>
             <Field
               col={c}
               value={draft[c.field]}

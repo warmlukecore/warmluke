@@ -1132,6 +1132,104 @@ export async function saveInventory(db: SupabaseClient, storeId: string, nodes: 
   }
 }
 
+// ── Stock a webhook said moved (0207) ───────────────────────────
+// Shopify's stock webhook carries available alone, and a sale, a cancel,
+// a fulfilment or a restock moves on_hand and committed too — a
+// fulfilment without touching available, so no stock webhook comes at
+// all. Every webhook that can move stock marks its variants due
+// (abo_stock_mark), and the nightly sweep marks a share counted longest
+// ago; this reads each one's whole count, in the shape of the stock
+// import, and writes it the same way.
+export const STOCK_QUERY = `
+query($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    ... on ProductVariant {
+      id
+      inventoryItem {
+        inventoryLevels(first: 10) {
+          nodes {
+            quantities(names: ["available", "on_hand", "committed", "incoming"]) { name quantity }
+            location { id name }
+          }
+        }
+      }
+    }
+  }
+}`;
+
+/** Variants counted in one question: half a stock page, as nodes() is priced per id. */
+export const STOCK_PAGE = 25;
+/** How long a page Shopify would not count waits before it is asked again. */
+const STOCK_RETRY_MS = 15 * 60_000;
+
+/**
+ * Counts the store's due stock whole, a page at a time, until none is due
+ * or `until` passes. True when some is still due.
+ *
+ * A row is settled only if nothing marked it again after it was read — by
+ * the database's own time, the newest due_at read, never this server's
+ * clock — so a webhook landing mid-count is counted next time round. A page
+ * Shopify would not count waits a quarter of an hour rather than being
+ * asked every minute, and the error goes on to the caller.
+ *
+ * ponytail: a level Shopify no longer has at a location (disconnected)
+ * keeps its last count; the next stock pass replaces it.
+ */
+export async function refreshStock(db: SupabaseClient, store: StoreToken, until: number): Promise<boolean> {
+  const token = await ensureFreshToken(db, store);
+  for (;;) {
+    if (Date.now() > until) return true;
+    const { data, error } = await db
+      .from("stock_refresh_due")
+      .select("variant_id, due_at, variants!inner(external_id)")
+      .eq("store_id", store.id)
+      // A few seconds' grace: a mark carries the database's clock, and this
+      // server's may run behind it.
+      .lte("due_at", new Date(Date.now() + 5_000).toISOString())
+      .order("due_at")
+      .limit(STOCK_PAGE);
+    if (error) throw new Error(error.message);
+    const due = (data ?? []) as unknown as Array<{
+      variant_id: string;
+      due_at: string;
+      variants: { external_id: string };
+    }>;
+    if (due.length === 0) return false;
+    const read = due.map((d) => d.variant_id);
+    // As the database wrote it (ISO, UTC): compared as text, it orders as time.
+    const readAt = due
+      .map((d) => d.due_at)
+      .toSorted()
+      .at(-1)!;
+    try {
+      const got = await graphql<{ nodes: Array<GqlStock | null> }>(store.shop_domain, token, STOCK_QUERY, {
+        ids: due.map((d) => d.variants.external_id),
+      });
+      // A variant deleted in Shopify comes back null: nothing to count.
+      await saveInventory(
+        db,
+        store.id,
+        (got.nodes ?? []).filter((n): n is GqlStock => !!n?.id)
+      );
+    } catch (e) {
+      await db
+        .from("stock_refresh_due")
+        .update({ due_at: new Date(Date.now() + STOCK_RETRY_MS).toISOString() })
+        .eq("store_id", store.id)
+        .in("variant_id", read)
+        .lte("due_at", readAt);
+      throw e;
+    }
+    const { error: settled } = await db
+      .from("stock_refresh_due")
+      .delete()
+      .eq("store_id", store.id)
+      .in("variant_id", read)
+      .lte("due_at", readAt);
+    if (settled) throw new Error(settled.message);
+  }
+}
+
 // ── Draft orders ────────────────────────────────────────────────
 // The sale that did not start in the storefront: a quote sent over
 // WhatsApp, an order taken on the phone, a basket built for somebody

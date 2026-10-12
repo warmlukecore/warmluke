@@ -15,6 +15,7 @@ import { fillFromLinked, narrowFor } from "@/lib/links";
 import type { FeatureSchema, RecordRow, SchemaColumn, UiSchema } from "@/lib/types";
 import { Check } from "lucide-react";
 import { Dialog } from "@/components/ui/Dialog";
+import { InfoTip } from "@/components/ui/InfoTip";
 import { Select, type SelectOption } from "@/components/ui/Select";
 import { DateField } from "@/components/ui/DateField";
 import { badgeLabel } from "@/lib/tone";
@@ -470,7 +471,14 @@ export default function RecordModal({
         )}
         {columns.map((col) => (
           <div key={col.field}>
-            <label className={label}>{col.label}</label>
+            <div className="flex items-center gap-1.5">
+              <label className={label}>{col.label}</label>
+              {col.about?.trim() && (
+                <span className="mb-1.5">
+                  <InfoTip label={`What ${col.label} means`} title={col.label} lines={[col.about.trim()]} />
+                </span>
+              )}
+            </div>
             <Field
               col={col}
               value={draft[col.field]}

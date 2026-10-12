@@ -22,12 +22,22 @@ export type CodeResult = {
   add: Array<{ fields: Record<string, unknown> }>;
   /** A scheduled rule's next run, "YYYY-MM-DDTHH:MM" on the store's clock (0138). */
   next?: string;
+  /** Writes it handed back past what one run may make, left unmade and said in its run (0206). */
+  dropped?: number;
 };
+
+/** What one run may write: rows it sets, and rows it adds. */
+export const SETS_MAX = 500;
+export const ADDS_MAX = 100;
 
 /** Past this a rule's code is not small. */
 export const CODE_MAX = 20_000;
-/** A run's whole input, rows and all: past it the rule is asked to read less. */
-const INPUT_MAX = 2_000_000;
+/**
+ * A run's whole input, rows and all. Past it the rows go with only the
+ * fields the code names (namesIn); past it still, the rule is asked to
+ * read less, and its run says so.
+ */
+export const INPUT_MAX = 8_000_000;
 
 /** Why a rule's code would not be run, or null when it may be. */
 export function codeProblem(code: unknown): string | null {
@@ -39,11 +49,12 @@ export function codeProblem(code: unknown): string | null {
   return null;
 }
 
+const obj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+
 /** Reads what the code handed back; anything else is no result. */
 export function parseResult(raw: unknown): CodeResult | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as { set?: unknown; add?: unknown; next?: unknown };
-  const obj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
   const set = Array.isArray(r.set)
     ? r.set
         .filter(
@@ -56,7 +67,80 @@ export function parseResult(raw: unknown): CodeResult | null {
     ? r.add.filter((a): a is { fields: Record<string, unknown> } => obj(a) && obj(a.fields))
     : [];
   const next = typeof r.next === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(r.next) ? r.next : undefined;
-  return { set: set.slice(0, 500), add: add.slice(0, 100), ...(next ? { next } : {}) };
+  const dropped = Math.max(0, set.length - SETS_MAX) + Math.max(0, add.length - ADDS_MAX);
+  return {
+    set: set.slice(0, SETS_MAX),
+    add: add.slice(0, ADDS_MAX),
+    ...(next ? { next } : {}),
+    ...(dropped ? { dropped } : {}),
+  };
+}
+
+/**
+ * Every word the code could reach a row's field by, or null when it reads
+ * rows whole (their keys, values or entries, a spread, a stringify, a
+ * for…in), so no field may be left off.
+ * ponytail: a field reached only through data (row[other.which]) is not
+ * seen; rows are slimmed only when the whole input would not fit anyway.
+ */
+export function namesIn(code: string): Set<string> | null {
+  if (
+    /\bObject\s*\.\s*(keys|values|entries|assign|fromEntries)\b|\bJSON\s*\.\s*stringify\b|\bfor\s*\([^;)]*\bin\b|\.\.\./.test(
+      code
+    )
+  ) {
+    return null;
+  }
+  return new Set(code.match(/[A-Za-z_$][\w$]*/g) ?? []);
+}
+
+/** A list of rows with only the fields in `names`, and each row's id. */
+function slimRows(rows: unknown, names: Set<string>): unknown {
+  if (!Array.isArray(rows)) return rows;
+  return rows.map((r) =>
+    r && typeof r === "object" && !Array.isArray(r)
+      ? Object.fromEntries(Object.entries(r).filter(([k]) => k === "id" || names.has(k)))
+      : r
+  );
+}
+
+/**
+ * What goes into the machine: the sections every input shares, once
+ * (a store bringing in fifty orders handed the same 2,000 stock rows
+ * fifty times), and each input's own part. Rows are slimmed to the
+ * fields the code names only when the whole would not fit otherwise.
+ * Null when even that does not fit.
+ */
+export function packInputs(code: string, inputs: unknown[]): string | null {
+  const first = obj(inputs[0]) ? inputs[0] : null;
+  const shared =
+    inputs.length > 1 && first && "sections" in first && inputs.every((i) => obj(i) && i.sections === first.sections)
+      ? first.sections
+      : undefined;
+  const pack = (each: unknown[], sections: unknown) =>
+    JSON.stringify({
+      ...(sections === undefined ? {} : { sections }),
+      inputs: sections === undefined ? each : each.map((i) => (obj(i) ? { ...i, sections: undefined } : i)),
+    });
+  const whole = pack(inputs, shared);
+  if (whole.length <= INPUT_MAX) return whole;
+  const names = namesIn(code);
+  if (!names) return null;
+  const slimSections = (sections: unknown) =>
+    obj(sections)
+      ? Object.fromEntries(Object.entries(sections).map(([k, rows]) => [k, slimRows(rows, names)]))
+      : sections;
+  const slim = inputs.map((i) =>
+    obj(i)
+      ? {
+          ...i,
+          ...(shared === undefined && "sections" in i ? { sections: slimSections(i.sections) } : {}),
+          ...("rows" in i ? { rows: slimRows(i.rows, names) } : {}),
+        }
+      : i
+  );
+  const lean = pack(slim, shared === undefined ? undefined : slimSections(shared));
+  return lean.length <= INPUT_MAX ? lean : null;
 }
 
 /**
@@ -68,7 +152,15 @@ export function parseResult(raw: unknown): CodeResult | null {
 export const ALIASES = "__names";
 
 export const RUNNER = `import { readFileSync } from "node:fs";
-const inputs = JSON.parse(readFileSync("inputs.json", "utf8"));
+// The sections every input shares come once (lib/code-run packInputs), and
+// each input is handed its own copy, so code that sorts or trims a list for
+// one row does not change it for the next. A plain list is each input whole.
+const file = JSON.parse(readFileSync("inputs.json", "utf8"));
+const inputs = Array.isArray(file)
+  ? file
+  : file.inputs.map((i, n) =>
+      file.sections === undefined ? i : { ...i, sections: n === file.inputs.length - 1 ? file.sections : structuredClone(file.sections) }
+    );
 const out = [];
 let run;
 try {
@@ -136,8 +228,11 @@ export async function runCodeEach(code: string, inputs: unknown[]): Promise<Ran[
   const problem = codeProblem(code);
   if (problem) return all(problem);
   if (!inputs.length) return [];
-  const json = JSON.stringify(inputs);
-  if (json.length > INPUT_MAX) return all("The rows this rule reads are too many to hand it in one go.");
+  const json = packInputs(code, inputs);
+  if (json === null)
+    return all(
+      "The rows this rule reads are too many to hand it in one go: read fewer sections, or fewer of their rows."
+    );
   if (!canRunCode()) return all("Code rules cannot run here: no sandbox is reachable.");
   let sandbox: Sandbox | null = null;
   try {

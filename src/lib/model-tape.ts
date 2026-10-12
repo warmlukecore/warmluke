@@ -125,6 +125,10 @@ function renumberCalls<T>(value: T): T {
     for (const [k, v] of Object.entries(x as Record<string, unknown>)) {
       // Anthropic's tool_use id and tool_result's pointer to it; Gemini's
       // functionCall and functionResponse, when they carry one.
+      // Where a call asks to be cached is a setting, not the conversation:
+      // a turn cached at its last message (lib/ai asMessages) plays the
+      // recording made before it was.
+      if (k === "cache_control") continue;
       if ((k === "id" && named) || k === "tool_use_id") o[k] = as(v);
       else if ((k === "functionCall" || k === "functionResponse") && v && typeof v === "object" && "id" in v)
         o[k] = walk({ ...(v as Record<string, unknown>), id: as((v as { id: unknown }).id) });
@@ -170,7 +174,13 @@ export function fingerprint(label: string, url: string, body: string) {
   // recording made through one must play back through the other.
   const road = new URL(url).pathname.replace(/^.*?(\/v1\/)/, "$1").replace(/\/models\/[^/:]+/, "/models/‹model›");
   const parts = { system: hash(system), tools: hash(tools), conversation: hash({ road, rest }) };
-  return { key: hash([label, parts]), parts, asked: lastSaid(rest) };
+  // The same conversation as a call with no tools sends it: tool_choice
+  // comes only with tools, which are out of the match, so a call that has
+  // gained tools (Luke reads the app with or without a store, 12 Oct)
+  // still finds what was recorded before it had any.
+  const { tool_choice: _choice, ...bare } = rest;
+  const plain = "tool_choice" in rest ? hash({ road, rest: bare }) : null;
+  return { key: hash([label, parts]), parts, asked: lastSaid(rest), plain };
 }
 
 /** The last user words in an Anthropic, Gemini or Jev request. */
@@ -238,7 +248,10 @@ function sameConversation(label: string, fp: ReturnType<typeof fingerprint>, tag
       byConversation.set(at, [...(byConversation.get(at) ?? []), { key: f.slice(0, -5), kept }]);
     }
   }
-  const found = byConversation.get(`${label}|${fp.parts.conversation}`) ?? [];
+  const found =
+    byConversation.get(`${label}|${fp.parts.conversation}`) ??
+    (fp.plain ? byConversation.get(`${label}|${fp.plain}`) : undefined) ??
+    [];
   return (
     found.find((c) => c.kept.parts.tag === tag) ??
     found.find((c) => c.kept.parts.tools === fp.parts.tools) ??

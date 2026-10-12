@@ -236,9 +236,14 @@ A section over the store reads its table through `abo_store_page(p_module, p_que
 ## Rule logs
 
 The Rules dialog asks `abo_rule_log(p_project)` (0172) what each rule has done: how many
-times it ran, how many failed, and its last run (when, whether it worked, its error), over
-both kinds of run, `automation_runs` for a rule of expressions and `code_jobs` for a rule of
-code. It runs as the caller, so it counts only what their policies let them see.
+times it ran, how many failed, and its last run (when, whether it worked, its error, the
+rows it changed, and whether a list it read was cut short, 0206), over every kind of run.
+Since 0206 a rule of code keeps each run in `automation_runs` (`abo_rule_ran`, after the
+owner's write or from the queue, a queued one naming its job so it counts once); jobs from
+before still count from `code_jobs`. Runs past sixty days are folded into the rule's totals
+by `abo_rule_runs_sweep` (daily), so the count stays whole. `abo_rule_runs(p_project,
+p_rule, p_limit)` reads the runs themselves, newest first, for Luke and MCP `rule_runs`. All
+run as the caller, so they count only what their policies let them see.
 
 ## Invite links
 

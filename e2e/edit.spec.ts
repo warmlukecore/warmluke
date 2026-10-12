@@ -221,9 +221,13 @@ test("a section of their own is edited like a sheet: kept while they look elsewh
     await expect(qty()).toHaveValue("5");
     await expect(bar.getByText("1 change")).toBeVisible();
 
-    // Not dropped by leaving edit mode: saved or let go first.
+    // Not dropped by leaving edit mode: asked plainly, with the choice right there.
     await page.getByRole("button", { name: "Done editing" }).click();
-    await expect(bar.getByText("Save or discard the 1 change first.")).toBeVisible();
+    const asked = bar.getByRole("alert");
+    await expect(asked).toContainText("1 change isn't saved.");
+    await expect(asked.getByRole("button", { name: "Save and finish" })).toBeFocused();
+    await asked.getByRole("button", { name: "Keep editing" }).click();
+    await expect(asked).toHaveCount(0);
     await bar.getByRole("button", { name: "Save", exact: true }).click();
     await expect(bar.getByText(/Saved on 1 row/)).toBeVisible();
     await expect.poll(() => qtyOf("Pack hampers")).toBe(5);
@@ -231,6 +235,126 @@ test("a section of their own is edited like a sheet: kept while they look elsewh
     await expect.poll(() => qtyOf("Pack hampers")).toBe(2);
     await bar.getByRole("button", { name: "Redo" }).click();
     await expect.poll(() => qtyOf("Pack hampers")).toBe(5);
+
+    // Typed again and let go in one press, edit mode with it.
+    await qty().fill("9");
+    await page.getByRole("button", { name: "Done editing" }).click();
+    await asked.getByRole("button", { name: "Discard and finish" }).click();
+    await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeVisible();
+    expect(await qtyOf("Pack hampers")).toBe(5);
+
+    // Or saved and finished in one: what went, and its Undo, said under the table.
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await qty().fill("6");
+    await page.getByRole("button", { name: "Done editing" }).click();
+    await asked.getByRole("button", { name: "Save and finish" }).click();
+    await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeVisible();
+    await expect.poll(() => qtyOf("Pack hampers")).toBe(6);
+    const done = page.getByRole("region", { name: "What was done" });
+    await expect(done.getByText(/Saved on 1 row/)).toBeVisible();
+    await done.getByRole("button", { name: "Undo" }).click();
+    await expect.poll(() => qtyOf("Pack hampers")).toBe(5);
+  } finally {
+    await shop.admin.from("modules").delete().eq("id", id);
+  }
+});
+
+test("ticked rows of their own are acted on from Actions: a field set starts empty each time, rows go after a yes, and a column says what it means", async ({
+  signedIn: page,
+  shop,
+}) => {
+  const id = await build(page, shop, {
+    ...section("e2e-actions-own", "Blanks", null),
+    newSchema: {
+      columns: [
+        { field: "sku", label: "SKU", type: "text" },
+        { field: "parent", label: "Parent SKU", type: "text" },
+        { field: "left", label: "Left", type: "number" },
+      ],
+    },
+    newRecords: [
+      { sku: "A-1", parent: "", left: 3 },
+      { sku: "A-2", parent: "", left: 5 },
+      { sku: "A-3", parent: "", left: 8 },
+    ],
+  });
+  // What a column means, kept on the section (SchemaColumn.about).
+  const { data: ui } = await shop.admin
+    .from("ui_schemas")
+    .select("id, schema_json")
+    .eq("module_id", id)
+    .order("version", { ascending: false })
+    .limit(1)
+    .single();
+  const schemaJson = ui!.schema_json as { columns: Array<Record<string, unknown>> };
+  await shop.admin
+    .from("ui_schemas")
+    .update({
+      schema_json: {
+        ...schemaJson,
+        columns: schemaJson.columns.map((c) =>
+          c.field === "left" ? { ...c, about: "Blanks still on the shelf, counted by hand." } : c
+        ),
+      },
+    })
+    .eq("id", ui!.id);
+  const rows = async () =>
+    ((await shop.admin.from("records").select("data").eq("module_id", id)).data ?? []).map(
+      (r) => r.data as { sku: string; parent?: string }
+    );
+  try {
+    await page.goto(`/app/${shop.projectId}?section=${id}`);
+    await expect(page.getByRole("heading", { level: 1, name: "Blanks" })).toBeVisible();
+
+    // The meaning sits behind an i, pressed or focused, and the name stays short.
+    await page.getByRole("button", { name: "What Left means" }).click();
+    await expect(page.getByRole("note")).toContainText("Blanks still on the shelf, counted by hand.");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("note")).toHaveCount(0);
+
+    // One button beside Edit, waiting for a tick; ticking moves nothing above the rows.
+    await expect(page.getByRole("button", { name: "Actions: tick rows first" })).toBeDisabled();
+    const first = page.getByRole("row", { name: /A-1/ });
+    const before = (await first.boundingBox())!.y;
+    const ticks = page.getByRole("checkbox", { name: "Tick this row" });
+    await ticks.nth(0).click();
+    await ticks.nth(1).click();
+    expect((await first.boundingBox())!.y).toBe(before);
+
+    // A field set on both, from its own dialog.
+    await page.getByRole("button", { name: "Actions on 2 ticked rows" }).click();
+    await page.getByRole("menuitem", { name: "Set a field…" }).click();
+    const set = page.getByRole("dialog", { name: "Set a field on 2 rows" });
+    await set.getByRole("button", { name: /^Field to set/ }).click();
+    await page.getByRole("option", { name: "Parent SKU" }).click();
+    await set.getByRole("textbox", { name: "Parent SKU" }).fill("POX-SL");
+    await set.getByRole("button", { name: "Set on 2" }).click();
+    const done = page.getByRole("region", { name: "What was done" });
+    await expect(done.getByText("Parent SKU set: done on 2.")).toBeVisible();
+    await expect.poll(async () => (await rows()).filter((r) => r.parent === "POX-SL").length).toBe(2);
+
+    // Ticked again, it opens empty: nothing kept from the last time (Tanish, 12 Oct).
+    await ticks.nth(2).click();
+    await page.getByRole("button", { name: "Actions on 1 ticked row" }).click();
+    await page.getByRole("menuitem", { name: "Set a field…" }).click();
+    const again = page.getByRole("dialog", { name: "Set a field on 1 row" });
+    await expect(again.getByRole("button", { name: "Field to set: none" })).toBeVisible();
+    await expect(again.getByRole("button", { name: "Set on 1" })).toBeDisabled();
+    await again.getByRole("button", { name: "Cancel" }).click();
+
+    // Deleted after a yes, in one request; Cancel deletes nothing.
+    await page.getByRole("button", { name: "Actions on 1 ticked row" }).click();
+    await page.getByRole("menuitem", { name: "Delete 1 row…" }).click();
+    const sure = page.getByRole("dialog", { name: "Delete 1 row?" });
+    await expect(sure.getByText(/can.t be undone/)).toBeVisible();
+    await sure.getByRole("button", { name: "Cancel" }).click();
+    expect(await rows()).toHaveLength(3);
+    await page.getByRole("button", { name: "Actions on 1 ticked row" }).click();
+    await page.getByRole("menuitem", { name: "Delete 1 row…" }).click();
+    await sure.getByRole("button", { name: "Delete 1 row" }).click();
+    await expect(done.getByText("Deleted 1 row.")).toBeVisible();
+    await expect(page.getByRole("row", { name: /A-3/ })).toHaveCount(0);
+    expect((await rows()).map((r) => r.sku).sort()).toEqual(["A-1", "A-2"]);
   } finally {
     await shop.admin.from("modules").delete().eq("id", id);
   }

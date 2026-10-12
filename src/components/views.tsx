@@ -20,6 +20,7 @@ import { button, fieldOf, type ButtonTone } from "@/components/ui/controls";
 import { ArrowDown, ArrowUp, ArrowUpDown, Check, Clock, Copy, Inbox, Pencil, Plus, SearchX } from "lucide-react";
 import { Field } from "@/components/RecordModal";
 import { Select } from "@/components/ui/Select";
+import { InfoTip } from "@/components/ui/InfoTip";
 
 /**
  * The first column stays put while the rest scroll under it: a line at its
@@ -532,7 +533,7 @@ function withId(rec: RecordRow): Record<string, unknown> {
 /**
  * What a row button writes to this row, or null when its guard does not
  * offer it there: the one button's own logic, for a press on many rows at
- * once (BulkBar), so ticking twenty orders and pressing Mark RTO does what
+ * once (the Actions menu), so ticking twenty orders and pressing Mark RTO does what
  * twenty presses would, and nothing a press could not.
  */
 export function actionChange(
@@ -685,31 +686,26 @@ export function TableView({
                       : "z-10"
                   }`}
                 >
-                  {i === 0 && onSelect ? (
-                    <div className="flex items-center">
+                  <div className="flex items-center">
+                    {i === 0 && onSelect && (
                       <TickBox
                         label={allTicked ? "Untick every row shown" : "Tick every row shown"}
                         checked={allTicked}
                         mixed={someTicked}
                         onChange={(on) => onSelect(ids, on)}
                       />
-                      <SortButton
-                        col={col}
-                        dir={dir}
-                        onSort={onSort}
-                        fresh={newFields?.has(col.field)}
-                        editable={!!editing?.fields.has(col.field)}
-                      />
-                    </div>
-                  ) : (
+                    )}
                     <SortButton
                       col={col}
                       dir={dir}
                       onSort={onSort}
                       fresh={newFields?.has(col.field)}
                       editable={!!editing?.fields.has(col.field)}
+                      // A name read left to right keeps its i beside it, not at the column's far edge.
+                      fit={!!col.about?.trim() && !NUMERIC.has(col.type)}
                     />
-                  )}
+                    <About col={col} />
+                  </div>
                   <ColumnEdge
                     label={col.label}
                     width={widths[col.field]}
@@ -811,6 +807,16 @@ export function TableView({
   );
 }
 
+/** What a column means (SchemaColumn.about), behind an ⓘ beside its name: pressed, focused or tapped. */
+export function About({ col }: { col: SchemaColumn }) {
+  if (!col.about?.trim()) return null;
+  return (
+    <span className="inline-flex shrink-0 items-center pr-2 font-normal normal-case">
+      <InfoTip label={`What ${col.label} means`} title={col.label} lines={[col.about.trim()]} />
+    </span>
+  );
+}
+
 /** A column's head: its name, and the order its rows are in when it sorts them. */
 function SortButton({
   col,
@@ -818,6 +824,7 @@ function SortButton({
   onSort,
   fresh = false,
   editable = false,
+  fit = false,
 }: {
   col: SchemaColumn;
   dir: "asc" | "desc" | null;
@@ -826,13 +833,15 @@ function SortButton({
   fresh?: boolean;
   /** Typed into in edit mode: marked with a pencil. */
   editable?: boolean;
+  /** As wide as its name, for what follows it (the column's i); else the whole head. */
+  fit?: boolean;
 }) {
   return (
     <button
       type="button"
       aria-description={fresh ? "New since you last looked" : undefined}
       onClick={() => onSort(col.field)}
-      className={`group/sort flex h-9 w-full items-center gap-1 rounded-lg px-3 transition-colors hover:text-fg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus ${
+      className={`group/sort flex h-9 ${fit ? "w-auto pr-1" : "w-full"} items-center gap-1 rounded-lg px-3 transition-colors hover:text-fg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus ${
         NUMERIC.has(col.type) ? "justify-end" : ""
       } ${dir ? "text-fg" : ""}`}
     >

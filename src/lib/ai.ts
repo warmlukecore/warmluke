@@ -91,6 +91,18 @@ const CHANGE_TYPES = [
   "AUTOMATION_REMOVE",
 ] as const;
 
+/** The most a column's "about" holds: a sentence, not a manual. */
+export const ABOUT_MAX = 240;
+
+/** An "about" as kept: one line, cut at a word to ABOUT_MAX; nothing left is no "about". */
+export function clipAbout(about: string): string | undefined {
+  const line = about.replace(/\s+/g, " ").trim();
+  if (!line) return undefined;
+  if (line.length <= ABOUT_MAX) return line;
+  const cut = line.slice(0, ABOUT_MAX - 1);
+  return `${cut.slice(0, cut.lastIndexOf(" ") > ABOUT_MAX / 2 ? cut.lastIndexOf(" ") : cut.length).trimEnd()}…`;
+}
+
 /**
  * The exact shape of a plan, and how to pick its changeType.
  *
@@ -122,7 +134,7 @@ export const PLAN_FORMAT = `Each plan must have exactly this shape:
   "changeType": "UI_CHANGE" | "FIELD_ADD" | "NEW_MODULE" | "MODULE_UPDATE" | "MODULE_DELETE" | "FEATURE_UPDATE" | "RECORD_SEED" | "AUTOMATION_ADD" | "AUTOMATION_REMOVE",
   "targetModuleId": "<uuid, or null for NEW_MODULE>",
   "newModule": { "name": "kebab-case-unique-slug", "nav_label": "Human Label", "icon": "<from icon list>", "parent_id": "<uuid or #slug of the section this sits inside, or null for top level>", "source_table": "<${Object.keys(STORE_TABLES).join("|")}, ONLY when the section shows the connected store's own rows; otherwise null>" } or null,
-  "newSchema": { "columns": [ { "field": "snake_case_field", "label": "Human Label", "type": "<type>", "compute": <expression, optional> } ] },
+  "newSchema": { "columns": [ { "field": "snake_case_field", "label": "Human Label", "type": "<type>", "about": "<optional: what this column means, one plain sentence>", "compute": <expression, optional> } ] },
   "moduleUpdate": { "nav_label": "...", "icon": "...", "sort_order": 1.5, "parent_id": "<uuid, #slug, or null to move it back to the top>" } or null,
   "deleteConfirmName": "<module 'name' slug for MODULE_DELETE, else null>",
   "features": {
@@ -141,6 +153,8 @@ export const PLAN_FORMAT = `Each plan must have exactly this shape:
   "newRecords": [ { "field": "value" } ] or null,
   "explanation": "one sentence, plain language, for the user"
 }
+
+A LABEL is a few words. What a column means, how it is worked out or where its number comes from goes in "about": one plain sentence, at most ${ABOUT_MAX} characters, shown beside the column's name for anyone new to the app. Never put it in brackets in the label: "Blank remaining (shared)" is the label "Blank remaining" with "about": "What is left of the blank case that every design printed on it shares." A column whose meaning is plain from its label needs none.
 
 A COMPUTED COLUMN — "compute" — is worked out every time the row is read, and never stored. Use it for anything that is a statement ABOUT the other columns rather than a fact somebody types: whether stock is low, whether a job is overdue, what a line is worth. It reads any stored column in the section, plus any computed column declared ABOVE it.
     { "field": "stock_level", "label": "Stock", "type": "badge",
@@ -2153,6 +2167,12 @@ export function validatePlan(
         if (typeof c.label !== "string" || !c.label.trim()) {
           err(errors, `Column "${c.field}" is missing a label.`);
         }
+        // What it means, beside its name (12 Oct): words, cut to fit rather than sent back for a repair.
+        if (c.about !== undefined && c.about !== null) {
+          if (typeof c.about !== "string")
+            err(errors, `Column "${c.field}": "about" is one plain sentence, or left out.`);
+          else c.about = clipAbout(c.about);
+        }
         if (c.type === "link") {
           const to = c.linkTo;
           if (!to) {
@@ -3637,21 +3657,28 @@ export const LOOKUP_STEPS = 4;
 /** How much of what was looked up is carried into a reply the cap cut short. */
 const FOLD_CHARS = 60_000;
 
-const asMessages = (turns: ChatTurn[]) =>
-  turns.map((t): ModelMessage =>
-    t.role === "assistant"
-      ? { role: "assistant", content: t.content }
-      : t.images?.length
-        ? {
-            role: "user",
-            // v7: a picture is a file part with an image media type (the old image part is deprecated).
-            content: [
-              ...t.images.map((i) => ({ type: "file" as const, mediaType: i.mediaType, data: i.data })),
-              { type: "text" as const, text: t.content },
-            ],
-          }
-        : { role: "user", content: t.content }
-  );
+/** Where a call's cache ends: the last turn, so the next call of the same turn reads all before it at a tenth. */
+const CACHE_HERE = { anthropic: { cacheControl: { type: "ephemeral" } } } as const;
+
+const asMessages = (turns: ChatTurn[], cacheLast = false) =>
+  turns.map((t, i): ModelMessage => {
+    const m = asMessage(t);
+    return cacheLast && i === turns.length - 1 ? ({ ...m, providerOptions: CACHE_HERE } as ModelMessage) : m;
+  });
+
+const asMessage = (t: ChatTurn): ModelMessage =>
+  t.role === "assistant"
+    ? { role: "assistant", content: t.content }
+    : t.images?.length
+      ? {
+          role: "user",
+          // v7: a picture is a file part with an image media type (the old image part is deprecated).
+          content: [
+            ...t.images.map((i) => ({ type: "file" as const, mediaType: i.mediaType, data: i.data })),
+            { type: "text" as const, text: t.content },
+          ],
+        }
+      : { role: "user", content: t.content };
 
 /**
  * One model step or loop, whole or streamed. Streamed only when someone
@@ -3714,10 +3741,16 @@ async function generate(
   onText?: (text: string) => void,
   /** How hard a Claude 5 model thinks first; the house default unless the caller says (designEffort). */
   effort: Effort = EFFORT,
-  /** More room (a try after one that truly ran out), and who hears how the call ended. */
-  more: { roomy?: boolean; onFinish?: (reason: string) => void } = {}
+  /** More room (a try after one that truly ran out), who hears how the call ended, and whether to cache the turns. */
+  more: { roomy?: boolean; onFinish?: (reason: string) => void; cacheTurns?: boolean } = {}
 ): Promise<string> {
   const id = typeof model === "string" ? model : model.modelId;
+  // The thread so far, cached at its last turn, when this call is one of
+  // several on it: a lookup's next step, a repair, a redo. Only the
+  // contract was cached, so every one of those sent the whole thread
+  // again at full price (Carefone, 11 Oct: 72,534 uncached tokens for a
+  // one-lookup answer, 340,000 for one design turn).
+  const cache = provider === "anthropic" && (!!lookups || !!more.cacheTurns);
   const base = {
     model,
     instructions,
@@ -3743,7 +3776,7 @@ async function generate(
   let text: string;
   const tools = lookups ? { tools: lookups.tools, stopWhen: isStepCount(lookups.steps ?? LOOKUP_STEPS) } : {};
   try {
-    const result = await step(provider, { ...base, messages: asMessages(turns), ...tools }, hear);
+    const result = await step(provider, { ...base, messages: asMessages(turns, cache), ...tools }, hear);
     text = result.text;
     let finish = result.finishReason;
     // Said, so a reply that fails to parse can be told apart from one cut short.
@@ -3766,7 +3799,7 @@ async function generate(
         role: "user",
         content: `${last?.role === "user" ? `${last.content}\n\n` : ""}What your lookups returned, all you will get:\n${JSON.stringify(found).slice(0, FOLD_CHARS)}\n\nReply now, from these and the rows above, with the JSON only.`,
       };
-      ({ text, finishReason: finish } = await step(provider, { ...base, messages: asMessages(folded) }, hear));
+      ({ text, finishReason: finish } = await step(provider, { ...base, messages: asMessages(folded, cache) }, hear));
     }
     // Out of room before a word was written, all of it spent thinking
     // (Sonnet 5 at high effort on a hold that must never oversell,
@@ -3777,7 +3810,7 @@ async function generate(
       hear?.("");
       ({ text, finishReason: finish } = await step(
         provider,
-        { ...base, providerOptions: { anthropic: { effort: "low" } }, messages: asMessages(turns), ...tools },
+        { ...base, providerOptions: { anthropic: { effort: "low" } }, messages: asMessages(turns, cache), ...tools },
         hear
       ));
     }
@@ -3820,6 +3853,8 @@ export async function callModel(opts: {
   roomy?: boolean;
   /** Hears how the call ended ("stop", "length", …), so a reader can tell a cut-off from a slip. */
   onFinish?: (reason: string) => void;
+  /** One of several calls on the same turns (Luke's reply: lookups, repairs): cache them at the last. */
+  cacheTurns?: boolean;
 }): Promise<string> {
   const { system, turns, signal, lookups, onText } = opts;
   const model = opts.model || modelFor("design");
@@ -3878,6 +3913,7 @@ export async function callModel(opts: {
   return generate("anthropic", anthropic(model), instructions, turns, signal, lookups, onText, opts.effort, {
     roomy: opts.roomy,
     onFinish: opts.onFinish,
+    cacheTurns: opts.cacheTurns,
   });
 }
 
