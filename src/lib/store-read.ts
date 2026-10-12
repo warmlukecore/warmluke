@@ -363,7 +363,8 @@ export type StoreTable =
   | "product_sales"
   | "order_line_items"
   | "refunds"
-  | "variants";
+  | "variants"
+  | "stock_pools";
 
 type TableSpec = {
   /** What a stat over this table should be — for whoever designs one. */
@@ -884,6 +885,50 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "stock_state", label: "State", type: "badge" },
     ],
   },
+  // Stock by SKU, seen (0213, docs/domain/stock-by-sku.md phase 1): read
+  // only. Shopify counts per listing; a pool is the SKU on the shelf.
+  stock_pools: {
+    label: "Stock by SKU",
+    what: 'one row per SKU that is pooled — listed on more than one product, made from a blank, or a blank designs are made from — with how many listings carry it, the count it would start from, how far its listings disagree, the blank it draws from and what could be sold; what "same SKU different stock", "shared SKU", "stock does not match", "blank", "parent SKU", "made to order" and "how many can I print" mean',
+    section: { label: "Stock by SKU", icon: "layers", importedWith: "inventory" },
+    advice:
+      'Read only: nothing here is written to Shopify yet. role is "Shared SKU" (listed more than once), "Design" (made from a blank) or "Blank" (designs are made from it). start_count is the lowest count among its listings: where a pooled count would start, never more than every listing has. spread is highest minus lowest; counts says "Disagree" when its listings show different stock, the usual answer to "why does this case show 72 here and 168 there". For a Design, sellable is its own start_count plus its blank\'s (blank_available), since a design can be printed from the blank; for anything else it is start_count. A blank is linked from any field of the owner\'s own on the Stock list whose value is another SKU of the store, whatever the field is called; designs counts the SKUs made from a blank.',
+    view: "store_stock_pools",
+    order: { field: "spread", ascending: false },
+    select:
+      "id, sku, role, products, location_name, listings, start_count, highest, spread, counts, draws_from, blank_available, sellable, designs",
+    columns: [
+      { field: "sku", label: "SKU", type: "text" },
+      { field: "role", label: "Kind", type: "badge" },
+      { field: "products", label: "Listed as", type: "text" },
+      { field: "location_name", label: "Location", type: "text" },
+      { field: "listings", label: "Listings", type: "number" },
+      {
+        field: "start_count",
+        label: "Start at",
+        type: "number",
+        about:
+          "The lowest count among this SKU's listings: where a pooled count would start, never more than any listing has.",
+      },
+      { field: "spread", label: "Apart by", type: "number", about: "Highest count minus lowest across its listings." },
+      { field: "counts", label: "Listings agree", type: "badge" },
+      {
+        field: "draws_from",
+        label: "Blank",
+        type: "text",
+        about: "The blank SKU this design is made from, read from a field of yours on Stock that names another SKU.",
+      },
+      { field: "blank_available", label: "Blank count", type: "number" },
+      {
+        field: "sellable",
+        label: "Can sell",
+        type: "number",
+        about:
+          "For a design, its own count plus its blank's, since it can be printed from the blank. Otherwise the starting count.",
+      },
+      { field: "designs", label: "Designs on it", type: "number" },
+    ],
+  },
 } as Record<StoreTable, TableSpec>;
 
 /**
@@ -912,6 +957,7 @@ const SEARCHABLE: Record<StoreTable, string[]> = {
   customers: ["name", "email", "phone", "city"],
   products: ["title", "handle", "status", "product_type", "vendor", "collections"],
   inventory_levels: ["product", "variant", "sku", "location_name", "stock_state"],
+  stock_pools: ["sku", "products", "draws_from", "role", "counts"],
   locations: ["name", "place", "state"],
   collections: ["title", "handle"],
   carts: ["customer_name", "email", "items"],
