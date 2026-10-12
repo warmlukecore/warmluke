@@ -19,19 +19,28 @@
 //
 //   ENV_FILE=.env.check.local APP_URL=http://localhost:3101 \
 //   EVAL_SIM_MODEL=claude-haiku-4-5 EVAL_GRADE_MODEL=claude-haiku-4-5 \
-//   node scripts/eval-luke.mjs --label before --max-usd 1.5 [--cases rto-new,low-stock] [--design-model <name>]
+//   node scripts/eval-luke.mjs --label before --max-usd 1.5 [--set smoke|full-a|full-b|full | --cases a,b] [--design-model <name>]
 //
 // Run from the repository's root. The check project only (CHECK_PROJECT=1):
 // each case makes a throwaway project with the seeded shop in it, and
 // removes it at the end. The model key is read from the environment, or
 // the env file when the environment has none.
 //
+// Since 12 Oct a case may run on another kind of shop (`shop`, from
+// scripts/fixtures/shops.ts), and is graded by code first (`expect`, worked
+// out from that shop in evals/expect.mjs): the number in the answer, the rows
+// a build points at, a question asked first, a plain "I can't" only where the
+// platform can't. The grader model then reads tone and helpfulness. A case
+// scores out of 10; `--set smoke` runs the six cheap ones.
+//
 // Everything above main() is pure, so check-eval-harness can test it.
 
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { register } from "node:module";
-import { SCORE_KEYS, casePassed, summarise } from "../src/lib/eval-report.ts";
+import { SCORE_KEYS, casePassed, scoreOf, summarise } from "../src/lib/eval-report.ts";
 import { priceOf } from "../src/lib/model-prices.ts";
+import { EXPECT, expectationFor, viewOf } from "../evals/expect.mjs";
+import { SHOPS } from "./fixtures/shops.ts";
 
 export const CASES_DIR = new URL("../evals/cases/", import.meta.url);
 export const RUNS_DIR = new URL("../evals/runs/", import.meta.url);
@@ -69,6 +78,7 @@ export function parseArgs(argv) {
   const label = value("--label");
   const maxUsd = Number(value("--max-usd"));
   const only = value("--cases");
+  const set = value("--set") ?? null;
   const designModel = value("--design-model") ?? null;
   if (!label || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(label)) {
     return { error: "--label is required: lowercase letters, digits and dashes (before, after-prompt-fix)" };
@@ -78,18 +88,41 @@ export function parseArgs(argv) {
   if (designModel !== null && !/^[a-z0-9][a-z0-9.-]*$/.test(designModel)) {
     return { error: "--design-model is a model's id, as the panel names it (claude-sonnet-5)" };
   }
+  if (set !== null && !SETS.includes(set)) return { error: `--set is one of ${SETS.join(", ")}` };
+  if (set !== null && only) return { error: "--set or --cases, not both" };
   const cases = only
     ? only
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean)
     : null;
-  return { label, maxUsd, cases, designModel };
+  return { label, maxUsd, cases, set, designModel };
 }
 
 // ── Cases ───────────────────────────────────────────────────────────
 
-const KEYS = ["id", "title", "language", "persona", "before", "opening", "facts", "success", "must_not", "max_turns"];
+const KEYS = [
+  "id",
+  "title",
+  "language",
+  "kind",
+  "shop",
+  "persona",
+  "before",
+  "opening",
+  "facts",
+  "success",
+  "must_not",
+  "max_turns",
+  "expect",
+  "follow_ups",
+  "smoke",
+];
+/** build: something is made (the common criteria apply); question: one answer from the store; vague: a question first; limit: a plain no. */
+export const KINDS = ["build", "question", "vague", "limit"];
+const EXPECT_KEYS = ["answer", "effect", "exercise", "asks_first", "honest", "builds", "edited"];
+/** The runs a --set names: the six cheap cases, everything, or everything in two halves under one cap each. */
+export const SETS = ["smoke", "full", "full-a", "full-b"];
 const words = (v) => typeof v === "string" && v.trim().length > 0;
 
 /** What is wrong with a case file, in a line each; none when it is whole. */
@@ -101,18 +134,42 @@ export function caseProblems(c, file) {
   if (file && `${c.id}.json` !== file) p.push(`id "${c.id}" is not its file's name`);
   for (const k of ["title", "persona", "opening"]) if (!words(c[k])) p.push(`${k}: some words`);
   if (!["hinglish", "english"].includes(c.language)) p.push('language: "hinglish" or "english"');
+  const kind = c.kind ?? "build";
+  if (!KINDS.includes(kind)) p.push(`kind: one of ${KINDS.join(", ")}`);
+  if (c.shop !== undefined && c.shop !== "seed" && !SHOPS[c.shop])
+    p.push(`shop: "seed" or one of ${Object.keys(SHOPS).join(", ")}`);
+  const e = c.expect;
+  if (e !== undefined) {
+    if (!e || typeof e !== "object" || Array.isArray(e)) p.push("expect: an object");
+    else {
+      for (const k of Object.keys(e)) if (!EXPECT_KEYS.includes(k)) p.push(`expect: unknown key "${k}"`);
+      for (const k of ["answer", "effect", "exercise"])
+        if (e[k] !== undefined && !EXPECT[e[k]]) p.push(`expect.${k}: no expectation "${e[k]}"`);
+      if (e.builds !== undefined && !(Number.isInteger(e.builds) && e.builds >= 1))
+        p.push("expect.builds: a whole number of builds");
+    }
+  }
+  if (kind !== "build" && !e) p.push(`a ${kind} case is graded by its expect`);
+  if (c.follow_ups !== undefined && (!Array.isArray(c.follow_ups) || !c.follow_ups.every(words))) {
+    p.push("follow_ups: what the owner says after a build, in order");
+  }
   if (!Array.isArray(c.before) || c.before.some((pl) => !pl || typeof pl.changeType !== "string")) {
     p.push("before: a list of plans, each with a changeType");
   }
   const facts = c.facts && typeof c.facts === "object" && !Array.isArray(c.facts) ? Object.values(c.facts) : [];
   if (facts.length === 0 || !facts.every(words)) p.push("facts: topics, each with what the owner would answer");
+  // A build is said in words first, whatever else it is graded on; other kinds may be graded by code alone.
   for (const k of ["success", "must_not"]) {
-    if (!Array.isArray(c[k]) || c[k].length === 0 || !c[k].every(words)) p.push(`${k}: a list of sentences`);
+    if (!Array.isArray(c[k]) || (kind === "build" && c[k].length === 0) || !c[k].every(words)) {
+      p.push(`${k}: a list of sentences`);
+    }
   }
-  for (const s of COMMON_SUCCESS)
-    if (!Array.isArray(c.success) || !c.success.includes(s)) p.push(`success lacks "${s}"`);
-  for (const s of COMMON_MUST_NOT)
-    if (!Array.isArray(c.must_not) || !c.must_not.includes(s)) p.push(`must_not lacks "${s}"`);
+  if (kind === "build") {
+    for (const s of COMMON_SUCCESS)
+      if (!Array.isArray(c.success) || !c.success.includes(s)) p.push(`success lacks "${s}"`);
+    for (const s of COMMON_MUST_NOT)
+      if (!Array.isArray(c.must_not) || !c.must_not.includes(s)) p.push(`must_not lacks "${s}"`);
+  }
   if (!Number.isInteger(c.max_turns) || c.max_turns < 1 || c.max_turns > 8) p.push("max_turns: a whole number, 1 to 8");
   return p;
 }
@@ -127,6 +184,28 @@ export function privateBits(text) {
     ),
     ...(text.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi) ?? []),
   ];
+}
+
+/** The cases a run is asked for: named ones, a set, or all. */
+export function selectCases(all, { cases = null, set = null } = {}) {
+  if (cases) return all.filter((c) => cases.includes(c.id));
+  if (set === "smoke") return all.filter((c) => c.smoke === true);
+  const half = Math.ceil(all.length / 2);
+  if (set === "full-a") return all.slice(0, half);
+  if (set === "full-b") return all.slice(half);
+  return all;
+}
+
+/** "{{days:+45}}" in a case's `before` is that many days from today, as a date in India. */
+export function fillDates(v, now = Date.now()) {
+  if (typeof v === "string") {
+    return v.replace(/\{\{days:([+-]?\d+)\}\}/g, (_, n) =>
+      new Date(now + 5.5 * 3_600_000 + Number(n) * 86_400_000).toISOString().slice(0, 10)
+    );
+  }
+  if (Array.isArray(v)) return v.map((x) => fillDates(x, now));
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fillDates(x, now)]));
+  return v;
 }
 
 export function loadCases() {
@@ -336,6 +415,239 @@ export function jargonIn(text) {
   return [...found];
 }
 
+// ── The outcome, as code sees it (12 Oct) ───────────────────────────
+
+const MULTIPLIER = {
+  k: 1e3,
+  thousand: 1e3,
+  lakh: 1e5,
+  lakhs: 1e5,
+  lac: 1e5,
+  lacs: 1e5,
+  crore: 1e7,
+  crores: 1e7,
+  cr: 1e7,
+};
+
+/**
+ * The numbers in what Luke said, as an owner would read them: "₹31,735",
+ * "31735.00", "3,17,350" (Indian grouping), "₹31.7k", "1.2 lakh". A number
+ * written with a multiplier is approximate.
+ */
+export function numbersIn(text) {
+  const out = [];
+  const re = /(\d{1,3}(?:,\d{2,3})+|\d+)(?:\.(\d+))?(?:\s?(k|thousand|lakhs?|lacs?|crores?|cr)\b)?/gi;
+  for (const m of String(text ?? "").matchAll(re)) {
+    const whole = Number(m[1].replace(/,/g, ""));
+    const value = m[2] ? Number(`${whole}.${m[2]}`) : whole;
+    const times = m[3] ? MULTIPLIER[m[3].toLowerCase()] : 1;
+    out.push({ value: value * times, approx: times > 1 });
+  }
+  return out;
+}
+
+/** One number matches another: exactly for a count, to the rupee for money, to 1% when written with a multiplier. */
+const near = (n, e) =>
+  n.approx ? Math.abs(n.value - e) <= Math.max(1, e * 0.01) : Math.abs(n.value - e) <= (e >= 1000 ? 1 : 0);
+
+/** What an answer must hold: each item a check of its own. */
+export function answerChecks(text, items) {
+  const said = String(text ?? "");
+  const found = numbersIn(said);
+  return items.map((it) => {
+    if (Array.isArray(it.names)) {
+      const missing = it.names.filter((n) => !said.toLowerCase().includes(n.toLowerCase()));
+      return {
+        name: `answer: ${it.label}`,
+        ok: missing.length === 0,
+        detail: missing.length ? `not named: ${missing.join(", ")}` : `named ${it.names.join(", ")}`,
+      };
+    }
+    if (it.re) {
+      const ok = new RegExp(it.re, "i").test(said);
+      return { name: `answer: ${it.label}`, ok, detail: ok ? "said" : `nothing matching /${it.re}/` };
+    }
+    const hit = found.find((n) => it.any.some((e) => near(n, e)));
+    return {
+      name: `answer: ${it.label}`,
+      ok: !!hit,
+      detail: hit
+        ? `said ${hit.value}`
+        : `expected ${it.any.filter((e, i, a) => a.indexOf(e) === i).join(" or ")}; said ${
+            found
+              .map((n) => n.value)
+              .slice(0, 12)
+              .join(", ") || "no number"
+          }`,
+    };
+  });
+}
+
+const CANT = [
+  /\b(?:i|we)\s+(?:can(?:'|’)?t|cannot|am unable to|are unable to|am not able to|don(?:'|’)?t have (?:a way|the ability|access))\b/i,
+  /\b(?:this platform|this app|warmluke|the app)\s+(?:can(?:'|’)?t|cannot|doesn(?:'|’)?t (?:support|let|allow|connect))/i,
+  /\bnot (?:possible|supported) (?:here|in (?:this|the) app|on this platform|yet)\b/i,
+  /\b(?:nahi|nahin|nhi)\s+(?:kar|bhej|dekh|jod|bana|padh)\s?(?:sakta|sakti|sakte|paunga|paaunga|payega)\b/i,
+  /\b(?:possible|support)\s+nahi\b/i,
+];
+
+/** Where Luke says it cannot do something: the words, or none. */
+export function cantIn(text) {
+  const said = String(text ?? "");
+  return CANT.map((re) => said.match(re)?.[0]).filter(Boolean);
+}
+
+/** No "I can't" where the platform can; a plain one where it can't. */
+export const capableCheck = (text) => {
+  const said = cantIn(text);
+  return { name: "capable", ok: said.length === 0, detail: said.length ? `said "${said[0]}"` : "never said it can't" };
+};
+export const honestCheck = (text) => {
+  const said = cantIn(text);
+  return {
+    name: "honest",
+    ok: said.length > 0,
+    detail: said.length ? `said "${said[0]}"` : "never said plainly that it can't",
+  };
+};
+
+/** A vague ask is met with a question, and nothing drawn yet. */
+export function asksFirstCheck(replies) {
+  const r = replies[0];
+  const asked = (Array.isArray(r?.questions) && r.questions.length > 0) || /\?/.test(ownerText(r));
+  const drew = plansOf(r).length > 0;
+  return {
+    name: "asks first",
+    ok: asked && !drew,
+    detail: drew ? "drew a design before asking" : asked ? "asked first" : "neither asked nor drew",
+  };
+}
+
+/** Reached the goal in at most `max` builds; on a change, edited what was there rather than made again. */
+export function buildChecks(builds, builtPlans, { max, edited }) {
+  const out = [];
+  if (max !== undefined) {
+    out.push({
+      name: "builds",
+      ok: builds >= 1 && builds <= max,
+      detail: `${builds} build${builds === 1 ? "" : "s"}, at most ${max}`,
+    });
+  }
+  if (edited) {
+    const deleted = builtPlans.filter((p) => p?.changeType === "MODULE_DELETE");
+    const made = builtPlans
+      .filter((p) => p?.changeType === "NEW_MODULE")
+      .map((p) => p.newModule?.nav_label ?? p.newModule?.name);
+    const twice = made.filter((n, i) => made.indexOf(n) !== i);
+    out.push({
+      name: "edited, not made again",
+      ok: deleted.length === 0 && twice.length === 0,
+      detail: deleted.length
+        ? "a section was deleted"
+        : twice.length
+          ? `"${twice[0]}" was made twice`
+          : "changed in place",
+    });
+  }
+  return out;
+}
+
+const own = (s, c) => !s.table || !!c.compute || !s.storeFields.has(c.field);
+const marked = (v) => v === true || (typeof v === "string" && /^(true|yes|y)$/i.test(v.trim()));
+const same = (a, b) => a.size === b.size && [...a].every((x) => b.has(x));
+
+/** The sections an expectation is about: over one of its store lists, or of the owner's with a matching name. */
+export const sectionsFor = (sections, e) =>
+  sections.filter((s) =>
+    s.table ? (e.tables ?? []).includes(s.table) : !!e.own && new RegExp(e.own, "i").test(s.name)
+  );
+
+/**
+ * The rows a build points at: some field of the owner's, or one worked out,
+ * marks exactly the expected rows (a tick, one badge or choice, or text
+ * filled in), or a counter shows how many, or a rule's dry run matches that
+ * many. Whatever Luke named it. `sections`: { name, table, storeFields, columns, rows, stats }.
+ */
+export function effectCheck(sections, e, dryRuns = []) {
+  const notes = [];
+  for (const s of sectionsFor(sections, e)) {
+    const expected = new Set(s.rows.filter((r) => e.match(r)).map((r) => r.id));
+    if (expected.size !== e.count) notes.push(`${s.name} holds ${expected.size} of the ${e.count} expected rows`);
+    for (const c of s.columns.filter((c) => own(s, c))) {
+      const sets = new Map();
+      for (const r of s.rows) {
+        const v = r[c.field];
+        if (c.type === "boolean" ? marked(v) : typeof v === "string" && v.trim() !== "") {
+          const key = c.type === "boolean" ? "ticked" : v.trim();
+          sets.set(key, (sets.get(key) ?? new Set()).add(r.id));
+          if (c.type !== "boolean") sets.set("filled", (sets.get("filled") ?? new Set()).add(r.id));
+        }
+      }
+      for (const [k, set] of sets)
+        if (same(set, expected))
+          return {
+            name: "effect",
+            ok: true,
+            detail: `${s.name}: "${c.label}" (${k}) marks exactly ${e.labels.join(", ")}`,
+          };
+    }
+    for (const st of s.stats ?? [])
+      if (Number(st.value) === e.count)
+        return { name: "effect", ok: true, detail: `${s.name}: the counter "${st.label}" shows ${e.count}` };
+  }
+  for (const d of dryRuns)
+    if (d.matched === e.count)
+      return { name: "effect", ok: true, detail: `the rule "${d.rule}" matches ${e.count} rows` };
+  const looked = sectionsFor(sections, e).map((s) => s.name);
+  return {
+    name: "effect",
+    ok: false,
+    detail: `nothing marks exactly ${e.labels.join(", ")}${looked.length ? ` (looked at ${looked.join(", ")})` : " (no section over those rows)"}${notes.length ? `; ${notes.join("; ")}` : ""}`,
+  };
+}
+
+/** After the owner's writes, the expected rows all show one of the expected values in some field of the owner's. */
+export function valuesCheck(sections, t) {
+  for (const s of sectionsFor(sections, t)) {
+    const rows = s.rows.filter((r) => t.match(r));
+    if (!rows.length) continue;
+    // The field that ties a row to its blank holds words, never one of these numbers: no need to set it aside.
+    for (const c of s.columns.filter((c) => own(s, c))) {
+      if (rows.every((r) => t.equals.includes(Number(r[c.field]))))
+        return {
+          name: "works when used",
+          ok: true,
+          detail: `${s.name}: "${c.label}" shows ${rows.map((r) => r[c.field]).join(", ")} on ${t.labels.join(", ")}`,
+        };
+    }
+  }
+  return {
+    name: "works when used",
+    ok: false,
+    detail: `no field shows ${t.equals.join(" or ")} on ${t.labels.join(", ")}`,
+  };
+}
+
+/** A column of the owner's whose name or label fits `pattern`, not one already taken. */
+export const pickColumn = (columns, pattern, taken = new Set()) =>
+  columns.find((c) => !taken.has(c.field) && new RegExp(pattern, "i").test(`${c.field} ${c.label}`)) ?? null;
+
+/** The checks a case's expectation asks for, from what was said and built and what the app now holds. */
+export function outcomeChecks(c, x, { replies, builds, builtPlans, sections = [], dryRuns = [], exercised = null }) {
+  const text = replies.map(replyText).join("\n");
+  const e = c.expect ?? {};
+  const kind = c.kind ?? "build";
+  const out = [];
+  if (x.answer) out.push(...answerChecks(text, x.answer));
+  if (x.effect) out.push(effectCheck(sections, x.effect, dryRuns));
+  if (x.exercise) out.push(exercised ?? { name: "works when used", ok: false, detail: "not exercised" });
+  if (e.asks_first) out.push(asksFirstCheck(replies));
+  if (kind === "limit" || e.honest) out.push(honestCheck(text));
+  else out.push(capableCheck(text));
+  out.push(...buildChecks(builds, builtPlans, { max: e.builds, edited: e.edited }));
+  return out;
+}
+
 // ── The simulated owner and the grader ──────────────────────────────
 
 /** The JSON object in a model's reply, fenced or not; null when there is none. */
@@ -490,6 +802,169 @@ export function parseGrade(raw, success, mustNot, material) {
   return { ok: !!j, criteria, must_not, scores };
 }
 
+/**
+ * Every section of the app with its rows as the owner's screen and the
+ * rules see them (lib/dry-run readSection, on the owner's client), its
+ * store fields named so a field of the owner's can be told apart, and its
+ * counters worked out by lib/expr over those rows. The app's modules come
+ * in `d`, so a check can hand them in.
+ */
+export async function appSections(ctx, mods, schemas, d) {
+  const out = [];
+  for (const m of mods) {
+    const at = d.sectionFor(ctx, [], m.id);
+    if (!at || "made" in at) continue;
+    const read = await d.readSection(ctx, at).catch(() => null);
+    if (!read) continue;
+    const stats = (schemas.get(m.id)?.features?.stats ?? [])
+      .filter((st) => !st.by)
+      .map((st) => {
+        const rows = read.rows.filter((r) => st.where === undefined || d.truthy(d.evalExpr(st.where, r)));
+        const nums = rows
+          .map((r) => Number(st.value !== undefined ? d.evalExpr(st.value, r) : r[st.field]))
+          .filter(Number.isFinite);
+        const total = nums.reduce((a, b) => a + b, 0);
+        const value =
+          st.op === "count"
+            ? rows.length
+            : st.op === "sum"
+              ? total
+              : st.op === "avg"
+                ? nums.length
+                  ? total / nums.length
+                  : null
+                : nums.length
+                  ? (st.op === "min" ? Math.min : Math.max)(...nums)
+                  : null;
+        return { label: st.label, value };
+      });
+    out.push({
+      name: at.name,
+      table: at.table,
+      storeFields: new Set(
+        at.table
+          ? String(d.STORE_TABLES[at.table].select)
+              .split(",")
+              .map((f) => f.trim())
+          : []
+      ),
+      columns: at.columns,
+      rows: read.rows,
+      stats,
+    });
+  }
+  return out;
+}
+
+// ── The conversation ────────────────────────────────────────────────
+
+/**
+ * One case's conversation, as the panel has it: the opening, Luke's reply,
+ * the simulated owner's answer, a design built on their yes; then, while
+ * the case has follow-ups, the next one said after each build. Everything
+ * it touches is in `io`, so check-eval-harness plays it with a Luke and an
+ * owner of its own and no money is spent:
+ *
+ *   io.turn(n, costs)         before each of Luke's turns (the cap)
+ *   io.chat(message, thread)  → { reply, conversationId, answerId, ms, usd, trace }
+ *   io.build(plans, thread)   → { ok, errors }
+ *   io.sim(lines, pushedBack) → { said: { agree, pushback, say }, usd }
+ *   io.lines, io.trace        arrays to say and trace into, so a run the cap stops keeps them
+ */
+export async function converse(c, io) {
+  const lines = io.lines ?? [];
+  const trace = io.trace ?? [];
+  const costs = [];
+  const ms = [];
+  const replies = [];
+  const builtPlans = [];
+  const jargon = new Set();
+  const followUps = [...(c.follow_ups ?? [])];
+  let conversationId = null;
+  let message = c.opening;
+  let builds = 0;
+  let proposed = false;
+  let proposedFirst = null;
+  let pushedBack = false;
+  let simUsd = 0;
+
+  for (let turn = 1; turn <= c.max_turns; turn++) {
+    await io.turn?.(turn, costs);
+    lines.push({ who: "owner", text: message });
+    const t = await io.chat(message, conversationId);
+    conversationId = t.conversationId ?? conversationId;
+    ms.push(t.ms);
+    costs.push(t.usd);
+    trace.push({ turn, ...t.trace });
+    const reply = t.reply;
+    replies.push(reply);
+    lines.push({ who: "luke", text: replyText(reply).slice(0, 2000) });
+    for (const w of jargonIn(ownerText(reply))) jargon.add(w);
+    if (isProposal(reply)) proposed = true;
+    if (reply?.type === "unanswered" || reply?.type === "stopped") break;
+    // A question is done once it is answered: another turn would only be paid for.
+    if ((c.kind ?? "build") === "question" && !(Array.isArray(reply?.questions) && reply.questions.length)) break;
+
+    const plans = plansOf(reply);
+    const buildIt = async () => {
+      const done = await io.build(plans, {
+        conversationId,
+        designId: t.answerId,
+        sent: plans.map((_, i) => i),
+        next: reply.next ?? reply.blueprint?.next,
+      });
+      lines.push({ who: "app", text: done.ok ? "Built." : `The build was refused: ${done.errors.join("; ")}` });
+      if (!done.ok) return false;
+      builds += 1;
+      builtPlans.push(...plans);
+      // Whether a plan in words came before the first build: what the signs count.
+      if (proposedFirst === null) proposedFirst = proposed;
+      return true;
+    };
+
+    let built = false;
+    // Agreed in words and drawn: built at once, as the panel does.
+    if (plans.length && reply.approved) built = await buildIt();
+    else {
+      if (turn === c.max_turns) break;
+      const sim = await io.sim(lines, pushedBack);
+      simUsd += sim.usd;
+      const said = sim.said;
+      if (said.pushback) pushedBack = true;
+      // A drawn design they agree to is the card's Build button.
+      if (plans.length && said.agree) {
+        lines.push({ who: "owner", text: "(taps Build)" });
+        built = await buildIt();
+      } else {
+        // A yes to a plan in words is said as the panel's "Build it" would be: plainly.
+        message =
+          said.agree && isProposal(reply)
+            ? YES[c.language]
+            : said.say || (said.agree ? YES[c.language] : DECIDE[c.language]);
+        continue;
+      }
+    }
+    // After a build: the case's next follow-up, said fresh, or the end.
+    if (!built || followUps.length === 0) break;
+    message = followUps.shift();
+    pushedBack = false;
+  }
+
+  return {
+    lines,
+    trace,
+    costs,
+    ms,
+    replies,
+    builds,
+    builtPlans,
+    jargon: [...jargon],
+    proposedFirst: proposedFirst ?? proposed,
+    simUsd,
+    conversationId,
+  };
+}
+
 // ── The cap ─────────────────────────────────────────────────────────
 
 export class CapReached extends Error {}
@@ -625,7 +1100,11 @@ async function main() {
   if (broken.length) refuse(`the cases are not whole:\n  ${broken.join("\n  ")}`);
   const unknown = (args.cases ?? []).filter((id) => !all.some((x) => x.case.id === id));
   if (unknown.length) refuse(`no case called ${unknown.join(", ")}`);
-  const cases = all.map((x) => x.case).filter((c) => !args.cases || args.cases.includes(c.id));
+  const cases = selectCases(
+    all.map((x) => x.case),
+    args
+  );
+  if (cases.length === 0) refuse("no case to run");
 
   // The server must be on the env file's database, or every write lands somewhere else.
   const served = await fetch(`${APP}/.well-known/oauth-protected-resource`)
@@ -642,6 +1121,10 @@ async function main() {
   const { signInAsCheckUser, throwawayProject } = await import("./owner-session.mjs");
   const { readTurn } = await import("./turn-lines.mjs");
   const { SEED_CURRENCY, SEED_TIMEZONE, seedNodes, seedShop } = await import("./fixtures/seed-shop.ts");
+  const { seedBusiness, shopNodes } = await import("./fixtures/business-shop.ts");
+  const { dryRunRules, readSection, sectionFor } = await import("../src/lib/dry-run.ts");
+  const { STORE_TABLES } = await import("../src/lib/store-read.ts");
+  const { evalExpr, truthy } = await import("../src/lib/expr.ts");
   const { RESOURCES } = await import("../src/lib/shopify-resources.ts");
   const { callModel } = await import("../src/lib/ai.ts");
   const { metered } = await import("../src/lib/usage.ts");
@@ -706,8 +1189,10 @@ async function main() {
     const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
     const project = await throwawayProject(admin, me.user.id, `eval ${c.id}`);
     try {
-      // The seeded shop, as e2e/shop.ts makes it: every case has a store to build on.
-      const now = new Date().toISOString();
+      // The case's shop, as e2e/shop.ts makes the seed: every case has a store to build on.
+      const nowMs = Date.now();
+      const now = new Date(nowMs).toISOString();
+      const shop = c.shop ?? "seed";
       const { data: store, error } = await admin
         .from("stores")
         .insert({
@@ -726,18 +1211,21 @@ async function main() {
         .select("id")
         .single();
       if (error) throw new Error(`could not make the case's store: ${error.message}`);
-      await seedShop(admin, store.id);
-      const nodes = seedNodes();
+      const nodes = shop === "seed" ? seedNodes(nowMs) : shopNodes(SHOPS[shop], nowMs);
+      if (shop === "seed") await seedShop(admin, store.id, nowMs);
+      else await seedBusiness(admin, store.id, SHOPS[shop], nowMs);
       await admin.from("import_runs").insert(
         RESOURCES.map((resource) => ({
           store_id: store.id,
           resource,
           status: "done",
           imported: nodes[resource].length,
-          started_at: new Date(Date.parse(now) - 60_000).toISOString(),
+          started_at: new Date(nowMs - 60_000).toISOString(),
           finished_at: now,
         }))
       );
+      // What it expects, from the very nodes just seeded.
+      const expected = expectationFor(c, viewOf(nodes, nowMs));
 
       // As AppShell's buildNow sends it: the plans, and the thread to write the build into.
       const build = async (plans, thread) => {
@@ -749,24 +1237,15 @@ async function main() {
         const data = await r.json().catch(() => ({}));
         return { ok: r.ok && data.applied === true, errors: data.errors ?? (data.error ? [data.error] : []) };
       };
-      if (c.before.length) {
-        const made = await build(c.before, null);
+      const before = fillDates(c.before, nowMs);
+      if (before.length) {
+        const made = await build(before, null);
         if (!made.ok) throw new Error(`${c.id}: its "before" would not build: ${made.errors.join("; ")}`);
       }
 
       const lines = [];
       const trace = [];
       inFlight = { id: c.id, title: c.title, transcript: lines, trace };
-      const lukeCosts = [];
-      const turnMs = [];
-      const jargon = new Set();
-      let conversationId = null;
-      let message = c.opening;
-      let built = false;
-      // The loop ends at the first build, so a plan said at all came before it.
-      let proposed = false;
-      let pushedBack = false;
-      let simSpent = 0;
 
       // The stream may end before a durable turn does: its answer's line is what settles it.
       const settle = async (id) => {
@@ -793,97 +1272,74 @@ async function main() {
         return null;
       };
 
-      for (let turn = 1; turn <= c.max_turns; turn++) {
-        const estimate = lukeEstimate(lukeCosts);
-        meter.before(estimate + gradeReserve, `Luke's turn ${turn} of ${c.id}`);
-        lines.push({ who: "owner", text: message });
-        const t0 = Date.now();
-        const res = await fetch(`${APP}/api/chat`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            projectId: project.id,
-            message,
-            conversationId,
-            ...(args.designModel ? { model: args.designModel } : {}),
-          }),
-        });
-        // A server playing its calls back from tapes answers from the past: nothing measured.
-        const tape = res.headers.get("x-model-tape");
-        if (tape)
-          throw new Error(
-            `the app at ${APP} plays its model calls back (MODEL_TAPE=${tape}); start one that calls the model`
+      const talk = await converse(c, {
+        lines,
+        trace,
+        turn: (turn, costs) => meter.before(lukeEstimate(costs) + gradeReserve, `Luke's turn ${turn} of ${c.id}`),
+        chat: async (message, conversationId) => {
+          const t0 = Date.now();
+          const res = await fetch(`${APP}/api/chat`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              projectId: project.id,
+              message,
+              conversationId,
+              ...(args.designModel ? { model: args.designModel } : {}),
+            }),
+          });
+          // A server playing its calls back from tapes answers from the past: nothing measured.
+          const tape = res.headers.get("x-model-tape");
+          if (tape)
+            throw new Error(
+              `the app at ${APP} plays its model calls back (MODEL_TAPE=${tape}); start one that calls the model`
+            );
+          const read = await readTurn(res);
+          if (read.status !== 200)
+            throw new Error(`${c.id}: Luke refused the turn (${read.status}): ${read.data.error ?? ""}`);
+          const accepted = read.steps.find((s) => s.step === "accepted");
+          const answerId = accepted?.turn ?? read.data.replyId;
+          if (!answerId) throw new Error(`${c.id}: the turn named no line for its answer`);
+          const reply = await settle(answerId);
+          const took = Date.now() - t0;
+          const t = await traceOf(answerId);
+          const usage = reply.usage ?? t?.usage ?? null;
+          if (!usage) console.log(`  (a turn of ${c.id} left no usage; counted at its estimate)`);
+          else if (usage.partial) console.log(`  (a turn of ${c.id} used a model with no price; its cost is short)`);
+          const usdSpent = usage?.usd ?? LUKE_TURN_USD;
+          meter.add(usdSpent);
+          const step = {
+            repairs: t?.repairs ?? 0,
+            refused: (Array.isArray(t?.repair_errors) ? t.repair_errors : []).map((e) => String(e).slice(0, 300)),
+            steps: (Array.isArray(t?.steps) ? t.steps : []).map(stepLine),
+          };
+          return {
+            reply,
+            conversationId: accepted?.conversationId ?? read.data.conversationId,
+            answerId,
+            ms: took,
+            usd: usdSpent,
+            trace: step,
+          };
+        },
+        build,
+        sim: async (sofar, pushedBack) => {
+          const sim = await ask(
+            simModel,
+            simSystem(c, pushedBack),
+            simInput(sofar),
+            SIM_OUT_TOKENS,
+            "the simulated owner",
+            gradeReserve
           );
-        const read = await readTurn(res);
-        if (read.status !== 200)
-          throw new Error(`${c.id}: Luke refused the turn (${read.status}): ${read.data.error ?? ""}`);
-        const accepted = read.steps.find((s) => s.step === "accepted");
-        conversationId = accepted?.conversationId ?? read.data.conversationId ?? conversationId;
-        const answerId = accepted?.turn ?? read.data.replyId;
-        if (!answerId) throw new Error(`${c.id}: the turn named no line for its answer`);
-        const reply = await settle(answerId);
-        turnMs.push(Date.now() - t0);
-        const t = await traceOf(answerId);
-        trace.push({
-          turn,
-          repairs: t?.repairs ?? 0,
-          refused: (Array.isArray(t?.repair_errors) ? t.repair_errors : []).map((e) => String(e).slice(0, 300)),
-          steps: (Array.isArray(t?.steps) ? t.steps : []).map(stepLine),
-        });
-        const usage = reply.usage ?? t?.usage ?? null;
-        if (!usage) console.log(`  (turn ${turn} of ${c.id} left no usage; counted at its estimate)`);
-        else if (usage.partial)
-          console.log(`  (turn ${turn} of ${c.id} used a model with no price; its cost is short)`);
-        const spent = usage?.usd ?? estimate;
-        meter.add(spent);
-        lukeCosts.push(spent);
-
-        lines.push({ who: "luke", text: replyText(reply).slice(0, 2000) });
-        for (const w of jargonIn(ownerText(reply))) jargon.add(w);
-        if (isProposal(reply)) proposed = true;
-        if (reply.type === "unanswered" || reply.type === "stopped") break;
-
-        const plans = plansOf(reply);
-        const buildIt = async () => {
-          const next = reply.next ?? reply.blueprint?.next;
-          const done = await build(plans, { conversationId, designId: answerId, sent: plans.map((_, i) => i), next });
-          lines.push({ who: "app", text: done.ok ? "Built." : `The build was refused: ${done.errors.join("; ")}` });
-          built = done.ok;
-        };
-        // Agreed in words and drawn: built at once, as the panel does.
-        if (plans.length && reply.approved) {
-          await buildIt();
-          break;
-        }
-        if (turn === c.max_turns) break;
-
-        const sim = await ask(
-          simModel,
-          simSystem(c, pushedBack),
-          simInput(lines),
-          SIM_OUT_TOKENS,
-          "the simulated owner",
-          gradeReserve
-        );
-        simSpent += sim.spent;
-        const said = parseSim(sim.raw);
-        if (said.pushback) pushedBack = true;
-        // A drawn design they agree to is the card's Build button.
-        if (plans.length && said.agree) {
-          lines.push({ who: "owner", text: "(taps Build)" });
-          await buildIt();
-          break;
-        }
-        // A yes to a plan in words is said as the panel's "Build it" would be: plainly.
-        message =
-          said.agree && isProposal(reply)
-            ? YES[c.language]
-            : said.say || (said.agree ? YES[c.language] : DECIDE[c.language]);
-      }
+          return { said: parseSim(sim.raw), usd: sim.spent };
+        },
+      });
 
       // What is in the app now, read past RLS: every section's newest schema, every rule.
       const { data: mods } = await admin.from("modules").select("*").eq("project_id", project.id);
       const sections = [];
+      const schemas = new Map();
       for (const m of mods ?? []) {
         const { data: s } = await admin
           .from("ui_schemas")
@@ -892,6 +1348,7 @@ async function main() {
           .order("version", { ascending: false })
           .limit(1)
           .maybeSingle();
+        if (s?.schema_json) schemas.set(m.id, s.schema_json);
         sections.push({
           id: m.id,
           nav_label: m.nav_label,
@@ -905,12 +1362,111 @@ async function main() {
         .select("name, enabled, definition, module_id")
         .eq("project_id", project.id);
 
-      const beforeText = c.before.length ? describeBuild(sectionsOfPlans(c.before), []) : "(nothing of their own)";
+      // The rows as the owner's screen and the rules see them, on the owner's own client.
+      const ctx = {
+        db: anon,
+        projectId: project.id,
+        store: null,
+        modules: mods ?? [],
+        schemas,
+        ownerWords: "",
+        understood: "",
+        locale: "en-IN",
+        currency: SEED_CURRENCY,
+        uxModel: null,
+      };
+      const readApp = () =>
+        appSections(ctx, mods ?? [], schemas, { sectionFor, readSection, STORE_TABLES, evalExpr, truthy });
+
+      // Owner writes after the build, as the panel makes them, then what the rows show.
+      let exercised = null;
+      if (expected.exercise) {
+        const notes = [];
+        const write = async (moduleId, body) => {
+          const r = await fetch(`${APP}/api/records`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ projectId: project.id, moduleId, ...body }),
+          });
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok || data.error) notes.push(`a write was refused: ${data.error ?? r.status}`);
+        };
+        for (const step of expected.exercise.steps) {
+          const app = await readApp();
+          const modOf = (s) => (mods ?? []).find((m) => (m.nav_label || m.name) === s.name);
+          if (step.tag) {
+            const s = sectionsFor(app, step.tag).find((x) =>
+              pickColumn(
+                x.columns.filter((c) => !x.storeFields.has(c.field)),
+                step.tag.field
+              )
+            );
+            if (!s) {
+              notes.push("no field of the owner's to tie a design to its blank");
+              continue;
+            }
+            const col = pickColumn(
+              s.columns.filter((c) => !s.storeFields.has(c.field)),
+              step.tag.field
+            );
+            for (const r of s.rows.filter((x) => step.tag.match(x)))
+              await write(modOf(s).id, {
+                action: "update_store_row",
+                storeRowId: r.id,
+                data: { [col.field]: step.tag.value },
+              });
+          }
+          if (step.add) {
+            const s = app.find((x) => !x.table && new RegExp(step.add.own, "i").test(x.name));
+            if (!s) {
+              notes.push("no section of the owner's to put the blank's count in");
+              continue;
+            }
+            const taken = new Set();
+            const data = {};
+            for (const [pattern, value] of step.add.values) {
+              const col = pickColumn(s.columns, pattern, taken);
+              if (col) {
+                taken.add(col.field);
+                data[col.field] = value;
+              }
+            }
+            const keyField = Object.keys(data)[0];
+            const there = keyField ? s.rows.find((r) => String(r[keyField] ?? "") === String(data[keyField])) : null;
+            await write(
+              modOf(s).id,
+              there ? { action: "update", recordId: there.id, data } : { action: "create", data }
+            );
+          }
+        }
+        // A rule runs after the write's answer is out: a moment for it to land.
+        let verdict = null;
+        for (let i = 0; i < 10; i++) {
+          await pause(2000);
+          verdict = valuesCheck(await readApp(), expected.exercise.then);
+          if (verdict.ok) break;
+        }
+        exercised = notes.length ? { ...verdict, detail: `${verdict.detail}; ${notes.join("; ")}` } : verdict;
+      }
+
+      const app = expected.effect ? await readApp() : [];
+      const dryRuns =
+        expected.effect && talk.builtPlans.length ? await dryRunRules(ctx, talk.builtPlans).catch(() => []) : [];
+      const checks = outcomeChecks(c, expected, {
+        replies: talk.replies,
+        builds: talk.builds,
+        builtPlans: talk.builtPlans,
+        sections: app,
+        dryRuns,
+        exercised,
+      });
+
+      const beforeText = before.length ? describeBuild(sectionsOfPlans(before), []) : "(nothing of their own)";
       const nowText = describeBuild(sections, rules ?? []);
       const graded = await ask(
         gradeModel,
         GRADE_SYSTEM,
-        gradeInput(c, beforeText, lines, nowText),
+        gradeInput(c, beforeText, talk.lines, nowText),
         GRADE_OUT_TOKENS,
         `the grader on ${c.id}`,
         0
@@ -919,24 +1475,32 @@ async function main() {
         graded.raw,
         c.success,
         c.must_not,
-        [beforeText, transcriptLines(lines), nowText].join("\n")
+        [beforeText, transcriptLines(talk.lines), nowText].join("\n")
       );
       if (!verdict.ok) console.log(`  (the grader's answer on ${c.id} was not JSON: every criterion is unmet)`);
 
-      return {
+      const result = {
         id: c.id,
         title: c.title,
-        turns: turnMs.length,
-        built,
-        signs: { workarounds: workaroundSigns(sections, rules ?? []), jargon: [...jargon], proposed_first: proposed },
+        kind: c.kind ?? "build",
+        shop,
+        turns: talk.ms.length,
+        built: talk.builds > 0,
+        signs: {
+          workarounds: workaroundSigns(sections, rules ?? []),
+          jargon: talk.jargon,
+          proposed_first: talk.proposedFirst,
+        },
+        checks,
         criteria: verdict.criteria,
         must_not: verdict.must_not,
         scores: verdict.scores,
-        cost: Math.round((lukeCosts.reduce((a, b) => a + b, 0) + simSpent + graded.spent) * 1e4) / 1e4,
-        ms: turnMs.reduce((a, b) => a + b, 0),
-        transcript: lines,
-        trace,
+        cost: Math.round((talk.costs.reduce((a, b) => a + b, 0) + talk.simUsd + graded.spent) * 1e4) / 1e4,
+        ms: talk.ms.reduce((a, b) => a + b, 0),
+        transcript: talk.lines,
+        trace: talk.trace.map((t) => ({ turn: t.turn, repairs: t.repairs, refused: t.refused, steps: t.steps })),
       };
+      return { ...result, score10: scoreOf(result) };
     } finally {
       await project.remove();
     }
@@ -953,8 +1517,9 @@ async function main() {
       done.push(r);
       inFlight = null;
       console.log(
-        `${casePassed(r) ? "pass" : "FAIL"}  ${c.id.padEnd(18)} ${r.turns} turn${r.turns === 1 ? "" : "s"}, ${r.built ? "built" : "not built"}, ${usd(r.cost)}, ${Math.round(r.ms / 1000)}s   spent ${usd(meter.spent)} of $${args.maxUsd}`
+        `${casePassed(r) ? "pass" : "FAIL"}  ${c.id.padEnd(20)} ${String(r.score10).padStart(4)}/10  ${r.turns} turn${r.turns === 1 ? "" : "s"}, ${r.built ? "built" : "not built"}, ${usd(r.cost)}, ${Math.round(r.ms / 1000)}s   spent ${usd(meter.spent)} of $${args.maxUsd}`
       );
+      for (const x of r.checks) if (!x.ok) console.log(`      check: ${x.name}: ${x.detail}`);
       for (const x of r.criteria) if (!x.met) console.log(`      unmet: ${x.text}`);
       for (const x of r.must_not) if (x.hit) console.log(`      hit:   ${x.text}`);
     }
@@ -992,7 +1557,7 @@ async function main() {
     const file = writeRun(run);
     const s = run.summary;
     console.log(
-      `\n${done.length} of ${cases.length} case${cases.length === 1 ? "" : "s"}${run.partial ? " (partial)" : ""} · passed ${Math.round(s.pass_rate * 100)}% · signs ${s.signs_total} · spent ${usd(run.spent)} → evals/runs/${file}`
+      `\n${done.length} of ${cases.length} case${cases.length === 1 ? "" : "s"}${run.partial ? " (partial)" : ""} · score ${s.score10}/10 · passed ${Math.round(s.pass_rate * 100)}% · signs ${s.signs_total} · spent ${usd(run.spent)} → evals/runs/${file}`
     );
   }
   process.exit(failed ? 1 : 0);

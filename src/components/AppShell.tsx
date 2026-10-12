@@ -102,6 +102,7 @@ import type {
   ProblemCheckIn,
 } from "@/lib/types";
 import { TITLE_MAX } from "@/lib/types";
+import { groupAsks, type Ask, type AskRow } from "@/lib/row-approval";
 import { Icon } from "@/components/ui/Icon";
 import {
   ArrowRight,
@@ -181,7 +182,8 @@ const seenAs = (n: SectionNews, version: number): SectionNews => ({
   changed: n.version > version,
 });
 
-type ButtonApproval = { id: string; action: string; row_label: string; module_id: string; asked_at: string };
+/** What waits on the owner's yes in the bell: a teammate's press, or an ask over rows from Luke or their AI (0208). */
+type ButtonApproval = Ask;
 
 type BuildPayload = {
   status: "building" | "built" | "refused";
@@ -195,6 +197,8 @@ type BuildPayload = {
   next?: NextStep[];
   /** Each section built, walked in a browser after it (lib/walk.ts). */
   walked?: Array<{ name: string; tried: number; breaks: string[] }>;
+  /** What it built, tried on the store's real data after it (lib/verify testAfterBuild). */
+  tested?: { ok: boolean; said: string; problems: string[] };
 };
 
 /** How long a build may say "building" before the thread stops believing it: far past any real one. */
@@ -894,6 +898,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               ...(b.undo?.length ? { undo: { messageId: m.id, what: b.undo.map((u) => u.what) } } : {}),
               ...(next?.length ? { next } : {}),
               ...(Array.isArray(b.walked) && b.walked.length ? { walked: b.walked } : {}),
+              ...(b.tested?.said ? { tested: b.tested } : {}),
             });
           }
           continue;
@@ -3406,11 +3411,12 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     if (!isOwner) return setApprovals([]);
     const { data, error } = await supabase
       .from("row_approvals")
-      .select("id, action, row_label, module_id, asked_at")
+      .select("id, action, row_label, module_id, asked_at, kind, batch, summary, asked_via")
       .eq("project_id", projectId)
       .eq("status", "waiting")
       .order("asked_at");
-    if (!error) setApprovals((data ?? []) as ButtonApproval[]);
+    // One card an ask: an ask over many rows waits as one yes.
+    if (!error) setApprovals(groupAsks((data ?? []) as AskRow[]));
   }, [projectId, isOwner]);
   useEffect(() => {
     void loadApprovals();
@@ -3421,13 +3427,22 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   /** The owner's word on one: what came of it, in a line when it was not done. */
   const decideApproval = useCallback(
     async (id: string, decision: "approve" | "decline"): Promise<string | null> => {
-      const { ok, data } = await apiFetch("/api/row-action", { projectId, approvalId: id, decision });
+      const batch = approvals.find((a) => a.id === id)?.batch ?? null;
+      const { ok, data } = await apiFetch(
+        "/api/row-action",
+        batch ? { projectId, batch, decision } : { projectId, approvalId: id, decision }
+      );
       if (!ok || data.error) return (data.error as string) ?? "That didn't go through.";
       setApprovals((prev) => prev.filter((a) => a.id !== id));
       if (selectedModuleId) await loadModuleData(selectedModuleId);
+      if (batch) {
+        // Every row settled on its own: what did not go is said, not hidden.
+        const left = Number(data.stale ?? 0) + Number(data.failed ?? 0);
+        return left > 0 ? `${left} of them were not changed: ${String(data.said ?? "they changed since")}` : null;
+      }
       return data.stale ? ((data.said as string) ?? null) : null;
     },
-    [projectId, selectedModuleId, loadModuleData]
+    [projectId, selectedModuleId, loadModuleData, approvals]
   );
 
   /**
@@ -3693,13 +3708,17 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // section open, so the turn reads its own settings (filters, buttons,
   // its screen) and not whatever was on screen when "Fix it" was tapped.
   const walkFix = useCallback(
-    (section: string, problem: string) => {
+    (
+      section: string,
+      problem: string,
+      how = "tried in a browser, on a laptop and a phone, as the team would use it"
+    ) => {
       const m = modules.find((x) => x.nav_label === section);
       if (m) setSelectedModuleId(m.id);
       setChatMessages((prev) => [...prev, { id: nextChatId(), role: "system", text: "Asking Luke to fix it…" }]);
       void runPrompt(
         [
-          `After the last build, ${section} was tried in a browser, on a laptop and a phone, as the team would use it, and this did not work:`,
+          `After the last build, ${section} was ${how}, and this did not work:`,
           `- ${problem}`,
           `Fix ${section} so it works as they would expect. Change only what has to change.`,
         ].join("\n"),

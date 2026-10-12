@@ -6,7 +6,11 @@
 // in. Luke's turns that failed or were sent back, an owner saying it went
 // wrong, a section changed again and again, a rule failing, a written
 // screen breaking (0178), and designs that look like a way round the
-// app. Each says where to look.
+// app. Since 0211, kept by a scan every fifteen minutes (and on opening
+// this page), with what Tanish's first meeting showed missing: slow or
+// stopped turns, asks left undone, Luke saying he can't, three builds in
+// an hour, rules that never ran or changed nothing, lists cut short, an
+// owner who left a question. Each says where to look, down to the turn.
 //
 // Everything goes through a function that refuses anyone who is not an
 // administrator; the page itself decides nothing.
@@ -22,13 +26,18 @@ import { ago } from "@/lib/when";
 import { PageFrame } from "@/components/PageFrame";
 import { Choices, ListPanel, adminError, matches } from "@/components/AdminParts";
 import { card, note } from "@/components/ui/controls";
+import { troubleHref, troubleName, troubleTone, type TroubleKind } from "@/lib/trouble";
 
 type Sign = {
-  kind: "turn" | "frustrated" | "churn" | "rule" | "workaround" | "screen";
+  kind: TroubleKind;
   at: string;
   detail: string;
   sample: string | null;
   conversation_id: string | null;
+  /** The reply it is about (a message id), when it is one. */
+  turn_id?: string | null;
+  /** How much it hurts: 3 an owner let down, 1 worth a glance. */
+  weight?: number;
   project: string;
   title: string | null;
 };
@@ -38,14 +47,10 @@ const DAYS: Array<[number, string]> = [
   [7, "7 days"],
   [30, "30 days"],
 ];
-const KIND: Record<Sign["kind"], [string, string]> = {
-  turn: ["Luke", "bg-tone-critical text-tone-critical-fg"],
-  frustrated: ["Owner", "bg-tone-attention text-tone-attention-fg"],
-  churn: ["Section", "bg-tone-info text-tone-info-fg"],
-  rule: ["Rule", "bg-tone-critical text-tone-critical-fg"],
-  workaround: ["Design", "bg-tone-warning text-tone-warning-fg"],
-  screen: ["Screen", "bg-tone-attention text-tone-attention-fg"],
-};
+const ORDER: Array<["newest" | "worst", string]> = [
+  ["newest", "Newest"],
+  ["worst", "Worst first"],
+];
 
 export default function TroublePage() {
   const { user, loading } = useUser();
@@ -58,6 +63,7 @@ export default function TroublePage() {
   const [days, setDays] = useState(7);
   const [now, setNow] = useState(0);
   const [kind, setKind] = useState("");
+  const [order, setOrder] = useState<"newest" | "worst">("newest");
   const [query, setQuery] = useState("");
 
   useEffect(() => {
@@ -96,21 +102,19 @@ export default function TroublePage() {
     ["", `All ${signs?.length ?? 0}`],
     ...[...new Set((signs ?? []).map((x) => x.kind))].map((k): [string, string] => [
       k,
-      `${KIND[k]?.[0] ?? k} ${(signs ?? []).filter((x) => x.kind === k).length}`,
+      `${troubleName(k)} ${(signs ?? []).filter((x) => x.kind === k).length}`,
     ]),
   ];
-  const shown = (signs ?? []).filter(
-    (x) => (!kind || x.kind === kind) && matches(query, x.detail, x.sample, x.project, x.title)
-  );
+  const shown = (signs ?? [])
+    .filter((x) => (!kind || x.kind === kind) && matches(query, x.detail, x.sample, x.project, x.title))
+    .toSorted((a, b) => (order === "worst" ? (b.weight ?? 1) - (a.weight ?? 1) : 0) || b.at.localeCompare(a.at));
   return (
     <PageFrame email={user.email} isSuperadmin={!refused}>
       <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-8 sm:py-8">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold tracking-tight text-fg">Needs a look</h1>
-            <p className="mt-1 text-[13px] text-fg-muted">
-              Where something went wrong, found before anyone writes in. Newest first.
-            </p>
+            <p className="mt-1 text-[13px] text-fg-muted">Where something went wrong, found before anyone writes in.</p>
           </div>
           <Choices options={DAYS} value={days} onChange={setDays} />
         </div>
@@ -128,7 +132,10 @@ export default function TroublePage() {
         )}
         {signs && signs.length > 0 && (
           <div className="mt-6 space-y-3">
-            <Choices options={kinds} value={kind} onChange={setKind} />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Choices options={kinds} value={kind} onChange={setKind} />
+              <Choices options={ORDER} value={order} onChange={setOrder} />
+            </div>
             <ListPanel
               query={query}
               onQuery={setQuery}
@@ -144,9 +151,9 @@ export default function TroublePage() {
                 {shown.map((s, i) => (
                   <li key={`${s.kind}-${s.at}-${i}`} className="flex items-start gap-3 px-5 py-3">
                     <span
-                      className={`mt-px w-16 shrink-0 rounded-full px-2 py-0.5 text-center text-[11px] font-medium ${KIND[s.kind]?.[1] ?? "bg-tone-neutral text-tone-neutral-fg"}`}
+                      className={`mt-px w-20 shrink-0 rounded-full px-2 py-0.5 text-center text-[11px] font-medium ${troubleTone(s.kind)}`}
                     >
-                      {KIND[s.kind]?.[0] ?? s.kind}
+                      {troubleName(s.kind)}
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="text-[13px] text-fg">{s.detail}</p>
@@ -159,10 +166,10 @@ export default function TroublePage() {
                           <span>
                             ·{" "}
                             <Link
-                              href={`/${gate}/conversations?id=${s.conversation_id}`}
+                              href={troubleHref(gate, s.conversation_id, s.turn_id)}
                               className="text-link hover:underline"
                             >
-                              Open the conversation
+                              {s.turn_id ? "Open the turn" : "Open the conversation"}
                             </Link>
                           </span>
                         )}

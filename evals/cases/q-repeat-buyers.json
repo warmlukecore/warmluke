@@ -1,0 +1,20 @@
+{
+  "id": "q-repeat-buyers",
+  "title": "Customers who keep coming back",
+  "language": "hinglish",
+  "kind": "question",
+  "shop": "snacks",
+  "persona": "Snack brand owner proud of loyal buyers, wants a quick count to share with the team.",
+  "before": [],
+  "opening": "kitne customers ne 2 se zyada baar order kiya hai?",
+  "facts": {
+    "2 se zyada": "matlab 3 ya usse zyada orders",
+    "cancelled orders": "mat gino"
+  },
+  "success": [],
+  "must_not": [],
+  "max_turns": 2,
+  "expect": {
+    "answer": "snacks-repeat-buyers"
+  }
+}

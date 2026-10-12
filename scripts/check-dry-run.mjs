@@ -3,7 +3,9 @@
 //
 // Pure: no database (a stand-in that serves fixture rows for a section
 // over the store, through abo_store_page as the app reads it, and for a
-// section of the owner's, from records) and no model.
+// section of the owner's, from records) and no model. A rule of code is
+// tried through a stand-in for the runtime's reader and sandbox: what it is
+// handed, and what each kind of answer comes to.
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-dry-run.mjs
 
@@ -28,6 +30,7 @@ const SHIPMENTS = Array.from({ length: 2353 }, (_, i) => ({
 }));
 const PACKING = Array.from({ length: 25 }, (_, i) => ({ data: { item: `Mug ${i}`, packed: "Yes" } }));
 const RETURNS = Array.from({ length: 30 }, (_, i) => ({
+  id: `r-${i}`,
   data: { order: `#${1001 + i}`, status: i < 7 ? "Open" : "Closed", phone: "+91 98765 43210" },
 }));
 const CUSTOMERS = Array.from({ length: 22 }, (_, i) => ({
@@ -175,8 +178,10 @@ const plans = [
   { ...rule("m-pack", "", hourly, []), changeType: "FEATURE_UPDATE", automation: null },
 ];
 
+/** The runtime, stood in for: no sandbox here. */
+const NO_SANDBOX = { can: () => false, read: async () => ({}), run: async () => [], zone: async () => "Asia/Kolkata" };
 const { db, asked } = fakeDb();
-const got = await dryRunRules(ctxOf(db), plans);
+const got = await dryRunRules(ctxOf(db), plans, NO_SANDBOX);
 const of = (name) => got.find((d) => d.rule === name);
 
 console.log("a rule that writes every row");
@@ -222,8 +227,8 @@ check("matches no row when every row already says it", packed?.matched === 0 && 
 console.log("\nwhat cannot be told in the head");
 const code = of("Code rule");
 check(
-  "a rule of code: no count, and why",
-  code?.matched === null && code.note === "A rule of code is tried on its first run."
+  "a rule of code, with nowhere to run it: no count, and why",
+  code?.matched === null && /no sandbox/.test(code.note)
 );
 const fresh = of("Log it");
 check(
@@ -231,7 +236,10 @@ check(
   fresh?.matched === null && fresh.section === "Courier Log" && /new in this design/.test(fresh.note)
 );
 const change = of("On a change");
-check("a rule on a change: no count", change?.matched === null && /changes/.test(change.note));
+check(
+  "a rule on a change is tried as if each row had just changed, never as every row",
+  change?.matched === 30 && /As if each row's Status had just changed/.test(change.note) && !change.everyRow
+);
 
 console.log("\na rule that writes to another section");
 const cross = of("RTO from returns");
@@ -266,6 +274,94 @@ check(
   "an already stopped turn reads nothing",
   (await dryRunRules(ctxOf(db, { signal: AbortSignal.abort() }), plans)).length === 0
 );
+
+console.log("\na rule of code, run as its runs will run it");
+{
+  // Shipments as the runtime's reader hands them: every row, with its id.
+  const handed = (cut = false) => ({
+    rows: { "#shipments": SHIPMENTS.map((r) => ({ ...r.data, id: r.id })) },
+    places: { "#shipments": { moduleId: "m-ship", table: "fulfillments" } },
+    aliases: { shipments: "#shipments" },
+    sizes: { Shipments: { rows: cut ? 500 : SHIPMENTS.length, cut } },
+  });
+  const coded = (answer, opts = {}) => {
+    const inputs = [];
+    const use = {
+      can: () => true,
+      read: async (_db, _p, refs) =>
+        refs.includes("m-ship") ? handed(opts.cut) : { rows: {}, places: {}, aliases: {}, sizes: {} },
+      run: async (_code, given) => (inputs.push(...given), given.map((g) => answer(g))),
+      zone: async () => "Asia/Kolkata",
+    };
+    const p = [
+      rule(
+        "m-ret",
+        "Mark RTO on shipments",
+        { type: "record_updated", when: { op: "changed", args: [{ field: "status" }] } },
+        [{ type: "run_code", code: "export default () => ({})", reads: ["m-ship"] }]
+      ),
+    ];
+    return { inputs, run: () => dryRunRules(ctxOf(fakeDb().db), p, use).then((d) => d[0]) };
+  };
+  const done = (set = [], add = []) => ({ ok: true, result: { set, add } });
+  const ids = (n) => Array.from({ length: n }, (_, i) => `f-${i}`);
+
+  const fine = coded(() => done(ids(34).map((id) => ({ id, section: "shipments", fields: { rto: "Yes" } }))));
+  const ok = await fine.run();
+  check(
+    "it is handed what a run is handed: the row, its id, as it was before, the sections, today",
+    (() => {
+      const g = fine.inputs[0];
+      return (
+        g?.row?.id === "r-0" &&
+        g.previous?.status === null &&
+        g.sections["#shipments"].length === 2353 &&
+        !!g.__names &&
+        !!g.today
+      );
+    })()
+  );
+  check("on its section's newest rows, three at most", fine.inputs.length === 3);
+  check(
+    "and says what it would write, on how many rows",
+    ok?.matched === 34 && ok.of === 2353 && /would set RTO on 34 Shipments rows/.test(ok.note) && !ok.problem
+  );
+  check(
+    "as if their status had just changed",
+    /as if Status on '#1001', '#1002', '#1003' had just changed/.test(ok.note)
+  );
+
+  const said = async (answer, opts) => (await coded(answer, opts).run())?.problem ?? "";
+  check(
+    "a field that is not there is a problem",
+    /has no such field/.test(await said(() => done([{ id: "f-1", section: "shipments", fields: { nope: 1 } }])))
+  );
+  check(
+    "a store's own field is a problem",
+    /store's own/.test(await said(() => done([{ id: "f-1", section: "shipments", fields: { carrier: "X" } }])))
+  );
+  check(
+    "a section it does not read is a problem",
+    /does not read/.test(await said(() => done([{ id: "f-1", section: "Payments", fields: { rto: "Yes" } }])))
+  );
+  check(
+    "a row it was not handed is a problem",
+    /not handed/.test(await said(() => done([{ id: "zzz", section: "shipments", fields: { rto: "Yes" } }])))
+  );
+  check(
+    "code that throws is a problem, in its own words",
+    /stops with: x is not defined/.test(await said(() => ({ ok: false, error: "x is not defined" })))
+  );
+  check(
+    "a list read only in part is a problem",
+    /reads only the first 500 rows of Shipments/.test(await said(() => done(), { cut: true }))
+  );
+  const nothing = await coded(() => done()).run();
+  check(
+    "one that changes nothing says so, and is no problem",
+    /it changed nothing/.test(nothing?.note) && !nothing.problem && nothing.matched === 0
+  );
+}
 
 console.log(fails.length ? `\n${fails.length} FAILED` : "\nevery rule is counted on its rows before it is built");
 process.exit(fails.length ? 1 : 0);

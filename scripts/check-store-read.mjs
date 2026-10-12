@@ -8,7 +8,16 @@
 
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { dayRangeInZone, readStoreRows, searchOrders, storeOverview, storeValues } from "../src/lib/store-read.ts";
+import {
+  dayRangeInZone,
+  lowStockCounted,
+  readStoreRows,
+  searchOrders,
+  searchOrdersCounted,
+  stockCounts,
+  storeOverview,
+  storeValues,
+} from "../src/lib/store-read.ts";
 import { realStores } from "./owner-session.mjs";
 
 const fails = [];
@@ -109,6 +118,42 @@ if (stores.length === 0) {
 
   check("the limit is honoured", (await searchOrders(db, store, { limit: 1 })).length <= 1);
   check("an absurd limit is capped, not obeyed", (await searchOrders(db, store, { limit: 100000 })).length <= 100);
+
+  // A page is not a count (docs/reference/limits.md): "count: 20" was read as twenty orders.
+  const { count: everyOrder } = await db
+    .from("orders")
+    .select("id", { count: "exact", head: true })
+    .eq("store_id", store.id);
+  const one = await searchOrdersCounted(db, store, { limit: 1 });
+  check(
+    "a search of one says how many matched in all",
+    one.orders.length === 1 && one.matched === everyOrder && everyOrder > 1
+  );
+
+  console.log("\nlow stock counts the whole store, and only what Shopify counts");
+  {
+    const counts = await stockCounts(db, store.id, 10);
+    const low = await lowStockCounted(db, store.id, { threshold: 10, limit: 1 });
+    check("the lowest one is listed, with how many are low in all", low.rows.length <= 1 && low.matched === counts.low);
+    check("out of stock is part of low", counts.out <= counts.low);
+    const { data: untracked } = await db
+      .from("inventory_levels")
+      .select("id, variants!inner(tracked)")
+      .eq("store_id", store.id)
+      .lte("available", 10)
+      .eq("variants.tracked", false)
+      .limit(1);
+    const { count: tracked } = await db
+      .from("inventory_levels")
+      .select("id, variants!inner(tracked)", { count: "exact", head: true })
+      .eq("store_id", store.id)
+      .lte("available", 10)
+      .not("variants.tracked", "is", false);
+    check(
+      `untracked variants are not counted as short${untracked?.length ? "" : " (none in this store)"}`,
+      counts.low === tracked
+    );
+  }
 
   const withPeople = all.filter((o) => o.customer);
   check("orders carry their customer", withPeople.length > 0);

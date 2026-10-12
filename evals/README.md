@@ -7,7 +7,8 @@ problem. Its opening goes to the running app as the panel sends it, a simulated 
 answers Luke only from the case's facts and says yes when the plan fits, the yes is built
 as the panel builds it (`POST /api/apply`), and what is left in the app is graded.
 
-- `cases/*.json`: the eight owners, in our own words. No real store, person, phone number,
+- `cases/*.json`: thirty-two owners, in our own words: the first eight on the seeded shop,
+  and twenty-four more on six other kinds of business (12 Oct). No real store, person, phone number,
   email or order number: the repository is public, and `check-eval-harness` fails a case
   that holds an email, an eight-digit number or an id.
 - `runs/<YYYYMMDD-HHMM>-<label>.json`: one run each (UTC minute). `runs/index.json` lists
@@ -15,8 +16,15 @@ as the panel builds it (`POST /api/apply`), and what is left in the app is grade
   is edited by hand.
 - `scripts/eval-luke.mjs`: the harness. `scripts/check-eval-harness.mjs`: its logic, tested
   without a model, a server or a database (pure tier, in CI).
-- `src/lib/eval-report.ts`: what a run is, and how a pass, a sign and the summary are
-  counted, for the harness and the page alike.
+- `src/lib/eval-report.ts`: what a run is, and how a pass, a sign, a score out of 10 and the
+  summary are counted, for the harness and the page alike.
+- `scripts/fixtures/shops.ts`: six more shops as data (phone cases, clothes in sizes,
+  skincare, gadgets, snacks, wholesale); `scripts/fixtures/business-shop.ts` turns each into
+  the Shopify-shaped nodes `seed-shop.ts` makes and saves them through the import's savers.
+- `expect.mjs`: what each case expects, worked out from the very nodes its store was seeded
+  with, so a change to a shop moves its answers with it.
+- `scripts/check-eval-graders.mjs` (live, no model): every shop saves, and the graders pass a
+  right build and fail a wrong one on real rows read as the screen reads them.
 
 ## The cases
 
@@ -31,9 +39,27 @@ as the panel builds it (`POST /api/apply`), and what is left in the app is grade
 | `repeat-customers` | Hinglish | Customers with more than one order shown, and Luke asks whether "tag" means a Shopify tag (a store change, which needs the owner's yes) or a mark in the app                    |
 | `return-reasons`   | English  | The reason as one choice from sensible options, and a weekly count or chart                                                                                                    |
 
-Every case also asks that the plan is said in plain words before anything is built, with
-no field names or types, ending by asking whether to build; and fails jargon such as
+Every build case also asks that the plan is said in plain words before anything is built,
+with no field names or types, ending by asking whether to build; and fails jargon such as
 "boolean" or "set_fields" in what the owner reads.
+
+The twenty-four from 12 Oct, by kind. Each names its shop (`shop`) and what code checks
+(`expect`):
+
+| Kind | Cases | Graded by code |
+| ---- | ----- | -------------- |
+| `question`: one answer from the store | q-cod-pending, q-discount-use (seed); q-out-of-stock (cases); q-top-size (fashion); q-week-vs-week (cosmetics); q-big-cod (gadgets); q-repeat-buyers (snacks); q-owed, q-top-customers (wholesale) | the number, or the names, worked out from the shop are in what Luke said |
+| `build`: rows a design must point at | o-repeat-cod (snacks), o-not-shipped (fashion), o-call-list (gadgets), o-overdue (wholesale), o-expiring (cosmetics, its batches kept in the app), i-reorder (fashion), i-sku-twins (cases) | a field of the owner's marks exactly those rows, or a counter shows how many, or a rule's dry run matches them |
+| `build`: an event rule, used | o-blank-stock (cases) | after the build, the owner ties designs to their blank and sets the blank's count through `/api/records`; every design then shows it |
+| `vague`: a question first | v-warranty (gadgets), v-track-better (snacks) | the first reply asks, and draws nothing |
+| `limit`: a plain no | l-whatsapp (fashion), l-amazon (cosmetics) | Luke says plainly he can't |
+| `build` with a follow-up | f-cod-callers (seed), f-dues-per-invoice (wholesale), f-blank-rename (cases) | two builds at most, and the second changes what is there rather than deleting it and making it again |
+
+The shops are built so a window can't straddle a row (no order 6–8, 13–15 or 28–32 days back
+where a case asks about that window), no count sits on a threshold a case names, and where a
+window matters an older row would win if the window were ignored. `smoke: true` marks the six
+cases `--set smoke` runs: q-cod-pending, q-big-cod, o-repeat-cod, v-warranty, l-whatsapp and
+f-cod-callers.
 
 A case file: `id`, `title`, `language` (`hinglish` or `english`), `persona`, `before` (plans
 applied through `/api/apply` before the conversation, or `[]`), `opening`, `facts` (topic →
@@ -42,6 +68,12 @@ what the owner would answer; anything else gets "aap decide karo" / "you decide"
 
 ## How a case is graded
 
+0. **The outcome, by code first** (the `checks`, 12 Oct): what the case's `expect` names, plus,
+   on every case, `capable`: no "I can't" or "nahi kar sakta" where the platform can (or, on a
+   `limit` case, `honest`: a plain one). A question ends once it is answered; a vague or limit
+   case is one turn. A case's **score out of 10** is the share of its checks passed, criteria
+   met and must-nots clear; a run's score is the mean. A case passes when every check passes
+   too.
 1. **Code, no model** (the `signs`): 0175's workaround signs in JavaScript (a schedule
    writing fields with no condition; three or more yes/no, status or choice fields sharing
    a word; a written screen over rows a table shows), builder's words in what the owner read
@@ -78,6 +110,8 @@ node scripts/eval-luke.mjs --label before --max-usd 1.5
 - `--label`: what this run is (`before`, `after-rto-prompt`); it names the file.
 - `--max-usd`: the cap, in dollars (at most 10, the whole budget). Required.
 - `--cases rto-new,low-stock`: only these.
+- `--set smoke`: the six cheap cases across every kind; `--set full-a` and `--set full-b`: every
+  case in two halves, each under its own cap; `--set full`: all of them under one.
 - `--design-model claude-sonnet-5`: the owner's pick in the panel, sent with every turn.
   Refused before anything is spent when the check account may not use it, since the chat
   route would quietly use the default instead.
@@ -93,6 +127,29 @@ and deletes it at the end. For the run the check account's designs are unlimited
 after. Commit what it wrote: the run file, `runs/index.json` and `runs/all.ts`.
 
 ## What it costs
+
+With the thirty-two cases (12 Oct), production's models (Opus 5.5 designing, Sonnet 5 talking
+and criticising) and Haiku as owner and grader:
+
+| Kind | Per case | Cases | Basis |
+| ---- | -------- | ----- | ----- |
+| question | about $0.10 | 9 | one talk turn with one to three lookups on a fresh thread, about 15–25k tokens in and 600 out, plus the grader |
+| vague, limit | about $0.12 | 4 | one turn, plus the grader |
+| build | about $0.35 | 8 | the measure below; the code checks cost nothing (no model) |
+| build with a follow-up | about $0.70 | 3 | two builds |
+| the first eight | about $0.32 | 8 | below |
+
+- **Smoke** (6): about **$1.5** (0.10 + 0.10 + 0.35 + 0.12 + 0.12 + 0.70). `--max-usd 2.5`.
+- **Full** (32): about **$8.8** (0.90 + 0.48 + 2.80 + 2.10 + 2.56). Run it as `--set full-a --max-usd 6`
+  and `--set full-b --max-usd 6`; each half is counted before it is spent and stops at its cap.
+
+```sh
+ENV_FILE=.env.check.local APP_URL=http://localhost:3101 \
+EVAL_SIM_MODEL=claude-haiku-4-5 EVAL_GRADE_MODEL=claude-haiku-4-5 \
+node scripts/eval-luke.mjs --label smoke --set smoke --max-usd 2.5
+```
+
+The first eight alone, as measured before:
 
 About **$0.32 a case** with production's models (Opus 5.5 designing and planning, Sonnet 5
 as critic), about **$2.60 for all eight**. How:

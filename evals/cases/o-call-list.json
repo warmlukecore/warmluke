@@ -1,0 +1,28 @@
+{
+  "id": "o-call-list",
+  "title": "A call list for big COD orders",
+  "language": "hinglish",
+  "kind": "build",
+  "shop": "gadgets",
+  "persona": "Electronics seller who calls every big COD buyer before shipping to cut fake orders.",
+  "before": [],
+  "opening": "5000 se upar ke COD orders pe ship karne se pehle call karna hai, mujhe ek list chahiye kis kis ko call karna hai",
+  "facts": {
+    "above 5000": "products ka amount 5000 se upar",
+    "which ones": "sirf jo abhi ship nahi hue, cancel wale nahi",
+    "after calling": "abhi ke liye sirf list chahiye"
+  },
+  "success": [
+    "the big unshipped COD orders are on one list to call",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "a rule that writes a value into every row",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 4,
+  "expect": {
+    "effect": "gadgets-call-list"
+  }
+}

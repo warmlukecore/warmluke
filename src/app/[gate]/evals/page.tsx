@@ -179,7 +179,8 @@ export default function EvalsPage() {
                         {when(r.started)} · {modelName(r.design_model)}
                       </span>
                     </span>
-                    <span className="mt-2 grid grid-cols-3 gap-x-4 gap-y-2 sm:grid-cols-6">
+                    <span className="mt-2 grid grid-cols-3 gap-x-4 gap-y-2 sm:grid-cols-7">
+                      <Fig name="Score" value={r.summary.score10 === undefined ? "—" : `${r.summary.score10} of 10`} />
                       <Fig name="Cases" value={r.cases.length} />
                       <Fig name="Passed" value={pct(r.summary.pass_rate)} />
                       <Fig name="Average score" value={`${mean(r.summary.avg_scores).toFixed(1)} of 5`} />
@@ -340,6 +341,7 @@ function CaseDetail({ c }: { c: CaseResult }) {
         <span className="min-w-0 flex-1">
           <span className="block text-[13px] font-medium text-fg">{c.title}</span>
           <span className="block text-xs text-fg-faint">
+            {c.score10 !== undefined && `${c.score10} of 10 · `}
             {c.turns} turn{c.turns === 1 ? "" : "s"} · {c.built ? "built" : "nothing built"} · {money(c.cost)} ·{" "}
             {secs(c.ms)}
           </span>
@@ -347,28 +349,45 @@ function CaseDetail({ c }: { c: CaseResult }) {
         <Pill tone={passed ? "success" : "critical"}>{passed ? "Passed" : "Failed"}</Pill>
       </summary>
       <div className="space-y-4 border-t border-line px-4 py-3 sm:px-5">
-        <Part title="What it had to do">
-          {c.criteria.map((x) => (
-            <div key={x.text}>
-              <div className="flex items-start gap-2 text-xs">
-                <span className="min-w-0 flex-1 text-fg">{x.text}</span>
-                <Met met={x.met} />
+        {!!c.checks?.length && (
+          <Part title="What code saw">
+            {c.checks.map((x) => (
+              <div key={x.name}>
+                <div className="flex items-start gap-2 text-xs">
+                  <span className="min-w-0 flex-1 text-fg">{x.name}</span>
+                  <Met met={x.ok} />
+                </div>
+                <Quoted text={x.detail} />
               </div>
-              <Quoted text={x.evidence} />
-            </div>
-          ))}
-        </Part>
-        <Part title="What it must not do">
-          {c.must_not.map((x) => (
-            <div key={x.text}>
-              <div className="flex items-start gap-2 text-xs">
-                <span className="min-w-0 flex-1 text-fg">{x.text}</span>
-                <Hit hit={x.hit} />
+            ))}
+          </Part>
+        )}
+        {c.criteria.length > 0 && (
+          <Part title="What it had to do">
+            {c.criteria.map((x) => (
+              <div key={x.text}>
+                <div className="flex items-start gap-2 text-xs">
+                  <span className="min-w-0 flex-1 text-fg">{x.text}</span>
+                  <Met met={x.met} />
+                </div>
+                <Quoted text={x.evidence} />
               </div>
-              {x.hit && <Quoted text={x.evidence} />}
-            </div>
-          ))}
-        </Part>
+            ))}
+          </Part>
+        )}
+        {c.must_not.length > 0 && (
+          <Part title="What it must not do">
+            {c.must_not.map((x) => (
+              <div key={x.text}>
+                <div className="flex items-start gap-2 text-xs">
+                  <span className="min-w-0 flex-1 text-fg">{x.text}</span>
+                  <Hit hit={x.hit} />
+                </div>
+                {x.hit && <Quoted text={x.evidence} />}
+              </div>
+            ))}
+          </Part>
+        )}
         <Part title="Signs">
           <ul className="space-y-1 text-xs text-fg">
             {c.signs.workarounds.map((w) => (

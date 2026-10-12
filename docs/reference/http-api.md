@@ -17,7 +17,7 @@ Database RLS remains authoritative.
 | `PATCH /api/modules`              | Rename/reorder/reparent/change source                                                 | Prevents invalid nesting/source transitions; versions schema changes                                                                                                                                                  |
 | `DELETE /api/modules`             | Delete a section                                                                      | Owner-only with confirmation name and dependency checks                                                                                                                                                               |
 | `POST /api/records`               | Create, update, delete, or apply a row action                                         | Reloads current schema, strips undeclared data, enforces computed/store restrictions                                                                                                                                  |
-| `POST /api/row-action`            | A row button that waits for the owner (0183): a press, or the owner's decision on one | Works the change out from the row on the server; the owner's press is made, a teammate's waits; only the owner decides (`abo_decide_approval`), and an approved change is worked out again from the row as it is then |
+| `POST /api/row-action`            | A row button that waits for the owner (0183): a press, or the owner's decision on one, or on a whole ask over rows from Luke or their own AI (`batch`, 0208) | Works the change out from the row on the server; the owner's press is made, a teammate's waits; only the owner decides (`abo_decide_approval`), and an approved change is worked out again from the row as it is then; a batch is settled row by row, a change made only where the row still holds what the asker saw, answering how many were done, stale and failed |
 | `POST /api/rollback`              | Restore an earlier UI schema                                                          | Appends a new schema version rather than rewriting history                                                                                                                                                            |
 | `POST /api/code-rules/worker`     | Run a project's queued code rules                                                     | Called by the database only; `{ project, ticket }`, the ticket checked by the database; 202, the work in `after()`                                                                                                    |
 
@@ -156,7 +156,26 @@ the critic; an owner's words that say it went wrong (a word list, English and Hi
 a section changed four or more times in a day; a rule whose runs or code jobs failed; a
 schedule setting fields on every row with no `when`; three or more yes/no or status
 fields sharing a word; a written screen that broke while it ran (`screen_errors`, 0178: kept
-by the app once a message a visit, insert only, read by this function alone). **Learning** (0176) reads what Luke learned for each store:
+by the app once a message a visit, insert only, read by this function alone). Since 0211 the
+signs are kept, not recounted: `abo_trouble_scan` (pg_cron every 15 minutes, and first
+thing in each read below) adds what is new since its last pass, two hours back for late
+rows. It keys one row per thing, so a pass run twice keeps one, in `trouble_signs`, which
+only these functions read. It adds what Tanish's first meeting showed missing:
+- a turn over 90 s or stopped;
+- an ask the gap check left `unmet`;
+- Luke saying he can't (the sentence kept);
+- three builds in one conversation within an hour;
+- a rule that ran three times in a day and wrote nothing (0206), or, set off by rows with
+  no `when`, never ran though rows came;
+- a rule handed a list cut short;
+- a Luke question or plan left unanswered 12 hours on.
+
+`abo_admin_trouble` now returns up to 200, with each sign's `turn_id` and `weight`, and
+links open the turn. `abo_admin_trouble_day(p_account, p_app, p_zone)` gives yesterday in
+the viewer's zone: the total, the day before, counts by kind, and the five conversations
+that went worst by weight. That is the card on the console's first screen.
+`scripts/autopsy.mjs <conversation-id>` tells one conversation's story, read only
+(`.agents/skills/conversation-autopsy`). **Learning** (0176) reads what Luke learned for each store:
 `abo_admin_learning(p_days)` gives the window's totals (lessons and skills active today; created,
 patched, retired, struck, used, helped, hurt and broken again; the owners' thumbs; the reflector's
 runs and their dollars, `reflections` and `learning_usd`) and the repeat rate, mistakes made again

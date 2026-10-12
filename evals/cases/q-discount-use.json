@@ -1,0 +1,19 @@
+{
+  "id": "q-discount-use",
+  "title": "How much the Diwali code gave away",
+  "language": "english",
+  "kind": "question",
+  "shop": "seed",
+  "persona": "Owner planning the next sale, wants to know what the last code cost before running another.",
+  "before": [],
+  "opening": "How many orders used DIWALI10, and how much discount did we give in total?",
+  "facts": {
+    "which orders": "every order that used the code, not cancelled ones"
+  },
+  "success": [],
+  "must_not": [],
+  "max_turns": 2,
+  "expect": {
+    "answer": "seed-discount-use"
+  }
+}

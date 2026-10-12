@@ -1,0 +1,20 @@
+{
+  "id": "q-week-vs-week",
+  "title": "This week against last week",
+  "language": "english",
+  "kind": "question",
+  "shop": "cosmetics",
+  "persona": "Skincare founder who reviews sales every Monday, wants the two numbers side by side.",
+  "before": [],
+  "opening": "What was my revenue in the last 7 days compared with the 7 days before that?",
+  "facts": {
+    "what revenue means": "what customers paid for orders, cancelled ones left out",
+    "which days": "today and the six days before, then the seven before those"
+  },
+  "success": [],
+  "must_not": [],
+  "max_turns": 2,
+  "expect": {
+    "answer": "cosmetics-week-vs-week"
+  }
+}

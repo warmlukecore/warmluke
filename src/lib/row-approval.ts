@@ -55,6 +55,63 @@ export function approvalNeededFor(
   return null;
 }
 
+/** The row as the owner will know it in the bell: its first two fields that say something. */
+export const rowLabel = (columns: SchemaColumn[], row: Record<string, unknown>) =>
+  columns
+    .filter((c) => !c.hidden && c.type !== "link" && c.type !== "boolean")
+    .map((c) => row[c.field])
+    .filter((v) => v !== null && v !== undefined && String(v).trim() !== "")
+    .slice(0, 2)
+    .map((v) => String(v).slice(0, 50))
+    .join(" · ");
+
 /** A section's button by its label, as the screen shows it. */
 export const actionNamed = (features: FeatureSchema | null | undefined, label: string) =>
   (features?.actions ?? []).find((a) => a.label === label) ?? null;
+
+/** One row of row_approvals, as the bell and the tools read it. */
+export type AskRow = {
+  id: string;
+  module_id: string;
+  kind: string | null;
+  batch: string | null;
+  action: string;
+  row_label: string;
+  summary: string | null;
+  asked_via: string | null;
+  asked_at: string;
+};
+
+export type Ask = {
+  /** The batch, or the one row's id for a teammate's press. */
+  id: string;
+  batch: string | null;
+  module_id: string;
+  what: string;
+  rows: number;
+  asked_by: "Luke" | "their own AI" | "a teammate";
+  asked_at: string;
+};
+
+/** Waiting rows as asks: one per batch, one per teammate's press. */
+export function groupAsks(rows: AskRow[]): Ask[] {
+  const by = new Map<string, Ask>();
+  for (const r of rows) {
+    const key = r.batch ?? r.id;
+    const had = by.get(key);
+    if (had) {
+      had.rows++;
+      continue;
+    }
+    by.set(key, {
+      id: key,
+      batch: r.batch,
+      module_id: r.module_id,
+      what: r.summary ?? `“${r.action}” on ${r.row_label ? `“${r.row_label}”` : "a row"}`,
+      rows: 1,
+      asked_by: r.asked_via === "luke" ? "Luke" : r.asked_via === "mcp" ? "their own AI" : "a teammate",
+      asked_at: r.asked_at,
+    });
+  }
+  return [...by.values()];
+}

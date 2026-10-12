@@ -1,0 +1,27 @@
+{
+  "id": "i-sku-twins",
+  "title": "Same SKU, different stock",
+  "language": "english",
+  "kind": "build",
+  "shop": "cases",
+  "persona": "Phone-case brand: the same case is listed for two phone models under one SKU, and the counts drift apart.",
+  "before": [],
+  "opening": "Some of my listings share one SKU, but Shopify shows different stock on each. Flag the ones that don't match.",
+  "facts": {
+    "what a mismatch is": "two or more listings with the same SKU and different stock",
+    "fixing the stock": "just flag them for now"
+  },
+  "success": [
+    "the listings whose shared SKU shows different stock are flagged",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "a rule that writes a value into every row",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 4,
+  "expect": {
+    "effect": "cases-sku-twins"
+  }
+}

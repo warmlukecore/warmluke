@@ -18,7 +18,7 @@ type SchemaJsonWithFeatures = UiSchema & { features?: FeatureSchema | null };
  * schema says number would break every sum, filter and automation that
  * reads it, so coerce against the column type on the way in.
  */
-function coerce(col: SchemaColumn, raw: unknown): unknown {
+export function coerce(col: SchemaColumn, raw: unknown): unknown {
   if (col.type === "link") return raw === null || raw === undefined ? "" : String(raw).trim();
   if (col.type === "boolean") {
     return raw === true || raw === "true" || raw === "yes" || raw === 1;

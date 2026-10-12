@@ -27,11 +27,11 @@ import { jsonSchema, tool, type JSONSchema7, type Tool } from "ai";
 import {
   dayRangeInZone,
   isStoreTable,
-  lowStock,
+  lowStockCounted,
   orderDetail,
   ownFieldsOf,
   readStoreRows,
-  searchOrders,
+  searchOrdersCounted,
   storeLeaders,
   storeOverview,
   storeMetrics,
@@ -215,7 +215,7 @@ const TOOLS: readonly StoreTool[] = [
           return { error: `"${day}" is not a date. Use YYYY-MM-DD.` };
         }
       }
-      const hits = await searchOrders(db, store, {
+      const { orders: hits, matched } = await searchOrdersCounted(db, store, {
         day,
         from: args.from as string | undefined,
         to: args.to as string | undefined,
@@ -223,11 +223,18 @@ const TOOLS: readonly StoreTool[] = [
         q: args.q as string | undefined,
         limit: args.limit as number | undefined,
       });
+      // How many matched, not how many fit the page: "count: 20" was read as twenty orders.
       return {
         shop: store.shop_domain,
         timezone: store.timezone,
         currency: store.currency,
-        count: hits.length,
+        matched,
+        showing: hits.length,
+        ...(matched > hits.length
+          ? {
+              note: `${matched} orders match; only the newest ${hits.length} are listed. Quote ${matched} as the count; for a total or average over all of them use store_metrics.`,
+            }
+          : {}),
         orders: hits,
       };
     },
@@ -342,12 +349,18 @@ const TOOLS: readonly StoreTool[] = [
       if (!Number.isFinite(threshold) || threshold < 0) {
         return { error: "threshold must be a number, 0 or more." };
       }
-      const rows = await lowStock(db, store.id, { threshold, limit: Number(args.limit ?? 50) || 50 });
+      const { rows, matched } = await lowStockCounted(db, store.id, {
+        threshold,
+        limit: Number(args.limit ?? 50) || 50,
+      });
       return {
         threshold,
-        count: rows.length,
+        matched,
+        showing: rows.length,
         note:
-          rows.length === 0 ? `Nothing is at or below ${threshold}.` : "Counts are as of the last sync from Shopify.",
+          rows.length === 0
+            ? `Nothing is at or below ${threshold}.`
+            : `${matched > rows.length ? `${matched} are at or below ${threshold}; only the lowest ${rows.length} are listed, so quote ${matched} as the count. ` : ""}Variants Shopify does not count stock for are left out. Counts are as of the last sync from Shopify.`,
         rows,
       };
     },

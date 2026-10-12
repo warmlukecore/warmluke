@@ -8,7 +8,7 @@
 // here is computed; Luke does the arithmetic over rows it can quote.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { SHAPES, dayRangeInZone, lowStock, readStoreRows } from "@/lib/store-read";
+import { SHAPES, dayRangeInZone, lowStockCounted, readStoreRows } from "@/lib/store-read";
 import { narrowResult } from "@/lib/store-columns";
 import { ROUTE_TABLE, type Route } from "@/lib/route";
 import { shiftDay as shift, todayIn } from "@/lib/period";
@@ -23,6 +23,8 @@ export type Slice = {
 
 /** The most rows a slice carries. Luke reads every one; past this it reads none well. */
 const ROWS = 50;
+/** The products a sales slice lists, most units first. */
+const SALES_ROWS = 20;
 
 const firstOfMonth = (year: number, month: number) => `${year}-${String(month).padStart(2, "0")}-01`;
 
@@ -126,17 +128,23 @@ export async function fetchSlice(
 
   if (route.list === "sales" && span) {
     // Per product within a span: the view is all-time, the function is not.
+    // One more than shown, to know whether these are all: twenty told as
+    // "20 of 20" in a span that sold sixty made a sum over them look whole.
     const { data, error } = await db.rpc("abo_sales_between", {
       p_store: store.id,
       p_from: span.from,
       p_to: span.to,
-      p_limit: 20,
+      p_limit: SALES_ROWS + 1,
     });
     if (error) throw new Error(error.message);
-    const rows = narrowResult(SHAPES.sold, (data ?? []) as Array<Record<string, unknown>>) as Array<
-      Record<string, unknown>
-    >;
-    return { what: `products sold${when}, most units first`, rows, total: rows.length };
+    const all = (data ?? []) as Array<Record<string, unknown>>;
+    const cut = all.length > SALES_ROWS;
+    const rows = narrowResult(SHAPES.sold, all.slice(0, SALES_ROWS)) as Array<Record<string, unknown>>;
+    return {
+      what: `products sold${when}, most units first${cut ? ` — the top ${SALES_ROWS} only: more products sold in this span, so a sum over these is not the span's total (store_metrics counts it whole)` : ""}`,
+      rows,
+      total: cut ? null : rows.length,
+    };
   }
 
   // "August ka top buyer": the customers list carries lifetime spend,
@@ -164,10 +172,10 @@ export async function fetchSlice(
   }
 
   if (route.list === "stock" && route.kind !== "lookup") {
-    const low = narrowResult(SHAPES.stock, await lowStock(db, store.id, { threshold: 10, limit: ROWS })) as Array<
-      Record<string, unknown>
-    >;
-    return { what: "stock running low (under 10), lowest first", rows: low, total: null };
+    const { rows, matched } = await lowStockCounted(db, store.id, { threshold: 10, limit: ROWS });
+    const low = narrowResult(SHAPES.stock, rows) as Array<Record<string, unknown>>;
+    // The whole count, so "50 of 718 shown" is said rather than fifty read as all.
+    return { what: "stock running low (under 10), lowest first", rows: low, total: matched };
   }
 
   // Ranked lists are cut biggest-first on the server; a lookup by the

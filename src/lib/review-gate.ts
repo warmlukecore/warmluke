@@ -72,14 +72,17 @@ export function redoFrom(
     parts.push(`Checked against their own rows:\n${problems.map((f) => `- ${f.text}`).join("\n")}`);
   }
   const rewrites = found.dryRuns.filter((d) => d.everyRow && writesConstantOnSchedule(plans[d.plan]));
-  if (rewrites.length) {
+  // A rule tried and found broken (dry-run tryCode): what stops it, as evidence.
+  const broken = found.dryRuns.filter((d) => d.problem);
+  if (rewrites.length || broken.length) {
     parts.push(
-      `Tried on their rows:\n${rewrites
-        .map(
+      `Tried on their rows:\n${[
+        ...rewrites.map(
           (d) =>
             `- Rule "${d.rule}" would rewrite all ${d.of ?? d.matched ?? "the"} rows of ${d.section} every run, writing the same value each time`
-        )
-        .join("\n")}`
+        ),
+        ...broken.map((d) => `- Rule "${d.rule}": ${d.problem} (${d.note ?? "tried on their rows"})`),
+      ].join("\n")}`
     );
   }
   if (found.ux?.verdict === "redo" && found.ux.fix) {

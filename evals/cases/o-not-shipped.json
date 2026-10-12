@@ -1,0 +1,27 @@
+{
+  "id": "o-not-shipped",
+  "title": "Orders still not shipped after 2 days",
+  "language": "english",
+  "kind": "build",
+  "shop": "fashion",
+  "persona": "Clothing brand owner whose packer falls behind; wants to see the late ones every morning.",
+  "before": [],
+  "opening": "Show me the orders that still haven't shipped 2 days after they were placed.",
+  "facts": {
+    "what late means": "placed more than 2 days ago and not shipped yet",
+    "cancelled": "leave them out"
+  },
+  "success": [
+    "the late, unshipped orders can be seen apart from the rest",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "a rule that writes a value into every row",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 4,
+  "expect": {
+    "effect": "fashion-late"
+  }
+}

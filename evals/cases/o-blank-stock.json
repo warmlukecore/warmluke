@@ -1,0 +1,28 @@
+{
+  "id": "o-blank-stock",
+  "title": "Printed designs share their blank's count",
+  "language": "hinglish",
+  "kind": "build",
+  "shop": "cases",
+  "persona": "Phone-case maker: every printed design is made on a blank case; the blank's count is the real stock.",
+  "before": [],
+  "opening": "mere printed designs ka stock 0 dikhta hai kyunki wo blank case pe print hote hain. blank ka count ek baar daalu to har design pe wahi dikhe",
+  "facts": {
+    "which blank": "har design ka ek blank hota hai, uska SKU",
+    "where the count is kept": "blank ka count main app mein ek jagah daalunga",
+    "the designs": "har design ko uske blank se jodna padega, main ek baar kar dunga"
+  },
+  "success": [
+    "each design shows its blank's count once the blank's count is set",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "a rule that writes a value into every row",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 5,
+  "expect": {
+    "exercise": "cases-blank"
+  }
+}

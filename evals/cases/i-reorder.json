@@ -1,0 +1,27 @@
+{
+  "id": "i-reorder",
+  "title": "Sizes under the reorder level",
+  "language": "english",
+  "kind": "build",
+  "shop": "fashion",
+  "persona": "Clothing founder who reorders when a size drops below 5 pieces.",
+  "before": [],
+  "opening": "I reorder when any size goes below 5 pieces. Show me which ones are below that now.",
+  "facts": {
+    "the level": "below 5, so 5 itself is fine",
+    "which products": "every product and size"
+  },
+  "success": [
+    "the sizes below 5 can be seen apart from the rest",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "a rule that writes a value into every row",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 4,
+  "expect": {
+    "effect": "fashion-reorder"
+  }
+}

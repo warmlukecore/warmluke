@@ -245,7 +245,7 @@ try {
     check("and counts real rows", (over?.counts?.orders ?? 0) > 0);
 
     const all = toolText(await rpc("tools/call", { name: "search_orders", arguments: {} }, t));
-    check("orders come back", (all?.count ?? 0) > 0);
+    check("orders come back, with how many matched in all", (all?.showing ?? 0) > 0 && all.matched >= all.showing);
     check("with the store's own currency, not the caller's", all?.currency === over?.currency);
 
     const cancelled = toolText(
@@ -262,7 +262,7 @@ try {
     check("a malformed day is refused, not ignored", /is not a date/.test(bad?.error ?? ""));
 
     const capped = toolText(await rpc("tools/call", { name: "search_orders", arguments: { limit: 100000 } }, t));
-    check("an absurd limit is capped", (capped?.count ?? 0) <= 100);
+    check("an absurd limit is capped", (capped?.showing ?? 0) <= 100);
 
     console.log("\nreading the rest of the store");
     const one = toolText(await rpc("tools/call", { name: "search_store", arguments: { table: "products" } }, t));
@@ -288,7 +288,10 @@ try {
     );
 
     const stock = toolText(await rpc("tools/call", { name: "low_stock", arguments: { threshold: 100000 } }, t));
-    check("low stock lists what is running out", (stock?.count ?? 0) > 0);
+    check(
+      "low stock lists what is running out, and how many in all",
+      (stock?.showing ?? 0) > 0 && stock.matched >= stock.showing
+    );
     check("lowest first", stock.rows[0].available <= stock.rows[stock.rows.length - 1].available);
     check("each row says where it is short", !!stock.rows[0].location);
     check(

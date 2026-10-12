@@ -45,6 +45,8 @@ const ROWS_A_SECTION = 50_000;
 const PAGE = 1000;
 /** Writes made at once. */
 const WRITERS = 8;
+/** Queued jobs claimed at a time; batches go on until the worker's time is spent. */
+const JOB_BATCH = 20;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Place = { moduleId: string; table: StoreTable | null };
@@ -140,6 +142,22 @@ async function readAll(
     }),
     cut,
   };
+}
+
+/**
+ * What a rule's code is handed: a row (with what it was) or a schedule's
+ * rows, the sections it reads under every name they go by, and today on
+ * the store's clock. One shape for a run and for a try before it is built
+ * (lib/dry-run), so the two cannot hand the code different things.
+ */
+export function codeInput(
+  at:
+    | { row: Record<string, unknown>; previous: Record<string, unknown> | null }
+    | { rows: Array<Record<string, unknown>> },
+  given: Pick<SectionsRead, "rows" | "aliases">,
+  clock: { today: string; now: string }
+) {
+  return { ...at, sections: given.rows, [ALIASES]: given.aliases, ...clock };
 }
 
 /** Where a write naming `section` lands, however it was spelled; null for one the rule does not read. */
@@ -322,13 +340,10 @@ export async function runCodeRules(client: SupabaseClient, w: Written): Promise<
           const given = await readSections(client, w.projectId, a.reads ?? []);
           sizes = given.sizes;
           const read = Date.now() - t0;
-          const out = await runCode(a.code, {
-            row: { id, ...row },
-            previous,
-            sections: given.rows,
-            [ALIASES]: given.aliases,
-            ...storeClock(await storeZone(client, w.projectId)),
-          });
+          const out = await runCode(
+            a.code,
+            codeInput({ row: { id, ...row }, previous }, given, storeClock(await storeZone(client, w.projectId)))
+          );
           const wrote = out.ok
             ? await applyWrites(client, w, here, given, out.result)
             : { wrote: 0, refused: 0, why: null, dropped: 0 };
@@ -464,7 +479,7 @@ export function storeClock(zone: string, at = new Date()): { today: string; now:
 }
 
 /** The timezone a project's store keeps, the clock its rules run on. */
-async function storeZone(client: SupabaseClient, projectId: string): Promise<string> {
+export async function storeZone(client: SupabaseClient, projectId: string): Promise<string> {
   const { data } = await client
     .from("stores")
     .select("timezone")
@@ -537,14 +552,12 @@ async function runJob(client: SupabaseClient, projectId: string, job: Job): Prom
     if (a.type !== "run_code") continue;
     const given = await readSections(client, projectId, a.reads ?? []);
     sizes = { ...sizes, ...given.sizes };
-    const sections = given.rows;
-    const named = { [ALIASES]: given.aliases };
     // A row the store brought in is handed as a row, as an added one is;
     // a schedule hands the section's rows, and no row.
     const inputs =
       job.kind === "added"
-        ? seen.map((row) => ({ row, previous: null, sections, ...named, ...clock }))
-        : [{ rows: seen, sections, ...named, ...clock }];
+        ? seen.map((row) => codeInput({ row, previous: null }, given, clock))
+        : [codeInput({ rows: seen }, given, clock)];
     const outs = await runCodeEach(a.code, inputs);
     for (const out of outs) {
       if (!out.ok) {
@@ -583,45 +596,53 @@ async function runJob(client: SupabaseClient, projectId: string, job: Job): Prom
  * the project's ticket; everything it reads and writes is that project's.
  */
 export async function runQueuedJobs(client: SupabaseClient, projectId: string, until: number): Promise<number> {
-  const { data: jobs } = await client
-    .from("code_jobs")
-    .select("id, automation_id, kind, row_ids, attempts")
-    .eq("project_id", projectId)
-    .eq("status", "queued")
-    .order("created_at", { ascending: true })
-    .limit(20);
   let ran = 0;
-  for (const job of (jobs ?? []) as Job[]) {
-    if (Date.now() > until) break;
-    const { data: claimed } = await client
+  // A batch at a time until the time is spent: twenty and stop left an
+  // order burst's three hundred jobs a quarter of an hour behind.
+  for (;;) {
+    if (Date.now() > until) return ran;
+    const { data: jobs } = await client
       .from("code_jobs")
-      .update({ status: "running", attempts: job.attempts + 1, started_at: new Date().toISOString() })
-      .eq("id", job.id)
+      .select("id, automation_id, kind, row_ids, attempts")
+      .eq("project_id", projectId)
       .eq("status", "queued")
-      .select("id");
-    if (!claimed?.length) continue;
-    let why: string | null;
-    try {
-      why = await runJob(client, projectId, job);
-    } catch (e) {
-      why = e instanceof Error ? e.message : "The job failed.";
-      await keepRun(client, job.automation_id, null, {
-        ok: false,
-        trigger: job.kind === "added" ? "store_row_added" : "schedule",
-        read: {},
-        error: why,
-        job: job.id,
-        wrote: 0,
-        refused: 0,
-        why: null,
-        dropped: 0,
-      });
+      .order("created_at", { ascending: true })
+      .limit(JOB_BATCH);
+    if (!jobs?.length) return ran;
+    const before = ran;
+    for (const job of jobs as Job[]) {
+      if (Date.now() > until) break;
+      const { data: claimed } = await client
+        .from("code_jobs")
+        .update({ status: "running", attempts: job.attempts + 1, started_at: new Date().toISOString() })
+        .eq("id", job.id)
+        .eq("status", "queued")
+        .select("id");
+      if (!claimed?.length) continue;
+      let why: string | null;
+      try {
+        why = await runJob(client, projectId, job);
+      } catch (e) {
+        why = e instanceof Error ? e.message : "The job failed.";
+        await keepRun(client, job.automation_id, null, {
+          ok: false,
+          trigger: job.kind === "added" ? "store_row_added" : "schedule",
+          read: {},
+          error: why,
+          job: job.id,
+          wrote: 0,
+          refused: 0,
+          why: null,
+          dropped: 0,
+        });
+      }
+      await client
+        .from("code_jobs")
+        .update({ status: why ? "failed" : "done", error: why, finished_at: new Date().toISOString() })
+        .eq("id", job.id);
+      ran += 1;
     }
-    await client
-      .from("code_jobs")
-      .update({ status: why ? "failed" : "done", error: why, finished_at: new Date().toISOString() })
-      .eq("id", job.id);
-    ran += 1;
+    // Every one claimed by another worker: theirs to finish, not a reason to spin.
+    if (ran === before) return ran;
   }
-  return ran;
 }

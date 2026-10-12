@@ -71,6 +71,7 @@ import { asJob } from "@/lib/usage";
 import { describeMerchant, type ProfileRow } from "@/lib/onboarding";
 import { MEET_BRIEF, MEET_BUILT, MEET_OFFER_NOW, MEET_OPENER } from "@/lib/meet";
 import { appTools, READ_THE_APP } from "@/lib/section-read";
+import { appActionTools, CHANGE_ROWS } from "@/lib/app-actions";
 import {
   describeFeaturesFull,
   describePlan,
@@ -87,6 +88,10 @@ import { describeScreenAsk, readScreenAsk, type ScreenShown } from "@/lib/screen
 import { approvedExamples, describeExamples, examplesFor } from "@/lib/examples";
 import { aiStoreTools, fitForModel } from "@/lib/store-tools";
 import { aiProposeTool } from "@/lib/store-action-propose";
+import { agentOn, draftOf, runAgent, type Checked } from "@/lib/agent";
+import { verifyTools } from "@/lib/verify-tool";
+import { dryRunRules } from "@/lib/dry-run";
+import { checkAgainstData } from "@/lib/data-check";
 
 /**
  * The store tools Luke may look things up with. Not ask_store: it routes
@@ -110,7 +115,7 @@ const PLAN_TOOLS = ["search_store", "store_metrics", "store_overview"] as const;
 /** Two lookups, then the plan. */
 const PLAN_STEPS = 3;
 
-import { lowStock, searchOrders, storeLeaders, storeOverview, storeValues } from "@/lib/store-read";
+import { lowStock, searchOrders, stockCounts, storeLeaders, storeOverview, storeValues } from "@/lib/store-read";
 import { routeQuestion } from "@/lib/route";
 import { fetchSlice } from "@/lib/slice";
 import { projectFormat } from "@/lib/money";
@@ -162,11 +167,13 @@ export async function storeContextFor(
   // hold (one particular order, a day not shown) the chat's turn can
   // look up with the store tools; each lookup is recorded by the tool
   // that ran it, never by the model's word for it (see runTurn).
-  const [recent, low, leaders, routed] = await Promise.all([
+  const [recent, low, lowCount, leaders, routed] = await Promise.all([
     searchOrders(client, { id: storeRow.id as string, timezone: storeRow.timezone as string }, { limit: 20 }).catch(
       () => []
     ),
     lowStock(client, storeRow.id as string, { threshold: 10, limit: 15 }).catch(() => []),
+    // How many in all, beside the fifteen: a count, never the rows read for one.
+    stockCounts(client, storeRow.id as string, 10).catch(() => null),
     // Whole-store, unlike the two above: the questions these answer are
     // rankings, and a ranking over the latest twenty rows is not one.
     storeLeaders(client, storeRow.id as string).catch(() => ({ top_customers: [], best_sellers: [] })),
@@ -239,6 +246,7 @@ export async function storeContextFor(
           available: l.available,
         }))
       ) as Array<{ product: string; variant: string | null; location: string; available: number }>,
+      lowCount,
     },
   };
 }
@@ -834,7 +842,16 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
   const canChange = !!toolStore && changeOn === true;
   // The app's own rows and what its rules did (lib/section-read): read the
   // way their own AI reads them, with or without a store.
-  const appReads = lookups ? appTools({ db: client, projectId: project.id }, hear) : null;
+  const appReads = lookups
+    ? {
+        ...appTools({ db: client, projectId: project.id }, hear),
+        // And what the owner can do in the app, as asks they approve in one click (lib/app-actions).
+        ...appActionTools(
+          { db: client, projectId: project.id },
+          { observe: hear, proposed: (summary) => tell({ step: "proposed", summary }) }
+        ),
+      }
+    : null;
   const tools =
     toolStore || appReads
       ? {
@@ -867,6 +884,11 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
         }
       }
     : undefined;
+
+  // Luke as an agent (lib/agent.ts, LUKE_AGENT=on): in his own chat, a loop
+  // that reads, builds a change at a time and tries it, instead of one JSON
+  // reply. Not for a design another assistant drew, nor where nothing can be read.
+  const agent = agentOn() && lookups && !givenDesign && !!tools;
 
   // Before the prompt is written: it offers only what the tools can do.
   if (store) {
@@ -905,7 +927,8 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
   // Money as the owner chose it, else as their shop keeps it: Luke writes the same currency the app shows.
   const money = projectFormat(project, store);
   // Told to look before answering about their own rows and rules, when he can (lib/section-read).
-  const withApp = (s: [string, string]): [string, string] => (appReads ? [s[0], `${s[1]}\n\n${READ_THE_APP}`] : s);
+  const withApp = (s: [string, string]): [string, string] =>
+    appReads ? [s[0], `${s[1]}\n\n${READ_THE_APP}\n\n${CHANGE_ROWS}`] : s;
   const designSystem = () =>
     withApp(buildSystemPrompt(modules, project.name, money.locale, money.currency, store, merchant, examplesBlock));
   let system =
@@ -998,7 +1021,7 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
     planBlock = agreedBlock(agreed);
     tell({ step: "plan", goal: agreed.goal });
   }
-  if (road === "design" && !givenDesign) await plan();
+  if (road === "design" && !givenDesign && !agent) await plan();
   // An answer to the plan said in words that leaves nothing more to talk
   // over is their go-ahead, changes and all ("Bas iska screen bana do",
   // eval 4 Oct): the planner said nothing back, so what it now understood
@@ -1080,6 +1103,82 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
   // answer, and these are that design's checks.
   let checks: DesignChecks | null = resume?.checks ?? null;
 
+  // The agent's attempt (lib/agent.ts): every change it drafts is checked as
+  // this loop checks a whole reply, it tries the design on the rows it would
+  // meet, and a repair starts from the design it had. Only when agent is on.
+  const facts = store ? { shop_domain: store.shop_domain, currency: store.currency, counts: store.counts } : null;
+  const validate = (plans: Record<string, unknown>[]): Checked => {
+    const checked = parseReply(
+      JSON.stringify({ type: "plans", title: "Draft", message: "Draft", plans }),
+      modules,
+      currentSchema,
+      currentFeatures,
+      (mid) => schemas.get(mid) ?? null,
+      (mid) => ((ruleRows ?? []) as RuleRow[]).filter((r) => r.module_id === mid)
+    );
+    if (!checked.ok) return { ok: false, errors: checked.errors };
+    const drafted = checked.reply.type === "plans" ? checked.reply.plans : [];
+    const copies = seededCopies(drafted, facts);
+    return copies.length
+      ? { ok: false, errors: copies }
+      : { ok: true, parts: partsOf(drafted, modules), plans: drafted };
+  };
+  const tryOnRows = async (plans: AssistantPlan[]) => {
+    const ctx = {
+      db: client,
+      projectId: project.id,
+      store,
+      modules,
+      schemas,
+      ownerWords: message.trim(),
+      understood: planBlock,
+      locale: money.locale,
+      currency: money.currency,
+      uxModel: null,
+      signal,
+    };
+    const [rules, data] = await Promise.all([dryRunRules(ctx, plans), checkAgainstData(ctx, plans)]);
+    const counted = rules.map((r) => r.matched);
+    tell({
+      step: "dryrun",
+      rules: rules.length,
+      matched: counted.every((m) => m !== null) ? counted.reduce((a: number, m) => a + (m ?? 0), 0) : null,
+    });
+    return fitForModel({ rules, data }, 6_000);
+  };
+  const agentAttempt = async (attempt: number) => {
+    const out = await runAgent({
+      context: designSystem()[1],
+      turns: [...history, ...attemptTurns],
+      model,
+      signal,
+      // What is already built, tried on their data (lib/verify, B): beside the draft's own try.
+      reads: { ...tools, ...verifyTools({ db: client, projectId: project.id }, hear) },
+      start: attempt > firstAttempt || resume ? draftOf(raw) : [],
+      validate,
+      test: tryOnRows,
+      tell,
+      // Words as Luke writes them between steps: plain words, not a reply's JSON.
+      onText: onWords
+        ? (text: string) => {
+            try {
+              onWords(text);
+            } catch {
+              /* the caller's problem, not the turn's */
+            }
+          }
+        : undefined,
+      deadline: deadline ? deadline - 15_000 : undefined,
+    });
+    repairErrors.push(...out.refused);
+    return out.raw ?? "";
+  };
+  // What a send-back asks of each: the whole reply again, or the draft mended with the tools.
+  const mendWith = (json: string) =>
+    agent
+      ? ". Mend the design with your tools: it is still your draft (replace_change, draft_change, drop_change). Try it on their rows when it has rules, then finish."
+      : json;
+
   const firstAttempt = resume?.attempt ?? 0;
   // The repairs have their attempts, and a send-back its own: once it
   // shared them, a design that took two repairs could no longer be sent
@@ -1127,24 +1226,26 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
       const roomy = cutAtLimit;
       cutAtLimit = false;
       raw = await tapeRoad.run(road, () =>
-        callModel({
-          system,
-          turns: [...history, ...attemptTurns],
-          signal,
-          // The one they picked wins on both roads; otherwise each road's own.
-          model: model ?? (road === "talk" ? talkModel() : undefined),
-          lookups: attempt === 0 && tools ? { tools } : undefined,
-          // A turn is several calls on one prefix (lookups, repairs, a redo):
-          // the thread so far is written to the cache once and read after.
-          cacheTurns: true,
-          onText: draft,
-          // How hard a design is thought through: a deploy setting, measured (designEffort).
-          effort: road === "design" ? designEffort() : undefined,
-          roomy,
-          onFinish: (reason) => {
-            cutAtLimit = reason === "length";
-          },
-        })
+        agent
+          ? agentAttempt(attempt)
+          : callModel({
+              system,
+              turns: [...history, ...attemptTurns],
+              signal,
+              // The one they picked wins on both roads; otherwise each road's own.
+              model: model ?? (road === "talk" ? talkModel() : undefined),
+              lookups: attempt === 0 && tools ? { tools } : undefined,
+              // A turn is several calls on one prefix (lookups, repairs, a redo):
+              // the thread so far is written to the cache once and read after.
+              cacheTurns: true,
+              onText: draft,
+              // How hard a design is thought through: a deploy setting, measured (designEffort).
+              effort: road === "design" ? designEffort() : undefined,
+              roomy,
+              onFinish: (reason) => {
+                cutAtLimit = reason === "length";
+              },
+            })
       );
     }
     // The talk road hands a build back: a "build" reply, or a design it
@@ -1154,7 +1255,7 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
     const read = readJson(stripFences(raw));
     const said = read.ok ? read.value : null;
     const type = said && typeof said === "object" ? (said as { type?: unknown }).type : undefined;
-    if (road === "talk") {
+    if (road === "talk" && !agent) {
       if (typeof type === "string" && type !== "answer") {
         road = "design";
         tell({ step: "road", road });
@@ -1319,9 +1420,9 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
               role: "user",
               content: `The design was checked against what the owner asked for and sent back: ${verdict.redo}\n\nStill missing, in their words:\n${verdict.unmet
                 .map((u) => `- ${u}`)
-                .join(
-                  "\n"
-                )}\n\nRedesign so it does this too, and reply with the whole corrected design as JSON only: every plan, as if sent for the first time, not just the ones that change. Do not apologise or explain.`,
+                .join("\n")}\n\nRedesign so it does this too${mendWith(
+                ", and reply with the whole corrected design as JSON only: every plan, as if sent for the first time, not just the ones that change. Do not apologise or explain."
+              )}`,
             }
           );
           continue;
@@ -1371,7 +1472,9 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
             // The whole design: told only "the corrected JSON", a redo sent the one
             // changed section, which the validator refused, and the design it
             // sent back stood as the answer (returns eval, 4 Oct).
-            content: `The design was reviewed before the owner sees it, and sent back:\n\n${gated.redo}\n\nRedesign so it does the same job for them, changing what this says and nothing else, and reply with the whole corrected design as JSON only: every plan, as if sent for the first time, not just the ones that change. Do not apologise or explain.`,
+            content: `The design was reviewed before the owner sees it, and sent back:\n\n${gated.redo}\n\nRedesign so it does the same job for them, changing what this says and nothing else${mendWith(
+              ", and reply with the whole corrected design as JSON only: every plan, as if sent for the first time, not just the ones that change. Do not apologise or explain."
+            )}`,
           }
         );
         continue;
@@ -1399,9 +1502,11 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
         role: "user",
         content: `Your previous reply was rejected by the validator:\n${parsed.errors
           .map((e) => `- ${e}`)
-          .join(
-            "\n"
-          )}\n\nFix every one of these and reply again with the corrected JSON only. Do not apologise or explain — just the corrected reply. If a module name is already taken, either target the existing module instead of creating a new one, or choose a different name.${foundBlock(found)}`,
+          .join("\n")}\n\n${
+          agent
+            ? "Fix every one of these in your draft with your tools, try it, then finish. If a module name is already taken, target the existing module or choose another name."
+            : "Fix every one of these and reply again with the corrected JSON only. Do not apologise or explain — just the corrected reply. If a module name is already taken, either target the existing module instead of creating a new one, or choose a different name."
+        }${foundBlock(found)}`,
       }
     );
   }

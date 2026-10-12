@@ -48,9 +48,11 @@ export async function readSectionRows(
   section: SectionRef,
   columns: SchemaColumn[],
   ask: RowsAsk,
-  sort?: FeatureSchema["defaultSort"] | null
+  sort?: FeatureSchema["defaultSort"] | null,
+  /** The most rows one read hands back: a model's page by default, more for a change's rows. */
+  max = 200
 ): Promise<RowsRead | { error: string }> {
-  const limit = Math.min(Math.max(Number(ask.limit ?? 50) || 50, 1), 200);
+  const limit = Math.min(Math.max(Number(ask.limit ?? 50) || 50, 1), max);
   const search =
     word(ask.search)
       ?.replace(/[,()%*]/g, " ")
@@ -89,7 +91,7 @@ export async function readSectionRows(
       return {
         total: hit.length,
         showing: Math.min(hit.length, limit),
-        rows: hit.slice(0, limit).map((r) => r.data),
+        rows: hit.slice(0, limit).map((r) => ({ ...r.data, id: r.id })),
         ...(hit.length >= 500 ? { note: "The first 500 that match; ask more narrowly for the rest." } : {}),
       };
     }
@@ -102,12 +104,12 @@ export async function readSectionRows(
       sort && typeof sort.field === "string" ? { field: sort.field, dir: sort.dir === "asc" ? "asc" : "desc" } : null
     );
     const laid = await withOwnFields(db, section.id, rows);
-    return { total, showing: laid.length, rows: laid.map((r) => r.data) };
+    return { total, showing: laid.length, rows: laid.map((r) => ({ ...r.data, id: r.id })) };
   }
 
   let q = db
     .from("records")
-    .select("data", { count: "exact" })
+    .select("id, data", { count: "exact" })
     .eq("module_id", section.id)
     // Fields kept beside a store row are not rows of the section's own.
     .is("store_row_id", null);
@@ -123,12 +125,12 @@ export async function readSectionRows(
   }
   const { data, count, error } = await q.order("created_at", { ascending: false }).limit(limit);
   if (error) throw new Error(error.message);
-  const rows = (data ?? []).map((r) => (r.data ?? {}) as Record<string, unknown>);
+  const rows = (data ?? []).map((r) => ({ ...((r.data ?? {}) as Record<string, unknown>), id: r.id as string }));
   return { total: count ?? rows.length, showing: rows.length, rows };
 }
 
 /** The app's sections, as the tools name them. */
-async function sectionsOf(db: SupabaseClient, projectId: string): Promise<SectionRef[]> {
+export async function sectionsOf(db: SupabaseClient, projectId: string): Promise<SectionRef[]> {
   const { data, error } = await db
     .from("modules")
     .select("id, name, nav_label, source_table")
@@ -139,7 +141,7 @@ async function sectionsOf(db: SupabaseClient, projectId: string): Promise<Sectio
 }
 
 /** One section's newest design: its columns as the account is shown them, and its features. */
-async function designOf(
+export async function designOf(
   db: SupabaseClient,
   section: SectionRef
 ): Promise<{ columns: SchemaColumn[]; features: FeatureSchema | null }> {
@@ -155,6 +157,31 @@ async function designOf(
     ? storeSectionColumns(section.source_table, sj.columns)
     : (sj.columns ?? []);
   return { columns, features: sj.features ?? null };
+}
+
+/**
+ * How a section got to be the way it is: every version, newest first.
+ * Versions are appended and never rewritten, so a version put back shows
+ * as a new one holding what the old one held. One reader for Luke and
+ * for the owner's own AI (MCP read_section history).
+ */
+export async function sectionHistory(db: SupabaseClient, section: SectionRef, limit = 30) {
+  const { data: versions } = await db
+    .from("ui_schemas")
+    .select("version, created_by, change_description, created_at, schema_json")
+    .eq("module_id", section.id)
+    .order("version", { ascending: false })
+    .limit(limit);
+  return {
+    section: section.nav_label,
+    versions: (versions ?? []).map((v) => ({
+      version: v.version as number,
+      on: v.created_at as string,
+      by: v.created_by === "ai" ? "Warmluke" : "the merchant",
+      what_changed: (v.change_description as string | null) ?? null,
+      fields: ((v.schema_json as UiSchema | null)?.columns ?? []).map((c) => c.field),
+    })),
+  };
 }
 
 type Heard = { tool: string; about: string; args: unknown; result?: unknown };
@@ -179,8 +206,8 @@ export function appTools(
   return {
     read_section: tool({
       description:
-        "Read a section of their app. With no section: every section, and whether its rows are their own or the store's. With one: its fields and its rows, newest first. Rows of a section they made, and the fields they keep beside the store's rows, are only here. search looks for words in its text fields; field and value keep only rows whose field is exactly that value (a field of theirs or of the store's). Says how many match beside the rows it shows.",
-      inputSchema: jsonSchema<RowsAsk & { section?: unknown }>({
+        "Read a section of their app. With no section: every section, and whether its rows are their own or the store's. With one: its fields and its rows, newest first, each with its id. Rows of a section they made, and the fields they keep beside the store's rows, are only here. search looks for words in its text fields; field and value keep only rows whose field is exactly that value (a field of theirs or of the store's). Says how many match beside the rows it shows. history: true gives how the section has changed instead, every version newest first.",
+      inputSchema: jsonSchema<RowsAsk & { section?: unknown; history?: unknown }>({
         type: "object",
         properties: {
           section: { type: "string", description: "The section's name, as they call it. Leave it out to list them." },
@@ -188,6 +215,7 @@ export function appTools(
           field: { type: "string", description: "A field to match exactly, with value." },
           value: { type: "string", description: "The value that field must hold." },
           limit: { type: "number", description: "Up to 200. Defaults to 50." },
+          history: { type: "boolean", description: "How this section has changed, instead of its rows." },
         },
       }),
       execute: async (args) => {
@@ -210,6 +238,8 @@ export function appTools(
             error: `No section called "${wanted}".`,
             sections: sections.map((s) => s.nav_label),
           });
+        if (args.history === true)
+          return heard("read_section", `how ${section.nav_label} changed`, args, await sectionHistory(ctx.db, section));
         const { columns, features } = await designOf(ctx.db, section);
         const read = await readSectionRows(ctx.db, ctx.projectId, section, columns, args, features?.defaultSort);
         const result = {

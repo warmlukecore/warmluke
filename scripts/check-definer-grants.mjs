@@ -62,6 +62,7 @@ const GUARDED = {
   abo_connector_open_shipments: "the connector worker's ticket: its own connection's quiet shipments",
   abo_connector_hook: "the hook address's own token, 256 random bits kept as a hash; it writes one connection's rows",
   abo_book_demo: "the server's booking key (booking_key_sha256), 256 random bits; it writes one booking",
+  abo_book_demo_meta: "the server's booking key; it writes whether Meta heard one booking, onto that booking",
   abo_invite_peek: "the invite link's own token, 192 random bits, and it tells only about that link",
   abo_code_holds: "the code worker's ticket",
   abo_code_holds_store: "the code worker's ticket",

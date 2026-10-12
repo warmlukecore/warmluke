@@ -1,0 +1,99 @@
+{
+  "id": "o-expiring",
+  "title": "Batches expiring in the next 60 days",
+  "language": "english",
+  "kind": "build",
+  "shop": "cosmetics",
+  "persona": "Skincare founder who keeps every batch with its expiry in the app and hates throwing stock away.",
+  "before": [
+    {
+      "changeType": "NEW_MODULE",
+      "targetModuleId": null,
+      "newModule": {
+        "name": "batches",
+        "nav_label": "Batches",
+        "icon": "package"
+      },
+      "newSchema": {
+        "columns": [
+          {
+            "field": "batch_code",
+            "label": "Batch",
+            "type": "text"
+          },
+          {
+            "field": "product",
+            "label": "Product",
+            "type": "text"
+          },
+          {
+            "field": "expires_on",
+            "label": "Expires on",
+            "type": "date"
+          },
+          {
+            "field": "units",
+            "label": "Units",
+            "type": "number"
+          }
+        ]
+      },
+      "moduleUpdate": null,
+      "deleteConfirmName": null,
+      "features": null,
+      "automation": null,
+      "automationRemoveName": null,
+      "newRecords": [
+        {
+          "batch_code": "VCS-2401",
+          "product": "Vitamin C Serum",
+          "expires_on": "{{days:+20}}",
+          "units": 30
+        },
+        {
+          "batch_code": "HYA-2402",
+          "product": "Hyaluronic Moisturiser",
+          "expires_on": "{{days:+45}}",
+          "units": 25
+        },
+        {
+          "batch_code": "SPF-2403",
+          "product": "SPF 50 Sunscreen",
+          "expires_on": "{{days:+75}}",
+          "units": 60
+        },
+        {
+          "batch_code": "TON-2404",
+          "product": "Niacinamide Toner",
+          "expires_on": "{{days:+120}}",
+          "units": 18
+        },
+        {
+          "batch_code": "LIP-2405",
+          "product": "Matte Lip Tint",
+          "expires_on": "{{days:+200}}",
+          "units": 80
+        }
+      ],
+      "explanation": "The batches the owner keeps in the app before the conversation, each with its expiry."
+    }
+  ],
+  "opening": "Which of my batches expire in the next 60 days? I want them marked so I can push them in offers.",
+  "facts": {
+    "what to use": "the expiry date on each batch",
+    "already expired": "none are expired yet"
+  },
+  "success": [
+    "the batches expiring within 60 days are marked",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "a second field for the expiry date",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 4,
+  "expect": {
+    "effect": "cosmetics-expiring"
+  }
+}

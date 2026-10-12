@@ -1,0 +1,29 @@
+{
+  "id": "o-repeat-cod",
+  "title": "Flag repeat COD orders by phone",
+  "language": "hinglish",
+  "kind": "build",
+  "shop": "snacks",
+  "persona": "Snack brand owner who calls repeat COD buyers to thank them and confirm; short messages, Hinglish.",
+  "before": [],
+  "opening": "jo customer pehle bhi order kar chuka hai aur ab COD pe order kiya hai, un orders ko mark kar do taaki main call kar saku",
+  "facts": {
+    "how to know repeat": "same phone number se pehle koi bhi order aaya ho, prepaid ya COD",
+    "which orders": "sirf COD wale naye order mark karne hain",
+    "cancelled": "cancelled ko ignore karo"
+  },
+  "success": [
+    "the repeat COD orders are marked in the orders list",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "a rule that writes a value into every row",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 4,
+  "expect": {
+    "effect": "snacks-repeat-cod"
+  },
+  "smoke": true
+}

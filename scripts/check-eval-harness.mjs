@@ -12,6 +12,21 @@ import {
   COMMON_MUST_NOT,
   COMMON_SUCCESS,
   CapReached,
+  KINDS,
+  answerChecks,
+  asksFirstCheck,
+  buildChecks,
+  cantIn,
+  capableCheck,
+  converse,
+  effectCheck,
+  fillDates,
+  honestCheck,
+  numbersIn,
+  outcomeChecks,
+  pickColumn,
+  selectCases,
+  valuesCheck,
   LUKE_TURN_USD,
   capMeter,
   caseProblems,
@@ -33,7 +48,12 @@ import {
   stepLine,
   workaroundSigns,
 } from "./eval-luke.mjs";
-import { casePassed, signCount, summarise } from "../src/lib/eval-report.ts";
+import { casePassed, scoreOf, signCount, summarise } from "../src/lib/eval-report.ts";
+import { EXPECT, expectationFor, viewOf } from "../evals/expect.mjs";
+import { SHOPS } from "./fixtures/shops.ts";
+import { shopNodes } from "./fixtures/business-shop.ts";
+import { seedNodes } from "./fixtures/seed-shop.ts";
+import { RESOURCES } from "../src/lib/shopify-resources.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -46,7 +66,7 @@ console.log("the cases");
 const cases = loadCases();
 const ids = cases.map((x) => x.case.id);
 check(
-  "eight cases, the ones asked for",
+  "the eight first owners are all still there",
   [
     "cod-confirm",
     "low-stock",
@@ -56,15 +76,21 @@ check(
     "returns-screen",
     "rto-cleanup",
     "rto-new",
-  ].join() === ids.join()
+  ].every((id) => ids.includes(id))
+);
+check(
+  "and about thirty in all, across every kind",
+  ids.length >= 30 && KINDS.every((k) => cases.some((x) => (x.case.kind ?? "build") === k))
 );
 for (const { file, case: c } of cases) {
   const problems = caseProblems(c, file);
   check(`${file} is whole`, problems.length === 0);
   if (problems.length) show(problems);
   check(
-    `${file} has success, must_not and max_turns`,
-    c.success?.length > 0 && c.must_not?.length > 0 && Number.isInteger(c.max_turns)
+    `${file} has what it is graded on, and max_turns`,
+    ((c.kind ?? "build") !== "build" || (c.success?.length > 0 && c.must_not?.length > 0)) &&
+      ((c.kind ?? "build") === "build" || !!c.expect) &&
+      Number.isInteger(c.max_turns)
   );
   const leaks = privateBits(JSON.stringify(c));
   check(`${file} holds no email, phone number or id`, leaks.length === 0);
@@ -443,6 +469,371 @@ const none = summarise([]);
 check(
   "and of nothing, zeros",
   none.pass_rate === 0 && none.cost === 0 && none.avg_ms === 0 && none.avg_scores.plain === 0
+);
+
+console.log("\nthe shops a case runs on");
+const NOW = Date.UTC(2026, 9, 12, 6);
+const views = { seed: viewOf(seedNodes(NOW), NOW) };
+for (const [name, shop] of Object.entries(SHOPS)) {
+  const nodes = shopNodes(shop, NOW);
+  views[name] = viewOf(nodes, NOW);
+  check(
+    `${name}: every list a store has, its orders and its stock`,
+    RESOURCES.every((r) => Array.isArray(nodes[r])) &&
+      nodes.orders.length === shop.orders.length &&
+      nodes.inventory.length === views[name].variants.length
+  );
+  check(
+    `${name}: built the same twice on the same day`,
+    JSON.stringify(shopNodes(shop, NOW)) === JSON.stringify(shopNodes(shop, NOW + 3_600_000))
+  );
+  check(
+    `${name}: an order's age is the day it was given`,
+    views[name].orders.every((o, i) => o.daysBack === shop.orders[i].daysBack)
+  );
+}
+for (const { case: c } of cases) {
+  const shop = c.shop ?? "seed";
+  let x = null;
+  try {
+    x = expectationFor(c, views[shop]);
+  } catch (e) {
+    show(e.message);
+  }
+  const fine =
+    !!x &&
+    (x.answer ?? []).every((it) => (it.any ?? it.names ?? [it.re]).length > 0) &&
+    (!x.effect || (x.effect.count > 0 && x.effect.labels.length > 0)) &&
+    (!x.exercise || x.exercise.then.labels.length > 0);
+  check(`${c.id}: what it expects is worked out from its shop`, fine);
+}
+check(
+  "a window ignored would show: the top size over all time is not the month's",
+  (() => {
+    const all = new Map();
+    for (const o of views.fashion.orders.filter((o) => !o.cancelled))
+      for (const l of o.lines.filter((l) => l.type === "Tee")) all.set(l.variant, (all.get(l.variant) ?? 0) + l.qty);
+    const allTime = [...all].toSorted((a, b) => b[1] - a[1])[0][0];
+    return allTime !== "M" && EXPECT["fashion-top-size"](views.fashion).answer[0].label === "size M";
+  })()
+);
+check(
+  "and the quarter's top customer is not the one with the old big order",
+  !EXPECT["wholesale-top-customers"](views.wholesale).answer[0].names.includes("Iyer Supermart")
+);
+
+console.log("\nthe numbers in what Luke said");
+const nums = (t) =>
+  numbersIn(t)
+    .map((n) => `${n.value}${n.approx ? "~" : ""}`)
+    .join(" ");
+check("₹31,735 and 31735.00", nums("₹31,735 or 31735.00") === "31735 31735");
+check("Indian grouping", nums("₹3,17,350") === "317350");
+check("a k and a lakh, as approximate", nums("about ₹31.7k, or 1.2 lakh") === "31700~ 120000~");
+const lukeSaid = "Pending COD from the last 7 days is ₹1,528 across 1 order.";
+check("a number said is found", answerChecks(lukeSaid, [{ label: "due", any: [1528, 1398] }])[0].ok);
+check("one not said is not", !answerChecks("It is ₹1,400.", [{ label: "due", any: [1528, 1398] }])[0].ok);
+check("a count is exact", !answerChecks("about 5 of them", [{ label: "n", any: [4] }])[0].ok);
+check(
+  "a rounded figure with a multiplier is near enough",
+  answerChecks("roughly ₹31.7k in all", [{ label: "t", any: [31735] }])[0].ok
+);
+check(
+  "names, every one",
+  answerChecks("Sharma Traders, Gupta Retail and Mehta Stores lead.", [
+    { label: "top", names: ["Sharma Traders", "Gupta Retail", "Mehta Stores"] },
+  ])[0].ok
+);
+check(
+  "and one missing fails",
+  !answerChecks("Sharma Traders and Gupta Retail.", [
+    { label: "top", names: ["Sharma Traders", "Gupta Retail", "Mehta Stores"] },
+  ])[0].ok
+);
+check("a pattern", answerChecks("Size M sold best, 7 pieces.", [{ label: "size", re: "\\b(M|medium)\\b" }])[0].ok);
+
+console.log("\nwhat Luke says it can and can't do");
+check("“I can't see your custom rows” is a can't", cantIn("I can't actually see your custom rows").length === 1);
+check("in Hinglish too", cantIn("Main WhatsApp message nahi bhej sakta").length === 1);
+check("an ordinary answer is not", cantIn("Your pending COD is ₹1,528. Want a counter for it?").length === 0);
+check("capable where it can", capableCheck("Here it is.").ok && !capableCheck("I cannot read that section.").ok);
+check(
+  "honest where it can't",
+  honestCheck("This app can't send WhatsApp messages yet, but I can list who to message.").ok &&
+    !honestCheck("Done, messages sent!").ok
+);
+
+console.log("\nasked first, built once, changed in place");
+check("a question first", asksFirstCheck([{ type: "answer", message: "How do claims reach you today?" }]).ok);
+check(
+  "a design first is not",
+  !asksFirstCheck([{ type: "plans", plans: [{ changeType: "NEW_MODULE" }], message: "Shall I?" }]).ok
+);
+const [b2] = buildChecks(2, [], { max: 2 });
+const [b3] = buildChecks(3, [], { max: 2 });
+check("two builds where two are allowed, three not", b2.ok && !b3.ok);
+const [rebuilt] = buildChecks(
+  2,
+  [{ changeType: "MODULE_DELETE" }, { changeType: "NEW_MODULE", newModule: { nav_label: "Blanks" } }],
+  { edited: true }
+);
+const [twice] = buildChecks(
+  2,
+  [
+    { changeType: "NEW_MODULE", newModule: { nav_label: "Blanks" } },
+    { changeType: "NEW_MODULE", newModule: { nav_label: "Blanks" } },
+  ],
+  { edited: true }
+);
+const [inPlace] = buildChecks(
+  2,
+  [{ changeType: "NEW_MODULE", newModule: { nav_label: "Blanks" } }, { changeType: "UI_CHANGE" }],
+  { edited: true }
+);
+check("a section deleted and made again is not an edit", !rebuilt.ok && !twice.ok && inPlace.ok);
+
+console.log("\nthe rows a build points at");
+const repeat = EXPECT["snacks-repeat-cod"](views.snacks).effect;
+const orderRows = views.snacks.orders.map((o, i) => ({
+  id: `r${i}`,
+  order_number: o.number,
+  gateway: o.cod ? "COD" : "razorpay",
+  repeat_cod: repeat.labels.includes(o.number),
+  note: repeat.labels.includes(o.number) ? "Repeat COD" : "",
+}));
+const ordersSection = (columns, rows = orderRows, stats = []) => [
+  { name: "Orders", table: "orders", storeFields: new Set(["id", "order_number", "gateway"]), columns, rows, stats },
+];
+check(
+  "a tick of the owner's on exactly those orders",
+  effectCheck(ordersSection([{ field: "repeat_cod", label: "Repeat COD", type: "boolean" }]), repeat).ok
+);
+check(
+  "or a badge, whatever it is called",
+  effectCheck(ordersSection([{ field: "note", label: "Call", type: "badge" }]), repeat).ok
+);
+check(
+  "the store's own fields never count",
+  !effectCheck(ordersSection([{ field: "gateway", label: "Gateway", type: "badge" }]), {
+    ...repeat,
+    labels: repeat.labels,
+  }).ok
+);
+const tooMany = orderRows.map((r) => ({ ...r, repeat_cod: r.gateway === "COD" }));
+check(
+  "a tick on every COD order is not it",
+  !effectCheck(ordersSection([{ field: "repeat_cod", label: "Repeat COD", type: "boolean" }], tooMany), repeat).ok
+);
+check(
+  "a counter showing how many is",
+  effectCheck(ordersSection([], orderRows, [{ label: "Repeat COD", value: repeat.count }]), repeat).ok
+);
+check(
+  "and a rule's dry run matching that many is",
+  effectCheck(ordersSection([]), repeat, [{ rule: "Flag repeat COD", matched: repeat.count }]).ok
+);
+check("nothing at all is not", !effectCheck(ordersSection([]), repeat).ok);
+const batches = EXPECT["cosmetics-expiring"]().effect;
+check(
+  "rows of the owner's own section, found by its name",
+  effectCheck(
+    [
+      {
+        name: "Batches",
+        table: null,
+        storeFields: new Set(),
+        columns: [{ field: "soon", label: "Expiring soon", type: "boolean" }],
+        rows: [
+          { id: "1", batch_code: "VCS-2401", soon: true },
+          { id: "2", batch_code: "HYA-2402", soon: true },
+          { id: "3", batch_code: "SPF-2403", soon: false },
+        ],
+      },
+    ],
+    batches
+  ).ok
+);
+
+console.log("\nan event rule, used");
+const blank = EXPECT["cases-blank"](views.cases).exercise;
+const stockRows = views.cases.variants.map((v, i) => ({
+  id: `v${i}`,
+  sku: v.sku,
+  parent: v.type === "Printed" ? "CASE-17PM-CLR" : "",
+  blank_left: v.type === "Printed" ? 50 : null,
+}));
+const stock = [
+  {
+    name: "Stock",
+    table: "variants",
+    storeFields: new Set(["id", "sku"]),
+    columns: [
+      { field: "parent", label: "Blank SKU", type: "text" },
+      { field: "blank_left", label: "Blank count", type: "number" },
+    ],
+    rows: stockRows,
+  },
+];
+check("the designs show the blank's count once it is set", valuesCheck(stock, blank.then).ok);
+check(
+  "and not before",
+  !valuesCheck([{ ...stock[0], rows: stockRows.map((r) => ({ ...r, blank_left: null })) }], blank.then).ok
+);
+check(
+  "the field that ties a design to its blank is found by its words",
+  pickColumn(stock[0].columns, blank.steps[0].tag.field)?.field === "parent"
+);
+check(
+  "and the count's, not the one already taken",
+  pickColumn(stock[0].columns, "blank|count", new Set(["parent"]))?.field === "blank_left"
+);
+
+console.log("\nthe checks a case asks for");
+const qCase = cases.find((x) => x.case.id === "q-cod-pending").case;
+const qx = expectationFor(qCase, views.seed);
+const due = qx.answer[0].any[0];
+const qChecks = outcomeChecks(qCase, qx, {
+  replies: [{ type: "answer", message: `₹${due.toLocaleString("en-IN")} is still to collect.` }],
+  builds: 0,
+  builtPlans: [],
+});
+check(
+  "a question: its number, and no can't",
+  qChecks.map((x) => x.name).join() === "answer: COD still to collect from the last 7 days,capable" &&
+    qChecks.every((x) => x.ok)
+);
+const lCase = cases.find((x) => x.case.id === "l-whatsapp").case;
+check(
+  "an ask the platform can't do: a plain no is what passes",
+  outcomeChecks(
+    lCase,
+    {},
+    { replies: [{ type: "answer", message: "I can't send WhatsApp messages from here." }], builds: 0, builtPlans: [] }
+  )[0].ok
+);
+const scored = {
+  criteria: [{ text: "x", met: true, evidence: "" }],
+  must_not: [{ text: "y", hit: false, evidence: "" }],
+  checks: [
+    { name: "a", ok: true, detail: "" },
+    { name: "b", ok: false, detail: "" },
+  ],
+};
+check("a score out of 10 is the share of everything graded", scoreOf(scored) === 7.5);
+check("a failed check fails the case", !casePassed(scored) && casePassed({ ...scored, checks: [scored.checks[0]] }));
+check(
+  "a question graded by code alone can pass",
+  casePassed({ criteria: [], must_not: [], checks: [{ name: "a", ok: true, detail: "" }] })
+);
+
+console.log("\nthe conversation, played without a model");
+const reply = (r) => ({ ...r, message: r.message ?? "" });
+const play = async (c, script, owner = () => ({ agree: true, pushback: false, say: "" })) => {
+  const sent = [];
+  const built = [];
+  let i = 0;
+  const out = await converse(c, {
+    chat: async (message) => {
+      sent.push(message);
+      return {
+        reply: reply(script[i++]),
+        conversationId: "t1",
+        answerId: `a${i}`,
+        ms: 1000,
+        usd: 0.1,
+        trace: { repairs: 0, refused: [], steps: [] },
+      };
+    },
+    build: async (plans) => {
+      built.push(plans.length);
+      return { ok: true, errors: [] };
+    },
+    sim: async () => ({ said: owner(), usd: 0.001 }),
+  });
+  return { out, sent, built };
+};
+const design = (approved) => ({
+  type: "plans",
+  approved,
+  plans: [{ changeType: "NEW_MODULE", newModule: { nav_label: "Calls" } }],
+});
+const fCase = cases.find((x) => x.case.id === "f-cod-callers").case;
+const f = await play(fCase, [
+  { type: "answer", kind: "proposal", message: "Main ek Calls list banaunga. Bana du?" },
+  design(true),
+  { type: "plans", approved: true, plans: [{ changeType: "FIELD_ADD" }] },
+]);
+check(
+  "said in words, built on the yes, then the follow-up said and built",
+  f.out.builds === 2 && f.sent[1] === "haan bana do" && f.sent[2] === fCase.follow_ups[0] && f.out.proposedFirst
+);
+check("and it stops when the follow-ups are said", f.sent.length === 3 && f.out.lines.at(-1).text === "Built.");
+const q = await play(qCase, [
+  { type: "answer", message: "₹1,528 is pending." },
+  { type: "answer", message: "never asked" },
+]);
+check("a question ends when it is answered, with no second turn paid for", q.sent.length === 1);
+const askedBack = await play(
+  qCase,
+  [
+    { type: "answer", message: "Which 7 days?", questions: [{ question: "Which 7 days?" }] },
+    { type: "answer", message: "₹1,528." },
+  ],
+  () => ({ agree: false, pushback: false, say: "aaj ko mila ke" })
+);
+check(
+  "unless Luke asks back: then the owner answers and Luke answers",
+  askedBack.sent.length === 2 && askedBack.sent[1] === "aaj ko mila ke"
+);
+const kept = { lines: [], trace: [] };
+let stoppedAt = null;
+try {
+  await converse(qCase, {
+    ...kept,
+    turn: (n) => {
+      if (n === 2) throw new CapReached("the cap");
+    },
+    chat: async () => ({
+      reply: { type: "answer", message: "Which week?", questions: [{ question: "Which week?" }] },
+      conversationId: "t",
+      answerId: "a",
+      ms: 1,
+      usd: 0.1,
+      trace: { repairs: 0, refused: [], steps: [] },
+    }),
+    build: async () => ({ ok: true, errors: [] }),
+    sim: async () => ({ said: { agree: false, pushback: false, say: "this week" }, usd: 0 }),
+  });
+} catch (e) {
+  stoppedAt = e;
+}
+check(
+  "a run the cap stops keeps what was said, in the caller's own lines",
+  stoppedAt instanceof CapReached && kept.lines.length === 2 && kept.trace.length === 1
+);
+
+console.log("\nwhich cases a run is, and dates in a case");
+const plain = cases.map((x) => x.case);
+const smoke = selectCases(plain, { set: "smoke" });
+check(
+  "the smoke set is six, across the kinds",
+  smoke.length === 6 && new Set(smoke.map((c) => c.kind ?? "build")).size >= 4
+);
+const a = selectCases(plain, { set: "full-a" });
+const b = selectCases(plain, { set: "full-b" });
+check("the two halves are every case once", a.length + b.length === plain.length && a.every((c) => !b.includes(c)));
+check("named cases win", selectCases(plain, { cases: ["q-owed"] })[0].id === "q-owed");
+check(
+  "{{days:+45}} is that day, in India",
+  fillDates({ x: ["{{days:+45}}"] }, Date.UTC(2026, 9, 12, 20)).x[0] === "2026-11-27"
+);
+check(
+  "the arguments take a set",
+  parseArgs(["--label", "smoke", "--max-usd", "2.5", "--set", "smoke"]).set === "smoke"
+);
+check(
+  "but not a set and names at once",
+  !!parseArgs(["--label", "x", "--max-usd", "1", "--set", "smoke", "--cases", "q-owed"]).error
 );
 
 console.log("\nwhere a run is written");

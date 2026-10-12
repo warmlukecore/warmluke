@@ -1741,10 +1741,23 @@ export async function searchOrders(
   store: Pick<StoreBrief, "id" | "timezone">,
   search: OrderSearch = {}
 ): Promise<OrderHit[]> {
+  return (await searchOrdersCounted(db, store, search)).orders;
+}
+
+/**
+ * The same search, with how many orders matched in all: a page of twenty
+ * was being read as "twenty orders yesterday" when there were eighty.
+ */
+export async function searchOrdersCounted(
+  db: SupabaseClient,
+  store: Pick<StoreBrief, "id" | "timezone">,
+  search: OrderSearch = {}
+): Promise<{ orders: OrderHit[]; matched: number }> {
   let q = db
     .from("orders")
     .select(
-      "order_number, placed_at, total, total_original, currency, financial_status, fulfilment_status, cancelled_at, tags, customers(name, phone, email)"
+      "order_number, placed_at, total, total_original, currency, financial_status, fulfilment_status, cancelled_at, tags, customers(name, phone, email)",
+      { count: "exact" }
     )
     .eq("store_id", store.id)
     .order("placed_at", { ascending: false })
@@ -1796,10 +1809,10 @@ export async function searchOrders(
       : q.ilike("order_number", `%${term}%`);
   }
 
-  const { data, error } = await q;
+  const { data, count, error } = await q;
   if (error) throw new Error(error.message);
 
-  return (data ?? []).map((row) => {
+  const orders = (data ?? []).map((row) => {
     // PostgREST returns one object for a to-one relation, but the client
     // types every embed as an array. Both are handled rather than cast
     // away, because the cast is what turns a wrong shape into a crash
@@ -1814,6 +1827,7 @@ export async function searchOrders(
       customer: Array.isArray(customers) ? (customers[0] ?? null) : (customers ?? null),
     };
   });
+  return { orders, matched: count ?? orders.length };
 }
 
 /**
@@ -1827,15 +1841,60 @@ export async function searchOrders(
 export async function lowStock(
   db: SupabaseClient,
   storeId: string,
-  { threshold = 5, limit = 50 }: { threshold?: number; limit?: number } = {}
+  opts: { threshold?: number; limit?: number } = {}
 ): Promise<
   Array<{ product: string | null; variant: string | null; sku: string | null; location: string; available: number }>
 > {
-  const { data, error } = await db
+  return (await lowStockCounted(db, storeId, opts)).rows;
+}
+
+/**
+ * How many are at or below a number, and how many already out, over the
+ * whole store: a list of the fifteen lowest was being read as "fifteen out
+ * of stock" in a store with 311. Tracked variants only, as the Overview
+ * counts: one Shopify does not count reads zero and is not a shortage.
+ */
+export async function stockCounts(
+  db: SupabaseClient,
+  storeId: string,
+  threshold = 10
+): Promise<{ low: number; out: number }> {
+  const atOrBelow = async (n: number) => {
+    const { count, error } = await db
+      .from("inventory_levels")
+      .select("id, variants!inner(tracked)", { count: "exact", head: true })
+      .eq("store_id", storeId)
+      .lte("available", n)
+      .not("variants.tracked", "is", false);
+    if (error) throw new Error(error.message);
+    return count ?? 0;
+  };
+  const [low, out] = await Promise.all([atOrBelow(Math.max(threshold, 0)), atOrBelow(0)]);
+  return { low, out };
+}
+
+/** The lowest, and how many are at or below the number in all. */
+export async function lowStockCounted(
+  db: SupabaseClient,
+  storeId: string,
+  { threshold = 5, limit = 50 }: { threshold?: number; limit?: number } = {}
+): Promise<{
+  rows: Array<{
+    product: string | null;
+    variant: string | null;
+    sku: string | null;
+    location: string;
+    available: number;
+  }>;
+  matched: number;
+}> {
+  const { data, count, error } = await db
     .from("inventory_levels")
-    .select("available, location_name, variants(title, sku, products(title))")
+    .select("available, location_name, variants!inner(title, sku, tracked, products(title))", { count: "exact" })
     .eq("store_id", storeId)
     .lte("available", Math.max(threshold, 0))
+    // Not counted by Shopify is not short (STORE_TABLES.inventory_levels says so to Luke).
+    .not("variants.tracked", "is", false)
     .order("available", { ascending: true })
     .order("location_name", { ascending: true })
     .limit(Math.min(Math.max(limit, 1), MAX_LIMIT));
@@ -1846,7 +1905,7 @@ export async function lowStock(
   // an unbroken tie reshuffles between reads.
   // ponytail: a tie across the limit's edge can still swap which row is cut; sort in SQL if that ever shows.
   const name = (x: { product: string | null; variant: string | null }) => `${x.product ?? ""} ${x.variant ?? ""}`;
-  return (data ?? [])
+  const rows = (data ?? [])
     .map((r) => {
       const row = r as unknown as Record<string, unknown>;
       const v = one(row.variants as { title?: string; sku?: string; products?: unknown } | null);
@@ -1862,6 +1921,7 @@ export async function lowStock(
     .sort(
       (a, b) => a.available - b.available || a.location.localeCompare(b.location) || name(a).localeCompare(name(b))
     );
+  return { rows, matched: count ?? rows.length };
 }
 
 /**

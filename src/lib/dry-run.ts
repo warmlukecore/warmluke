@@ -5,6 +5,17 @@
 // every row every hour looks like any other rule on paper; counted, it
 // does not.
 //
+// A rule of code is run for real, as its runs will run it (12 Oct): the
+// runtime's own reader of the sections it reads, the same input and the
+// same sandbox (lib/code-rules, lib/code-run), on rows of its section as if
+// each had just been added or changed, and what it hands back is read,
+// never written. A rule that throws, writes a field that is not there or a
+// section it does not read, or reads a list only in part, is a problem
+// found before the owner sees it; one that changes nothing is said so. A
+// rule set off by a change is tried as if each row had just changed. Before,
+// both were "tried on their first run", and a rule handed 500 of 2,058 rows
+// wrote nothing for a day (Parent Stock, 11 Oct).
+//
 // No model and no write. The rows are read on the caller's own client,
 // so RLS decides what may be counted, and the expressions are worked out
 // by lib/expr, the runtime's own twin of the database's evaluator: a
@@ -12,9 +23,11 @@
 //
 // The section reader here is the data check's too (lib/data-check.ts).
 //
-// Callers: src/lib/review-gate.ts, src/lib/data-check.ts.
+// Callers: src/lib/review-gate.ts, src/lib/data-check.ts, src/lib/verify.ts.
 
 import { isOperator, isServerOnly } from "@/lib/capabilities";
+import { codeInput, placeFor, readSections, storeClock, storeZone } from "@/lib/code-rules";
+import { ADDS_MAX, SETS_MAX, canRunCode, runCodeEach } from "@/lib/code-run";
 import { evalExpr, truthy, withComputed } from "@/lib/expr";
 import { findSection } from "@/lib/section-ref";
 import { STORE_TABLES, isStoreTable, storeSectionColumns, type StoreTable } from "@/lib/store-read";
@@ -33,6 +46,19 @@ const STORE_PAGE = 200;
 const OWN_PAGE = 1000;
 /** Touching every row means something only past a handful of them. */
 const EVERY_ROW_AT = 20;
+/** Trying a design's rules of code: a sandbox to start, and the sections they read, whole. */
+export const CODE_BUDGET_MS = 20_000;
+/** Rows of a rule's own section it is tried on, as if each had just been added or changed. */
+const TRY_ROWS = 3;
+
+/** What trying a rule of code reaches: the runtime's reader, sandbox and clock; a check stands in for them. */
+export type CodeTry = {
+  can: () => boolean;
+  read: typeof readSections;
+  run: typeof runCodeEach;
+  zone: typeof storeZone;
+};
+const RUNTIME: CodeTry = { can: canRunCode, read: readSections, run: runCodeEach, zone: storeZone };
 
 /** A value as the runtime reads it for comparing: blank for nothing, else its text. */
 export const txt = (v: unknown): string => (v === null || v === undefined ? "" : String(v));
@@ -160,7 +186,7 @@ export async function readSection(ctx: ReviewContext, at: Section, facets: strin
           facets: asked,
         },
       });
-    type Page = { rows?: Array<{ data?: Row }>; total?: number; facets?: Record<string, string[]> };
+    type Page = { rows?: Array<{ id?: string; data?: Row }>; total?: number; facets?: Record<string, string[]> };
     const first = await page(0, facets);
     if (first.error) throw new Error(first.error.message);
     const got = (first.data ?? {}) as Page;
@@ -174,7 +200,7 @@ export async function readSection(ctx: ReviewContext, at: Section, facets: strin
       if (r.error) throw new Error(r.error.message);
       pages.push((r.data ?? {}) as Page);
     }
-    raw = pages.flatMap((p) => (p.rows ?? []).map((r) => r.data ?? {}));
+    raw = pages.flatMap((p) => (p.rows ?? []).map((r) => ({ ...r.data, id: r.id ?? r.data?.id })));
   } else {
     for (let from = 0; from < ROWS_READ; from += OWN_PAGE) {
       const {
@@ -183,14 +209,14 @@ export async function readSection(ctx: ReviewContext, at: Section, facets: strin
         error,
       } = await ctx.db
         .from("records")
-        .select("data", from === 0 ? { count: "exact" } : undefined)
+        .select("id, data", from === 0 ? { count: "exact" } : undefined)
         .eq("module_id", at.mod.id)
         .is("store_row_id", null)
         .order("created_at", { ascending: false })
         .range(from, Math.min(from + OWN_PAGE, ROWS_READ) - 1);
       if (error) throw new Error(error.message);
       if (from === 0) total = n ?? (data ?? []).length;
-      raw.push(...(data ?? []).map((r) => ((r as { data?: Row }).data ?? {}) as Row));
+      raw.push(...(data ?? []).map((r) => ({ ...(r as { data?: Row }).data, id: (r as { id?: string }).id })));
       if (from + OWN_PAGE >= total) break;
     }
   }
@@ -209,12 +235,12 @@ export async function readSection(ctx: ReviewContext, at: Section, facets: strin
  * Never throws: a check that cannot look says nothing rather than
  * stopping the design it was reading.
  */
-export async function inBudget<T>(ctx: ReviewContext, work: (out: T[]) => Promise<void>): Promise<T[]> {
+export async function inBudget<T>(ctx: ReviewContext, work: (out: T[]) => Promise<void>, ms = BUDGET_MS): Promise<T[]> {
   if (ctx.signal?.aborted) return [];
   const out: T[] = [];
   let quit!: () => void;
   const stop = new Promise<void>((resolve) => (quit = resolve));
-  const timer = setTimeout(quit, BUDGET_MS);
+  const timer = setTimeout(quit, ms);
   ctx.signal?.addEventListener("abort", quit, { once: true });
   try {
     await Promise.race([work(out), stop]);
@@ -234,24 +260,77 @@ export async function inBudget<T>(ctx: ReviewContext, work: (out: T[]) => Promis
  * Each rule the design adds or changes (AUTOMATION_ADD), tried on the
  * rows it would meet: how many its condition matches, or would change,
  * of how many looked at, and three of them by name. `plan` is the
- * rule's place in `plans`. A rule that cannot be told without running
- * (its own code, a count over other rows, a change as it happens) is
- * said so, with no count.
+ * rule's place in `plans`. A rule of code is run as its runs will run it
+ * (tryCode), after the rest, its place held by "not tried in time" until
+ * it is; a rule that counts other rows as it runs is said so, with no count.
  */
-export async function dryRunRules(ctx: ReviewContext, plans: AssistantPlan[]): Promise<DryRun[]> {
-  return inBudget<DryRun>(ctx, async (out) => {
-    const read = new Map<string, Promise<SectionRows>>();
-    const rowsOf = (at: Section) => {
-      if (!read.has(at.mod.id)) read.set(at.mod.id, readSection(ctx, at));
-      return read.get(at.mod.id)!;
-    };
-    for (const [i, plan] of plans.entries()) {
-      if (plan.changeType !== "AUTOMATION_ADD" || !plan.automation?.definition) continue;
-      const tried = await tryRule(ctx, plans, i, plan, rowsOf);
-      if (tried) out.push(tried);
-    }
-  });
+export async function dryRunRules(
+  ctx: ReviewContext,
+  plans: AssistantPlan[],
+  use: CodeTry = RUNTIME
+): Promise<DryRun[]> {
+  const rules = [...plans.entries()].filter(([, p]) => p.changeType === "AUTOMATION_ADD" && !!p.automation?.definition);
+  return inBudget<DryRun>(
+    ctx,
+    async (out) => {
+      const read = new Map<string, Promise<SectionRows>>();
+      const rowsOf = (at: Section) => {
+        if (!read.has(at.mod.id)) read.set(at.mod.id, readSection(ctx, at));
+        return read.get(at.mod.id)!;
+      };
+      for (const [i, plan] of rules.filter(([, p]) => !coded(p))) {
+        const tried = await tryRule(ctx, plans, i, plan, rowsOf);
+        if (tried) out.push(tried);
+      }
+      for (const [i, plan] of rules.filter(([, p]) => coded(p))) {
+        const at = sectionFor(ctx, plans, plan.targetModuleId);
+        if (!at) continue;
+        const name = plan.automation!.name;
+        if ("made" in at) {
+          out.push(
+            blank(i, name, at.made, `${at.made} is new in this design, so it has no rows to try the rule on yet.`)
+          );
+          continue;
+        }
+        const place = out.push(blank(i, name, at.name, "Not tried in time.")) - 1;
+        out[place] = await tryCode(ctx, plans, i, plan, at, rowsOf, use);
+      }
+    },
+    rules.some(([, p]) => coded(p)) ? CODE_BUDGET_MS : BUDGET_MS
+  );
 }
+
+/** Whether a plan's rule has code of its own to run. */
+const coded = (p: AssistantPlan) => (p.automation?.definition?.actions ?? []).some((a) => a.type === "run_code");
+
+/** A field as a column calls it. */
+const label = (f: string, cols: SchemaColumn[]) => cols.find((c) => c.field === f)?.label ?? f;
+
+/** A rule's line with no count: what can be said of it instead. */
+const blank = (plan: number, rule: string, section: string, note: string): DryRun => ({
+  plan,
+  rule,
+  section,
+  matched: null,
+  of: null,
+  sample: [],
+  note,
+  everyRow: false,
+});
+
+/** The fields a rule watches change: what its `changed` and `was` read. */
+function watchedBy(said: Row[]): string[] {
+  const read = said.flatMap((n) =>
+    "was" in n ? [txt(n.was)] : n.op === "changed" ? [txt((n.args as Row[] | undefined)?.[0]?.field)] : []
+  );
+  return [...new Set(read.filter(Boolean))];
+}
+
+/** A row as it was just before those fields changed: blank where they hold something now, something where they are blank. */
+const before = (r: Row, fields: string[]): Row => ({
+  ...r,
+  ...Object.fromEntries(fields.map((f) => [f, txt(r[f]) === "" ? "‹before›" : null])),
+});
 
 async function tryRule(
   ctx: ReviewContext,
@@ -261,23 +340,12 @@ async function tryRule(
   rowsOf: (at: Section) => Promise<SectionRows>
 ): Promise<DryRun | null> {
   const { name, definition } = plan.automation!;
-  const told = (section: string, note: string): DryRun => ({
-    plan: i,
-    rule: name,
-    section,
-    matched: null,
-    of: null,
-    sample: [],
-    note,
-    everyRow: false,
-  });
+  const told = (section: string, note: string): DryRun => blank(i, name, section, note);
   const at = sectionFor(ctx, plans, plan.targetModuleId);
   if (!at) return null;
   if ("made" in at) return told(at.made, `${at.made} is new in this design, so it has no rows to try the rule on yet.`);
 
   const actions = Array.isArray(definition.actions) ? definition.actions : [];
-  // ponytail: v1 tries no code; a rule of code could be run on a copy of these rows (lib/code-run) once its count is wanted.
-  if (actions.some((a) => a.type === "run_code")) return told(at.name, "A rule of code is tried on its first run.");
   if (actions.some((a) => a.type === "ai_fill"))
     return told(
       at.name,
@@ -295,14 +363,15 @@ async function tryRule(
           : []
     ),
   ].flatMap(nodes);
-  if (said.some((n) => "was" in n || n.op === "changed"))
-    return told(at.name, "It fires as a row changes, so today's rows cannot say how often.");
+  // Set off by a change: tried as if each row's watched fields had just changed.
+  const watched = watchedBy(said);
+  const prevOf = (r: Row): Row => (watched.length ? before(r, watched) : {});
   if (said.some((n) => isOperator(n.op) && isServerOnly(n.op)))
     return told(at.name, "It counts other rows as it runs, so it is told on its first run.");
 
   const got = await rowsOf(at);
   // The rows its condition picks, read as the runtime reads them.
-  const hits = when === undefined ? got.rows : got.rows.filter((r) => truthy(evalExpr(when, r)));
+  const hits = when === undefined ? got.rows : got.rows.filter((r) => truthy(evalExpr(when, r, prevOf(r))));
   let counted = hits;
   let of = got.rows.length;
   let where = at.name;
@@ -314,7 +383,7 @@ async function tryRule(
   if (self?.type === "set_fields") {
     // Only the rows it would really change: a value already there is no change.
     counted = hits.filter((r) =>
-      Object.entries(self.set ?? {}).some(([f, e]) => txt(evalExpr(e, r, {}, r)) !== txt(r[f]))
+      Object.entries(self.set ?? {}).some(([f, e]) => txt(evalExpr(e, r, prevOf(r), r)) !== txt(r[f]))
     );
   } else if (other?.type === "set_fields" && !("self" in other.target)) {
     const { module_id, match } = other.target;
@@ -324,7 +393,7 @@ async function tryRule(
       return told(there.made, `${there.made} is new in this design, so it has no rows for the rule to change yet.`);
     const theirs = await rowsOf(there);
     // The rows it writes to are found by plain equal text, as the runtime finds them.
-    const keys = new Set(hits.map((r) => txt(evalExpr(match.to, r))).filter(Boolean));
+    const keys = new Set(hits.map((r) => txt(evalExpr(match.to, r, prevOf(r)))).filter(Boolean));
     counted = theirs.rows.filter((t) => keys.has(txt(t[match.field])));
     of = theirs.rows.length;
     where = there.name;
@@ -337,6 +406,10 @@ async function tryRule(
   }
   if (where === at.name && got.total > got.rows.length)
     notes.push(`Tried on the newest ${count(of, ctx.locale)} of ${count(got.total, ctx.locale)}.`);
+  if (watched.length)
+    notes.unshift(
+      `As if each row's ${watched.map((f) => at.columns.find((c) => c.field === f)?.label ?? f).join(" and ")} had just changed.`
+    );
   if (of === 0) notes.push(`${where} has no rows yet.`);
   else if (definition.trigger?.type !== "schedule")
     notes.push("It runs as rows are saved; this is how many match today.");
@@ -349,6 +422,151 @@ async function tryRule(
     of,
     sample: [...new Set(counted.map(label).filter(Boolean))].slice(0, 3),
     note: notes.join(" ") || null,
-    everyRow: counted.length === of && of >= EVERY_ROW_AT,
+    everyRow: counted.length === of && of >= EVERY_ROW_AT && !watched.length,
+  };
+}
+
+/**
+ * A rule of code, run as its runs will run it, nothing written: on a
+ * schedule once with its section's rows; set off by a row, on up to
+ * TRY_ROWS of its section's newest rows that would set it off (as if each
+ * had just been added, or its watched fields had just changed), or, when
+ * none would, on the newest as if they did. The sections it reads come
+ * through the runtime's own reader, whole, so a reader that falls short
+ * falls short here too. What it hands back is read for what would stop it
+ * working, and counted.
+ */
+async function tryCode(
+  ctx: ReviewContext,
+  plans: AssistantPlan[],
+  i: number,
+  plan: AssistantPlan,
+  at: Section,
+  rowsOf: (at: Section) => Promise<SectionRows>,
+  use: CodeTry
+): Promise<DryRun> {
+  const { name, definition } = plan.automation!;
+  const told = (note: string): DryRun => blank(i, name, at.name, note);
+  if (!use.can()) return told("Not tried here: there is no sandbox to run code in.");
+  const on = definition.trigger?.type;
+  const when = definition.trigger?.when;
+  const clock = storeClock(await use.zone(ctx.db, ctx.projectId));
+
+  // What sets it off, as the runtime hands it over.
+  let given: Array<{ row: Row; previous: Row | null } | { rows: Row[] }>;
+  let tried: Row[] = [];
+  let lead: string;
+  const got = await rowsOf(at);
+  if (on === "schedule") {
+    const own = await use.read(ctx.db, ctx.projectId, [at.mod.id]);
+    const rows = (Object.values(own.rows)[0] ?? [])
+      .map((r) => ({ ...withComputed(at.columns, r), id: r.id }))
+      .filter((r) => when === undefined || truthy(evalExpr(when, r, {})));
+    given = [{ rows }];
+    tried = rows;
+    lead = `Run once now, on the ${count(rows.length, ctx.locale)} ${at.name} rows it would be handed`;
+  } else {
+    const watched = watchedBy(nodes(when));
+    const changed = on === "record_updated";
+    const prevOf = (r: Row): Row | null => (changed ? (watched.length ? before(r, watched) : { ...r }) : null);
+    const fires = got.rows
+      .filter((r) => when === undefined || truthy(evalExpr(when, r, prevOf(r) ?? {})))
+      .slice(0, TRY_ROWS);
+    tried = fires.length ? fires : got.rows.slice(0, TRY_ROWS);
+    if (!tried.length) return told(`${at.name} has no rows yet: it is tried when its first comes in.`);
+    given = tried.map((r) => ({ row: r, previous: prevOf(r) }));
+    const names = tried.map(got.label).filter(Boolean);
+    const which = names.length ? names.map((n) => `'${n}'`).join(", ") : `${tried.length} of its rows`;
+    const what = changed
+      ? watched.length
+        ? `${watched.map((f) => label(f, at.columns)).join(" and ")} on ${which} had just changed`
+        : `${which} had just been changed`
+      : `${which} had just been added`;
+    lead = fires.length
+      ? `Tried as if ${what}`
+      : `None of the newest ${at.name} rows would set it off; tried as if ${what}`;
+  }
+
+  // Run, and read what it hands back.
+  const problems = new Set<string>();
+  const wrote = new Map<string, { section: string; of: number | null; rows: Set<string>; fields: Set<string> }>();
+  let added = 0;
+  for (const a of definition.actions ?? []) {
+    if (a.type !== "run_code") continue;
+    const read = await use.read(ctx.db, ctx.projectId, a.reads ?? []);
+    for (const [section, size] of Object.entries(read.sizes))
+      if (size.cut)
+        problems.add(
+          `It reads only the first ${count(size.rows, ctx.locale)} rows of ${section}; the rest are never seen.`
+        );
+    const outs = await use.run(
+      a.code,
+      given.map((g) => codeInput(g, read, clock))
+    );
+    for (const out of outs) {
+      if (!out.ok) {
+        problems.add(`It stops with: ${out.error}`);
+        continue;
+      }
+      const { set, add } = out.result;
+      if (set.length > SETS_MAX)
+        problems.add(`It would set ${count(set.length, ctx.locale)} rows in one run; a run sets at most ${SETS_MAX}.`);
+      if (add.length > ADDS_MAX)
+        problems.add(`It would add ${count(add.length, ctx.locale)} rows in one run; a run adds at most ${ADDS_MAX}.`);
+      if (add.length && at.table)
+        problems.add(`It adds rows to ${at.name}, a list over the store, which takes no new rows.`);
+      else added += add.length;
+      for (const s of set) {
+        const place = s.section ? placeFor(read, s.section) : { moduleId: at.mod.id, table: at.table };
+        if (!place) {
+          problems.add(`It writes to "${s.section}", which it does not read: that write lands nowhere.`);
+          continue;
+        }
+        const there = place.moduleId === at.mod.id ? at : sectionFor(ctx, plans, place.moduleId);
+        if (!there || "made" in there) continue;
+        const theirs = new Set(there.table ? STORE_TABLES[there.table].columns.map((c) => c.field) : []);
+        for (const f of Object.keys(s.fields ?? {})) {
+          const col = there.columns.find((c) => c.field === f);
+          if (!col) problems.add(`It writes "${f}" on ${there.name}, which has no such field.`);
+          else if (col.compute)
+            problems.add(`It writes ${col.label} on ${there.name}, which is worked out and cannot be written.`);
+          else if (theirs.has(f))
+            problems.add(
+              `It writes ${col.label} on ${there.name}, which is the store's own and changes only in Shopify.`
+            );
+        }
+        // The row it names must be one it was handed: any other write is refused.
+        const key = Object.entries(read.places).find(([, p]) => p.moduleId === place.moduleId)?.[0];
+        const pool = key ? (read.rows[key] ?? []) : tried;
+        if (!pool.some((r) => String(r.id) === String(s.id)))
+          problems.add(`It writes to a row of ${there.name} it was not handed, so that write would be refused.`);
+        const size = key ? (read.sizes[there.name]?.rows ?? pool.length) : null;
+        const w = wrote.get(there.mod.id) ?? { section: there.name, of: size, rows: new Set(), fields: new Set() };
+        w.rows.add(String(s.id));
+        for (const f of Object.keys(s.fields ?? {})) w.fields.add(label(f, there.columns));
+        wrote.set(there.mod.id, w);
+      }
+    }
+  }
+
+  const each = [...wrote.values()];
+  const changes = [
+    ...each.map(
+      (w) =>
+        `would set ${[...w.fields].join(", ")} on ${count(w.rows.size, ctx.locale)} ${w.section} ${w.rows.size === 1 ? "row" : "rows"}`
+    ),
+    ...(added ? [`would add ${count(added, ctx.locale)} ${added === 1 ? "row" : "rows"}`] : []),
+  ];
+  const first = each[0];
+  return {
+    plan: i,
+    rule: name,
+    section: first?.section ?? at.name,
+    matched: each.reduce((n, w) => n + w.rows.size, 0) + added,
+    of: first?.of ?? null,
+    sample: [],
+    note: `${lead}: ${changes.length ? changes.join("; ") : "it changed nothing"}.`,
+    everyRow: false,
+    problem: problems.size ? [...problems].slice(0, 3).join(" ") : null,
   };
 }

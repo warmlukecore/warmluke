@@ -1,0 +1,20 @@
+{
+  "id": "q-owed",
+  "title": "What the shops owe right now",
+  "language": "english",
+  "kind": "question",
+  "shop": "wholesale",
+  "persona": "Wholesale distributor selling to shops on 30-day credit, chasing payments every week.",
+  "before": [],
+  "opening": "How much do my B2B customers owe me right now?",
+  "facts": {
+    "what is owed": "every order not paid yet, whatever its age",
+    "cancelled": "none of those count"
+  },
+  "success": [],
+  "must_not": [],
+  "max_turns": 2,
+  "expect": {
+    "answer": "wholesale-owed"
+  }
+}

@@ -137,11 +137,17 @@ export async function turnContext(
     }
   }
 
-  const { data: historyRows, error: histErr } = convId
+  const {
+    data: historyRows,
+    count: threadLength,
+    error: histErr,
+  } = convId
     ? await client
         .from("messages")
         .select(
-          "role, content, ptype:payload->>type, said:payload->>text, kind:payload->>kind, offered:payload->>offered_store"
+          "role, content, ptype:payload->>type, said:payload->>text, kind:payload->>kind, offered:payload->>offered_store",
+          // How long the thread is, beside the newest it reads: the rest is said to be there.
+          { count: "exact" }
         )
         .eq("conversation_id", convId)
         .lt("created_at", before ?? "infinity")
@@ -153,7 +159,7 @@ export async function turnContext(
         // requirements the owner had already replaced.
         .order("created_at", { ascending: false })
         .limit(HISTORY_LIMIT)
-    : { data: [], error: null };
+    : { data: [], count: 0, error: null };
   if (histErr) throw new Error(histErr.message);
 
   type HistoryRow = Pick<MessageRow, "role" | "content"> & {
@@ -172,13 +178,27 @@ export async function turnContext(
   // the fresh one on the newest turn.
   // A question whose answer never came is replayed only while it is the
   // latest thing asked, its stand-in said as NOT_ANSWERED (answeredTurns).
-  const history = historyOf(rows);
+  const history = withEarlier(historyOf(rows), (threadLength ?? 0) - rows.length);
 
   // Has the owner already seen a design for this thread? New sections may
   // only be built after one — otherwise the assistant can skip straight to
   // creating things the owner never agreed to.
   const blueprintShown = rows.some((m) => m.ptype === "blueprint");
   return { proj, moduleList, currentSchema, currentFeatures, history, blueprintShown, meetState: meetStateOf(rows) };
+}
+
+/**
+ * A thread longer than what is read says so before its first turn (12 Oct):
+ * cut silently at 30, an older decision was neither seen nor asked about.
+ * Nothing changes for a thread read whole.
+ */
+export function withEarlier(history: ChatTurn[], hidden: number): ChatTurn[] {
+  if (hidden <= 0 || history.length === 0) return history;
+  const note = `(This thread is longer than shown: its first ${hidden} messages are not here. If something decided earlier matters, ask; do not assume.)`;
+  const [first, ...rest] = history;
+  return first.role === "user"
+    ? [{ ...first, content: `${note}\n\n${first.content}` }, ...rest]
+    : [{ role: "user", content: note }, ...history];
 }
 
 /**

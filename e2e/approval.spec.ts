@@ -86,3 +86,86 @@ test("a teammate's press waits in the owner's bell, and Approve does it", async 
     await shop.admin.from("modules").delete().eq("id", mod!.id);
   }
 });
+
+// Luke's ask over rows (0208, lib/app-actions): one card for the whole ask,
+// who asked and how many rows said on it, and one yes changes them all.
+test("Luke's ask to change two rows waits as one card, and one yes changes both", async ({ signedIn: page, shop }) => {
+  const made = await page.request.post("/api/apply", {
+    headers: { Authorization: `Bearer ${(shop.session as { access_token: string }).access_token}` },
+    data: {
+      projectId: shop.projectId,
+      plans: [
+        {
+          changeType: "NEW_MODULE",
+          targetModuleId: null,
+          newModule: { name: "e2e-ask-blanks", nav_label: "Blanks", icon: "table" },
+          newSchema: {
+            columns: [
+              { field: "sku", label: "SKU", type: "text" },
+              { field: "qty", label: "Quantity", type: "number" },
+            ],
+          },
+          features: null,
+          newRecords: null,
+          explanation: "Blanks, counted.",
+        },
+      ],
+    },
+  });
+  expect(made.ok(), "the section was built").toBe(true);
+  const { data: mod } = await shop.admin
+    .from("modules")
+    .select("id")
+    .eq("project_id", shop.projectId)
+    .eq("name", "e2e-ask-blanks")
+    .single();
+  const { data: recs } = await shop.admin
+    .from("records")
+    .insert(
+      ["POX-ONE", "POX-TWO"].map((sku) => ({ project_id: shop.projectId, module_id: mod!.id, data: { sku, qty: 3 } }))
+    )
+    .select("id");
+  // As abo_ask_rows keeps it when Luke asks.
+  const batch = crypto.randomUUID();
+  const summary = "Set “Quantity” to “500” on 2 rows of Blanks";
+  await shop.admin.from("row_approvals").insert(
+    recs!.map((r) => ({
+      project_id: shop.projectId,
+      module_id: mod!.id,
+      record_id: r.id,
+      action: `change:${batch}`,
+      row_label: "",
+      set: { qty: 500 },
+      before: { qty: 3 },
+      kind: "change",
+      batch,
+      asked_via: "luke",
+      summary,
+      asked_by: shop.userId,
+    }))
+  );
+  try {
+    await page.goto(`/app/${shop.projectId}?section=${mod!.id}`);
+    await expect(page.getByRole("cell", { name: "POX-ONE" })).toBeVisible({ timeout: 30_000 });
+    if ((page.viewportSize()?.width ?? 0) < 1024) await page.getByRole("button", { name: /^Luke/ }).first().click();
+    const panel = page.getByRole("complementary", { name: "Luke" });
+    await panel.getByRole("button", { name: /want your attention/ }).click();
+    await expect(panel.getByText("LUKE ASKS · BLANKS")).toBeVisible();
+    await expect(panel.getByText(summary)).toBeVisible();
+    await expect(panel.getByText(/^2 rows · /)).toBeVisible();
+    await page.screenshot({
+      path: `${process.env.LOOK_DIR ?? "test-results"}/ask-card-${test.info().project.name}.png`,
+    });
+    await panel.getByRole("button", { name: "Approve all 2" }).click();
+    await expect(panel.getByText("LUKE ASKS · BLANKS")).toHaveCount(0);
+    await expect
+      .poll(async () =>
+        ((await shop.admin.from("records").select("data").eq("module_id", mod!.id)).data ?? []).map((r) =>
+          Number(r.data.qty)
+        )
+      )
+      .toEqual([500, 500]);
+  } finally {
+    await shop.admin.from("modules").delete().eq("id", mod!.id);
+  }
+});

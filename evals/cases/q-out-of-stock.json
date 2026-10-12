@@ -1,0 +1,20 @@
+{
+  "id": "q-out-of-stock",
+  "title": "Which products have nothing left",
+  "language": "english",
+  "kind": "question",
+  "shop": "cases",
+  "persona": "Phone-case brand owner, about to place a print run, wants the list of what has run out.",
+  "before": [],
+  "opening": "Which of my products are completely out of stock right now?",
+  "facts": {
+    "what counts as out of stock": "nothing left in any variant",
+    "draft products": "ignore them"
+  },
+  "success": [],
+  "must_not": [],
+  "max_turns": 2,
+  "expect": {
+    "answer": "cases-out-of-stock"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "id": "q-big-cod",
+  "title": "High-value cash on delivery this month",
+  "language": "english",
+  "kind": "question",
+  "shop": "gadgets",
+  "persona": "Electronics seller worried about returns on expensive cash-on-delivery orders.",
+  "before": [],
+  "opening": "In the last 30 days, how many COD orders were above ₹5,000, and what do they add up to?",
+  "facts": {
+    "above 5,000 means": "the products in the order cost more than 5,000",
+    "cancelled": "leave those out"
+  },
+  "success": [],
+  "must_not": [],
+  "max_turns": 2,
+  "expect": {
+    "answer": "gadgets-big-cod"
+  },
+  "smoke": true
+}

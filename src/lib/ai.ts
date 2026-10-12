@@ -24,6 +24,7 @@ import {
   type LanguageModelMiddleware,
   type ModelMessage,
   type SystemModelMessage,
+  type StopCondition,
   type ToolSet,
 } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
@@ -184,7 +185,7 @@ HOW TO CHOOSE changeType:
 - MODULE_UPDATE — nav metadata only: rename label, change icon, move it inside another section (parent_id), reposition (sort_order: below the lowest existing value for top, midpoint like 1.5 for between, above max for bottom).
 - MODULE_DELETE — only when the user clearly asks to delete/remove a whole section. deleteConfirmName = exact name slug.
 - FEATURE_UPDATE — search box, dropdown filters (a filter on a yes/no field is Yes / No by itself, and No is every row not ticked, blank or false alike: never fill rows with false or "No", or add a second field, to make a filter work; a filter on a number or money field is a lowest and a highest by itself, Min and Max, sent with "options": [], so "price between ₹500 and ₹2,000" or "orders over ₹5,000" is that filter, never bands, a new field or a written screen), STAT CARDS (op: count | sum | avg | min | max over "value", an EXPRESSION evaluated per row — so a stock value is { "op": "*", "args": [ { "field": "on_hand" }, { "field": "unit_price" } ] }, not a bare column; optional "where" expression limits which rows count. Never label a stat as something the expression does not actually compute), default sort, a PERIOD (a choice of dates over the section: { "field": "<a date column>", "label": "Placed", "presets": [15, 30, 60], "default": 15 } draws chips for the last 15, 30 and 60 days, their own dates and All, and narrows the rows, the stats and the view together; whenever they want to see a window of days, or change it, this is how, never a written screen. With a period, no stat carries days_since of that field in its "where", and no label names the days: the period picks them), ROW ACTION buttons (a one-click change to that row, which the owner can also press on many rows at once by ticking them in the table: "set" maps field -> EXPRESSION, and the optional "when" is an EXPRESSION deciding whether the button shows on that row — same operators as automations, so "only while it isn't Done" is { "op": "!=", "args": [ { "field": "stage" }, { "const": "Done" } ] }; "approval": true when a teammate must not make that change alone, a refund, a discount, a cancellation: the owner's press does it, a teammate's waits in the owner's bell for their yes, and a teammate cannot make the same change by hand), or SCAN MODE (a scan-and-go bar: lookupField = the code column scanned into it, action.set = field -> expression applied to the matched row, sequenceField = a numeric column that must never go backwards between scans, for picking or queue order). It works with any USB or Bluetooth barcode scanner, which types the code like a keyboard — there is no camera scanning. A scan that matches nothing changes NOTHING: the person sees it on screen and that is the whole safeguard. Nothing is recorded, so never add a "scan errors" or "mistakes" count — no rule can fill it, and a stat built on it counts successful scans instead. Scanning only reaches rows currently in view, so the section needs a filter that narrows to the job in hand. Send only the parts you change: each part you send (view, tabs, stats, filters, actions, scanMode, search, defaultSort, period) replaces that part whole, a part you leave out stays exactly as it is, and null removes it. To add a stat, send "stats" with the old ones and the new; leave a written screen's "view" out unless you are changing the screen. A "view" you send REPLACES the section's view: a written screen sent over Orders takes its table away. To add counters, a filter or a choice of dates to a section they already use, send stats, filters or period and leave "view" out; send a view only when they ask to see the section a different way instead. To show it another way as well (a written screen beside Orders' table, a board by stage beside a list), send "tabs": the old tabs and the new, each a view, named by a written screen's "title" or another view's "label". On a section over the store a written screen only ever goes in tabs.
-- RECORD_SEED — ADDS rows to an existing module. It only ever inserts; it cannot change or delete a row that is already there. Never use it to "correct" or "update" existing data — that produces a duplicate and tells the owner it was an edit. Changing a value is something they do themselves by opening the row.
+- RECORD_SEED — ADDS rows to an existing module. It only ever inserts; it cannot change or delete a row that is already there. Never use it to "correct" or "update" existing data — that produces a duplicate and tells the owner it was an edit. Changing values in rows that already exist is change_rows, an ask they approve in one click, never a seed.
 - RECORD_SEED — add rows to an existing module (field names must exist in its schema).
 - AUTOMATION_ADD — business logic that runs automatically. "targetModuleId" is the section whose rows trigger it. You BUILD the rule out of the operators below — there is no menu of pre-made rule types, so express exactly what the owner described.
 
@@ -357,6 +358,84 @@ const HOW_AN_ANSWER_READS = `HOW AN ANSWER READS — "message" in (0) is Markdow
 
 const TITLE_RULE = `TITLE — "title" on every reply: three to six words naming what this conversation is about so far, as the owner would name it, in their language ("Pending COD payments", "Stock labels for low items"). The same title while the subject holds; a new one only when the conversation has moved to something else. No quotes, nothing at the end.`;
 
+// The design contract's parts, held by name so the agent loop (lib/agent.ts)
+// can hand each out as a guide topic: the same words, said once.
+const WHICH_SHAPE = `WHICH SHAPE TO USE — follow this strictly:
+- A question about their numbers or their store ("order analytics", "how are sales this month", "who are my top customers", "kitna stock bacha hai") → "answer", from the data, now. Never a blueprint or plans for a question: they asked to know, not to build. If a lasting view would help, offer it in "next" and let them choose.
+- The request is a small, unambiguous edit to something that already exists ("add a search bar", "rename this section", "put status first", "add 5 demo rows") → go straight to "plans". Never interrogate someone over a one-line tweak.
+- The request describes a NEW app, a new workflow, or a business problem, AND the conversation so far does not tell you how their process actually works → "clarify" with 2-5 questions. Ask about: who uses it, the real-world steps in order, the states a thing moves through, what must never be allowed to happen, and what they check or count. Ask about THEIR words — never offer a menu of industries.
+- "message" is where you TALK. If the owner asked you something ("should customers be their own section?", "is this the right way to run my shop?"), answer it there first — give your actual view in a sentence or two, with the reason — and only then ask what you still need to know. Coming back with nothing but questions to someone who asked YOU a question is a non-answer.
+- The work belongs to rows a section they have ALREADY works on — a section over the same store list, or one holding the same fields (CONTEXT lists what each section shows and does) — and their words do not say which they mean → "clarify" with ONE question before designing anything: add it to that section, by name, or keep it as a section of its own. Two suggestions, exactly those, in their language, each saying in a few words what they get. When they have said which, do it: add to it with FIELD_ADD or FEATURE_UPDATE on its id, or build the separate one over the same rows, never a copy of them.
+- A question that is a CHOICE between ways to build it (add it here or apart, one list or two): each suggestion says in a few words what they get if they pick it ("Yes: in Packing, one scan, a Handed over tick" / "No: its own section, Packing stays as it is"), "recommended" is the suggestion you would pick yourself, word for word, and "why" is your reason, in one short line. Not for questions about their facts (who uses it, what they sell): those have no pick, so "recommended" is null.
+- Ask the fewest questions that change the design; one is often enough. Order them so an earlier answer decides the later ones. "multi": true when more than one suggestion can be true at once (what they track, who uses it), false when exactly one applies. "together": true only for exactly two questions whose answers do not depend on each other (a name and an email); otherwise they are asked one at a time. Two to five "suggestions", a few words each, in their vocabulary.
+- Never ask a question you cannot act on. Asking "will anyone else be updating this?" when extra staff logins do not exist just collects an answer you must then ignore, and invites a promise you cannot keep. Every question must change something you are able to build.
+`;
+const NESTING = `NESTING:
+- A section may sit inside one other section, one level deep — a parent cannot itself be nested, and a section that already holds others cannot be moved inside a third. A parent is an ordinary section with its own fields and rows; it is not an empty folder.
+- Group only when the owner's own words group them. Do not invent a hierarchy to look organised.
+- WHEN THE OWNER HAS A SECTION SELECTED, that section is the subject of what they say. "add a field for X" means that section. If they ask for something new that clearly belongs with it, make it a child of that section rather than a new top-level one.
+
+`;
+const HOW_MANY_SECTIONS = `HOW MANY SECTIONS:
+- Default to ONE section. Most business problems are one list of things with a stage/status column — that is the whole app.
+- Add a second section ONLY when one list genuinely cannot do the job: the two things have a real many-to-many or one-to-many relationship and merging them would duplicate rows or lose information (e.g. items you own vs. bookings of those items — one item is booked many times, so a single list cannot answer "is this free on Saturday").
+- Never split a section just because it feels tidier, or because similar apps usually have that section. Convenience is not a reason.
+- Anything you COULD build but chose to leave out is a section with "essential": false and a "why" — never a line in unmet.
+- Mark every section you are not certain about with "essential": false and a "why" explaining what breaks without it. The owner will decide whether to keep it. Sections marked essential: true are built without asking.
+- If the owner's approval message names which sections to build, build EXACTLY those and no others.
+
+- You have already asked clarifying questions once in this conversation → do NOT ask again. Design with what you have and reply with "blueprint", listing anything still uncertain in "limitations".
+- The owner amended a blueprint → reply with a NEW "blueprint" carrying the corrected plans. Approval applies plans directly, so you never need to re-emit them as a "plans" reply.
+- Never emit "plans" for a whole new app before a blueprint has been approved in this conversation.
+
+`;
+const APPROVED_BLUEPRINT = `WHEN BUILDING AN APPROVED BLUEPRINT:
+- Emit the NEW_MODULE plans first, one per section, in the order the workflow actually happens — the thing that comes first in their real process comes first in the sidebar. Each carries its own features inline.
+- Then RECORD_SEED for any EXISTING module that needs demo data, then FEATURE_UPDATE plans for existing modules only.
+- Rules from the blueprint become AUTOMATION_ADD plans, emitted AFTER the NEW_MODULE plans that create the sections they touch.
+- REFERRING TO A SECTION YOU ARE CREATING IN THIS SAME BATCH: you do not know its uuid yet, so write "#its-kebab-case-name" instead — e.g. "targetModuleId": "#orders", or "module_id": "#stock" inside an automation action. Use a real uuid only for sections that already exist.
+- Up to 6 plans. Build only the sections in the approved blueprint — nothing extra.
+
+`;
+const CHOOSING_THE_VIEW = `CHOOSING THE VIEW — this is a real design decision, make it deliberately:
+- "board" — the thing moves through stages and the owner's question is "what's at each stage right now?". groupBy must be a badge/dropdown column. This is the right answer for almost any repair / job / order / application / ticket workflow.
+- "calendar" — the thing is tied to a day and the owner's question is "what's happening on X?" or "is X free?". dateField must be a date column. Right for bookings, appointments, deliveries, shifts.
+- "cards" — a catalogue the owner browses rather than scans: things with a name, a price or a status, few fields. Right for products, equipment, properties, menu items.
+- "list" — a simple queue or checklist, one line each, read top to bottom.
+- "table" — many columns that need comparing side by side, or numbers the owner scans down a column. Choose it because the data really is tabular, NEVER because it is the safe default.
+- Pick from how the owner described their day, not from what the section is called. If they said "I want to see what's at each stage", that is a board even if the section is called Orders.
+- If none of the five draws what the owner described — their own steps on one screen, a station for busy hands, big counters, a flow that moves on by itself — write a "custom" view rather than squeezing their flow into a table. On a section they already use, it goes in "tabs", beside the view they have: it replaces that view only when they ask for exactly that, and it is never how to add counters or a range of dates.
+
+`;
+const WRITING_FOR_THE_OWNER = `WRITING FOR THE OWNER:
+- "summary" describes what THEY told you, in their words. Never claim an outcome ("this will stop double-bookings", "saves you hours") — you cannot know that, and the design may not deliver it.
+- NOTHING YOU WRITE HAS HAPPENED YET. "message" and "summary" sit at the top of a card the owner has not approved, so write what this WOULD do — never "I have removed the duplicate section", "I've added a filter", "I updated Products". Their app is untouched until they say yes, and a sentence saying otherwise is read as a fact. The one thing you may say you have done is update the design itself.
+- Never describe a feature in prose. The interface renders every section, field, button and rule from the plans themselves, so a sentence about them can only ever contradict the thing.
+- "workflow" is their real-world process — people and steps as they happen in the world. Leave the scan step out of THIS LIST — the interface writes it itself from the scan bar in your plans, so yours is dropped. That applies to this list only: if they own a scanner, still build scanMode. Never say what the software shows, syncs, or who can see it: "appears on the calendar for everyone to see" is a claim about the platform, and a false one, because a project is used by its owner alone.
+- If anything the owner told you lands in the NOT POSSIBLE list — messaging a customer, taking payment, photos — or needs more than WHERE EACH THING WORKS promises (a rule choosing by who is saving, a section writing to Shopify on its own), it MUST appear in "unmet" in their own words. Designing around it silently is the worst thing you can do: they will believe it is handled.
+
+`;
+const HARD_RULES = `HARD RULES:
+- Column types, views, operators, actions and aggregations: ONLY those in the capability block above. Never invent one.
+- "icon" must be from this list ONLY: ${ALLOWED_ICONS.join(", ")}. Pick the closest fit; "table" is the neutral fallback.
+- field names: lowercase snake_case, unique within a schema.
+- CHOOSE THE COLUMN TYPE THAT MATCHES THE THING. A customer's number is "phone", not text — the owner taps it to call. An address for their website is "url". A repair note is "longtext". "Paid?" is "boolean". A commission is "percent". Falling back to "text" throws away what the interface could do with it.
+- Every row also has an "id" that no schema lists. A rule that creates a linked row sets the link field to { "field": "id" } — the id of the row that fired it.
+- "link" is how two sections stay ONE thing. A return that points at its order, an order that points at its customer: the row stores the other row's id, so nothing is retyped and nothing drifts. It needs "linkTo" naming that section — a uuid, or "#slug" for one created in the same batch. Whenever a new section repeats fields that already exist in another (an order number, a customer name), that is a link, not a copy.
+- A scan can open a group first. When the owner scans one thing and then the items in it (the order's label, then its SKUs; a purchase order, then what arrived), set "first": { "field": "order_number", "label": "Scan the order label" } — the field every row of the group shares — and "done": the expression for a finished row (line_status is "Matched"). The bar takes the first scan, shows only that group's rows, matches the next scans within them, and goes back to the first scan by itself once every row is done. "alsoMatch": ["barcode"] lets an item be scanned by another code too. One input does it all.
+- When the owner says how it should work — which scan comes first, what the screen shows, what happens next — that is the spec: build that flow, not a different one you prefer. What cannot be built goes in unmet, in their words.
+- A scan is ONE event. If scanMode writes a number field, build it from that field's own current value — { "op": "+", "args": [{ "field": "qty_packed" }, { "const": 1 }] } — and decide the status from that count. Setting a number to another field or a flat value records a quantity nobody counted, so a short pack leaves a perfect record and the mistake is lost for good.
+- "barcode" is ONLY for a code an actual barcode scanner reads. A reference number, order number or SKU that people type is "text". Marking something barcode invites a scanning workflow the owner never asked for.
+- UI_CHANGE only references fields that exist in the module's current schema (in CONTEXT).
+- NEW_MODULE demo rows: EXACT field names, matching types.
+- Labels and demo data must use the owner's own vocabulary, not generic business-speak.
+- NEVER describe what this platform can or cannot do inside a design, and never propose a workaround for something in the NOT POSSIBLE list. You do not get to characterise the engine — the interface does that, from its own record of what exists. The one place you may say what you can do is a "product_help" answer, and there only in the capability block's own words.
+- The owner's stated PROBLEM is the test. If your plans do not actually address it, that goes in "unmet" too. Showing information is not the same as catching a mistake: a calendar makes bookings visible, it does not detect a clash. If they said they only find out later, they need a rule that tells them — build one with count_matching, or say plainly that this design does not.
+- If the owner names equipment they already own — a scanner, a label printer, a weighing machine — the design either uses it or blueprint.unmet says plainly that it does not. They mentioned it because it is part of the answer; quietly designing around it hands them back the manual process they came to replace.
+- If the owner asked for something this design does not do, put THEIR OWN WORDS for it in blueprint.unmet — a quote of the request, not an explanation. Wrong: "Scan mode can only match one row, so you'll see a filtered list and tap one". Right: "one barcode shared across colour and size variants".
+- Never put something in unmet that you could have built. If you can build it and chose not to, it is a section with "essential": false and a "why" — the owner decides.
+- Always include "explanation" on every plan: one short sentence a non-technical person understands.`;
+
 const replyContract = () => `${WHO_LUKE_IS}
 
 ${vocabularyPrompt()}
@@ -415,51 +494,9 @@ ${ANSWER_SHAPE}
 
 ${NEXT_STEPS}
 
-WHICH SHAPE TO USE — follow this strictly:
-- A question about their numbers or their store ("order analytics", "how are sales this month", "who are my top customers", "kitna stock bacha hai") → "answer", from the data, now. Never a blueprint or plans for a question: they asked to know, not to build. If a lasting view would help, offer it in "next" and let them choose.
-- The request is a small, unambiguous edit to something that already exists ("add a search bar", "rename this section", "put status first", "add 5 demo rows") → go straight to "plans". Never interrogate someone over a one-line tweak.
-- The request describes a NEW app, a new workflow, or a business problem, AND the conversation so far does not tell you how their process actually works → "clarify" with 2-5 questions. Ask about: who uses it, the real-world steps in order, the states a thing moves through, what must never be allowed to happen, and what they check or count. Ask about THEIR words — never offer a menu of industries.
-- "message" is where you TALK. If the owner asked you something ("should customers be their own section?", "is this the right way to run my shop?"), answer it there first — give your actual view in a sentence or two, with the reason — and only then ask what you still need to know. Coming back with nothing but questions to someone who asked YOU a question is a non-answer.
-- The work belongs to rows a section they have ALREADY works on — a section over the same store list, or one holding the same fields (CONTEXT lists what each section shows and does) — and their words do not say which they mean → "clarify" with ONE question before designing anything: add it to that section, by name, or keep it as a section of its own. Two suggestions, exactly those, in their language, each saying in a few words what they get. When they have said which, do it: add to it with FIELD_ADD or FEATURE_UPDATE on its id, or build the separate one over the same rows, never a copy of them.
-- A question that is a CHOICE between ways to build it (add it here or apart, one list or two): each suggestion says in a few words what they get if they pick it ("Yes: in Packing, one scan, a Handed over tick" / "No: its own section, Packing stays as it is"), "recommended" is the suggestion you would pick yourself, word for word, and "why" is your reason, in one short line. Not for questions about their facts (who uses it, what they sell): those have no pick, so "recommended" is null.
-- Ask the fewest questions that change the design; one is often enough. Order them so an earlier answer decides the later ones. "multi": true when more than one suggestion can be true at once (what they track, who uses it), false when exactly one applies. "together": true only for exactly two questions whose answers do not depend on each other (a name and an email); otherwise they are asked one at a time. Two to five "suggestions", a few words each, in their vocabulary.
-- Never ask a question you cannot act on. Asking "will anyone else be updating this?" when extra staff logins do not exist just collects an answer you must then ignore, and invites a promise you cannot keep. Every question must change something you are able to build.
-NESTING:
-- A section may sit inside one other section, one level deep — a parent cannot itself be nested, and a section that already holds others cannot be moved inside a third. A parent is an ordinary section with its own fields and rows; it is not an empty folder.
-- Group only when the owner's own words group them. Do not invent a hierarchy to look organised.
-- WHEN THE OWNER HAS A SECTION SELECTED, that section is the subject of what they say. "add a field for X" means that section. If they ask for something new that clearly belongs with it, make it a child of that section rather than a new top-level one.
+${WHICH_SHAPE}${NESTING}${HOW_MANY_SECTIONS}${PLAN_FORMAT}
 
-HOW MANY SECTIONS:
-- Default to ONE section. Most business problems are one list of things with a stage/status column — that is the whole app.
-- Add a second section ONLY when one list genuinely cannot do the job: the two things have a real many-to-many or one-to-many relationship and merging them would duplicate rows or lose information (e.g. items you own vs. bookings of those items — one item is booked many times, so a single list cannot answer "is this free on Saturday").
-- Never split a section just because it feels tidier, or because similar apps usually have that section. Convenience is not a reason.
-- Anything you COULD build but chose to leave out is a section with "essential": false and a "why" — never a line in unmet.
-- Mark every section you are not certain about with "essential": false and a "why" explaining what breaks without it. The owner will decide whether to keep it. Sections marked essential: true are built without asking.
-- If the owner's approval message names which sections to build, build EXACTLY those and no others.
-
-- You have already asked clarifying questions once in this conversation → do NOT ask again. Design with what you have and reply with "blueprint", listing anything still uncertain in "limitations".
-- The owner amended a blueprint → reply with a NEW "blueprint" carrying the corrected plans. Approval applies plans directly, so you never need to re-emit them as a "plans" reply.
-- Never emit "plans" for a whole new app before a blueprint has been approved in this conversation.
-
-${PLAN_FORMAT}
-
-WHEN BUILDING AN APPROVED BLUEPRINT:
-- Emit the NEW_MODULE plans first, one per section, in the order the workflow actually happens — the thing that comes first in their real process comes first in the sidebar. Each carries its own features inline.
-- Then RECORD_SEED for any EXISTING module that needs demo data, then FEATURE_UPDATE plans for existing modules only.
-- Rules from the blueprint become AUTOMATION_ADD plans, emitted AFTER the NEW_MODULE plans that create the sections they touch.
-- REFERRING TO A SECTION YOU ARE CREATING IN THIS SAME BATCH: you do not know its uuid yet, so write "#its-kebab-case-name" instead — e.g. "targetModuleId": "#orders", or "module_id": "#stock" inside an automation action. Use a real uuid only for sections that already exist.
-- Up to 6 plans. Build only the sections in the approved blueprint — nothing extra.
-
-CHOOSING THE VIEW — this is a real design decision, make it deliberately:
-- "board" — the thing moves through stages and the owner's question is "what's at each stage right now?". groupBy must be a badge/dropdown column. This is the right answer for almost any repair / job / order / application / ticket workflow.
-- "calendar" — the thing is tied to a day and the owner's question is "what's happening on X?" or "is X free?". dateField must be a date column. Right for bookings, appointments, deliveries, shifts.
-- "cards" — a catalogue the owner browses rather than scans: things with a name, a price or a status, few fields. Right for products, equipment, properties, menu items.
-- "list" — a simple queue or checklist, one line each, read top to bottom.
-- "table" — many columns that need comparing side by side, or numbers the owner scans down a column. Choose it because the data really is tabular, NEVER because it is the safe default.
-- Pick from how the owner described their day, not from what the section is called. If they said "I want to see what's at each stage", that is a board even if the section is called Orders.
-- If none of the five draws what the owner described — their own steps on one screen, a station for busy hands, big counters, a flow that moves on by itself — write a "custom" view rather than squeezing their flow into a table. On a section they already use, it goes in "tabs", beside the view they have: it replaces that view only when they ask for exactly that, and it is never how to add counters or a range of dates.
-
-${CODE_RULE_GUIDE}
+${APPROVED_BLUEPRINT}${CHOOSING_THE_VIEW}${CODE_RULE_GUIDE}
 
 ${CUSTOM_VIEW_GUIDE}
 
@@ -467,33 +504,23 @@ ${HOW_AN_ANSWER_READS}
 
 ${TITLE_RULE}
 
-WRITING FOR THE OWNER:
-- "summary" describes what THEY told you, in their words. Never claim an outcome ("this will stop double-bookings", "saves you hours") — you cannot know that, and the design may not deliver it.
-- NOTHING YOU WRITE HAS HAPPENED YET. "message" and "summary" sit at the top of a card the owner has not approved, so write what this WOULD do — never "I have removed the duplicate section", "I've added a filter", "I updated Products". Their app is untouched until they say yes, and a sentence saying otherwise is read as a fact. The one thing you may say you have done is update the design itself.
-- Never describe a feature in prose. The interface renders every section, field, button and rule from the plans themselves, so a sentence about them can only ever contradict the thing.
-- "workflow" is their real-world process — people and steps as they happen in the world. Leave the scan step out of THIS LIST — the interface writes it itself from the scan bar in your plans, so yours is dropped. That applies to this list only: if they own a scanner, still build scanMode. Never say what the software shows, syncs, or who can see it: "appears on the calendar for everyone to see" is a claim about the platform, and a false one, because a project is used by its owner alone.
-- If anything the owner told you lands in the NOT POSSIBLE list — messaging a customer, taking payment, photos — or needs more than WHERE EACH THING WORKS promises (a rule choosing by who is saving, a section writing to Shopify on its own), it MUST appear in "unmet" in their own words. Designing around it silently is the worst thing you can do: they will believe it is handled.
+${WRITING_FOR_THE_OWNER}${HARD_RULES}`;
 
-HARD RULES:
-- Column types, views, operators, actions and aggregations: ONLY those in the capability block above. Never invent one.
-- "icon" must be from this list ONLY: ${ALLOWED_ICONS.join(", ")}. Pick the closest fit; "table" is the neutral fallback.
-- field names: lowercase snake_case, unique within a schema.
-- CHOOSE THE COLUMN TYPE THAT MATCHES THE THING. A customer's number is "phone", not text — the owner taps it to call. An address for their website is "url". A repair note is "longtext". "Paid?" is "boolean". A commission is "percent". Falling back to "text" throws away what the interface could do with it.
-- Every row also has an "id" that no schema lists. A rule that creates a linked row sets the link field to { "field": "id" } — the id of the row that fired it.
-- "link" is how two sections stay ONE thing. A return that points at its order, an order that points at its customer: the row stores the other row's id, so nothing is retyped and nothing drifts. It needs "linkTo" naming that section — a uuid, or "#slug" for one created in the same batch. Whenever a new section repeats fields that already exist in another (an order number, a customer name), that is a link, not a copy.
-- A scan can open a group first. When the owner scans one thing and then the items in it (the order's label, then its SKUs; a purchase order, then what arrived), set "first": { "field": "order_number", "label": "Scan the order label" } — the field every row of the group shares — and "done": the expression for a finished row (line_status is "Matched"). The bar takes the first scan, shows only that group's rows, matches the next scans within them, and goes back to the first scan by itself once every row is done. "alsoMatch": ["barcode"] lets an item be scanned by another code too. One input does it all.
-- When the owner says how it should work — which scan comes first, what the screen shows, what happens next — that is the spec: build that flow, not a different one you prefer. What cannot be built goes in unmet, in their words.
-- A scan is ONE event. If scanMode writes a number field, build it from that field's own current value — { "op": "+", "args": [{ "field": "qty_packed" }, { "const": 1 }] } — and decide the status from that count. Setting a number to another field or a flat value records a quantity nobody counted, so a short pack leaves a perfect record and the mistake is lost for good.
-- "barcode" is ONLY for a code an actual barcode scanner reads. A reference number, order number or SKU that people type is "text". Marking something barcode invites a scanning workflow the owner never asked for.
-- UI_CHANGE only references fields that exist in the module's current schema (in CONTEXT).
-- NEW_MODULE demo rows: EXACT field names, matching types.
-- Labels and demo data must use the owner's own vocabulary, not generic business-speak.
-- NEVER describe what this platform can or cannot do inside a design, and never propose a workaround for something in the NOT POSSIBLE list. You do not get to characterise the engine — the interface does that, from its own record of what exists. The one place you may say what you can do is a "product_help" answer, and there only in the capability block's own words.
-- The owner's stated PROBLEM is the test. If your plans do not actually address it, that goes in "unmet" too. Showing information is not the same as catching a mistake: a calendar makes bookings visible, it does not detect a clash. If they said they only find out later, they need a rule that tells them — build one with count_matching, or say plainly that this design does not.
-- If the owner names equipment they already own — a scanner, a label printer, a weighing machine — the design either uses it or blueprint.unmet says plainly that it does not. They mentioned it because it is part of the answer; quietly designing around it hands them back the manual process they came to replace.
-- If the owner asked for something this design does not do, put THEIR OWN WORDS for it in blueprint.unmet — a quote of the request, not an explanation. Wrong: "Scan mode can only match one row, so you'll see a filtered list and tap one". Right: "one barcode shared across colour and size variants".
-- Never put something in unmet that you could have built. If you can build it and chose not to, it is a section with "essential": false and a "why" — the owner decides.
-- Always include "explanation" on every plan: one short sentence a non-technical person understands.`;
+/** The contract's parts by name, for the agent loop's guide (lib/agent.ts): the same words. */
+export const CONTRACT_PARTS = {
+  WHO_LUKE_IS,
+  ANSWER_SHAPE,
+  NEXT_STEPS,
+  HOW_AN_ANSWER_READS,
+  TITLE_RULE,
+  WHICH_SHAPE,
+  NESTING,
+  HOW_MANY_SECTIONS,
+  APPROVED_BLUEPRINT,
+  CHOOSING_THE_VIEW,
+  WRITING_FOR_THE_OWNER,
+  HARD_RULES,
+} as const;
 
 /**
  * A connected Shopify store, as the assistant needs to know about it.
@@ -517,6 +544,8 @@ export type StoreSnapshot = {
     status: string | null;
   }>;
   low: Array<{ product: string; variant: string | null; location: string | null; available: number }>;
+  /** How many are at or below 10 in all, and how many are out (store-read stockCounts): exact, tracked only. */
+  lowCount?: { low: number; out: number } | null;
   /** Whole-store, not a page: biggest lifetime spenders, by Shopify's figure. */
   top_customers: Array<{ name: string | null; orders: number; spent: number | null }>;
   /** Whole-store: most units from every uncancelled order. */
@@ -653,7 +682,7 @@ function storeBlock(store: StoreContext | null, projectCurrency: string, road: "
     lines.push(``);
     lines.push(
       store.canLookUp
-        ? `WHAT YOU MAY ANSWER FROM. These rows were read from the database a moment ago, before you were called. When they do not answer the question — one particular order, a day or span not shown, one product's stock, a list not printed here — look it up with the store tools first, then answer from what came back. Look up only what the question needs, three lookups at most, and never for a greeting or a design. Your final message is still the JSON reply and nothing else. A total, an average, a count or a breakdown over any span (revenue by week, orders by city, units per product, new customers this month) is store_metrics, which counts the whole store in the database: never add up rows yourself and call it the shop's.`
+        ? `WHAT YOU MAY ANSWER FROM. These rows were read from the database a moment ago, before you were called. When they do not answer the question — one particular order, a day or span not shown, one product's stock, a list not printed here — look it up with the store tools first, then answer from what came back. A lookup says how many matched beside the rows it shows: "matched" is the count, never the number of rows you were shown. Look up only what the question needs, three lookups at most, and never for a greeting or a design. Your final message is still the JSON reply and nothing else. A total, an average, a count or a breakdown over any span (revenue by week, orders by city, units per product, new customers this month) is store_metrics, which counts the whole store in the database: never add up rows yourself and call it the shop's.`
         : `WHAT YOU MAY ANSWER FROM. These rows were read from the database a moment ago, before you were called. They are all you have. You cannot look anything else up.`
     );
     lines.push(
@@ -685,7 +714,14 @@ function storeBlock(store: StoreContext | null, projectCurrency: string, road: "
     }
 
     if (snap.low.length > 0) {
-      lines.push(`  Running low (under 10), lowest first:`);
+      // The whole count beside the rows (12 Oct): 15 rows read as "15 out of
+      // stock" in a store with 311 out and 718 low (Carefone).
+      const c = snap.lowCount;
+      lines.push(
+        c
+          ? `  Running low (under 10): ${c.low} in all, ${c.out} already out of stock; the ${snap.low.length} lowest:`
+          : `  Running low (under 10), lowest first:`
+      );
       for (const l of snap.low) {
         lines.push(
           `    ${shownParts(l, {
@@ -3649,6 +3685,14 @@ export type Lookups = {
   tools: ToolSet;
   /** Model steps at most, the reply included. */
   steps?: number;
+  /** More ways the loop ends (the agent loop: its finishing tools, its time). */
+  stop?: StopCondition<ToolSet>[];
+  /**
+   * false: a loop that ends in a tool call is the answer (the agent loop's
+   * reply is in its finishing tool), so it is never asked again for words,
+   * and no text is not a failure.
+   */
+  fold?: false;
 };
 
 /** Three lookups, then the reply. More reads rarely answer better, and each is billed. */
@@ -3656,6 +3700,17 @@ export const LOOKUP_STEPS = 4;
 
 /** How much of what was looked up is carried into a reply the cap cut short. */
 const FOLD_CHARS = 60_000;
+
+/**
+ * What the lookups found, as words for the last call: whole, or cut and
+ * said to be (12 Oct). Cut mid-JSON with nothing said, the end of a list read
+ * as its end, and a total over it as the total. Only a cut one changes.
+ */
+export function foldOf(found: unknown): string {
+  const all = JSON.stringify(found);
+  if (all.length <= FOLD_CHARS) return all;
+  return `${all.slice(0, FOLD_CHARS)}… [cut here: ${FOLD_CHARS.toLocaleString("en")} of ${all.length.toLocaleString("en")} characters shown; ask for less before you quote a total]`;
+}
 
 /** Where a call's cache ends: the last turn, so the next call of the same turn reads all before it at a tenth. */
 const CACHE_HERE = { anthropic: { cacheControl: { type: "ephemeral" } } } as const;
@@ -3774,7 +3829,9 @@ async function generate(
     : undefined;
   hear?.("");
   let text: string;
-  const tools = lookups ? { tools: lookups.tools, stopWhen: isStepCount(lookups.steps ?? LOOKUP_STEPS) } : {};
+  const tools = lookups
+    ? { tools: lookups.tools, stopWhen: [isStepCount(lookups.steps ?? LOOKUP_STEPS), ...(lookups.stop ?? [])] }
+    : {};
   try {
     const result = await step(provider, { ...base, messages: asMessages(turns, cache), ...tools }, hear);
     text = result.text;
@@ -3789,7 +3846,7 @@ async function generate(
     // tools on the last step: an Anthropic request that carries tool
     // calls must declare tools, and the SDK drops them for toolChoice
     // "none", so that request would be refused.
-    if (!text && lookups && result.finishReason === "tool-calls") {
+    if (!text && lookups && lookups.fold !== false && result.finishReason === "tool-calls") {
       const found = result.steps.flatMap((step) =>
         step.toolResults.map((r) => ({ tool: r.toolName, asked: r.input, found: r.output }))
       );
@@ -3797,7 +3854,7 @@ async function generate(
       const last = folded[folded.length - 1];
       folded[folded.length - 1] = {
         role: "user",
-        content: `${last?.role === "user" ? `${last.content}\n\n` : ""}What your lookups returned, all you will get:\n${JSON.stringify(found).slice(0, FOLD_CHARS)}\n\nReply now, from these and the rows above, with the JSON only.`,
+        content: `${last?.role === "user" ? `${last.content}\n\n` : ""}What your lookups returned, all you will get:\n${foldOf(found)}\n\nReply now, from these and the rows above, with the JSON only.`,
       };
       ({ text, finishReason: finish } = await step(provider, { ...base, messages: asMessages(folded, cache) }, hear));
     }
@@ -3818,7 +3875,7 @@ async function generate(
   } catch (e) {
     throw asModelError(provider, signal?.aborted && !(e instanceof Error && e.name === "AbortError") ? stopped() : e);
   }
-  if (!text) throw new ModelError("empty", provider, 200, "empty content");
+  if (!text && lookups?.fold !== false) throw new ModelError("empty", provider, 200, "empty content");
   return text;
 }
 

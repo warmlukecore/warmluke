@@ -23,6 +23,14 @@ Any UI change, by whoever makes it, uses those tokens and blocks, is walked in a
 browser with Playwright at desktop and phone width, and proposes newer techniques to the
 user with pros and cons instead of adopting them unasked.
 
+Before committing, pushing or running a migration on production, read and follow
+`.agents/skills/ship-a-batch/SKILL.md`: the gates, migrations before code, and pushing
+from a clean copy while others are still working.
+
 Before changing a model call, a model, a tool Luke or an MCP client can call, or Luke's
 loop, read and follow `.agents/skills/ai-stack/SKILL.md`: where each piece lives, the rules
 that keep it safe, and how each is tested.
+
+When a merchant reports a problem, or a conversation or turn id needs explaining, read and
+follow `.agents/skills/conversation-autopsy/SKILL.md`: `node scripts/autopsy.mjs <id>` tells
+its story from production, read only.

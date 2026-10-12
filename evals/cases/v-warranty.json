@@ -1,0 +1,22 @@
+{
+  "id": "v-warranty",
+  "title": "Help with warranty claims",
+  "language": "english",
+  "kind": "vague",
+  "shop": "gadgets",
+  "persona": "Electronics seller with no system for warranty; customers email when something breaks.",
+  "before": [],
+  "opening": "Help me manage warranty claims.",
+  "facts": {
+    "how claims come in": "customers email or call with the order number",
+    "warranty length": "1 year from delivery",
+    "what to track": "who claimed, which product, what happened"
+  },
+  "success": [],
+  "must_not": [],
+  "max_turns": 1,
+  "expect": {
+    "asks_first": true
+  },
+  "smoke": true
+}

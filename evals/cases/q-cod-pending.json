@@ -1,0 +1,21 @@
+{
+  "id": "q-cod-pending",
+  "title": "COD still to collect from the last week",
+  "language": "hinglish",
+  "kind": "question",
+  "shop": "seed",
+  "persona": "Runs a small ethnic-wear shop, checks money every evening on the phone, wants one number, fast.",
+  "before": [],
+  "opening": "pichle 7 din ke COD orders ka kitna paisa abhi pending hai?",
+  "facts": {
+    "which days": "aaj ko mila ke pichle 7 din",
+    "what counts as pending": "jo COD order abhi paid nahi hua, cancel wala nahi"
+  },
+  "success": [],
+  "must_not": [],
+  "max_turns": 2,
+  "expect": {
+    "answer": "seed-cod-pending"
+  },
+  "smoke": true
+}

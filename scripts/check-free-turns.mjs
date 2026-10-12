@@ -337,7 +337,7 @@ if (!signedIn?.session) {
     const overview = await tool("store_overview", {});
     check("reading the store still works", !!overview?.shop_domain);
     const orders = await tool("search_orders", { limit: 3 });
-    check("and searching it", typeof orders?.count === "number");
+    check("and searching it", typeof orders?.matched === "number");
     const sections = await tool("read_section", {});
     check("and reading their own sections", Array.isArray(sections?.sections));
 

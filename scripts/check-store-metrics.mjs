@@ -159,9 +159,9 @@ try {
   const pendingRows = await storeTool("search_orders").run({ status: "pending" }, ctx);
   check(
     'search_orders asked for "pending" finds the PENDING orders',
-    pendingRows.count > 0 && pendingRows.count === pending.total.orders
+    pendingRows.matched > 0 && pendingRows.matched === pending.total.orders
   );
-  if (fails.length) show({ search: pendingRows.count, metrics: pending.total.orders });
+  if (fails.length) show({ search: pendingRows.matched, metrics: pending.total.orders });
 
   console.log("\nthe two lists agree");
   for (const m of Object.keys(STORE_METRICS.measures)) {

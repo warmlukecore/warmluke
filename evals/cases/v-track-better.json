@@ -1,0 +1,20 @@
+{
+  "id": "v-track-better",
+  "title": "Track the business better",
+  "language": "hinglish",
+  "kind": "vague",
+  "shop": "snacks",
+  "persona": "Snack brand owner who feels things slip through but can't say which.",
+  "before": [],
+  "opening": "mujhe apna business better track karna hai",
+  "facts": {
+    "what slips": "COD orders jo deliver nahi hote aur stock jo khatam ho jata hai",
+    "how often": "roz shaam ko dekhta hoon"
+  },
+  "success": [],
+  "must_not": [],
+  "max_turns": 1,
+  "expect": {
+    "asks_first": true
+  }
+}

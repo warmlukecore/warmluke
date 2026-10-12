@@ -6,6 +6,7 @@ import { storeShownFor, withStoreShown } from "@/lib/store-columns";
 import { describePlan } from "@/lib/describe";
 import { undoableFrom } from "@/lib/undo";
 import { walkAfterBuild } from "@/lib/walk";
+import { testAfterBuild } from "@/lib/verify";
 import type { AssistantPlan, ModuleRow, NextStep } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -124,8 +125,11 @@ export async function POST(req: Request) {
         );
         // Then each section built walked in a browser, after the answer has gone (lib/walk.ts).
         // As the account is shown the store (0192): what the walk says is about what they see.
-        if (errors.length === 0)
+        // And what it built tried on their real data (lib/verify), said on the same line.
+        if (errors.length === 0) {
           after(() => withStoreShown(columnsShown, () => walkAfterBuild(client, projectId, applied, book.id)));
+          after(() => testAfterBuild(client, projectId, book.id));
+        }
       }
     }
     const recorded = book ? { recorded: book.id } : {};

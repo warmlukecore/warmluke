@@ -44,6 +44,8 @@ export type DryRun = {
   note: string | null;
   /** It would touch every row it looked at, and there were enough to mean it. */
   everyRow: boolean;
+  /** What stops it working, found by trying it (a rule of code that throws, writes a field that is not there…): sent back, and said as not done. */
+  problem?: string | null;
 };
 
 /** What the screen review saw. */

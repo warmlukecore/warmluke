@@ -1,0 +1,20 @@
+{
+  "id": "q-top-customers",
+  "title": "The best customers this quarter",
+  "language": "english",
+  "kind": "question",
+  "shop": "wholesale",
+  "persona": "Wholesale distributor planning visits to the shops that buy the most.",
+  "before": [],
+  "opening": "Who are my top 3 customers by revenue in the last 90 days?",
+  "facts": {
+    "revenue": "the order totals",
+    "which days": "the last 90 days only"
+  },
+  "success": [],
+  "must_not": [],
+  "max_turns": 2,
+  "expect": {
+    "answer": "wholesale-top-customers"
+  }
+}

@@ -1,10 +1,14 @@
-// What needs a look (0175), against the check database, in one
-// transaction that is rolled back.
+// What needs a look (0175, kept since 0211), against the check database,
+// in one transaction that is rolled back.
 //
 // Tanish found the RTO tangle and the broken rule by hand (3 Oct); every
 // sign was already in the database. One of each is planted here, beside
 // the ordinary work that must not show: each sign is listed, newest first,
-// with where to look, and only to an administrator.
+// with where to look, and only to an administrator. And what Tanish's first
+// meeting showed it missing (0211): a slow or stopped turn, an ask left
+// undone, Luke saying he can't, "why would I lie" and a lone "?", three
+// builds in an hour, a rule that ran and changed nothing or never ran, a
+// list cut short, and an owner who left a question. Yesterday, worst first.
 //
 //   ENV_FILE=.env.check.local node scripts/check-trouble.mjs
 
@@ -32,6 +36,7 @@ const tag = randomBytes(4).toString("hex");
 const id = (n) => `7a666666-0000-0000-0000-${String(n).padStart(12, "0")}`;
 const [ADMIN, MERCHANT, P, C, M, CALM, FILL, WATCH] = [id(1), id(2), id(10), id(11), id(20), id(21), id(30), id(31)];
 const [FAILED, OK_TURN] = [id(40), id(41)];
+const [C2, C3, C4, NEVERM, NEVER, IDLE, BUSY, CUT, ASKED, ANSWERED] = [50, 51, 52, 60, 61, 62, 63, 64, 70, 71].map(id);
 const cols = (fields) => JSON.stringify({ columns: fields.map(([field, type]) => ({ field, label: field, type })) });
 
 const r = spawnSync("psql", [env.DATABASE_URL, "-X", "-q", "-A", "-t", "-F", "\t", "-v", "ON_ERROR_STOP=1"], {
@@ -118,8 +123,69 @@ insert into public.screen_errors (project_id, module_id, screen, message) values
   ('${P}', '${M}', 'Queue', 'wl.find did not work: Failed to fetch');
 reset role;
 
+-- What 0211 adds. Yesterday, in the console's zone: one conversation that went badly.
+create function pg_temp.yday(m integer) returns timestamptz language sql as $f$
+  select ((((now() at time zone 'Asia/Kolkata')::date - 1) + time '12:00') at time zone 'Asia/Kolkata') + make_interval(mins => m)
+$f$;
+insert into public.conversations (id, project_id, title) values
+  ('${C2}', '${P}', 'Parent stock ${tag}'), ('${C3}', '${P}', 'Left ${tag}'), ('${C4}', '${P}', 'Answered ${tag}');
+insert into public.messages (id, conversation_id, role, content, payload, created_at) values
+  (gen_random_uuid(), '${C2}', 'assistant', '', '{"type": "build", "message": "New section: Parent Stock"}', pg_temp.yday(0)),
+  (gen_random_uuid(), '${C2}', 'assistant', '', '{"type": "build", "message": "Change Parent Stock"}', pg_temp.yday(20)),
+  (gen_random_uuid(), '${C2}', 'assistant', '', '{"type": "build", "message": "Delete this section · New section: Parent Stock"}', pg_temp.yday(40)),
+  (gen_random_uuid(), '${C2}', 'user', 'x', '{"kind": "user", "text": "But, bro, why would I lie?"}', pg_temp.yday(45)),
+  (gen_random_uuid(), '${C2}', 'user', 'x', '{"kind": "user", "text": "?"}', pg_temp.yday(46)),
+  (gen_random_uuid(), '${C2}', 'user', 'x', '{"kind": "user", "text": "why is my stock zero on the blank?"}', pg_temp.yday(47)),
+  (gen_random_uuid(), '${C2}', 'assistant', '', '{"type": "answer", "message": "Let us look. I can''t actually see your custom rows, they live in the app. Check Parent Stock."}', pg_temp.yday(48)),
+  (gen_random_uuid(), '${C2}', 'assistant', '', '{"type": "answer", "message": "I can help with that: here is what Stock says."}', pg_temp.yday(49)),
+  (gen_random_uuid(), '${C2}', 'assistant', '', '{"type": "stopped"}', pg_temp.yday(50)),
+  ('${ASKED}', '${C3}', 'assistant', '', '{"type": "clarify", "message": "Which blank does this design use?"}', now() - interval '13 hours'),
+  ('${ANSWERED}', '${C4}', 'assistant', '', '{"type": "clarify", "message": "Which store?"}', now() - interval '13 hours'),
+  (gen_random_uuid(), '${C4}', 'user', 'x', '{"kind": "user", "text": "the main one"}', now() - interval '12 hours'),
+  (gen_random_uuid(), '${C}', 'assistant', '', '{"type": "build", "message": "One"}', now() - interval '50 minutes'),
+  (gen_random_uuid(), '${C}', 'assistant', '', '{"type": "build", "message": "Two"}', now() - interval '40 minutes');
+insert into public.turn_traces (project_id, conversation_id, turn_id, road, repairs, took_ms, unmet, created_at) values
+  ('${P}', '${C2}', null, 'design', 0, 182000, '["Packed status on every order"]', pg_temp.yday(10)),
+  ('${P}', '${C2}', null, 'talk', 0, 30000, '[]', pg_temp.yday(11));
+-- A section of their own, and four rules on it: one that never ran though a
+-- row came, one that ran and changed nothing, one that did, one handed a list cut short.
+insert into public.modules (id, project_id, name, nav_label, route, created_by) values
+  ('${NEVERM}', '${P}', 'parent-${tag}', 'Parent Stock', '/modules/parent-${tag}', '${MERCHANT}');
+insert into public.ui_schemas (module_id, schema_json, version, change_description, created_at) values
+  ('${NEVERM}', '${cols([["name", "text"]])}', 1, 'Made it', now() - interval '3 hours');
+insert into public.automations (id, project_id, module_id, name, enabled, definition, created_at) values
+  ('${NEVER}', '${P}', '${NEVERM}', 'Push to children', true,
+   '{"trigger": {"type": "record_created"}, "actions": [{"type": "run_code", "code": "export default function run() { return {}; }", "reads": []}]}',
+   now() - interval '2 hours'),
+  ('${IDLE}', '${P}', '${NEVERM}', 'Sync blank stock', true,
+   '{"trigger": {"type": "record_updated"}, "actions": [{"type": "run_code", "code": "export default function run() { return {}; }", "reads": []}]}',
+   now() - interval '2 hours'),
+  ('${BUSY}', '${P}', '${NEVERM}', 'Busy one', true,
+   '{"trigger": {"type": "record_updated", "when": {"op": "changed", "args": [{"field": "name"}]}}, "actions": [{"type": "run_code", "code": "export default function run() { return {}; }", "reads": []}]}',
+   now() - interval '2 hours'),
+  ('${CUT}', '${P}', '${NEVERM}', 'Read everything', true,
+   '{"trigger": {"type": "record_updated", "when": {"op": "changed", "args": [{"field": "name"}]}}, "actions": [{"type": "run_code", "code": "export default function run() { return {}; }", "reads": []}]}',
+   now() - interval '2 hours');
+insert into public.records (module_id, project_id, data, created_at, updated_at) values
+  ('${NEVERM}', '${P}', '{"name": "POX-iPh17PM-SL"}', now() - interval '30 minutes', now() - interval '30 minutes');
+insert into public.automation_runs (automation_id, ok, detail, created_at) values
+  ('${IDLE}', true, '{"kind": "code", "wrote": 0, "read": {"Stock": {"rows": 500, "cut": false}}}', now() - interval '20 minutes'),
+  ('${IDLE}', true, '{"kind": "code", "wrote": 0}', now() - interval '15 minutes'),
+  ('${IDLE}', true, '{"kind": "code", "wrote": 0}', now() - interval '10 minutes'),
+  ('${BUSY}', true, '{"kind": "code", "wrote": 0}', now() - interval '20 minutes'),
+  ('${BUSY}', true, '{"kind": "code", "wrote": 2}', now() - interval '15 minutes'),
+  ('${BUSY}', true, '{"kind": "code", "wrote": 0}', now() - interval '10 minutes'),
+  ('${CUT}', true, '{"kind": "code", "wrote": 34, "read": {"Stock": {"rows": 50000, "cut": true}}}', now() - interval '5 minutes');
+
+-- From the start: what was planted back in time is scanned, as on a fresh database.
+delete from public.trouble_scan;
 select pg_temp.as('${ADMIN}');
 select 'admin', public.abo_admin_trouble(7)::text;
+select 'day', public.abo_admin_trouble_day(null, '${P}')::text;
+reset role;
+select 'scan1', count(*) from public.trouble_signs where project_id = '${P}';
+select 'rescan', public.abo_trouble_scan() >= 0;
+select 'scan2', count(*) from public.trouble_signs where project_id = '${P}';
 select pg_temp.as('${MERCHANT}');
 do $d$ begin
   perform public.abo_admin_trouble(7);
@@ -127,6 +193,11 @@ do $d$ begin
 exception when insufficient_privilege then null;
 end $d$;
 select 'merchant', 'refused';
+do $d$ begin
+  perform public.abo_trouble_scan();
+  raise notice 'merchant-scanned';
+exception when insufficient_privilege then null;
+end $d$;
 rollback;
 `,
   encoding: "utf8",
@@ -151,7 +222,8 @@ check("a design the critic sent back", has("turn", "The critic sent the design b
 check("a turn that went fine is not there", of("turn").length === 3);
 check(
   "the owner, unhappy, in their own words",
-  of("frustrated").length === 1 && of("frustrated")[0].sample.includes("galat")
+  of("frustrated").some((s) => s.sample.includes("galat")) &&
+    !of("frustrated").some((s) => s.sample.includes("add a note"))
 );
 check("a section changed four times in a day", has("churn", "Shipments changed 4 times in a day"));
 check("one changed twice is not", of("churn").length === 1);
@@ -171,10 +243,74 @@ check(
   )
 );
 
+console.log("\nwhat Tanish's first meeting showed it missing (0211)");
+const in2 = (kind) => of(kind).filter((s) => s.conversation_id === C2);
+check(
+  "a design turn the owner waited three minutes on",
+  in2("slow").some((s) => s.detail === "A design turn took 182 s")
+);
+check("a quick turn is not", !in2("slow").some((s) => s.detail.includes("took 30 s")));
+check(
+  "a turn stopped before it answered",
+  in2("slow").some((s) => s.detail.includes("stopped"))
+);
+check(
+  "an ask the app could not do",
+  in2("gap").some((s) => s.sample === "Packed status on every order")
+);
+check(
+  "Luke saying he can't, the sentence that says it",
+  in2("cant").length === 1 && in2("cant")[0].sample.trim().startsWith("I can't actually see your custom rows")
+);
+check(
+  '"why would I lie" and a lone "?"',
+  ["why would I lie", "?"].every((w) => in2("frustrated").some((s) => s.sample.includes(w)))
+);
+check("a plain question is not unhappy", !in2("frustrated").some((s) => s.sample.includes("stock zero")));
+check(
+  "three builds in an hour",
+  in2("rebuilds").some((s) => s.detail.startsWith("3 builds in one conversation, three within 40 min"))
+);
+check("two builds are not", !of("rebuilds").some((s) => s.conversation_id === C));
+check(
+  "a rule that never ran, though a row came",
+  has("idle", 'Rule "Push to children" never ran, though rows were added')
+);
+check("a rule that ran and changed nothing", has("idle", 'Rule "Sync blank stock" ran 3 times and changed nothing'));
+check("one that changed rows once is not", !has("idle", "Busy one"));
+check("a rule with a condition is not called idle", !has("idle", "Read everything"));
+check("a rule handed a list cut short", has("cut", 'Rule "Read everything" read a list cut short 1 time'));
+check(
+  "a question left unanswered",
+  of("left").some((s) => s.conversation_id === C3 && s.detail.includes("question"))
+);
+check("one answered is not", !of("left").some((s) => s.conversation_id === C4));
+check(
+  "each names its turn where it has one",
+  in2("cant").every((s) => typeof s.turn_id === "string")
+);
+
+console.log("\nkept once, and yesterday worst first");
+check("a scan run again keeps the same signs", Number(out.scan1) > 0 && out.scan1 === out.scan2);
+const day = JSON.parse(out.day ?? "{}");
+check("yesterday is counted", day.total >= 7 && typeof day.before === "number");
+check(
+  "by kind",
+  (day.kinds ?? []).some((k) => k.kind === "rebuilds" && k.n === 1)
+);
+check(
+  "the conversation that went worst comes first",
+  day.worst?.[0]?.conversation_id === C2 && day.worst[0].title === `Parent stock ${tag}` && day.worst[0].score >= 10
+);
+
 console.log("\nwhere to look");
 check(
   "each turn and complaint names its thread",
-  [...of("turn"), ...of("frustrated")].every((s) => s.conversation_id === C && s.title === `RTO ${tag}`)
+  [...of("turn"), ...of("frustrated")].every(
+    (s) =>
+      (s.conversation_id === C && s.title === `RTO ${tag}`) ||
+      (s.conversation_id === C2 && s.title === `Parent stock ${tag}`)
+  )
 );
 check("each names its project", ours.length > 0 && ours.every((s) => s.project === `trouble ${tag}`));
 check(
@@ -185,6 +321,7 @@ check("nothing from before the window", !ours.some((s) => (s.sample ?? "").inclu
 
 console.log("\nwho may read it");
 check("a merchant is refused", out.merchant === "refused" && !r.stderr.includes("merchant-saw-it"));
+check("and cannot run the scan", !r.stderr.includes("merchant-scanned"));
 
 console.log(
   fails.length ? `\n${fails.length} FAILED` : "\nwhat needs a look is found, and only shown to an administrator"

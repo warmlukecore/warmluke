@@ -1,0 +1,27 @@
+{
+  "id": "o-overdue",
+  "title": "Unpaid invoices past 30 days",
+  "language": "english",
+  "kind": "build",
+  "shop": "wholesale",
+  "persona": "Wholesale distributor on 30-day terms; wants the overdue ones so he can chase them.",
+  "before": [],
+  "opening": "Mark the orders that are unpaid for more than 30 days so I can chase those shops.",
+  "facts": {
+    "overdue means": "not paid and placed more than 30 days ago",
+    "paid ones": "never mark them"
+  },
+  "success": [
+    "the overdue unpaid orders are marked",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "a rule that writes a value into every row",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 4,
+  "expect": {
+    "effect": "wholesale-overdue"
+  }
+}

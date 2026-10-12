@@ -257,7 +257,6 @@ export const NOT_SUPPORTED: Array<{ id: string; label: string }> = [
   // The assistant builds the app; the owner owns the data in it. Asked
   // to change a value it produced a plan that inserted a duplicate row
   // and called it an update.
-  { id: "edit_data", label: "changing what's in a row — open the row and edit it yourself, it's quicker" },
   { id: "custom_colours", label: "choosing the colour of a status — colours are picked automatically" },
 ];
 
@@ -272,7 +271,13 @@ function bullets(entries: Array<[string, string]>): string {
  * declarations validation uses. Editing a capability here changes what
  * the assistant is told and what is accepted, together.
  */
-export function vocabularyPrompt(): string {
+export function vocabularyPrompt(
+  /** The agent loop's words for the same lists (buildingBlocks); absent, the design contract's. */
+  heads: { can: string; cannot: string } = {
+    can: "WHAT THIS PLATFORM CAN DO — this list is exhaustive. Anything not here does not exist, and a plan that uses it is rejected.",
+    cannot: "NOT POSSIBLE ON THIS PLATFORM — never design around these, never describe a workaround for them:",
+  }
+): string {
   const opsByGroup = (group: OperatorSpec["group"]) =>
     EXPR_OPS.filter((o) => OPERATORS[o].group === group && !isServerOnly(o))
       .map((o) => `${o} (${OPERATORS[o].doc})`)
@@ -293,7 +298,7 @@ export function vocabularyPrompt(): string {
     return `  ${v} — ${spec.doc}${keys ? `. Keys: ${keys}` : ""}`;
   }).join("\n");
 
-  return `WHAT THIS PLATFORM CAN DO — this list is exhaustive. Anything not here does not exist, and a plan that uses it is rejected.
+  return `${heads.can}
 
 COLUMN TYPES:
 ${bullets(COLUMN_TYPES.map((c) => [c, COLUMNS[c]]))}
@@ -321,9 +326,23 @@ ${bullets(STAT_OP_LIST.map((s) => [s, STAT_OPS[s]]))}
   A stat runs over EVERY row of the section, not the page on screen. "where" may use today / days_since, so a fixed "last 30 days revenue" is sum of total where days_since(placed_at) <= 30. A window they want to pick or change (15, 30, 60 days, their own dates) is the section's period instead, and then no stat counts days itself.
   "by" — group the rows by a field and show the top few, as a list in the card: "Sales by city" is { "op": "sum", "value": { "field": "total" }, "by": "city", "limit": 5 }. "Orders per customer" is op count, by customer_name. Use it whenever they ask "by", "per", "which X most".
 
-NOT POSSIBLE ON THIS PLATFORM — never design around these, never describe a workaround for them:
+${heads.cannot}
 ${NOT_SUPPORTED.map((n) => `  - ${n.label}`).join("\n")}`;
 }
+
+/**
+ * The same lists for the agent loop (lib/agent.ts), said as what an app here
+ * is made of rather than a fence: what no block draws is written as code and
+ * tried; what needs a service that is not connected is said, with what would
+ * make it possible. The validator behind the tools still refuses what does
+ * not exist, so the words can be generous and the build stays exact.
+ */
+export const buildingBlocks = () =>
+  vocabularyPrompt({
+    can: "THE BUILDING BLOCKS — what an app here is made of. Build from these; when none of them draws what the owner needs, write it: a rule's own code (run_code) for logic, a written screen (a custom view) for a flow. Then try it on their data before you finish.",
+    cannot:
+      "NOT REACHABLE FROM HERE YET — no block or code reaches these. Say so plainly, build the rest, and say what would make it possible (a connected service, a setting):",
+  });
 
 /**
  * What Luke can build, in one breath: for the talk road, whose answers

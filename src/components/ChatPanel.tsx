@@ -164,6 +164,8 @@ export interface ChatMessage {
   undo?: { messageId: string; what: string[] };
   /** Each section the build made or changed, walked in a browser after it (lib/walk.ts): how much was tried, what broke. */
   walked?: Array<{ name: string; tried: number; breaks: string[] }>;
+  /** What it built, tried on the store's real data after it (lib/verify testAfterBuild): what it showed, what stops it working. */
+  tested?: { ok: boolean; said: string; problems: string[] };
   /** What Luke did on the screen open as he said this (lib/screen.ts), in the code's words. */
   show?: ScreenShown;
   /** Answered from their store's own rows (the reply's kind "store"): help the first conversation waits for (0200). */
@@ -1219,7 +1221,7 @@ function CaughtLine({ caught }: { caught: NonNullable<ChatMessage["caught"]> }) 
  */
 function ChecksLine({ checks }: { checks: DesignChecks }) {
   const look =
-    checks.dryRuns.some((d) => d.everyRow) ||
+    checks.dryRuns.some((d) => d.everyRow || !!d.problem) ||
     checks.data.some((f) => f.severity === "problem") ||
     checks.ux?.verdict === "redo" ||
     checks.simplicity?.verdict === "redo" ||
@@ -1245,9 +1247,10 @@ function ChecksLine({ checks }: { checks: DesignChecks }) {
       </summary>
       <ul className="mt-1 space-y-1 border-l border-line pl-2.5 leading-relaxed break-words">
         {checks.dryRuns.map((d, i) => (
-          <li key={`r${i}`} className={d.everyRow ? "text-tone-attention-fg" : "text-fg-muted"}>
+          <li key={`r${i}`} className={d.everyRow || d.problem ? "text-tone-attention-fg" : "text-fg-muted"}>
             {withoutIds(`${d.rule} · ${dryRunWords(d)}`)}
             {d.matched !== null && d.note && <span className="block text-fg-faint">{withoutIds(d.note)}</span>}
+            {d.problem && <span className="block">{withoutIds(d.problem)}</span>}
             {d.sample.length > 0 && (
               <span className="block text-[10px] text-fg-faint">{withoutIds(d.sample.join(", "))}</span>
             )}
@@ -1318,11 +1321,21 @@ function ChecksLine({ checks }: { checks: DesignChecks }) {
  * does is worked out again from the row when approved; a row that has
  * moved on says so here, and nothing changes.
  */
+/** A wait in the bell (lib/row-approval Ask): a teammate's press, or an ask over rows from Luke or their AI. */
+type BellAsk = {
+  id: string;
+  what: string;
+  rows: number;
+  asked_by: string;
+  section: string;
+  asked_at: string;
+};
+
 function ApprovalCard({
   approval,
   onApproval,
 }: {
-  approval: { id: string; action: string; row_label: string; section: string; asked_at: string };
+  approval: BellAsk;
   onApproval?: (id: string, decision: "approve" | "decline") => Promise<string | null>;
 }) {
   const [busy, setBusy] = useState(false);
@@ -1339,12 +1352,13 @@ function ApprovalCard({
   return (
     <div className="rounded-xl border border-tone-attention bg-tone-attention/25 px-2.5 py-2">
       <div className="text-[10px] font-semibold tracking-widest text-tone-attention-fg">
-        A TEAMMATE ASKS · {approval.section.toUpperCase()}
+        {approval.asked_by.toUpperCase()} ASKS · {approval.section.toUpperCase()}
       </div>
-      <div className="mt-1 text-[12px] leading-relaxed text-fg">
-        “{approval.action}” on {approval.row_label ? `“${approval.row_label}”` : "a row"}
+      <div className="mt-1 text-[12px] leading-relaxed text-fg">{approval.what}</div>
+      <div className="mt-1 text-[10px] text-fg-muted">
+        {approval.rows > 1 ? `${approval.rows} rows · ` : ""}
+        {ago(approval.asked_at, now)}
       </div>
-      <div className="mt-1 text-[10px] text-fg-muted">{ago(approval.asked_at, now)}</div>
       {said && <div className="mt-1 text-[10px] leading-relaxed text-tone-critical-fg">{said}</div>}
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         <button
@@ -1352,14 +1366,14 @@ function ApprovalCard({
           disabled={busy || !onApproval}
           className="rounded-lg bg-primary px-2 py-1 text-[10px] font-medium text-on-primary hover:bg-primary-hover disabled:opacity-40"
         >
-          {busy ? "Doing it…" : "Approve"}
+          {busy ? "Doing it…" : approval.rows > 1 ? `Approve all ${approval.rows}` : "Approve"}
         </button>
         <button
           onClick={() => go("decline")}
           disabled={busy || !onApproval}
           className="ml-auto text-[10px] text-tone-attention-fg hover:underline disabled:opacity-40"
         >
-          Not this one
+          {approval.rows > 1 ? "Not these" : "Not this one"}
         </button>
       </div>
     </div>
@@ -1526,6 +1540,44 @@ function WalkedLine({
             {withoutIds(`${section}: ${b}`)}
             {onFix && (
               <button onClick={() => onFix(section, b)} className="ml-2 text-fg transition-colors hover:underline">
+                Fix it
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * What the build did on their real data (lib/verify): one quiet line when
+ * it works as tried; what stops it, each with a way to ask Luke to fix it.
+ */
+function TestedLine({
+  tested,
+  onFix,
+}: {
+  tested: { ok: boolean; said: string; problems: string[] };
+  onFix?: (section: string, problem: string, how?: string) => void;
+}) {
+  if (tested.ok || tested.problems.length === 0)
+    return <p className="text-[11px] text-fg-faint">{withoutIds(tested.said)}</p>;
+  return (
+    <div className="text-[11px]">
+      <p className="text-tone-attention-fg">
+        <TriangleAlert aria-hidden size={12} strokeWidth={2} className="mr-1 inline align-[-2px]" />
+        {withoutIds(tested.said)}
+      </p>
+      <ul className="mt-1 space-y-1 border-l border-line pl-2.5 text-fg-muted">
+        {tested.problems.map((p, i) => (
+          <li key={i} className="leading-relaxed break-words">
+            {withoutIds(p)}
+            {onFix && (
+              <button
+                onClick={() => onFix("what was just built", p, "tried on the store's real data")}
+                className="ml-2 text-fg transition-colors hover:underline"
+              >
                 Fix it
               </button>
             )}
@@ -2615,11 +2667,11 @@ export default function ChatPanel({
   /** Told once the empty welcome is on screen: the suggestions are counted only when they will be offered. */
   onEmpty?: () => void;
   /** Hands Luke what the browser walk found on a section, with that section open (AppShell). */
-  onWalkFix?: (section: string, problem: string) => void;
+  onWalkFix?: (section: string, problem: string, how?: string) => void;
   /** Sets the screen as Luke set it under an answer, again (AppShell). */
   onShow?: (show: ScreenShown) => void;
   /** Teammates' presses of a button that waits for the owner (0183): the owner's to approve, in the bell. */
-  approvals?: Array<{ id: string; action: string; row_label: string; section: string; asked_at: string }>;
+  approvals?: BellAsk[];
   /** Builds of theirs nobody has used since (0190), each asked about once in the bell. */
   followUps?: FollowUp[];
   onFollowUp?: (f: FollowUp, answer: "fine" | "missed") => Promise<string | null>;
@@ -4596,6 +4648,7 @@ export default function ChatPanel({
                             </div>
                           )}
                           {m.walked && <WalkedLine walked={m.walked} onFix={busy ? undefined : onWalkFix} />}
+                          {m.tested && <TestedLine tested={m.tested} onFix={busy ? undefined : onWalkFix} />}
                           {m.show && <ShownLine show={m.show} onShow={onShow} />}
                           {/* A design their AI asked for, waiting as a request:
                     what became of it since, read from the bell's own

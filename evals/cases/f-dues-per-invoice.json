@@ -1,0 +1,31 @@
+{
+  "id": "f-dues-per-invoice",
+  "title": "B2B payments, then per invoice",
+  "language": "english",
+  "kind": "build",
+  "shop": "wholesale",
+  "persona": "Wholesale distributor who first asks per shop, then realises he chases per invoice.",
+  "before": [],
+  "opening": "I want to track payments from my B2B customers.",
+  "facts": {
+    "what to track": "how much each owes and when it was paid",
+    "partial payments": "they sometimes pay part"
+  },
+  "success": [
+    "payments can be tracked against what is owed",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "a second section for the same payments",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 6,
+  "expect": {
+    "builds": 2,
+    "edited": true
+  },
+  "follow_ups": [
+    "Actually I chase per invoice, not per shop. Make it per order, please."
+  ]
+}

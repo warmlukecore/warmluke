@@ -1,0 +1,20 @@
+{
+  "id": "q-top-size",
+  "title": "The size that sells most in tees",
+  "language": "hinglish",
+  "kind": "question",
+  "shop": "fashion",
+  "persona": "Clothing brand founder deciding the next tee production, thinks in sizes and pieces.",
+  "before": [],
+  "opening": "last 30 din mein tees ka kaunsa size sabse zyada bika? kitne piece?",
+  "facts": {
+    "which products": "sirf tees, jeans aur shirt nahi",
+    "cancelled orders": "unko mat gino"
+  },
+  "success": [],
+  "must_not": [],
+  "max_turns": 2,
+  "expect": {
+    "answer": "fashion-top-size"
+  }
+}

@@ -389,6 +389,13 @@ function Detail({
     };
   }, [whole]);
 
+  // A link from Needs a look names its turn (#turn-<id>): there, once the thread is in.
+  useEffect(() => {
+    if (whole && window.location.hash.startsWith("#turn-")) {
+      document.getElementById(window.location.hash.slice(1))?.scrollIntoView({ block: "center" });
+    }
+  }, [whole]);
+
   const back = (
     <button onClick={onBack} className={`${button("plain", "sm")} -ml-2`}>
       <ArrowLeft aria-hidden size={14} strokeWidth={2} />
@@ -484,7 +491,11 @@ function Detail({
                   ? m.payload.text
                   : m.content;
           return (
-            <li key={m.id} className={`${card} p-4 ${m.role === "user" ? "bg-surface-subdued" : ""}`}>
+            <li
+              key={m.id}
+              id={`turn-${m.id}`}
+              className={`${card} scroll-mt-24 p-4 target:ring-2 target:ring-focus ${m.role === "user" ? "bg-surface-subdued" : ""}`}
+            >
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-muted">
                 <span className="font-medium text-fg">{m.role === "user" ? "Asked" : "Luke"}</span>
                 {m.role === "assistant" && typeof m.payload?.type === "string" && (

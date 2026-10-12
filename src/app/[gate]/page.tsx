@@ -38,6 +38,7 @@ import { Breakdown, ListPanel, Stat, siteLink, stickyHead, topCounts } from "@/c
 import { Dialog } from "@/components/ui/Dialog";
 import { AccountDetail, type Account } from "@/components/AccountDetail";
 import { LukeAccess } from "@/components/LukeAccess";
+import { TroubleDay } from "@/components/TroubleDay";
 import { downloadCsv, type Column } from "@/lib/csv";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -297,6 +298,8 @@ export default function Admin() {
         <p className="mt-1 text-[13px] text-fg-muted">
           Who is using Warmluke, what they told us, and which assistants are switched on for them.
         </p>
+
+        {!error && <TroubleDay />}
 
         {error && (
           <div role="alert" className={`${note.critical} mt-5 text-[13px]`}>

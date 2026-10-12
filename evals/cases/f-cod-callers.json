@@ -1,0 +1,33 @@
+{
+  "id": "f-cod-callers",
+  "title": "COD confirmation, then who called",
+  "language": "hinglish",
+  "kind": "build",
+  "shop": "seed",
+  "persona": "Ethnic-wear shop owner whose team calls COD buyers; adds what they need once they see it.",
+  "before": [],
+  "opening": "COD orders confirm karne ke liye call karte hain, unko track karna hai: call karna hai, confirm, cancel",
+  "facts": {
+    "the three states": "To call, Confirmed, Cancelled",
+    "new COD orders": "To call se shuru",
+    "cancel": "sirf app mein, Shopify mein kuch cancel nahi"
+  },
+  "success": [
+    "the call state is kept on the orders",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "anything cancelled in Shopify",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 6,
+  "expect": {
+    "builds": 2,
+    "edited": true
+  },
+  "follow_ups": [
+    "ek aur cheez: kisne call kiya aur kab kiya, woh bhi chahiye"
+  ],
+  "smoke": true
+}

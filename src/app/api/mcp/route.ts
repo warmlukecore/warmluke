@@ -16,7 +16,7 @@ import {
   adviceOf,
   type StoreTable,
 } from "@/lib/store-read";
-import { readSectionRows } from "@/lib/section-read";
+import { readSectionRows, sectionHistory } from "@/lib/section-read";
 import { enterStoreShown, narrowedLists, storeShownFor } from "@/lib/store-columns";
 import { asksFromStore } from "@/lib/suggest";
 import { viewEditPlans, type ViewEdit } from "@/lib/view-edit";
@@ -53,16 +53,12 @@ import { start } from "workflow/api";
 import { lukeTurn } from "@/workflows/luke-turn";
 import { ACTION_CATALOGUE, PROPOSE_INPUT, proposeStoreAction } from "@/lib/store-action-propose";
 import { readRuleRuns } from "@/lib/rule-runs";
+import { proposeRowChange, whatsWaiting, type ChangeAsk } from "@/lib/app-actions";
+import { groupAsks, type AskRow } from "@/lib/row-approval";
+import { TEST_BUILD, builtFrom } from "@/lib/verify-tool";
+import { testBuild } from "@/lib/verify";
 import { ALLOWED_ICONS } from "@/lib/types";
-import type {
-  AssistantPlan,
-  FeatureSchema,
-  ModuleRow,
-  NextStep,
-  ProjectRow,
-  SchemaColumn,
-  UiSchema,
-} from "@/lib/types";
+import type { AssistantPlan, FeatureSchema, ModuleRow, NextStep, ProjectRow, SchemaColumn } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -447,6 +443,50 @@ const TOOLS = [
       properties: {
         rule: { type: "string", description: "One rule's name; left out, every rule's runs together." },
         limit: { type: "number", description: "Up to 200. Defaults to 20." },
+        project_id: { type: "string", description: "Which app, when they have more than one." },
+      },
+    },
+  },
+  {
+    // Luke's own test_build (lib/verify-tool), word for word: a build is tested alike whoever made it.
+    name: TEST_BUILD.name,
+    description: TEST_BUILD.description,
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...TEST_BUILD.inputSchema.properties,
+        project_id: { type: "string", description: "Which app, when they have more than one." },
+      },
+    },
+  },
+  {
+    // Luke's own change_rows (lib/app-actions), one door for both (0208).
+    name: "propose_row_change",
+    description:
+      "Ask the merchant to change rows in one of their Warmluke sections: fields set to values, or one of the section's own row buttons pressed. Name the rows by the ids read_section gives, or every row whose field is a value, or rows holding words (at most 500). Only their own fields can be set, never the store's (that is propose_store_action). It waits in their bell in Warmluke, in a sentence Warmluke writes from the change; nothing changes until they approve it there. You cannot approve it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        section: { type: "string", description: "The section's name, as listed by read_section." },
+        ids: { type: "array", items: { type: "string" }, description: "Row ids from read_section." },
+        field: { type: "string", description: "Change every row whose field is exactly value." },
+        value: { type: ["string", "number", "boolean"], description: "The value that field holds." },
+        search: { type: "string", description: "Change rows holding these words." },
+        set: { type: "object", description: "Field → new value; empty string clears it." },
+        button: { type: "string", description: "One of the section's row buttons, by its label." },
+        project_id: { type: "string", description: "Which app, when they have more than one." },
+      },
+      required: ["section"],
+    },
+  },
+  {
+    // Luke's own whats_waiting (lib/app-actions): the bell, read one way.
+    name: "whats_waiting",
+    description:
+      "Everything waiting on the merchant in one Warmluke app, as their bell shows it: asks to change rows (from Luke, you or a teammate), changes to their shop, designs waiting, open alerts (what Warmluke noticed in their store), and the bell's questions for them. You can say what waits; only they approve, in Warmluke. pending_changes gives the request ids approve_change needs.",
+    inputSchema: {
+      type: "object",
+      properties: {
         project_id: { type: "string", description: "Which app, when they have more than one." },
       },
     },
@@ -1210,23 +1250,11 @@ async function handle(req: Request, seen: Seen) {
       // assistant asked "put Orders back to how it was on Friday" had
       // nothing to read and could only guess at what Friday held.
       if (args.history === true) {
-        const { data: versions } = await db
-          .from("ui_schemas")
-          .select("version, created_by, change_description, created_at, schema_json")
-          .eq("module_id", section.id)
-          .order("version", { ascending: false })
-          .limit(30);
+        // One reader with Luke's (lib/section-read sectionHistory).
         return ok(
           id,
           text({
-            section: section.nav_label,
-            versions: (versions ?? []).map((v) => ({
-              version: v.version,
-              on: v.created_at,
-              by: v.created_by === "ai" ? "Warmluke" : "the merchant",
-              what_changed: v.change_description ?? null,
-              fields: ((v.schema_json as UiSchema | null)?.columns ?? []).map((c) => c.field),
-            })),
+            ...(await sectionHistory(db, section)),
             note: "Putting one back is an ordinary change: propose_change describing the version to restore. Nothing is overwritten — restoring version 3 writes a new version holding what 3 held.",
           })
         );
@@ -1382,7 +1410,7 @@ async function handle(req: Request, seen: Seen) {
       // owner approves, in Warmluke; the database refuses an AI's token.
       let pressQuery = db
         .from("row_approvals")
-        .select("id, project_id, module_id, action, row_label, asked_at")
+        .select("id, project_id, module_id, action, row_label, asked_at, kind, batch, summary, asked_via")
         .eq("status", "waiting")
         .order("asked_at", { ascending: false })
         .limit(SHOW_WAITING);
@@ -1431,14 +1459,17 @@ async function handle(req: Request, seen: Seen) {
           })
         )
       ).flat();
-      const buttonPresses = (pressRows ?? []).map((p) => ({
-        button: p.action,
-        row: p.row_label || null,
-        section: pressSections.get(p.module_id) ?? null,
-        asked_at: p.asked_at,
+      // A teammate's press, or an ask over rows from Luke or their AI (0208): one entry an ask.
+      const projectOf = new Map((pressRows ?? []).map((p) => [p.module_id as string, p.project_id as string]));
+      const buttonPresses = groupAsks((pressRows ?? []) as AskRow[]).map((a) => ({
+        waiting: a.what,
+        rows: a.rows,
+        asked_by: a.asked_by,
+        section: pressSections.get(a.module_id) ?? null,
+        asked_at: a.asked_at,
         you_can_approve_it: false,
         what_the_merchant_does: "Open Warmluke: it waits in the bell, with Approve or Not this one.",
-        open: openAt(new URL(req.url).origin, p.project_id),
+        open: openAt(new URL(req.url).origin, projectOf.get(a.module_id) ?? ""),
       }));
 
       // What this assistant asked for that is not a request yet: still
@@ -1852,6 +1883,78 @@ async function handle(req: Request, seen: Seen) {
             : {}),
           runs,
         })
+      );
+    }
+
+    if (name === TEST_BUILD.name) {
+      // On their own client, so RLS decides what is read; nothing is written.
+      const { data: projects } = await db.from("projects").select("id, name");
+      const list = projects ?? [];
+      const wanted = (args.project_id as string | undefined)?.trim();
+      const project = wanted ? list.find((p) => p.id === wanted) : list.length === 1 ? list[0] : null;
+      if (!project) {
+        return ok(
+          id,
+          text({
+            error: list.length ? "Which app? Pass project_id." : "This account has no app yet.",
+            projects: list.map((p) => ({ id: p.id, name: p.name })),
+          })
+        );
+      }
+      const { built, expect } = builtFrom(args);
+      return ok(id, text({ app: project.name, ...(await testBuild(db, project.id as string, built, expect)) }));
+    }
+
+    if (name === "whats_waiting") {
+      const { data: projects } = await db.from("projects").select("id, name");
+      const list = projects ?? [];
+      const wanted = (args.project_id as string | undefined)?.trim();
+      const project = wanted ? list.find((p) => p.id === wanted) : list.length === 1 ? list[0] : null;
+      if (!project) {
+        return ok(
+          id,
+          text({
+            error: list.length ? "Which app? Pass project_id." : "This account has no app yet.",
+            projects: list.map((p) => ({ id: p.id, name: p.name })),
+          })
+        );
+      }
+      return ok(id, text({ app: project.name, ...(await whatsWaiting(db, project.id as string)) }));
+    }
+
+    if (name === "propose_row_change") {
+      // On their own client: abo_ask_rows marks it as their AI's, and only the owner decides.
+      const { data: projects } = await db.from("projects").select("id, name");
+      const list = projects ?? [];
+      const wanted = (args.project_id as string | undefined)?.trim();
+      const project = wanted ? list.find((p) => p.id === wanted) : list.length === 1 ? list[0] : null;
+      if (!project) {
+        return ok(
+          id,
+          text({
+            error: list.length ? "Which app? Pass project_id." : "This account has no app yet.",
+            projects: list.map((p) => ({ id: p.id, name: p.name })),
+          })
+        );
+      }
+      const asked = await proposeRowChange(db, project.id as string, args as unknown as ChangeAsk);
+      return ok(
+        id,
+        text(
+          "waiting" in asked
+            ? {
+                status: "waiting for the merchant",
+                app: project.name,
+                changes: asked.summary,
+                rows: asked.rows,
+                already_waiting: asked.already_waiting,
+                left_alone: asked.left_alone,
+                you_can_approve_it: false,
+                what_the_merchant_does: "Open Warmluke: it waits in the bell, with Approve or Not these.",
+                open: openAt(new URL(req.url).origin, project.id as string),
+              }
+            : { app: project.name, ...asked }
+        )
       );
     }
 

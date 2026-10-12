@@ -31,10 +31,21 @@ const nums = numbered.map((x) => x.n).filter(Boolean);
 const dups = nums.filter((n, i) => nums.indexOf(n) !== i);
 check("no two share a number", dups.length === 0);
 if (dups.length) console.log("     →", [...new Set(dups)].join(", "));
+// A number that was handed out and never needed, said here with why, is
+// not a lost migration. Production keys its ledger by number, so the
+// files after it cannot move down once applied there.
+const NEVER_WRITTEN = {
+  "0209":
+    "reserved on 12 Oct for a verify migration that turned out not to be needed; 0210 and 0211 were already on production",
+};
+const between = (a, b) =>
+  Array.from({ length: Math.max(0, Number(b) - Number(a) - 1) }, (_, k) => String(Number(a) + k + 1).padStart(4, "0"));
 const gaps = nums
   .slice(1)
   .map((n, i) => [nums[i], n])
-  .filter(([a, b]) => Number(b) - Number(a) !== 1);
+  .filter(([a, b]) => Number(b) <= Number(a) || between(a, b).some((m) => !NEVER_WRITTEN[m]));
+const stale = Object.keys(NEVER_WRITTEN).filter((n) => nums.includes(n));
+check("a number said never written is not written after all", stale.length === 0);
 check("and there are no gaps", gaps.length === 0);
 if (gaps.length) console.log("     →", gaps.map(([a, b]) => `${a}→${b}`).join(", "));
 

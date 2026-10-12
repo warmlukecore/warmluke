@@ -1,0 +1,31 @@
+{
+  "id": "f-blank-rename",
+  "title": "A blanks list, then renamed and moved",
+  "language": "english",
+  "kind": "build",
+  "shop": "cases",
+  "persona": "Phone-case maker who builds a list of blanks, then wants it tidier in the sidebar.",
+  "before": [],
+  "opening": "Make me a simple list of my blank cases with how many of each I have.",
+  "facts": {
+    "what to keep": "the blank's SKU, its phone model and the count",
+    "where it comes from": "I'll type the counts myself"
+  },
+  "success": [
+    "the blanks list keeps its rows after the change",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "the blanks list deleted and made again",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 6,
+  "expect": {
+    "builds": 2,
+    "edited": true
+  },
+  "follow_ups": [
+    "Call it Blank Stock and put it under Stock in the sidebar."
+  ]
+}
