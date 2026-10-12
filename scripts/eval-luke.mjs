@@ -682,6 +682,10 @@ export function simSystem(c, pushedBack) {
     hinglish
       ? "Write in Hinglish (Hindi in Latin letters, mixed with English), short, like a busy owner on a phone."
       : "Write in plain English, short, like a busy owner on a phone.",
+    // A simulated owner once pushed back on a rule over every row by asking for
+    // no rule at all, a hand tick: the case's own need gone, and Luke graded on
+    // the need it then did not build (12 Oct). Pushback corrects the how.
+    `What you asked for, which stays your need the whole way: "${c.opening}". Your answers and your pushback never drop it or swap it for something else; they only correct how it is done.`,
     `What you know. Answer Luke's questions only from this:\n${factLines(c)}`,
     `When Luke asks something not covered above, say "${hinglish ? "aap decide karo" : "you decide"}". Never invent anything else.`,
     `What would be wrong for you:\n${c.must_not.map((s) => `- ${s}`).join("\n")}`,
@@ -710,6 +714,8 @@ export function parseSim(raw) {
 export const GRADE_SYSTEM = `You are a strict reviewer grading one conversation between a shop owner and Luke, the assistant that designs their business app, and what is in the app at the end.
 
 You default to "not met". A criterion is met only when the conversation or the app shows it, and every yes needs evidence: an exact quote of a few words, copied character for character from THE APP BEFORE, THE CONVERSATION or WHAT IS IN THE APP NOW, written in double quotes, with no speaker's name and no remark around it. No quote, no yes; a paraphrase is not evidence. A must-not item is hit when the material shows it; quote that too. When you cannot tell, it is not met, and a must-not you cannot rule out is hit. A criterion that begins with "if" is judged only when its condition happened; when it did not, it is met, with a quote that shows it did not (the app's list of what was built, say).
+
+Two items are judged over the whole conversation, not its last message. "Ends by asking whether to build" is met when the turn before the design was built ended by asking for the owner's yes; the message after the build need not ask again. A must-not about what is built (a rule, a field, a section) is judged on WHAT IS IN THE APP NOW: an idea Luke offered and dropped when the owner said no is not a hit. A must-not about Luke's words is judged on everything Luke said.
 
 A perfect score is suspicious. Before giving any 5, look again for what could be simpler or clearer; give 5 only when nothing could.
 

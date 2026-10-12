@@ -11,6 +11,8 @@
 import {
   COMMON_MUST_NOT,
   COMMON_SUCCESS,
+  GRADE_SYSTEM,
+  simSystem,
   CapReached,
   KINDS,
   answerChecks,
@@ -232,6 +234,31 @@ console.log("\nthe simulated owner's answer");
 check("fenced JSON", parseSim('```json\n{"agree": true, "pushback": false, "say": "haan"}\n```').agree === true);
 const prose = parseSim("Haan theek hai, bana do");
 check("words that are not JSON are words, not a yes", !prose.agree && prose.say === "Haan theek hai, bana do");
+// 12 Oct: pushback on a rule over every row became "no rule, a hand tick", the case's need dropped.
+{
+  const sys = simSystem(
+    {
+      persona: "Owner",
+      language: "hinglish",
+      opening: "repeat COD orders mark kar do",
+      facts: { repeat: "same phone" },
+      must_not: ["a rule that writes a value into every row"],
+    },
+    false
+  );
+  check(
+    "the owner keeps the need they opened with",
+    sys.includes('"repeat COD orders mark kar do"') && /never drop it/.test(sys)
+  );
+}
+check(
+  "the grader judges asking before a build on the turn before it",
+  /turn before the design was built ended by asking/.test(GRADE_SYSTEM)
+);
+check(
+  "and a dropped idea is not a hit on what was built",
+  /dropped when the owner said no is not a hit/.test(GRADE_SYSTEM)
+);
 
 console.log("\nthe workaround signs (0175)");
 const col = (field, type, more = {}) => ({ field, label: field, type, ...more });
