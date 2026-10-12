@@ -22,7 +22,7 @@
 // Callers: src/lib/engine.ts (runTurn's attempt, when agentOn()).
 // ─────────────────────────────────────────────────────────────
 
-import { hasToolCall, jsonSchema, tool, type Tool } from "ai";
+import { jsonSchema, tool, type Tool } from "ai";
 import {
   callModel,
   CODE_RULE_GUIDE,
@@ -192,6 +192,25 @@ const indexOf = (v: unknown, n: number): number | null => {
   return Number.isFinite(i) && i >= 0 && i < n ? i : null;
 };
 
+/**
+ * Words of ours that are not the owner's: plan and rule names, tool names,
+ * a field's type, a field's key as code. The smoke eval of 12 Oct found
+ * "boolean" and "set_fields" in a reply to an owner; a prompt asking for
+ * plain words was not enough, so the finish refuses them and Luke says it
+ * again as they name things.
+ */
+const INTERNAL =
+  /\b(NEW_MODULE|FIELD_ADD|FEATURE_UPDATE|UI_CHANGE|MODULE_UPDATE|MODULE_DELETE|AUTOMATION_ADD|AUTOMATION_REMOVE|RECORD_SEED|set_fields|create_record|run_code|ai_fill|count_matching|record_created|record_updated|store_row_added|targetModuleId|newRecords|changeType|draft_change|replace_change|drop_change|test_draft|read_section|rule_runs|change_rows|whats_waiting|propose_store_action|boolean)\b/g;
+const CODED_KEY = /`[a-z0-9]+_[a-z0-9_]+`/g;
+export function ownerJargon(text: string): string[] {
+  return [...new Set([...(text.match(INTERNAL) ?? []), ...(text.match(CODED_KEY) ?? [])])];
+}
+/** Times a finish is sent back for jargon before it is let through, so a turn always ends. */
+const JARGON_TRIES = 2;
+
+/** New work: what is said in words and agreed to before it is drafted (Tanish, 3 Oct). */
+const NEW_WORK = new Set(["NEW_MODULE", "AUTOMATION_ADD"]);
+
 /** The plans of a reply already written (a repair starts from them), or none. */
 export function draftOf(raw: string): Record<string, unknown>[] {
   const read = readJson(stripFences(raw));
@@ -211,8 +230,32 @@ export function buildTools(o: {
   validate: (plans: Record<string, unknown>[]) => Checked;
   test: (plans: AssistantPlan[]) => Promise<unknown>;
   tell: (e: TurnEvent) => void;
+  /** The owner agreed to a plan said in words, or asked to just build: new sections and rules may be drafted. */
+  mayBuildNew: boolean;
 }): Record<string, Tool> {
   const { state } = o;
+  let jargonSent = 0;
+  // Sent back once or twice with what to say instead; then let through, so the turn ends.
+  const plainWords = (text: string) => {
+    const hits = ownerJargon(text);
+    if (!hits.length || jargonSent >= JARGON_TRIES) return null;
+    jargonSent++;
+    state.refused.push(`owner text said ${hits.join(", ")}`);
+    return {
+      ok: false,
+      rephrase: `Not sent: the owner would read ${hits.join(", ")}. Say it as they name things (a field by its label, a rule by what it does, no types or our words), then finish again.`,
+    };
+  };
+  // New work waits for their yes: a plain-words plan first, then the build (code, not a hope).
+  const notYet = (c: Record<string, unknown>) =>
+    !o.mayBuildNew && NEW_WORK.has(String(c.changeType))
+      ? {
+          ok: false,
+          added: false,
+          problems: ["This is new work (a new section or rule) and they have not agreed to it yet."],
+          then: 'Nothing changed. Say in a few plain sentences how it would work for them, ask what would change it, and finish with proposal: true ("Want me to build it?"). Draft it once they say yes.',
+        }
+      : null;
   // A change stands when the design it makes has no problem the design did not have before.
   const tryDraft = (next: Record<string, unknown>[]) => {
     const checked = o.validate(next);
@@ -270,7 +313,7 @@ export function buildTools(o: {
       }),
       execute: async ({ change: c }) =>
         isObject(c)
-          ? tryDraft([...state.draft, c])
+          ? (notYet(c) ?? tryDraft([...state.draft, c]))
           : { ok: false, problems: ['A change is one object, shaped as guide "plan" says.'] },
     }),
     replace_change: tool({
@@ -285,7 +328,7 @@ export function buildTools(o: {
         if (i === null)
           return { ok: false, problems: [`No change at ${String(index)}: the design has ${state.draft.length}.`] };
         if (!isObject(c)) return { ok: false, problems: ['A change is one object, shaped as guide "plan" says.'] };
-        return tryDraft(state.draft.map((p, j) => (j === i ? c : p)));
+        return notYet(c) ?? tryDraft(state.draft.map((p, j) => (j === i ? c : p)));
       },
     }),
     drop_change: tool({
@@ -344,6 +387,8 @@ export function buildTools(o: {
         required: ["message"],
       }),
       execute: async (args) => {
+        const back = plainWords(said(args.message));
+        if (back) return back;
         state.finished = args;
         return "ok";
       },
@@ -362,6 +407,8 @@ export function buildTools(o: {
         required: ["message", "questions"],
       }),
       execute: async (args) => {
+        const back = plainWords([said(args.message), JSON.stringify(args.questions ?? [])].join("\n"));
+        if (back) return back;
         state.asked = args;
         return "ok";
       },
@@ -449,6 +496,8 @@ export async function runAgent(o: {
   onText?: (text: string) => void;
   /** When the leg must hand on (epoch ms); the attempt keeps inside it. */
   deadline?: number;
+  /** They agreed to a plan in words, or asked to just build: new sections and rules may be drafted. */
+  mayBuildNew: boolean;
 }): Promise<{ raw: string | null; refused: string[] }> {
   const first = o.start.length ? o.validate(o.start) : null;
   const state: AgentState = {
@@ -465,9 +514,13 @@ export async function runAgent(o: {
     signal: o.signal,
     model: o.model,
     lookups: {
-      tools: { ...o.reads, ...buildTools({ state, validate: o.validate, test: o.test, tell: o.tell }) },
+      tools: {
+        ...o.reads,
+        ...buildTools({ state, validate: o.validate, test: o.test, tell: o.tell, mayBuildNew: o.mayBuildNew }),
+      },
       steps: STEPS(),
-      stop: [hasToolCall("finish", "ask_owner"), () => Date.now() > until],
+      // Ended by a finish or a question that was taken, not one sent back for its words.
+      stop: [() => !!(state.finished || state.asked), () => Date.now() > until],
       fold: false,
     },
     onText: o.onText,

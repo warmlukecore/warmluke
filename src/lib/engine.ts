@@ -1158,6 +1158,9 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
       validate,
       test: tryOnRows,
       tell,
+      // New sections and rules wait for a yes to a plan said in words, or a
+      // "just build it", decided here from the thread, never by the model.
+      mayBuildNew: approved || plansAllowed,
       // Words as Luke writes them between steps: plain words, not a reply's JSON.
       onText: onWords
         ? (text: string) => {

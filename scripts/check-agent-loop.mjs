@@ -12,7 +12,7 @@
 // and that a loop out of steps hands back what it built.
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-agent-loop.mjs
-import { agentContract, agentReply, draftOf, guideTopics, runAgent } from "../src/lib/agent.ts";
+import { agentContract, agentReply, draftOf, guideTopics, ownerJargon, runAgent } from "../src/lib/agent.ts";
 import { buildSystemPrompt, foldOf } from "../src/lib/ai.ts";
 import { withEarlier } from "../src/lib/turn-run.ts";
 import { proposalOf } from "../src/lib/plan.ts";
@@ -107,8 +107,13 @@ const reads = {
     execute: async () => ({ section: "Stock", total: 2058, rows: [] }),
   }),
 };
-const run = (start = [], turns = [{ role: "user", content: "Flag orders not shipped in 2 days" }]) =>
-  runAgent({ context: "PROJECT: test", turns, reads, start, validate, test, tell: (e) => told.push(e) });
+// The turns below build on a yes the owner already gave, unless a case says otherwise.
+const run = (
+  start = [],
+  turns = [{ role: "user", content: "Flag orders not shipped in 2 days" }],
+  mayBuildNew = true
+) =>
+  runAgent({ context: "PROJECT: test", turns, reads, start, validate, test, tell: (e) => told.push(e), mayBuildNew });
 const asText = (body) => JSON.stringify(body?.messages ?? []);
 const good = { changeType: "AUTOMATION_ADD", targetModuleId: "m1", automation: { name: "Flag late" } };
 
@@ -228,6 +233,54 @@ console.log("\na repair, and a loop out of steps");
     "agentReply with nothing at all is nothing",
     agentReply({ draft: [], problems: [], refused: [], finished: null, asked: null }, "") === null
   );
+}
+
+console.log("\nnew work waits for their yes (smoke eval, 12 Oct)");
+{
+  sent.length = 0;
+  const field = { changeType: "FIELD_ADD", targetModuleId: "m1", newSchema: { columns: [] } };
+  script.push(
+    { tool: "draft_change", input: { change: good } },
+    { tool: "draft_change", input: { change: field } },
+    { tool: "finish", input: { message: "Here's how it would work. Want me to build it?", proposal: true } }
+  );
+  const out = await run([], undefined, false);
+  check(
+    "a new rule before their yes is refused, said why, and not added",
+    asText(sent[1]).includes("have not agreed to it yet") && asText(sent[1]).includes("proposal: true")
+  );
+  check("a small exact change still goes in", JSON.parse(out.raw).plans?.[0]?.changeType === "FIELD_ADD");
+}
+
+console.log("\nthe owner reads their words, not ours (smoke eval, 12 Oct)");
+{
+  check(
+    "ownerJargon finds our words and a field's key as code",
+    JSON.stringify(ownerJargon("Adds a boolean and a set_fields rule on `call_state`.")) ===
+      JSON.stringify(["boolean", "set_fields", "`call_state`"])
+  );
+  check("and leaves plain words alone", ownerJargon("A tick for called, set on each COD order.").length === 0);
+
+  sent.length = 0;
+  script.push(
+    { tool: "finish", input: { message: "I added a boolean field and a set_fields rule." } },
+    { tool: "finish", input: { message: "I added a Called tick, and a rule that ticks it." } }
+  );
+  const plain = JSON.parse((await run()).raw);
+  check(
+    "a finish in our words goes back to Luke with what to say instead",
+    asText(sent[1]).includes("the owner would read boolean, set_fields")
+  );
+  check("and the turn ends on the one in theirs", sent.length === 2 && /Called tick/.test(plain.message));
+
+  sent.length = 0;
+  script.push(
+    { tool: "finish", input: { message: "A boolean one." } },
+    { tool: "finish", input: { message: "A boolean two." } },
+    { tool: "finish", input: { message: "A boolean three." } }
+  );
+  const last = JSON.parse((await run()).raw);
+  check("sent back twice at most, so a turn always ends", sent.length === 3 && /three/.test(last.message));
 }
 
 console.log("\nwhat is cut is said (no silent limits, 12 Oct)");

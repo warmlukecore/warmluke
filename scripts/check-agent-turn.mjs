@@ -125,7 +125,8 @@ try {
       input: { title: "Repairs board", message: "This would put every repair on a board by its stage." },
     }
   );
-  const out = await turn("I lose track of repairs. Make me a board of them by stage.");
+  // "just build it": new work drafted with no plan said first only when they ask for that (12 Oct).
+  const out = await turn("I lose track of repairs. Make me a board of them by stage, just build it.");
   const agentCalls = sent.filter((s) => s.agent);
   check("the turn was the agent's", agentCalls.length === 4);
   const offered = (agentCalls[0]?.body.tools ?? []).map((t) => t.name);
@@ -135,7 +136,8 @@ try {
       (n) => offered.includes(n)
     )
   );
-  check("it ends in the card the app always showed", out.ok && out.reply.type === "blueprint");
+  // Asked to just build it: the card to apply, with nothing left to agree to first.
+  check("it ends in the card the app always showed", out.ok && out.reply.type === "plans");
   const plans = out.ok ? (out.reply.blueprint?.plans ?? out.reply.plans ?? []) : [];
   check("holding the section Luke drafted, as drafted", plans.length === 1 && plans[0].newModule?.name === "repairs");
   const third = JSON.stringify(agentCalls[2]?.body.messages ?? []);
