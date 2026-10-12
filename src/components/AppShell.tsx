@@ -1325,9 +1325,21 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // How far Load more has gone in the section open: a read again (a row
   // someone else added, the tab shown again) keeps those rows, not 200.
   const ownShown = useRef<{ moduleId: string; limit: number } | null>(null);
+  // What this screen wrote to rows of its own, each with when in the screen's
+  // order of writes (null: deleted). A read that went out before a write and
+  // came back after it would put back the row as it was, and the next save
+  // was refused as "someone changed this row" over their own Undo and Redo
+  // (CI, 12 Oct): such a read keeps the write unless the database's is newer.
+  const writeEpoch = useRef(0);
+  const ownWrites = useRef(new Map<string, { at: number; row: RecordRow | null }>());
+  const noteWrite = useCallback((id: string, row: RecordRow | null) => {
+    ownWrites.current.set(id, { at: ++writeEpoch.current, row });
+  }, []);
 
   const loadModuleData = useCallback(
     async (moduleId: string, asked?: number, rowsOnly = false) => {
+      // Writes after this are newer than anything this read can bring.
+      const readFrom = writeEpoch.current;
       const limit = asked ?? (ownShown.current?.moduleId === moduleId ? ownShown.current.limit : RECORD_PAGE);
       ownShown.current = { moduleId, limit };
       const seq = (loadSeq.current[moduleId] = (loadSeq.current[moduleId] ?? 0) + 1);
@@ -1365,7 +1377,23 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       };
       // Rows read again and found as they were are left as they are: a new
       // list of the same rows redrew the table for nothing.
-      const show = (rows: RecordRow[]) => {
+      const show = (read: RecordRow[], own = false) => {
+        let rows = read;
+        if (own) {
+          // Their own rows: what was written while this read was out stands
+          // over what it brought, unless the database already has newer.
+          for (const [id, w] of ownWrites.current) {
+            if (w.at <= readFrom) continue;
+            const got = rows.find((r) => r.id === id);
+            if (!w.row) rows = rows.filter((r) => r.id !== id);
+            else if (!got) {
+              if (w.row.module_id === moduleId) rows = [w.row, ...rows];
+            } else if (String(got.updated_at ?? "") < String(w.row.updated_at ?? ""))
+              rows = rows.map((r) => (r.id === id ? (w.row as RecordRow) : r));
+          }
+          // What a read that began after a write brings already holds it.
+          for (const [id, w] of ownWrites.current) if (w.at <= readFrom) ownWrites.current.delete(id);
+        }
         const was = shownRows.current;
         if (rows.length === was.length && JSON.stringify(rows) === JSON.stringify(was)) return false;
         setRecords(rows);
@@ -1426,7 +1454,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           return false;
         }
         setRecordTotal(own.count ?? (own.data as RecordRow[]).length);
-        return show(own.data as RecordRow[]);
+        return show(own.data as RecordRow[], true);
       }
       // The module is fetched rather than looked up in state: a section
       // created a moment ago is selected before the list has reloaded,
@@ -1503,7 +1531,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       setLoadedSource(sourceTable ?? null);
       if (isStoreTable(sourceTable) && storeId) await readPage(loadedSchema, sourceTable);
       else {
-        show(recordsRes.data as RecordRow[]);
+        show(recordsRes.data as RecordRow[], true);
         setRecordTotal(recordsRes.count ?? (recordsRes.data as RecordRow[]).length);
       }
       if (seq !== loadSeq.current[moduleId]) return;
@@ -1867,20 +1895,24 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   // Rows written, or changed elsewhere, in the open section: its stat cards
   // count again. Rows read for a new pick are not a change; the pick counts them.
   const [rowsMoved, setRowsMoved] = useState(0);
-  const patchRow = useCallback((row: Record<string, unknown> | undefined, moduleId: string | null): boolean => {
-    const id = row && typeof row.id === "string" ? row.id : null;
-    if (!row || !id || !moduleId) return false;
-    if (row.module_id !== moduleId) return true;
-    const beside = typeof row.store_row_id === "string" ? row.store_row_id : null;
-    const data = (row.data ?? {}) as Record<string, unknown>;
-    setRecords((prev) => {
-      if (beside) return prev.map((r) => (r.id === beside ? { ...r, data: { ...r.data, ...data } } : r));
-      const rec = row as unknown as RecordRow;
-      return prev.some((r) => r.id === id) ? prev.map((r) => (r.id === id ? rec : r)) : [...prev, rec];
-    });
-    setRowsMoved((n) => n + 1);
-    return true;
-  }, []);
+  const patchRow = useCallback(
+    (row: Record<string, unknown> | undefined, moduleId: string | null): boolean => {
+      const id = row && typeof row.id === "string" ? row.id : null;
+      if (!row || !id || !moduleId) return false;
+      if (row.module_id !== moduleId) return true;
+      const beside = typeof row.store_row_id === "string" ? row.store_row_id : null;
+      const data = (row.data ?? {}) as Record<string, unknown>;
+      if (!beside) noteWrite(id, row as unknown as RecordRow);
+      setRecords((prev) => {
+        if (beside) return prev.map((r) => (r.id === beside ? { ...r, data: { ...r.data, ...data } } : r));
+        const rec = row as unknown as RecordRow;
+        return prev.some((r) => r.id === id) ? prev.map((r) => (r.id === id ? rec : r)) : [...prev, rec];
+      });
+      setRowsMoved((n) => n + 1);
+      return true;
+    },
+    [noteWrite]
+  );
 
   // A change that could not be placed: the section read again, and its figures with it.
   const reloadMoved = useCallback(
@@ -3294,6 +3326,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       // The row as the server left it, placed where it is; a rule that
       // wrote another section is seen when that section is opened.
       if (body.action === "delete") {
+        if (typeof body.recordId === "string") noteWrite(body.recordId, null);
         setRecords((prev) => prev.filter((r) => r.id !== body.recordId));
         setRecordTotal((t) => Math.max(0, t - 1));
         setRowsMoved((n) => n + 1);
@@ -3301,6 +3334,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       }
       if (body.action === "delete_many") {
         const gone = new Set((data.deleted as string[] | undefined) ?? []);
+        for (const id of gone) noteWrite(id, null);
         setRecords((prev) => prev.filter((r) => !gone.has(r.id)));
         setRecordTotal((t) => Math.max(0, t - gone.size));
         setRowsMoved((n) => n + 1);
@@ -3308,6 +3342,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       }
       const rec = data.record as Record<string, unknown> | undefined;
       if (body.action === "create" && typeof rec?.id === "string") {
+        noteWrite(rec.id, rec as unknown as RecordRow);
         setRecords((prev) => [...prev, rec as unknown as RecordRow]);
         setRecordTotal((t) => t + 1);
         setRowsMoved((n) => n + 1);
@@ -3317,7 +3352,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       // The row as stored: what a put-back expects to find there, whatever the screen shows by then.
       return rec;
     },
-    [projectId, selectedModuleId, reloadMoved, patchRow]
+    [projectId, selectedModuleId, reloadMoved, patchRow, noteWrite]
   );
 
   const createRecord = useCallback(
