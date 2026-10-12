@@ -3283,10 +3283,13 @@ function parseShape(
       // store receipt. A reply from before kinds existed said nothing
       // and was always about the store.
       const kind = parsed.kind === undefined ? "store" : parsed.kind;
-      if (kind !== "store" && kind !== "product_help" && kind !== "conversation") {
+      // A proposal is a plan said in words, ending "Want me to build it?" (lib/plan).
+      // The engine made its own without this check; Luke's loop ends in one
+      // through it, and every such turn failed as an unknown kind (eval, 12 Oct).
+      if (kind !== "store" && kind !== "product_help" && kind !== "conversation" && kind !== "proposal") {
         return {
           ok: false,
-          errors: ['An answer must say which "kind" it is: "store", "product_help" or "conversation".'],
+          errors: ['An answer must say which "kind" it is: "store", "product_help", "conversation" or "proposal".'],
         };
       }
       // More to offer after a question about the store than after a hello.
@@ -3294,7 +3297,13 @@ function parseShape(
       // grounding is attached by the caller, which knows what it read.
       // Their yes to seeing their store, in the first meeting (lib/meet): the app lets them in.
       const open = parsed.open_store === true ? { open_store: true } : {};
-      return { ok: true, reply: { type: "answer", kind, message, ...(next ? { next } : {}), ...open } };
+      // What their yes to a proposal builds: kept as it was said (proposalOf reads it back).
+      const understood =
+        kind === "proposal" && isPlainObject(parsed.understood) ? { understood: parsed.understood } : {};
+      return {
+        ok: true,
+        reply: { type: "answer", kind, message, ...(next ? { next } : {}), ...open, ...understood },
+      };
     }
     case "clarify":
       return parseClarify(parsed);

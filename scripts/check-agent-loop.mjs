@@ -13,7 +13,7 @@
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-agent-loop.mjs
 import { agentContract, agentReply, draftOf, guideTopics, ownerJargon, runAgent } from "../src/lib/agent.ts";
-import { buildSystemPrompt, foldOf } from "../src/lib/ai.ts";
+import { buildSystemPrompt, foldOf, parseReply } from "../src/lib/ai.ts";
 import { withEarlier } from "../src/lib/turn-run.ts";
 import { proposalOf } from "../src/lib/plan.ts";
 import { jsonSchema, tool } from "ai";
@@ -191,6 +191,13 @@ console.log("\nthe other ways a turn ends");
   check(
     "a plan said in words is one their yes agrees to",
     JSON.parse(said).kind === "proposal" && plan?.goal === "Parent stock" && /Want me to build it/.test(plan?.say ?? "")
+  );
+  // Every proposal the loop made failed the app's own reply check as an
+  // unknown kind, so the turn failed after three repairs (smoke eval, 12 Oct).
+  const parsedPlan = parseReply(said, [], null, null);
+  check(
+    "and the app's own reply check takes it, with what was understood",
+    parsedPlan.ok && parsedPlan.reply.kind === "proposal" && parsedPlan.reply.understood?.goal === "Parent stock"
   );
 
   script.push({ text: "Sab theek hai, 12 orders pending hain." });
