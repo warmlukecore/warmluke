@@ -41,7 +41,14 @@ export function Tabs<T extends string>({
     row.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[to]?.focus();
   };
   return (
-    <div ref={row} role="tablist" aria-label={label} className={`flex gap-4 border-b border-line ${className}`}>
+    // A row wider than the screen scrolls by itself, never its page: the
+    // baseline is an inset line so a tab's underline still sits on it.
+    <div
+      ref={row}
+      role="tablist"
+      aria-label={label}
+      className={`flex gap-4 overflow-x-auto shadow-[inset_0_-1px_0_var(--color-line)] [scrollbar-width:none] ${className}`}
+    >
       {tabs.map((t, i) => (
         <button
           key={t.id}
@@ -50,7 +57,7 @@ export function Tabs<T extends string>({
           tabIndex={value === t.id ? 0 : -1}
           onClick={() => onChange(t.id)}
           onKeyDown={(e) => move(e, i)}
-          className={`-mb-px shrink-0 border-b-2 py-2.5 text-[13px] font-medium whitespace-nowrap transition-colors ${
+          className={`shrink-0 border-b-2 py-2.5 text-[13px] font-medium whitespace-nowrap transition-colors ${
             value === t.id ? "border-fg text-fg" : "border-transparent text-fg-muted hover:text-fg"
           }`}
         >

@@ -1923,6 +1923,10 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       if (row.module_id !== moduleId) return true;
       const beside = typeof row.store_row_id === "string" ? row.store_row_id : null;
       const data = (row.data ?? {}) as Record<string, unknown>;
+      // A row this screen deleted stays deleted: the live echo of a change
+      // made to it just before (a field set on ticked rows) arrived after the
+      // delete and put it back on screen (e2e, 14 Oct).
+      if (!beside && ownWrites.current.get(id)?.row === null) return true;
       if (!beside) noteWrite(id, row as unknown as RecordRow);
       setRecords((prev) => {
         if (beside) return prev.map((r) => (r.id === beside ? { ...r, data: { ...r.data, ...data } } : r));
