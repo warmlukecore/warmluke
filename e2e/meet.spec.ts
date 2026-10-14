@@ -91,7 +91,7 @@ async function meeting(page: Page, shop: Shop) {
     if (had) await shop.admin.from("profiles").upsert(had);
     else await shop.admin.from("profiles").delete().eq("user_id", shop.userId);
   };
-  return { asked, putBack };
+  return { asked, putBack, older: older!.id };
 }
 
 /** In the store: the Overview's greeting, as luke.spec waits for it on a busy check database. */
@@ -112,15 +112,33 @@ test("the first conversation is Luke's alone, and the store opens on their yes t
   signedIn: page,
   shop,
 }) => {
-  const { asked, putBack } = await meeting(page, shop);
+  const { asked, putBack, older } = await meeting(page, shop);
+  // The meeting's own look for a thread of his, held a moment: the window
+  // in which a live echo of another thread opened it over him (CI, 14 Oct).
+  await page.route(/\/rest\/v1\/messages\?.*kind=eq\.meet/, async (route) => {
+    await new Promise((r) => setTimeout(r, 2500));
+    await route.continue();
+  });
   try {
     await page.goto(`/app/${shop.projectId}`);
     const luke = page.getByRole("complementary", { name: "Luke" });
     // Nothing to type into before he has spoken: typed into, it raced his hello into a second thread.
     await expect(page.getByPlaceholder("Luke is saying hello…")).toBeDisabled({ timeout: 30_000 });
+    // Their AI writes in its own thread while he is about to say hello: its
+    // live echo opened that thread over him, and he never spoke (CI, 14 Oct).
+    // A second for the page's live channel to be joined, inside the hold above.
+    await page.waitForTimeout(1000);
+    await shop.admin.from("messages").insert({
+      conversation_id: older,
+      role: "user",
+      content: "And the refunds?",
+      payload: { kind: "user", text: "And the refunds?" },
+    });
+    await shop.admin.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", older);
     await expect(luke.getByText("I've already read your store")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByPlaceholder("Reply to Luke, in your own words")).toBeEnabled();
     await expect(luke.getByText("List my unpaid orders")).toHaveCount(0);
+    await expect(luke.getByText("And the refunds?")).toHaveCount(0);
     // He spoke first: no words of theirs, the meeting's flag on it.
     expect(asked[0]).toMatchObject({ meet: true, message: "" });
     // Nothing of the app and none of the panel's controls: Luke, and their own way into the store.

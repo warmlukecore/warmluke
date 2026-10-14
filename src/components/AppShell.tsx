@@ -422,6 +422,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   const [meeting, setMeeting] = useState<boolean | null>(null);
   const meetingRef = useRef(false);
   meetingRef.current = meeting === true;
+  /** The meeting as known so far: null until the profile is read. */
+  const meetingKnownRef = useRef<boolean | null>(null);
+  meetingKnownRef.current = meeting;
   /** Into the store (enterStore, below), for a reply that arrives before it is defined. */
   const enterStoreRef = useRef<() => void>(() => {});
   // Just let in: the store and the sidebar rise in as Luke moves aside.
@@ -2440,6 +2443,10 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           // One they asked in and went away from: they left it on purpose,
           // and its answer waits there, in the list.
           if (ownThreads.current.has(id)) return;
+          // Never over the first conversation, nor before it is known whether
+          // this is one: a late live echo of a thread their AI had written in
+          // opened it over Luke's hello, and he never said it (CI, 14 Oct).
+          if (meetingKnownRef.current !== false) return;
           if (!awaitingAnswer(chatMessagesRef.current)) {
             loadThread(id, false, false).catch(() => {});
           }
