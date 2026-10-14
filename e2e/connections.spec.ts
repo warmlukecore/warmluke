@@ -58,8 +58,81 @@ test("the owner connects a courier in Settings, sees where it stands, and discon
     await expect(dialog.getByText("Couriers", { exact: true })).toBeVisible();
     await expect(dialog.getByText("Shiprocket", { exact: true })).toBeVisible();
     await expect(dialog.getByText("GoSwift", { exact: true })).toBeVisible();
-    await expect(dialog.getByText("Coming soon: waiting on Meta's app review")).toBeVisible();
-    await expect(dialog.getByText("Coming soon: waiting on Google's API approval")).toBeVisible();
+    // Every kind has its group, and every provider its own mark (0215).
+    for (const group of ["Ads", "Analytics", "Email", "Support", "CRM", "Social"]) {
+      await expect(dialog.getByText(group, { exact: true })).toBeVisible();
+    }
+    for (const name of [
+      "Google Ads",
+      "Google Analytics",
+      "Mailchimp",
+      "Brevo",
+      "Zendesk",
+      "HubSpot",
+      "Facebook & Instagram",
+    ]) {
+      const item = dialog.getByRole("listitem").filter({ hasText: name });
+      await expect(item.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
+      await expect(item.locator("img")).toHaveJSProperty("complete", true);
+      expect(await item.locator("img").evaluate((i: HTMLImageElement) => i.naturalWidth)).toBeGreaterThan(0);
+    }
+
+    // Nothing in the list is wider than the dialog: its body never scrolls sideways.
+    const sideways = await dialog.evaluate((d) => {
+      const body = [...d.querySelectorAll<HTMLElement>("*")].find(
+        (n) => /(auto|scroll)/.test(getComputedStyle(n).overflowY) && n.scrollHeight > n.clientHeight
+      );
+      return body ? body.scrollWidth - body.clientWidth : 0;
+    });
+    expect(sideways).toBeLessThanOrEqual(1);
+
+    // Each group as it looks, for a person to read (LOOK_DIR).
+    for (const group of ["Couriers", "Ads", "Analytics", "Email", "Support", "CRM", "Social"]) {
+      const section = dialog
+        .locator("section")
+        .filter({ has: page.getByText(group, { exact: true }) })
+        .first();
+      await section.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: `${process.env.LOOK_DIR ?? "test-results"}/connections-${group.toLowerCase()}-${test.info().project.name}.png`,
+      });
+    }
+
+    // Google Analytics takes the key file whole; Google Ads' manager account may be left empty.
+    const ga = dialog.getByRole("listitem").filter({ hasText: "Google Analytics" });
+    await ga.getByRole("button", { name: "Connect", exact: true }).click();
+    await expect(ga.locator("textarea")).toBeVisible();
+    await ga.getByLabel("Property ID").fill("123456789");
+    await ga.locator("textarea").fill('{"client_email":"wl@x.iam.gserviceaccount.com"}');
+    await expect(ga.getByRole("button", { name: "Connect Google Analytics" })).toBeEnabled();
+    await ga.screenshot({
+      path: `${process.env.LOOK_DIR ?? "test-results"}/connections-ga-${test.info().project.name}.png`,
+    });
+    await ga.getByRole("button", { name: "Cancel" }).click();
+    const gads = dialog.getByRole("listitem").filter({ hasText: "Google Ads" });
+    await gads.getByRole("button", { name: "Connect", exact: true }).click();
+    for (const label of [
+      "Ad account ID",
+      "Developer token",
+      "OAuth client ID",
+      "OAuth client secret",
+      "Refresh token",
+    ]) {
+      await gads.getByLabel(label, { exact: true }).fill("x");
+    }
+    await expect(gads.getByRole("button", { name: "Connect Google Ads" })).toBeEnabled();
+    await gads.getByRole("button", { name: "Cancel" }).click();
+
+    // Meta Ads takes a token from the store's own business, and says how to make one (0214).
+    const meta = dialog.getByRole("listitem").filter({ hasText: "Meta Ads" });
+    await meta.getByRole("button", { name: "Connect", exact: true }).click();
+    await expect(meta.getByText(/Use a token from your business, not your own login/)).toBeVisible();
+    await expect(meta.getByLabel("System user access token")).toHaveAttribute("type", "password");
+    await expect(meta.getByLabel("Ad account ID")).toBeVisible();
+    await meta.screenshot({
+      path: `${process.env.LOOK_DIR ?? "test-results"}/connections-meta-${test.info().project.name}.png`,
+    });
+    await meta.getByRole("button", { name: "Cancel" }).click();
 
     // GoSwift asks for what it gives on request, and says where to ask.
     const goswift = dialog.getByRole("listitem").filter({ hasText: "GoSwift" });

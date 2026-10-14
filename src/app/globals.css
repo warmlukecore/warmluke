@@ -39,6 +39,8 @@
 
   --color-canvas: hsl(0 0% 95%);
   --color-surface: hsl(0 0% 100%);
+  /* The tile a provider's own mark sits on: brand marks are drawn for white. */
+  --color-logo-tile: hsl(0 0% 100%);
   --color-surface-subdued: hsl(0 0% 97%);
   --color-surface-hover: hsl(0 0% 96%);
   --color-line: hsl(0 0% 89%);
@@ -118,6 +120,8 @@
 
   --color-canvas: hsl(0 0% 9%);
   --color-surface: hsl(0 0% 12.5%);
+  /* Still white at night: a dark mark (Zendesk's, Mailchimp's) would vanish on the dark surface. */
+  --color-logo-tile: hsl(0 0% 96%);
   --color-surface-subdued: hsl(0 0% 11%);
   --color-surface-hover: hsl(0 0% 16%);
   --color-line: hsl(0 0% 20%);

@@ -56,6 +56,9 @@ export function leadPayload(lead: MetaLead) {
  * Bounded retries, same ID/time. A Meta failure never fails a saved booking;
  * what happened is returned, in words the Early access list can show.
  */
+/** The Graph API version every Meta call here uses: this Lead and the Meta Ads connector. */
+export const graphApiVersion = () => process.env.META_GRAPH_API_VERSION || "v26.0";
+
 export async function sendMetaLead(lead: MetaLead): Promise<MetaOutcome> {
   const pixel = process.env.NEXT_PUBLIC_META_PIXEL_ID;
   const token = process.env.META_CAPI_ACCESS_TOKEN;
@@ -63,7 +66,7 @@ export async function sendMetaLead(lead: MetaLead): Promise<MetaOutcome> {
   const testCode = testCodeOf(lead.testCode) ?? testCodeOf(process.env.META_CAPI_TEST_EVENT_CODE);
   const test = !!testCode;
   if (!pixel || !token) return { sent: false, why: "Meta is not set up on this server", test };
-  const version = process.env.META_GRAPH_API_VERSION || "v26.0";
+  const version = graphApiVersion();
   if (!/^\d+$/.test(pixel) || !/^v\d+\.0$/.test(version)) {
     console.warn("Meta Lead: invalid dataset ID or Graph API version");
     return { sent: false, why: "Meta's dataset ID or API version is wrong on this server", test };

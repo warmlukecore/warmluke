@@ -2,7 +2,7 @@ import { after, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { connectorTicketClient } from "@/lib/supabase-server";
 import { ADAPTERS } from "@/lib/connectors/adapters";
-import { ConnectorBusy, ConnectorRefused, type Job, type ShipmentRow } from "@/lib/connectors/kit";
+import { ConnectorBusy, ConnectorRefused, type Job, type ListRows, type ShipmentRow } from "@/lib/connectors/kit";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -66,6 +66,13 @@ async function work(db: SupabaseClient, job: HeldJob, hookBase: string) {
       putShipments: async (rows: ShipmentRow[]) => {
         for (let i = 0; i < rows.length; i += PAGE) {
           const { error } = await db.rpc("abo_connector_put_shipments", { p_rows: rows.slice(i, i + PAGE) });
+          if (error) throw new Error(error.message);
+        }
+      },
+      // Each list has its own writer (abo_connector_put_<list>), which takes only the lists this connection brings.
+      put: async <L extends keyof ListRows>(list: L, rows: ListRows[L][]) => {
+        for (let i = 0; i < rows.length; i += PAGE) {
+          const { error } = await db.rpc(`abo_connector_put_${list}`, { p_rows: rows.slice(i, i + PAGE) });
           if (error) throw new Error(error.message);
         }
       },

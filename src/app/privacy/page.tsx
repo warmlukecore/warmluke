@@ -65,6 +65,40 @@ export default function Privacy() {
             their shipments, and copy each shipment&rsquo;s AWB, courier, status and the order it belongs to.
             Disconnecting the courier deletes the login; the shipments already copied stay with the store.
           </p>
+          <p>
+            If a merchant connects a Meta or Google Ads account, we keep the credential they made for it, encrypted, to
+            read what each campaign spent by day, with its impressions, clicks and the purchases or conversions the ad
+            platform counted. No customer&rsquo;s details come from either.
+          </p>
+          <p>
+            The other accounts a merchant can connect work the same way, each with a credential they made, kept
+            encrypted, read only:
+          </p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>
+              Google Analytics: visits, purchases and revenue by day and where the visits came from, with no
+              visitor&rsquo;s details.
+            </li>
+            <li>
+              Mailchimp and Brevo: each email campaign&rsquo;s sends, opens, clicks, unsubscribes and revenue, with no
+              subscriber&rsquo;s details.
+            </li>
+            <li>
+              Zendesk: each ticket&rsquo;s subject, status and tags, with the name, email and phone of the person who
+              raised it, so it can be matched to their order history.
+            </li>
+            <li>
+              HubSpot: each contact&rsquo;s name, email, phone, lifecycle stage and lead status, matched the same way.
+            </li>
+            <li>
+              A Facebook Page and its Instagram account: the store&rsquo;s own posts and their counts of likes, comments
+              and shares.
+            </li>
+          </ul>
+          <p>
+            Disconnecting any of them deletes its credential; what was already copied stays with the store, and goes
+            when the store does.
+          </p>
         </Section>
 
         <Section title="What we do not do">

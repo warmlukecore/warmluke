@@ -14,11 +14,14 @@ import {
   Box,
   Calendar,
   ClipboardList,
+  Contact,
   FileText,
   Globe,
   Heart,
   Layers,
+  LifeBuoy,
   List,
+  Mail,
   MapPin,
   Package,
   Receipt,
@@ -61,6 +64,10 @@ export const SECTION_ICONS: Readonly<Record<string, LucideIcon>> = {
   tag: Tag,
   "file-text": FileText,
   list: List,
+  // What a store's connections bring (0215): its email, its tickets, its contacts.
+  mail: Mail,
+  "life-buoy": LifeBuoy,
+  contact: Contact,
 };
 
 export function Icon({

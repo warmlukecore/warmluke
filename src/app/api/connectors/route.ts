@@ -37,7 +37,8 @@ export async function POST(req: Request) {
       ? Object.fromEntries(
           Object.entries(body.fields as Record<string, unknown>)
             .filter(([, v]) => typeof v === "string")
-            .map(([k, v]) => [k, (v as string).slice(0, 500)])
+            // A key file (Google's service account, ~2.3k) is the longest a provider asks for.
+            .map(([k, v]) => [k, (v as string).slice(0, 8000)])
         )
       : null;
   if (!storeId || !connector || !fields) {

@@ -100,6 +100,9 @@ export default function StorePicker({
   }
 
   const missingCore = CORE_STORE_TABLES.filter((t) => !added.includes(t));
+  // A list a connection brings (ad spend) waits until that connection has brought something.
+  const offered = (t: StoreTable) =>
+    STORE_TABLES[t].section.importedWith !== null || added.includes(t) || (counts[t] ?? 0) > 0;
 
   const row = (t: StoreTable) => {
     const spec = STORE_TABLES[t];
@@ -176,7 +179,7 @@ export default function StorePicker({
             <h3 className="text-[13px] font-semibold text-fg">More from your store</h3>
             <p className="text-xs text-fg-muted">Add only what you will open. A section can be removed any time.</p>
           </header>
-          <ul className="divide-y divide-line">{MORE.map(row)}</ul>
+          <ul className="divide-y divide-line">{MORE.filter(offered).map(row)}</ul>
         </section>
       </div>
     </Dialog>

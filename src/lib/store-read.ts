@@ -364,7 +364,13 @@ export type StoreTable =
   | "order_line_items"
   | "refunds"
   | "variants"
-  | "stock_pools";
+  | "stock_pools"
+  | "ad_spend"
+  | "web_traffic"
+  | "email_campaigns"
+  | "support_tickets"
+  | "crm_contacts"
+  | "social_posts";
 
 type TableSpec = {
   /** What a stat over this table should be — for whoever designs one. */
@@ -417,9 +423,10 @@ type TableSpec = {
   /**
    * The section this list becomes when the store connects: its name in
    * the sidebar, its icon, and which import's rows say it has anything
-   * to show (lines and sales come in with the orders).
+   * to show (lines and sales come in with the orders). Null for a list a
+   * store connection brings (lib/connectors), not Shopify's import.
    */
-  section: { label: string; icon: string; importedWith: Resource };
+  section: { label: string; icon: string; importedWith: Resource | null };
 };
 
 /** PostgREST embeds a to-one relation as a one-element array or an object; either way, the one row. */
@@ -929,6 +936,176 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "designs", label: "Designs on it", type: "number" },
     ],
   },
+  // What the store's ads cost (0214, connectors phase 4): from a
+  // connected ad account, not Shopify; empty until one is connected.
+  ad_spend: {
+    label: "Ad spend",
+    what: 'one row per ad campaign per day, from the store\'s connected ad account (Meta) — what it spent, impressions, clicks, and the purchases and their value as the ad platform counts them, with ROAS and cost per purchase worked out; what "ad spend", "how much did ads cost", "Meta spend", "Facebook ads", "ROAS", "CPA", "cost per purchase" and "which campaign is working" mean',
+    section: { label: "Ad spend", icon: "target", importedWith: null },
+    advice:
+      "Read from the store's connected ad account every hour; empty until one is connected in Settings → Connections. day is the ad account's own day. purchases, purchase_value, roas (purchase_value ÷ spend) and cost_per_purchase are the AD PLATFORM'S OWN CLAIM, not the store's orders: always say \"Meta says\" when quoting them, and never add them to the store's revenue. What a campaign really sold is the store's orders whose utm_campaign names it (Shopify orders). Spend over a period is the sum of spend across its days; ROAS over a period is the sum of purchase_value ÷ the sum of spend, never an average of the daily roas.",
+    view: "store_ad_spend",
+    dated: "day",
+    order: { field: "day", ascending: false },
+    select:
+      "id, day, provider, campaign_name, campaign_id, spend, currency, impressions, clicks, purchases, purchase_value, roas, cost_per_purchase",
+    columns: [
+      { field: "day", label: "Day", type: "date" },
+      { field: "campaign_name", label: "Campaign", type: "text" },
+      { field: "spend", label: "Spent", type: "currency", currencyField: "currency" },
+      { field: "impressions", label: "Impressions", type: "number" },
+      { field: "clicks", label: "Clicks", type: "number" },
+      {
+        field: "purchases",
+        label: "Purchases (Meta)",
+        type: "number",
+        about: "Purchases as the ad platform counts them, not the store's orders.",
+      },
+      {
+        field: "purchase_value",
+        label: "Value (Meta)",
+        type: "currency",
+        currencyField: "currency",
+        about: "What those purchases were worth, as the ad platform counts them.",
+      },
+      {
+        field: "roas",
+        label: "ROAS (Meta)",
+        type: "number",
+        about: "Value ÷ spent, from the ad platform's own count.",
+      },
+      { field: "cost_per_purchase", label: "Cost per purchase", type: "currency", currencyField: "currency" },
+      { field: "provider", label: "From", type: "badge" },
+    ],
+  },
+  // What the rest of a store's connected accounts bring (0215): read from
+  // each provider on its own clock, empty until it is connected.
+  web_traffic: {
+    label: "Web traffic",
+    what: 'one row per day and where the visits came from (source, medium and campaign), from the store\'s connected Google Analytics — visits, people, and the purchases and revenue Google Analytics counted, with the conversion rate; what "traffic", "visitors", "sessions", "where do visitors come from", "conversion rate", "Google Analytics" and "GA4" mean',
+    section: { label: "Web traffic", icon: "globe", importedWith: null },
+    advice:
+      'Read from the store\'s connected Google Analytics every few hours; empty until it is connected in Settings → Connections. purchases and revenue are GOOGLE ANALYTICS\' OWN COUNT, not the store\'s orders: say "Google Analytics counted" when quoting them, and never add them to the store\'s revenue. source, medium and campaign are as GA4 names them: "(direct)", "(none)" and "(not set)" are its words for unknown. Visits over a period are the sum of sessions across its days; a conversion rate over a period is the sum of purchases ÷ the sum of sessions, never an average of the daily rates.',
+    view: "store_web_traffic",
+    dated: "day",
+    order: { field: "day", ascending: false },
+    select:
+      "id, day, source, medium, campaign, sessions, users, purchases, revenue, currency, conversion_rate, provider",
+    columns: [
+      { field: "day", label: "Day", type: "date" },
+      { field: "source", label: "Source", type: "text" },
+      { field: "medium", label: "Medium", type: "text" },
+      { field: "campaign", label: "Campaign", type: "text" },
+      { field: "sessions", label: "Visits", type: "number" },
+      { field: "users", label: "People", type: "number" },
+      {
+        field: "purchases",
+        label: "Purchases (GA)",
+        type: "number",
+        about: "Purchases as Google Analytics counts them, not the store's orders.",
+      },
+      { field: "revenue", label: "Revenue (GA)", type: "currency", currencyField: "currency" },
+      { field: "conversion_rate", label: "Conversion", type: "percent", about: "Purchases ÷ visits, that day." },
+    ],
+  },
+  email_campaigns: {
+    label: "Email campaigns",
+    what: 'one row per email campaign sent, from the store\'s connected Mailchimp or Brevo — when, to how many, opened, clicked, unsubscribed and bounced, with open and click rates, and the orders and revenue Mailchimp credits it; what "email campaigns", "newsletters", "open rate", "click rate", "Mailchimp" and "Brevo" mean',
+    section: { label: "Email campaigns", icon: "mail", importedWith: null },
+    advice:
+      "Read from the connected Mailchimp or Brevo every few hours; empty until one is connected. opens and clicks are unique people. open_rate and click_rate are percentages of delivered (of sent where delivered is unknown). orders and revenue are Mailchimp's own e-commerce credit, not the store's orders, and are empty for Brevo, which keeps none. Opens are inflated by mail apps that load every email; clicks are the surer signal.",
+    view: "store_email_campaigns",
+    dated: "sent_on",
+    order: { field: "sent_on", ascending: false },
+    select:
+      "id, sent_on, name, subject, sent, delivered, opens, clicks, unsubscribes, bounces, open_rate, click_rate, orders, revenue, currency, provider",
+    columns: [
+      { field: "sent_on", label: "Sent", type: "date" },
+      { field: "name", label: "Campaign", type: "text" },
+      { field: "subject", label: "Subject", type: "text" },
+      { field: "sent", label: "Sent to", type: "number" },
+      { field: "open_rate", label: "Opened", type: "percent" },
+      { field: "click_rate", label: "Clicked", type: "percent" },
+      { field: "unsubscribes", label: "Unsubscribed", type: "number" },
+      {
+        field: "revenue",
+        label: "Revenue (credited)",
+        type: "currency",
+        currencyField: "currency",
+        about: "What the email tool credits this campaign with, not the store's orders.",
+      },
+      { field: "provider", label: "From", type: "badge" },
+    ],
+  },
+  support_tickets: {
+    label: "Support tickets",
+    what: 'one row per support ticket, from the store\'s connected Zendesk — subject, status, priority and channel, and the customer who raised it, matched to their Shopify customer by email or phone with how many orders they have placed; what "tickets", "support", "complaints", "Zendesk", "open tickets" and "who is unhappy" mean',
+    section: { label: "Support tickets", icon: "life-buoy", importedWith: null },
+    advice:
+      'Read from the connected Zendesk every half hour; empty until it is connected. status is Zendesk\'s own ("new", "open", "pending", "hold", "solved", "closed", "deleted"); a ticket still needing an answer is new or open. customer_orders is the Shopify customer\'s order count when the ticket\'s email or phone matched one, empty when it matched none. url opens the ticket in Zendesk.',
+    view: "store_support_tickets",
+    dated: "opened_on",
+    order: { field: "changed_on", ascending: false },
+    gives: { Customer: "shopify_customer_id" },
+    select:
+      "id, ticket, subject, status, priority, channel, customer_name, email, customer_orders, opened_on, changed_on, tags, url, provider",
+    columns: [
+      { field: "ticket", label: "Ticket", type: "text" },
+      { field: "subject", label: "Subject", type: "text" },
+      { field: "status", label: "Status", type: "badge" },
+      { field: "priority", label: "Priority", type: "badge" },
+      { field: "customer_name", label: "Customer", type: "text" },
+      { field: "customer_orders", label: "Their orders", type: "number" },
+      { field: "opened_on", label: "Opened", type: "date" },
+      { field: "changed_on", label: "Last change", type: "date" },
+      { field: "url", label: "Open in Zendesk", type: "url" },
+    ],
+  },
+  crm_contacts: {
+    label: "CRM contacts",
+    what: 'one row per contact in the store\'s connected HubSpot — name, email, phone, lifecycle stage and lead status, and whether they are already a Shopify customer, with how many orders; what "contacts", "leads", "CRM", "HubSpot", "lifecycle stage" and "leads who never bought" mean',
+    section: { label: "CRM contacts", icon: "contact", importedWith: null },
+    advice:
+      'Read from the connected HubSpot every hour; empty until it is connected. in_store is "Customer" when the contact\'s email or phone matched a Shopify customer, else "Not a customer"; customer_orders is that customer\'s order count. lifecycle_stage and lead_status are HubSpot\'s own values ("subscriber", "lead", "customer"…). url opens the contact in HubSpot.',
+    view: "store_crm_contacts",
+    order: { field: "changed_on", ascending: false },
+    gives: { Customer: "shopify_customer_id" },
+    select:
+      "id, name, email, phone, lifecycle_stage, lead_status, in_store, customer_orders, added_on, changed_on, url, provider",
+    columns: [
+      { field: "name", label: "Name", type: "text" },
+      { field: "email", label: "Email", type: "email" },
+      { field: "phone", label: "Phone", type: "phone" },
+      { field: "lifecycle_stage", label: "Stage", type: "badge" },
+      { field: "lead_status", label: "Lead status", type: "badge" },
+      { field: "in_store", label: "In your store", type: "badge" },
+      { field: "customer_orders", label: "Their orders", type: "number" },
+      { field: "changed_on", label: "Last change", type: "date" },
+      { field: "url", label: "Open in HubSpot", type: "url" },
+    ],
+  },
+  social_posts: {
+    label: "Social posts",
+    what: 'one row per post on the store\'s own Facebook Page and Instagram — when, what it said, its kind, and its likes, comments and shares; what "posts", "Instagram", "Facebook page", "reels", "engagement" and "which post did best" mean',
+    section: { label: "Social posts", icon: "heart", importedWith: null },
+    advice:
+      "Read from the connected Facebook Page and its Instagram every few hours; empty until connected. likes on Facebook are all reactions. Instagram does not share its share count, so shares are empty there. engagement is likes + comments + shares. The latest month's numbers still move as people react.",
+    view: "store_social_posts",
+    dated: "posted_on",
+    order: { field: "posted_on", ascending: false },
+    select: "id, posted_on, network, text, kind, likes, comments, shares, engagement, url, provider",
+    columns: [
+      { field: "posted_on", label: "Posted", type: "date" },
+      { field: "network", label: "Where", type: "badge" },
+      { field: "text", label: "Post", type: "text" },
+      { field: "kind", label: "Kind", type: "text" },
+      { field: "likes", label: "Likes", type: "number" },
+      { field: "comments", label: "Comments", type: "number" },
+      { field: "shares", label: "Shares", type: "number" },
+      { field: "engagement", label: "Engagement", type: "number" },
+      { field: "url", label: "Open", type: "url" },
+    ],
+  },
 } as Record<StoreTable, TableSpec>;
 
 /**
@@ -958,6 +1135,12 @@ const SEARCHABLE: Record<StoreTable, string[]> = {
   products: ["title", "handle", "status", "product_type", "vendor", "collections"],
   inventory_levels: ["product", "variant", "sku", "location_name", "stock_state"],
   stock_pools: ["sku", "products", "draws_from", "role", "counts"],
+  ad_spend: ["campaign_name", "provider"],
+  web_traffic: ["source", "medium", "campaign"],
+  email_campaigns: ["name", "subject", "provider"],
+  support_tickets: ["ticket", "subject", "status", "customer_name", "email", "tags"],
+  crm_contacts: ["name", "email", "phone", "lifecycle_stage", "lead_status", "in_store"],
+  social_posts: ["text", "network", "kind"],
   locations: ["name", "place", "state"],
   collections: ["title", "handle"],
   carts: ["customer_name", "email", "items"],

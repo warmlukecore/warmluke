@@ -1,7 +1,8 @@
 # Connectors: couriers and ad accounts beside the store
 
-Status: design, agreed 11 Oct 2026. Phases 1 to 3 are built; each waits on what is listed
-under [Phases](#phases).
+Status: design, agreed 11 Oct 2026. Phases 1 to 5 and 7 are built; each waits on what is listed
+under [Phases](#phases). Every connector is reached with the merchant's own credential, so
+none waits on a review of Warmluke's own app.
 
 ## Scope
 
@@ -88,7 +89,9 @@ campaign) once there is spend to divide by.
 
 `src/lib/connectors.ts` declares each provider once:
 
-- `id`, `label`, `logo` (official mark, unaltered), `kind` (`courier` or `ads`).
+- `id`, `label`, `logo` (the provider's official mark, unaltered, in `public/logos`, on the
+  `logo-tile` token), `kind` (`courier`, `ads`, `analytics`, `email`, `support`, `crm`,
+  `social`; `KINDS` names each group in Settings).
 - `auth`:
   - `{ kind: "oauth", authorize, token, scopes }` for Meta and Google;
   - `{ kind: "login", fields }` for Shiprocket and GoSwift, whose APIs are reached with an
@@ -243,15 +246,51 @@ The connection row keeps who connected and who disconnected, and when.
      (tech-integrations@goswift.in). The token lasts about a day and is renewed near its end.
    - Waiting on a live account: the header GoSwift signs a delivery with is not in its docs.
      The address's token is the proof until a live delivery shows it.
-4. **Meta Ads.** Spend and results by campaign and day.
-   - Needs: a Meta Business app with Facebook Login for Business, Business Verification,
-     and Advanced Access to `ads_read` through App Review.
-   - Until then it works for the app's own testers.
-5. **Google Ads.** Spend and results by campaign and day.
-   - Needs: a Google Cloud project with the Google Ads API, a verified consent screen, and
-     API access approved for production.
+4. **Meta Ads.** Built (0214, 14 Oct): `ad_spend` and its `store_ad_spend` list ("Ad spend"),
+   the adapter (`src/lib/connectors/meta-ads.ts`) and Settings → Connections. Checked by
+   `check-meta-ads` (Meta stood in for), `check-connectors` (the walls, and a courier's ticket
+   writing no spend) and the Connections walk.
+   - Connected with a **token from the store's own business**: a system user given the ad
+     account, with `ads_read` and no expiry. A business's own app reading its own ad account
+     needs only the access every app has, so it waits on no review of ours (Meta's Marketing
+     API authorization docs, 14 Oct). Its limits are tighter, which one read an hour fits.
+   - What a sync reads: insights at campaign level, one row per campaign and day, 90 days on
+     the first run, a month per request; each run starts three days before the last one
+     finished, which Meta still revises. Purchases are Meta's `omni_purchase`, its own claim,
+     kept apart from the store's orders.
+   - Later, for merchants without a business app: "Continue with Facebook" through our own
+     app, once it has Business Verification and Advanced Access to `ads_read`. Only the login
+     step changes.
+   - Waiting on a live account: the first real token, to see an account's own answers.
+5. **Google Ads.** Built (0215, 14 Oct) into the same `ad_spend` list as Meta's, by
+   `src/lib/connectors/google-ads.ts` (API v25, GAQL over campaign by `segments.date`, a month
+   per request, cost in micros). Checked by `check-google-connectors`.
+   - Connected with the merchant's **own API access**: a developer token from their manager
+     account, an OAuth client and its refresh token, and the account id (and the manager's
+     when they sign in through one). Usually set up by whoever runs their ads.
+   - "Conversions" are whatever the account counts as one; the list says so.
+   - Later: "Continue with Google" through our own project, once it has Google Ads API
+     access approved for production. Only the login step changes.
 6. **ROAS across both:** revenue from phase 1 divided by spend from phases 4 and 5, by
    campaign where the UTM campaign matches.
+7. **The rest of the store's day.** Built (0215, 14 Oct): five lists by kind, each written
+   only by a connection whose provider brings it (`abo_connector_holding`), with customers
+   matched on write by email or the phone's last ten digits (`abo_connector_customer_for`).
+   Checked by `check-email-connectors`, `check-support-crm-connectors`, `check-meta-social`,
+   `check-connectors` (every list's walls, and the matching) and the Connections walk.
+   - **Google Analytics** → `web_traffic`: visits, people, purchases and revenue by day,
+     source, medium and campaign (Data API `runReport`). A service account of the merchant's
+     own, added as a Viewer of the property; its key signs a JWT here.
+   - **Mailchimp, Brevo** → `email_campaigns`: each send's opens, clicks, unsubscribes and
+     bounces, and Mailchimp's credited orders and revenue. An API key each.
+   - **Zendesk** → `support_tickets`: the incremental ticket export by cursor, with the
+     requester, on the Shopify customer they are. An agent's email and an API token.
+   - **HubSpot** → `crm_contacts`: contacts changed since the last run, through the CRM
+     search, past its 10,000 cap. A private app's token.
+   - **Facebook & Instagram** → `social_posts`: the Page's posts and the linked Instagram's
+     media, with likes, comments and shares. A system user's token, traded for the Page's.
+   - Not built, on purpose: scrapers of other sites (marketplaces, review sites, trends),
+     which break those sites' terms; and Google Drive, which is files, not store data.
 
 Provider facts (token lifetimes, rate limits, review steps) were researched on 9 Oct. Each
 phase checks them against the provider's current documentation before it is built.

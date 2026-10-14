@@ -61,12 +61,14 @@ function changeScopes(): string {
  */
 export function abilitiesPrompt(): string {
   const live = TABLES.filter(isLive);
-  const later = TABLES.filter((t) => !isLive(t));
+  // A list a connection brings is read from its provider on its own clock, not on Shopify's.
+  const connected = TABLES.filter((t) => STORE_TABLES[t].section.importedWith === null);
+  const later = TABLES.filter((t) => !isLive(t) && !connected.includes(t));
   const keys = keysByList()
     .map((k) => `${k.table}: ${k.keys.join(", ")}`)
     .join("; ");
   return `WHERE EACH THING WORKS, AND WHAT IT PROMISES — true of this platform as it runs today. Promise no more than this, and when a request needs more, say which line it needs.
-- READING THE STORE. The store's lists update within seconds of a change in Shopify (${live.join(", ")})${later.length ? `; ${later.join(", ")} only when the store is read again` : ""}. What a row holds is every field its list has, not only the columns a section shows: a field missing from a section's columns is not a field missing from the data. A value that is null is known to be empty; a field no tool returned is unknown, and one empty lookup is not proof that something does not exist.
+- READING THE STORE. The store's lists update within seconds of a change in Shopify (${live.join(", ")})${later.length ? `; ${later.join(", ")} only when the store is read again` : ""}${connected.length ? `; ${connected.join(", ")} from an account the owner connects in Settings → Connections, read on its own clock (every half hour to every few hours) and empty until one is connected` : ""}. What a row holds is every field its list has, not only the columns a section shows: a field missing from a section's columns is not a field missing from the data. A value that is null is known to be empty; a field no tool returned is unknown, and one empty lookup is not proof that something does not exist.
 - MATCHING A STORE ROW. By its keys — ${keys} — never by a name, a title or a SKU: two customers can share a name, and a SKU can be blank or repeated. Where only a name is given, find the candidates and ask which one, or match on something that tells them apart (email, phone, order number).
 - STOCK FIGURES. "available" is Shopify's own figure: what is on hand less what orders have already committed. Never take committed off it again; "on_hand" is what is physically there.
 - CHANGING THE SHOP ITSELF (${whatCanChange()}). Asked for in this chat or made by the owner on a list (ticked rows, or Edit and type in a cell); each waits for their yes unless Settings → Store sends that kind straight, never what you ask; the store must have allowed it (${changeScopes()}). No rule, button, scan or screen starts one. A stock count goes only while Shopify's is still the one Warmluke saw.

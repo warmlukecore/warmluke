@@ -56,6 +56,13 @@ const GUARDED = {
   abo_connector_put_cursor: "the connector worker's ticket",
   abo_connector_put_secret: "the connector worker's ticket",
   abo_connector_put_shipments: "the connector worker's ticket, writing its own connection's rows",
+  // 0214, 0215: each list's writer takes only a ticket whose connection brings that list.
+  abo_connector_put_ad_spend: "the connector worker's ticket, an ads connection writing its own rows",
+  abo_connector_put_web_traffic: "the connector worker's ticket, an analytics connection writing its own rows",
+  abo_connector_put_email_campaigns: "the connector worker's ticket, an email connection writing its own rows",
+  abo_connector_put_support_tickets: "the connector worker's ticket, a support connection writing its own rows",
+  abo_connector_put_crm_contacts: "the connector worker's ticket, a CRM connection writing its own rows",
+  abo_connector_put_social_posts: "the connector worker's ticket, a social connection writing its own rows",
   abo_connector_release: "the connector worker's ticket",
   abo_connector_renew: "the connector worker's ticket",
   abo_connector_put_hook: "the connector worker's ticket, keeping its own connection's hook token as a hash",
