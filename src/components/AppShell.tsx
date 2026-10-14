@@ -5043,7 +5043,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 wide={stage || focus === "luke"}
                 onWide={stage ? undefined : () => focusOn(focus === "luke" ? null : "luke")}
                 onHide={!stage && focus === null ? hideLuke : undefined}
-                meeting={stage ? { reading: project?.name ?? null } : undefined}
+                meeting={stage ? { reading: project?.name ?? null, onLeave: enterStore } : undefined}
                 onWaiting={setWaiting}
                 shopAsked={shopAsked}
                 alerts={alerts ?? []}

@@ -1,17 +1,21 @@
 // Luke meets them first (0200, 9 Oct): a new owner's app opens on Luke,
-// full screen, before anything else. He speaks first, nothing of the app
-// is there and no button leads out; once he has helped he asks whether to
-// open their store, and their yes ("open_store" on his answer) lets them
-// in, Luke beside it. His replies are stood in here: what is checked is
-// the screen, not his words.
-import { expect, test } from "./shop";
+// full screen, before anything else. He speaks first and nothing of the
+// app is there; once he has helped he asks whether to open their store,
+// and their yes ("open_store" on his answer) lets them in, Luke beside it.
+// "Go to store" at the top is their own way in at any moment (14 Oct).
+// His replies are stood in here: what is checked is the screen, not his
+// words.
+import type { Page } from "@playwright/test";
+import { expect, test, type Shop } from "./shop";
 
 const THREAD = "00000000-0000-4000-8000-00000000c0de";
 
-test("the first conversation is Luke's alone, and the store opens on their yes to his offer", async ({
-  signedIn: page,
-  shop,
-}) => {
+/**
+ * An owner just through onboarding, not yet let into the store, with an
+ * older thread their own AI started, and Luke's replies stood in. Returns
+ * what each turn asked and how to put the account back.
+ */
+async function meeting(page: Page, shop: Shop) {
   // Just through onboarding, not yet let into the store; put back as it was after.
   const { data: had } = await shop.admin.from("profiles").select("*").eq("user_id", shop.userId).maybeSingle();
   const made = await shop.admin.from("profiles").upsert({
@@ -82,6 +86,33 @@ test("the first conversation is Luke's alone, and the store opens on their yes t
     });
   });
 
+  const putBack = async () => {
+    await shop.admin.from("conversations").delete().eq("id", older!.id);
+    if (had) await shop.admin.from("profiles").upsert(had);
+    else await shop.admin.from("profiles").delete().eq("user_id", shop.userId);
+  };
+  return { asked, putBack };
+}
+
+/** In the store: the Overview's greeting, as luke.spec waits for it on a busy check database. */
+const inTheStore = (page: Page) =>
+  expect(page.getByRole("heading", { name: /Good (morning|afternoon|evening), Asha/ })).toBeVisible({
+    timeout: 30_000,
+  });
+
+const metLuke = (shop: Shop) =>
+  expect
+    .poll(
+      async () =>
+        (await shop.admin.from("profiles").select("met_luke_at").eq("user_id", shop.userId).single()).data?.met_luke_at
+    )
+    .not.toBeNull();
+
+test("the first conversation is Luke's alone, and the store opens on their yes to his offer", async ({
+  signedIn: page,
+  shop,
+}) => {
+  const { asked, putBack } = await meeting(page, shop);
   try {
     await page.goto(`/app/${shop.projectId}`);
     const luke = page.getByRole("complementary", { name: "Luke" });
@@ -92,13 +123,14 @@ test("the first conversation is Luke's alone, and the store opens on their yes t
     await expect(luke.getByText("List my unpaid orders")).toHaveCount(0);
     // He spoke first: no words of theirs, the meeting's flag on it.
     expect(asked[0]).toMatchObject({ meet: true, message: "" });
-    // Nothing of the app, and no way past him but him.
+    // Nothing of the app and none of the panel's controls: Luke, and their own way into the store.
     await expect(page.getByRole("link", { name: "Overview" })).toBeHidden();
     for (const name of [/History/, /New conversation/, "Close Luke", "Hide Luke's panel", /Luke full width/])
       await expect(luke.getByRole("button", { name })).toHaveCount(0);
+    await expect(luke.getByRole("button", { name: "Go to store" })).toBeVisible();
 
-    // Having helped, he asks in words whether to open their store: no button
-    // out (10 Oct), and still nothing of the app until they say yes.
+    // Having helped, he asks in words whether to open their store, and
+    // nothing of the app shows until they say yes or go in themselves.
     await luke.getByText("Calling COD customers").click();
     await luke.getByRole("button", { name: /Send answer/ }).click();
     await expect(luke.getByText("Want to see your store now?")).toBeVisible();
@@ -109,26 +141,33 @@ test("the first conversation is Luke's alone, and the store opens on their yes t
     // Their yes, his "open_store": in, Luke beside the store, and never asked again.
     await page.getByPlaceholder("Reply to Luke, in your own words").fill("haan dikhao");
     await page.keyboard.press("Enter");
-    // The Overview's counts, as luke.spec waits for them on a busy check database.
-    await expect(page.getByRole("heading", { name: /Good (morning|afternoon|evening), Asha/ })).toBeVisible({
-      timeout: 30_000,
-    });
-    await expect
-      .poll(
-        async () =>
-          (await shop.admin.from("profiles").select("met_luke_at").eq("user_id", shop.userId).single()).data
-            ?.met_luke_at
-      )
-      .not.toBeNull();
+    await inTheStore(page);
+    await metLuke(shop);
     await page.reload();
-    // The Overview's counts, as luke.spec waits for them on a busy check database.
-    await expect(page.getByRole("heading", { name: /Good (morning|afternoon|evening), Asha/ })).toBeVisible({
-      timeout: 30_000,
-    });
+    await inTheStore(page);
     await expect(page.getByRole("status", { name: "Luke is reading your store" })).toHaveCount(0);
   } finally {
-    await shop.admin.from("conversations").delete().eq("id", older!.id);
-    if (had) await shop.admin.from("profiles").upsert(had);
-    else await shop.admin.from("profiles").delete().eq("user_id", shop.userId);
+    await putBack();
+  }
+});
+
+test("Go to store lets them in at any moment, and the meeting is not asked again", async ({ signedIn: page, shop }) => {
+  const { putBack } = await meeting(page, shop);
+  try {
+    await page.goto(`/app/${shop.projectId}`);
+    const luke = page.getByRole("complementary", { name: "Luke" });
+    await expect(luke.getByText("I've already read your store")).toBeVisible({ timeout: 30_000 });
+    await page.screenshot({
+      path: `${process.env.LOOK_DIR ?? "test-results"}/meet-go-to-store-${test.info().project.name}.png`,
+    });
+    // Before answering anything: their choice, not his.
+    await luke.getByRole("button", { name: "Go to store" }).click();
+    await inTheStore(page);
+    await expect(luke.getByRole("button", { name: "Go to store" })).toHaveCount(0);
+    await metLuke(shop);
+    await page.reload();
+    await inTheStore(page);
+  } finally {
+    await putBack();
   }
 });

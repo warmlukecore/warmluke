@@ -45,6 +45,7 @@ import { changeShown } from "@/lib/change-preview";
 import { Icon } from "@/components/ui/Icon";
 import {
   ArrowDown,
+  ArrowRight,
   ArrowUp,
   Bell,
   Check,
@@ -2586,7 +2587,12 @@ export default function ChatPanel({
    * whether to open their store, and their yes opens it (10 Oct, AppShell).
    * `reading` names their shop while he reads it, before his first words.
    */
-  meeting?: { reading?: string | null };
+  /**
+   * The owner's first conversation: full screen, Luke alone. `onLeave` is
+   * their own way into the store at any moment (14 Oct, the user's ask);
+   * Luke still offers it in words once he has helped.
+   */
+  meeting?: { reading?: string | null; onLeave?: () => void };
   /** Luke alone, or back to the three panes. */
   onWide?: () => void;
   /** Shuts the docked panel on a wide screen; Ask Luke then floats over the page. */
@@ -3633,7 +3639,15 @@ export default function ChatPanel({
                       : LUKE_COPY.tagline}
                   </div>
                 </div>
-                {/* The first conversation has no history, bell or way out yet: only Luke. */}
+                {/* The first conversation has no history or bell yet: Luke, and the way into the store. */}
+                {meeting?.onLeave && (
+                  <div className="ml-auto">
+                    <button type="button" onClick={meeting.onLeave} className={button("secondary", "sm")}>
+                      Go to store
+                      <ArrowRight aria-hidden size={14} strokeWidth={2} />
+                    </button>
+                  </div>
+                )}
                 <div ref={menus} className={`ml-auto flex items-center gap-1 ${meeting ? "hidden" : ""}`}>
                   {/* What their own AI asked for is a notification, not a
                 turn in the conversation. It lived in the stream and
