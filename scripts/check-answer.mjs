@@ -130,6 +130,25 @@ console.log("\nwhat the prompt says when no store is connected");
   );
 }
 
+console.log("\nwho Luke is, and changing the shop when the switch is off");
+{
+  const snapshot = { last_synced_at: null, recent: [], low: [], top_customers: [], best_sellers: [] };
+  const store = (canChange) => ({
+    shop_domain: "x.myshopify.com",
+    timezone: "Asia/Kolkata",
+    currency: "INR",
+    counts: { orders: 3 },
+    snapshot,
+    canLookUp: true,
+    canChange,
+  });
+  const off = buildTalkPrompt([], "Test", "en-IN", "INR", store(false)).join("\n");
+  const on = buildTalkPrompt([], "Test", "en-IN", "INR", store(true)).join("\n");
+  check("Luke knows the trade he serves", /NDR and RTO/.test(off) && !/NO default industry/.test(off));
+  check("a switch that is off is said as off, never as impossible", /not turned on for this account/.test(off));
+  check("and is not said when it is on", !/not turned on for this account/.test(on) && /propose_store_action/.test(on));
+}
+
 console.log("\nand what it says when one is");
 {
   const db = createClient(env.NEXT_PUBLIC_ADAPTIVE_OS_SUPABASE_URL, env.ADAPTIVE_OS_SERVICE_ROLE_KEY);
