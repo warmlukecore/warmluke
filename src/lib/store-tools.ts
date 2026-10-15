@@ -39,6 +39,8 @@ import {
   STORE_METRIC_READS,
   STORE_TABLES,
   hiddenColumns,
+  queryStore,
+  type StoreQuery,
   type StoreDimension,
   type StoreMeasure,
   type StoreBrief,
@@ -438,6 +440,134 @@ const TOOLS: readonly StoreTool[] = [
         to: (args.to as string | undefined) || null,
         filters,
       });
+    },
+  },
+  {
+    // Any list, read or counted exactly in the database (0217): what
+    // store_metrics is for orders, for every list the store has.
+    name: "query_store",
+    shape: (args) =>
+      isStoreTable(args.table) && !(Array.isArray(args.measures) && args.measures.length)
+        ? { nested: { rows: { list: args.table } } }
+        : null,
+    about: (a) => {
+      const measures = Array.isArray(a.measures) ? (a.measures as Array<{ fn?: string; field?: string }>) : [];
+      const groups = Array.isArray(a.group_by) ? (a.group_by as Array<{ field?: string } | string>) : [];
+      const what = measures.length
+        ? measures.map((m) => [m.fn, m.field].filter(Boolean).join(" of ")).join(", ")
+        : "rows";
+      const by = groups.map((g) => (typeof g === "string" ? g : g.field)).filter(Boolean);
+      return `${what} in ${word(a.table) ?? "a list"}${by.length ? ` by ${by.join(" and ")}` : ""}`;
+    },
+    description: `Any of the store's lists, read or counted in the database — exactly, over every matching row, never a page: ${Object.values(
+      STORE_TABLES
+    )
+      .map((spec) => spec.section.label)
+      .join(", ")}. Two ways:
+(1) TOTALS: measures — count, count_distinct, sum, avg, min, max of a column — over every row that matches, grouped by up to two columns or by day, week, month or year of a date column, with the overall totals beside the groups. For any total, comparison or breakdown: what ads cost this month, ROAS by campaign (campaign_results), money settled by week, tickets by status, read rate by template, revenue by email campaign.
+(2) ROWS: every matching row, sorted, up to 500 a call, with offset to page on, and the count of all of them.
+Filters on any column (eq, neq, gt, gte, lt, lte, contains, starts_with, in, is_empty, not_empty), and from/to on the list's own date. Columns are the list's own (search_store's rows show them; a wrong one is answered with the right ones). Read-only.`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        table: { type: "string", enum: Object.keys(STORE_TABLES), description: "Which of the store's lists." },
+        where: {
+          type: "array",
+          description: "Only rows matching all of these.",
+          items: {
+            type: "object",
+            properties: {
+              field: { type: "string" },
+              op: {
+                type: "string",
+                enum: ["eq", "neq", "gt", "gte", "lt", "lte", "contains", "starts_with", "in", "is_empty", "not_empty"],
+              },
+              value: { description: "A value; for in, a list of values." },
+            },
+            required: ["field"],
+          },
+        },
+        from: { type: "string", description: "First day, YYYY-MM-DD, on the list's own date." },
+        to: { type: "string", description: "Last day, YYYY-MM-DD, inclusive." },
+        measures: {
+          type: "array",
+          description: "Totals to work out. Leave out to read rows instead.",
+          items: {
+            type: "object",
+            properties: {
+              fn: { type: "string", enum: ["count", "count_distinct", "sum", "avg", "min", "max"] },
+              field: { type: "string", description: "The column, for all but count." },
+              as: { type: "string", description: "A name for the figure." },
+            },
+            required: ["fn"],
+          },
+        },
+        group_by: {
+          type: "array",
+          description: "Up to two columns to break the totals down by.",
+          items: {
+            type: "object",
+            properties: {
+              field: { type: "string" },
+              by: { type: "string", enum: ["day", "week", "month", "year"], description: "For a date column." },
+            },
+            required: ["field"],
+          },
+        },
+        order: {
+          type: "object",
+          description: "Rows: a column. Totals: a figure's name or a group. Biggest first unless desc is false.",
+          properties: { by: { type: "string" }, desc: { type: "boolean" } },
+          required: ["by"],
+        },
+        limit: { type: "number", description: "Rows: up to 500 (100). Groups: up to 1000 (100)." },
+        offset: { type: "number", description: "Rows: how many to skip, to page on." },
+      },
+      required: ["table"],
+    },
+    run: async (args, { db, store }) => {
+      const table = String(args.table ?? "");
+      if (!isStoreTable(table)) {
+        return { error: `"${table}" is not one of the store's lists.`, available: Object.keys(STORE_TABLES) };
+      }
+      const q = {
+        where: Array.isArray(args.where) ? args.where : undefined,
+        from: typeof args.from === "string" && args.from ? args.from : null,
+        to: typeof args.to === "string" && args.to ? args.to : null,
+        measures: Array.isArray(args.measures) ? args.measures : undefined,
+        group_by: Array.isArray(args.group_by) ? args.group_by : undefined,
+        order: args.order && typeof args.order === "object" ? args.order : undefined,
+        limit: Number(args.limit) || undefined,
+        offset: Number(args.offset) || undefined,
+      } as StoreQuery;
+      for (const day of [q.from, q.to]) {
+        if (day && !/^\d{4}-\d{2}-\d{2}$/.test(day)) return { error: `"${day}" is not a date. Use YYYY-MM-DD.` };
+      }
+      // Nothing read or counted by a column this account is not shown (0192): said, not guessed at.
+      const hidden = hiddenColumns(table);
+      if (hidden) {
+        const named = [
+          ...(q.where ?? []).map((w) => w.field),
+          ...(q.measures ?? []).map((m) => m.field),
+          ...(q.group_by ?? []).map((g) => (typeof g === "string" ? g : g.field)),
+          q.order?.by,
+        ].filter((f): f is string => typeof f === "string");
+        const barred = [...new Set(named.filter((f) => hidden.has(f)))];
+        if (barred.length) {
+          return {
+            error: `Not shown to this account: ${barred.join(", ")} on ${STORE_TABLES[table].label}. Say it is not shown to them here (Warmluke can turn it on); do not guess it.`,
+          };
+        }
+      }
+      try {
+        return { ...(await queryStore(db, store.id, table, q)), currency: store.currency };
+      } catch (e) {
+        const said = e instanceof Error ? e.message : "The list could not be read.";
+        // A column it does not have is answered with the ones it does.
+        return /no column/.test(said)
+          ? { error: said, columns: STORE_TABLES[table].select.split(",").map((c) => c.trim()) }
+          : { error: said };
+      }
     },
   },
 ];

@@ -404,7 +404,7 @@ one of those sent the whole thread again at full price (57,360 uncached tokens f
 one-lookup answer, 11 Oct). Where the cache ends is left out of a tape's key.
 
 Most questions are answered from that read in one model call. In the chat (`lookups: true`)
-the model may also look up what the snapshot does not hold with six read-only store tools
+the model may also look up what the snapshot does not hold with seven read-only store tools
 (`LUKE_TOOLS`), and read the app itself with or without a store (`appTools`,
 `src/lib/section-read.ts`): `read_section`, a section's own rows and the fields kept beside the
 store's, found by a word or a field's value wherever they sit (the same reader MCP's
@@ -414,7 +414,11 @@ One store tool is `store_metrics`: a total, an average, a count or a breakdown
 over the whole store, counted in the database (`abo_store_metrics`, 0129) by one measure
 and one dimension in a window, so an answer about the shop's numbers is never the model's
 arithmetic over a page of rows. The measures and dimensions are declared once
-(`STORE_METRICS`) and `check-store-metrics` holds the SQL to them. The tools run at most three lookups before its reply, on the first attempt only, each read
+(`STORE_METRICS`) and `check-store-metrics` holds the SQL to them. Every other list is
+`query_store` (`abo_store_query`, 0217): the same exactness over any list the store has (ad
+spend, campaign results, payments, tickets, messages), its columns read off the list's own
+view and never written into the SQL as given, its values quoted, read as the caller with ten
+seconds at most; `check-store-query` holds it to totals, filters, paging and refusals. The tools run at most three lookups before its reply, on the first attempt only, each read
 with the caller's own client. `search_store` rows carry what the merchant keeps beside
 them (`yours`, by section name) when a section holds any, and a list's ties are broken by
 what its rows say, so the same store reads the same way every time. Every lookup is
@@ -634,7 +638,7 @@ time — production runs it on Sonnet 5. With a verdict in hand the gap pass bel
 the switch off, or the critic failing to answer, everything below runs as it always did.
 
 The plan step itself may look the store up (`PLAN_TOOLS`: search_store, store_metrics,
-store_overview; two lookups, then the plan), heard as `lookup` steps like the design's own.
+query_store, store_overview; two lookups, then the plan), heard as `lookup` steps like the design's own.
 
 ### Reviewers after the critic
 

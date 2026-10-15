@@ -271,8 +271,11 @@ The connection row keeps who connected and who disconnected, and when.
    - "Conversions" are whatever the account counts as one; the list says so.
    - Later: "Continue with Google" through our own project, once it has Google Ads API
      access approved for production. Only the login step changes.
-6. **ROAS across both:** revenue from phase 1 divided by spend from phases 4 and 5, by
-   campaign where the UTM campaign matches.
+6. **ROAS across both.** Built (0217, 15 Oct): `store_campaign_results` ("Campaign results"),
+   each campaign's spend by day beside the store's own orders that day whose UTM campaign is
+   the campaign's name or id (case and spaces aside, cancelled ones left out, on the store's
+   own calendar): `store_orders`, `store_revenue`, `store_roas`, `cost_per_order`, and the
+   platform's own claim (`platform_roas`) beside them. Checked by `check-store-query`.
 7. **The rest of the store's day.** Built (0215, 14 Oct): five lists by kind, each written
    only by a connection whose provider brings it (`abo_connector_holding`), with customers
    matched on write by email or the phone's last ten digits (`abo_connector_customer_for`).

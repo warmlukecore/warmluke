@@ -105,13 +105,14 @@ const LUKE_TOOLS = [
   "search_store",
   "low_stock",
   "store_metrics",
+  "query_store",
 ] as const;
 
 /**
  * What the plan step may read: enough to settle which rows the work
  * belongs to and what a column really holds. Never a change to the shop.
  */
-const PLAN_TOOLS = ["search_store", "store_metrics", "store_overview"] as const;
+const PLAN_TOOLS = ["search_store", "store_metrics", "query_store", "store_overview"] as const;
 /** Two lookups, then the plan. */
 const PLAN_STEPS = 3;
 

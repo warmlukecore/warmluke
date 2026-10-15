@@ -56,9 +56,10 @@ const NAMES = [
   "search_store",
   "low_stock",
   "store_metrics",
+  "query_store",
 ];
 check(
-  "the seven reading tools, in the order clients are shown them",
+  "the eight reading tools, in the order clients are shown them",
   JSON.stringify(STORE_TOOLS.map((t) => t.name)) === JSON.stringify(NAMES)
 );
 check(
@@ -123,6 +124,57 @@ check(
 console.log("\nthe same tools, as the AI SDK takes them");
 const ai = aiStoreTools(ctx);
 check("one AI SDK tool per store tool, same names", JSON.stringify(Object.keys(ai)) === JSON.stringify(NAMES));
+
+console.log("\nany list, counted exactly (0217)");
+{
+  const query = STORE_TOOLS.find((t) => t.name === "query_store");
+  let reached = false;
+  const db = { rpc: async () => ((reached = true), { data: null, error: null }) };
+  const wrong = await query.run({ table: "nope" }, { db, store: { id: "s", project_id: "p", currency: "INR" } });
+  check(
+    "a list that is not one is refused before any read",
+    !!wrong.error && !reached && wrong.available?.includes("campaign_results")
+  );
+  const notADay = await query.run(
+    { table: "ad_spend", from: "last week" },
+    { db, store: { id: "s", project_id: "p", currency: "INR" } }
+  );
+  check("and so is a day that is not one", /not a date/.test(notADay.error ?? "") && !reached);
+  let spec = null;
+  const asked = {
+    rpc: async (_fn, args) => ((spec = args), { data: { list: "ad_spend", totals: {}, groups: [] }, error: null }),
+  };
+  await query.run(
+    {
+      table: "ad_spend",
+      measures: [{ fn: "sum", field: "spend" }],
+      group_by: [{ field: "campaign_name" }],
+      from: "2026-10-01",
+    },
+    { db: asked, store: { id: "s", project_id: "p", currency: "INR" } }
+  );
+  check(
+    "totals are asked of the database over the list's own date column",
+    spec?.p_list === "ad_spend" &&
+      spec.p_spec.date_field === "day" &&
+      spec.p_spec.from === "2026-10-01" &&
+      spec.p_spec.measures[0].fn === "sum"
+  );
+  await query.run({ table: "gateway_payments" }, { db: asked, store: { id: "s", project_id: "p", currency: "INR" } });
+  check(
+    "rows come newest first, as the list opens",
+    spec?.p_spec.order?.by === "paid_on" && spec.p_spec.order.desc === true
+  );
+  const bad = { rpc: async () => ({ data: null, error: { message: 'The list ad_spend has no column "roi".' } }) };
+  const told = await query.run(
+    { table: "ad_spend", measures: [{ fn: "sum", field: "roi" }] },
+    { db: bad, store: { id: "s", project_id: "p", currency: "INR" } }
+  );
+  check(
+    "a column it does not have is answered with the ones it does",
+    /no column/.test(told.error) && told.columns?.includes("spend")
+  );
+}
 check(
   "each carries its description and schema",
   NAMES.every((n) => ai[n].description === storeTool(n).description && ai[n].inputSchema)

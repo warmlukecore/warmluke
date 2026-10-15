@@ -131,6 +131,41 @@ export async function storeMetrics(
   return data as Record<string, unknown>;
 }
 
+/** What abo_store_query is asked (0217): rows of a list, or totals over every matching row. */
+export type StoreQuery = {
+  where?: Array<{ field: string; op?: string; value?: unknown }>;
+  from?: string | null;
+  to?: string | null;
+  measures?: Array<{ fn: string; field?: string; as?: string }>;
+  group_by?: Array<{ field: string; by?: string } | string>;
+  order?: { by: string; desc?: boolean };
+  limit?: number;
+  offset?: number;
+};
+
+/** Any store list, read or counted in the database, exactly: never from a page. */
+export async function queryStore(
+  db: SupabaseClient,
+  storeId: string,
+  table: StoreTable,
+  q: StoreQuery
+): Promise<Record<string, unknown>> {
+  const spec = STORE_TABLES[table];
+  const rows = !q.measures?.length;
+  const { data, error } = await db.rpc("abo_store_query", {
+    p_store: storeId,
+    p_list: table,
+    p_spec: {
+      ...q,
+      date_field: spec.dated ?? null,
+      // Rows come as the list opens: newest first, unless asked otherwise.
+      ...(rows && !q.order ? { order: { by: spec.order.field, desc: !spec.order.ascending } } : {}),
+    },
+  });
+  if (error) throw new Error(error.message);
+  return data as Record<string, unknown>;
+}
+
 export const COUNTED = [
   "products",
   "variants",
@@ -373,7 +408,8 @@ export type StoreTable =
   | "social_posts"
   | "message_stats"
   | "gateway_payments"
-  | "gateway_settlements";
+  | "gateway_settlements"
+  | "campaign_results";
 
 type TableSpec = {
   /** What a stat over this table should be — for whoever designs one. */
@@ -1174,6 +1210,40 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "status", label: "Status", type: "badge" },
     ],
   },
+  // What ads cost beside what the store sold (0217): true ROAS.
+  campaign_results: {
+    label: "Campaign results",
+    what: 'one row per ad campaign per day — what it spent, and the store\'s OWN orders and revenue that day whose last visit named that campaign (utm_campaign), with ROAS and cost per order worked out from them, beside what the ad platform claims; what "ROAS", "real ROAS", "which campaign is making money", "cost per order", "is Meta lying" and "ads vs sales" mean',
+    section: { label: "Campaign results", icon: "target", importedWith: null },
+    advice:
+      "store_orders, store_revenue, store_roas (store_revenue ÷ spend) and cost_per_order are the STORE'S OWN orders, matched by the order's last visit (utm_campaign naming the campaign's name or id) on the same day; platform_purchases, platform_value and platform_roas are what the ad platform claims. Say which you quote. An order that came another way, or a campaign whose ads are tagged differently, is not counted for it, so zero store orders can mean untagged ads, not a failing campaign: say so. Over a period, ROAS is the sum of revenue ÷ the sum of spend, never an average of the daily ROAS.",
+    view: "store_campaign_results",
+    dated: "day",
+    order: { field: "day", ascending: false },
+    select:
+      "id, day, provider, campaign_name, campaign_id, spend, currency, impressions, clicks, platform_purchases, platform_value, store_orders, store_revenue, store_roas, cost_per_order, platform_roas",
+    columns: [
+      { field: "day", label: "Day", type: "date" },
+      { field: "campaign_name", label: "Campaign", type: "text" },
+      { field: "spend", label: "Spent", type: "currency", currencyField: "currency" },
+      { field: "store_orders", label: "Orders (store)", type: "number" },
+      { field: "store_revenue", label: "Revenue (store)", type: "currency" },
+      {
+        field: "store_roas",
+        label: "ROAS (store)",
+        type: "number",
+        about: "The store's own revenue from this campaign that day ÷ what it spent.",
+      },
+      { field: "cost_per_order", label: "Cost per order", type: "currency", currencyField: "currency" },
+      {
+        field: "platform_roas",
+        label: "ROAS (platform)",
+        type: "number",
+        about: "What the ad platform claims the campaign brought in ÷ spent.",
+      },
+      { field: "provider", label: "From", type: "badge" },
+    ],
+  },
 } as Record<StoreTable, TableSpec>;
 
 /**
@@ -1212,6 +1282,7 @@ const SEARCHABLE: Record<StoreTable, string[]> = {
   message_stats: ["template", "category", "language"],
   gateway_payments: ["payment", "order_number", "status", "method", "email", "phone"],
   gateway_settlements: ["settlement", "utr", "status"],
+  campaign_results: ["campaign_name", "campaign_id", "provider"],
   locations: ["name", "place", "state"],
   collections: ["title", "handle"],
   carts: ["customer_name", "email", "items"],

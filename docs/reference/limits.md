@@ -84,6 +84,7 @@ above saying what tells the reader it cut.
 | `abo_store_page` | A page of 25–200 rows, with the exact count | owner |
 | `abo_store_page` | Filter values: the 50 most common per field | not yet: say "most common 50; search for others" |
 | `abo_store_metrics` | 200 groups, with `truncated` | Luke |
+| `abo_store_query` | Rows: 500 a call, with `offset` and the exact `matched`. Totals: 1,000 groups, with `group_count`. 12 conditions, 8 figures, 2 groupings, 10 seconds | Luke and MCP |
 | `abo_section_stats` | A stat's groups, the top 1–20 it asks for | by design |
 | `abo_sales_between` | The top N products in a span | Luke (via the slice) |
 | `abo_store_overview` | The 20 lowest stock rows, beside exact counts | owner |

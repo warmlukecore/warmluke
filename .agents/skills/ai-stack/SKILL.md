@@ -18,7 +18,7 @@ database decides who may do what.
 | Model calls | `src/lib/ai.ts` (`callAnthropicChat`, `generate`) | AI SDK v7 `generateText`, straight to Anthropic (`@ai-sdk/anthropic`) or Google (`@ai-sdk/google`) on our own keys |
 | Which model | `MODEL_JOBS` in `src/lib/ai.ts` | One table: each job (design, gap, fallback) reads its setting when called; the defaults are only for an unconfigured server |
 | Failures | `ModelError` in `src/lib/ai.ts` | Every failure is one sentence for the merchant; the raw answer goes to the log under `[model]` |
-| Store tools | `src/lib/store-tools.ts` | The seven reading tools, declared once: name, description, JSON Schema, `run(args, { db, store })` |
+| Store tools | `src/lib/store-tools.ts` | The eight reading tools, declared once: name, description, JSON Schema, `run(args, { db, store })` |
 | MCP | `src/app/api/mcp/route.ts` | Lists `STORE_TOOLS` (adding `shop_domain` and the artifact note) and its own approval flows |
 | Luke's tools | `aiStoreTools(ctx, { only, observe })` in `src/lib/store-tools.ts` | The same tools as AI SDK tools, bound to one caller and one store, cut to fit (`fitForModel`) and heard as they run |
 | Luke's reads of the app | `appTools` and `readSectionRows` in `src/lib/section-read.ts` | `read_section` (a section's own rows, by a word or a field's value, in the database) and `rule_runs` (`lib/rule-runs`), with or without a store; MCP's `read_section` reads rows through the same `readSectionRows` |
