@@ -90,6 +90,18 @@ export function exprText(
       for (let i = 0; i + 1 < pairs.length; i += 2) by.push(`${pairs[i]} ${pairs[i + 1]}`);
       return `the store's ${field} in ${list.replace(/_/g, " ")} for ${by.join(", ")}`;
     }
+    case "lookup":
+      // lookup(parent, total): the row a link picks, and a field of it.
+      return `${a[1].replace(/_/g, " ")} of the ${a[0]} it is linked to`;
+    case "rollup": {
+      // rollup("#Stock", "parent", "sum", "qty"): the rows whose link picks this one.
+      // Once built it holds the section's id, which nobody should read.
+      const section = /^[0-9a-f-]{36}$/i.test(a[0]) ? "" : `${a[0].replace(/^#/, "")} `;
+      const of = `the ${section}rows whose ${a[1].replace(/_/g, " ")} is this one`;
+      if (a[2] === "count") return `how many of ${of}`;
+      const how = { sum: "added up", min: "the smallest", max: "the largest", avg: "on average" }[a[2]] ?? a[2];
+      return `${a[3]?.replace(/_/g, " ") ?? ""} of ${of}, ${how}`;
+    }
     case "if":
       return `${a[1]} if ${a[0]}, otherwise ${a[2] ?? "nothing"}`;
     case "round":

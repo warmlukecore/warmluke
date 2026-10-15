@@ -1616,7 +1616,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         next[moduleId] = ((rows ?? []) as RecordRow[]).map((r) => ({
           id: r.id,
           label: labelForRow(r, targetSchema),
-          data: r.data ?? {},
+          // Worked out as its own section shows it, so a lookup of a worked-out field reads its value (0219).
+          data: withComputed(targetSchema?.columns ?? [], r.data ?? {}),
         }));
         pointed[moduleId] = { table: null, parents: {}, columns: targetSchema?.columns ?? [] };
       })
@@ -1686,7 +1687,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       void readStoreRows(supabase, storeId, table, ids.length, undefined, null, null, {
         field: "id",
         values: ids,
-      }).then(({ rows }) => {
+      }).then(async ({ rows: found }) => {
+        // With the owner's fields on them, which a lookup may read (0219).
+        const rows = await withOwnFields(supabase, col.linkTo!, found);
         const named: LinkOption[] = rows.map((r) => ({ id: r.id, label: storeRowLabel(table, r.data), data: r.data }));
         setLinkOptions((prev) => {
           const have = new Set((prev[col.linkTo!] ?? []).map((o) => o.id));
@@ -1906,6 +1909,18 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
   useEffect(() => {
     sectionReads.current.clear();
   }, [loadSection]);
+  // The rows of a section whose link holds one of these ids: what a rollup
+  // column counts (0219). The rows of the owner's own and their fields on
+  // the store's rows alike are records; who may read which is the policy's.
+  const childRows = useCallback(async (moduleId: string, via: string, ids: string[]) => {
+    if (!/^[a-z][a-z0-9_]*$/.test(via) || ids.length === 0) return [];
+    const { data } = await supabase
+      .from("records")
+      .select("data")
+      .eq("module_id", moduleId)
+      .in(`data->>${via}`, ids.slice(0, 500));
+    return ((data ?? []) as Array<{ data: Record<string, unknown> | null }>).map((r) => r.data ?? {});
+  }, []);
   const readSection = useCallback(
     async (ref: string, match?: { field: string; code: string }) => {
       const { schema, rows } = await loadShared(ref, match);
@@ -4953,6 +4968,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     onStats={sectionStats}
                     onScanGroup={openScanGroup}
                     onReadSection={readSection}
+                    onChildRows={childRows}
                     onScreenBroke={screenBroke}
                     onScreenFix={screenFix}
                     periodKey={selectedModuleId ?? undefined}

@@ -86,17 +86,46 @@ function isoToday(): string {
  * Returns the original object untouched when the section has no
  * computed columns, which is almost all of them.
  */
-export function withComputed(columns: SchemaColumn[], data: Row): Row {
+export function withComputed(columns: SchemaColumn[], data: Row, ctx?: ExprContext): Row {
   let out: Row | null = null;
+  // A lookup that has not been through apply yet (a design's preview) names
+  // only its link column; the column says where it points.
+  const known = ctx && { ...ctx, linkTo: (f: string) => columns.find((c) => c.field === f)?.linkTo };
   for (const c of columns) {
     if (!c.compute) continue;
     if (!out) out = { ...data };
-    out[c.field] = evalExpr(c.compute, out);
+    out[c.field] = evalExpr(c.compute, out, {}, {}, known);
   }
   return out ?? data;
 }
 
-export function evalExpr(node: Expr | unknown, rec: Row, prev: Row = {}, target: Row = {}): unknown {
+/**
+ * The other rows a worked-out column may read (lookup, rollup; 0219): the
+ * row a link points at, and the rows of a section whose link points here.
+ * Absent, both read blank, as they do wherever those rows are not at hand.
+ */
+export type ExprContext = {
+  /** This row's own id, which a child's link holds. */
+  id?: string;
+  /** A row of a section, by its id. */
+  row?: (moduleId: string, id: string) => Row | null;
+  /** The rows of a section whose `via` link holds this id; undefined while they are not read. */
+  children?: (moduleId: string, via: string, id: string) => Row[] | undefined;
+  /** Where a link column of this section points (filled in by withComputed). */
+  linkTo?: (field: string) => string | undefined;
+};
+
+/** Does this expression read another row (lookup, rollup)? */
+export function readsOtherRows(node: unknown): boolean {
+  if (!node || typeof node !== "object") return false;
+  const n = node as { op?: unknown; args?: unknown };
+  if (n.op === "lookup" || n.op === "rollup") return true;
+  return Array.isArray(n.args) && n.args.some(readsOtherRows);
+}
+
+const constOf = (a: unknown): string => txt((a as { const?: unknown } | undefined)?.const);
+
+export function evalExpr(node: Expr | unknown, rec: Row, prev: Row = {}, target: Row = {}, ctx?: ExprContext): unknown {
   if (node === null || typeof node !== "object") return node;
   const n = node as Record<string, unknown>;
 
@@ -107,7 +136,7 @@ export function evalExpr(node: Expr | unknown, rec: Row, prev: Row = {}, target:
 
   const op = txt(n.op);
   const args = Array.isArray(n.args) ? n.args : [];
-  const at = (i: number) => evalExpr(args[i] as Expr, rec, prev, target);
+  const at = (i: number) => evalExpr(args[i] as Expr, rec, prev, target, ctx);
 
   switch (op) {
     case "today":
@@ -178,6 +207,34 @@ export function evalExpr(node: Expr | unknown, rec: Row, prev: Row = {}, target:
     }
     case "concat":
       return args.map((_, i) => txt(at(i))).join("");
+
+    // The row this row's link points at: lookup(link, field, [section]).
+    case "lookup": {
+      const id = txt(at(0));
+      const link = txt((args[0] as { field?: unknown } | undefined)?.field);
+      const to = constOf(args[2]) || ctx?.linkTo?.(link) || "";
+      if (!id || !to || !ctx?.row) return null;
+      return ctx.row(to, id)?.[constOf(args[1])] ?? null;
+    }
+    // The rows of a section whose link points here: rollup(section, via, how, [field]).
+    // As abo_eval: a count or a sum of none is 0; the rest of none is blank.
+    case "rollup": {
+      const id = txt(ctx?.id ?? rec.id);
+      const kids = id && ctx?.children ? ctx.children(constOf(args[0]), constOf(args[1]), id) : undefined;
+      if (!kids) return null;
+      const how = constOf(args[2]);
+      if (how === "count") return kids.length;
+      const field = constOf(args[3]);
+      const nums = kids
+        .map((k) => k[field])
+        .filter((v) => txt(v) !== "" && !Number.isNaN(Number(txt(v))))
+        .map(num);
+      if (how === "sum") return nums.reduce((a, b) => a + b, 0);
+      if (nums.length === 0) return null;
+      if (how === "min") return Math.min(...nums);
+      if (how === "max") return Math.max(...nums);
+      return how === "avg" ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
+    }
 
     default:
       return null;

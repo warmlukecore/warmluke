@@ -178,7 +178,7 @@ export async function writeRecord(
   if (source && (!table || !canCarryOwnFields(table))) {
     return reply({ error: "This list's rows cannot hold fields of your own." }, { status: 400 });
   }
-  const writable = table ? ownColumns(table, columns) : columns;
+  const writable = table ? ownColumns(table, columns) : columns.filter((c) => !c.compute);
   if (table && writable.length === 0) {
     return reply({ error: "This section has no fields of your own yet." }, { status: 400 });
   }

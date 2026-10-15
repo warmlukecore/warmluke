@@ -835,5 +835,256 @@ console.log("\nnewest first is how rows already come (4 Oct)");
   check("oldest first is still refused, as no column holds it", !sorted("asc").ok);
 }
 
+console.log("\na column reads another row: lookup and rollup (0219)");
+{
+  const BLANK = "22222222-2222-2222-2222-222222222222";
+  const DESIGN = "33333333-3333-3333-3333-333333333333";
+  const STOCK = "44444444-4444-4444-4444-444444444444";
+  const at = (id, name, source_table = null) => ({
+    ...modules[0],
+    id,
+    name,
+    nav_label: name,
+    route: `/${name}`,
+    source_table,
+  });
+  const all = [...modules, at(BLANK, "blanks"), at(DESIGN, "designs"), at(STOCK, "stock", "inventory_levels")];
+  const blanks = {
+    columns: [
+      { field: "sku", label: "SKU", type: "text" },
+      { field: "count", label: "Count", type: "number" },
+    ],
+  };
+  const designs = {
+    columns: [
+      { field: "name", label: "Name", type: "text" },
+      { field: "blank", label: "Blank", type: "link", linkTo: BLANK },
+      { field: "printed", label: "Printed", type: "number" },
+    ],
+  };
+  const stock = {
+    columns: [
+      { field: "sku", label: "SKU", type: "text" },
+      { field: "available", label: "Available", type: "number" },
+      { field: "blank", label: "Blank", type: "link", linkTo: BLANK },
+    ],
+  };
+  const lookupOf = (id) => ({ [BLANK]: blanks, [DESIGN]: designs, [STOCK]: stock })[id] ?? null;
+  const add = (target, schema, column, features = null) =>
+    parseReply(
+      JSON.stringify({
+        plans: [
+          {
+            changeType: "FIELD_ADD",
+            targetModuleId: target,
+            newModule: null,
+            newSchema: { columns: [...schema.columns, column] },
+            features,
+            newRecords: null,
+            explanation: "A column worked out from another row.",
+          },
+        ],
+      }),
+      all,
+      null,
+      null,
+      lookupOf
+    );
+  const said = (got) => (got.errors ?? []).join(" ");
+  const lookup = (link, field) => ({ op: "lookup", args: [{ field: link }, { const: field }] });
+  const rollup = (...a) => ({ op: "rollup", args: a.map((x) => ({ const: x })) });
+
+  const shared = add(DESIGN, designs, {
+    field: "blank_count",
+    label: "Blank stock",
+    type: "number",
+    compute: lookup("blank", "count"),
+  });
+  check("a design reads its blank's count", shared.ok);
+  if (!shared.ok) console.log(`     errors were: ${said(shared)}`);
+  const missing = add(DESIGN, designs, { field: "q", label: "Q", type: "number", compute: lookup("blank", "qty") });
+  check(
+    "a field the linked section lacks is refused, naming its fields",
+    !missing.ok && said(missing).includes("count")
+  );
+  const notLink = add(DESIGN, designs, { field: "q", label: "Q", type: "text", compute: lookup("name", "count") });
+  check("so is reading through a column that is not a link", !notLink.ok && said(notLink).includes("not one"));
+
+  const counted = add(BLANK, blanks, {
+    field: "designs_on_it",
+    label: "Designs",
+    type: "number",
+    compute: rollup(DESIGN, "blank", "count"),
+  });
+  check("a blank counts the designs linked to it", counted.ok);
+  if (!counted.ok) console.log(`     errors were: ${said(counted)}`);
+  const summed = add(BLANK, blanks, {
+    field: "printed",
+    label: "Printed",
+    type: "number",
+    compute: rollup("#designs", "blank", "sum", "printed"),
+  });
+  check("and adds up what they hold, the section named by name", summed.ok);
+  if (!summed.ok) console.log(`     errors were: ${said(summed)}`);
+  const noVia = add(BLANK, blanks, {
+    field: "n",
+    label: "N",
+    type: "number",
+    compute: rollup(DESIGN, "parent", "count"),
+  });
+  check("a link the rows do not have is refused, naming theirs", !noVia.ok && said(noVia).includes("blank"));
+  const words = add(BLANK, blanks, {
+    field: "n",
+    label: "N",
+    type: "number",
+    compute: rollup(DESIGN, "blank", "sum", "name"),
+  });
+  check("words are not added up", !words.ok && said(words).includes("a number"));
+  const how = add(BLANK, blanks, {
+    field: "n",
+    label: "N",
+    type: "number",
+    compute: rollup(DESIGN, "blank", "median", "printed"),
+  });
+  check("an unknown way to count is refused", !how.ok && said(how).includes("count"));
+  const nowhere = add(BLANK, blanks, {
+    field: "n",
+    label: "N",
+    type: "number",
+    compute: rollup("#ghosts", "blank", "count"),
+  });
+  check("a section that is not there is refused", !nowhere.ok && said(nowhere).includes("not one"));
+  const storeOwn = add(BLANK, blanks, {
+    field: "n",
+    label: "N",
+    type: "number",
+    compute: rollup(STOCK, "blank", "sum", "available"),
+  });
+  check(
+    "the store's own number on its rows is refused, saying what to do",
+    !storeOwn.ok && said(storeOwn).includes("stat")
+  );
+  const storeCount = add(BLANK, blanks, {
+    field: "n",
+    label: "N",
+    type: "number",
+    compute: rollup(STOCK, "blank", "count"),
+  });
+  check("counting the store's rows linked here is fine", storeCount.ok);
+  if (!storeCount.ok) console.log(`     errors were: ${said(storeCount)}`);
+  const inStat = parseReply(
+    JSON.stringify({
+      plans: [
+        {
+          changeType: "FEATURE_UPDATE",
+          targetModuleId: DESIGN,
+          newModule: null,
+          newSchema: null,
+          features: { stats: [{ label: "Blank", op: "sum", value: lookup("blank", "count") }] },
+          newRecords: null,
+          explanation: "A counter of the blanks.",
+        },
+      ],
+    }),
+    all,
+    null,
+    null,
+    lookupOf
+  );
+  check("outside a worked-out column it is refused", !inStat.ok && said(inStat).includes("worked-out column"));
+
+  // Both sections made in one design: each named by name, found in the batch.
+  const batch = parseReply(
+    JSON.stringify({
+      plans: [
+        {
+          changeType: "NEW_MODULE",
+          targetModuleId: null,
+          newModule: { name: "Bases", nav_label: "Bases", icon: "package", source_table: null },
+          newSchema: {
+            columns: [
+              { field: "sku", label: "SKU", type: "text" },
+              { field: "on_it", label: "Designs", type: "number", compute: rollup("#Prints", "base", "count") },
+            ],
+          },
+          features: { view: { type: "table" } },
+          newRecords: null,
+          explanation: "Each base, with how many prints are on it.",
+        },
+        {
+          changeType: "NEW_MODULE",
+          targetModuleId: null,
+          newModule: { name: "Prints", nav_label: "Prints", icon: "table", source_table: null },
+          newSchema: {
+            columns: [
+              { field: "name", label: "Name", type: "text" },
+              { field: "base", label: "Base", type: "link", linkTo: "#bases" },
+              { field: "base_sku", label: "Base SKU", type: "text", compute: lookup("base", "sku") },
+            ],
+          },
+          features: { view: { type: "table" } },
+          newRecords: null,
+          explanation: "Each print, on its base.",
+        },
+      ],
+    }),
+    all,
+    null,
+    null,
+    lookupOf
+  );
+  check("two new sections may read each other", batch.ok);
+  if (!batch.ok) console.log(`     errors were: ${said(batch)}`);
+
+  // Built: the rollup holds the section's id, the lookup the section its link points at.
+  const { resolveSlugRefs } = await import("../src/lib/apply.ts");
+  const plan = {
+    changeType: "FIELD_ADD",
+    targetModuleId: BLANK,
+    newSchema: {
+      columns: [
+        { field: "parent", label: "Parent", type: "link", linkTo: "#designs" },
+        { field: "a", label: "A", type: "number", compute: lookup("parent", "printed") },
+        {
+          field: "b",
+          label: "B",
+          type: "number",
+          compute: { op: "+", args: [rollup("#designs", "blank", "count"), { const: 1 }] },
+        },
+      ],
+    },
+  };
+  resolveSlugRefs(plan, all);
+  const [, a, b] = plan.newSchema.columns;
+  check("once built, a lookup says which section it reads", a.compute.args[2]?.const === DESIGN);
+  check("and a rollup's section is its id, wherever it sits", b.compute.args[0].args[0].const === DESIGN);
+
+  // Worked out in the browser as the database works it out.
+  const { withComputed } = await import("../src/lib/expr.ts");
+  const kids = { [BLANK]: [{ printed: 2 }, { printed: "3" }, { printed: "" }] };
+  const ctx = {
+    id: BLANK,
+    row: (m, id) => (m === BLANK && id === "b1" ? { count: 40 } : null),
+    children: (m, via, id) => (m === DESIGN && via === "blank" ? kids[id] : undefined),
+  };
+  const cols = [
+    { field: "blank", label: "Blank", type: "link", linkTo: BLANK },
+    { field: "c", label: "C", type: "number", compute: lookup("blank", "count") },
+    { field: "n", label: "N", type: "number", compute: rollup(DESIGN, "blank", "count") },
+    { field: "s", label: "S", type: "number", compute: rollup(DESIGN, "blank", "sum", "printed") },
+    { field: "lo", label: "L", type: "number", compute: rollup(DESIGN, "blank", "min", "printed") },
+  ];
+  const row = withComputed(cols, { blank: "b1" }, ctx);
+  check("a lookup reads the linked row, by the link's own section", row.c === 40);
+  check("a rollup counts every row, and adds up the numbers among them", row.n === 3 && row.s === 5 && row.lo === 2);
+  const none = withComputed(cols, { blank: "b9" }, { ...ctx, id: "x", children: () => [] });
+  check(
+    "with none, a count and a sum are 0, the rest blank",
+    none.c === null && none.n === 0 && none.s === 0 && none.lo === null
+  );
+  const unread = withComputed(cols, { blank: "b1" }, { row: ctx.row });
+  check("rows not read yet read blank, never 0", unread.n === null && unread.s === null);
+}
+
 console.log(fails.length === 0 ? "\na design says what it means" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

@@ -53,7 +53,10 @@ and when it last synced, the import while it runs, and anything that needs the o
 
 `GenericRenderer` receives rows and the latest `UiSchema`. It applies:
 
-- computed expressions;
+- computed expressions, with the rows a lookup or a rollup reads (0219): a link's rows from
+  `LinkProvider`, and the rows linked to those shown, read once per page through
+  `onChildRows`. A rollup is read again when the page's rows change, not when a linked row
+  is changed elsewhere;
 - text search and declared filters;
 - sorting;
 - section-wide server statistics for store-backed or paginated data;
