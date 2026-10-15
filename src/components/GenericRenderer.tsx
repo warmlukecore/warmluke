@@ -94,6 +94,7 @@ import {
 } from "@/components/views";
 import { useFormat } from "@/lib/format";
 import { evalExpr, truthy, withComputed } from "@/lib/expr";
+import { useLinkOptions } from "@/components/LinkContext";
 import { sameCode } from "@/lib/scan";
 import { PREVIEW_ROWS } from "@/lib/change-preview";
 import { badgeLabel } from "@/lib/tone";
@@ -459,6 +460,7 @@ export default function GenericRenderer({
   onScreenBroke,
   onScreenFix,
   onReadSection,
+  onChildRows,
   periodKey,
   timeZone,
   onPeriod,
@@ -528,6 +530,8 @@ export default function GenericRenderer({
     section: string,
     match?: { field: string; code: string }
   ) => Promise<Array<{ id: string; data: Record<string, unknown> }>>;
+  /** The rows of a section whose `via` link holds one of these ids: what a rollup column counts (0219). Absent in previews. */
+  onChildRows?: (moduleId: string, via: string, ids: string[]) => Promise<Array<Record<string, unknown>>>;
   /** Which section this is, so the dates picked above it are its own and remembered on this device. */
   periodKey?: string;
   /** Whose days "the last N days" are: the shop's zone on a section over the store; this device's otherwise. */
@@ -719,15 +723,62 @@ export default function GenericRenderer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ask?.at]);
 
+  // A rollup column counts the rows of another section whose link points
+  // at a row shown here (0219): read once for the rows on screen.
+  // ponytail: read again when these rows change, not when one of those
+  // rows is changed elsewhere; the page shows it on its next read.
+  const linkRows = useLinkOptions();
+  const rollups = useMemo(() => {
+    const found = new Map<string, { child: string; via: string }>();
+    const walk = (n: unknown) => {
+      if (!n || typeof n !== "object") return;
+      const { op, args } = n as { op?: unknown; args?: unknown[] };
+      if (!Array.isArray(args)) return;
+      args.forEach(walk);
+      const name = (i: number) => String((args[i] as { const?: unknown } | undefined)?.const ?? "");
+      if (op === "rollup" && name(0) && name(1)) found.set(`${name(0)}|${name(1)}`, { child: name(0), via: name(1) });
+    };
+    for (const c of columns) walk(c.compute);
+    return [...found.values()];
+  }, [columns]);
+  const [kids, setKids] = useState<Record<string, Array<Record<string, unknown>>>>({});
+  useEffect(() => {
+    if (!onChildRows || rollups.length === 0 || records.length === 0) return;
+    let live = true;
+    const ids = records.map((r) => r.id);
+    void Promise.all(rollups.map(async (r) => ({ ...r, rows: await onChildRows(r.child, r.via, ids) }))).then(
+      (read) => {
+        if (!live) return;
+        const next: Record<string, Array<Record<string, unknown>>> = {};
+        for (const { child, via, rows } of read) {
+          for (const id of ids) next[`${child}|${via}|${id}`] = [];
+          for (const row of rows) next[`${child}|${via}|${String(row[via] ?? "")}`]?.push(row);
+        }
+        setKids(next);
+      }
+    );
+    return () => {
+      live = false;
+    };
+  }, [records, rollups, onChildRows]);
+
   // Computed columns are filled in once, up front, so that everything
   // below — the search box, the filters, the sort, the stats and every
-  // view — reads them as ordinary fields.
+  // view — reads them as ordinary fields. A lookup reads the linked row
+  // the links already hold; a rollup, the rows read above.
   const rowsWithComputed = useMemo(
     () =>
       columns.some((c) => c.compute)
-        ? records.map((r) => ({ ...r, data: withComputed(columns, r.data ?? {}) }))
+        ? records.map((r) => ({
+            ...r,
+            data: withComputed(columns, r.data ?? {}, {
+              id: r.id,
+              row: (moduleId, id) => linkRows[moduleId]?.find((o) => o.id === id)?.data ?? null,
+              children: (moduleId, via, id) => kids[`${moduleId}|${via}|${id}`],
+            }),
+          }))
         : records,
-    [records, columns]
+    [records, columns, linkRows, kids]
   );
 
   const filteredRecords = useMemo(() => {

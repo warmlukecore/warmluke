@@ -30,6 +30,10 @@ const registry = entries.filter((e) => e.body.includes("arity:")).map((e) => e.n
 // Server-only operators live in Postgres alone; expr.ts is not expected
 // to implement them, and validation forbids them in browser contexts.
 const serverOnly = new Set(entries.filter((e) => e.body.includes("serverOnly: true")).map((e) => e.name));
+// Worked-out-column operators (0219) read another row, so with no row
+// to read they come back blank, as an unknown operator does: Postgres is
+// asked for their source instead of a probe.
+const computeOnly = new Set(entries.filter((e) => e.body.includes("computeOnly: true")).map((e) => e.name));
 
 if (registry.length === 0) {
   console.error("Could not read operators from capabilities.ts");
@@ -85,9 +89,10 @@ if (!url || !token) {
   };
 
   const selects = registry
-    .map(
-      (op, i) =>
-        `public.abo_eval('${JSON.stringify(probeFor(op))}'::jsonb, '{"a":1}'::jsonb, '{}'::jsonb, '{}'::jsonb) as op${i}`
+    .map((op, i) =>
+      computeOnly.has(op)
+        ? `(select p.prosrc like '%op = ''${op}''%' from pg_proc p where p.proname = 'abo_eval' limit 1) as op${i}`
+        : `public.abo_eval('${JSON.stringify(probeFor(op))}'::jsonb, '{"a":1}'::jsonb, '{}'::jsonb, '{}'::jsonb) as op${i}`
     )
     .join(", ");
 
@@ -103,7 +108,9 @@ if (!url || !token) {
   }
 
   const row = body[0];
-  const missingInPg = registry.filter((_, i) => row[`op${i}`] === null);
+  const missingInPg = registry.filter(
+    (op, i) => row[`op${i}`] === null || (computeOnly.has(op) && row[`op${i}`] !== true)
+  );
   if (missingInPg.length) {
     console.error("✗ Advertised but not implemented in Postgres:", missingInPg.join(", "));
     failed = true;

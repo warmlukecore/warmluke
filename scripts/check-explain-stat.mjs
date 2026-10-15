@@ -75,5 +75,42 @@ check(
   exprText({ op: "=", args: [{ field: "status" }, { const: "PAID" }] }) === "status is PAID"
 );
 
+console.log("\na value read from another row, in words (0219)");
+{
+  const label = (f) => ({ blank: "Blank", printed: "Printed" })[f] ?? f;
+  check(
+    "a lookup says what it reads, and through which link",
+    exprText(
+      {
+        op: "lookup",
+        args: [{ field: "blank" }, { const: "count" }, { const: "22222222-2222-2222-2222-222222222222" }],
+      },
+      label
+    ) === "count of the Blank it is linked to"
+  );
+  const rows = (how, field) => ({
+    op: "rollup",
+    args: [
+      { const: "33333333-3333-3333-3333-333333333333" },
+      { const: "blank" },
+      { const: how },
+      ...(field ? [{ const: field }] : []),
+    ],
+  });
+  check(
+    "a count of the rows linked here, never a section's id",
+    exprText(rows("count")) === "how many of the rows whose blank is this one"
+  );
+  check(
+    "and what they hold, added up",
+    exprText(rows("sum", "printed")) === "printed of the rows whose blank is this one, added up"
+  );
+  check(
+    "named by its section before it is built",
+    exprText({ op: "rollup", args: [{ const: "#Designs" }, { const: "blank" }, { const: "count" }] }) ===
+      "how many of the Designs rows whose blank is this one"
+  );
+}
+
 console.log(fails.length === 0 ? "\na stat says how it is worked out" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

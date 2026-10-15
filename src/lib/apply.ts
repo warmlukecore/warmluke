@@ -496,7 +496,7 @@ export async function applyPlans(
 }
 
 /** Rewrites "#slug" module references into real uuids, in place. */
-function resolveSlugRefs(plan: AssistantPlan, modules: ModuleRow[]): void {
+export function resolveSlugRefs(plan: AssistantPlan, modules: ModuleRow[]): void {
   // "#orders", "#Packing Scan", "#order_lines": one section however it is spelled (lib/section-ref).
   const idFor = (ref: unknown): string | null => {
     if (typeof ref !== "string" || !ref.startsWith("#")) return null;
@@ -518,6 +518,27 @@ function resolveSlugRefs(plan: AssistantPlan, modules: ModuleRow[]): void {
     const resolved = idFor(col.linkTo);
     if (resolved) col.linkTo = resolved;
   }
+  // A worked-out column reading another row (0219) carries that row's
+  // section by id, so the database knows where to read without the schema:
+  // a rollup's section resolved, a lookup given its link's section last.
+  const columns = plan.newSchema?.columns ?? [];
+  const readAcross = (node: unknown): void => {
+    if (!node || typeof node !== "object") return;
+    const n = node as { op?: unknown; args?: unknown[] };
+    if (!Array.isArray(n.args)) return;
+    n.args.forEach(readAcross);
+    if (n.op === "rollup") {
+      const child = n.args[0] as { const?: unknown } | undefined;
+      const resolved = idFor(child?.const);
+      if (child && resolved) child.const = resolved;
+    }
+    if (n.op === "lookup") {
+      const link = (n.args[0] as { field?: unknown } | undefined)?.field;
+      const to = columns.find((c) => c.field === link)?.linkTo;
+      if (to && !to.startsWith("#")) n.args = [n.args[0], n.args[1], { const: to }];
+    }
+  };
+  for (const col of columns) readAcross(col.compute);
   if (plan.moduleUpdate) {
     const p = idFor(plan.moduleUpdate.parent_id);
     if (p) plan.moduleUpdate.parent_id = p;

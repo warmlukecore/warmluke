@@ -128,6 +128,16 @@ Expressions are trees of literals, current-row fields, prior values, target-row 
 and closed-set operators. PostgreSQL evaluates automations; the browser evaluates
 computed columns, guards, and local display behavior where allowed.
 
+A computed column may read another row (0219), and nothing else may: `lookup(link, field)`
+is a field of the row a link column points at, and `rollup(section, via, how, field)`
+counts or adds up (count, sum, min, max, avg) the rows of a section whose `via` link points
+at this row. Apply writes the section each reads into the expression as its id, so the
+database knows where to read without the schema. Both are read each time, so a value two
+sections share is never copied by a rule. A rollup works on fields the rows keep: over a
+section on a store list, the owner's own fields on its rows, not the store's (a stat on
+that section counts those). Both read only within the row's app, and only a section the
+person asking may see.
+
 ## Conversation and build tables
 
 | Table                   | Purpose                                                                                                                                                                                                                                                                                                                                                               |

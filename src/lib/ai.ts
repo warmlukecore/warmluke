@@ -73,6 +73,7 @@ import {
   STAT_OP_LIST,
   SCHEDULE_TIMING,
   TRIGGER_TYPES,
+  isComputeOnly,
   isOperator,
   isServerOnly,
   vocabularyPrompt,
@@ -162,7 +163,8 @@ A COMPUTED COLUMN — "compute" — is worked out every time the row is read, an
       "compute": { "op": "if", "args": [ { "op": "<=", "args": [ { "field": "available" }, { "const": 5 } ] }, { "const": "Low" }, { "const": "OK" } ] } }
   Filters, search, sorting, stats and every view read it as an ordinary column, so a filter over "stock_level" works without anything else being built.
   NOBODY WRITES ONE. It is not offered in the row editor, and a rule, a button or a scan that sets it is rejected — the value would be recomputed on the next read and the write thrown away. This is the RIGHT answer whenever you were about to add a field plus a schedule rule to keep it up to date: the rule is what rots, and the computed column cannot.
-  Prefer a stored field only when somebody genuinely types the value, or when it depends on OTHER ROWS (a clash flag), which a compute cannot see.
+  It reads OTHER ROWS through links too, and this is how a value is shared between sections — never a rule that copies it across: "lookup" reads a field of the row a link column points at (each design's blank stock is lookup(blank, count), on a "blank" link to the Blanks section), and "rollup" counts or adds up the rows of another section whose link points at this row (a blank's "designs on it" is rollup("#Designs", "blank", "count")). Both are read fresh, so they never fall out of step, need no rule, and nobody types or copies them.
+  Prefer a stored field only when somebody genuinely types the value, or when it depends on other rows of the SAME section (a clash flag), which only a rule's count_matching sees.
 
 HOW TO CHOOSE changeType:
 - UI_CHANGE — reorder, relabel or retype columns; take one off the table with "hidden": true (still in the row when it is opened, and in its data: the only way for a store column); or leave out a field of theirs that nothing else reads (its values stay on the rows). When simplifying, hide or remove the old field: never stack a new one beside it.
@@ -1488,9 +1490,10 @@ function validateExpr(
    * "client" contexts (button guards, stat values, scan actions) are
    * evaluated in the browser against a single row, so an operator that
    * needs the rest of the section cannot work there. Rejecting it here
-   * stops a guard that would silently never fire.
+   * stops a guard that would silently never fire. "compute" is a
+   * worked-out column: one row too, plus the rows lookup and rollup read.
    */
-  where: "server" | "client" = "server",
+  where: "server" | "client" | "compute" = "server",
   depth = 0
 ): void {
   if (depth > 8) {
@@ -1539,8 +1542,15 @@ function validateExpr(
     return;
   }
   const args = Array.isArray(node.args) ? node.args : [];
-  if (where === "client" && isServerOnly(op)) {
+  if (where !== "server" && isServerOnly(op)) {
     err(errors, `"${op}" only works inside an automation — a button, stat or scan action sees one row at a time.`);
+    return;
+  }
+  if (where !== "compute" && isComputeOnly(op)) {
+    err(
+      errors,
+      `"${op}" only works in a worked-out column ("compute"), which reads the other row each time the page opens. Add one with it, and read that column here.`
+    );
     return;
   }
   const [min, max] = OPERATORS[op].arity;
@@ -1620,8 +1630,35 @@ function validateExpr(
     }
     return;
   }
+  // Names, not this row's fields: the section and fields of another row,
+  // checked against that section in parsePlans (otherRowsProblems).
+  const name = (a: unknown) => (isPlainObject(a) && typeof a.const === "string" && a.const.trim() ? a.const : null);
+  if (op === "lookup") {
+    if (!(isPlainObject(args[0]) && "field" in args[0])) {
+      err(errors, '"lookup" first names a link column of this row: { "field": "parent" }.');
+    } else validateExpr(args[0], ownHas, errors, where, depth + 1);
+    if (!name(args[1])) err(errors, '"lookup" then names the field to read from the linked row: { "const": "total" }.');
+    return;
+  }
+  if (op === "rollup") {
+    const how = name(args[2]);
+    if (!name(args[0]) || !name(args[1])) {
+      err(
+        errors,
+        '"rollup" names the section the rows are in and their link that points here: { "const": "#Stock" }, { "const": "parent" }.'
+      );
+    }
+    if (!how || !ROLLUP_HOW.includes(how)) {
+      err(errors, `"rollup" third says how: { "const": "count" }, or ${ROLLUP_HOW.slice(1).join(", ")} of a field.`);
+    } else if (how !== "count" && !name(args[3])) {
+      err(errors, `"rollup" with "${how}" names the field of those rows it works on: { "const": "qty" }.`);
+    }
+    return;
+  }
   for (const a of args) validateExpr(a, ownHas, errors, where, depth + 1);
 }
+
+const ROLLUP_HOW = ["count", "sum", "min", "max", "avg"];
 
 /**
  * A stored field is written once and then sits there. A value counted
@@ -2239,7 +2276,7 @@ export function validatePlan(
             c.compute,
             (f) => RESERVED_FIELDS.has(f) || storedFields.has(f) || computedAbove.has(f),
             errors,
-            "client"
+            "compute"
           );
         }
       }
@@ -2848,6 +2885,126 @@ function parsePlans(
     return maker?.newModule?.source_table ?? null;
   };
 
+  // A worked-out column reading another row (lookup, rollup; 0219) is held
+  // to that row's section: the link it reads through, the section and the
+  // field it reads, each one that is there.
+  const makerOf = (ref: string) => {
+    const slug = ref.slice(1).trim().toLowerCase();
+    return (raw as AssistantPlan[]).find(
+      (o) => o?.changeType === "NEW_MODULE" && o?.newModule?.name?.trim().toLowerCase() === slug
+    );
+  };
+  /** One way to name a section: its id once it exists, else its lowercase "#name". */
+  const sectionKeyOf = (ref: string | null | undefined): string => {
+    if (!ref) return "";
+    if (!ref.startsWith("#")) return ref;
+    if (makerOf(ref)) return `#${ref.slice(1).trim().toLowerCase()}`;
+    return findSection(modules, ref)?.id ?? `#${ref.slice(1).trim().toLowerCase()}`;
+  };
+  /** A section's columns: null when there is no such section, undefined when its columns are not known here. */
+  const columnsAt = (ref: string): SchemaColumn[] | null | undefined => {
+    const key = sectionKeyOf(ref);
+    if (key.startsWith("#")) {
+      const maker = makerOf(key);
+      if (!maker) return null;
+      const src = maker.newModule?.source_table;
+      return isStoreTable(src) ? storeSectionColumns(src, maker.newSchema?.columns) : (maker.newSchema?.columns ?? []);
+    }
+    const reshaped = (raw as AssistantPlan[]).find((o) => o?.targetModuleId === key && o?.newSchema?.columns?.length);
+    if (reshaped) return reshaped.newSchema.columns;
+    if (!modules.some((m) => m.id === key)) return null;
+    const found = schemas?.(key);
+    return found === undefined ? undefined : (found?.columns ?? []);
+  };
+  const sectionName = (ref: string) =>
+    ref.startsWith("#") ? `"${ref.slice(1)}"` : `"${modules.find((m) => m.id === ref)?.nav_label ?? "that section"}"`;
+  const otherRowsProblems = (plan: AssistantPlan): string[] => {
+    const out: string[] = [];
+    const cols = (plan.newSchema?.columns ?? []).filter((c) => c && typeof c.field === "string");
+    const here = sectionKeyOf(
+      plan.changeType === "NEW_MODULE" ? `#${plan.newModule?.name ?? ""}` : (plan.targetModuleId ?? "")
+    );
+    const constAt = (args: unknown[], i: number) => {
+      const a = args[i];
+      return isPlainObject(a) && typeof a.const === "string" ? a.const : "";
+    };
+    const walk = (node: unknown) => {
+      if (!isPlainObject(node)) return;
+      const args = Array.isArray(node.args) ? node.args : [];
+      args.forEach(walk);
+      if (node.op === "lookup") {
+        const link = isPlainObject(args[0]) && typeof args[0].field === "string" ? args[0].field : "";
+        const col = cols.find((c) => c.field === link);
+        if (!col) return;
+        if (col.type !== "link" || !col.linkTo) {
+          out.push(
+            `"lookup" reads through a link column, and "${link}" is not one: make it a link to the section it names.`
+          );
+          return;
+        }
+        const want = constAt(args, 1);
+        const theirs = columnsAt(col.linkTo);
+        if (want && want !== "id" && theirs && !theirs.some((c) => c.field === want)) {
+          out.push(
+            `"lookup" reads "${want}" from ${sectionName(col.linkTo)}, which has no such field. Its fields are: ${theirs.map((c) => c.field).join(", ")}.`
+          );
+        }
+      }
+      if (node.op === "rollup") {
+        const child = constAt(args, 0);
+        const via = constAt(args, 1);
+        const how = constAt(args, 2);
+        const field = constAt(args, 3);
+        if (!child || !via) return;
+        const theirs = columnsAt(child);
+        if (theirs === null) {
+          out.push(
+            `"rollup" counts the rows of one of this app's sections, and "${child}" is not one: name it "#Its Name".`
+          );
+          return;
+        }
+        if (!theirs) return;
+        const name = sectionName(sectionKeyOf(child));
+        const links = theirs.filter((c) => c.type === "link");
+        const viaCol = theirs.find((c) => c.field === via);
+        if (!viaCol || viaCol.type !== "link") {
+          out.push(
+            `"rollup" counts ${name}'s rows by a link of theirs that points here, and "${via}" is not one.${links.length ? ` Its links are: ${links.map((c) => c.field).join(", ")}.` : ` Add a link column to ${name} first.`}`
+          );
+          return;
+        }
+        if (here && sectionKeyOf(viaCol.linkTo) !== here) {
+          out.push(
+            `"rollup" counts ${name}'s rows whose "${via}" points at this section, and "${via}" points at another one.`
+          );
+          return;
+        }
+        if (how === "count" || !field) return;
+        const f = theirs.find((c) => c.field === field);
+        const src = sourceOf(
+          child.startsWith("#") && !makerOf(child) ? (findSection(modules, child)?.id ?? child) : child
+        );
+        if (!f) {
+          out.push(
+            `"rollup" works on "${field}", which ${name} has no field of. Its fields are: ${theirs.map((c) => c.field).join(", ")}.`
+          );
+        } else if (isStoreTable(src) && storeRowFields(src).includes(field)) {
+          out.push(
+            `"rollup" adds up fields of your own on ${name}'s rows, and "${field}" is the store's own. Count the rows instead, or show the store's number with a stat on ${name}.`
+          );
+        } else if (f.compute) {
+          out.push(
+            `"rollup" works on a field the rows keep, and "${field}" is worked out: read what it is worked out from.`
+          );
+        } else if ((how === "sum" || how === "avg") && !["number", "currency", "percent"].includes(f.type)) {
+          out.push(`"rollup" can only ${how === "sum" ? "add up" : "average"} a number, and "${field}" is ${f.type}.`);
+        }
+      }
+    };
+    for (const c of cols) walk(c.compute);
+    return out;
+  };
+
   // A filter on a yes/no field is Yes / No, whatever was sent (filters.ts):
   // a tick is ticked or it is not. Sent with no choices it was refused, and
   // the shaping in validateFeatures drops a filter with fewer than two.
@@ -2875,8 +3032,9 @@ function parsePlans(
       fieldsFor(plan),
       sourceOf
     );
-    if (res.ok && res.plan) plans.push(res.plan);
-    else errors.push(...res.errors);
+    const across = otherRowsProblems(plan);
+    if (res.ok && res.plan && across.length === 0) plans.push(res.plan);
+    else errors.push(...(res.ok ? [] : res.errors), ...across);
   }
 
   // Every section a written screen reads by name (wl.find's third word,

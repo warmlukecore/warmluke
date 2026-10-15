@@ -17,7 +17,7 @@
 //
 // Callers: src/lib/review-gate.ts, scripts/check-tryout.mjs.
 
-import { evalExpr, truthy, withComputed } from "@/lib/expr";
+import { evalExpr, readsOtherRows, truthy, withComputed } from "@/lib/expr";
 import { optionsFor } from "@/lib/filters";
 import { fillFromLinked } from "@/lib/links";
 import { inPeriod, openingPick, periodRange } from "@/lib/period";
@@ -131,12 +131,17 @@ export function tryParts(
   // A worked-out column comes out as something, and from something: the
   // expressions read a blank as nothing (lib/expr), so a column worked out
   // from fields no row has shows 0 on every row, as if it were an answer.
+  // A lookup reads the linked rows held here (0219); a rollup counts rows
+  // of another section, which are not, so it is not tried.
+  const linked = {
+    row: (moduleId: string, id: string) => targetOf(moduleId)?.rows.find((r) => txt(r.id) === id) ?? null,
+  };
   for (const c of s.columns) {
-    if (!c.compute || !knowable(c.field)) continue;
+    if (!c.compute || !knowable(c.field) || JSON.stringify(c.compute).includes('"rollup"')) continue;
     const inputs = [...new Set(reads(c.compute).filter((f) => f !== c.field))];
     if (inputs.some((f) => s.fresh.has(f))) continue;
     tried++;
-    const results = s.rows.map((r) => withComputed(s.columns, r)[c.field]);
+    const results = s.rows.map((r) => withComputed(s.columns, r, { ...linked, id: txt(r.id) })[c.field]);
     if (inputs.length && !inputs.some(has)) {
       const shown = results.find((v) => !blank(v));
       say(
@@ -145,7 +150,9 @@ export function tryParts(
         }.`,
         "note"
       );
-    } else if (results.every(blank)) say(`${c.label} works out blank on every one of the ${of}.`, "problem");
+    } else if (results.every(blank))
+      // A linked row the tryout was not handed reads blank too: said, not held against the design.
+      say(`${c.label} works out blank on every one of the ${of}.`, readsOtherRows(c.compute) ? "note" : "problem");
   }
 
   // A counter counts or adds up something.

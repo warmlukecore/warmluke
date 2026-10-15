@@ -528,6 +528,11 @@ the reply and each plan. Validation covers, among other rules:
 - valid links and cross-module automation targets;
 - store-backed sections: the store's own fields are read, never written;
 - computed-field write refusal;
+- a computed column reading another row (`lookup`, `rollup`, 0219): only in a column's
+  `compute`, through a link column that is one, to a field the other section has, over a
+  link that points back here, adding up only numbers the rows keep (`otherRowsProblems` in
+  `parsePlans`); the contract tells the model this, not a rule copying a value across, is how
+  two sections share one;
 - scan and scheduled-rule safety gates;
 - duplicate modules and unresolved references;
 - seeded copies of data already supplied by Shopify.

@@ -30,6 +30,12 @@ export interface OperatorSpec {
    * evaluated in the browser against one row and cannot answer it.
    */
   serverOnly?: boolean;
+  /**
+   * Reads another row — the one a link points at, or the rows that point
+   * here — so it only works in a worked-out column ("compute"), which is
+   * worked out each time the page opens with those rows at hand (0219).
+   */
+  computeOnly?: boolean;
 }
 
 export const OPERATORS = {
@@ -86,6 +92,18 @@ export const OPERATORS = {
     group: "compare",
     serverOnly: true,
   },
+  lookup: {
+    arity: [2, 3],
+    doc: 'a field of the row a link column points at: lookup(parent, total) is the "total" of the row this row\'s "parent" link picks — { "op": "lookup", "args": [ { "field": "parent" }, { "const": "total" } ] }. Always right, since it is read each time, never copied',
+    group: "maths",
+    computeOnly: true,
+  },
+  rollup: {
+    arity: [3, 4],
+    doc: 'the rows of another section whose link points at this row, counted or added up: rollup("#Stock", "parent", "sum", "qty") is the qty of every Stock row whose "parent" link picks this row, added up — { "op": "rollup", "args": [ { "const": "#Stock" }, { "const": "parent" }, { "const": "sum" }, { "const": "qty" } ] }. count, sum, min, max or avg; count needs no field. It adds up fields the rows keep, not worked-out ones',
+    group: "maths",
+    computeOnly: true,
+  },
 } as const satisfies Record<string, OperatorSpec>;
 
 export type ExprOp = keyof typeof OPERATORS;
@@ -97,6 +115,10 @@ export function isOperator(op: unknown): op is ExprOp {
 
 export function isServerOnly(op: ExprOp): boolean {
   return "serverOnly" in OPERATORS[op] && OPERATORS[op].serverOnly === true;
+}
+
+export function isComputeOnly(op: ExprOp): boolean {
+  return "computeOnly" in OPERATORS[op] && OPERATORS[op].computeOnly === true;
 }
 
 // ── Columns ──────────────────────────────────────────────────
@@ -279,11 +301,14 @@ export function vocabularyPrompt(
   }
 ): string {
   const opsByGroup = (group: OperatorSpec["group"]) =>
-    EXPR_OPS.filter((o) => OPERATORS[o].group === group && !isServerOnly(o))
+    EXPR_OPS.filter((o) => OPERATORS[o].group === group && !isServerOnly(o) && !isComputeOnly(o))
       .map((o) => `${o} (${OPERATORS[o].doc})`)
       .join(", ");
 
   const serverOnly = EXPR_OPS.filter(isServerOnly)
+    .map((o) => `  ${o} — ${OPERATORS[o].doc}`)
+    .join("\n");
+  const computeOnly = EXPR_OPS.filter(isComputeOnly)
     .map((o) => `  ${o} — ${OPERATORS[o].doc}`)
     .join("\n");
 
@@ -314,6 +339,9 @@ EXPRESSION OPERATORS (used for automation triggers, row-action guards, stat valu
 
 AUTOMATION-ONLY OPERATORS (allowed in an automation trigger; NOT in a button guard, stat or scan action, which see only one row):
 ${serverOnly}
+
+WORKED-OUT COLUMN ONLY (allowed in a column's "compute", and nowhere else — a value read from another row each time, never copied there by a rule):
+${computeOnly}
 
 AUTOMATION TRIGGERS:
 ${bullets(TRIGGER_TYPES.map((t) => [t, TRIGGERS[t]]))}
