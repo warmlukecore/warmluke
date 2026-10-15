@@ -1,0 +1,24 @@
+{
+  "id": "m-exit",
+  "title": "First meeting: straight to the store, first thing",
+  "language": "english",
+  "kind": "meet",
+  "meeting": true,
+  "shop": "seed",
+  "persona": "An owner in a hurry who wants to look around first.",
+  "before": [],
+  "opening": "take me to the dashboard",
+  "facts": {
+    "why": "I want to look around myself first"
+  },
+  "success": [
+    "Luke lets them in at once, in one short line"
+  ],
+  "must_not": [
+    "help, a question or a build asked for before letting them in"
+  ],
+  "max_turns": 2,
+  "expect": {
+    "opens": true
+  }
+}

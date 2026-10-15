@@ -813,6 +813,50 @@ check(
   askedBack.sent.length === 2 && askedBack.sent[1] === "aaj ko mila ke"
 );
 const kept = { lines: [], trace: [] };
+// The first meeting (15 Oct): Luke speaks first, the owner's opening follows, and it ends as they go in.
+{
+  const meetCase = {
+    id: "m-x",
+    kind: "meet",
+    meeting: true,
+    language: "english",
+    opening: "take me to the dashboard",
+    max_turns: 4,
+    expect: { opens: true },
+  };
+  const { out, sent } = await play(meetCase, [
+    { type: "answer", message: "Hi! What needs you every day?" },
+    { type: "answer", message: "Taking you there now.", open_store: true },
+    { type: "answer", message: "never asked" },
+  ]);
+  check(
+    "Luke speaks first, then the owner's own opening is sent",
+    sent[0] === "" && sent[1] === "take me to the dashboard" && sent.length === 2
+  );
+  check("and once their store opens, the meeting is over", out.replies.length === 2);
+  const opened = outcomeChecks(meetCase, {}, { replies: out.replies, builds: 0, builtPlans: [] });
+  check(
+    "opening their store is checked",
+    opened.some((x) => x.name === "opens their store when asked" && x.ok)
+  );
+  const drew = outcomeChecks(
+    { ...meetCase, expect: { talks: 2 } },
+    {},
+    {
+      replies: [
+        { type: "answer", message: "Tell me more" },
+        { type: "plans", plans: [{}] },
+      ],
+      builds: 0,
+      builtPlans: [],
+    }
+  );
+  check(
+    "a design drawn too soon fails the talk check",
+    drew.some((x) => x.name === "talks for 2 replies before drawing anything" && !x.ok)
+  );
+}
+
 let stoppedAt = null;
 try {
   await converse(qCase, {

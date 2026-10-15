@@ -1,0 +1,30 @@
+{
+  "id": "m-discovery",
+  "title": "First meeting: discovery, not a funnel to a build",
+  "language": "english",
+  "kind": "meet",
+  "meeting": true,
+  "shop": "seed",
+  "persona": "An owner whose returns take hours; explains when asked, never asks for a build.",
+  "before": [],
+  "opening": "returns eat my day",
+  "facts": {
+    "how returns happen": "Customers WhatsApp me, I check the order, ask for photos, then book a pickup",
+    "who does it": "Me, every evening",
+    "the slow part": "Finding the order and checking photos",
+    "what they want": "Spend less time on it"
+  },
+  "success": [
+    "Luke asks how returns happen today before suggesting anything",
+    "Luke says back what it understood before probing further",
+    "Luke asks who does the slow part or which part is slow"
+  ],
+  "must_not": [
+    "a design or a build offered before they ask for one",
+    "two questions in one reply"
+  ],
+  "max_turns": 5,
+  "expect": {
+    "talks": 5
+  }
+}

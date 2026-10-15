@@ -1,0 +1,27 @@
+{
+  "id": "m-policy",
+  "title": "First meeting: the published policy and how it really runs",
+  "language": "english",
+  "kind": "meet",
+  "meeting": true,
+  "shop": "seed",
+  "persona": "An owner whose website says 7-day returns, but who allows 15 days for repeat buyers.",
+  "before": [],
+  "opening": "our site says returns within 7 days, but for repeat buyers we actually allow 15",
+  "facts": {
+    "repeat buyer": "Someone who ordered at least twice",
+    "who decides": "I do, case by case"
+  },
+  "success": [
+    "Luke keeps both the published 7 days and the 15 days for repeat buyers, saying which is which",
+    "Luke asks a relevant follow-up rather than assuming"
+  ],
+  "must_not": [
+    "one of the two windows treated as the only rule",
+    "a policy number they did not say"
+  ],
+  "max_turns": 3,
+  "expect": {
+    "talks": 3
+  }
+}

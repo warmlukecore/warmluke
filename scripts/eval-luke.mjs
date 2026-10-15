@@ -117,12 +117,13 @@ const KEYS = [
   "expect",
   "follow_ups",
   "smoke",
+  "meeting",
 ];
-/** build: something is made (the common criteria apply); question: one answer from the store; vague: a question first; limit: a plain no. */
-export const KINDS = ["build", "question", "vague", "limit"];
-const EXPECT_KEYS = ["answer", "effect", "exercise", "asks_first", "honest", "builds", "edited"];
+/** build: something is made (the common criteria apply); question: one answer from the store; vague: a question first; limit: a plain no; meet: the first meeting (lib/meet), Luke speaking first. */
+export const KINDS = ["build", "question", "vague", "limit", "meet"];
+const EXPECT_KEYS = ["answer", "effect", "exercise", "asks_first", "honest", "builds", "edited", "opens", "talks"];
 /** The runs a --set names: the six cheap cases, the real owners' asks, everything, or everything in two halves under one cap each. */
-export const SETS = ["smoke", "real", "full", "full-a", "full-b"];
+export const SETS = ["smoke", "real", "onboarding", "full", "full-a", "full-b"];
 const words = (v) => typeof v === "string" && v.trim().length > 0;
 
 /** What is wrong with a case file, in a line each; none when it is whole. */
@@ -150,6 +151,9 @@ export function caseProblems(c, file) {
     }
   }
   if (kind !== "build" && !e) p.push(`a ${kind} case is graded by its expect`);
+  if ((kind === "meet") !== (c.meeting === true)) p.push('a meet case, and only one, has "meeting": true');
+  if (e?.talks !== undefined && !(Number.isInteger(e.talks) && e.talks >= 1))
+    p.push("expect.talks: a whole number of replies");
   if (c.follow_ups !== undefined && (!Array.isArray(c.follow_ups) || !c.follow_ups.every(words))) {
     p.push("follow_ups: what the owner says after a build, in order");
   }
@@ -192,6 +196,8 @@ export function selectCases(all, { cases = null, set = null } = {}) {
   if (set === "smoke") return all.filter((c) => c.smoke === true);
   // The asks real owners made that went wrong in production (r-…, 15 Oct).
   if (set === "real") return all.filter((c) => c.id.startsWith("r-"));
+  // The first meeting, as a new owner meets Luke (sprint, 15 Oct).
+  if (set === "onboarding") return all.filter((c) => c.meeting === true);
   const half = Math.ceil(all.length / 2);
   if (set === "full-a") return all.slice(0, half);
   if (set === "full-b") return all.slice(half);
@@ -647,6 +653,14 @@ export function outcomeChecks(c, x, { replies, builds, builtPlans, sections = []
   if (kind === "limit" || e.honest) out.push(honestCheck(text));
   else out.push(capableCheck(text));
   out.push(...buildChecks(builds, builtPlans, { max: e.builds, edited: e.edited }));
+  if (e.opens) out.push({ name: "opens their store when asked", ok: replies.some((r) => r?.open_store === true) });
+  if (e.talks) {
+    const early = replies.slice(0, e.talks);
+    out.push({
+      name: `talks for ${e.talks} replies before drawing anything`,
+      ok: early.every((r) => plansOf(r).length === 0 && r?.type !== "blueprint" && r?.type !== "plans"),
+    });
+  }
   return out;
 }
 
@@ -889,7 +903,8 @@ export async function converse(c, io) {
   const jargon = new Set();
   const followUps = [...(c.follow_ups ?? [])];
   let conversationId = null;
-  let message = c.opening;
+  // The first meeting: Luke speaks first, then the owner's opening (lib/meet).
+  let message = c.meeting ? "" : c.opening;
   let builds = 0;
   let proposed = false;
   let proposedFirst = null;
@@ -898,7 +913,7 @@ export async function converse(c, io) {
 
   for (let turn = 1; turn <= c.max_turns; turn++) {
     await io.turn?.(turn, costs);
-    lines.push({ who: "owner", text: message });
+    lines.push({ who: "owner", text: message || "(opens Warmluke for the first time)" });
     const t = await io.chat(message, conversationId);
     conversationId = t.conversationId ?? conversationId;
     ms.push(t.ms);
@@ -910,6 +925,13 @@ export async function converse(c, io) {
     for (const w of jargonIn(ownerText(reply))) jargon.add(w);
     if (isProposal(reply)) proposed = true;
     if (reply?.type === "unanswered" || reply?.type === "stopped") break;
+    // They went into their store: the meeting is over.
+    if (reply?.open_store === true) break;
+    // Luke spoke first; now the owner's own first words.
+    if (c.meeting && turn === 1) {
+      message = c.opening;
+      continue;
+    }
     // A question is done once it is answered: another turn would only be paid for.
     if ((c.kind ?? "build") === "question" && !(Array.isArray(reply?.questions) && reply.questions.length)) break;
 
@@ -1196,6 +1218,11 @@ async function main() {
     const token = me.session.access_token;
     const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
     const project = await throwawayProject(admin, me.user.id, `eval ${c.id}`);
+    // A meeting case meets Luke as a new owner would: not yet let into a store, put back after.
+    const { data: profile } = c.meeting
+      ? await admin.from("profiles").select("met_luke_at").eq("user_id", me.user.id).maybeSingle()
+      : { data: null };
+    if (c.meeting) await admin.from("profiles").update({ met_luke_at: null }).eq("user_id", me.user.id);
     try {
       // The case's shop, as e2e/shop.ts makes the seed: every case has a store to build on.
       const nowMs = Date.now();
@@ -1293,6 +1320,7 @@ async function main() {
               projectId: project.id,
               message,
               conversationId,
+              ...(c.meeting ? { meet: true } : {}),
               ...(args.designModel ? { model: args.designModel } : {}),
             }),
           });
@@ -1510,6 +1538,12 @@ async function main() {
       };
       return { ...result, score10: scoreOf(result) };
     } finally {
+      if (c.meeting) {
+        await admin
+          .from("profiles")
+          .update({ met_luke_at: profile?.met_luke_at ?? new Date().toISOString() })
+          .eq("user_id", me.user.id);
+      }
       await project.remove();
     }
   }

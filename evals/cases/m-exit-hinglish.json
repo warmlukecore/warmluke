@@ -1,0 +1,24 @@
+{
+  "id": "m-exit-hinglish",
+  "title": "First meeting: skip, in Hinglish",
+  "language": "hinglish",
+  "kind": "meet",
+  "meeting": true,
+  "shop": "seed",
+  "persona": "An owner who wants to skip the chat for now.",
+  "before": [],
+  "opening": "skip karo, dashboard dikhao",
+  "facts": {
+    "why": "baad mein baat karenge"
+  },
+  "success": [
+    "Luke lets them in at once, in their language"
+  ],
+  "must_not": [
+    "help, a question or a build asked for before letting them in"
+  ],
+  "max_turns": 2,
+  "expect": {
+    "opens": true
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "id": "m-informed",
+  "title": "First meeting: Luke speaks first from the store",
+  "language": "english",
+  "kind": "meet",
+  "meeting": true,
+  "shop": "seed",
+  "persona": "A new owner opening Warmluke for the first time; answers briefly and lets Luke lead.",
+  "before": [],
+  "opening": "hi, mostly I'm busy with orders and COD calls",
+  "facts": {
+    "what takes time": "Calling COD buyers to confirm, and chasing late shipments",
+    "who helps": "One person packs, I do the rest"
+  },
+  "success": [
+    "Luke's first words mention one or two real things from their store, with real numbers",
+    "Luke asks one open question at a time about how their day goes"
+  ],
+  "must_not": [
+    "a number that is not in their store",
+    "a claim to have audited or understood the whole business"
+  ],
+  "max_turns": 3,
+  "expect": {
+    "talks": 3
+  }
+}

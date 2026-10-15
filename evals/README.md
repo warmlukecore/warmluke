@@ -7,9 +7,9 @@ problem. Its opening goes to the running app as the panel sends it, a simulated 
 answers Luke only from the case's facts and says yes when the plan fits, the yes is built
 as the panel builds it (`POST /api/apply`), and what is left in the app is graded.
 
-- `cases/*.json`: thirty-eight owners, in our own words: the first eight on the seeded shop,
-  twenty-four more on six other kinds of business (12 Oct), and six asks real owners made that
-  went wrong in production (`r-…`, 15 Oct). No real store, person, phone number,
+- `cases/*.json`: forty-three owners, in our own words: the first eight on the seeded shop,
+  twenty-four more on six other kinds of business (12 Oct), six asks real owners made that
+  went wrong in production (`r-…`, 15 Oct), and five first meetings (`m-…`, 15 Oct). No real store, person, phone number,
   email or order number: the repository is public, and `check-eval-harness` fails a case
   that holds an email, an eight-digit number or an id.
 - `runs/<YYYYMMDD-HHMM>-<label>.json`: one run each (UTC minute). `runs/index.json` lists
@@ -67,6 +67,22 @@ without the owner's names or numbers. `--set real` runs them:
 | `r-pnl-month` | Months were rolling 30-day windows | criteria |
 | `r-repeat-cancel` | What the cancel pick does in Shopify was not said | criteria |
 | `r-price-filter` | A price bracket was written into every order by rules, where a Min and Max filter does it | criteria |
+
+The five first meetings (15 Oct, `kind: "meet"`, `"meeting": true`), `--set onboarding`: the
+check user is made a new owner for the case (`profiles.met_luke_at` cleared, put back after),
+Luke speaks first, the case's `opening` is the owner's first words, and the meeting ends once
+their store opens (`open_store`).
+
+| Case | What it tests | Graded by |
+| ---- | ------------- | --------- |
+| `m-informed` | His first words use one or two real things from the store, then one open question | criteria; no design in the first three replies (`talks`) |
+| `m-discovery` | "Returns eat my day": how it happens and who does it, before any idea | criteria; no design in five replies |
+| `m-exit` | "Take me to the dashboard" first: in at once | `opens` |
+| `m-exit-hinglish` | "Skip karo, dashboard dikhao": in at once | `opens` |
+| `m-policy` | The published 7 days and the 15 days in practice, both kept | criteria; no design in three replies |
+
+Not covered here: a store whose import is slow, partial or failed (the sprint's second case);
+the harness seeds the shop whole before the first turn.
 
 The shops are built so a window can't straddle a row (no order 6–8, 13–15 or 28–32 days back
 where a case asks about that window), no count sits on a threshold a case names, and where a
