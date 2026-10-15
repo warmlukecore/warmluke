@@ -87,6 +87,7 @@ export async function notesFor(db: SupabaseClient, projectId: string): Promise<s
     .select("note, kind, topic, source")
     .eq("project_id", projectId)
     .order("created_at", { ascending: false })
+    // limit: the table keeps forty of each (0220); all of both, then cut below.
     .limit(80);
   if (error) {
     const { data: old } = await db

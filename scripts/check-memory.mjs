@@ -70,7 +70,7 @@ check(
 check(
   "read with its kind and topic first, a guess said as one",
   factLine(facts[0]) === "[lead time: lead time: blank cases] Blank cases take 10 days from the supplier" &&
-    /\(a guess: not confirmed\)$/.test(factLine(facts[2]))
+    factLine(facts[2]).endsWith("(a guess: not confirmed)")
 );
 check("nothing to say reads as nothing", describeKnown([]) === "");
 check(
