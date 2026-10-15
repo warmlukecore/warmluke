@@ -316,7 +316,7 @@ check("nothing is watched until the merchant turns it on", r.off_by_default === 
 check(
   "each kind listed off, with no numbers of its own",
   r.listed_off ===
-    "low_stock:false:false:{},dispatch_late:false:false:{},returns_spike:false:false:{},return_reason:false:false:{}"
+    "low_stock:false:false:{},dispatch_late:false:false:{},returns_spike:false:false:{},return_reason:false:false:{},rto_rising:false:false:{},ads_no_sales:false:false:{}"
 );
 check("turned on without its numbers, it waits", r.on_without_numbers === "none");
 check(
@@ -331,7 +331,8 @@ check("so three no longer counts", r.threshold_closed === "resolved");
 check("switched off, it closes", r.switched_off === "resolved");
 check(
   "each kind says whether it is on and whether its data is here",
-  r.settings === "low_stock:true:true,dispatch_late:true:true,returns_spike:false:true,return_reason:true:true"
+  r.settings ===
+    "low_stock:true:true,dispatch_late:true:true,returns_spike:false:true,return_reason:true:true,rto_rising:false:true,ads_no_sales:false:true"
 );
 check("rows written by the store ask for a look", r.dirty_on_write === "1");
 check("a store taken off Shopify has nothing on the list", r.uninstalled === "0");

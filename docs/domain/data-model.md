@@ -202,6 +202,13 @@ model is called to find one.
   takes (`defaults`), with no numbers: each is the merchant's to give (0199).
   A kind raises nothing until every import it needs is `done`; a new source is a row and a
   function.
+  The kinds: running low (stock cover at the pace it sells), late to send, returns rising, a
+  return reason repeating (0163), and on what connections bring (0221) RTO rising (the share of
+  settled shipments a courier marked RTO over the owner's window against the four before, with
+  those still moving said apart and the worst couriers named, only with enough of both) and ads
+  spending without sales (a campaign's spend with none or too few of the store's own orders
+  from it, from `store_campaign_results`). Courier shipments and ad spend mark their store to be
+  looked at again, as orders do. `check-alerts-rto-ads` holds the two.
 - `alert_settings`: a project's own switch and numbers per kind, changed by a builder through
   `abo_set_alert_setting`. Nothing is watched until a builder turns a kind on and gives every
   number it takes: no row is off, and on with a number missing it waits (`set` in

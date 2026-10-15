@@ -11,7 +11,7 @@
 
 import type { LucideIcon } from "lucide-react";
 import { hiddenColumns, type StoreTable } from "@/lib/store-read";
-import { Bell, BellRing, MessageSquareWarning, PackageMinus, TrendingUp, Truck } from "lucide-react";
+import { Bell, BellRing, Megaphone, MessageSquareWarning, PackageMinus, TrendingUp, Truck, Undo2 } from "lucide-react";
 
 export type Alert = {
   id: string;
@@ -75,6 +75,14 @@ const factsOf = (raw: Record<string, unknown>): Facts => ({
 });
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+/** A sum in its own currency, as the facts keep it. */
+const spent = (f: Facts, k: string) =>
+  `${f.str("currency") ? `${f.str("currency")} ` : ""}${f.num(k).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+/** The couriers with the most coming back, as the facts keep them. */
+const worstCouriers = (f: Facts) =>
+  ((f.raw("couriers") as Array<{ courier?: string; rto?: number; settled?: number; rate?: number }> | undefined) ?? [])
+    .filter((c) => c?.courier)
+    .map((c) => `${c.courier} ${c.rate}% (${c.rto} of ${c.settled})`);
 const waited = (hours: number) => (hours >= 48 ? plural(Math.floor(hours / 24), "day") : plural(hours, "hour"));
 const named = (f: Facts) => [f.str("product"), f.str("variant")].filter(Boolean).join(" · ") || "A product";
 const titled = (kind: string) => kind.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
@@ -191,6 +199,57 @@ export const ALERT_WORDS: Record<string, Words> = {
   },
 };
 
+// RTO and ads, on what the connections bring (0221). Said with the window
+// and the counts behind them, so the owner reads evidence, not a verdict.
+ALERT_WORDS.rto_rising = {
+  icon: Undo2,
+  name: "RTO rising",
+  about: "More of what you ship coming back than usual, from your courier's own marks.",
+  title: (f) => `RTO at ${f.num("rate")}% over the last ${plural(f.num("days"), "day")}`,
+  detail: (f) =>
+    [
+      `${f.num("rto")} of ${f.num("settled")} delivered or returned came back, against ${f.num("rate_before")}% before`,
+      f.num("moving") > 0 ? `${f.num("moving")} still on the way` : "",
+      worstCouriers(f).join(", "),
+    ]
+      .filter(Boolean)
+      .join(" · "),
+  ask: (f) =>
+    `RTO was ${f.num("rate")}% over the last ${plural(f.num("days"), "day")} (${f.num("rto")} of ${f.num("settled")} shipments delivered or returned), against ${f.num("rate_before")}% in the weeks before${
+      f.num("moving") > 0 ? `, with ${f.num("moving")} still on the way` : ""
+    }${worstCouriers(f).length ? `. By courier: ${worstCouriers(f).join(", ")}` : ""}. What is behind the rise, by courier, area, payment and product, and what should I change?`,
+  settings: [
+    { key: "days", before: "Looking at shipments sent in the last", after: "days" },
+    { key: "min", before: "Once at least", after: "of them were delivered or returned" },
+    { key: "points", before: "Tell me when RTO rises by", after: "points or more" },
+  ],
+};
+ALERT_WORDS.ads_no_sales = {
+  icon: Megaphone,
+  name: "Ads spending without sales",
+  about: "A campaign spending while your store's own orders from it stay low.",
+  title: (f) =>
+    `${f.str("campaign") || "A campaign"}: ${spent(f, "spend")} spent, ${
+      f.num("orders") === 0 ? "no orders" : `store ROAS ${f.num("roas")}`
+    } in ${plural(f.num("days"), "day")}`,
+  detail: (f) =>
+    [
+      f.num("orders") > 0 ? `${plural(f.num("orders"), "order")}, ${spent(f, "revenue")} from it in your store` : "",
+      f.raw("platform_roas") != null ? `the ad platform claims ROAS ${f.num("platform_roas")}` : "",
+    ]
+      .filter(Boolean)
+      .join(" · "),
+  ask: (f) =>
+    `The campaign ${f.str("campaign") || ""} spent ${spent(f, "spend")} in the last ${plural(f.num("days"), "day")}, and my store's own orders from it were ${
+      f.num("orders") === 0 ? "none" : `${f.num("orders")} worth ${spent(f, "revenue")} (ROAS ${f.num("roas")})`
+    }${f.raw("platform_roas") != null ? `, while the ad platform claims ROAS ${f.num("platform_roas")}` : ""}. Is it really not selling, or are its orders not tagged with it? What should I do?`,
+  settings: [
+    { key: "days", before: "Looking at the last", after: "days" },
+    { key: "spend", before: "Once a campaign has spent", after: "or more" },
+    { key: "roas", before: "And brought back under", after: "times its cost" },
+  ],
+};
+
 /**
  * One of their own (0164): a rule Luke wrote from their words. Its
  * title is theirs; the fields it shows say which row.
@@ -215,7 +274,6 @@ const ruleValues = (f: Facts) =>
 /** What Luke will watch once the data for it is read; shown, never ticked. */
 export const ALERTS_COMING: Array<{ name: string; about: string; icon: LucideIcon }> = [
   { name: "Conversion changes", about: "Once Warmluke reads your store's visits.", icon: TrendingUp },
-  { name: "Ads spending without sales", about: "Once your ads account is connected.", icon: Bell },
 ];
 
 export const wordsOf = (kind: string): Words =>
