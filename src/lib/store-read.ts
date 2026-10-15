@@ -370,7 +370,10 @@ export type StoreTable =
   | "email_campaigns"
   | "support_tickets"
   | "crm_contacts"
-  | "social_posts";
+  | "social_posts"
+  | "message_stats"
+  | "gateway_payments"
+  | "gateway_settlements";
 
 type TableSpec = {
   /** What a stat over this table should be — for whoever designs one. */
@@ -1106,6 +1109,71 @@ export const STORE_TABLES: Record<StoreTable, TableSpec> = {
       { field: "url", label: "Open", type: "url" },
     ],
   },
+  // Payments and messages (0216): read from each provider on its own clock.
+  message_stats: {
+    label: "WhatsApp messages",
+    what: 'one row per WhatsApp message template per day, from the store\'s connected WhatsApp Business account — how many were sent, delivered, read and had a button clicked, with read and click rates; what "WhatsApp", "COD confirmation messages", "order update messages", "templates", "read rate" and "did they read it" mean',
+    section: { label: "WhatsApp messages", icon: "message-circle", importedWith: null },
+    advice:
+      "Read from the connected WhatsApp Business account every few hours; empty until it is connected. These are counts per template and day, never the messages themselves, which WhatsApp does not share after sending. read_rate and click_rate are percentages of delivered. WhatsApp keeps 90 days.",
+    view: "store_message_stats",
+    dated: "day",
+    order: { field: "day", ascending: false },
+    select: "id, day, template, category, language, sent, delivered, read, clicked, read_rate, click_rate, provider",
+    columns: [
+      { field: "day", label: "Day", type: "date" },
+      { field: "template", label: "Template", type: "text" },
+      { field: "category", label: "Kind", type: "badge" },
+      { field: "sent", label: "Sent", type: "number" },
+      { field: "delivered", label: "Delivered", type: "number" },
+      { field: "read", label: "Read", type: "number" },
+      { field: "read_rate", label: "Read rate", type: "percent" },
+      { field: "clicked", label: "Clicked", type: "number" },
+    ],
+  },
+  gateway_payments: {
+    label: "Online payments",
+    what: 'one row per online payment through the store\'s connected payment gateway (Razorpay) — amount, status, method (UPI, card, netbanking, wallet), the gateway\'s fee and tax, what was refunded, and the Shopify order it paid for when the gateway names it; what "online payments", "prepaid", "Razorpay", "UPI payments", "failed payments", "gateway fees" and "payment for order" mean',
+    section: { label: "Online payments", icon: "wallet", importedWith: null },
+    advice:
+      'Read from the connected gateway every hour; empty until it is connected. status is the gateway\'s own: "captured" is money taken, "failed" was not, "refunded" went back, "authorized" is waiting. A failed payment is not a lost order: the customer may have paid again or chosen COD. fee and tax are what the gateway kept. order_number is the Shopify order when the gateway names it, else empty.',
+    view: "store_gateway_payments",
+    dated: "paid_on",
+    order: { field: "paid_on", ascending: false },
+    gives: { Order: "shopify_order_id" },
+    select:
+      "id, paid_on, payment, order_number, amount, currency, status, method, fee, tax, refunded, email, phone, shopify_order_id, provider",
+    columns: [
+      { field: "paid_on", label: "Paid", type: "date" },
+      { field: "order_number", label: "Order", type: "text" },
+      { field: "amount", label: "Amount", type: "currency", currencyField: "currency" },
+      { field: "status", label: "Status", type: "badge" },
+      { field: "method", label: "Method", type: "badge" },
+      { field: "fee", label: "Gateway fee", type: "currency", currencyField: "currency" },
+      { field: "refunded", label: "Refunded", type: "currency", currencyField: "currency" },
+      { field: "email", label: "Email", type: "email" },
+      { field: "payment", label: "Payment id", type: "text" },
+    ],
+  },
+  gateway_settlements: {
+    label: "Gateway settlements",
+    what: 'one row per settlement the connected payment gateway (Razorpay) paid into the bank — when, how much, its fees and tax, what reached the bank, and the bank\'s UTR; what "settlements", "when will I get my money", "Razorpay settlement", "UTR" and "reconcile" mean',
+    section: { label: "Settlements", icon: "banknote", importedWith: null },
+    advice:
+      "Read from the connected gateway every hour; empty until it is connected. net is amount less fees and tax: what reached the bank. utr is the bank's reference to reconcile a statement line with. Cash on delivery is not here: it comes from the courier's COD remittance.",
+    view: "store_gateway_settlements",
+    dated: "settled_on",
+    order: { field: "settled_on", ascending: false },
+    select: "id, settled_on, settlement, amount, fees, tax, net, utr, status, provider",
+    columns: [
+      { field: "settled_on", label: "Settled", type: "date" },
+      { field: "amount", label: "Amount", type: "currency" },
+      { field: "fees", label: "Fees", type: "currency" },
+      { field: "net", label: "Reached the bank", type: "currency" },
+      { field: "utr", label: "UTR", type: "text" },
+      { field: "status", label: "Status", type: "badge" },
+    ],
+  },
 } as Record<StoreTable, TableSpec>;
 
 /**
@@ -1141,6 +1209,9 @@ const SEARCHABLE: Record<StoreTable, string[]> = {
   support_tickets: ["ticket", "subject", "status", "customer_name", "email", "tags"],
   crm_contacts: ["name", "email", "phone", "lifecycle_stage", "lead_status", "in_store"],
   social_posts: ["text", "network", "kind"],
+  message_stats: ["template", "category", "language"],
+  gateway_payments: ["payment", "order_number", "status", "method", "email", "phone"],
+  gateway_settlements: ["settlement", "utr", "status"],
   locations: ["name", "place", "state"],
   collections: ["title", "handle"],
   carts: ["customer_name", "email", "items"],

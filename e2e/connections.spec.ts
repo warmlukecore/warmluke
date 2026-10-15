@@ -59,14 +59,18 @@ test("the owner connects a courier in Settings, sees where it stands, and discon
     await expect(dialog.getByText("Shiprocket", { exact: true })).toBeVisible();
     await expect(dialog.getByText("GoSwift", { exact: true })).toBeVisible();
     // Every kind has its group, and every provider its own mark (0215).
-    for (const group of ["Ads", "Analytics", "Email", "Support", "CRM", "Social"]) {
+    for (const group of ["Ads", "Analytics", "Email", "Messaging", "Payments", "Support", "CRM", "Social"]) {
       await expect(dialog.getByText(group, { exact: true })).toBeVisible();
     }
     for (const name of [
+      "Delhivery",
       "Google Ads",
       "Google Analytics",
       "Mailchimp",
       "Brevo",
+      "Klaviyo",
+      "WhatsApp Business",
+      "Razorpay",
       "Zendesk",
       "HubSpot",
       "Facebook & Instagram",
@@ -87,7 +91,17 @@ test("the owner connects a courier in Settings, sees where it stands, and discon
     expect(sideways).toBeLessThanOrEqual(1);
 
     // Each group as it looks, for a person to read (LOOK_DIR).
-    for (const group of ["Couriers", "Ads", "Analytics", "Email", "Support", "CRM", "Social"]) {
+    for (const group of [
+      "Couriers",
+      "Ads",
+      "Analytics",
+      "Email",
+      "Messaging",
+      "Payments",
+      "Support",
+      "CRM",
+      "Social",
+    ]) {
       const section = dialog
         .locator("section")
         .filter({ has: page.getByText(group, { exact: true }) })

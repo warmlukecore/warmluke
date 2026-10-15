@@ -27,9 +27,22 @@ export type ConnectorId =
   | "brevo"
   | "zendesk"
   | "hubspot"
-  | "meta_social";
+  | "meta_social"
+  | "klaviyo"
+  | "whatsapp"
+  | "razorpay"
+  | "delhivery";
 
-export type ConnectorKind = "courier" | "ads" | "analytics" | "email" | "support" | "crm" | "social";
+export type ConnectorKind =
+  | "courier"
+  | "ads"
+  | "analytics"
+  | "email"
+  | "messaging"
+  | "payments"
+  | "support"
+  | "crm"
+  | "social";
 
 /** Each kind's group in Settings → Connections, in the order they show. */
 export const KINDS: Array<{ kind: ConnectorKind; title: string; description: string }> = [
@@ -41,6 +54,12 @@ export const KINDS: Array<{ kind: ConnectorKind; title: string; description: str
   { kind: "ads", title: "Ads", description: "What your campaigns spent, beside the orders they brought." },
   { kind: "analytics", title: "Analytics", description: "Your store's visits, and where they came from." },
   { kind: "email", title: "Email", description: "What each email campaign was opened, clicked and sold." },
+  { kind: "messaging", title: "Messaging", description: "What your WhatsApp messages reached, and who read them." },
+  {
+    kind: "payments",
+    title: "Payments",
+    description: "What customers paid online, on their orders, and what reached your bank.",
+  },
   { kind: "support", title: "Support", description: "Your customers' tickets, on the customer who raised them." },
   { kind: "crm", title: "CRM", description: "Your contacts, and which of them are already customers." },
   { kind: "social", title: "Social", description: "Your own posts, and how people took to them." },
@@ -125,6 +144,25 @@ export const CONNECTORS: Connector[] = [
     brings: ["courier_shipments"],
     brought: { one: "shipment", many: "shipments", arriving: "bringing its shipments in" },
     every: 30,
+    ready: true,
+  },
+  {
+    id: "delhivery",
+    label: "Delhivery",
+    kind: "courier",
+    logo: { src: "/logos/delhivery.png" },
+    gives: "Every Delhivery parcel's status, NDR and RTO, on its Shopify order.",
+    auth: {
+      kind: "login",
+      // Delhivery has no list of a client's shipments: the AWBs on the store's
+      // own Shopify fulfilments are tracked (lib/connectors/delhivery).
+      fields: [{ key: "token", label: "API token", type: "password" }],
+      how: "In Delhivery One, Settings → API setup: copy your API token. A parcel shows here once Shopify has its AWB on a fulfilment with Delhivery as the carrier.",
+      where: "https://one.delhivery.com",
+    },
+    brings: ["courier_shipments"],
+    brought: { one: "shipment", many: "shipments", arriving: "bringing its shipments in" },
+    every: 60,
     ready: true,
   },
   {
@@ -234,6 +272,64 @@ export const CONNECTORS: Connector[] = [
     brings: ["email_campaigns"],
     brought: SENDS,
     every: 360,
+    ready: true,
+  },
+  {
+    id: "klaviyo",
+    label: "Klaviyo",
+    kind: "email",
+    logo: { src: "/logos/klaviyo.png" },
+    gives: "Each campaign's opens, clicks, unsubscribes, and the orders and revenue Klaviyo credits it.",
+    auth: {
+      kind: "login",
+      fields: [{ key: "api_key", label: "Private API key", type: "password" }],
+      how: "In Klaviyo, Settings → API keys → Create Private API Key, read-only. It starts with pk_.",
+      where: "https://www.klaviyo.com/settings/account/api-keys",
+    },
+    brings: ["email_campaigns"],
+    brought: SENDS,
+    every: 360,
+    ready: true,
+  },
+  {
+    id: "whatsapp",
+    label: "WhatsApp Business",
+    kind: "messaging",
+    logo: { src: "/logos/whatsapp.svg" },
+    gives: "Each message template's sends, deliveries, reads and clicks, by day.",
+    auth: {
+      kind: "login",
+      // A system user's token, as Meta Ads (lib/connectors/whatsapp).
+      fields: [
+        { key: "token", label: "System user access token", type: "password" },
+        { key: "waba_id", label: "WhatsApp Business account ID", type: "text" },
+      ],
+      how: "In Meta Business settings → Users → System users: give a system user your WhatsApp account, then Generate token with whatsapp_business_management and no expiry. The account ID is in WhatsApp Manager → Account tools. Connecting turns on template insights, which is how WhatsApp shares these counts.",
+      where: "https://business.facebook.com/wa/manage/home/",
+    },
+    brings: ["message_stats"],
+    brought: { one: "template day", many: "template days", arriving: "bringing its message counts in" },
+    every: 180,
+    ready: true,
+  },
+  {
+    id: "razorpay",
+    label: "Razorpay",
+    kind: "payments",
+    logo: { src: "/logos/razorpay.svg" },
+    gives: "Each online payment on its Shopify order, its fee and refunds, and what reached your bank.",
+    auth: {
+      kind: "login",
+      fields: [
+        { key: "key_id", label: "Key id", type: "text" },
+        { key: "key_secret", label: "Key secret", type: "password" },
+      ],
+      how: "In Razorpay, Account & Settings → API keys → Generate key. Use the live key (rzp_live_…): a test key brings test payments.",
+      where: "https://dashboard.razorpay.com/app/keys",
+    },
+    brings: ["gateway_payments", "gateway_settlements"],
+    brought: { one: "payment", many: "payments", arriving: "bringing its payments in" },
+    every: 60,
     ready: true,
   },
   {

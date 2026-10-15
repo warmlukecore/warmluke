@@ -301,6 +301,37 @@ try {
         shares: 2,
       },
     },
+    {
+      list: "email_campaigns",
+      provider: "klaviyo",
+      view: "store_email_campaigns",
+      row: { campaign_ref: "k1", name: "Weekend", sent_at: "2026-10-11T08:00:00Z", sent: 500, opens: 200 },
+    },
+    {
+      list: "message_stats",
+      provider: "whatsapp",
+      view: "store_message_stats",
+      row: { template_ref: "T1", template_name: "cod_confirm", day: "2026-10-12", sent: 100, delivered: 95, read: 80 },
+    },
+    {
+      list: "gateway_payments",
+      provider: "razorpay",
+      view: "store_gateway_payments",
+      row: {
+        payment_ref: "pay_1",
+        order_ref: "#1042",
+        amount: 899,
+        currency: "INR",
+        status: "captured",
+        method: "upi",
+      },
+    },
+    {
+      list: "gateway_settlements",
+      provider: "razorpay",
+      view: "store_gateway_settlements",
+      row: { settlement_ref: "setl_1", amount: 5000, fees: 100, tax: 18, utr: "UTR1", status: "processed" },
+    },
   ];
   for (const { list, provider, view, row } of lists) {
     const { data: cid } = await owner.client.rpc("abo_connector_save", {
@@ -319,9 +350,13 @@ try {
       { p_rows: [] }
     );
     check(`and no other list`, other.error?.code === "42501");
-    const { data: seen } = await owner.client.from(view).select("*").eq("store_id", store.id);
+    const { data: seen } = await owner.client.from(view).select("*").eq("store_id", store.id).eq("provider", provider);
     check(`the owner reads ${list} as a list`, seen?.length === 1);
-    const { data: hiddenRows } = await stranger.client.from(view).select("id").eq("store_id", store.id);
+    const { data: hiddenRows } = await stranger.client
+      .from(view)
+      .select("id")
+      .eq("store_id", store.id)
+      .eq("provider", provider);
     check(`a stranger reads none of it`, (hiddenRows ?? []).length === 0);
     const straight = await owner.client
       .from(list)
@@ -342,6 +377,58 @@ try {
     .select("conversion_rate")
     .eq("store_id", store.id)
     .single();
+  const { data: paid } = await owner.client
+    .from("store_gateway_payments")
+    .select("order_number, shopify_order_id")
+    .eq("store_id", store.id)
+    .single();
+  check("a payment lands on the Shopify order it names", paid?.order_number === "#1042" && !!paid?.shopify_order_id);
+  const { data: net } = await owner.client
+    .from("store_gateway_settlements")
+    .select("net")
+    .eq("store_id", store.id)
+    .single();
+  check("and a settlement says what reached the bank", Number(net?.net) === 4882);
+
+  console.log("\na carrier with no list of its own (0216)");
+  await admin.from("fulfillments").insert({
+    store_id: store.id,
+    order_id: order.id,
+    external_id: "gid://shopify/Fulfillment/1",
+    carrier: "Delhivery",
+    tracking_number: "DLV123",
+  });
+  const { data: dlvId } = await owner.client.rpc("abo_connector_save", {
+    p_store: store.id,
+    p_provider: "delhivery",
+    p_account_ref: "delhivery-1",
+    p_account_label: "Delhivery",
+    p_secret: JSON.stringify({ token: "not-real" }),
+  });
+  const { data: dlvTicket } = await admin.rpc("abo_connector_mint", { p_connection: dlvId });
+  const dlv = worker(dlvTicket);
+  const { data: awbs } = await dlv.rpc("abo_connector_carrier_awbs", { p_carrier: "delhivery", p_limit: 50 });
+  check("its ticket is handed the store's own AWBs with that carrier", awbs?.length === 1 && awbs[0].awb === "DLV123");
+  check("each with the order it belongs to", awbs?.[0]?.order_number === "#1042");
+  await dlv.rpc("abo_connector_put_shipments", {
+    p_rows: [
+      {
+        shipment_ref: "DLV123",
+        awb: "DLV123",
+        order_ref: "#1042",
+        status: "Delivered",
+        delivered_at: "2026-10-12T09:00:00Z",
+      },
+    ],
+  });
+  const { data: after } = await dlv.rpc("abo_connector_carrier_awbs", { p_carrier: "delhivery", p_limit: 50 });
+  check("and not again once delivered", (after ?? []).length === 0);
+  const { data: none } = await worker("x".repeat(64)).rpc("abo_connector_carrier_awbs", {
+    p_carrier: "delhivery",
+    p_limit: 50,
+  });
+  check("a made-up ticket is handed nothing", (none ?? []).length === 0);
+  await admin.from("connector_leases").delete().eq("connection_id", dlvId);
   check("a day's conversion rate is worked out", Number(rate?.conversion_rate) === 2);
 
   console.log("\na refused credential asks for the owner");
@@ -424,6 +511,10 @@ try {
   console.log("\ndisconnecting");
   const theirOff = await stranger.client.rpc("abo_connector_disconnect", { p_connection: id });
   check("a stranger cannot", theirOff.error?.code === "42501");
+  const { count: before } = await owner.client
+    .from("store_courier_shipments")
+    .select("awb", { count: "exact", head: true })
+    .eq("store_id", store.id);
   const { error: offError } = await owner.client.rpc("abo_connector_disconnect", { p_connection: id });
   const { data: off } = await owner.client
     .from("store_connections")
@@ -432,7 +523,7 @@ try {
     .single();
   check("the owner can", !offError && off?.status === "disconnected" && !!off?.disconnected_at);
   const { data: kept } = await owner.client.from("store_courier_shipments").select("awb").eq("store_id", store.id);
-  check("and the rows already brought stay", kept?.length === 3);
+  check("and the rows already brought stay", (before ?? 0) >= 3 && kept?.length === before);
   const late = await post(hookToken, [{ shipment_ref: "SR-3", status: "Delivered" }]);
   check("its address is refused from then", late.error?.code === "42501");
   await admin.from("connector_leases").delete().eq("connection_id", id);

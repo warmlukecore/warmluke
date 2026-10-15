@@ -80,9 +80,18 @@ export default function Privacy() {
               visitor&rsquo;s details.
             </li>
             <li>
-              Mailchimp and Brevo: each email campaign&rsquo;s sends, opens, clicks, unsubscribes and revenue, with no
-              subscriber&rsquo;s details.
+              Mailchimp, Brevo and Klaviyo: each email campaign&rsquo;s sends, opens, clicks, unsubscribes and revenue,
+              with no subscriber&rsquo;s details.
             </li>
+            <li>
+              WhatsApp Business: how many of each message template were sent, delivered, read and clicked, by day. The
+              messages themselves are not read.
+            </li>
+            <li>
+              Razorpay: each online payment&rsquo;s amount, status, method, fee and refunds, with the paying
+              customer&rsquo;s email and phone, so it can be matched to its order; and each settlement into the bank.
+            </li>
+            <li>Delhivery: where each of the store&rsquo;s Delhivery parcels is, matched to its order.</li>
             <li>
               Zendesk: each ticket&rsquo;s subject, status and tags, with the name, email and phone of the person who
               raised it, so it can be matched to their order history.

@@ -93,6 +93,11 @@ async function work(db: SupabaseClient, job: HeldJob, hookBase: string) {
         const { error } = await db.rpc("abo_connector_put_hook", { p_token: token });
         if (error) throw new Error(error.message);
       },
+      carrierAwbs: async (carrier: string, limit: number) => {
+        const { data, error } = await db.rpc("abo_connector_carrier_awbs", { p_carrier: carrier, p_limit: limit });
+        if (error) throw new Error(error.message);
+        return (data ?? []) as Array<{ awb: string; order_number: string | null }>;
+      },
       openShipments: async (settled: string[], limit: number) => {
         const { data, error } = await db.rpc("abo_connector_open_shipments", { p_settled: settled, p_limit: limit });
         if (error) throw new Error(error.message);

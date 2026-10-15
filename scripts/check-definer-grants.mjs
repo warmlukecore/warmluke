@@ -63,6 +63,11 @@ const GUARDED = {
   abo_connector_put_support_tickets: "the connector worker's ticket, a support connection writing its own rows",
   abo_connector_put_crm_contacts: "the connector worker's ticket, a CRM connection writing its own rows",
   abo_connector_put_social_posts: "the connector worker's ticket, a social connection writing its own rows",
+  // 0216: payments, messages, and the AWBs a carrier with no list of its own asks after.
+  abo_connector_put_message_stats: "the connector worker's ticket, a messaging connection writing its own rows",
+  abo_connector_put_gateway_payments: "the connector worker's ticket, a payments connection writing its own rows",
+  abo_connector_put_gateway_settlements: "the connector worker's ticket, a payments connection writing its own rows",
+  abo_connector_carrier_awbs: "the connector worker's ticket, reading its own store's fulfilment AWBs for its carrier",
   abo_connector_release: "the connector worker's ticket",
   abo_connector_renew: "the connector worker's ticket",
   abo_connector_put_hook: "the connector worker's ticket, keeping its own connection's hook token as a hash",

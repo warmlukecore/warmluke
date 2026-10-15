@@ -22,6 +22,7 @@ import {
   LifeBuoy,
   List,
   Mail,
+  MessageCircle,
   MapPin,
   Package,
   Receipt,
@@ -68,6 +69,7 @@ export const SECTION_ICONS: Readonly<Record<string, LucideIcon>> = {
   mail: Mail,
   "life-buoy": LifeBuoy,
   contact: Contact,
+  "message-circle": MessageCircle,
 };
 
 export function Icon({

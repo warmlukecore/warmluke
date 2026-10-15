@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────────
-// Meta's Graph API, as every Meta connector calls it: Meta Ads (0214)
-// and a store's Facebook Page and Instagram (0215).
+// Meta's Graph API, as every Meta connector calls it: Meta Ads (0214),
+// a store's Facebook Page and Instagram (0215) and its WhatsApp (0216).
 //
 // The token rides in a header, never in an address. Meta's own error
 // codes say whether to wait (rate limits), to ask the owner again (a
@@ -26,11 +26,12 @@ export async function graph(
   token: string,
   f: Fetch,
   params: Record<string, string> = {},
-  missing = "give the system user what this needs"
+  missing = "give the system user what this needs",
+  method: "GET" | "POST" = "GET"
 ): Promise<Record<string, unknown>> {
   const url = new URL(`${GRAPH}/${graphApiVersion()}/${path}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const res = await f(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+  const res = await f(url.toString(), { method, headers: { Authorization: `Bearer ${token}` } });
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown> & {
     error?: { message?: string; code?: number; error_subcode?: number };
   };

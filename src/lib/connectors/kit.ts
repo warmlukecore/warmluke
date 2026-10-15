@@ -114,6 +114,47 @@ export type SocialPostRow = {
   url: string | null;
 };
 
+/** One WhatsApp template's day, as message_stats keeps it (0216). */
+export type MessageStatRow = {
+  template_ref: string;
+  template_name: string | null;
+  category: string | null;
+  language: string | null;
+  day: string;
+  sent: number | null;
+  delivered: number | null;
+  read: number | null;
+  clicked: number | null;
+};
+
+/** One online payment, as gateway_payments keeps it (0216): money in the store's currency, not paise. */
+export type GatewayPaymentRow = {
+  payment_ref: string;
+  /** The Shopify order it paid for, as the gateway names it; the database finds the order. */
+  order_ref: string | null;
+  amount: number | null;
+  currency: string | null;
+  status: string | null;
+  method: string | null;
+  fee: number | null;
+  tax: number | null;
+  refunded: number | null;
+  email: string | null;
+  phone: string | null;
+  paid_at: string | null;
+};
+
+/** What a gateway paid into the bank, as gateway_settlements keeps it (0216). */
+export type GatewaySettlementRow = {
+  settlement_ref: string;
+  amount: number | null;
+  fees: number | null;
+  tax: number | null;
+  utr: string | null;
+  status: string | null;
+  settled_at: string | null;
+};
+
 /** Each list a connection brings, and its row: written by abo_connector_put_<list>. */
 export type ListRows = {
   ad_spend: AdSpendRow;
@@ -122,6 +163,9 @@ export type ListRows = {
   support_tickets: SupportTicketRow;
   crm_contacts: CrmContactRow;
   social_posts: SocialPostRow;
+  message_stats: MessageStatRow;
+  gateway_payments: GatewayPaymentRow;
+  gateway_settlements: GatewaySettlementRow;
 };
 
 export type Job = {
@@ -143,6 +187,12 @@ export type SyncIO = {
   putHook(token: string): Promise<void>;
   /** This connection's shipments not yet settled that have not moved for hours, oldest first. */
   openShipments(settled: string[], limit: number): Promise<string[]>;
+  /**
+   * The store's own AWBs with this carrier, recent and not yet delivered,
+   * least lately asked after first, each with its Shopify order (0216):
+   * for a carrier with no list of its client's shipments.
+   */
+  carrierAwbs(carrier: string, limit: number): Promise<Array<{ awb: string; order_number: string | null }>>;
 };
 
 export type Fetch = typeof fetch;

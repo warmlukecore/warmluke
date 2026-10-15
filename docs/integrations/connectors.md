@@ -1,6 +1,6 @@
 # Connectors: couriers and ad accounts beside the store
 
-Status: design, agreed 11 Oct 2026. Phases 1 to 5 and 7 are built; each waits on what is listed
+Status: design, agreed 11 Oct 2026. Phases 1 to 5, 7 and 8 are built; each waits on what is listed
 under [Phases](#phases). Every connector is reached with the merchant's own credential, so
 none waits on a review of Warmluke's own app.
 
@@ -291,6 +291,26 @@ The connection row keeps who connected and who disconnected, and when.
      media, with likes, comments and shares. A system user's token, traded for the Page's.
    - Not built, on purpose: scrapers of other sites (marketplaces, review sites, trends),
      which break those sites' terms; and Google Drive, which is files, not store data.
+8. **Payments, messages, and two more.** Built (0216, 15 Oct). Checked by
+   `check-klaviyo-whatsapp`, `check-razorpay-delhivery`, `check-connectors` (every list's walls,
+   a payment on its order, Delhivery's AWBs) and the Connections walk.
+   - **Klaviyo** → `email_campaigns`: email campaigns changed in the span, then one campaign
+     values report a run (Klaviyo allows a couple a minute), revenue counted on the account's
+     "Placed Order" metric, found at connecting. A private API key (`pk_…`).
+   - **WhatsApp Business** → `message_stats`: each template's sends, deliveries, reads and
+     clicks by day (template analytics, ten templates a call, 90 days kept). A system user's
+     token and the WhatsApp Business account id; connecting turns template insights on.
+     Messages themselves are not readable after sending, and are not read.
+   - **Razorpay** → `gateway_payments` and `gateway_settlements`: payments on the Shopify order
+     their notes or description name (never Razorpay's own order id), amounts in rupees, and
+     settlements with their UTR. A key id and secret.
+   - **Delhivery** → `courier_shipments`: Delhivery has no list of a client's shipments, so
+     `abo_connector_carrier_awbs` hands its sync the AWBs on the store's own fulfilments with
+     Delhivery as the carrier (60 days, not delivered or returned, not asked in two hours),
+     tracked fifty a call. An API token.
+   - Next, by what Indian stores run on: Zoho Books or Inventory, Google Sheets as a section,
+     Freshdesk or Gorgias, Judge.me reviews, Search Console; marketplaces (Amazon, Flipkart)
+     need each seller's developer registration first.
 
 Provider facts (token lifetimes, rate limits, review steps) were researched on 9 Oct. Each
 phase checks them against the provider's current documentation before it is built.
