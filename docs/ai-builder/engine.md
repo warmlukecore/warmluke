@@ -212,6 +212,9 @@ a short stable key ("lead time: blanks"): the learner writes a correction with t
 topic, and `learn` retires the old line before keeping the new one (one line a topic, by a unique
 index). The source is the owner (they said or typed it), their data, or a guess, and a guess is
 read as one (`factLine`), so Luke checks it before leaning on it. `check-memory` holds it.
+What is known is read on every turn whether or not the memory model is set (only learning
+costs a call), so what the owner said themselves (their team and restock time, 0222,
+`lib/team-facts`) reaches Luke in a fresh chat without being asked again.
 
 The same call keeps what HURTS them (0201): at most one problem a turn, in their words, with what
 it costs them when they said it, in `merchant_problems` with the conversation it was said in.

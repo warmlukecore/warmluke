@@ -25,6 +25,7 @@ import { apiFetch, signOut, takePendingPrompt, useUser } from "@/lib/auth";
 import { supabase } from "@/lib/supabase-client";
 import ConnectShopify from "@/components/ConnectShopify";
 import HistoryPicker from "@/components/HistoryPicker";
+import { TeamFacts } from "@/components/TeamFacts";
 import { LukeMark } from "@/components/ui/LukeMark";
 import { button, field, label, note } from "@/components/ui/controls";
 import {
@@ -53,6 +54,8 @@ const WATCH_MS = 3000;
 type Owned = {
   id: string;
   name: string;
+  /** Who does what was answered or skipped (0222). */
+  teamAsked: boolean;
   store: { shop_domain: string; status: string; history_set_at?: string | null } | null;
 };
 type Progress = Record<string, { imported: number; status: string; label?: string }>;
@@ -74,7 +77,7 @@ const EMPTY: Answers = {
 const LATER = "I’ll do this later";
 
 /** The steps in the order they come. */
-const ORDER: Step[] = ["about", "store", "preparing", "done"];
+const ORDER: Step[] = ["about", "store", "team", "preparing", "done"];
 
 export default function Onboarding() {
   const { user, loading } = useUser();
@@ -117,7 +120,7 @@ export default function Onboarding() {
       supabase.from("profiles").select("*").eq("user_id", user.id).maybeSingle(),
       supabase
         .from("projects")
-        .select("id, name, owner_id, created_at, stores(shop_domain, status, history_set_at)")
+        .select("id, name, owner_id, created_at, team_asked_at, stores(shop_domain, status, history_set_at)")
         .eq("owner_id", user.id)
         .order("created_at", { ascending: true }),
       supabase.rpc("abo_may_start_app"),
@@ -165,9 +168,17 @@ export default function Onboarding() {
       setDraft(seed);
     }
     setOwned(
-      ((projects.data ?? []) as Array<{ id: string; name: string; stores: Owned["store"][] | null }>).map((p) => ({
+      (
+        (projects.data ?? []) as Array<{
+          id: string;
+          name: string;
+          team_asked_at?: string | null;
+          stores: Owned["store"][] | null;
+        }>
+      ).map((p) => ({
         id: p.id,
         name: p.name,
+        teamAsked: !!p.team_asked_at,
         store: p.stores?.[0] ?? null,
       }))
     );
@@ -185,6 +196,8 @@ export default function Onboarding() {
     historyAwaiting: historyOn && !!connected && !connected.store?.history_set_at && !historyChosen,
     importing: importing !== false,
     preparingSkipped: skipped.preparing,
+    // Asked of the project the store is in; with none yet, there is no one to ask about.
+    teamAsked: !target || target.teamAsked,
   });
   const shown: Step = viewing ?? step;
 
@@ -284,7 +297,7 @@ export default function Onboarding() {
                   .insert({ name: a.business_name.trim().slice(0, 42) })
                   .select("id, name")
                   .single();
-                if (data) setOwned([{ id: data.id, name: data.name, store: null }]);
+                if (data) setOwned([{ id: data.id, name: data.name, teamAsked: false, store: null }]);
               }
               setAnswers(a);
               setProfileSaved(true);
@@ -352,6 +365,25 @@ export default function Onboarding() {
                 </button>
               </div>
             )}
+          </Screen>
+        ) : shown === "team" && target ? (
+          <Screen
+            eyebrow="Your team"
+            title="Who does what"
+            lede="So Luke suggests work for the right person, and warns you about stock in time. Every answer is optional, and you can change them in Settings."
+          >
+            <TeamFacts
+              projectId={target.id}
+              submitLabel="Continue"
+              skippable
+              onDone={() => {
+                setOwned((all) => all.map((p) => (p.id === target.id ? { ...p, teamAsked: true } : p)));
+                onward();
+              }}
+            />
+            <div className="mt-4">
+              <BackLink onBack={() => revisit("store")} />
+            </div>
           </Screen>
         ) : shown === "preparing" ? (
           <Screen
@@ -438,6 +470,7 @@ function Frame({
   const trail: TrailItem[] = [
     { key: "about", steps: ["about"], text: "About you" },
     { key: "store", steps: ["store", "preparing"], text: "Your store" },
+    { key: "team", steps: ["team"], text: "Your team" },
     { key: "done", steps: ["done"], text: "Ready" },
   ];
   const at = trail.findIndex((t) => t.steps.includes(shown));
@@ -461,11 +494,13 @@ function Frame({
         : "Hi, I’m Luke. A few questions, and I’ll set things up around how you work."
       : shown === "store"
         ? "I read your store and change nothing in it until you say yes."
-        : shown === "preparing"
-          ? reading
-            ? `Reading ${reading.toLowerCase()}.`
-            : "Starting on your store."
-          : `That’s everything${first ? `, ${first}` : ""}. Let’s build something.`;
+        : shown === "team"
+          ? "Tell me who does what, and I’ll suggest work for the right person."
+          : shown === "preparing"
+            ? reading
+              ? `Reading ${reading.toLowerCase()}.`
+              : "Starting on your store."
+            : `That’s everything${first ? `, ${first}` : ""}. Let’s build something.`;
 
   return (
     <div className="font-ui grid min-h-dvh bg-canvas text-fg lg:grid-cols-[20rem_minmax(0,1fr)]">

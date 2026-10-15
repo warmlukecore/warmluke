@@ -258,9 +258,14 @@ error's own words. The
 landing-page prompt waits until onboarding is done, then opens in their project with the
 assistant.
 
-`/onboarding` has three visible steps: about you (name, business, role, orders a month,
+`/onboarding` has four visible steps: about you (name, business, role, orders a month,
 platform, and optionally website, team size and where they heard of Warmluke); the store
-(one-tap connect, typed address or a link for another browser, or later); and ready.
+(one-tap connect, typed address or a link for another browser, or later); your team (0222:
+who packs, answers customers, runs the ads and restocks, what else they run the store with,
+and how many days a restock takes, every answer optional, "Skip for now", the same form as
+Settings → General's "Your team and how you work", `TeamFacts`, `lib/team-facts`); and ready.
+The team answers become lines of what Luke knows that the work stands on (merchant_notes,
+kind team or lead_time), and the restock time a number on the project that Running low reads.
 Their own AI is not asked about here (9 Oct): the app offers it under "Use your own AI".
 After "Open Warmluke", a new owner's app opens on the first conversation with Luke (0200):
 `AppShell` reads `profiles.met_luke_at` and, while it is empty, shows `ChatPanel` alone and

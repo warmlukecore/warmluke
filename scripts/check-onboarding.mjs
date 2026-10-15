@@ -132,6 +132,7 @@ const at = (o) =>
     historyAwaiting: false,
     importing: false,
     preparingSkipped: false,
+    teamAsked: true,
     ...o,
   });
 check("nothing saved yet: about them", at({}) === "about");
@@ -152,6 +153,20 @@ check(
 );
 check("no store means no import to wait on", at({ profile: true, storeSkipped: true, importing: true }) === "done");
 check("an answer saved is never asked again", at({ profile: true, storeConnected: true }) !== "about");
+// Who does what (0222): after the store, before waiting on it, skippable, asked once.
+check(
+  "the store connected, its history chosen: who does what next",
+  at({ profile: true, storeConnected: true, importing: true, teamAsked: false }) === "team"
+);
+check("the store left for later: still asked", at({ profile: true, storeSkipped: true, teamAsked: false }) === "team");
+check(
+  "never before the store is settled",
+  at({ profile: true, storeConnected: true, historyAwaiting: true, teamAsked: false }) === "store"
+);
+check(
+  "answered or skipped: on to the import",
+  at({ profile: true, storeConnected: true, importing: true, teamAsked: true }) === "preparing"
+);
 
 console.log("\nwho is sent to it");
 check("a new account is", needsOnboarding({ onboarded: false, ownProjects: 0, sharedWithMe: 0 }));

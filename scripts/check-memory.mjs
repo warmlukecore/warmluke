@@ -69,7 +69,7 @@ check(
 );
 check(
   "read with its kind and topic first, a guess said as one",
-  factLine(facts[0]) === "[lead time: lead time: blank cases] Blank cases take 10 days from the supplier" &&
+  factLine(facts[0]) === "[lead time: blank cases] Blank cases take 10 days from the supplier" &&
     factLine(facts[2]).endsWith("(a guess: not confirmed)")
 );
 check("nothing to say reads as nothing", describeKnown([]) === "");
@@ -177,7 +177,7 @@ try {
   const read = await notesFor(owner, project.id);
   check(
     "forty-five newer lines later, it is still read, first",
-    read[0] === "[lead time: lead time: blanks] Blanks take 10 days from the supplier"
+    read[0] === "[lead time: blanks] Blanks take 10 days from the supplier"
   );
   const { error: clash } = await owner.from("merchant_notes").insert({
     project_id: project.id,

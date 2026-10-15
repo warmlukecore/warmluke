@@ -110,6 +110,15 @@ const stockPace = (f: Facts) => {
   return `selling about ${perDay} a day over the last ${days}`;
 };
 
+/** The restock time the owner gave (0222), said beside what is left: before it could arrive, said so. */
+const restockSaid = (f: Facts) => {
+  const lead = f.num("lead_days");
+  if (!(lead > 0)) return "";
+  return f.num("days_left") < lead
+    ? `a restock takes ${plural(lead, "day")}, so it runs out before one could arrive`
+    : `a restock takes ${plural(lead, "day")}`;
+};
+
 export const ALERT_WORDS: Record<string, Words> = {
   low_stock: {
     reads: [["inventory_levels", "available"]],
@@ -118,7 +127,9 @@ export const ALERT_WORDS: Record<string, Words> = {
     about: "A product that will run out soon at the pace it sells.",
     title: (f) => `${named(f)} ${stockWhen(f)}`,
     detail: (f) =>
-      f.num("available") <= 0 ? `None left to sell · ${stockPace(f)}` : `${f.num("available")} left · ${stockPace(f)}`,
+      [f.num("available") <= 0 ? `None left to sell` : `${f.num("available")} left`, stockPace(f), restockSaid(f)]
+        .filter(Boolean)
+        .join(" · "),
     // Said as the title says it, from the one reading: the question used to
     // say "has 0 left … runs out in about 0 days" under a title saying it
     // was already out (7 Oct).
@@ -127,7 +138,7 @@ export const ALERT_WORDS: Record<string, Words> = {
         f.num("available") <= 0 ? "has none left to sell" : `has ${f.num("available")} left to sell`
       }, ${stockPace(f)}${
         f.num("available") > 0 ? `, so it ${stockWhen(f)}` : ""
-      }. How much should I reorder, and what should I do until it arrives?`,
+      }${restockSaid(f) ? `; ${restockSaid(f)}` : ""}. How much should I reorder, and what should I do until it arrives?`,
     settings: [
       { key: "days_left", before: "Tell me when stock lasts", after: "days or fewer" },
       { key: "sales_days", before: "Judging by sales over the last", after: "days" },

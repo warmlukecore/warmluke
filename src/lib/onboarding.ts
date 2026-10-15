@@ -168,8 +168,8 @@ export function returnsToOnboarding(stored: string | null, now: number): boolean
   return Number.isFinite(at) && at > 0 && now - at >= 0 && now - at < RETURN_WITHIN_MS;
 }
 
-export type Step = "about" | "store" | "preparing" | "done";
-export const STEPS: Step[] = ["about", "store", "preparing", "done"];
+export type Step = "about" | "store" | "team" | "preparing" | "done";
+export const STEPS: Step[] = ["about", "store", "team", "preparing", "done"];
 
 export type Signals = {
   /** Their answers are saved. */
@@ -184,6 +184,8 @@ export type Signals = {
   importing: boolean;
   /** They chose not to wait for it. */
   preparingSkipped: boolean;
+  /** Who does what and the restock time were answered, or skipped (0222, projects.team_asked_at). */
+  teamAsked: boolean;
 };
 
 /** The first thing still missing, which is where they belong. */
@@ -193,6 +195,8 @@ export function currentStep(s: Signals): Step {
   // Asked on the store step, right after Shopify says yes: the counts
   // are real by then, and orders wait for the answer.
   if (s.storeConnected && s.historyAwaiting) return "store";
+  // Who does what, while the store comes in: short, and skippable.
+  if (!s.teamAsked) return "team";
   if (s.storeConnected && s.importing && !s.preparingSkipped) return "preparing";
   return "done";
 }

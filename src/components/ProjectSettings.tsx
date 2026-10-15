@@ -19,6 +19,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Switch } from "@/components/ui/Switch";
 import { Group } from "@/components/ui/Group";
 import { ConnectionsSettings } from "@/components/ConnectionsSettings";
+import { TeamFacts } from "@/components/TeamFacts";
 import { button, field, hint, iconButton, iconButtonCritical, label, note } from "@/components/ui/controls";
 import { Check, Copy, ExternalLink, Link2, Trash2, UserPlus } from "lucide-react";
 import ConnectShopify from "@/components/ConnectShopify";
@@ -530,6 +531,13 @@ export default function ProjectSettings({
                 )}
               </div>
             </div>
+          </Group>
+
+          <Group
+            title="Your team and how you work"
+            description="Who does what, and how long a restock takes. Luke reads it on every reply, and Running low warns you in time."
+          >
+            <TeamFacts projectId={project.id} />
           </Group>
 
           <Group title="Delete this project" danger>

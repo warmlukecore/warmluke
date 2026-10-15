@@ -771,9 +771,10 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
         .from("profiles")
         .select("full_name, business_name, role, monthly_orders, platform, team_size")
         .maybeSingle(),
-      // What earlier conversations taught about the business (0131), read
-      // only when something writes it: the setting is the switch.
-      memoryModel() ? notesFor(client, project.id) : Promise.resolve([] as string[]),
+      // What is known about the business (0131): what earlier conversations
+      // taught, and what the owner said themselves (their team, the restock
+      // time, 0222). Read whenever it exists: only learning costs a call.
+      notesFor(client, project.id),
       // What Luke learned for this store (0176): read whenever it exists,
       // switch or no switch, since only learning costs a model call. [] on
       // a database without the table.

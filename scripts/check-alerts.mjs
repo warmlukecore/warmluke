@@ -251,6 +251,15 @@ reset role;
 ${order(7, "now() - interval '1 hour'")}
 select pg_temp.say('dirty_on_write', (select count(*)::text from public.alert_dirty where store_id = '${S}'));
 
+-- A restock that takes ten days (0222): five days left runs out before one could arrive.
+select pg_temp.as('${OWNER}');
+select public.abo_set_alert_setting('${P}', 'low_stock', true, '{"days_left": 7, "sales_days": 14}');
+reset role;
+update public.projects set restock_days = 10 where id = '${P}';
+${run}
+select pg_temp.say('with_restock', (select severity || '|' || (facts->>'lead_days') from public.alerts
+  where store_id = '${S}' and kind = 'low_stock' and subject = '${V1}' and status = 'open'));
+
 -- Taken off Shopify, the store is looked at no more, and what it had open goes from the list.
 update public.stores set status = 'uninstalled' where id = '${S}';
 select pg_temp.as('${OWNER}');
@@ -334,6 +343,7 @@ check(
   r.settings === "low_stock:true:true,dispatch_late:true:true,returns_spike:false:true,return_reason:true:true"
 );
 check("rows written by the store ask for a look", r.dirty_on_write === "1");
+check("a restock of ten days with five left: critical, and the restock time said", r.with_restock === "critical|10");
 check("a store taken off Shopify has nothing on the list", r.uninstalled === "0");
 
 console.log(

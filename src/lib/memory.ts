@@ -72,7 +72,8 @@ const ID_LIKE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 /** A fact as the model reads it: its kind and topic first, a guess said as one. */
 export function factLine(f: Fact): string {
   const kind = f.kind === "fact" ? "" : f.kind.replace("_", " ");
-  const head = [kind, f.topic].filter(Boolean).join(": ");
+  // A topic that already says its kind ("lead time: blanks") is not said twice.
+  const head = (f.topic?.startsWith(kind) ? [f.topic] : [kind, f.topic]).filter(Boolean).join(": ");
   return `${head ? `[${head}] ` : ""}${f.text}${SAID[f.source]}`;
 }
 
