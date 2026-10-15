@@ -28,8 +28,9 @@ import { dryRunRules, type CodeTry } from "@/lib/dry-run";
 import { schemasFor } from "@/lib/engine";
 import { projectFormat } from "@/lib/money";
 import { findSection } from "@/lib/section-ref";
-import { tryDesign } from "@/lib/tryout";
-import type { DryRun, ReviewContext } from "@/lib/review-types";
+import { tryDesign, type Tryout } from "@/lib/tryout";
+import type { DesignChecks, DryRun, ReviewContext } from "@/lib/review-types";
+import type { Scenario } from "@/lib/scenarios";
 import type { AssistantPlan, AutomationDefinition, FeatureSchema, ModuleRow, ViewSpec } from "@/lib/types";
 
 /** What to test, by name or id; left out, what was built in the last hour. */
@@ -49,7 +50,12 @@ export type TestResult = {
   tested: { rules: number; sections: number; parts: number };
   /** What it was meant to do, as the caller said it: theirs to hold the result against. */
   expected?: string;
+  /** The checks the owner agreed to, played again on what was built: each through or not. */
+  checks?: Array<{ title: string; section: string; ok: boolean; why?: string }>;
 };
+
+/** A check the owner agreed to, as kept on the design it was played on: played again after the build. */
+export type GivenCheck = Scenario & { agreed?: boolean };
 
 /** "What was built" when nobody names it. */
 const LATELY_MS = 60 * 60 * 1000;
@@ -95,7 +101,9 @@ export async function testBuild(
   projectId: string,
   built: Built = {},
   expectation?: string,
-  use?: CodeTry
+  use?: CodeTry,
+  /** The design's agreed checks, with their steps: played again on what was saved. */
+  given: GivenCheck[] = []
 ): Promise<TestResult> {
   const [{ data: mods }, { data: project }, { data: store }, { data: autos }] = await Promise.all([
     db.from("modules").select("*").eq("project_id", projectId),
@@ -201,8 +209,8 @@ export async function testBuild(
   const [ran, used, leaned] = await Promise.all([
     rulePlans.length ? dryRunRules(ctx, rulePlans, use) : Promise.resolve([] as DryRun[]),
     sectionPlans.length
-      ? tryDesign(ctx, sectionPlans, { zone: (store?.timezone as string | undefined) ?? "UTC", scenarios: null })
-      : Promise.resolve({ tried: 0, found: [], fills: [] }),
+      ? tryDesign(ctx, sectionPlans, { zone: (store?.timezone as string | undefined) ?? "UTC", scenarios: null, given })
+      : Promise.resolve<Tryout>({ tried: 0, found: [], fills: [] }),
     checkAgainstData(ctx, [...rulePlans, ...sectionPlans]),
   ]);
 
@@ -245,11 +253,26 @@ export async function testBuild(
     rules: ruleLines,
     tested: { rules: rules.length, sections: tested.length, parts },
     ...(expectation ? { expected: expectation } : {}),
+    ...(used.scenarios?.length
+      ? { checks: used.scenarios.map(({ title, section, ok, why }) => ({ title, section, ok, why })) }
+      : {}),
   };
 }
 
-/** What the test said of a build, kept on the build's own line in the thread. */
-export type Tested = { ok: boolean; said: string; problems: string[] };
+/** The agreed checks a design was played on, with their steps, from its reply's kept checks. */
+export function givenFrom(checks: DesignChecks | null | undefined): GivenCheck[] {
+  return (checks?.tryout?.scenarios ?? [])
+    .filter((s) => s.agreed && Array.isArray(s.steps) && s.steps.length > 0)
+    .map((s) => ({ title: s.title, section: s.section, steps: s.steps!, agreed: true }));
+}
+
+/** What the test said of a build, kept on the build's own line in the thread, with the agreed checks played again. */
+export type Tested = {
+  ok: boolean;
+  said: string;
+  problems: string[];
+  checks?: Array<{ title: string; section: string; ok: boolean; why?: string }>;
+};
 
 /**
  * After a build: what it made or changed, tried on the store's real data,
@@ -262,12 +285,24 @@ export type Tested = { ok: boolean; said: string; problems: string[] };
  */
 export async function testAfterBuild(db: SupabaseClient, projectId: string, messageId: string): Promise<void> {
   try {
-    // Nothing named: what was made or changed in the last hour, this build with it.
-    const result = await testBuild(db, projectId);
-    if (!result.tested.rules && !result.tested.sections) return;
-    const tested: Tested = { ok: result.ok, said: result.said, problems: result.problems.slice(0, 4) };
     const { data: line } = await db.from("messages").select("payload").eq("id", messageId).maybeSingle();
     if (!line) return;
+    // The design this build came from: the checks its owner agreed to, kept on it, are played again.
+    const designId = (line.payload as { design?: unknown } | null)?.design;
+    const { data: design } =
+      typeof designId === "string"
+        ? await db.from("messages").select("payload").eq("id", designId).maybeSingle()
+        : { data: null };
+    const given = givenFrom((design?.payload as { checks?: DesignChecks } | null)?.checks);
+    // Nothing named: what was made or changed in the last hour, this build with it.
+    const result = await testBuild(db, projectId, {}, undefined, undefined, given);
+    if (!result.tested.rules && !result.tested.sections) return;
+    const tested: Tested = {
+      ok: result.ok,
+      said: result.said,
+      problems: result.problems.slice(0, 4),
+      ...(result.checks ? { checks: result.checks } : {}),
+    };
     await db
       .from("messages")
       .update({ payload: { ...(line.payload as Record<string, unknown>), tested } })

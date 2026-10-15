@@ -1,0 +1,32 @@
+{
+  "id": "r-keep-orders-table",
+  "title": "A chart above the orders, and the orders table stays",
+  "language": "english",
+  "kind": "build",
+  "shop": "seed",
+  "persona": "Shop owner who uses the orders table every day and wants a revenue chart beside it, not instead of it. From a real conversation (2 Oct).",
+  "before": [],
+  "opening": "Put a revenue chart with a date range on the same screen as my orders table.",
+  "facts": {
+    "the range": "15, 30 or 60 days, or my own dates",
+    "the orders table": "Keep it as it is, under the chart"
+  },
+  "success": [
+    "the orders stay in a table the owner can still use",
+    "the owner can change the chart's range",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "the orders table that was there is removed or made again from nothing",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 6,
+  "expect": {
+    "builds": 2,
+    "edited": true
+  },
+  "follow_ups": [
+    "the range is stuck on one value, I want to switch it to 30, 60 or my own dates"
+  ]
+}

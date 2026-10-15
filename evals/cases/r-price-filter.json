@@ -1,0 +1,24 @@
+{
+  "id": "r-price-filter",
+  "title": "Orders between two amounts, by filter",
+  "language": "english",
+  "kind": "build",
+  "shop": "seed",
+  "persona": "Owner who wants to look at orders between two amounts now and then. From a real request sent by the owner's own AI (6 Oct).",
+  "before": [],
+  "opening": "Add a price range filter to orders so I can see orders between two amounts.",
+  "facts": {
+    "which amount": "The order total",
+    "the range": "Any lowest and highest I type"
+  },
+  "success": [
+    "the orders can be filtered by a lowest and a highest order total",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "a new field on every order holding a price bracket that a rule fills in",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 4
+}

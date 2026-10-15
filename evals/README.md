@@ -7,8 +7,9 @@ problem. Its opening goes to the running app as the panel sends it, a simulated 
 answers Luke only from the case's facts and says yes when the plan fits, the yes is built
 as the panel builds it (`POST /api/apply`), and what is left in the app is graded.
 
-- `cases/*.json`: thirty-two owners, in our own words: the first eight on the seeded shop,
-  and twenty-four more on six other kinds of business (12 Oct). No real store, person, phone number,
+- `cases/*.json`: thirty-eight owners, in our own words: the first eight on the seeded shop,
+  twenty-four more on six other kinds of business (12 Oct), and six asks real owners made that
+  went wrong in production (`r-…`, 15 Oct). No real store, person, phone number,
   email or order number: the repository is public, and `check-eval-harness` fails a case
   that holds an email, an eight-digit number or an id.
 - `runs/<YYYYMMDD-HHMM>-<label>.json`: one run each (UTC minute). `runs/index.json` lists
@@ -54,6 +55,18 @@ The twenty-four from 12 Oct, by kind. Each names its shop (`shop`) and what code
 | `vague`: a question first | v-warranty (gadgets), v-track-better (snacks) | the first reply asks, and draws nothing |
 | `limit`: a plain no | l-whatsapp (fashion), l-amazon (cosmetics) | Luke says plainly he can't |
 | `build` with a follow-up | f-cod-callers (seed), f-dues-per-invoice (wholesale), f-blank-rename (cases) | two builds at most, and the second changes what is there rather than deleting it and making it again |
+
+The six from real conversations (15 Oct), each an ask that went wrong in production, retold
+without the owner's names or numbers. `--set real` runs them:
+
+| Case | What went wrong then | Graded by |
+| ---- | -------------------- | --------- |
+| `r-analytics-cod` | Net sales left out delivered COD orders whose payment still said pending | criteria |
+| `r-keep-orders-table` | A chart was added by removing the orders table already there; its range was fixed | criteria, two builds, the second an edit |
+| `r-pack-scan` | An order scanned twice gave no warning | criteria |
+| `r-pnl-month` | Months were rolling 30-day windows | criteria |
+| `r-repeat-cancel` | What the cancel pick does in Shopify was not said | criteria |
+| `r-price-filter` | A price bracket was written into every order by rules, where a Min and Max filter does it | criteria |
 
 The shops are built so a window can't straddle a row (no order 6–8, 13–15 or 28–32 days back
 where a case asks about that window), no count sits on a threshold a case names, and where a
@@ -128,7 +141,7 @@ after. Commit what it wrote: the run file, `runs/index.json` and `runs/all.ts`.
 
 ## What it costs
 
-With the thirty-two cases (12 Oct), production's models (Opus 5.5 designing, Sonnet 5 talking
+With the thirty-eight cases (15 Oct), production's models (Opus 5.5 designing, Sonnet 5 talking
 and criticising) and Haiku as owner and grader:
 
 | Kind | Per case | Cases | Basis |
@@ -140,8 +153,9 @@ and criticising) and Haiku as owner and grader:
 | the first eight | about $0.32 | 8 | below |
 
 - **Smoke** (6): about **$1.5** (0.10 + 0.10 + 0.35 + 0.12 + 0.12 + 0.70). `--max-usd 2.5`.
-- **Full** (32): about **$8.8** (0.90 + 0.48 + 2.80 + 2.10 + 2.56). Run it as `--set full-a --max-usd 6`
-  and `--set full-b --max-usd 6`; each half is counted before it is spent and stops at its cap.
+- **Real** (6): about **$2.5** (five builds and one with a follow-up). `--max-usd 3.5`.
+- **Full** (38): about **$11.3** (0.90 + 0.48 + 2.80 + 2.10 + 2.56, and the six real at 2.45). Run it as `--set full-a --max-usd 7`
+  and `--set full-b --max-usd 7`; each half is counted before it is spent and stops at its cap.
 
 ```sh
 ENV_FILE=.env.check.local APP_URL=http://localhost:3101 \

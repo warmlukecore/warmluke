@@ -25,8 +25,19 @@ import { STORE_TABLES, isStoreTable, storeSectionColumns, type StoreTable } from
 import { findSection } from "@/lib/section-ref";
 import { mergeFeatures, type AssistantPlan, type FeatureSchema, type SchemaColumn, type ViewSpec } from "@/lib/types";
 import type { ReviewContext, TryFinding } from "@/lib/review-types";
-import { count, inBudget, nodes, readSection, sectionFor, txt, type Row, type Section } from "@/lib/dry-run";
-import { describeForScenarios, playDay, rulesFor, writeScenarios, type Played } from "@/lib/scenarios";
+import {
+  BUDGET_MS,
+  CODE_BUDGET_MS,
+  count,
+  inBudget,
+  nodes,
+  readSection,
+  sectionFor,
+  txt,
+  type Row,
+  type Section,
+} from "@/lib/dry-run";
+import { describeForScenarios, playDay, rulesFor, writeScenarios, type Played, type Scenario } from "@/lib/scenarios";
 
 /** A section as the design leaves it, with the rows it will meet. */
 export type TrySection = {
@@ -49,8 +60,8 @@ export type Tryout = {
   tried: number;
   found: TryFinding[];
   fills: string[];
-  /** The scenarios that could be tried: through, or stopped by the design. */
-  scenarios?: Array<Omit<Played, "ok" | "notes"> & { ok: boolean }>;
+  /** The scenarios that could be tried: through, or stopped by the design, with their steps to play again. */
+  scenarios?: Array<Omit<Played, "ok" | "notes"> & { ok: boolean; agreed?: boolean; steps?: Scenario["steps"] }>;
 };
 
 const blank = (v: unknown) =>
@@ -267,126 +278,155 @@ export async function tryDesign(
     zone?: string;
     /** The model that writes the owner's work as scenarios (lib/scenarios.ts); none, the parts alone. */
     scenarios?: string | null;
+    /** Scenarios already written (the agreed checks, kept on the design): played again, none written. */
+    given?: Array<Scenario & { agreed?: boolean }>;
   } = {}
 ): Promise<Tryout> {
   const zone = opts.zone ?? ctx.store?.timezone ?? "UTC";
   const tried: Array<{ s: TrySection; isThis: (ref: string | null) => boolean }> = [];
   const out: Tryout = { tried: 0, found: [], fills: [] };
-  await inBudget<null>(ctx, async () => {
-    // Rows read once a section, for the sections tried and the ones they link to.
-    const rowsOf = new Map<string, Promise<Row[]>>();
-    const read = (at: Section) => {
-      if (!rowsOf.has(at.mod.id))
-        rowsOf.set(
-          at.mod.id,
-          readSection(ctx, at).then((r) => r.rows)
-        );
-      return rowsOf.get(at.mod.id)!;
-    };
-    // A section this design makes: its columns, and the rows it will open on.
-    const made = async (p: AssistantPlan) => {
-      const table = isStoreTable(p.newModule?.source_table) ? (p.newModule!.source_table as StoreTable) : null;
-      const columns = table ? storeSectionColumns(table, p.newSchema?.columns) : (p.newSchema?.columns ?? []);
-      let rows: Row[] = [];
-      if (table) {
-        // The store's rows, read through a section already over the same list.
-        const over = ctx.modules.find((m) => m.source_table === table);
-        const at = over ? sectionFor(ctx, plans, over.id) : null;
-        if (at && "mod" in at) rows = await read(at);
-      } else rows = (p.newRecords ?? []).map((r) => withComputed(columns, r));
-      return { table, columns, rows };
-    };
+  await inBudget<null>(
+    ctx,
+    async () => {
+      // Rows read once a section, for the sections tried and the ones they link to.
+      const rowsOf = new Map<string, Promise<Row[]>>();
+      const read = (at: Section) => {
+        if (!rowsOf.has(at.mod.id))
+          rowsOf.set(
+            at.mod.id,
+            readSection(ctx, at).then((r) => r.rows)
+          );
+        return rowsOf.get(at.mod.id)!;
+      };
+      // A section this design makes: its columns, and the rows it will open on.
+      const made = async (p: AssistantPlan) => {
+        const table = isStoreTable(p.newModule?.source_table) ? (p.newModule!.source_table as StoreTable) : null;
+        const columns = table ? storeSectionColumns(table, p.newSchema?.columns) : (p.newSchema?.columns ?? []);
+        let rows: Row[] = [];
+        if (table) {
+          // The store's rows, read through a section already over the same list.
+          const over = ctx.modules.find((m) => m.source_table === table);
+          const at = over ? sectionFor(ctx, plans, over.id) : null;
+          if (at && "mod" in at) rows = await read(at);
+        } else rows = (p.newRecords ?? []).map((r) => withComputed(columns, r));
+        return { table, columns, rows };
+      };
 
-    const targets = new Map<string, TryTarget | null>();
-    const target = async (linkTo: string) => {
-      if (targets.has(linkTo)) return;
-      const at = sectionFor(ctx, plans, linkTo);
-      let t: TryTarget | null = null;
-      if (at && "mod" in at) t = { name: at.name, columns: at.columns, rows: await read(at), store: !!at.table };
-      else if (at) {
-        const p = plans.find((x) => x.changeType === "NEW_MODULE" && x.newModule && findSection(asMade(x), linkTo));
-        if (p) {
-          const m = await made(p);
-          t = { name: p.newModule!.nav_label || p.newModule!.name, columns: m.columns, rows: m.rows, store: !!m.table };
+      const targets = new Map<string, TryTarget | null>();
+      const target = async (linkTo: string) => {
+        if (targets.has(linkTo)) return;
+        const at = sectionFor(ctx, plans, linkTo);
+        let t: TryTarget | null = null;
+        if (at && "mod" in at) t = { name: at.name, columns: at.columns, rows: await read(at), store: !!at.table };
+        else if (at) {
+          const p = plans.find((x) => x.changeType === "NEW_MODULE" && x.newModule && findSection(asMade(x), linkTo));
+          if (p) {
+            const m = await made(p);
+            t = {
+              name: p.newModule!.nav_label || p.newModule!.name,
+              columns: m.columns,
+              rows: m.rows,
+              store: !!m.table,
+            };
+          }
         }
-      }
-      targets.set(linkTo, t);
-    };
+        targets.set(linkTo, t);
+      };
 
-    // Each section once, as the design leaves it: its last columns, and every change to its features laid over.
-    const seen = new Set<string>();
-    for (const [i, p] of plans.entries()) {
-      if (!SHAPES.has(p.changeType)) continue;
-      let s: TrySection | null = null;
-      let isThis = (ref: string | null) => !!ref && !!p.newModule && !!findSection(asMade(p), ref);
-      if (p.changeType === "NEW_MODULE" && p.newModule) {
-        const key = `#${p.newModule.name}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const m = await made(p);
-        const ours = new Set(m.table ? STORE_TABLES[m.table].columns.map((c) => c.field) : []);
-        const later = plans.filter(
-          (x) => x.changeType === "FEATURE_UPDATE" && x.targetModuleId && findSection(asMade(p), x.targetModuleId)
-        );
-        s = {
-          plan: i,
-          name: p.newModule.nav_label || p.newModule.name,
-          columns: m.columns,
-          features: later.reduce((f, x) => mergeFeatures(f, x.features), mergeFeatures(null, p.features)),
-          rows: m.rows,
-          storeFields: ours,
-          // Over the store, the merchant's own fields are new; a section of their own opens on the rows it seeds.
-          fresh: new Set(m.table ? m.columns.map((c) => c.field).filter((f) => !ours.has(f)) : []),
-        };
-      } else if (p.targetModuleId) {
-        const at = sectionFor(ctx, plans, p.targetModuleId);
-        if (!at || !("mod" in at) || seen.has(at.mod.id)) continue;
-        isThis = (ref) => !!ref && !!findSection([at.mod], ref);
-        seen.add(at.mod.id);
-        const changes = plans.filter(
-          (x) => x.changeType === "FEATURE_UPDATE" && x.targetModuleId && findSection([at.mod], x.targetModuleId)
-        );
-        s = {
-          plan: i,
-          name: at.name,
-          columns: at.columns,
-          features: changes.reduce(
-            (f, x) => mergeFeatures(f, x.features),
-            ctx.schemas.get(at.mod.id)?.features ?? ({} as FeatureSchema)
-          ),
-          rows: await read(at),
-          storeFields: new Set(at.table ? STORE_TABLES[at.table].columns.map((c) => c.field) : []),
-          fresh: at.fresh,
-        };
+      // Each section once, as the design leaves it: its last columns, and every change to its features laid over.
+      const seen = new Set<string>();
+      for (const [i, p] of plans.entries()) {
+        if (!SHAPES.has(p.changeType)) continue;
+        let s: TrySection | null = null;
+        let isThis = (ref: string | null) => !!ref && !!p.newModule && !!findSection(asMade(p), ref);
+        if (p.changeType === "NEW_MODULE" && p.newModule) {
+          const key = `#${p.newModule.name}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const m = await made(p);
+          const ours = new Set(m.table ? STORE_TABLES[m.table].columns.map((c) => c.field) : []);
+          const later = plans.filter(
+            (x) => x.changeType === "FEATURE_UPDATE" && x.targetModuleId && findSection(asMade(p), x.targetModuleId)
+          );
+          s = {
+            plan: i,
+            name: p.newModule.nav_label || p.newModule.name,
+            columns: m.columns,
+            features: later.reduce((f, x) => mergeFeatures(f, x.features), mergeFeatures(null, p.features)),
+            rows: m.rows,
+            storeFields: ours,
+            // Over the store, the merchant's own fields are new; a section of their own opens on the rows it seeds.
+            fresh: new Set(m.table ? m.columns.map((c) => c.field).filter((f) => !ours.has(f)) : []),
+          };
+        } else if (p.targetModuleId) {
+          const at = sectionFor(ctx, plans, p.targetModuleId);
+          if (!at || !("mod" in at) || seen.has(at.mod.id)) continue;
+          isThis = (ref) => !!ref && !!findSection([at.mod], ref);
+          seen.add(at.mod.id);
+          const changes = plans.filter(
+            (x) => x.changeType === "FEATURE_UPDATE" && x.targetModuleId && findSection([at.mod], x.targetModuleId)
+          );
+          s = {
+            plan: i,
+            name: at.name,
+            columns: at.columns,
+            features: changes.reduce(
+              (f, x) => mergeFeatures(f, x.features),
+              ctx.schemas.get(at.mod.id)?.features ?? ({} as FeatureSchema)
+            ),
+            rows: await read(at),
+            storeFields: new Set(at.table ? STORE_TABLES[at.table].columns.map((c) => c.field) : []),
+            fresh: at.fresh,
+          };
+        }
+        if (!s) continue;
+        tried.push({ s, isThis });
+        for (const c of s.columns) if (c.type === "link" && c.linkTo) await target(c.linkTo);
+        const got = tryParts(s, (l) => targets.get(l) ?? null, { timeZone: zone, locale: ctx.locale });
+        out.tried += got.tried;
+        out.found.push(...got.found);
+        out.fills.push(...got.fills);
       }
-      if (!s) continue;
-      tried.push({ s, isThis });
-      for (const c of s.columns) if (c.type === "link" && c.linkTo) await target(c.linkTo);
-      const got = tryParts(s, (l) => targets.get(l) ?? null, { timeZone: zone, locale: ctx.locale });
-      out.tried += got.tried;
-      out.found.push(...got.found);
-      out.fills.push(...got.fills);
-    }
 
-    // The owner's own work, written as scenarios and played on what was read.
-    if (!opts.scenarios || !ctx.ownerWords.trim() || tried.length === 0) return;
-    const targetOf = (l: string) => targets.get(l) ?? null;
-    const withRules = tried.map((t) => ({ ...t, rules: rulesFor(plans, t.isThis) }));
-    const written = await writeScenarios({
-      ownerWords: ctx.ownerWords,
-      understood: ctx.understood,
-      sections: withRules.map((t) => describeForScenarios(t.s, targetOf, t.rules)),
-      model: opts.scenarios,
-      signal: ctx.signal,
-    });
-    const played = playDay(withRules, written, targetOf);
-    for (const p of played) {
-      if (p.ok === false) out.found.push({ plan: p.plan, text: `Tried "${p.title}": ${p.why}`, severity: "problem" });
-      for (const n of p.notes ?? []) out.found.push({ plan: p.plan, text: n, severity: "note" });
-    }
-    // What was tried: a scenario that could not be, its own mistake, is left out.
-    const done = played.filter((p) => p.ok !== null);
-    if (done.length) out.scenarios = done.map(({ title, section, ok, why }) => ({ title, section, ok: !!ok, why }));
-  });
+      // The owner's own work, written as scenarios (or given, as agreed) and played on what was read.
+      if (tried.length === 0) return;
+      const agreed = !!ctx.agreed?.length;
+      if (!opts.given?.length && (!opts.scenarios || !ctx.ownerWords.trim())) return;
+      const targetOf = (l: string) => targets.get(l) ?? null;
+      const withRules = tried.map((t) => ({ ...t, rules: rulesFor(plans, t.isThis) }));
+      const written: Array<Scenario & { agreed?: boolean }> = opts.given?.length
+        ? opts.given
+        : (
+            await writeScenarios({
+              ownerWords: ctx.ownerWords,
+              understood: ctx.understood,
+              sections: withRules.map((t) => describeForScenarios(t.s, targetOf, t.rules)),
+              model: opts.scenarios!,
+              agreed: ctx.agreed,
+              signal: ctx.signal,
+            })
+          ).map((w) => ({ ...w, agreed }));
+      const played = playDay(withRules, written, targetOf);
+      for (const p of played) {
+        if (p.ok === false) out.found.push({ plan: p.plan, text: `Tried "${p.title}": ${p.why}`, severity: "problem" });
+        for (const n of p.notes ?? []) out.found.push({ plan: p.plan, text: n, severity: "note" });
+      }
+      // What was tried, with its steps to play again: a scenario that could not be, its own mistake, is left out.
+      const done = played
+        .map((p, i) => ({ p, w: written[i] }))
+        .filter(({ p }) => p.ok !== null)
+        .map(({ p, w }) => ({
+          title: p.title,
+          section: p.section,
+          ok: !!p.ok,
+          why: p.why,
+          agreed: w.agreed,
+          steps: w.steps,
+        }));
+      if (done.length) out.scenarios = done;
+      // The scenarios' model and code rules get the longer budget; the parts alone, the short one.
+    },
+    opts.scenarios || opts.given?.length ? CODE_BUDGET_MS : BUDGET_MS
+  );
   return out;
 }

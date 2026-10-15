@@ -171,6 +171,7 @@ export async function finishClientTurn(
     },
     later,
     inThread: true,
+    checks: "checks" in reply ? reply.checks : null,
   });
   // Their AI drew this one (submit_design): what Luke found in it and
   // changed before the merchant saw it, said, never done quietly.

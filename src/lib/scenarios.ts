@@ -151,8 +151,13 @@ export async function writeScenarios(opts: {
   understood: string;
   sections: string[];
   model: string;
+  /** The checks the owner agreed to: one scenario each, titled with it, and no other. */
+  agreed?: string[];
   signal?: AbortSignal;
 }): Promise<Scenario[]> {
+  const agreed = opts.agreed?.length
+    ? `\n\nTHE CHECKS THE OWNER AGREED TO, before it was built — write exactly one scenario for each, in this order, its title the check word for word, its steps that moment played on the design, and no other scenario:\n${opts.agreed.map((a) => `- ${a}`).join("\n")}`
+    : "";
   try {
     const raw = await asJob("tryout", () =>
       callModel({
@@ -160,7 +165,7 @@ export async function writeScenarios(opts: {
         turns: [
           {
             role: "user",
-            content: `THE OWNER SAID:\n${opts.ownerWords}${opts.understood ? `\n\nWHAT THE ASSISTANT UNDERSTOOD:${opts.understood}` : ""}\n\nTHE DESIGN, AS IT WILL BE BUILT:\n${opts.sections.join("\n\n")}`,
+            content: `THE OWNER SAID:\n${opts.ownerWords}${opts.understood ? `\n\nWHAT THE ASSISTANT UNDERSTOOD:${opts.understood}` : ""}\n\nTHE DESIGN, AS IT WILL BE BUILT:\n${opts.sections.join("\n\n")}${agreed}`,
           },
         ],
         signal: opts.signal,

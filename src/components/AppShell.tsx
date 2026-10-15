@@ -102,6 +102,8 @@ import type {
   ProblemCheckIn,
 } from "@/lib/types";
 import { TITLE_MAX } from "@/lib/types";
+import { agreedFailing } from "@/lib/review-types";
+import type { Tested } from "@/lib/verify";
 import { groupAsks, type Ask, type AskRow } from "@/lib/row-approval";
 import { Icon } from "@/components/ui/Icon";
 import {
@@ -217,7 +219,7 @@ type BuildPayload = {
   /** Each section built, walked in a browser after it (lib/walk.ts). */
   walked?: Array<{ name: string; tried: number; breaks: string[] }>;
   /** What it built, tried on the store's real data after it (lib/verify testAfterBuild). */
-  tested?: { ok: boolean; said: string; problems: string[] };
+  tested?: Tested;
 };
 
 /** How long a build may say "building" before the thread stops believing it: far past any real one. */
@@ -2972,6 +2974,10 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           ...("checks" in reply && reply.checks ? { checks: reply.checks } : {}),
           ...(reply.caught ? { caught: reply.caught } : {}),
         };
+        // Agreed in words, and built at once on their yes: unless a check
+        // they agreed to did not come true on it. Then the card waits, saying
+        // so, and building it is theirs to choose ("Build anyway").
+        const buildAtOnce = !!reply.approved && !agreedFailing("checks" in reply ? reply.checks : null);
 
         if (reply.type === "clarify") {
           setChatMessages((prev) => [
@@ -3004,7 +3010,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
           ]);
           // Agreed in words before it was drawn (a plan, then their yes):
           // built now, as the card's own button would, with its undo.
-          if (reply.approved) buildNow.current?.(reply.blueprint.plans, reply.blueprint.next, id);
+          if (buildAtOnce) buildNow.current?.(reply.blueprint.plans, reply.blueprint.next, id);
           return;
         }
 
@@ -3061,7 +3067,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               ...took,
             },
           ]);
-          if (reply.approved) buildNow.current?.(plans, reply.next, id);
+          if (buildAtOnce) buildNow.current?.(plans, reply.next, id);
           return;
         }
 
@@ -3077,7 +3083,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             ...took,
           },
         ]);
-        if (reply.approved) buildNow.current?.(plans, reply.next, id);
+        if (buildAtOnce) buildNow.current?.(plans, reply.next, id);
       } catch (e) {
         const aborted = (e as Error)?.name === "AbortError";
         setChatMessages((prev) => [
@@ -3799,6 +3805,24 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
     },
     [modules, runPrompt, setSelectedModuleId]
   );
+
+  // A build whose agreed checks did not come true on what was built: Luke
+  // is asked to fix it at once, once, before anyone calls it done (15 Oct).
+  // Only while the build is the thread's last word: the fix turn that
+  // follows it moves that on, so a reload never asks twice.
+  const fixAsked = useRef(new Set<string>());
+  useEffect(() => {
+    if (chatBusy) return;
+    const last = chatMessages.at(-1);
+    const failing = last?.tested?.checks?.filter((c) => !c.ok) ?? [];
+    if (!last || failing.length === 0 || fixAsked.current.has(last.id)) return;
+    fixAsked.current.add(last.id);
+    walkFix(
+      failing[0].section,
+      failing.map((c) => `${c.title}${c.why ? ` (${c.why})` : ""}`).join("; "),
+      "tried on their real rows with the checks they agreed to before it was built"
+    );
+  }, [chatBusy, chatMessages, walkFix]);
 
   // A written screen that broke while it ran: kept once a message a visit,
   // so the console's Needs a look shows it (0178), and handed to Luke when

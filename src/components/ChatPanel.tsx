@@ -38,7 +38,8 @@ import type {
   FeatureSchema,
 } from "@/lib/types";
 import { ago, dayGroup } from "@/lib/when";
-import type { DesignChecks, DryRun } from "@/lib/review-types";
+import { agreedFailing, agreedOf, type DesignChecks, type DryRun } from "@/lib/review-types";
+import type { Tested } from "@/lib/verify";
 import type { ScreenShown } from "@/lib/screen";
 import { TITLE_MAX } from "@/lib/types";
 import { changeShown } from "@/lib/change-preview";
@@ -166,7 +167,7 @@ export interface ChatMessage {
   /** Each section the build made or changed, walked in a browser after it (lib/walk.ts): how much was tried, what broke. */
   walked?: Array<{ name: string; tried: number; breaks: string[] }>;
   /** What it built, tried on the store's real data after it (lib/verify testAfterBuild): what it showed, what stops it working. */
-  tested?: { ok: boolean; said: string; problems: string[] };
+  tested?: Tested;
   /** What Luke did on the screen open as he said this (lib/screen.ts), in the code's words. */
   show?: ScreenShown;
   /** Answered from their store's own rows (the reply's kind "store"): help the first conversation waits for (0200). */
@@ -1220,6 +1221,44 @@ function CaughtLine({ caught }: { caught: NonNullable<ChatMessage["caught"]> }) 
  * The rules tried on the rows come first, being what an owner checks
  * against what they know of their shop.
  */
+/** Open on the card, above Build: what was tried before it is theirs, each through or not, and why. */
+function AgreedChecks({ checks }: { checks: DesignChecks }) {
+  const agreed = agreedOf(checks);
+  if (agreed.length === 0) return null;
+  return (
+    <div className="space-y-1">
+      <div className="text-[11px] text-fg-faint">Tried on your rows before building</div>
+      <ul className="space-y-1 text-[12px] leading-snug">
+        {agreed.map((sc, i) => (
+          <li key={i} className="flex gap-1.5">
+            {sc.ok ? (
+              <Check
+                aria-label="Came true"
+                size={13}
+                strokeWidth={2.25}
+                className="mt-0.5 shrink-0 text-tone-success-fg"
+              />
+            ) : (
+              <X
+                aria-label="Did not come true"
+                size={13}
+                strokeWidth={2.25}
+                className="mt-0.5 shrink-0 text-tone-attention-fg"
+              />
+            )}
+            <span className="min-w-0 break-words text-fg-muted">
+              {withoutIds(sc.title)}
+              {!sc.ok && sc.why && (
+                <span className="block text-[11px] text-tone-attention-fg">{withoutIds(sc.why)}</span>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function ChecksLine({ checks }: { checks: DesignChecks }) {
   const look =
     checks.dryRuns.some((d) => d.everyRow || !!d.problem) ||
@@ -1278,11 +1317,17 @@ function ChecksLine({ checks }: { checks: DesignChecks }) {
         {checks.tryout && (
           <li className="text-fg-muted">
             {`Tried as you will use it: ${checks.tryout.tried} part${checks.tryout.tried === 1 ? "" : "s"}`}
-            {(checks.tryout.scenarios ?? []).map((sc, i) => (
-              <span key={`s${i}`} className={`block text-[10px] ${sc.ok ? "text-fg-faint" : "text-tone-attention-fg"}`}>
-                {withoutIds(`${sc.title}: ${sc.ok ? "worked" : (sc.why ?? "did not work")}`)}
-              </span>
-            ))}
+            {/* The agreed ones are open above Build (AgreedChecks), not said twice. */}
+            {(checks.tryout.scenarios ?? [])
+              .filter((sc) => !sc.agreed)
+              .map((sc, i) => (
+                <span
+                  key={`s${i}`}
+                  className={`block text-[10px] ${sc.ok ? "text-fg-faint" : "text-tone-attention-fg"}`}
+                >
+                  {withoutIds(`${sc.title}: ${sc.ok ? "worked" : (sc.why ?? "did not work")}`)}
+                </span>
+              ))}
             {checks.tryout.found
               // A scenario that did not work is said above, with its title.
               .filter((f) => !f.text.startsWith('Tried "'))
@@ -1559,7 +1604,7 @@ function TestedLine({
   tested,
   onFix,
 }: {
-  tested: { ok: boolean; said: string; problems: string[] };
+  tested: Tested;
   onFix?: (section: string, problem: string, how?: string) => void;
 }) {
   if (tested.ok || tested.problems.length === 0)
@@ -1881,6 +1926,7 @@ function BlueprintCard({
         </div>
       )}
 
+      {checks && <AgreedChecks checks={checks} />}
       {checks && <ChecksLine checks={checks} />}
       {superadmin && caught && <CaughtLine caught={caught} />}
 
@@ -1890,7 +1936,7 @@ function BlueprintCard({
       {!done && !nothingLeft && (
         <div className="flex items-center gap-1.5">
           <button onClick={approve} disabled={chosen.length === 0 || building} className={button("primary", "sm")}>
-            {building ? "Building…" : buildLabel(chosen)}
+            {building ? "Building…" : agreedFailing(checks) ? "Build anyway" : buildLabel(chosen)}
           </button>
           <button onClick={onAmend} className={button("plain", "sm")}>
             Change something
@@ -4891,6 +4937,7 @@ export default function ChatPanel({
 
                           {!built && <ChangePreview plan={plan} peek={onPeekSection} onReadSection={onReadSection} />}
 
+                          {m.checks && <AgreedChecks checks={m.checks} />}
                           {m.checks && <ChecksLine checks={m.checks} />}
                           {superadmin && m.caught && <CaughtLine caught={m.caught} />}
 

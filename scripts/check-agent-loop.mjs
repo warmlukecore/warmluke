@@ -12,7 +12,7 @@
 // and that a loop out of steps hands back what it built.
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-agent-loop.mjs
-import { agentContract, agentReply, draftOf, guideTopics, ownerJargon, runAgent } from "../src/lib/agent.ts";
+import { agentContract, agentReply, draftOf, freeOn, guideTopics, ownerJargon, runAgent } from "../src/lib/agent.ts";
 import { buildSystemPrompt, foldOf, parseReply } from "../src/lib/ai.ts";
 import { withEarlier } from "../src/lib/turn-run.ts";
 import { proposalOf } from "../src/lib/plan.ts";
@@ -340,6 +340,17 @@ console.log("\nwhat is cut is said (no silent limits, 12 Oct)");
   );
 }
 
+// Free mode (15 Oct): only ever with the agent on.
+{
+  const was = [process.env.LUKE_AGENT, process.env.LUKE_FREE];
+  process.env.LUKE_FREE = "on";
+  process.env.LUKE_AGENT = "";
+  const alone = freeOn();
+  process.env.LUKE_AGENT = "on";
+  const withAgent = freeOn();
+  [process.env.LUKE_AGENT, process.env.LUKE_FREE] = was.map((v) => v ?? "");
+  check("free mode is never on without the agent", !alone && withAgent);
+}
 console.log(
   fails.length === 0
     ? "\nLuke builds a change at a time, and finishes in the reply the app reads"

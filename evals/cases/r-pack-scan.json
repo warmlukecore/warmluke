@@ -1,0 +1,28 @@
+{
+  "id": "r-pack-scan",
+  "title": "Pack by scanning, warned on a wrong item or an order scanned twice",
+  "language": "hinglish",
+  "kind": "build",
+  "shop": "gadgets",
+  "persona": "Owner setting up a packing table for a small team on phones; the team scans, never types. From real conversations (28 Sept to 8 Oct).",
+  "before": [],
+  "opening": "packing ke liye scan wala screen chahiye: order scan karo, phir har item scan karo, galat item ho ya same order dobara scan ho to turant warning",
+  "facts": {
+    "who": "packing team, phone pe",
+    "after every item": "order packed mark ho jaye, kisne aur kab pack kiya",
+    "wrong item": "turant dikhe aur order pe likha rahe",
+    "same order twice": "warning ki ye pehle pack ho chuka"
+  },
+  "success": [
+    "an item that is not on the order is flagged at once and kept against the order",
+    "scanning an order that is already packed warns",
+    "once every item is scanned the order is marked packed with who packed it and when",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "a change to the Shopify store",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 6
+}

@@ -30,7 +30,9 @@ On Luke's own chat (not a design another assistant drew), with the switch on, on
      result, in the validator's words. Nothing is added, and he fixes it on the spot.
    - `replace_change` and `drop_change` mend the draft.
 4. **Try it on real rows.** `test_draft` runs the draft's rules on the rows they would meet
-   (`dryRunRules`) and checks the values it leans on (`checkAgainstData`). Nothing is written.
+   (`dryRunRules`), checks the values it leans on (`checkAgainstData`), and plays the checks
+   the owner agreed to, or the ones the plan said, as their team would (`tryDesign`, 15 Oct):
+   each must come true before he finishes. Nothing is written.
 5. **Finish.**
    - `finish` takes Luke's words, the design he drafted, and next steps. With
      `proposal: true`, it says how a bigger build would work and asks; "Build it" then agrees
@@ -103,3 +105,13 @@ from one JSON reply to a tool loop. Re-recording the taped checks that design (a
 check-luke-lookups, check-builds-on-store, check-meet-turns, check-answer, check-chat-stream and the
 e2e Luke specs) is roughly **$4–8** on Opus 5.5 at today's token counts. A loop is several cached
 calls per turn instead of one. Measure on the scenario suite (`evals/`) before switching.
+
+## Free mode (15 Oct)
+
+`LUKE_FREE=on`, with `LUKE_AGENT=on`, takes the reviewers out of the agent's way: no critic, no
+simplicity or screen reviewer, no gap pass. What stays is the validator (a design the app can
+draw) and the tests: the data check, the dry run, and the checks the owner agreed to, played on
+the draft and on what was built. The question it answers is whether the reviewers help or only
+slow Luke down, and it is answered on the scoreboard (`scripts/eval-luke.mjs --set real`, then
+the full set), one run with the switch and one without, on the same models. Off by default, and
+off in production until it wins there.

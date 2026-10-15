@@ -9,6 +9,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { StoreContext } from "@/lib/ai";
 import type { ModuleRow, UiSchema } from "@/lib/types";
+import type { Step } from "@/lib/scenarios";
 
 /** What every reviewer reads: the caller's own client, so RLS decides what it may see. */
 export type ReviewContext = {
@@ -24,6 +25,8 @@ export type ReviewContext = {
   currency: string;
   /** The model the screen review looks on, or null: the setting is the switch. */
   uxModel: string | null;
+  /** The checks the owner agreed to before the build (lib/plan DesignIntent.accept): each played as a scenario, and a failing one sent back. */
+  agreed?: string[];
   signal?: AbortSignal;
 };
 
@@ -73,6 +76,22 @@ export type DesignChecks = {
     found: TryFinding[];
     fills: string[];
     /** The owner's own work, written as scenarios and played on the design (lib/scenarios.ts). */
-    scenarios?: Array<{ title: string; section: string; ok: boolean; why?: string }>;
+    scenarios?: Array<{
+      title: string;
+      section: string;
+      ok: boolean;
+      why?: string;
+      /** One of the checks the owner agreed to before the build. */
+      agreed?: boolean;
+      /** Its steps, kept so the same check is played again on what was built (lib/verify). */
+      steps?: Step[];
+    }>;
   } | null;
 };
+
+/** The checks the owner agreed to with the plan, as played on a design (lib/plan accept, 15 Oct). */
+export const agreedOf = (checks: DesignChecks | null | undefined) =>
+  (checks?.tryout?.scenarios ?? []).filter((s) => s.agreed);
+
+/** One of them did not come true: building is then the owner's call, never done for them. */
+export const agreedFailing = (checks: DesignChecks | null | undefined) => agreedOf(checks).some((s) => !s.ok);

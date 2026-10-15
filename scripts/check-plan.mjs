@@ -50,6 +50,28 @@ check("skips an empty list", !/Rules:/.test(block));
 check("carries what is unsure, for a question", /Unsure:\n- should a second scan/.test(block));
 check("a thin plan is a short block", intentBlock(thin).split("\n").length === 4);
 
+// What "done" means, agreed with the plan (15 Oct).
+const checked = parseIntent(
+  JSON.stringify({
+    goal: "Net sales that count COD",
+    accept: [
+      " order #1042 delivered, payment pending → counts in net sales ",
+      7,
+      "",
+      ...Array.from({ length: 6 }, (_, i) => `c${i}`),
+    ],
+  })
+);
+check(
+  "the checks are kept, trimmed, words only, four at most",
+  checked?.accept.length === 4 && checked.accept[0].startsWith("order #1042")
+);
+check("an old plan with none reads as none", thin?.accept.length === 0);
+check(
+  "the design reads them as checks it must make come true",
+  /Checks — the design is tried on these[^\n]*\n- order #1042 delivered/.test(intentBlock(checked))
+);
+
 // The plan as the owner reads it: no column's key left in it (4 Oct eval).
 const labels = new Map([
   ["orders_count", "Orders"],

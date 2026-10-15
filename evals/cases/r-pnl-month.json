@@ -1,0 +1,27 @@
+{
+  "id": "r-pnl-month",
+  "title": "P&L by calendar month with expenses typed in",
+  "language": "english",
+  "kind": "build",
+  "shop": "cosmetics",
+  "persona": "Skincare founder who does the books monthly and types expenses in herself. From a real conversation (28 Sept).",
+  "before": [],
+  "opening": "I need a P&L by calendar month: sales minus my expenses. I'll enter expenses like ads, salaries and packaging.",
+  "facts": {
+    "months": "Calendar months, January, February, not the last 30 days",
+    "expenses": "I type each expense with its month, amount and category",
+    "sales": "From the store's orders, after cancellations"
+  },
+  "success": [
+    "the figures are by calendar month",
+    "expenses are entered in the app with an amount, a category and a month or date",
+    "each month shows sales, expenses and what is left",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "months shown as rolling 30-day windows instead of calendar months",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 6
+}

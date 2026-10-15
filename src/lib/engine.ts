@@ -49,6 +49,7 @@ import {
   memoryModel,
   opsModel,
   uxModel,
+  checksModel,
 } from "@/lib/ai";
 import { opsBlock, opsView } from "@/lib/reviewers";
 import { hasChecks, reviewDesign } from "@/lib/review-gate";
@@ -88,9 +89,10 @@ import { describeScreenAsk, readScreenAsk, type ScreenShown } from "@/lib/screen
 import { approvedExamples, describeExamples, examplesFor } from "@/lib/examples";
 import { aiStoreTools, fitForModel } from "@/lib/store-tools";
 import { aiProposeTool } from "@/lib/store-action-propose";
-import { agentOn, draftOf, runAgent, type Checked } from "@/lib/agent";
+import { agentOn, draftOf, freeOn, runAgent, type Checked } from "@/lib/agent";
 import { verifyTools } from "@/lib/verify-tool";
 import { dryRunRules } from "@/lib/dry-run";
+import { tryDesign } from "@/lib/tryout";
 import { checkAgainstData } from "@/lib/data-check";
 
 /**
@@ -366,6 +368,8 @@ export type TurnState = {
   } | null;
   /** What the review gate last said, of the design it last read. Absent in a state from before the gate. */
   checks?: DesignChecks | null;
+  /** The one more try for failing agreed checks was spent. Absent in a state from before it. */
+  checkSent?: boolean;
   lookedUp: string[];
   /** What the lookups returned, cut to size: a repair reads it again. Absent in a state from before it was kept. */
   found?: Array<{ about: string; result: unknown }>;
@@ -890,6 +894,8 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
   // that reads, builds a change at a time and tries it, instead of one JSON
   // reply. Not for a design another assistant drew, nor where nothing can be read.
   const agent = agentOn() && lookups && !givenDesign && !!tools;
+  // Free mode: tests, not reviewers (lib/agent freeOn).
+  const free = agent && freeOn();
 
   // Before the prompt is written: it offers only what the tools can do.
   if (store) {
@@ -1023,6 +1029,10 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
     tell({ step: "plan", goal: agreed.goal });
   }
   if (road === "design" && !givenDesign && !agent) await plan();
+  // What "done" means for this design: the checks the owner agreed to with
+  // the plan, else the ones the plan step wrote (lib/plan accept). Played
+  // on the design before its card, and on the build after it.
+  const acceptLines = () => (goAhead && agreed ? agreed.accept : understood.intent?.accept) ?? [];
   // An answer to the plan said in words that leaves nothing more to talk
   // over is their go-ahead, changes and all ("Bas iska screen bana do",
   // eval 4 Oct): the planner said nothing back, so what it now understood
@@ -1094,6 +1104,9 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
   // One more try, once, when a repair got further (a different problem
   // than the one before): progress is worth an attempt, a repeat is not.
   let earned = false;
+  // One more try, once, for a design whose agreed checks failed after the
+  // turn's one send-back was spent: the checks are what "done" means.
+  let checkSent = resume?.checkSent ?? false;
   let lastErrors = "";
   // A design that came back from a repair as an answer saying nothing was
   // built is sent back once, rather than shown as "Here's the build:".
@@ -1136,16 +1149,26 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
       locale: money.locale,
       currency: money.currency,
       uxModel: null,
+      agreed: acceptLines(),
       signal,
     };
-    const [rules, data] = await Promise.all([dryRunRules(ctx, plans), checkAgainstData(ctx, plans)]);
+    const [rules, data, tried] = await Promise.all([
+      dryRunRules(ctx, plans),
+      checkAgainstData(ctx, plans),
+      // The agreed checks, played on the draft: what the owner will try first.
+      tryDesign(ctx, plans, { scenarios: checksModel(!!ctx.agreed.length) }),
+    ]);
     const counted = rules.map((r) => r.matched);
     tell({
       step: "dryrun",
       rules: rules.length,
       matched: counted.every((m) => m !== null) ? counted.reduce((a: number, m) => a + (m ?? 0), 0) : null,
     });
-    return fitForModel({ rules, data }, 6_000);
+    const used = {
+      broke: tried.found.filter((f) => f.severity === "problem").map((f) => f.text),
+      checks: (tried.scenarios ?? []).map(({ title, ok, why, agreed }) => ({ title, ok, why, agreed })),
+    };
+    return fitForModel({ rules, data, used }, 6_000);
   };
   const agentAttempt = async (attempt: number) => {
     const out = await runAgent({
@@ -1188,7 +1211,7 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
   // shared them, a design that took two repairs could no longer be sent
   // back, and the reviewers read a written screen they could do nothing
   // about (returns eval, 4 Oct).
-  const lastAttempt = () => MAX_REPAIR_ATTEMPTS + (sentBack ? 1 : 0) + (earned ? 1 : 0);
+  const lastAttempt = () => MAX_REPAIR_ATTEMPTS + (sentBack ? 1 : 0) + (earned ? 1 : 0) + (checkSent ? 1 : 0);
   for (let attempt = firstAttempt; attempt <= lastAttempt(); attempt++) {
     // Out of this invocation's time, with an attempt made in it: the
     // turn so far, handed on whole, to go on in a fresh one.
@@ -1216,6 +1239,7 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
           sentBack,
           sentBackDesign,
           checks,
+          checkSent,
           lookedUp,
           found,
         },
@@ -1403,7 +1427,7 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
     // plan switch on it reads the ask, what was understood and what will
     // be built, and may send the design back once, in the same loop the
     // repairs use. A critic that fails to answer is no critic.
-    if (parsed.ok && planOn && parsed.reply.type !== "clarify" && parsed.reply.type !== "answer") {
+    if (parsed.ok && planOn && !free && parsed.reply.type !== "clarify" && parsed.reply.type !== "answer") {
       const plans = parsed.reply.type === "blueprint" ? parsed.reply.blueprint.plans : parsed.reply.plans;
       const verdict = await critique({
         ownerWords: message.trim(),
@@ -1456,6 +1480,7 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
           locale: money.locale,
           currency: money.currency,
           uxModel: uxModel(),
+          agreed: acceptLines(),
           signal,
         },
         plans,
@@ -1463,6 +1488,7 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
           tell,
           describe: describeBuild(plans, modules, currentSchema?.columns, store, { screens: true }),
           columnLines: sectionLines,
+          free,
         }
       );
       checks = gated.checks;
@@ -1477,6 +1503,26 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
             // changed section, which the validator refused, and the design it
             // sent back stood as the answer (returns eval, 4 Oct).
             content: `The design was reviewed before the owner sees it, and sent back:\n\n${gated.redo}\n\nRedesign so it does the same job for them, changing what this says and nothing else${mendWith(
+              ", and reply with the whole corrected design as JSON only: every plan, as if sent for the first time, not just the ones that change. Do not apologise or explain."
+            )}`,
+          }
+        );
+        continue;
+      }
+      // The turn's send-back spent and an agreed check still failing: once
+      // more, on those checks alone. They are what the owner said yes to.
+      const failing = (gated.checks.tryout?.scenarios ?? []).filter((x) => x.agreed && !x.ok);
+      if (failing.length && !checkSent) {
+        checkSent = true;
+        sentBackDesign ??= { parsed, raw, unmet: critiqued?.unmet ?? [], by: "gate", why: "agreed checks failed" };
+        tell({ step: "tryout", tried: gated.checks.tryout?.tried ?? 0, problems: failing.length });
+        attemptTurns.push(
+          { role: "assistant", content: raw },
+          {
+            role: "user",
+            content: `The checks the owner agreed to were played on this design, and these did not come true:\n${failing
+              .map((x) => `- ${x.title}${x.why ? ` — ${x.why}` : ""}`)
+              .join("\n")}\n\nRedesign so every agreed check comes true${mendWith(
               ", and reply with the whole corrected design as JSON only: every plan, as if sent for the first time, not just the ones that change. Do not apologise or explain."
             )}`,
           }
@@ -1556,6 +1602,9 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
     if (critiqued) {
       // The critic already read this design against the ask.
       gaps = critiqued.unmet;
+    } else if (free) {
+      // Free mode: the agreed checks say what it does not do.
+      gaps = [];
     } else {
       const built = describeBuild(plans, modules, currentSchema?.columns, store, { screens: true });
       tell({ step: "gaps", parts: partsOf(plans, modules) });

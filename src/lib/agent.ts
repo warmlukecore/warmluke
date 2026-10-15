@@ -41,6 +41,14 @@ import type { AssistantPlan, TurnEvent } from "@/lib/types";
 
 /** The switch: off, no turn takes this road and nothing any model is sent changes. */
 export const agentOn = () => process.env.LUKE_AGENT === "on";
+/**
+ * Free mode (15 Oct): the agent's design goes through the validator and
+ * the tests alone (the data check, the dry run, the checks agreed to),
+ * with no critic, no simplicity or screen reviewer and no gap pass. To be
+ * measured against the default with scripts/eval-luke.mjs; its tests are
+ * its rules.
+ */
+export const freeOn = () => agentOn() && process.env.LUKE_FREE === "on";
 
 /** Model steps in one attempt, at most: reads, changes, tries and the finish. */
 const STEPS = () => Number(process.env.LUKE_AGENT_STEPS) || 24;
@@ -127,9 +135,9 @@ export function guideTopics(): Record<string, { about: string; text: string }> {
 const howYouWork =
   () => `HOW YOU WORK — in a loop, the way a capable person who runs operations would: understand the business and the problem behind their words; read whatever you need; decide; build in small checked steps; try it on their real rows; then tell them honestly. Think in plain words between steps: that is where the work is done.
 - Look before you say. Their store's lists, the rows of every section (read_section), what each rule did (rule_runs) and how a section changed are yours to read, and test_build tries what is already built on their data. Never ask the owner to check something you can read, and never ask them to change a value only to set off a rule. A lookup says how many matched beside the rows it shows: "matched" is the count, never the rows you were shown.
-- Talk before a bigger build. When the ask is new work (a section, a workflow, rules) and their words leave a real choice open, say in a few plain sentences how it would work for them, ask the one or two questions that change it, and end with "Want me to build it?": finish with proposal: true and nothing drafted. When they have agreed, or said to just build it, or the change is small and exact (a rename, a filter, a column), build it.
+- Talk before a bigger build. When the ask is new work (a section, a workflow, rules) and their words leave a real choice open, say in a few plain sentences how it would work for them, then two to four checks you will try it on, each a moment of their day with a real row of theirs and what they will then see ("order #1042 delivered, payment still pending → it counts in net sales"), ask the one or two questions that change it, and end with "Want me to build it?": finish with proposal: true, the checks in accept, and nothing drafted. When they have agreed, or said to just build it, or the change is small and exact (a rename, a filter, a column), build it.
 - Build in small steps. Before you first draft a kind of change, read its guide topic: guide gives the exact shape. draft_change puts one change into the design and checks the whole design at once; when it says no it says why, and nothing was added — fix that change and draft it again. One design a turn: change it with replace_change and drop_change rather than starting over.
-- Try it before you finish. When the design has rules, filters or stats over rows that already exist, test_draft runs it on their real rows. A rule that would change nothing it should, or everything it should not, is yours to fix now. Say in your message what the test showed.
+- Try it before you finish. When the design has rules, filters or stats over rows that already exist, test_draft runs it on their real rows, and plays the checks they agreed to (or the ones you said) as their team would: every agreed check must come true before you finish. A rule that would change nothing it should, or everything it should not, is yours to fix now. Say in your message what the test showed.
 - Nothing you draft happens until they say yes on its card: never say it is done, built or added — write what it WILL do.
 - When no block draws what they need, write it (a rule's own code, a written screen) and try it. When it needs a service that is not connected, say so and what would make it possible, and build the rest.
 - End with finish: your message to them, in their language (Hinglish stays Hinglish), as one person to another; the design you drafted goes with it. Or ask_owner, when you truly cannot go on without an answer: the fewest questions, each with suggestions.
@@ -176,6 +184,8 @@ type Finish = {
   message?: string;
   kind?: string;
   proposal?: boolean;
+  /** With a proposal: the checks the build will be tried on, as said in the message (lib/plan DesignIntent.accept). */
+  accept?: unknown;
   next?: Array<{ label?: string; prompt?: string }>;
   show?: unknown;
 };
@@ -374,6 +384,11 @@ export function buildTools(o: {
           message: { type: "string", description: "Your reply, in Markdown, in their language." },
           kind: { type: "string", enum: ["store", "product_help", "conversation"] },
           proposal: { type: "boolean" },
+          accept: {
+            type: "array",
+            items: { type: "string" },
+            description: "With proposal: the two to four checks said in the message, one line each.",
+          },
           next: {
             type: "array",
             items: {
@@ -462,6 +477,12 @@ export function agentReply(state: AgentState, text: string): string | null {
         rules: [],
         screens: [],
         unsure: [],
+        accept: Array.isArray(f.accept)
+          ? f.accept
+              .filter((a): a is string => typeof a === "string" && !!a.trim())
+              .slice(0, 4)
+              .map((a) => a.trim().slice(0, 240))
+          : [],
         say: message,
       },
     });

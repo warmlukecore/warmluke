@@ -533,6 +533,63 @@ test("what the checks caught on a design is shown to a superadmin alone", async 
   }
 });
 
+test("the checks agreed before building show on the card, and one that failed makes building their call", async ({
+  signedIn: page,
+  shop,
+}) => {
+  // What "done" means, agreed with the plan and played on the design
+  // before its card (lib/plan accept, 15 Oct): open above Build, each
+  // through or not and why. One that did not come true is never built for
+  // them: the button says it is their call.
+  const names = ["e2e-agreed-a", "e2e-agreed-b"];
+  const thread = await replyThread(
+    shop,
+    {
+      type: "plans",
+      message: "This adds the sections.",
+      plans: [newSection(names[0], "Agreed A"), newSection(names[1], "Agreed B")],
+      checks: {
+        simplicity: null,
+        data: [],
+        dryRuns: [],
+        ux: null,
+        tryout: {
+          tried: 2,
+          found: [],
+          fills: [],
+          scenarios: [
+            { title: "A new return for #1042 shows under Open", section: "Agreed A", ok: true, agreed: true },
+            {
+              title: "Marking it Received takes it off the Open list",
+              section: "Agreed A",
+              ok: false,
+              why: "there is no Received to choose",
+              agreed: true,
+            },
+          ],
+        },
+      },
+    },
+    "okey do that then"
+  );
+  try {
+    await page.goto(`/app/${shop.projectId}`);
+    const { panel } = await luke(page);
+    await expect(panel.getByText("Tried on your rows before building")).toBeVisible();
+    await expect(panel.getByText("A new return for #1042 shows under Open")).toBeVisible();
+    await expect(panel.getByLabel("Came true")).toHaveCount(1);
+    await expect(panel.getByLabel("Did not come true")).toHaveCount(1);
+    await expect(panel.getByText("there is no Received to choose")).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Build anyway" })).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Build 2 sections" })).toHaveCount(0);
+    await panel.screenshot({
+      path: `${process.env.LOOK_DIR ?? "test-results"}/agreed-checks-${test.info().project.name}.png`,
+    });
+  } finally {
+    await clearUp(shop, thread, names);
+  }
+});
+
 test("two changes in one reply stay up for a yes when the thread reloads", async ({ signedIn: page, shop }) => {
   // Reloaded, a reply with more than one plan came back as a line of
   // text, and a finished turn reloads the thread (it touches the

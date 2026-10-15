@@ -1,0 +1,28 @@
+{
+  "id": "r-analytics-cod",
+  "title": "Analytics where a delivered COD order counts as sold",
+  "language": "english",
+  "kind": "build",
+  "shop": "cases",
+  "persona": "Phone-case brand owner, mostly cash on delivery, who checks the numbers daily and knows exactly what each one should mean. From a real conversation (6 Oct).",
+  "before": [],
+  "opening": "I want an analytics tab: gross sales, net sales, COD vs prepaid, COD %, RTO %, for any range I pick.",
+  "facts": {
+    "net sales": "Net sales are orders delivered and paid for. A COD order says Payment Pending until the courier pays us, but once it is delivered it counts as sold.",
+    "refunds": "Take refunds off net sales.",
+    "rto": "I mark RTO myself on the order, many at once if I can.",
+    "range": "Today, this month, or any dates I choose."
+  },
+  "success": [
+    "net sales counts delivered cash-on-delivery orders even while their payment still says pending",
+    "an order can be marked RTO and the RTO percentage is worked out from those marks",
+    "the figures follow a range the owner chooses",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "a figure the screen could work out is written into every order by a scheduled rule",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 6
+}

@@ -19,7 +19,7 @@
 //
 //   ENV_FILE=.env.check.local APP_URL=http://localhost:3101 \
 //   EVAL_SIM_MODEL=claude-haiku-4-5 EVAL_GRADE_MODEL=claude-haiku-4-5 \
-//   node scripts/eval-luke.mjs --label before --max-usd 1.5 [--set smoke|full-a|full-b|full | --cases a,b] [--design-model <name>]
+//   node scripts/eval-luke.mjs --label before --max-usd 1.5 [--set smoke|real|full-a|full-b|full | --cases a,b] [--design-model <name>]
 //
 // Run from the repository's root. The check project only (CHECK_PROJECT=1):
 // each case makes a throwaway project with the seeded shop in it, and
@@ -121,8 +121,8 @@ const KEYS = [
 /** build: something is made (the common criteria apply); question: one answer from the store; vague: a question first; limit: a plain no. */
 export const KINDS = ["build", "question", "vague", "limit"];
 const EXPECT_KEYS = ["answer", "effect", "exercise", "asks_first", "honest", "builds", "edited"];
-/** The runs a --set names: the six cheap cases, everything, or everything in two halves under one cap each. */
-export const SETS = ["smoke", "full", "full-a", "full-b"];
+/** The runs a --set names: the six cheap cases, the real owners' asks, everything, or everything in two halves under one cap each. */
+export const SETS = ["smoke", "real", "full", "full-a", "full-b"];
 const words = (v) => typeof v === "string" && v.trim().length > 0;
 
 /** What is wrong with a case file, in a line each; none when it is whole. */
@@ -190,6 +190,8 @@ export function privateBits(text) {
 export function selectCases(all, { cases = null, set = null } = {}) {
   if (cases) return all.filter((c) => cases.includes(c.id));
   if (set === "smoke") return all.filter((c) => c.smoke === true);
+  // The asks real owners made that went wrong in production (r-…, 15 Oct).
+  if (set === "real") return all.filter((c) => c.id.startsWith("r-"));
   const half = Math.ceil(all.length / 2);
   if (set === "full-a") return all.slice(0, half);
   if (set === "full-b") return all.slice(half);

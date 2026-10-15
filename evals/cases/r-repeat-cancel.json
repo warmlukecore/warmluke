@@ -1,0 +1,26 @@
+{
+  "id": "r-repeat-cancel",
+  "title": "A second order before the first ships: flag both, the team picks",
+  "language": "english",
+  "kind": "build",
+  "shop": "snacks",
+  "persona": "Snack brand owner whose COD buyers often order twice by mistake. From a real conversation (2 Oct).",
+  "before": [],
+  "opening": "When the same customer orders again before the first order ships, flag both and let my team pick: cancel the old one or the new one.",
+  "facts": {
+    "same customer": "Same phone number",
+    "window": "Before the first order ships",
+    "the cancel": "My team decides here; the order itself is cancelled in Shopify"
+  },
+  "success": [
+    "both orders of the same customer are flagged while the first is unshipped",
+    "Luke says plainly what the pick does here and that cancelling in Shopify needs the owner's yes or is done in Shopify",
+    "the plan is said in plain words before anything is built, with no field names or types",
+    "ends by asking whether to build"
+  ],
+  "must_not": [
+    "an order cancelled in Shopify without the owner's yes",
+    "jargon such as \"boolean\" or \"set_fields\" in what the owner reads"
+  ],
+  "max_turns": 6
+}

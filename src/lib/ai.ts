@@ -900,9 +900,10 @@ You reply with ONLY a single valid JSON object, no code fences, no commentary ou
   "rules": ["when this, then that — only what they asked for or plainly need — at most four"],
   "screens": ["what they see or do, and where (a list, a scan bar, a board, a button on a row) — at most four"],
   "unsure": ["what their words do not settle and matters to the design — a short question each, at most three; empty when nothing does"],
+  "accept": ["how the finished work will be checked — two to four lines, each one moment of their day on a real row of theirs and what they must then see: 'order #1042 is delivered while its payment still says pending → it counts in net sales'. Real names, numbers and values from their store or their words; never a field name. Empty only for a small exact change"],
   "say": "what you tell the owner now, before anything is built, as one person to another"
 }
-Every field but "say" is short lines for the designer. "say" is the one the owner reads, and it is how they agree to the design, so it must be enough to agree to: in a few plain sentences, how it will work for them (what they will see, what they do, what happens by itself), then the questions from "unsure" that matter, asked plainly, then end with "Want me to build it?" in their language. Never a field name, a type, a list of buttons or a rule's wording: "a tick for RTO on each shipment, and a count of them above the list", not "boolean field rto". When something they asked for is not possible, say so here and what you would do instead. Leave "say" empty only for a small exact change with nothing to discuss (rename, reorder, relabel), or when they said to just build it. Under 120 words.
+Every field but "say" is short lines for the designer. "say" is the one the owner reads, and it is how they agree to the design, so it must be enough to agree to: in a few plain sentences, how it will work for them (what they will see, what they do, what happens by itself), then the checks from "accept" as a short list they can correct ("I'll try it like this before it's yours:" in their language), then the questions from "unsure" that matter, asked plainly, then end with "Want me to build it?" in their language. The design is tried on those checks, and built only to make them come true: a check you cannot keep is a wrong plan, so say what you would do instead. Never a field name, a type, a list of buttons or a rule's wording: "a tick for RTO on each shipment, and a count of them above the list", not "boolean field rto". When something they asked for is not possible, say so here and what you would do instead. Leave "say" empty only for a small exact change with nothing to discuss (rename, reorder, relabel), or when they said to just build it. Under 160 words.
 When an operator's idea is given after their request and it is genuinely better than what they asked for, say it in "say" as one plain sentence before the questions ("A better idea: …", in Hinglish "Ek behtar idea: …") and ask whether they want it; never put it in the other fields unasked.
 
 When the store's tools are offered, you may look twice at most — to settle which list holds this, or what a column really says (a status, a gateway, a tag) — then write the plan. Never look for a greeting, and never to browse.
@@ -3574,6 +3575,14 @@ export function uxModel(): string | null {
 }
 export function tryoutModel(): string | null {
   return optionalModel("tryout");
+}
+/**
+ * Who plays the checks the owner agreed to (lib/plan accept): the tryout's
+ * model, else the plan step's, which wrote them. Agreed checks are what
+ * "done" means, so they are played wherever there is a plan to agree to.
+ */
+export function checksModel(agreed: boolean): string | null {
+  return tryoutModel() ?? (agreed ? planModel() : null);
 }
 
 /** The model a rule's AI step runs on; null when it is not set, and the step then does nothing. */

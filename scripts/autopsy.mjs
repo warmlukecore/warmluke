@@ -148,7 +148,8 @@ for (const road of new Set(traces.map((t) => t.road))) {
   const of = traces.filter((t) => t.road === road);
   const ms = of.map((t) => t.took_ms ?? 0);
   console.log(
-    `${road.padEnd(8)} ${of.length} turns · $${of.reduce((n, t) => n + Number(t.usd ?? 0), 0).toFixed(2)} · avg ${Math.round(ms.reduce((a, b) => a + b, 0) / of.length / 1000)}s · max ${Math.round(Math.max(...ms) / 1000)}s · models ${[...new Set(of.map((t) => t.model))].join(", ")}`
+    // A turn stopped before it chose a road has none.
+    `${(road ?? "stopped").padEnd(8)} ${of.length} turns · $${of.reduce((n, t) => n + Number(t.usd ?? 0), 0).toFixed(2)} · avg ${Math.round(ms.reduce((a, b) => a + b, 0) / of.length / 1000)}s · max ${Math.round(Math.max(...ms) / 1000)}s · models ${[...new Set(of.map((t) => t.model))].join(", ")}`
   );
 }
 

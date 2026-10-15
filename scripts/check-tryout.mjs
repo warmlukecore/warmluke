@@ -340,6 +340,35 @@ console.log("\na whole design, through the rows it will meet");
     said.some((t) => /^1:problem:.*'Refunded' counter adds up nothing/.test(t))
   );
   check("a rule is the dry-run's, not tried here", !said.some((t) => t.startsWith("2:")));
+
+  // The checks the owner agreed to, kept with their steps, played again with no model (lib/verify, 15 Oct).
+  const again = await tryDesign(ctx, [plan({ changeType: "FEATURE_UPDATE", targetModuleId: "m-ret", features: {} })], {
+    given: [
+      {
+        title: "a return is logged as Open",
+        section: "Returns",
+        agreed: true,
+        steps: [{ add: { set: { order: "#2001", status: "Open" } } }, { expect: { status: "Open" } }],
+      },
+      {
+        title: "a new return shows Received",
+        section: "Returns",
+        agreed: true,
+        steps: [{ add: { set: { order: "#2002" } } }, { expect: { status: "Received" } }],
+      },
+    ],
+  });
+  const [through, stopped] = again.scenarios ?? [];
+  check(
+    "an agreed check is played again with no model, and comes through with its steps",
+    through?.ok === true && through.agreed === true && through.steps?.length === 2
+  );
+  check(
+    "one the build does not keep is stopped, and said why, as a problem",
+    stopped?.ok === false &&
+      !!stopped.why &&
+      again.found.some((f) => f.severity === "problem" && f.text.startsWith('Tried "a new return shows Received"'))
+  );
 }
 
 console.log(fails.length === 0 ? "\na design is tried as it will be used" : `\n${fails.length} FAILED`);

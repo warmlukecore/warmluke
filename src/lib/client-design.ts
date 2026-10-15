@@ -16,6 +16,8 @@ import { describePlan, stepsToFinish } from "@/lib/describe";
 import { applyPlans, logClientBuild } from "@/lib/apply";
 import { noteJudgement } from "@/lib/judge";
 import type { AssistantPlan, ModuleRow, NextStep, ProjectRow } from "@/lib/types";
+import type { DesignChecks } from "@/lib/review-types";
+import { givenFrom, testBuild } from "@/lib/verify";
 
 export type Json = Record<string, unknown>;
 
@@ -132,6 +134,8 @@ export async function settleDesign(opts: {
    * "Changes from your AI", as it always was.
    */
   inThread?: boolean;
+  /** What the review gate said of the design: its agreed checks are played again on what is built. */
+  checks?: DesignChecks | null;
 }): Promise<Settled> {
   const { db, origin, project, moduleList, plans, design, unmet, next, request, store, charged, later, inThread } =
     opts;
@@ -286,6 +290,12 @@ export async function settleDesign(opts: {
       // did not record it, the app would change and the merchant's
       // history would stay blank.
       if (!inThread) await logClientBuild(db, project.id, request, builtLine(plans, moduleList, errors), applied);
+      // What was built, tried on their data with the checks agreed to it,
+      // before the answer goes (lib/verify, 15 Oct): built is not done.
+      const tested =
+        errors.length === 0
+          ? await testBuild(db, project.id, {}, undefined, undefined, givenFrom(opts.checks)).catch(() => null)
+          : null;
       return {
         requestId: requestId as string,
         status: errors.length ? "partly built" : "built",
@@ -305,6 +315,22 @@ export async function settleDesign(opts: {
             request_id: requestId,
             built: applied,
             ...(errors.length ? { not_built: errors.slice(0, 3) } : {}),
+            ...(tested
+              ? {
+                  tested: {
+                    ok: tested.ok,
+                    said: tested.said,
+                    problems: tested.problems,
+                    ...(tested.checks ? { checks: tested.checks } : {}),
+                  },
+                  ...(tested.ok
+                    ? {}
+                    : {
+                        tested_note:
+                          "Built, and not yet working as agreed: tell the merchant what did not, then fix it (propose_change) before calling it done.",
+                      }),
+                }
+              : {}),
             design,
             // Built already, so there is nothing to finish — but a
             // half-built one has a card worth opening, and this

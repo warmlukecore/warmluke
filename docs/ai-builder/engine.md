@@ -775,6 +775,25 @@ is none of, where a status of that name is, is done the long way and said as a n
 lists each scenario, worked or not. `check-scenario-play` (pure) holds the player;
 `check-scenario-eval` (model tier) the writer, on eight designs, four broken.
 
+**What "done" means, agreed first (15 Oct).** A build that only fitted the grammar was "done",
+and the owner found what it did not do: half of a month's design turns needed a repair and a
+third left part of the ask undone. Now the plan step writes `accept` (lib/plan): two to four
+checks, each a moment of their day on a real row of theirs and what they then see ("order
+#1042 delivered, payment still pending → it counts in net sales"), and says them in the plan
+they read before saying yes. Those checks are the scenarios: the writer is told to play
+exactly them, titled with them (`ReviewContext.agreed`), on the tryout's model or, unset, the
+plan step's (`checksModel`). A failing one goes back to the designer whatever the review's
+switch (`review-gate`), and once more on its own after the turn's one send-back is spent
+(`checkSent`, kept across a resumed turn). The agent's `test_draft` plays them on its draft.
+The card shows them open above Build, each through or not and why (`AgreedChecks`), and one
+that failed turns Build into "Build anyway" and stops a yes from building at once. Each is
+kept with its steps on the design's reply, and played again on what was saved after the
+build (`testAfterBuild` reads the build line's design, `givenFrom`, `testBuild` with `given`);
+a failure there asks Luke to fix it once, at once, while the build is the thread's last word
+(AppShell `fixAsked`). Their own AI's automatic builds are tested the same way before the
+answer goes (`settleDesign`, `tested` in the answer). Not yet played: a rule's own code
+(`run_code`) and writes to another section inside a scenario; the dry run tries those.
+
 Its third layer walks what was built in a real browser (`lib/walk.ts`). The walk page
 (`src/walk/page.tsx`) is the section drawn by the app's own components, `GenericRenderer` and
 all, bundled with the app's CSS into one sealed file by `scripts/build-walk-page.mjs`, which

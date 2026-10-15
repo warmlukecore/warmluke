@@ -32,6 +32,15 @@ export type DesignIntent = {
   /** What Luke could not settle from the words: each a candidate question. */
   unsure: string[];
   /**
+   * How the finished work will be checked, agreed before it is built: a
+   * moment of their day each, on a real row of theirs, and what they then
+   * see ("Order #1042 delivered, payment still pending → it counts in net
+   * sales"). Said to the owner in "say"; played on the design before its
+   * card and on what was built after it (15 Oct). A build that only fit
+   * the grammar was "done" before, and the owner found what it did not do.
+   */
+  accept: string[];
+  /**
    * The plan as the owner reads it, before anything is built: how it
    * will work, what is unclear, and "Want me to build it?". Empty for a
    * small exact change, or when they said to just build it.
@@ -68,6 +77,7 @@ export function parseIntent(raw: string): DesignIntent | null {
     rules: words(r.rules, 8),
     screens: words(r.screens, 6),
     unsure: words(r.unsure, 4),
+    accept: words(r.accept, 4).map((a) => a.slice(0, 240)),
     say: typeof r.say === "string" ? r.say.trim().slice(0, 1500) : "",
   };
 }
@@ -86,6 +96,10 @@ export function intentBlock(intent: DesignIntent): string {
     list("Rules", intent.rules),
     list("Screens", intent.screens),
     list("Unsure", intent.unsure),
+    list(
+      "Checks — the design is tried on these before the owner sees it, and the build after; each must come true",
+      intent.accept
+    ),
   ];
   // A blank line first: it follows the owner's own words in the same turn.
   return `\n\n${lines.filter((l) => l !== "").join("\n")}`;

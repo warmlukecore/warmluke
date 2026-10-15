@@ -14,7 +14,7 @@
 //
 // Callers: src/lib/engine.ts (runTurn), scripts/check-reviewers.mjs.
 
-import { reviewModel, tryoutModel } from "@/lib/ai";
+import { checksModel, reviewModel } from "@/lib/ai";
 import { checkAgainstData } from "@/lib/data-check";
 import { dryRunRules } from "@/lib/dry-run";
 import { simplicityReview, workaroundSigns, type SimplicityVerdict } from "@/lib/reviewers";
@@ -58,7 +58,11 @@ export function redoFrom(
     data: DataFinding[];
     dryRuns: DryRun[];
     ux: UxVerdict | null;
-    /** Sent back only with the review's switch on: off, a recorded conversation must play as it was recorded. */
+    /**
+     * Sent back with the review's switch on, or when the owner agreed to
+     * checks (they are what "done" means): otherwise off, so a recorded
+     * conversation plays as it was recorded.
+     */
     tryout?: Tryout | null;
   },
   plans: AssistantPlan[]
@@ -121,7 +125,13 @@ async function quietly<T>(what: string, run: () => Promise<T>): Promise<T | null
 export async function reviewDesign(
   ctx: ReviewContext,
   plans: AssistantPlan[],
-  opts: { tell: (s: TurnEvent) => void; describe: string; columnLines: string[] }
+  opts: {
+    tell: (s: TurnEvent) => void;
+    describe: string;
+    columnLines: string[];
+    /** Free mode (lib/agent freeOn): the tests alone, no simplicity or screen reviewer. */
+    free?: boolean;
+  }
 ): Promise<{ redo: string | null; checks: DesignChecks }> {
   const tell = (s: TurnEvent) => {
     try {
@@ -131,7 +141,7 @@ export async function reviewDesign(
     }
   };
   try {
-    const review = reviewModel();
+    const review = opts.free ? null : reviewModel();
     const [simplicity, data, dryRuns, ux, tryout] = await Promise.all([
       review
         ? quietly("simplicity", async () => {
@@ -167,12 +177,13 @@ export async function reviewDesign(
         return d;
       }),
       quietly("screens", async () => {
+        if (opts.free) return null;
         const u = await reviewScreens(ctx, plans);
         if (u.verdict !== "skipped") tell({ step: "ux", verdict: u.verdict, how: u.how });
         return u;
       }),
       quietly("tryout", async () => {
-        const t = await tryDesign(ctx, plans, { scenarios: tryoutModel() });
+        const t = await tryDesign(ctx, plans, { scenarios: checksModel(!!ctx.agreed?.length) });
         if (t.tried)
           tell({ step: "tryout", tried: t.tried, problems: t.found.filter((f) => f.severity === "problem").length });
         return t;
@@ -183,7 +194,7 @@ export async function reviewDesign(
       data: data ?? [],
       dryRuns: dryRuns ?? [],
       ux: ux && ux.verdict !== "skipped" ? ux : null,
-      tryout: review ? tryout : null,
+      tryout: review || ctx.agreed?.length ? tryout : null,
     };
     return {
       redo: redoFrom(found, plans),
