@@ -13,12 +13,14 @@
 --                  0217) stayed at none, or under a ROAS
 --
 -- As every kind since 0199: off until the owner turns it on and gives
--- every number. Running low (0163) is the stock-cover watch already.
+-- every number. Offered only where the store has that connection (a
+-- courier, an ad account: `needs` names it), and run only while it is
+-- connected. Running low (0163) is the stock-cover watch already.
 -- No model is called to notice: the words are the app's (lib/alerts.ts).
 
 insert into public.alert_kinds (kind, area, needs, check_fn, defaults, sort_order) values
-  ('rto_rising', 'Shipping', '{orders}', 'abo_alert_rto_rising', '{"days": null, "min": null, "points": null}', 5),
-  ('ads_no_sales', 'Ads', '{orders}', 'abo_alert_ads_no_sales', '{"days": null, "spend": null, "roas": null}', 6)
+  ('rto_rising', 'Shipping', '{orders,courier}', 'abo_alert_rto_rising', '{"days": null, "min": null, "points": null}', 5),
+  ('ads_no_sales', 'Ads', '{orders,ads}', 'abo_alert_ads_no_sales', '{"days": null, "spend": null, "roas": null}', 6)
 on conflict (kind) do update
   set area = excluded.area, needs = excluded.needs, check_fn = excluded.check_fn,
       defaults = excluded.defaults, sort_order = excluded.sort_order;
@@ -112,6 +114,60 @@ language sql stable security definer set search_path = public as $$
    where c.spend >= s.spend_min
      and (c.orders = 0 or c.revenue / nullif(c.spend, 0) < s.roas_min)
 $$;
+
+-- A connection a kind needs: there at all (offered), or connected now (ready).
+create or replace function public.abo_alert_connection(p_store uuid, p_need text, p_live boolean)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.store_connections c
+     where c.store_id = p_store
+       and c.provider = any (case p_need when 'courier' then array['shiprocket', 'goswift', 'delhivery']
+                                         when 'ads' then array['meta_ads', 'google_ads'] end)
+       and (case when p_live then c.status = 'connected' else c.status <> 'disconnected' end))
+$$;
+revoke all on function public.abo_alert_connection(uuid, text, boolean) from public, anon, authenticated;
+
+-- 0163's readiness, with a connection as a need: an import done, or that connection live.
+create or replace function public.abo_alert_ready(p_store uuid, p_needs text[]) returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce(bool_and(case
+           when need in ('courier', 'ads') then public.abo_alert_connection(p_store, need, true)
+           else exists (select 1 from public.import_runs ir
+                         where ir.store_id = p_store and ir.resource = need and ir.status = 'done')
+         end), false)
+    from unnest(p_needs) need
+$$;
+revoke all on function public.abo_alert_ready(uuid, text[]) from public, anon, authenticated;
+
+-- 0199's list, with a kind that needs a connection offered only where the store has one.
+create or replace function public.abo_alert_settings(p_project uuid) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  v_store uuid;
+begin
+  if p_project is null or not public.abo_can_open_store(p_project) then
+    raise exception 'No such project on this account.' using errcode = '42501';
+  end if;
+  select s.id into v_store from public.stores s where s.project_id = p_project and s.status = 'connected';
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'kind', ak.kind, 'area', ak.area, 'needs', to_jsonb(ak.needs),
+             'enabled', coalesce(se.enabled, false), 'defaults', ak.defaults,
+             'settings', coalesce(se.settings, '{}'::jsonb),
+             'set', not exists (select 1 from jsonb_object_keys(ak.defaults) x(key)
+                                where not coalesce(se.settings, '{}'::jsonb) ? x.key),
+             'ready', v_store is not null and public.abo_alert_ready(v_store, ak.needs),
+             'chosen', se.project_id is not null)
+           order by ak.sort_order)
+      from public.alert_kinds ak
+      left join public.alert_settings se on se.project_id = p_project and se.kind = ak.kind
+     where ak.check_fn is not null
+       and not exists (select 1 from unnest(ak.needs) need
+                        where need in ('courier', 'ads')
+                          and not (v_store is not null and public.abo_alert_connection(v_store, need, false)))), '[]'::jsonb);
+end $$;
+revoke all on function public.abo_alert_settings(uuid) from public, anon;
+grant execute on function public.abo_alert_settings(uuid) to authenticated;
 
 revoke all on function public.abo_alert_rto_rising(uuid, jsonb) from public, anon, authenticated;
 revoke all on function public.abo_alert_ads_no_sales(uuid, jsonb) from public, anon, authenticated;

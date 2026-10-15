@@ -145,3 +145,58 @@ test("the cross watches nothing, and the question is not asked again", async ({ 
   await expect(page.getByText("Orders today")).toBeVisible({ timeout: 30_000 });
   await expect(choose).toHaveCount(0);
 });
+
+test("with a courier and an ad account connected, RTO and ads are offered to watch, with their numbers", async ({
+  signedIn: page,
+  shop,
+}) => {
+  // Offered only where the store has the connection (0221): the shop has none until here.
+  const { data: made } = await shop.admin
+    .from("store_connections")
+    .insert([
+      {
+        project_id: shop.projectId,
+        store_id: shop.storeId,
+        provider: "shiprocket",
+        account_ref: "e2e-ship",
+        status: "connected",
+        connected_by: shop.userId,
+      },
+      {
+        project_id: shop.projectId,
+        store_id: shop.storeId,
+        provider: "meta_ads",
+        account_ref: "e2e-ads",
+        status: "connected",
+        connected_by: shop.userId,
+      },
+    ])
+    .select("id");
+  try {
+    await page.goto(`/app/${shop.projectId}`);
+    await expect(page.getByText("Orders today")).toBeVisible({ timeout: 30_000 });
+    const notNow = page.getByRole("button", { name: "Not now" });
+    if (await notNow.count()) await notNow.click();
+    if ((page.viewportSize()?.width ?? 0) < 1024) await page.getByRole("button", { name: "Open sections" }).click();
+    await page.getByRole("button", { name: "Project settings" }).click();
+    await page.getByRole("tab", { name: "Alerts" }).click();
+    const rto = page.getByRole("switch", { name: "RTO rising" });
+    const ads = page.getByRole("switch", { name: "Ads spending without sales" });
+    await expect(rto).toBeVisible();
+    await expect(ads).toBeVisible();
+    await rto.click();
+    await expect(rto).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByText("Tell me when RTO rises by")).toBeVisible();
+    await expect(page.getByText("Give it its numbers to start.")).toBeVisible();
+    await page.getByRole("dialog").screenshot({
+      path: `${process.env.LOOK_DIR ?? "test-results"}/alerts-rto-ads-${test.info().project.name}.png`,
+    });
+  } finally {
+    await shop.admin
+      .from("alert_settings")
+      .delete()
+      .eq("project_id", shop.projectId)
+      .in("kind", ["rto_rising", "ads_no_sales"]);
+    for (const c of made ?? []) await shop.admin.from("store_connections").delete().eq("id", c.id);
+  }
+});

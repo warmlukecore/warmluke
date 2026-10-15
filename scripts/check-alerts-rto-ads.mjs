@@ -62,6 +62,7 @@ const ships = (from, n, courier, ago, rto, moving = 0) =>
 const r = psql(`
 begin;
 create temp table out (k text, v text);
+grant all on out to public;
 create function pg_temp.say(k text, v text) returns void language sql as $f$ insert into out values (k, v) $f$;
 create function pg_temp.as(uid uuid) returns void language plpgsql as $f$
 begin
@@ -123,6 +124,15 @@ reset role;
 ${run}
 select pg_temp.say('few', ${open("rto_rising")});
 
+-- Offered only where the store has the connection: the ad account gone, its watch is not listed.
+select pg_temp.say('listed_with', (select string_agg(s ->> 'kind', ',') from jsonb_array_elements(
+  (select public.abo_alert_settings('${P}') from (select pg_temp.as('${OWNER}')) x)) s where s ->> 'kind' in ('rto_rising', 'ads_no_sales')));
+reset role;
+update public.store_connections set status = 'disconnected' where id = '${ADS}';
+select pg_temp.say('listed_without', (select string_agg(s ->> 'kind', ',') from jsonb_array_elements(
+  (select public.abo_alert_settings('${P}') from (select pg_temp.as('${OWNER}')) x)) s where s ->> 'kind' in ('rto_rising', 'ads_no_sales')));
+reset role;
+
 select k, v from out;
 rollback;
 `);
@@ -143,6 +153,10 @@ check(
 check("the worst courier named first", rto.couriers?.[0]?.courier === "Delhivery" && rto.couriers[0].rto === 10);
 check("a rise under the owner's points is quiet, and what was open closes", r.quiet === "none");
 check("too few settled to compare says nothing", r.few === "none");
+
+console.log("\noffered where the store has the connection");
+check("both are listed while their connections are there", r.listed_with === "rto_rising,ads_no_sales");
+check("and the ad watch is not, once the ad account is gone", r.listed_without === "rto_rising");
 
 console.log("\nads spending without sales");
 const ads = JSON.parse(r.ads_facts ?? "{}");

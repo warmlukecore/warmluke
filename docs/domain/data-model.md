@@ -208,7 +208,9 @@ model is called to find one.
   those still moving said apart and the worst couriers named, only with enough of both) and ads
   spending without sales (a campaign's spend with none or too few of the store's own orders
   from it, from `store_campaign_results`). Courier shipments and ad spend mark their store to be
-  looked at again, as orders do. `check-alerts-rto-ads` holds the two.
+  looked at again, as orders do. Each is offered only where the store has that connection (`needs`
+  names `courier` or `ads`; `abo_alert_connection`) and runs only while it is connected.
+  `check-alerts-rto-ads` holds the two.
 - `alert_settings`: a project's own switch and numbers per kind, changed by a builder through
   `abo_set_alert_setting`. Nothing is watched until a builder turns a kind on and gives every
   number it takes: no row is off, and on with a number missing it waits (`set` in

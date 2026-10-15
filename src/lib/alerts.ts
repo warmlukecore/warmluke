@@ -301,6 +301,9 @@ export const NEEDS_NAMES: Record<string, string> = {
   inventory: "stock",
   fulfillments: "shipments",
   returns: "returns",
+  // A connection a kind needs (0221): its rows, once it is connected and syncing.
+  courier: "courier's shipments",
+  ads: "ad account's days",
 };
 
 /** Whether this account is shown an alert: not one worked out from a store column it is not shown (0192). */
