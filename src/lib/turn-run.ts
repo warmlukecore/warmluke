@@ -239,6 +239,8 @@ export function meetStateOf(
   const replies = rows.filter((m) => m.role === "assistant" && m.ptype !== "answering");
   return {
     helped: replies.some((m) => m.ptype === "build" || (m.ptype === "answer" && m.kind === "store")),
+    // Their own answers: not the opener, nor the line a build sends (kind "meet").
+    exchanges: rows.filter((m) => m.role === "user" && m.kind !== "meet").length,
     offered: replies.some((m) => m.offered === "true"),
     lastOffered: replies.at(-1)?.offered === "true",
   };

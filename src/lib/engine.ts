@@ -70,7 +70,7 @@ import {
 } from "@/lib/plan";
 import { asJob } from "@/lib/usage";
 import { describeMerchant, type ProfileRow } from "@/lib/onboarding";
-import { MEET_BRIEF, MEET_BUILT, MEET_OFFER_NOW, MEET_OPENER } from "@/lib/meet";
+import { MEET_BRIEF, MEET_BUILT, MEET_CHECK_IN, MEET_OFFER_NOW, MEET_OPENER, wantsOut } from "@/lib/meet";
 import { appTools, READ_THE_APP } from "@/lib/section-read";
 import { appActionTools, CHANGE_ROWS } from "@/lib/app-actions";
 import {
@@ -607,6 +607,8 @@ export const NOT_ANSWERED =
 export type MeetState = {
   /** He has helped: built something they agreed to, or answered from their store's numbers. */
   helped: boolean;
+  /** How many times they have answered in it (the opener and a build's line aside). */
+  exchanges: number;
   /** He has asked whether to open their store. */
   offered: boolean;
   /** And his last reply was that question, so a yes now is the yes to it. */
@@ -648,9 +650,10 @@ export function pastReply(content: string): string {
 
 /**
  * A first-meeting turn's part in letting them in (lib/meet): whether this
- * answer is the one that asks to open their store (it was just built, or he
- * has helped and not asked), and whether this message is the yes to his
- * asking, which opens it whatever the model wrote.
+ * answer offers the choice (it was just built, or they have answered about
+ * eight times and he has not offered), and whether this message opens their
+ * store whatever the model wrote: their yes to his offer, or asking to go,
+ * in any words, at any time (discovery, 15 Oct).
  */
 export function meetTurn(
   meeting: boolean,
@@ -659,8 +662,10 @@ export function meetTurn(
 ): { offerDue: boolean; opens: boolean } {
   if (!meeting) return { offerDue: false, opens: false };
   return {
-    offerDue: message === MEET_BUILT || (!!state?.helped && !state.offered && message !== MEET_OPENER),
-    opens: !!state?.lastOffered && isGoAhead(message),
+    offerDue:
+      message === MEET_BUILT ||
+      ((state?.exchanges ?? 0) >= MEET_CHECK_IN && !state?.offered && message !== MEET_OPENER),
+    opens: (!!state?.lastOffered && isGoAhead(message)) || wantsOut(message),
   };
 }
 

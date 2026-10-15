@@ -116,9 +116,28 @@ console.log("\nthe first meeting's way out");
   ]);
   check("and once more said, it is no longer the last", moved.offered && !moved.lastOffered);
   check("the line after a build asks", meetTurn(true, talked, MEET_BUILT).offerDue);
-  check("helped and not asked: this turn asks", meetTurn(true, built, "and what about RTO?").offerDue);
-  check("asked once: not again", !meetTurn(true, asked, "tell me more").offerDue);
-  check("the opener never asks", !meetTurn(true, built, MEET_OPENER).offerDue);
+  // Discovery (15 Oct): helping is no reason to end it; eight answers is a choice offered once.
+  check("helped, after one answer: no push to leave", !meetTurn(true, built, "and what about RTO?").offerDue);
+  const eight = meetStateOf([
+    row("user", null, "meet"),
+    ...Array.from({ length: 8 }, () => [row("user", null, "user"), row("assistant", "answer", "conversation")]).flat(),
+  ]);
+  check("their own answers are counted, the opener aside", eight.exchanges === 8);
+  check("after about eight of them, the choice is offered", meetTurn(true, eight, "and the courier side?").offerDue);
+  check("asked once: not again", !meetTurn(true, { ...eight, offered: true }, "tell me more").offerDue);
+  check("the opener never asks", !meetTurn(true, eight, MEET_OPENER).offerDue);
+  check(
+    "asking to go opens their store at once, in any words",
+    ["take me to the dashboard", "skip", "dashboard dikhao", "go to my store", "let me in"].every(
+      (m) => meetTurn(true, talked, m).opens
+    )
+  );
+  check(
+    "but a wish to build one is not asking to go",
+    ["make me a dashboard for returns", "I want a store report", "what's on my dashboard?"].every(
+      (m) => !meetTurn(true, talked, m).opens
+    )
+  );
   check("their yes to it opens the store", meetTurn(true, asked, "haan").opens);
   check("in any of their words", meetTurn(true, asked, "yes please").opens);
   check("but not a yes to something else", !meetTurn(true, built, "haan").opens);

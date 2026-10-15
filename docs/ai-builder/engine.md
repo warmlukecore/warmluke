@@ -223,23 +223,26 @@ A new owner's app opens on Luke (0200, `src/lib/meet.ts`), full screen, while
 `profiles.met_luke_at` is empty. He speaks first: the app sends a turn with no words and
 `meet: true`, the route keeps `MEET_OPENER` as the thread's first line (payload kind `meet`,
 never drawn as a bubble), and the engine takes the talk road for it. Every turn of that
-conversation reads `MEET_BRIEF` beside who they are: greet them by name, show two or three of
-their store's real numbers, ask one thing at a time as a clarify whose options come from the
-store, say back what was understood and offer two or three ideas in words, asking which
-would help most; answer any store question from the store. The conversation is talk (10 Oct):
+conversation reads `MEET_BRIEF` beside who they are. Since 15 Oct it is discovery: greet them
+by name, mention one or two real observations from their store if there are any, then find out
+how their days really go (what hurts, how they handle it, who does it, what goes wrong), one
+meaningful question at a time, saying back what was understood before probing further;
+answer their questions directly, never ask for a fact already given or readable, and offer an
+idea only when what they said supports it. Nothing pushes them to a build or ends it. The conversation is talk (10 Oct):
 every turn of it takes the talk road unless a plan Luke already said is pending, and the
 brief lets the talk road describe what could be built but hand a build back only once the
 owner asks for one, in any words (a yes to an idea, "bana do"). Their problem, a wish or an
 answer is not that. No other turn reads the brief, so recorded turns
-replay unchanged. There is no button out (10 Oct): once Luke has helped (answered from their
-store, or built what they asked for) the brief has him ask, in words, whether to open their
-store, and on their yes his answer carries `"open_store": true` (kept by the answer parser;
-the app acts on it only in the meeting). The code holds the moment, not only the brief (12 Oct,
-after a meeting that went quiet once a build landed): a build applied in the meeting has the
-app send the hidden line `MEET_BUILT`, which Luke answers by saying so and asking; once he has
-helped and not asked, the turn reads `MEET_OFFER_NOW` beside the brief; the answer that asks is
-kept with `offered_store`, and a plain yes after it (`isGoAhead`) sets `open_store` whatever the
-model wrote (`meetTurn`, `meetStateOf`, `check-lean-turns`). Entering stamps `met_luke_at` (once, by the
+replay unchanged. They leave whenever they like: the Go to store button from the first screen
+(14 Oct), or asking to, in any words ("take me to the dashboard", "skip", "dashboard dikhao":
+`wantsOut`), which sets `"open_store": true` at once whatever the model wrote, with no help or
+build first (kept by the answer parser; the app acts on it only in the meeting). The code holds
+two moments: a build applied in the meeting has the app send the hidden line `MEET_BUILT`, which
+Luke answers by saying so and asking whether to see it; and after `MEET_CHECK_IN` (eight) of
+their answers with no offer yet, the turn reads `MEET_OFFER_NOW`, a choice offered once (keep
+talking, start on it, or open their store), never an ending. The answer that offers is kept with
+`offered_store`, and a plain yes after it (`isGoAhead`) opens it too (`meetTurn`, `meetStateOf`
+with `exchanges`, `check-lean-turns`). Entering stamps `met_luke_at` (once, by the
 database; only the service role may clear it), Luke moves into the side panel with the same
 conversation, and the tour runs after.
 
