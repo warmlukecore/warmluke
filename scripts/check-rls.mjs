@@ -782,12 +782,19 @@ try {
   check("outsider sees no project", (await X(`projects?id=eq.${proj.id}`)).json.length === 0);
   check("outsider sees no rows", (await X(`records?id=eq.${rec.id}`)).json.length === 0);
 } finally {
-  // Test accounts are not a thing to leave lying in a real database.
+  // Test accounts are not a thing to leave lying in a real database. A
+  // refusal said, not swallowed: an owner left behind kept its "RLS check"
+  // store connected, which every check reading the real store took for it
+  // (15 Oct: six checks failed on its missing token).
   for (const u of [owner, staff, outsider]) {
-    await fetch(`${URL_}/auth/v1/admin/users/${u.id}`, {
-      method: "DELETE",
-      headers: { apikey: SVC, Authorization: `Bearer ${SVC}` },
-    });
+    for (let tries = 1; tries <= 3; tries++) {
+      const res = await fetch(`${URL_}/auth/v1/admin/users/${u.id}`, {
+        method: "DELETE",
+        headers: { apikey: SVC, Authorization: `Bearer ${SVC}` },
+      });
+      if (res.ok || res.status === 404) break;
+      if (tries === 3) check(`test user ${u.id} removed (the auth API said ${res.status})`, false);
+    }
   }
   console.log("\ntest users removed");
 }
