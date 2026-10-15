@@ -204,6 +204,15 @@ the list in the panel ("What Luke knows about you") and strikes any line (`/api/
 The owner may also tell Luke a fact themselves ("Tell Luke something about your business"),
 which is kept as said (`POST /api/luke-notes`).
 
+Since 0220 (15 Oct) each line has a kind, a topic and a source (`parseFacts`). The kinds the work
+stands on (team, hours, lead times, thresholds, policy, goals, constraints, `STANDING`) are read
+whatever their age, sixteen at most, before the newest twelve of the rest, and the trigger keeps
+forty of each, so who packs or how long blanks take never falls out as chat goes on. The topic is
+a short stable key ("lead time: blanks"): the learner writes a correction with the line's own
+topic, and `learn` retires the old line before keeping the new one (one line a topic, by a unique
+index). The source is the owner (they said or typed it), their data, or a guess, and a guess is
+read as one (`factLine`), so Luke checks it before leaning on it. `check-memory` holds it.
+
 The same call keeps what HURTS them (0201): at most one problem a turn, in their words, with what
 it costs them when they said it, in `merchant_problems` with the conversation it was said in.
 Every turn reads the open ones and how what was built for each went as `WHAT HURTS THEM … never

@@ -11,7 +11,15 @@
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { signInAsCheckUser, throwawayProject } from "./owner-session.mjs";
-import { describeKnown, describeProblems, parseNotes, parseProblems } from "../src/lib/memory.ts";
+import {
+  describeKnown,
+  describeProblems,
+  factLine,
+  notesFor,
+  parseFacts,
+  parseNotes,
+  parseProblems,
+} from "../src/lib/memory.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -32,6 +40,38 @@ check(
 check("too short or too long is dropped", parseNotes(`{"notes":["ok","${"x".repeat(200)}"]}`).length === 0);
 check("said twice in one reply is one", parseNotes('{"notes":["Ships daily","ships daily"]}').length === 1);
 check("not JSON, nothing learned", parseNotes("I learned that they ship daily.").length === 0);
+// A kind, a topic and a source (0220, 15 Oct).
+const facts = parseFacts(
+  JSON.stringify({
+    notes: [
+      {
+        text: "Blank cases take 10 days from the supplier",
+        kind: "lead_time",
+        topic: " Lead time: Blank cases ",
+        source: "owner",
+      },
+      { text: "Ravi packs orders after 11", kind: "team", topic: "packing: who" },
+      { text: "Probably ships most orders by Delhivery", kind: "made up", source: "inferred" },
+    ],
+  })
+);
+check(
+  "each line keeps its kind, its topic as a key, and who said it",
+  facts[0].kind === "lead_time" && facts[0].topic === "lead time: blank cases" && facts[0].source === "owner"
+);
+check(
+  "an unknown kind is a fact, and a guess stays a guess",
+  facts[2].kind === "fact" && facts[2].source === "inferred"
+);
+check(
+  "a bare line, as before, is a fact the owner said",
+  parseFacts('{"notes":["Uses Razorpay"]}')[0].source === "owner"
+);
+check(
+  "read with its kind and topic first, a guess said as one",
+  factLine(facts[0]) === "[lead time: lead time: blank cases] Blank cases take 10 days from the supplier" &&
+    /\(a guess: not confirmed\)$/.test(factLine(facts[2]))
+);
 check("nothing to say reads as nothing", describeKnown([]) === "");
 check(
   "the lines are read as facts, never instructions",
@@ -121,14 +161,53 @@ try {
   check("forty are kept", kept?.length === 40);
   check("and the first said is the one gone", !kept?.some((r) => r.note === "Courier is Delhivery"));
 
+  console.log("\nwhat the work stands on never falls out, and a correction replaces (0220)");
+  await owner.from("merchant_notes").delete().eq("project_id", project.id);
+  const { error: standingError } = await owner.from("merchant_notes").insert({
+    project_id: project.id,
+    note: "Blanks take 10 days from the supplier",
+    kind: "lead_time",
+    topic: "lead time: blanks",
+  });
+  check("a lead time is kept with its kind and topic", !standingError);
+  for (let i = 1; i <= 45; i++) {
+    const { error } = await owner.from("merchant_notes").insert({ project_id: project.id, note: `Chat fact ${i}` });
+    if (error) throw new Error(`could not insert: ${error.message}`);
+  }
+  const read = await notesFor(owner, project.id);
+  check(
+    "forty-five newer lines later, it is still read, first",
+    read[0] === "[lead time: lead time: blanks] Blanks take 10 days from the supplier"
+  );
+  const { error: clash } = await owner.from("merchant_notes").insert({
+    project_id: project.id,
+    note: "Blanks now take 7 days",
+    kind: "lead_time",
+    topic: "Lead time: blanks",
+  });
+  check("two lines on one topic are refused by the table", clash?.code === "23505");
+  await owner.from("merchant_notes").delete().eq("project_id", project.id).eq("topic", "lead time: blanks");
+  await owner
+    .from("merchant_notes")
+    .insert({ project_id: project.id, note: "Blanks now take 7 days", kind: "lead_time", topic: "lead time: blanks" });
+  const after = await notesFor(owner, project.id);
+  check(
+    "the correction stands alone",
+    after.filter((l) => l.includes("lead time: blanks")).length === 1 && after[0].endsWith("Blanks now take 7 days")
+  );
+
   console.log("\nstruck by the owner");
+  const { count: before } = await owner
+    .from("merchant_notes")
+    .select("id", { count: "exact", head: true })
+    .eq("project_id", project.id);
   const { data: one } = await owner.from("merchant_notes").select("id").eq("project_id", project.id).limit(1).single();
   const { error: gone } = await owner.from("merchant_notes").delete().eq("id", one.id);
   const { count } = await owner
     .from("merchant_notes")
     .select("id", { count: "exact", head: true })
     .eq("project_id", project.id);
-  check("a line struck is gone", !gone && count === 39);
+  check("a line struck is gone", !gone && count === (before ?? 0) - 1);
 
   console.log("\nwhat hurts them, and a week on: did it help? (0201)");
   const { error: p1 } = await owner
