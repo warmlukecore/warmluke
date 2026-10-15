@@ -56,7 +56,7 @@ gets. Writes come only from functions or a ticket's policies.
   - `provider` (`shiprocket`, `goswift`, `meta_ads`, `google_ads`).
   - `account_ref`: the remote account (an ad account id, the login email shown masked).
   - `account_label` and `status`. `status` is `connected`, `needs_attention` (a refused
-    credential or a revoked grant, said in `last_error`) or `disconnected`.
+    credential or a revoked grant, said in `last_error`), `paused` (0218) or `disconnected`.
   - `scopes`, `connected_by`, `connected_at`, `last_synced_at`, `next_sync_at`.
   - Unique on `(store_id, provider, account_ref)`.
   - No secret is a column.
@@ -128,6 +128,15 @@ Nothing outside the adapter knows a provider's field names.
   2. The server tries them once against the provider.
   3. On success it saves them, with the token it got and its expiry; on failure it says
      the provider's reason in plain words, and saves nothing.
+- **Pause and Resume (0218):** the owner's, in Settings → Connections
+  (`abo_connector_pause`).
+  - Paused keeps the credential and the rows already brought, and brings nothing new: the
+    tick, a ticket, every write a ticket makes, Sync now and a provider's own delivery all
+    ask for `connected` already. Pausing drops the live ticket, so a sync on its way stops
+    at its next write.
+  - Resume marks it `connected` and syncs at once. A courier that posts to us (GoSwift)
+    is not asked again for what it sent while paused; those parcels join when they next move.
+  - Sync now that cannot start says why on the screen (already syncing, or no worker yet).
 - **Disconnect:**
   - Deletes the vault secret and marks the row `disconnected`.
   - Keeps the rows already brought: they are the business's history, still useful in a
@@ -175,7 +184,7 @@ The connection row keeps who connected and who disconnected, and when.
 | Reader | Sees | How |
 | --- | --- | --- |
 | Owner | Connections, status, the data | Settings → Connections; sections and the Overview over the store lists |
-| Member | Status and the data, as for orders | The same lists, no connect or disconnect |
+| Member | Status and the data, as for orders | The same lists, no connect, pause or disconnect |
 | Luke | The data | `STORE_TABLES`, store metrics (ROAS) |
 | Their own AI (MCP) | The data, and which connections exist with their last sync | The store tools that already list `STORE_TABLES`; connecting stays in Warmluke |
 | Alerts | The data | The alert rules over store lists (an NDR not acted on in a day, ad spend with no orders) start off, as every alert does (0199) |

@@ -508,6 +508,53 @@ try {
   check("and nobody else is told anything", Array.isArray(quietBlind) && quietBlind.length === 0);
   await w5.rpc("abo_connector_release");
 
+  console.log("\npausing (0218)");
+  const theirPause = await stranger.client.rpc("abo_connector_pause", { p_connection: id, p_paused: true });
+  check("a stranger cannot", theirPause.error?.code === "42501");
+  await admin.from("connector_leases").delete().eq("connection_id", id);
+  const { data: t6 } = await admin.rpc("abo_connector_mint", { p_connection: id });
+  const { data: paused, error: pauseError } = await owner.client.rpc("abo_connector_pause", {
+    p_connection: id,
+    p_paused: true,
+  });
+  const { data: pausedRow } = await owner.client.from("store_connections").select("status").eq("id", id).single();
+  check("the owner can", !pauseError && paused === "paused" && pausedRow?.status === "paused");
+  if (pauseError) console.log("     →", pauseError.message);
+  const midway = await worker(t6).rpc("abo_connector_put_shipments", {
+    p_rows: [{ shipment_ref: "SR-9", status: "IN TRANSIT" }],
+  });
+  check("a sync on its way writes nothing more", midway.error?.code === "42501");
+  const { data: t7 } = await admin.rpc("abo_connector_mint", { p_connection: id });
+  check("and no new one starts", t7 === null);
+  const { data: kicked } = await owner.client.rpc("abo_connector_kick", { p_connection: id });
+  check("not even by Sync now", kicked === "not_connected" || kicked === "not_configured");
+  const pausedHook = await post(hookToken, [{ shipment_ref: "SR-3", status: "Delivered" }]);
+  check("and what the provider sends is not taken", pausedHook.error?.code === "42501");
+  const twice = await owner.client.rpc("abo_connector_pause", { p_connection: id, p_paused: true });
+  check("pausing what is paused is said", twice.error?.code === "22023");
+  const { data: resumed, error: resumeError } = await owner.client.rpc("abo_connector_pause", {
+    p_connection: id,
+    p_paused: false,
+  });
+  const { data: resumedRow } = await admin
+    .from("store_connections")
+    .select("status, next_sync_at")
+    .eq("id", id)
+    .single();
+  check(
+    "resuming syncs at once",
+    !resumeError &&
+      resumed === "connected" &&
+      resumedRow?.status === "connected" &&
+      Date.parse(resumedRow.next_sync_at) <= Date.now() + 5000
+  );
+  const { data: t8 } = await admin.rpc("abo_connector_mint", { p_connection: id });
+  const { data: job8 } = await worker(t8).rpc("abo_connector_job");
+  check("with the login it had", job8?.secret === secret);
+  await admin.from("connector_leases").delete().eq("connection_id", id);
+  const notPaused = await owner.client.rpc("abo_connector_pause", { p_connection: id, p_paused: false });
+  check("resuming what runs is said", notPaused.error?.code === "22023");
+
   console.log("\ndisconnecting");
   const theirOff = await stranger.client.rpc("abo_connector_disconnect", { p_connection: id });
   check("a stranger cannot", theirOff.error?.code === "42501");

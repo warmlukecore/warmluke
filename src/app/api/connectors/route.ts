@@ -12,6 +12,7 @@ export const runtime = "nodejs";
  *   POST   { storeId, provider, fields }  connect: the login is proved with
  *          the provider here, then kept in the vault (abo_connector_save)
  *   PATCH  { connectionId }               sync now (abo_connector_kick)
+ *   PATCH  { connectionId, paused }       pause, or resume and sync now (abo_connector_pause, 0218)
  *   DELETE { connectionId }               disconnect (abo_connector_disconnect)
  *
  * The database decides who may: the owner, in Warmluke, never from their
@@ -101,10 +102,13 @@ export async function DELETE(req: Request) {
 async function connection(req: Request, fn: "abo_connector_kick" | "abo_connector_disconnect") {
   const auth = await getUserClient(req);
   if (!auth) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
-  const body = (await req.json().catch(() => null)) as { connectionId?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as { connectionId?: unknown; paused?: unknown } | null;
   const id = typeof body?.connectionId === "string" ? body.connectionId : null;
   if (!id) return NextResponse.json({ error: "Which connection." }, { status: 400 });
-  const { data, error } = await auth.client.rpc(fn, { p_connection: id });
+  const { data, error } =
+    fn === "abo_connector_kick" && typeof body?.paused === "boolean"
+      ? await auth.client.rpc("abo_connector_pause", { p_connection: id, p_paused: body.paused })
+      : await auth.client.rpc(fn, { p_connection: id });
   if (error) return NextResponse.json({ error: error.message }, { status: error.code === "42501" ? 403 : 400 });
   return NextResponse.json({ ok: true, said: data });
 }

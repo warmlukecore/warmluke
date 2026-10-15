@@ -6,7 +6,8 @@
 //
 // Every connector in lib/connectors, grouped by kind and shown by its
 // own mark, with where it stands: connected (and when it last synced,
-// and how many rows it brought, in its own words), needing
+// and how many rows it brought, in its own words), paused (its login
+// and rows kept, nothing new brought until resumed, 0218), needing
 // the owner's attention (in the provider's own words), or not ready yet
 // (and what it waits for). A login connector opens its form in place;
 // the login is proved with the provider before anything is kept, and
@@ -28,7 +29,7 @@ type Connection = {
   id: string;
   provider: string;
   account_label: string | null;
-  status: "connected" | "needs_attention" | "disconnected";
+  status: "connected" | "needs_attention" | "paused" | "disconnected";
   last_error: string | null;
   last_synced_at: string | null;
   connected_at: string;
@@ -41,6 +42,7 @@ export function ConnectionsSettings({ storeId }: { storeId: string | null }) {
   const [leaving, setLeaving] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [told, setTold] = useState<string | null>(null);
   // When the list was read: "synced 5 min ago" is said against it, not against render.
   const [readAt, setReadAt] = useState(0);
 
@@ -73,13 +75,18 @@ export function ConnectionsSettings({ storeId }: { storeId: string | null }) {
     load();
   }, [load]);
 
-  async function act(method: "PATCH" | "DELETE", connectionId: string) {
+  async function act(method: "PATCH" | "DELETE", connectionId: string, paused?: boolean) {
     setBusy(connectionId);
     setError(null);
-    const { ok, data } = await apiFetch("/api/connectors", { connectionId }, method);
+    setTold(null);
+    const { ok, data } = await apiFetch("/api/connectors", { connectionId, paused }, method);
     setBusy(null);
     setLeaving(null);
     if (!ok) setError((data.error as string) ?? "That did not go through.");
+    // Sync now that did not start says why, rather than nothing.
+    else if (data.said === "busy") setTold("It is syncing already. It shows here when it is done.");
+    else if (data.said === "not_configured")
+      setTold("Syncing is not running yet. Your account is kept, and syncs once it is.");
     await load();
   }
 
@@ -92,6 +99,7 @@ export function ConnectionsSettings({ storeId }: { storeId: string | null }) {
   return (
     <div className="space-y-4">
       {error && <div className={note.critical}>{error}</div>}
+      {told && <div className={note.info}>{told}</div>}
       {KINDS.map(({ kind, title, description }) => (
         <Group key={kind} title={title} description={description}>
           <ul className="divide-y divide-line">
@@ -123,6 +131,7 @@ export function ConnectionsSettings({ storeId }: { storeId: string | null }) {
                       opened={open === c.id}
                       onOpen={() => setOpen(open === c.id ? null : c.id)}
                       onSync={() => mine && act("PATCH", mine.id)}
+                      onPause={(paused) => mine && act("PATCH", mine.id, paused)}
                       onLeave={() => setLeaving(mine?.id ?? null)}
                       onStay={() => setLeaving(null)}
                       onDisconnect={() => mine && act("DELETE", mine.id)}
@@ -170,6 +179,12 @@ function Standing({
   if (connection?.status === "needs_attention") {
     return line("bg-signal-attention", `Needs you: ${connection.last_error ?? "connect it again"}`);
   }
+  if (connection?.status === "paused") {
+    return line(
+      "bg-fg-faint",
+      `${connection.account_label ?? connector.label} · paused, nothing new comes in${connection.last_synced_at ? ` · last synced ${ago(connection.last_synced_at, now)}` : ""}`
+    );
+  }
   if (connection) {
     const synced = connection.last_synced_at
       ? `synced ${ago(connection.last_synced_at, now)}${count !== undefined ? ` · ${count.toLocaleString()} ${count === 1 ? connector.brought.one : connector.brought.many}` : ""}`
@@ -188,6 +203,7 @@ function Actions({
   opened,
   onOpen,
   onSync,
+  onPause,
   onLeave,
   onStay,
   onDisconnect,
@@ -199,6 +215,7 @@ function Actions({
   opened: boolean;
   onOpen: () => void;
   onSync: () => void;
+  onPause: (paused: boolean) => void;
   onLeave: () => void;
   onStay: () => void;
   onDisconnect: () => void;
@@ -214,7 +231,7 @@ function Actions({
   if (leaving) {
     return (
       <div className="flex items-center gap-2">
-        <span className="text-xs text-fg-muted">Stop syncing? What it brought stays.</span>
+        <span className="text-xs text-fg-muted">Forget its login? What it brought stays.</span>
         <button onClick={onStay} className={button("plain", "sm")}>
           Keep
         </button>
@@ -224,10 +241,25 @@ function Actions({
       </div>
     );
   }
+  if (connection.status === "paused") {
+    return (
+      <div className="flex items-center gap-2">
+        <button onClick={() => onPause(false)} disabled={busy} className={button("secondary", "sm")}>
+          {busy ? "Resuming…" : "Resume"}
+        </button>
+        <button onClick={onLeave} className={button("plain", "sm")}>
+          Disconnect
+        </button>
+      </div>
+    );
+  }
   return (
     <div className="flex items-center gap-2">
       <button onClick={onSync} disabled={busy} className={button("secondary", "sm")}>
         {busy ? "Asking…" : "Sync now"}
+      </button>
+      <button onClick={() => onPause(true)} disabled={busy} className={button("plain", "sm")}>
+        Pause
       </button>
       <button onClick={onLeave} className={button("plain", "sm")}>
         Disconnect

@@ -43,7 +43,8 @@ test("the owner connects a courier in Settings, sees where it stands, and discon
         .eq("id", body.connectionId!);
       return route.fulfill({ json: { ok: true } });
     }
-    return route.fulfill({ json: { ok: true, said: "not_configured" } });
+    // Sync now, Pause and Resume go to the real route and database (0218).
+    return route.continue();
   });
 
   try {
@@ -175,9 +176,24 @@ test("the owner connects a courier in Settings, sees where it stands, and discon
       path: `${process.env.LOOK_DIR ?? "test-results"}/connections-${test.info().project.name}.png`,
     });
 
+    // Sync now that cannot start says why: the check project has no worker, on purpose.
+    await shiprocket.getByRole("button", { name: "Sync now" }).click();
+    await expect(dialog.getByText(/Syncing is not running yet/)).toBeVisible();
+
+    // Paused keeps the login and brings nothing new; Resume starts it again (0218).
+    await shiprocket.getByRole("button", { name: "Pause" }).click();
+    await expect(shiprocket.getByText(/api@shop.in · paused, nothing new comes in/)).toBeVisible();
+    await expect(shiprocket.getByRole("button", { name: "Sync now" })).toHaveCount(0);
+    await shiprocket.screenshot({
+      path: `${process.env.LOOK_DIR ?? "test-results"}/connections-paused-${test.info().project.name}.png`,
+    });
+    await shiprocket.getByRole("button", { name: "Resume" }).click();
+    await expect(shiprocket.getByText(/api@shop.in · connected/)).toBeVisible();
+    await expect(shiprocket.getByRole("button", { name: "Pause" })).toBeVisible();
+
     // Disconnecting asks once, in place, and says the rows stay.
     await dialog.getByRole("button", { name: "Disconnect" }).click();
-    await expect(dialog.getByText("Stop syncing? What it brought stays.")).toBeVisible();
+    await expect(dialog.getByText("Forget its login? What it brought stays.")).toBeVisible();
     await dialog.getByRole("button", { name: "Disconnect" }).click();
     await expect(shiprocket.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
   } finally {
