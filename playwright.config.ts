@@ -11,6 +11,12 @@
 
 import { defineConfig } from "@playwright/test";
 
+// One clock for the specs and the browser they drive: the merchants'. A
+// spec that works out "yesterday" in Node and a page that shows it in the
+// browser disagreed for five and a half hours a night on CI, whose runner
+// is on UTC (15 Oct). The workers inherit it.
+process.env.TZ = "Asia/Kolkata";
+
 export default defineConfig({
   testDir: "e2e",
   workers: 1,
@@ -25,9 +31,7 @@ export default defineConfig({
     baseURL: process.env.APP_URL ?? "http://localhost:3100",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
-    // The merchants' clock, on every machine: CI's browser was on UTC, and
-    // from 18:30 to midnight UTC "yesterday" in India was today to it
-    // (trouble.spec failed both widths at 19:11 UTC, 15 Oct).
+    // The same clock in the browser (TZ above is the specs').
     timezoneId: "Asia/Kolkata",
   },
   projects: [
