@@ -25,6 +25,10 @@ export default defineConfig({
     baseURL: process.env.APP_URL ?? "http://localhost:3100",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
+    // The merchants' clock, on every machine: CI's browser was on UTC, and
+    // from 18:30 to midnight UTC "yesterday" in India was today to it
+    // (trouble.spec failed both widths at 19:11 UTC, 15 Oct).
+    timezoneId: "Asia/Kolkata",
   },
   projects: [
     { name: "desktop", use: { browserName: "chromium", viewport: { width: 1440, height: 900 } } },
