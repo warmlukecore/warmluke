@@ -47,6 +47,13 @@ export async function POST(req: Request) {
     }
 
     const { done, couldNot } = await putBack(client, projectId, steps);
+    // Put back, the design may be built again (0224 counts only builds not put back).
+    if (done.length) {
+      await client
+        .from("messages")
+        .update({ payload: { ...(msg!.payload as Record<string, unknown>), undone: true } })
+        .eq("id", messageId);
+    }
 
     // Taking it back is itself a change to the app, so it is written
     // down the same way the build was. A history that records only the

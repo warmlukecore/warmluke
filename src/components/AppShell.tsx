@@ -3674,6 +3674,14 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
             ...(typeof data.failedAt === "number" ? { failedAt: data.failedAt } : {}),
           };
         }
+        if (data.already) {
+          // Built, or being built, already (0224): nothing was built twice. The thread says which.
+          if (thread) await loadThread(thread);
+          void loadModules();
+          const why = "This design is already built, or being built, so it was not built twice.";
+          setChatMessages((prev) => [...prev, { id: nextChatId(), role: "system", text: why }]);
+          return { applied: [], errors: [why] };
+        }
         if (ok && data.applied) {
           const results = data.results as Array<Record<string, unknown>>;
           if (data.partial) {

@@ -83,6 +83,14 @@ export async function POST(req: Request) {
     }
 
     const book = !requestId && thread?.conversationId ? await openBook(client, projectId, thread, plans.length) : null;
+    if (book === "already") {
+      // Pressed again, or sent again after a dropped connection: the
+      // receipt says it is being built or was (0224), so not twice.
+      return NextResponse.json(
+        { applied: false, already: true, error: "This design is already built, or being built." },
+        { status: 409 }
+      );
+    }
 
     // Checked and saved as the account is shown the store's lists (0192):
     // a column it is not shown is not one a design can put back on screen.
@@ -258,6 +266,8 @@ async function openBook(client: SupabaseClient, projectId: string, thread: Threa
     })
     .select("id")
     .single();
+  // The same design and plans already building or built (0224's index): this one is the duplicate.
+  if (error?.code === "23505") return "already" as const;
   if (error || !data) {
     console.error("could not record the build starting:", error?.message);
     return null;
