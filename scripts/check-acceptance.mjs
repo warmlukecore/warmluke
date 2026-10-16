@@ -7,7 +7,7 @@
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-acceptance.mjs
 import { existsSync } from "node:fs";
-import { CRITICAL, percentile, scorecard, scorecardMarkdown } from "../src/lib/acceptance.ts";
+import { CONDITIONS, CRITICAL, percentile, scorecard, scorecardMarkdown } from "../src/lib/acceptance.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -22,10 +22,17 @@ check(
   "each stands on something",
   CRITICAL.every((c) => c.checks.length + (c.e2e?.length ?? 0) + (c.cases?.length ?? 0) > 0)
 );
+check(
+  "and the ten conditions every run is tried under, each standing on something",
+  CONDITIONS.length === 10 &&
+    new Set(CONDITIONS.map((c) => c.id)).size === 10 &&
+    CONDITIONS.every((c) => c.checks.length + (c.e2e?.length ?? 0) + (c.cases?.length ?? 0) > 0)
+);
+const both = [...CRITICAL, ...CONDITIONS];
 const missing = [
-  ...CRITICAL.flatMap((c) => c.checks.map((n) => `scripts/${n}.mjs`)),
-  ...CRITICAL.flatMap((c) => c.e2e ?? []),
-  ...CRITICAL.flatMap((c) => (c.cases ?? []).map((id) => `evals/cases/${id}.json`)),
+  ...both.flatMap((c) => c.checks.map((n) => `scripts/${n}.mjs`)),
+  ...both.flatMap((c) => c.e2e ?? []),
+  ...both.flatMap((c) => (c.cases ?? []).map((id) => `evals/cases/${id}.json`)),
 ].filter((p) => !existsSync(at(p)));
 check(
   `every check, spec and case named exists${missing.length ? `: missing ${missing.join(", ")}` : ""}`,
@@ -76,6 +83,14 @@ check("and the open gap", /auto-send \(0195\)/.test(page));
 check(
   "with each check's result, or that it was not run",
   /check-rls: pass/.test(page) && /check-build-once: not run/.test(page)
+);
+check(
+  "and the conditions, each with what tries it",
+  /## The conditions every run is tried under/.test(page) && /check-thread-window: not run/.test(page)
+);
+check(
+  "a condition's case missed on a run is named with its run",
+  /FAIL v-warranty#2/.test(scorecardMarkdown("x", [], scorecard([run("v-warranty", false, 1000, "question", 2)])))
 );
 const met = scorecardMarkdown("final", [], card);
 check(

@@ -86,6 +86,67 @@ export const CRITICAL: readonly Critical[] = [
   },
 ];
 
+/**
+ * The conditions the sprint tries every run under (Days 14–15), each tied
+ * to what already tries it, so a condition nothing tries is seen here.
+ */
+export const CONDITIONS: readonly Critical[] = [
+  {
+    id: "fresh-chat",
+    says: "A fresh chat uses what was said in another, without asking again",
+    checks: ["check-memory", "check-team-facts"],
+    cases: ["m-policy"],
+  },
+  {
+    id: "long-chat",
+    says: "A long chat keeps its newest messages and a digest of the ones before",
+    checks: ["check-thread-window", "check-agent-loop", "check-lean-turns"],
+  },
+  {
+    id: "ambiguous",
+    says: "A vague ask gets a question or a plan in words before anything is built",
+    checks: ["check-talk-first"],
+    cases: ["v-track-better", "v-warranty"],
+  },
+  {
+    id: "correction",
+    says: "A correction replaces the old line, in this chat and the next",
+    checks: ["check-memory", "check-team-facts"],
+    cases: ["f-blank-rename", "m-policy"],
+  },
+  {
+    id: "missing-data",
+    says: "Data missing, unfinished or stale is said, never counted as none",
+    checks: ["check-memory", "check-site-read", "check-stock-cover", "check-rto-cohorts"],
+  },
+  {
+    id: "tool-failure",
+    says: "A refused design or a failed read is repaired or said, and the same reply is not sent twice",
+    checks: ["check-repair-honest", "check-model-errors", "check-errors"],
+  },
+  {
+    id: "expired-credentials",
+    says: "A login that ran out is said, with the way to reconnect, and nothing is read with it",
+    checks: ["check-store-switcher", "check-connectors", "check-meta-ads", "check-import-worker"],
+  },
+  {
+    id: "refresh",
+    says: "A reload mid-reply finishes it or says it did not, and shows what was really done",
+    checks: ["check-thread-reload", "check-chat-stream"],
+    e2e: ["e2e/retry.spec.ts"],
+  },
+  {
+    id: "interrupted-worker",
+    says: "Work cut off is taken up where it stopped, by one worker, and closed after its tries",
+    checks: ["check-turn-legs", "check-connectors", "check-code-jobs-live"],
+  },
+  {
+    id: "denied-permission",
+    says: "What an account may not do is refused and said",
+    checks: ["check-row-asks", "check-team", "check-oauth-writes", "check-luke-access"],
+  },
+];
+
 /** The sprint's bar: 90% of runs end to end. */
 export const COMPLETION = 0.9;
 
@@ -172,27 +233,32 @@ export function scorecardMarkdown(
 ): string {
   const ran = new Map(checks.map((c) => [c.name, c.ok]));
   const mark = (ok: boolean | undefined) => (ok === undefined ? "not run" : ok ? "pass" : "FAIL");
+  // A case missed on any run, as id#run: critical ones from the card's own list, the rest from its failures.
+  const misses = (c: Critical) =>
+    card ? card.failed.filter((f) => (c.cases ?? []).includes(f.id)).map((f) => `${f.id}#${f.run}`) : [];
+  const row = (c: Critical) =>
+    `| ${c.says} | ${c.checks.map((n) => `${n}: ${mark(ran.get(n))}`).join(", ") || "-"} | ${(c.e2e ?? []).join(", ") || "-"} | ${
+      c.cases?.length
+        ? card
+          ? misses(c).length
+            ? `FAIL ${misses(c).join(", ")}`
+            : "pass every run"
+          : "not run"
+        : "-"
+    } | ${c.open ?? ""} |`;
+  const head = ["| Scenario | Checks | Browser | Eval cases | Open |", "| --- | --- | --- | --- | --- |"];
   const lines = [
     `# Acceptance: ${label}`,
     "",
     "## The ten critical scenarios",
     "",
-    "| Scenario | Checks | Browser | Eval cases | Open |",
-    "| --- | --- | --- | --- | --- |",
-    ...CRITICAL.map((c) => {
-      const caseMisses = card
-        ? card.criticalMisses.filter((m) => (c.cases ?? []).some((id) => m.startsWith(`${id}#`)))
-        : [];
-      return `| ${c.says} | ${c.checks.map((n) => `${n}: ${mark(ran.get(n))}`).join(", ") || "-"} | ${(c.e2e ?? []).join(", ") || "-"} | ${
-        c.cases?.length
-          ? card
-            ? caseMisses.length
-              ? `FAIL ${caseMisses.join(", ")}`
-              : "pass every run"
-            : "not run"
-          : "-"
-      } | ${c.open ?? ""} |`;
-    }),
+    ...head,
+    ...CRITICAL.map(row),
+    "",
+    "## The conditions every run is tried under",
+    "",
+    ...head,
+    ...CONDITIONS.map(row),
     "",
   ];
   if (!card) {
