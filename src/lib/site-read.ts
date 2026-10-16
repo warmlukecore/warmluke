@@ -220,6 +220,15 @@ const clip = (s: string) => {
   return `${cut.slice(0, cut.lastIndexOf(" ") > 120 ? cut.lastIndexOf(" ") : cut.length)}…`;
 };
 
+/**
+ * A page's words are data, never orders (the sprint's rule for anything
+ * read off the web): a sentence that talks to an AI, or carries markup or
+ * a role marker, is never kept as something Luke knows.
+ */
+const TALKS_TO_AI =
+  /\b(ignore|disregard|forget|override)\b[^.]{0,60}\b(instructions?|prompts?|rules?|previous|above|everything)\b|\bsystem prompt\b|\byou are (now )?(an? |the )?(ai|assistant|chatbot|language model|llm|gpt|claude)\b|\bas an ai\b|\b(assistant|system|developer|user)\s*:|<\/?[a-z][^>]*>|\bjailbreak\b|\bprompt injection\b/i;
+export const talksToAI = (s: string) => TALKS_TO_AI.test(s);
+
 /** The first sentence about the thing, one that names a time first; null when the page never says it. */
 export function sentenceOn(text: string, about: RegExp, prefer: RegExp | null = DAYS): string | null {
   const sentences = text
@@ -229,7 +238,7 @@ export function sentenceOn(text: string, about: RegExp, prefer: RegExp | null = 
     .filter((s) => s.length >= 12 && s.length <= 3000 && s.split(" ").length >= 4);
   // Nor is a disclaimer in capitals the policy itself.
   const shouted = (s: string) => (s.match(/[A-Z]/g)?.length ?? 0) > 0.6 * (s.match(/[A-Za-z]/g)?.length ?? 1);
-  const on = sentences.filter((s) => about.test(s) && !shouted(s));
+  const on = sentences.filter((s) => about.test(s) && !shouted(s) && !talksToAI(s));
   const best = (prefer && on.find((s) => prefer.test(s))) || on[0];
   return best ? clip(best) : null;
 }
@@ -244,7 +253,7 @@ export function siteFacts(p: { home?: Page | null; refund?: Page | null; shippin
       out.push({ note, kind, topic, source: "website" });
   };
   const about = p.home?.description ?? "";
-  if (about.length >= 20) add("product", "what they sell", clip(about));
+  if (about.length >= 20 && !talksToAI(about)) add("product", "what they sell", clip(about));
   if (p.refund) add("policy", "policy: returns", sentenceOn(p.refund.text, /\b(return|exchange|refund)/i));
   if (p.shipping) add("policy", "policy: shipping", sentenceOn(p.shipping.text, /\b(ship|deliver|dispatch)/i));
   const all = [p.shipping, p.refund, p.home].filter(Boolean).map((x) => x!.text);
