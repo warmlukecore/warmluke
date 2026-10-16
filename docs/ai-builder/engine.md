@@ -210,7 +210,12 @@ whatever their age, sixteen at most; of the rest, a turn reads the ones that sha
 what was asked, most first, and only the two newest beside them (`pickFacts`, 16 Oct), so an RTO
 question reads what is known of RTO and a packing one does not carry the ads history (their own
 AI's guide, asking nothing, reads the newest twelve). The turn's "context" step says how many
-facts were read and which were picked as bearing on the ask, for its trace. The trigger keeps
+facts were read and which were picked as bearing on the ask, for its trace. Something they
+keep asking (`lib/repeat-ask`, 16 Oct: like their asks on at least two other days, the third
+time or more, by the words shared) adds a line telling Luke to answer it first and then offer
+once to keep it as a saved view or watch it; the answer that offered carries
+`offered_repeat`, so the topic is not offered again, and nothing is built unless they say yes.
+No model is asked to notice. The trigger keeps
 forty of each, so who packs or how long blanks take never falls out as chat goes on. The topic is
 a short stable key ("lead time: blanks"): the learner writes a correction with the line's own
 topic, and `learn` retires the old line before keeping the new one (one line a topic, by a unique

@@ -568,6 +568,8 @@ export type AssistantReply =
         open_store?: boolean;
         /** The first meeting only: this answer asked whether to open their store, so a yes after it does (lib/engine). */
         offered_store?: boolean;
+        /** This answer offered to keep or watch something they keep asking: never offered again (lib/repeat-ask). */
+        offered_repeat?: string;
         /** On a proposal, what was understood, so their yes builds exactly that (lib/plan DesignIntent). */
         understood?: unknown;
         grounding?: {

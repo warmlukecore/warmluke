@@ -56,6 +56,7 @@ import { hasChecks, reviewDesign } from "@/lib/review-gate";
 import type { DesignChecks } from "@/lib/review-types";
 import { isQuestion, lastReplyTypeOf, roadFor, type Road } from "@/lib/intent";
 import { describeKnown, describeProblems, factsFor, problemsFor, type ProblemRow } from "@/lib/memory";
+import { describeRepeat, repeatFor } from "@/lib/repeat-ask";
 import { describeSkills, skillsFor, type Skill } from "@/lib/learning";
 import {
   agreedBlock,
@@ -751,42 +752,50 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
   // system prompt because that prompt is cached across projects.
   // Beside it, what the owner's own connected assistant asked for
   // lately: the one piece of intent that lives outside this thread.
-  const [{ data: ruleRows }, requests, { data: changeOn }, { data: profile }, notesRows, skills, approvedEx, hurts] =
-    await Promise.all([
-      client
-        .from("automations")
-        .select("id, name, enabled, module_id, definition")
-        .eq("project_id", project.id)
-        // Every rule, up to the server's page (1,000): capped at 40, the rest
-        // were neither shown to the designer nor kept from losing a field
-        // they read (rulesOf), so a field a 41st rule read could be taken away.
-        // ponytail: past a few hundred, summarise by section rather than list.
-        .order("created_at", { ascending: true }),
-      recentRequests(client, project.id, modules),
-      // Whether Luke may ask for a change in the shop: the account's own
-      // switch, off unless somebody at Warmluke turned it on. Read only
-      // when the tools are on offer at all.
-      lookups && store ? client.rpc("abo_feature", { p_name: "store_actions" }) : Promise.resolve({ data: false }),
-      // Who they are, from onboarding: read under their own RLS, so a
-      // connected assistant acting for them reads theirs and nobody else's.
-      client
-        .from("profiles")
-        .select("full_name, business_name, role, monthly_orders, platform, team_size")
-        .maybeSingle(),
-      // What is known about the business (0131): what earlier conversations
-      // taught, and what the owner said themselves (their team, the restock
-      // time, 0222). Read whenever it exists: only learning costs a call.
-      // What bears on this message first (pickFacts), so the trace can say why each was read.
-      factsFor(client, project.id, message),
-      // What Luke learned for this store (0176): read whenever it exists,
-      // switch or no switch, since only learning costs a model call. [] on
-      // a database without the table.
-      skillsFor(client, project.id),
-      // Kept designs an administrator approved as examples (0181), beside our seeds.
-      approvedExamples(client),
-      // What hurts them and how what was built went (0201), read when it is written.
-      memoryModel() ? problemsFor(client, project.id) : Promise.resolve([] as ProblemRow[]),
-    ]);
+  const [
+    { data: ruleRows },
+    requests,
+    { data: changeOn },
+    { data: profile },
+    notesRows,
+    skills,
+    approvedEx,
+    hurts,
+    repeat,
+  ] = await Promise.all([
+    client
+      .from("automations")
+      .select("id, name, enabled, module_id, definition")
+      .eq("project_id", project.id)
+      // Every rule, up to the server's page (1,000): capped at 40, the rest
+      // were neither shown to the designer nor kept from losing a field
+      // they read (rulesOf), so a field a 41st rule read could be taken away.
+      // ponytail: past a few hundred, summarise by section rather than list.
+      .order("created_at", { ascending: true }),
+    recentRequests(client, project.id, modules),
+    // Whether Luke may ask for a change in the shop: the account's own
+    // switch, off unless somebody at Warmluke turned it on. Read only
+    // when the tools are on offer at all.
+    lookups && store ? client.rpc("abo_feature", { p_name: "store_actions" }) : Promise.resolve({ data: false }),
+    // Who they are, from onboarding: read under their own RLS, so a
+    // connected assistant acting for them reads theirs and nobody else's.
+    client.from("profiles").select("full_name, business_name, role, monthly_orders, platform, team_size").maybeSingle(),
+    // What is known about the business (0131): what earlier conversations
+    // taught, and what the owner said themselves (their team, the restock
+    // time, 0222). Read whenever it exists: only learning costs a call.
+    // What bears on this message first (pickFacts), so the trace can say why each was read.
+    factsFor(client, project.id, message),
+    // What Luke learned for this store (0176): read whenever it exists,
+    // switch or no switch, since only learning costs a model call. [] on
+    // a database without the table.
+    skillsFor(client, project.id),
+    // Kept designs an administrator approved as examples (0181), beside our seeds.
+    approvedExamples(client),
+    // What hurts them and how what was built went (0201), read when it is written.
+    memoryModel() ? problemsFor(client, project.id) : Promise.resolve([] as ProblemRow[]),
+    // Something they keep asking (lib/repeat-ask), in Luke's own chat: offered once to keep or watch.
+    lookups && !input.meeting && !resume ? repeatFor(client, project.id, message).catch(() => null) : null,
+  ]);
   const known = notesRows.lines;
   // The first meeting's way out (lib/meet), decided here rather than left to
   // the brief alone: once he has helped and not yet asked, this turn asks.
@@ -808,6 +817,7 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
       describeKnown(known),
       describeProblems(hurts),
       learnedBlock,
+      describeRepeat(repeat),
       input.meeting ? MEET_BRIEF : null,
       offerDue && message !== MEET_BUILT ? MEET_OFFER_NOW : null,
     ]
@@ -1672,6 +1682,8 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
     if (offerDue) parsed.reply.offered_store = true;
     if (opens) parsed.reply.open_store = true;
   }
+  // Told to offer keeping something they keep asking: marked, so it is offered once (lib/repeat-ask).
+  if (repeat && parsed.reply.type === "answer") parsed.reply.offered_repeat = repeat.key;
   // Which designs that worked it was shown, so what stuck can be counted by them (4c).
   delete (parsed.reply as { examples?: unknown }).examples;
   if (examples.length && (parsed.reply.type === "plans" || parsed.reply.type === "blueprint")) {
