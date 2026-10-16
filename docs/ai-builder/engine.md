@@ -465,7 +465,12 @@ shipments sent in the last N days beside the N before, each rate over the shipme
 settled (delivered or returned) and said so, what is still moving and what went quiet (three
 weeks without word) counted apart, broken down by courier, payment, the order's state, NDR
 reason or provider, and no rate for a group under its minimum of settled shipments; read as
-the caller (`check-rto-cohorts`). The tools run at most three lookups before its reply, on the first attempt only, each read
+the caller (`check-rto-cohorts`). `stock_cover` (`abo_stock_cover`, 0226): how long each
+variant's stock lasts at the pace it sold over a stated window (28 days), soonest out first,
+cancelled orders and archived or untracked lines left out; beside the owner's restock time,
+whether it runs out first and the day to reorder by, none guessed without one; with no stock
+history kept, a variant out of stock now or quiet in its last week after selling earlier has
+its pace said to be a floor (`check-stock-cover`). The tools run at most three lookups before its reply, on the first attempt only, each read
 with the caller's own client. `search_store` rows carry what the merchant keeps beside
 them (`yours`, by section name) when a section holds any, and a list's ties are broken by
 what its rows say, so the same store reads the same way every time. Every lookup is

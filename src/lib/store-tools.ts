@@ -601,6 +601,43 @@ Filters on any column (eq, neq, gt, gte, lt, lte, contains, starts_with, in, is_
         : { ...out, said: "No courier shipments in this window: connect a courier, or widen the window." };
     },
   },
+  {
+    // How long stock lasts, variant by variant (0226): the sprint's inventory investigation.
+    name: "stock_cover",
+    about: (a) => `how long stock lasts over ${Number(a.days) || 28} days of sales`,
+    description: `How long each variant's stock lasts at the pace it sells, soonest out first, over every order line in a stated sales window (28 days) and the stock on hand now: what it sold, its pace a day, the days it lasts, and, beside the restock time the owner gave, whether it runs out before a restock could arrive and the day to reorder by. No stock history is kept: a variant out of stock now, or one that sold early in the window and nothing in its last week, has pace_is_a_floor and why_a_floor; say its pace may be low, never that it stopped selling. Use it for "what runs out", "what to reorder", "how many days of stock". Say the window and the restock time you used; reordering and adjusting stock stay the owner's. Read-only.`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        days: { type: "number", description: "The sales window, 7 to 180 days (28)." },
+        limit: { type: "number", description: "Up to 200 variants, soonest out first (50)." },
+      },
+    },
+    run: async (args, { db, store }) => {
+      // Not worked out from a column this account is not shown (0192): said, not guessed at.
+      if (hiddenColumns("inventory_levels")?.has("available")) {
+        return {
+          error: "Stock on hand is not shown to this account. Say so; Warmluke can turn it on. Do not guess it.",
+        };
+      }
+      const { data, error } = await db.rpc("abo_stock_cover", {
+        p_store: store.id,
+        p_days: Number(args.days) || 28,
+        p_limit: Number(args.limit) || 50,
+      });
+      if (error) return { error: error.message };
+      const out = data as { variants?: unknown[]; lead_days?: number | null };
+      return {
+        ...out,
+        ...(out?.lead_days
+          ? {}
+          : { restock_time: "Not given: ask how many days a restock takes, or say it in Settings." }),
+        ...(out?.variants?.length
+          ? {}
+          : { said: "Nothing sold in this window with stock to count: widen the window." }),
+      };
+    },
+  },
 ];
 
 /** Each tool whose answer holds a list's rows, cut to what the account is shown of them (0192). */

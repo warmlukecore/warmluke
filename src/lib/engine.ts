@@ -109,6 +109,7 @@ const LUKE_TOOLS = [
   "store_metrics",
   "query_store",
   "rto_cohorts",
+  "stock_cover",
 ] as const;
 
 /**
