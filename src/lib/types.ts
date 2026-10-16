@@ -716,7 +716,8 @@ export type TurnEvent =
   /** Scout (lib/scout): the store's lists read field by field before the design. */
   | { step: "scout"; lists: number; fields: number }
   /** Every section's columns and the rules were read. */
-  | { step: "context"; sections: number; rules: number }
+  /** What the turn read: its sections and rules, how many facts, and which were picked as bearing on the ask (lib/memory pickFacts). */
+  | { step: "context"; sections: number; rules: number; facts?: number; bearing?: string[] }
   /** The model is being asked, for the n-th time of at most `of`. */
   | { step: "model"; attempt: number; of: number }
   /** Which road the turn took: only how to answer, or the whole design contract. */

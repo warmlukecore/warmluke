@@ -206,7 +206,11 @@ which is kept as said (`POST /api/luke-notes`).
 
 Since 0220 (15 Oct) each line has a kind, a topic and a source (`parseFacts`). The kinds the work
 stands on (team, hours, lead times, thresholds, policy, goals, constraints, `STANDING`) are read
-whatever their age, sixteen at most, before the newest twelve of the rest, and the trigger keeps
+whatever their age, sixteen at most; of the rest, a turn reads the ones that share words with
+what was asked, most first, and only the two newest beside them (`pickFacts`, 16 Oct), so an RTO
+question reads what is known of RTO and a packing one does not carry the ads history (their own
+AI's guide, asking nothing, reads the newest twelve). The turn's "context" step says how many
+facts were read and which were picked as bearing on the ask, for its trace. The trigger keeps
 forty of each, so who packs or how long blanks take never falls out as chat goes on. The topic is
 a short stable key ("lead time: blanks"): the learner writes a correction with the line's own
 topic, and `learn` retires the old line before keeping the new one (one line a topic, by a unique
@@ -401,7 +405,10 @@ For each turn, the engine reads:
 - current module context, when present;
 - up to 40 existing automation rules;
 - recent external-assistant build requests;
-- conversation history supplied by the caller (`historyOf`): the owner's own words, never the
+- conversation history supplied by the caller (`historyOf`), the newest thirty messages; a
+  longer thread says so before them and brings what was asked and built in the rest, a line
+  each in the owner's words, its first four and latest eight (`earlierDigest`, 16 Oct), so an
+  older decision is neither lost nor paraphrased by a model. Then: the owner's own words, never the
   context sent with them; the last reply whole, since they may be answering it; an older design
   as what it said and what each change was (`pastReply`), since what was built is in the
   turn's context as it is now (a thread on 11 Oct halved, 14,996 to 7,453 tokens). A question whose answer never came (failed or

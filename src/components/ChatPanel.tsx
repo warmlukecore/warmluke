@@ -409,7 +409,7 @@ function stepWords(step: TurnEvent): string | null {
     case "scout":
       return `Read ${n(step.lists, "store list")} field by field`;
     case "context":
-      return `Read ${n(step.sections, "section")} and ${n(step.rules, "rule")}`;
+      return `Read ${n(step.sections, "section")} and ${n(step.rules, "rule")}${step.facts ? `, and ${n(step.facts, "thing")} it knows about your business` : ""}`;
     case "model":
       return step.attempt === 1 ? "Thinking it through…" : `Trying again (${step.attempt} of ${step.of})…`;
     case "lookup":

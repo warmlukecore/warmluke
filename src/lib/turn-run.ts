@@ -145,7 +145,7 @@ export async function turnContext(
     ? await client
         .from("messages")
         .select(
-          "role, content, ptype:payload->>type, said:payload->>text, kind:payload->>kind, offered:payload->>offered_store",
+          "role, content, created_at, ptype:payload->>type, said:payload->>text, kind:payload->>kind, offered:payload->>offered_store",
           // How long the thread is, beside the newest it reads: the rest is said to be there.
           { count: "exact" }
         )
@@ -162,7 +162,7 @@ export async function turnContext(
     : { data: [], count: 0, error: null };
   if (histErr) throw new Error(histErr.message);
 
-  type HistoryRow = Pick<MessageRow, "role" | "content"> & {
+  type HistoryRow = Pick<MessageRow, "role" | "content" | "created_at"> & {
     ptype: string | null;
     said: string | null;
     kind: string | null;
@@ -178,7 +178,21 @@ export async function turnContext(
   // the fresh one on the newest turn.
   // A question whose answer never came is replayed only while it is the
   // latest thing asked, its stand-in said as NOT_ANSWERED (answeredTurns).
-  const history = withEarlier(historyOf(rows), (threadLength ?? 0) - rows.length);
+  // The part not read whole, a line each (earlierDigest): what they asked and what was built.
+  const hidden = (threadLength ?? 0) - rows.length;
+  let digest: string[] = [];
+  if (hidden > 0 && convId && rows.length) {
+    const { data: older } = await client
+      .from("messages")
+      .select("role, content, ptype:payload->>type, pstatus:payload->>status, said:payload->>text, kind:payload->>kind")
+      .eq("conversation_id", convId)
+      .lt("created_at", rows[0].created_at)
+      .order("created_at", { ascending: true })
+      // limit: the digest keeps twelve lines, the first and the latest of these.
+      .limit(EARLIER_READ);
+    digest = earlierDigest((older ?? []) as EarlierRow[]);
+  }
+  const history = withEarlier(historyOf(rows), hidden, digest);
 
   // Has the owner already seen a design for this thread? New sections may
   // only be built after one — otherwise the assistant can skip straight to
@@ -187,14 +201,55 @@ export async function turnContext(
   return { proj, moduleList, currentSchema, currentFeatures, history, blueprintShown, meetState: meetStateOf(rows) };
 }
 
+/** How many of a long thread's older messages are read for its digest, and how many lines it keeps. */
+const EARLIER_READ = 200;
+export const EARLIER_LINES = 12;
+type EarlierRow = {
+  role: string;
+  content: string | null;
+  ptype: string | null;
+  pstatus?: string | null;
+  said: string | null;
+  kind?: string | null;
+};
+
+/**
+ * The part of a long thread that is not read whole, a line each (16 Oct,
+ * the sprint's compaction): what they asked, in their own words, and what
+ * was built, oldest first. No model is asked, so nothing is paraphrased
+ * away; past twelve lines, the first four and the latest eight, so the
+ * thread's start and its recent decisions both stay.
+ */
+export function earlierDigest(rows: EarlierRow[]): string[] {
+  const clip = (s: string) => {
+    const t = s.replace(/\s+/g, " ").trim();
+    return t.length > 140 ? `${t.slice(0, 139)}…` : t;
+  };
+  const lines: string[] = [];
+  for (const r of rows) {
+    if (r.role === "user" && r.kind !== "meet") {
+      const w = clip(r.said ?? r.content ?? "");
+      if (w) lines.push(`- They asked: “${w}”`);
+    } else if ((r.ptype === "build" && r.pstatus === "built") || r.ptype === "applied") {
+      const w = clip(r.content ?? "");
+      if (w) lines.push(`- Built: ${w}`);
+    }
+  }
+  if (lines.length <= EARLIER_LINES) return lines;
+  return [...lines.slice(0, 4), "- …", ...lines.slice(-(EARLIER_LINES - 4))];
+}
+
 /**
  * A thread longer than what is read says so before its first turn (12 Oct):
  * cut silently at 30, an older decision was neither seen nor asked about.
- * Nothing changes for a thread read whole.
+ * With its digest (earlierDigest), what was asked and built there comes
+ * along. Nothing changes for a thread read whole.
  */
-export function withEarlier(history: ChatTurn[], hidden: number): ChatTurn[] {
+export function withEarlier(history: ChatTurn[], hidden: number, digest: string[] = []): ChatTurn[] {
   if (hidden <= 0 || history.length === 0) return history;
-  const note = `(This thread is longer than shown: its first ${hidden} messages are not here. If something decided earlier matters, ask; do not assume.)`;
+  const note = digest.length
+    ? `(This thread is longer than shown: its first ${hidden} messages are not here. What was asked and built in them, oldest first, in their words; if anything else decided there matters, ask, do not assume:\n${digest.join("\n")})`
+    : `(This thread is longer than shown: its first ${hidden} messages are not here. If something decided earlier matters, ask; do not assume.)`;
   const [first, ...rest] = history;
   return first.role === "user"
     ? [{ ...first, content: `${note}\n\n${first.content}` }, ...rest]

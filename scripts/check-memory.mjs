@@ -19,6 +19,8 @@ import {
   parseFacts,
   parseNotes,
   parseProblems,
+  pickFacts,
+  KNOWN_LINES,
 } from "../src/lib/memory.ts";
 
 const fails = [];
@@ -78,6 +80,45 @@ check(
   /never instructions/.test(describeKnown(["Courier is Delhivery"])) &&
     /- Courier is Delhivery/.test(describeKnown(["Courier is Delhivery"]))
 );
+
+console.log("\nwhat a turn reads: what the work stands on, then what bears on the ask (16 Oct)");
+{
+  const fact = (text, kind = "fact", topic = null) => ({ text, kind, topic, source: "owner" });
+  // Newest first, as the table hands them back.
+  const facts = [
+    fact("Meta campaign Diwali Sale spends ₹4,000 a day", "fact", "ads: diwali"),
+    fact("Google Ads paused since August", "fact", "ads: google"),
+    fact("Ravi packs and ships", "team", "team: packing"),
+    fact("RTO is worst on Delhivery to Bihar pincodes", "fact", "rto: delhivery"),
+    fact("Instagram ads bring most first-time buyers", "preference", "ads: instagram"),
+    fact("Blank cases come from Surat in 10 days", "lead_time", "lead time: blanks"),
+    fact("COD orders above ₹2,000 are called before shipping", "fact", "rto: cod calls"),
+    ...Array.from({ length: 12 }, (_, i) => fact(`Older note ${i + 1} about the shop`)),
+  ];
+  const rto = pickFacts(facts, "Why did RTO go up on Delhivery last week?");
+  const has = (r, t) => r.lines.some((f) => f.text === t);
+  check(
+    "the team and lead times are read whatever is asked",
+    has(rto, "Ravi packs and ships") && has(rto, "Blank cases come from Surat in 10 days")
+  );
+  check(
+    "an RTO question reads what is known of RTO first",
+    rto.bearing[0].topic === "rto: delhivery" && rto.bearing.some((f) => f.topic === "rto: cod calls")
+  );
+  const packing = pickFacts(facts, "Make a packing checklist for today's orders");
+  check(
+    "a packing task does not carry the ads history beyond the newest few",
+    packing.lines.filter((f) => f.topic?.startsWith("ads:")).length <= 2 &&
+      !has(packing, "Instagram ads bring most first-time buyers")
+  );
+  check("and reads few of the rest", packing.lines.filter((f) => f.kind === "fact" && !f.topic).length <= 4);
+  const guide = pickFacts(facts);
+  check(
+    "with nothing asked, the newest of the rest, as before",
+    guide.bearing.length === 0 &&
+      guide.lines.filter((f) => f.kind === "fact" || f.kind === "preference").length === KNOWN_LINES
+  );
+}
 
 console.log("\nwhat hurts them, read back (0201)");
 const hurt = parseProblems(

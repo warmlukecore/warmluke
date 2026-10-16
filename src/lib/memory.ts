@@ -27,6 +27,24 @@ import { asJob } from "@/lib/usage";
 import type { AssistantReply } from "@/lib/types";
 import { MEET_OPENER } from "@/lib/meet";
 
+// Words that say nothing about which lesson or fact a message is about, in
+// either language. A store's own words (order, phone, rto, cod) stay.
+const STOP = new Set(
+  "the a an and or but of to in on at for from by with is are was were be been it its this that these those i me my we our you your they them their he she his her what which who when where why how can could would should will do does did done have has had not no yes please just also so than then there here into out up about all any some only very more most want need make add show tell give get set use like as if else each every one ones kya kaise kab kahan kaun kitna kitne hai hain tha thi the ka ke ki ko se me mein ne par aur ya bhi to toh ye yeh wo woh hum ham mujhe mera meri mere apna apni kar karo karna kardo dena do hona ho raha rahi rahe wala wali wale sab koi kuch abhi bas na".split(
+    " "
+  )
+);
+
+/** A text's words, lower-case, without filler; a plural is its singular. */
+export function wordsOf(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const w of text.toLowerCase().split(/[^\p{L}\p{N}]+/u)) {
+    if (w.length < 3 || STOP.has(w) || /^\d+$/.test(w)) continue;
+    out.add(w.length > 3 && w.endsWith("s") ? w.slice(0, -1) : w);
+  }
+  return out;
+}
+
 /** How many of the other lines a prompt is read; the table keeps forty. */
 export const KNOWN_LINES = 12;
 /** And of the ones the work stands on, read whatever their age. */
@@ -78,12 +96,46 @@ export function factLine(f: Fact): string {
   return `${head ? `[${head}] ` : ""}${f.text}${SAID[f.source]}`;
 }
 
+/** Of the other lines, how many that do not bear on the message still come along: the newest, for continuity. */
+export const ALSO_NEWEST = 2;
+
 /**
- * What is known about this project, under the caller's own rights: every
- * line the work stands on (team, hours, lead times…) whatever its age,
- * then the newest of the rest. Before 0220, the newest lines as they were.
+ * Which facts a turn reads (16 Oct, the sprint's "relevant context"):
+ * every line the work stands on, whatever it is about; then, of the rest,
+ * the ones that share words with what was asked, most first, and only the
+ * two newest beside them, so an RTO question reads what is known of
+ * RTO and a packing one does not carry the ads history. With nothing asked
+ * (their own AI's guide), the newest of the rest, as before. Newest first in.
  */
-export async function notesFor(db: SupabaseClient, projectId: string): Promise<string[]> {
+export function pickFacts(facts: Fact[], about?: string): { lines: Fact[]; bearing: Fact[] } {
+  const standing = facts.filter((f) => STANDING.has(f.kind)).slice(0, STANDING_LINES);
+  const rest = facts.filter((f) => !STANDING.has(f.kind));
+  const asked = about ? wordsOf(about) : null;
+  if (!asked?.size) return { lines: [...standing, ...rest.slice(0, KNOWN_LINES)], bearing: [] };
+  const bearing = rest
+    .map((f, i) => {
+      const theirs = wordsOf(`${f.topic ?? ""} ${f.text}`);
+      return { f, i, overlap: [...asked].filter((w) => theirs.has(w)).length };
+    })
+    .filter((x) => x.overlap > 0)
+    .toSorted((a, b) => b.overlap - a.overlap || a.i - b.i)
+    .slice(0, KNOWN_LINES)
+    .map((x) => x.f);
+  const newest = rest.filter((f) => !bearing.includes(f)).slice(0, Math.min(ALSO_NEWEST, KNOWN_LINES - bearing.length));
+  return { lines: [...standing, ...bearing, ...newest], bearing };
+}
+
+/**
+ * What is known about this project, under the caller's own rights, as the
+ * model reads it (pickFacts), and which of the lines were picked because
+ * they bear on what was asked, for the turn's trace. Before 0220, the
+ * newest lines as they were.
+ */
+export async function factsFor(
+  db: SupabaseClient,
+  projectId: string,
+  about?: string
+): Promise<{ lines: string[]; bearing: string[] }> {
   const { data, error } = await db
     .from("merchant_notes")
     .select("note, kind, topic, source")
@@ -98,7 +150,7 @@ export async function notesFor(db: SupabaseClient, projectId: string): Promise<s
       .eq("project_id", projectId)
       .order("created_at", { ascending: false })
       .limit(KNOWN_LINES);
-    return (old ?? []).map((r) => String((r as { note: unknown }).note)).filter(Boolean);
+    return { lines: (old ?? []).map((r) => String((r as { note: unknown }).note)).filter(Boolean), bearing: [] };
   }
   const facts = (data ?? []).map((r) => {
     const row = r as { note: unknown; kind: unknown; topic: unknown; source: unknown };
@@ -109,10 +161,16 @@ export async function notesFor(db: SupabaseClient, projectId: string): Promise<s
       source: row.source === "data" || row.source === "inferred" || row.source === "website" ? row.source : "owner",
     } satisfies Fact;
   });
-  const standing = facts.filter((f) => STANDING.has(f.kind)).slice(0, STANDING_LINES);
-  const rest = facts.filter((f) => !STANDING.has(f.kind)).slice(0, KNOWN_LINES);
-  return [...standing, ...rest].filter((f) => f.text).map(factLine);
+  const picked = pickFacts(
+    facts.filter((f) => f.text),
+    about
+  );
+  return { lines: picked.lines.map(factLine), bearing: picked.bearing.map((f) => f.topic ?? f.text.slice(0, 40)) };
 }
+
+/** The lines alone (their own AI's guide, the checks). */
+export const notesFor = async (db: SupabaseClient, projectId: string, about?: string) =>
+  (await factsFor(db, projectId, about)).lines;
 
 /** The lines as the model reads them, or "" when there are none. */
 export function describeKnown(notes: string[]): string {

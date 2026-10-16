@@ -28,7 +28,10 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callModel, reflectModel, stripFences } from "@/lib/ai";
-import { learn, saidBack } from "@/lib/memory";
+import { learn, saidBack, wordsOf } from "@/lib/memory";
+
+// Where examples.ts and the checks have always found it.
+export { wordsOf };
 import { asJob, metered } from "@/lib/usage";
 import type { AssistantReply } from "@/lib/types";
 
@@ -77,24 +80,6 @@ export async function skillsFor(db: SupabaseClient, projectId: string): Promise<
   } catch {
     return [];
   }
-}
-
-// Words that say nothing about which lesson a message is about, in
-// either language. A store's own words (order, phone, rto, cod) stay.
-const STOP = new Set(
-  "the a an and or but of to in on at for from by with is are was were be been it its this that these those i me my we our you your they them their he she his her what which who when where why how can could would should will do does did done have has had not no yes please just also so than then there here into out up about all any some only very more most want need make add show tell give get set use like as if else each every one ones kya kaise kab kahan kaun kitna kitne hai hain tha thi the ka ke ki ko se me mein ne par aur ya bhi to toh ye yeh wo woh hum ham mujhe mera meri mere apna apni kar karo karna kardo dena do hona ho raha rahi rahe wala wali wale sab koi kuch abhi bas na".split(
-    " "
-  )
-);
-
-/** A text's words, lower-case, without filler; a plural is its singular. */
-export function wordsOf(text: string): Set<string> {
-  const out = new Set<string>();
-  for (const w of text.toLowerCase().split(/[^\p{L}\p{N}]+/u)) {
-    if (w.length < 3 || STOP.has(w) || /^\d+$/.test(w)) continue;
-    out.add(w.length > 3 && w.endsWith("s") ? w.slice(0, -1) : w);
-  }
-  return out;
 }
 
 const oneLine = (s: Skill) => `- [${s.kind}] ${s.title}${s.when_to_use ? ` — ${s.when_to_use}` : ""}`;

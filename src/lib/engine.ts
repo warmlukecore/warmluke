@@ -55,7 +55,7 @@ import { opsBlock, opsView } from "@/lib/reviewers";
 import { hasChecks, reviewDesign } from "@/lib/review-gate";
 import type { DesignChecks } from "@/lib/review-types";
 import { isQuestion, lastReplyTypeOf, roadFor, type Road } from "@/lib/intent";
-import { describeKnown, describeProblems, notesFor, problemsFor, type ProblemRow } from "@/lib/memory";
+import { describeKnown, describeProblems, factsFor, problemsFor, type ProblemRow } from "@/lib/memory";
 import { describeSkills, skillsFor, type Skill } from "@/lib/learning";
 import {
   agreedBlock,
@@ -774,7 +774,8 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
       // What is known about the business (0131): what earlier conversations
       // taught, and what the owner said themselves (their team, the restock
       // time, 0222). Read whenever it exists: only learning costs a call.
-      notesFor(client, project.id),
+      // What bears on this message first (pickFacts), so the trace can say why each was read.
+      factsFor(client, project.id, message),
       // What Luke learned for this store (0176): read whenever it exists,
       // switch or no switch, since only learning costs a model call. [] on
       // a database without the table.
@@ -784,7 +785,7 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
       // What hurts them and how what was built went (0201), read when it is written.
       memoryModel() ? problemsFor(client, project.id) : Promise.resolve([] as ProblemRow[]),
     ]);
-  const known = notesRows;
+  const known = notesRows.lines;
   // The first meeting's way out (lib/meet), decided here rather than left to
   // the brief alone: once he has helped and not yet asked, this turn asks.
   const { offerDue, opens } = meetTurn(!!input.meeting, input.meetState, message);
@@ -815,7 +816,14 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
   // Every section's columns, so a design that touches one the caller
   // did not have open is both checked and readable.
   const schemas = await schemasFor(client, modules);
-  if (!resume) tell({ step: "context", sections: modules.length, rules: (ruleRows ?? []).length });
+  if (!resume)
+    tell({
+      step: "context",
+      sections: modules.length,
+      rules: (ruleRows ?? []).length,
+      facts: known.length,
+      ...(notesRows.bearing.length ? { bearing: notesRows.bearing } : {}),
+    });
 
   // The store tools, when this caller allows them and there is a store
   // to read. Each lookup is told as it comes back and kept once for the

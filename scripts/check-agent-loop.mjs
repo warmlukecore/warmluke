@@ -14,7 +14,7 @@
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-agent-loop.mjs
 import { agentContract, agentReply, draftOf, freeOn, guideTopics, ownerJargon, runAgent } from "../src/lib/agent.ts";
 import { buildSystemPrompt, foldOf, parseReply } from "../src/lib/ai.ts";
-import { withEarlier } from "../src/lib/turn-run.ts";
+import { EARLIER_LINES, earlierDigest, withEarlier } from "../src/lib/turn-run.ts";
 import { proposalOf } from "../src/lib/plan.ts";
 import { jsonSchema, tool } from "ai";
 
@@ -311,6 +311,36 @@ console.log("\nwhat is cut is said (no silent limits, 12 Oct)");
   check(
     "and a thread read whole is told nothing",
     withEarlier([{ role: "user", content: "Hi" }], 0)[0].content === "Hi"
+  );
+  // What is cut comes along as a line each (16 Oct): what they asked, and what was built.
+  const digest = earlierDigest([
+    { role: "user", content: "", said: "Make a returns tool, search by order number", ptype: null },
+    { role: "assistant", content: "Here is a design", said: null, ptype: "blueprint" },
+    { role: "assistant", content: "Built Returns desk", said: null, ptype: "build", pstatus: "built" },
+    { role: "user", content: "", said: "Only flagged orders, one table", ptype: null },
+    { role: "user", content: "", said: "hello", ptype: null, kind: "meet" },
+  ]);
+  check(
+    "the older part, in their words and what was built, oldest first",
+    digest.join("|") ===
+      "- They asked: “Make a returns tool, search by order number”|- Built: Built Returns desk|- They asked: “Only flagged orders, one table”"
+  );
+  const many = earlierDigest(
+    Array.from({ length: 30 }, (_, i) => ({ role: "user", content: "", said: `ask ${i + 1}`, ptype: null }))
+  );
+  check(
+    "a long one keeps its start and its latest, and says what is skipped",
+    many.length === EARLIER_LINES + 1 &&
+      many[0].includes("ask 1”") &&
+      many[4] === "- …" &&
+      many.at(-1).includes("ask 30”")
+  );
+  const told = withEarlier([{ role: "user", content: "Now this" }], 40, digest);
+  check(
+    "and is said before the first turn read",
+    /first 40 messages are not here/.test(told[0].content) &&
+      told[0].content.includes("Only flagged orders, one table") &&
+      told[0].content.endsWith("Now this")
   );
   const big = foldOf(Array.from({ length: 4000 }, (_, i) => ({ order: i, note: "x".repeat(20) })));
   check(
