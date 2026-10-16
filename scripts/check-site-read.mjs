@@ -18,6 +18,7 @@ import {
   allowedUrl,
   blockedAddress,
   fetchPage,
+  keepSiteNotes,
   pageOf,
   sentenceOn,
   siteBase,
@@ -254,6 +255,22 @@ try {
   check("a website line on a topic the owner spoke to is refused, theirs stands", !!took.error);
   const kept = await owner.from("merchant_notes").insert({ project_id: project.id, ...topicRow("policy: shipping") });
   check("a website line is kept as from the website", !kept.error);
+  // Public promise and actual practice: the page's word kept beside theirs, never over it.
+  const beside = await keepSiteNotes(owner, project.id, [facts[1]]);
+  const { data: returns } = await owner
+    .from("merchant_notes")
+    .select("note, topic, source")
+    .eq("project_id", project.id)
+    .ilike("topic", "policy: returns%")
+    .order("topic");
+  check(
+    "and what the page promises is kept beside theirs, both said",
+    beside[0]?.topic === "policy: returns (website)" &&
+      returns?.length === 2 &&
+      returns[0].note === "Returns within 10 days, said by me" &&
+      returns[0].source === "owner" &&
+      returns[1].source === "website"
+  );
 
   console.log("\nread by the owner, at most every two minutes");
   check("not signed in, not read", (await read(null)).status === 401);

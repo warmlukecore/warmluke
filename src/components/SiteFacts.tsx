@@ -12,7 +12,7 @@ import { RefreshCw } from "lucide-react";
 import { apiFetch } from "@/lib/auth";
 import { supabase } from "@/lib/supabase-client";
 import { ago } from "@/lib/when";
-import { coverageSaid } from "@/lib/site-coverage";
+import { BESIDE_THEIRS, coverageSaid } from "@/lib/site-coverage";
 import { button, hint } from "@/components/ui/controls";
 
 const TOPIC: Record<string, string> = {
@@ -21,6 +21,13 @@ const TOPIC: Record<string, string> = {
   "policy: shipping": "Shipping",
   "policy: cash on delivery": "Cash on delivery",
   "policy: free shipping": "Free shipping",
+};
+/** A line's heading; one kept beside the owner's own word on it (lib/site-coverage) says so. */
+const heading = (topic: string | null) => {
+  const beside = !!topic?.endsWith(BESIDE_THEIRS);
+  const t = beside ? topic!.slice(0, -BESIDE_THEIRS.length) : (topic ?? "");
+  const name = TOPIC[t] ?? (t || "From your website");
+  return beside ? `${name} · you also told Luke` : name;
 };
 
 export function SiteFacts({
@@ -73,9 +80,7 @@ export function SiteFacts({
         <ul className="divide-y divide-line rounded-card border border-line">
           {lines.map((l) => (
             <li key={l.note} className="px-3 py-2 text-[13px] text-fg">
-              <span className="block text-[11px] font-medium text-fg-muted">
-                {TOPIC[l.topic ?? ""] ?? l.topic ?? "From your website"}
-              </span>
+              <span className="block text-[11px] font-medium text-fg-muted">{heading(l.topic)}</span>
               {l.note}
             </li>
           ))}

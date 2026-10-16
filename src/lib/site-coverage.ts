@@ -7,6 +7,14 @@
 /** How a page went: read, not there, or turned away / not answering / not public. */
 export type PageWhy = "not found" | "could not be read";
 
+/**
+ * What the page promises on a topic the owner already spoke to is kept
+ * beside theirs under this mark (the sprint's "public promise and actual
+ * practice"): theirs stands, and Luke asks which holds when it matters.
+ */
+export const BESIDE_THEIRS = " (website)";
+export const besideTopic = (topic: string) => `${topic.slice(0, 80 - BESIDE_THEIRS.length)}${BESIDE_THEIRS}`;
+
 /** Each page as it went, one word each, for Settings and for Luke (0228). */
 export type Coverage = Record<"home" | "refund" | "shipping" | "about" | "faq", "read" | PageWhy>;
 

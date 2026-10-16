@@ -235,7 +235,10 @@ refund and shipping policies, read once on its own when the owner gave a website
 Settings → General, at most every two minutes. No model reads it: each line is the site's own
 sentence about returns, delivery time, cash on delivery or free shipping (kind policy), and
 the home page's description (what they sell), read as "(from their website)". A line on a topic
-the owner already spoke to is refused by the topic index, so theirs stands. The read is fenced:
+the owner already spoke to is refused by the topic index, so theirs stands, and the page's
+word is kept beside it under "<topic> (website)" (`keepSiteNotes`, `besideTopic`): Luke reads
+both, what customers are promised and how it really works, and asks which holds when it matters;
+Settings heads it "you also told Luke". The read is fenced:
 http(s) on the usual ports, every address a name resolves to public (checked as the socket
 connects), three redirects each checked again, eight seconds and a megabyte a page, HTML only.
 Their own AI reads the same lines in `how_to_help`, standing ones first (`notesFor`).

@@ -34,6 +34,14 @@ test("Settings shows what their website says, in its words, and says when it can
       topic: "policy: cash on delivery",
       source: "website",
     },
+    // Kept beside what the owner told Luke on the same topic (lib/site-coverage besideTopic).
+    {
+      project_id: shop.projectId,
+      note: "Orders ship within 2 days.",
+      kind: "policy",
+      topic: "policy: shipping (website)",
+      source: "website",
+    },
   ]);
   await shop.admin
     .from("projects")
@@ -48,6 +56,7 @@ test("Settings shows what their website says, in its words, and says when it can
     const site = dialog.locator("section").filter({ hasText: "What your website says" });
     await expect(site.getByText("You can return or exchange within 7 days of delivery.")).toBeVisible();
     await expect(site.getByText("Cash on delivery", { exact: true })).toBeVisible();
+    await expect(site.getByText("Shipping · you also told Luke", { exact: true })).toBeVisible();
     // What was read and what was not (0228), said plainly.
     await expect(site.getByText("Read: home page, returns policy. Not on the site: FAQ.")).toBeVisible();
     await site.getByRole("button", { name: "Read it again" }).click();

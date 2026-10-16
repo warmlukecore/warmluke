@@ -21,7 +21,7 @@ import { BlockList, isIP } from "node:net";
 import http from "node:http";
 import https from "node:https";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Coverage, PageWhy } from "@/lib/site-coverage";
+import { besideTopic, type Coverage, type PageWhy } from "@/lib/site-coverage";
 
 const PAGE_MS = 8_000;
 const PAGE_BYTES = 1_000_000;
@@ -325,9 +325,29 @@ export async function siteOf(
 }
 
 /**
+ * Keeps the site's lines, under the caller's own rights. One on a topic
+ * the owner already spoke to is refused by its index and theirs stands;
+ * what the page promises is kept beside it (besideTopic), so Luke sees
+ * both and asks which holds rather than losing either.
+ */
+export async function keepSiteNotes(db: SupabaseClient, projectId: string, notes: SiteNote[]): Promise<SiteNote[]> {
+  const learned: SiteNote[] = [];
+  for (const n of notes) {
+    let kept: SiteNote = n;
+    let { error } = await db.from("merchant_notes").insert({ project_id: projectId, ...n });
+    if (error?.code === "23505") {
+      kept = { ...n, topic: besideTopic(n.topic) };
+      ({ error } = await db.from("merchant_notes").insert({ project_id: projectId, ...kept }));
+    }
+    if (!error) learned.push(kept);
+  }
+  return learned;
+}
+
+/**
  * Reads the site and keeps what it says, under the owner's own rights:
  * what the website said before is replaced, and a topic the owner already
- * spoke to is left as they said it.
+ * spoke to is left as they said it, with the page's word beside it.
  */
 export async function readSite(
   db: SupabaseClient,
@@ -374,12 +394,7 @@ export async function readSite(
   ) as Coverage;
   const gone = await db.from("merchant_notes").delete().eq("project_id", projectId).eq("source", "website");
   if (gone.error) return { error: gone.error.message };
-  const learned: SiteNote[] = [];
-  for (const n of notes) {
-    // One on a topic the owner already spoke to is refused by its index, and theirs stands.
-    const { error } = await db.from("merchant_notes").insert({ project_id: projectId, ...n });
-    if (!error) learned.push(n);
-  }
+  const learned = await keepSiteNotes(db, projectId, notes);
   await db.from("projects").update({ site_coverage: coverage }).eq("id", projectId);
   return { from: origin, pages: Object.values(read).filter((r) => "html" in r).length, learned, coverage };
 }
