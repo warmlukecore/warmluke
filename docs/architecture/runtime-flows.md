@@ -212,6 +212,14 @@ again (a recheck) is left alone until it is done. The words are the app's
 for Luke. The check database has no pg_cron, so its checks and specs call
 `abo_alerts_run` themselves.
 
+Each open alert also says what comes next (`lib/alert-next`, 16 Oct): the next step in a
+line, the owner's to take; whose job it is, by the team's own answers (packing, customers,
+ads, restocking), read under the owner's rights so a teammate's screen names nobody; and,
+for RTO, what Luke found looking into it, counted in the database by payment and by state
+(`abo_rto_cohorts`, 0225) with the worst groups and their counts. No model is asked: a run
+every quarter hour is the recheck, and an alert closes on its own when what raised it is
+gone. Luke and their own AI read the same in `whats_waiting` (`next_step`, `who`).
+
 ## Store question routing
 
 Before the built-in model sees a merchant's question, Jev may classify its list, time

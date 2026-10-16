@@ -8,6 +8,7 @@ test.afterEach(async ({ shop }) => {
   // The shop is the worker's: what this left would ring the bell in the next spec.
   await shop.admin.from("alerts").delete().eq("store_id", shop.storeId);
   await shop.admin.from("alert_settings").delete().eq("project_id", shop.projectId);
+  await shop.admin.from("merchant_notes").delete().eq("project_id", shop.projectId).eq("topic", "team: packing");
 });
 
 test("an order not sent is noticed, told in the bell and the overview, put away, and can be switched off", async ({
@@ -17,6 +18,10 @@ test("an order not sent is noticed, told in the bell and the overview, put away,
   // The seeded cash-on-delivery order from three days ago has not gone out.
   const { error } = await shop.admin.rpc("abo_alerts_run", { p_store: shop.storeId });
   expect(error).toBeNull();
+  // Who packs, as the owner said it (lib/team-facts): the alert says whose it is (lib/alert-next).
+  await shop.admin
+    .from("merchant_notes")
+    .insert({ project_id: shop.projectId, note: "Packing and shipping: Ravi", kind: "team", topic: "team: packing" });
   await page.goto(`/app/${shop.projectId}`);
   const wide = (page.viewportSize()?.width ?? 0) >= 1024;
 
@@ -55,6 +60,13 @@ test("an order not sent is noticed, told in the bell and the overview, put away,
   const card = page.locator("section").filter({ hasText: "What Luke noticed" });
   await expect(card.getByText("1 order not sent after 2 days")).toBeVisible({ timeout: 30_000 });
   await expect(card.getByText(/#1008/)).toBeVisible();
+  // What to do next, and whose job it is.
+  await expect(
+    card.getByText("Next: Send the oldest first, or tell those customers when theirs will go · Ravi handles this")
+  ).toBeVisible();
+  await card.screenshot({
+    path: `${process.env.LOOK_DIR ?? "test-results"}/alert-next-${test.info().project.name}.png`,
+  });
   await expect(card.getByRole("button", { name: "Ask Luke" })).toBeVisible();
 
   if (wide) {

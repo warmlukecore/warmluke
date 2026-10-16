@@ -113,6 +113,12 @@ export const DOORS: Door[] = [
     mcp: ["whats_waiting"],
   },
   { door: "rpc abo_alert_settings", does: "which alerts are on", why: OWNER },
+  {
+    door: "rpc abo_rto_cohorts",
+    does: "see what Luke found looking into RTO",
+    luke: ["rto_cohorts"],
+    mcp: ["rto_cohorts"],
+  },
   { door: "rpc abo_set_alert_setting", does: "turn an alert on or off", why: OWNER },
   {
     door: "rpc abo_follow_ups",

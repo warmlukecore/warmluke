@@ -2612,6 +2612,8 @@ export default function ChatPanel({
   shopAsked = 0,
   alerts,
   alertsAt,
+  alertTeam,
+  alertLooked,
   onAskAlert,
   onSeeAlerts,
 }: {
@@ -2676,6 +2678,9 @@ export default function ChatPanel({
   alerts: Alert[];
   /** When they were read, for "since 2 h ago". */
   alertsAt: number;
+  /** Whose job each is, and what Luke found looking into one (lib/alerts whoOf, lookedIntoRto). */
+  alertTeam?: Partial<Record<"packing" | "customers" | "ads" | "restocking", string>> | null;
+  alertLooked?: Record<string, string>;
   onAskAlert: (a: Alert) => void;
   /** Seen, or put away until it gets worse. */
   onSeeAlerts: (ids: string[], putAway?: boolean) => void;
@@ -3794,6 +3799,8 @@ export default function ChatPanel({
                             dense
                             alerts={alerts}
                             now={alertsAt}
+                            team={alertTeam}
+                            looked={alertLooked}
                             busy={busy}
                             onAsk={(a) => {
                               setBellOpen(false);

@@ -56,6 +56,8 @@ import Overview from "@/components/Overview";
 import { AlertsPanel } from "@/components/Alerts";
 import { TodayBrief } from "@/components/TodayBrief";
 import { alertShown, describeAlert, type Alert } from "@/lib/alerts";
+import { lookedIntoRto } from "@/lib/alert-next";
+import { loadTeam, type TeamAnswers } from "@/lib/team-facts";
 import StoreRecordDetail, { type DetailRow } from "@/components/StoreRecordDetail";
 import StorePicker, { addStoreSections } from "@/components/StorePicker";
 import {
@@ -2670,6 +2672,24 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       { table: "alerts", filter: `project_id=eq.${projectId}`, onChange: () => void loadAlerts() },
     ]);
   }, [projectId, loadAlerts]);
+  // Whose job each alert is, from the team's own answers: the owner's to read (merchant_notes, 0140).
+  const [alertTeam, setAlertTeam] = useState<TeamAnswers | null>(null);
+  useEffect(() => {
+    if (isOwner) void loadTeam(supabase, projectId).then(setAlertTeam);
+  }, [projectId, isOwner]);
+  // What Luke found looking into RTO (0225): by payment and by state, over every shipment, read as them.
+  const [alertLooked, setAlertLooked] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const rto = (alerts ?? []).find((a) => a.kind === "rto_rising");
+    if (!rto || !storeId) return;
+    const days = Number((rto.facts as { days?: unknown }).days) || 14;
+    const by = (p_by: string) =>
+      supabase.rpc("abo_rto_cohorts", { p_store: storeId, p_days: days, p_by }).then(({ data }) => data);
+    void Promise.all([by("payment"), by("state")]).then(([pay, state]) =>
+      setAlertLooked({ [rto.id]: lookedIntoRto(pay, state) })
+    );
+  }, [alerts, storeId]);
+
   /** Seen takes them off the bell's count; put away takes them off the list until they get worse. */
   const seeAlerts = useCallback((ids: string[], dismiss = false) => {
     if (ids.length === 0) return;
@@ -4894,6 +4914,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                       <AlertsPanel
                         alerts={alerts}
                         now={alertsAt}
+                        team={alertTeam}
+                        looked={alertLooked}
                         onAsk={canBuild ? askAboutAlert : undefined}
                         onDismiss={(a) => seeAlerts([a.id], true)}
                         busy={chatBusy || building}
@@ -5128,6 +5150,8 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                 shopAsked={shopAsked}
                 alerts={alerts ?? []}
                 alertsAt={alertsAt}
+                alertTeam={alertTeam}
+                alertLooked={alertLooked}
                 onAskAlert={askAboutAlert}
                 onSeeAlerts={seeAlerts}
                 modules={modules}

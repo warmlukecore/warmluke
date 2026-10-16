@@ -29,6 +29,8 @@ import { z } from "zod";
 import { findSection } from "@/lib/section-ref";
 import { readBrief } from "@/lib/brief";
 import { grantedSections, hasGrant } from "@/lib/luke-may";
+import { nextOf, whoOf } from "@/lib/alert-next";
+import { loadTeam } from "@/lib/team-facts";
 import { decide } from "@/lib/row-decide";
 import { designOf, readSectionRows, sectionsOf, type SectionRef } from "@/lib/section-read";
 import { STORE_TABLES, canCarryOwnFields, isStoreTable, ownColumns, withOwnFields } from "@/lib/store-read";
@@ -301,7 +303,7 @@ export async function proposeRowChange(
 
 /** Everything waiting on the owner in one app, as the bell shows it. */
 export async function whatsWaiting(db: SupabaseClient, projectId: string) {
-  const [asks, shop, designs, alerts, mods, followUps, checkIns, today, granted] = await Promise.all([
+  const [asks, shop, designs, alerts, mods, followUps, checkIns, today, granted, team] = await Promise.all([
     db
       .from("row_approvals")
       .select("id, module_id, kind, batch, action, row_label, summary, asked_via, asked_at")
@@ -325,7 +327,7 @@ export async function whatsWaiting(db: SupabaseClient, projectId: string) {
       .limit(20),
     db
       .from("alerts")
-      .select("subject, severity, kind, opened_at")
+      .select("subject, severity, kind, facts, opened_at")
       .eq("project_id", projectId)
       .eq("status", "open")
       .order("opened_at", { ascending: false })
@@ -335,6 +337,8 @@ export async function whatsWaiting(db: SupabaseClient, projectId: string) {
     db.rpc("abo_problem_check_ins", { p_project: projectId }),
     readBrief(db, projectId),
     grantedSections(db, projectId),
+    // Whose job each alert is: the owner's to read (merchant_notes), so a teammate's read has none.
+    loadTeam(db, projectId).catch(() => null),
   ]);
   const name = new Map((mods.data ?? []).map((m) => [m.id as string, m.nav_label as string]));
   const rowAsks = groupAsks((asks.data ?? []) as AskRow[]);
@@ -356,7 +360,13 @@ export async function whatsWaiting(db: SupabaseClient, projectId: string) {
       state: d.status === "pending" ? "waiting for their yes" : d.status,
       asked_at: d.created_at,
     })),
-    alerts_open: (alerts.data ?? []).map((a) => ({ what: a.subject, severity: a.severity, since: a.opened_at })),
+    alerts_open: (alerts.data ?? []).map((a) => ({
+      what: a.subject,
+      severity: a.severity,
+      since: a.opened_at,
+      next_step: nextOf({ kind: a.kind as string, facts: (a.facts ?? {}) as Record<string, unknown> }),
+      who: whoOf(a.kind as string, team),
+    })),
     // The bell's own questions: a build nobody has used (0190), a problem a week after its fix (0201).
     questions_for_the_owner: [
       ...((followUps.data ?? []) as Array<{ sections: string[]; built_at: string }>).map((f) => ({

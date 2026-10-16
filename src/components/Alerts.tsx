@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowUp, BellOff, Check, X, type LucideIcon } from "lucide-react";
 import { ALERTS_COMING, describeAlert, NEEDS_NAMES, wordsOf, type Alert, type AlertSetting } from "@/lib/alerts";
+import { nextOf, whoOf } from "@/lib/alert-next";
 import { supabase } from "@/lib/supabase-client";
 import { ago } from "@/lib/when";
 import { button, field, fieldOf, hint, iconButton, label, note, sendButton } from "@/components/ui/controls";
@@ -28,6 +29,10 @@ type Handlers = {
   onDismiss: (a: Alert) => void;
   /** Luke is answering something already. */
   busy?: boolean;
+  /** The team's own answers, to say whose job each is (lib/team-facts); the owner's alone to read. */
+  team?: Partial<Record<"packing" | "customers" | "ads" | "restocking", string>> | null;
+  /** What Luke found looking into one, by its id (lib/alerts lookedIntoRto). */
+  looked?: Record<string, string>;
 };
 
 const TILE = {
@@ -43,6 +48,8 @@ export function AlertList({
   onDismiss,
   busy,
   dense,
+  team,
+  looked,
 }: Handlers & { alerts: Alert[]; dense?: boolean }) {
   return (
     <ul className="divide-y divide-line">
@@ -66,6 +73,12 @@ export function AlertList({
                 {title}
               </p>
               {detail && <p className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-fg-muted">{detail}</p>}
+              {looked?.[a.id] && <p className="mt-0.5 text-[11px] leading-relaxed text-fg-muted">{looked[a.id]}</p>}
+              {(nextOf(a) || whoOf(a.kind, team ?? null)) && (
+                <p className="mt-1 text-[11px] leading-relaxed text-fg">
+                  {[nextOf(a) && `Next: ${nextOf(a)}`, whoOf(a.kind, team ?? null)].filter(Boolean).join(" · ")}
+                </p>
+              )}
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 {onAsk && (ask || asked) && (
                   <button onClick={() => onAsk(a)} disabled={busy && !asked} className={button("secondary", "sm")}>
