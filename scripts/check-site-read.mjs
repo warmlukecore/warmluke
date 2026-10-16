@@ -24,6 +24,8 @@ import {
   siteFacts,
   talksToAI,
 } from "../src/lib/site-read.ts";
+import { coverageSaid, describeCoverage } from "../src/lib/site-coverage.ts";
+import { storeBlock } from "../src/lib/ai.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -119,6 +121,71 @@ const long = siteFacts({
 });
 check("never longer than a note holds", long[0].note.length <= 200 && long[0].note.endsWith("…"));
 check("nothing read, nothing said", siteFacts({}).length === 0);
+
+console.log("\nits About page and FAQ (0228)");
+const aboutPage = pageOf(
+  `<main><h1>About us</h1><p>Welcome.</p><p>We started Asha Cases in 2019 in Jaipur to make cases that last.</p></main>`
+);
+const faqPage = pageOf(
+  `<main><p>Do you take returns? Yes, you can return within 10 days of delivery.</p><p>Is cash on delivery available? COD is available above ₹300.</p></main>`
+);
+const fromFaq = siteFacts({ about: aboutPage, faq: faqPage });
+const said = (t) => fromFaq.find((f) => f.topic === t)?.note;
+check(
+  "who they are, from the About page",
+  said("about them") === "We started Asha Cases in 2019 in Jaipur to make cases that last."
+);
+check(
+  "no returns policy page: the FAQ's answer is used",
+  said("policy: returns") === "Yes, you can return within 10 days of delivery."
+);
+check("and cash on delivery from it too", said("policy: cash on delivery") === "COD is available above ₹300.");
+check(
+  "a policy page, when there is one, comes before the FAQ",
+  siteFacts({ refund, faq: faqPage })
+    .find((f) => f.topic === "policy: returns")
+    .note.includes("7 days")
+);
+
+console.log("\nwhat was read and what was not, said");
+const cov = { home: "read", refund: "read", shipping: "not found", about: "read", faq: "could not be read" };
+const toLuke = describeCoverage(cov);
+check(
+  "Luke is told each page as it went",
+  /read: home page, returns policy, About page/.test(toLuke) &&
+    /not found: shipping policy/.test(toLuke) &&
+    /could not be read: FAQ/.test(toLuke)
+);
+check("and never to say they have none", /never say they have none; ask/.test(toLuke));
+check(
+  "the owner reads it plainly",
+  coverageSaid(cov) ===
+    "Read: home page, returns policy, About page. Not on the site: shipping policy. Could not be read: FAQ."
+);
+check("nothing read yet, nothing said", describeCoverage(null) === null && coverageSaid(undefined) === null);
+const store = (over) => ({
+  store_id: "s",
+  shop_domain: "x.myshopify.com",
+  timezone: "Asia/Kolkata",
+  currency: "INR",
+  importing: true,
+  counts: { orders: 120 },
+  values: {},
+  ...over,
+});
+const block = storeBlock(store({ unfinished: ["customers", "refunds"], failed: ["payouts"] }), "INR", "talk");
+check(
+  "lists still coming in are named, their counts partial",
+  /Still coming in: customers, refunds\. Their counts are what has arrived so far/.test(block)
+);
+check(
+  "and one that could not be read is never counted as none",
+  /Could not be read: payouts\. Say so if it matters; never count it as none/.test(block)
+);
+check(
+  "all across, neither is said",
+  !/Still coming in|Could not be read/.test(storeBlock(store({ importing: false }), "INR", "talk"))
+);
 
 console.log("\na page's words are data, never orders");
 const hostile =

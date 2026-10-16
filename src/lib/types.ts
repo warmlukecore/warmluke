@@ -318,6 +318,8 @@ export interface ProjectRow {
   currency_set_by_user?: boolean;
   /** When their website was last read (0223, lib/site-read); null: never. */
   site_read_at?: string | null;
+  /** How each page of their website went when read (0228): "read", "not found" or "could not be read". */
+  site_coverage?: Record<string, string> | null;
   created_at: string;
 }
 

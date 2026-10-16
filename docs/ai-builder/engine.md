@@ -239,6 +239,13 @@ the owner already spoke to is refused by the topic index, so theirs stands. The 
 http(s) on the usual ports, every address a name resolves to public (checked as the socket
 connects), three redirects each checked again, eight seconds and a megabyte a page, HTML only.
 Their own AI reads the same lines in `how_to_help`, standing ones first (`notesFor`).
+Since 0228 the read also takes their About page (who they are) and FAQ (returns, delivery, COD
+and free shipping where no policy page says them; a question is never taken for its answer),
+and keeps how each page went (`projects.site_coverage`: read, not found, could not be read).
+Luke is told it, and told that a page not found never means they have no such policy
+(`lib/site-coverage`); Settings says it under the lines. The store's own lists are named the
+same way: those still coming in, whose counts are partial, and those that could not be read,
+never counted as none.
 
 A standing yes (0223, `lib/luke-may`): in Settings → Luke the owner lets Luke change a
 section's rows without asking. Luke's `change_rows` then settles its own ask at once through

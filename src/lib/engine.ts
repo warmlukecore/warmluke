@@ -57,6 +57,7 @@ import type { DesignChecks } from "@/lib/review-types";
 import { isQuestion, lastReplyTypeOf, roadFor, type Road } from "@/lib/intent";
 import { describeKnown, describeProblems, factsFor, problemsFor, type ProblemRow } from "@/lib/memory";
 import { describeRepeat, repeatFor } from "@/lib/repeat-ask";
+import { describeCoverage } from "@/lib/site-coverage";
 import { describeSkills, skillsFor, type Skill } from "@/lib/learning";
 import {
   agreedBlock,
@@ -200,8 +201,8 @@ export async function storeContextFor(
   // it off without a deploy, for an eval's baseline or a store it is slow on.
   const profile = process.env.LUKE_SCOUT === "off" ? null : await profileStore(client, storeRow.id as string);
   const values = profile ? {} : await storeValues(client, storeRow.id as string);
-  const { data: runs } = await client.from("import_runs").select("status").eq("store_id", storeRow.id);
-  const runList = (runs ?? []) as Array<{ status: string }>;
+  const { data: runs } = await client.from("import_runs").select("resource, status").eq("store_id", storeRow.id);
+  const runList = (runs ?? []) as Array<{ resource: string; status: string }>;
 
   return {
     store_id: storeRow.id as string,
@@ -212,6 +213,10 @@ export async function storeContextFor(
     // Counts quoted mid-import are partial, and a design built on "you
     // have 4 orders" is wrong if 4,000 are still arriving.
     importing: runList.length === 0 || runList.some((r) => r.status !== "done"),
+    unfinished: [
+      ...new Set(runList.filter((r) => r.status === "pending" || r.status === "running").map((r) => r.resource)),
+    ],
+    failed: [...new Set(runList.filter((r) => r.status === "failed").map((r) => r.resource))],
     counts: overview?.counts ?? {},
     values,
     profile,
@@ -818,6 +823,8 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
       describeProblems(hurts),
       learnedBlock,
       describeRepeat(repeat),
+      // What of their website was read, and that a page not found is not a policy missing (0228).
+      describeCoverage(project.site_coverage as Parameters<typeof describeCoverage>[0]),
       input.meeting ? MEET_BRIEF : null,
       offerDue && message !== MEET_BUILT ? MEET_OFFER_NOW : null,
     ]

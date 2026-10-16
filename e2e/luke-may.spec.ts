@@ -35,6 +35,10 @@ test("Settings shows what their website says, in its words, and says when it can
       source: "website",
     },
   ]);
+  await shop.admin
+    .from("projects")
+    .update({ site_coverage: { home: "read", refund: "read", faq: "not found" } })
+    .eq("id", shop.projectId);
   try {
     // The read itself is checked against the server in check-site-read; here, what a refusal says.
     await page.route("**/api/site-read", (r) =>
@@ -44,6 +48,8 @@ test("Settings shows what their website says, in its words, and says when it can
     const site = dialog.locator("section").filter({ hasText: "What your website says" });
     await expect(site.getByText("You can return or exchange within 7 days of delivery.")).toBeVisible();
     await expect(site.getByText("Cash on delivery", { exact: true })).toBeVisible();
+    // What was read and what was not (0228), said plainly.
+    await expect(site.getByText("Read: home page, returns policy. Not on the site: FAQ.")).toBeVisible();
     await site.getByRole("button", { name: "Read it again" }).click();
     await expect(site.getByRole("alert")).toHaveText("Read a moment ago; try again in a couple of minutes.");
     await site.screenshot({
@@ -51,6 +57,7 @@ test("Settings shows what their website says, in its words, and says when it can
     });
   } finally {
     await shop.admin.from("merchant_notes").delete().eq("project_id", shop.projectId).eq("source", "website");
+    await shop.admin.from("projects").update({ site_coverage: null }).eq("id", shop.projectId);
   }
 });
 

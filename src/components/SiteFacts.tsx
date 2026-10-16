@@ -12,6 +12,7 @@ import { RefreshCw } from "lucide-react";
 import { apiFetch } from "@/lib/auth";
 import { supabase } from "@/lib/supabase-client";
 import { ago } from "@/lib/when";
+import { coverageSaid } from "@/lib/site-coverage";
 import { button, hint } from "@/components/ui/controls";
 
 const TOPIC: Record<string, string> = {
@@ -22,7 +23,17 @@ const TOPIC: Record<string, string> = {
   "policy: free shipping": "Free shipping",
 };
 
-export function SiteFacts({ projectId, readAt }: { projectId: string; readAt: string | null }) {
+export function SiteFacts({
+  projectId,
+  readAt,
+  coverage: given,
+}: {
+  projectId: string;
+  readAt: string | null;
+  /** What of the site was read, and what was not (0228). */
+  coverage?: Record<string, string> | null;
+}) {
+  const [coverage, setCoverage] = useState(given ?? null);
   const [lines, setLines] = useState<Array<{ note: string; topic: string | null }> | null>(null);
   const [when, setWhen] = useState(readAt);
   const [now, setNow] = useState(() => Date.now());
@@ -50,6 +61,7 @@ export function SiteFacts({ projectId, readAt }: { projectId: string; readAt: st
     if (!ok) return setError(String(data.error ?? "It couldn’t be read just now."));
     setWhen(new Date().toISOString());
     setNow(Date.now());
+    if (data.coverage && typeof data.coverage === "object") setCoverage(data.coverage as Record<string, string>);
     await load();
   };
 
@@ -80,6 +92,7 @@ export function SiteFacts({ projectId, readAt }: { projectId: string; readAt: st
         </button>
         {when && <span className="text-xs text-fg-faint">Read {ago(when, now)}</span>}
       </div>
+      {coverageSaid(coverage) && <p className={hint}>{coverageSaid(coverage)}</p>}
       {error && (
         <p role="alert" className={`${hint} text-tone-critical-fg`}>
           {error}

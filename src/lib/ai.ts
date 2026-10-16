@@ -590,6 +590,9 @@ export type StoreContext = {
   snapshot?: StoreSnapshot;
   /** True while an import is still running, so the counts are partial. */
   importing: boolean;
+  /** Which lists have not finished coming across, and which could not be read (import_runs, 16 Oct). */
+  unfinished?: string[];
+  failed?: string[];
   counts: Record<string, number>;
   /**
    * The values a column actually holds, for the few columns worth
@@ -612,7 +615,11 @@ export type StoreContext = {
  * in USD inside a project formatted in INR produces demo amounts in the
  * wrong money, which looks right and is not.
  */
-function storeBlock(store: StoreContext | null, projectCurrency: string, road: "design" | "talk" = "design"): string {
+export function storeBlock(
+  store: StoreContext | null,
+  projectCurrency: string,
+  road: "design" | "talk" = "design"
+): string {
   // Said out loud rather than left to inference. With nothing here at
   // all the model used to guess from silence, and a guess about
   // whether somebody has a shop connected is a bad guess to make.
@@ -640,6 +647,13 @@ function storeBlock(store: StoreContext | null, projectCurrency: string, road: "
     );
   } else {
     lines.push(`Already here${store.importing ? ", and still importing, so these are partial" : ""}: ${rows}.`);
+    // Which, by name: coverage said out loud, never a whole-store total from a list half across (16 Oct).
+    if (store.unfinished?.length)
+      lines.push(
+        `Still coming in: ${store.unfinished.join(", ")}. Their counts are what has arrived so far, not the whole store.`
+      );
+    if (store.failed?.length)
+      lines.push(`Could not be read: ${store.failed.join(", ")}. Say so if it matters; never count it as none.`);
     if (road === "design")
       lines.push(
         `Design on top of it. When what they want IS this data, or work done to it, build a section over it: NEW_MODULE with "source_table" set to the table, with fields of theirs beside each row where the work needs them. Never propose a section whose purpose is to re-enter this data by hand — if you build a separate list anyway, say plainly in "unmet" that it will not match their Shopify data, so they can decide.`

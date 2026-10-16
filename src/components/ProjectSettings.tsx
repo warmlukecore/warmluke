@@ -547,7 +547,11 @@ export default function ProjectSettings({
             title="What your website says"
             description="Your returns, delivery and what you sell, read from your store’s own pages in their words. Luke answers by them."
           >
-            <SiteFacts projectId={project.id} readAt={project.site_read_at ?? null} />
+            <SiteFacts
+              projectId={project.id}
+              readAt={project.site_read_at ?? null}
+              coverage={project.site_coverage ?? null}
+            />
           </Group>
 
           <Group title="Delete this project" danger>

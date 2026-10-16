@@ -21,6 +21,7 @@ import { BlockList, isIP } from "node:net";
 import http from "node:http";
 import https from "node:https";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Coverage, PageWhy } from "@/lib/site-coverage";
 
 const PAGE_MS = 8_000;
 const PAGE_BYTES = 1_000_000;
@@ -133,29 +134,37 @@ function get(u: URL): Promise<Got | null> {
 
 /** One page, redirects followed and each checked again; null when it cannot be read. */
 export async function fetchPage(raw: string): Promise<{ url: string; html: string } | null> {
+  const r = await readPage(raw);
+  return "html" in r ? r : null;
+}
+
+/** One page, with why not when it was not read: a page not found is not a page that does not exist in their business. */
+export async function readPage(raw: string): Promise<{ url: string; html: string } | { why: PageWhy }> {
+  const no = { why: "could not be read" as const };
   let u: URL;
   try {
     u = new URL(raw);
   } catch {
-    return null;
+    return no;
   }
   for (let hop = 0; hop <= HOPS; hop++) {
-    if (!allowedUrl(u)) return null;
+    if (!allowedUrl(u)) return no;
     const got = await get(u);
-    if (!got) return null;
+    if (!got) return no;
     if (got.location) {
       try {
         u = new URL(got.location, u);
       } catch {
-        return null;
+        return no;
       }
       continue;
     }
+    if (got.status === 404 || got.status === 410) return { why: "not found" };
     // A store behind its password page has nothing public to read.
-    if (got.status !== 200 || !got.html || /\/password\/?$/.test(u.pathname)) return null;
+    if (got.status !== 200 || !got.html || /\/password\/?$/.test(u.pathname)) return no;
     return { url: u.href, html: got.html };
   }
-  return null;
+  return no;
 }
 
 // ── What a page says ────────────────────────────────────────
@@ -238,7 +247,8 @@ export function sentenceOn(text: string, about: RegExp, prefer: RegExp | null = 
     .filter((s) => s.length >= 12 && s.length <= 3000 && s.split(" ").length >= 4);
   // Nor is a disclaimer in capitals the policy itself.
   const shouted = (s: string) => (s.match(/[A-Z]/g)?.length ?? 0) > 0.6 * (s.match(/[A-Za-z]/g)?.length ?? 1);
-  const on = sentences.filter((s) => about.test(s) && !shouted(s) && !talksToAI(s));
+  // A question (an FAQ's) never says the policy: its answer does.
+  const on = sentences.filter((s) => about.test(s) && !shouted(s) && !talksToAI(s) && !s.endsWith("?"));
   const best = (prefer && on.find((s) => prefer.test(s))) || on[0];
   return best ? clip(best) : null;
 }
@@ -246,7 +256,13 @@ export function sentenceOn(text: string, about: RegExp, prefer: RegExp | null = 
 export type SiteNote = { note: string; kind: "policy" | "product"; topic: string; source: "website" };
 
 /** The lines a site gives Luke: what they sell, how returns, delivery, cash on delivery and free shipping work. */
-export function siteFacts(p: { home?: Page | null; refund?: Page | null; shipping?: Page | null }): SiteNote[] {
+export function siteFacts(p: {
+  home?: Page | null;
+  refund?: Page | null;
+  shipping?: Page | null;
+  about?: Page | null;
+  faq?: Page | null;
+}): SiteNote[] {
   const out: SiteNote[] = [];
   const add = (kind: SiteNote["kind"], topic: string, note: string | null) => {
     if (note && note.length >= 3 && !out.some((n) => n.note === note))
@@ -254,9 +270,22 @@ export function siteFacts(p: { home?: Page | null; refund?: Page | null; shippin
   };
   const about = p.home?.description ?? "";
   if (about.length >= 20 && !talksToAI(about)) add("product", "what they sell", clip(about));
-  if (p.refund) add("policy", "policy: returns", sentenceOn(p.refund.text, /\b(return|exchange|refund)/i));
-  if (p.shipping) add("policy", "policy: shipping", sentenceOn(p.shipping.text, /\b(ship|deliver|dispatch)/i));
-  const all = [p.shipping, p.refund, p.home].filter(Boolean).map((x) => x!.text);
+  // Who they are, from their About page: its first sentence that says something.
+  if (p.about) add("product", "about them", sentenceOn(p.about.text, /\w/, /\b(we|our|founded|since|started)\b/i));
+  // A policy page first; where there is none, what their FAQ says of it.
+  const returns = /\b(return|exchange|refund)/i;
+  const ships = /\b(ship|deliver|dispatch)/i;
+  add(
+    "policy",
+    "policy: returns",
+    (p.refund && sentenceOn(p.refund.text, returns)) || (p.faq && sentenceOn(p.faq.text, returns)) || null
+  );
+  add(
+    "policy",
+    "policy: shipping",
+    (p.shipping && sentenceOn(p.shipping.text, ships)) || (p.faq && sentenceOn(p.faq.text, ships)) || null
+  );
+  const all = [p.shipping, p.refund, p.faq, p.home, p.about].filter(Boolean).map((x) => x!.text);
   for (const t of all) {
     if (!out.some((n) => n.topic === "policy: cash on delivery"))
       add("policy", "policy: cash on delivery", sentenceOn(t, /[Cc]ash [Oo]n [Dd]elivery|\bCOD\b/, null));
@@ -274,6 +303,9 @@ export function siteBase(website: string | null, shopDomain: string | null): str
 }
 
 export const SITE_PAGES = ["/policies/refund-policy", "/policies/shipping-policy"] as const;
+/** Where a store keeps its About and FAQ pages, the common names first. */
+export const ABOUT_PAGES = ["/pages/about-us", "/pages/about"] as const;
+export const FAQ_PAGES = ["/pages/faq", "/pages/faqs"] as const;
 
 /** The website the owner gave in onboarding, and their store's address. */
 export async function siteOf(
@@ -300,26 +332,46 @@ export async function siteOf(
 export async function readSite(
   db: SupabaseClient,
   projectId: string
-): Promise<{ from: string; pages: number; learned: SiteNote[] } | { error: string }> {
+): Promise<{ from: string; pages: number; learned: SiteNote[]; coverage: Coverage } | { error: string }> {
   const site = await siteOf(db, projectId);
   if (!site) return { error: "No such project." };
   const base = siteBase(site.website, site.shopDomain);
   if (!base) return { error: "There is no website or store to read yet." };
-  const home = await fetchPage(base);
+  const home = await readPage(base);
   // Where the store really lives, once it has said (a myshopify address sends on to its own).
   let origin: string;
   try {
-    origin = new URL(home?.url ?? base).origin;
+    origin = new URL("html" in home ? home.url : base).origin;
   } catch {
     return { error: "That website address cannot be read." };
   }
-  const [refund, shipping] = await Promise.all(SITE_PAGES.map((path) => fetchPage(origin + path)));
-  const read = { home, refund, shipping };
+  // The first of a page's usual names that is there; the last answer when none is.
+  const firstOf = async (paths: readonly string[]) => {
+    let last: Awaited<ReturnType<typeof readPage>> = { why: "not found" };
+    for (const path of paths) {
+      last = await readPage(origin + path);
+      if ("html" in last) return last;
+    }
+    return last;
+  };
+  const [refund, shipping, about, faq] = await Promise.all([
+    readPage(origin + SITE_PAGES[0]),
+    readPage(origin + SITE_PAGES[1]),
+    firstOf(ABOUT_PAGES),
+    firstOf(FAQ_PAGES),
+  ]);
+  const read = { home, refund, shipping, about, faq };
+  const page = (r: Awaited<ReturnType<typeof readPage>>) => ("html" in r ? pageOf(r.html) : null);
   const notes = siteFacts({
-    home: home && pageOf(home.html),
-    refund: refund && pageOf(refund.html),
-    shipping: shipping && pageOf(shipping.html),
+    home: page(home),
+    refund: page(refund),
+    shipping: page(shipping),
+    about: page(about),
+    faq: page(faq),
   });
+  const coverage = Object.fromEntries(
+    Object.entries(read).map(([k, r]) => [k, "html" in r ? "read" : r.why])
+  ) as Coverage;
   const gone = await db.from("merchant_notes").delete().eq("project_id", projectId).eq("source", "website");
   if (gone.error) return { error: gone.error.message };
   const learned: SiteNote[] = [];
@@ -328,5 +380,6 @@ export async function readSite(
     const { error } = await db.from("merchant_notes").insert({ project_id: projectId, ...n });
     if (!error) learned.push(n);
   }
-  return { from: origin, pages: Object.values(read).filter(Boolean).length, learned };
+  await db.from("projects").update({ site_coverage: coverage }).eq("id", projectId);
+  return { from: origin, pages: Object.values(read).filter((r) => "html" in r).length, learned, coverage };
 }
