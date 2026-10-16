@@ -106,6 +106,7 @@ export default function Overview({
   onInspect,
   refreshKey,
   noticed,
+  brief,
 }: {
   projectId: string;
   storeId: string;
@@ -118,6 +119,8 @@ export default function Overview({
   refreshKey: number;
   /** What Luke noticed (0163), below the numbers, small: the bell says it first. */
   noticed?: React.ReactNode;
+  /** The day's brief (lib/brief), above the numbers: what needs them first. */
+  brief?: React.ReactNode;
 }) {
   const [data, setData] = useState<OverviewData | null>(null);
   const [latest, setLatest] = useState<DetailRow[] | null>(null);
@@ -187,6 +190,7 @@ export default function Overview({
       onOpenTable={onOpenTable}
       onInspect={onInspect}
       noticed={noticed}
+      brief={brief}
     />
   );
 }
@@ -206,6 +210,7 @@ export function OverviewBoard({
   onOpenTable,
   onInspect,
   noticed,
+  brief,
 }: {
   data: OverviewData;
   /** The newest orders, or null while they are still being read. */
@@ -217,6 +222,7 @@ export function OverviewBoard({
   onOpenTable: (table: StoreTable) => void;
   onInspect: (table: StoreTable, row: DetailRow) => void;
   noticed?: React.ReactNode;
+  brief?: React.ReactNode;
 }) {
   const fmt = useFormat();
   if (!data.store) return null;
@@ -277,6 +283,8 @@ export function OverviewBoard({
           Your store is still coming in. These numbers grow as it does.
         </div>
       )}
+
+      {brief}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi

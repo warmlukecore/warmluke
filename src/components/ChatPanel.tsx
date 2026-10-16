@@ -109,6 +109,7 @@ import { Markdown } from "@/components/ui/Markdown";
 import { IdNames, useIdNames, withoutIds } from "@/lib/no-ids";
 import { LUKE_COPY } from "@/lib/luke-copy";
 import { ASSISTANTS } from "@/lib/connect-assistants";
+import { TASK_LABEL, type TaskState } from "@/lib/task-state";
 
 /** The time an owner acted, for a row it settles: taken in the handler, never during a render. */
 const stamp = () => new Date().toISOString();
@@ -269,6 +270,17 @@ const removalsIn = (plans: AssistantPlan[] | null): string[] =>
 const THREADS_BEFORE_SEARCH = 5;
 
 /** Under a past conversation's name: when it last moved, and what it holds. */
+/** A state that wants them in the attention colour, one that went wrong in the critical one. */
+const STATE_TONE: Record<TaskState, string> = {
+  working: "text-fg-muted",
+  needs_answer: "text-tone-attention-fg",
+  needs_yes: "text-tone-attention-fg",
+  check_failed: "text-tone-critical-fg",
+  failed: "text-tone-critical-fg",
+  stopped: "text-fg-muted",
+  done: "",
+};
+
 function threadLine(t: ThreadSummary, now: number): string {
   const built = t.built ?? 0;
   const answers = t.answers ?? 0;
@@ -4320,7 +4332,15 @@ export default function ChatPanel({
                                           )}
                                           <span className="truncate">{t.title ?? "Untitled"}</span>
                                         </div>
-                                        <div className="truncate text-[10px] text-fg-faint">{threadLine(t, now)}</div>
+                                        <div className="truncate text-[10px] text-fg-faint">
+                                          {/* Where it stands first, unless it is simply done (lib/task-state). */}
+                                          {t.state && t.state !== "done" && (
+                                            <span className={`font-medium ${STATE_TONE[t.state]}`}>
+                                              {TASK_LABEL[t.state]} ·{" "}
+                                            </span>
+                                          )}
+                                          {threadLine(t, now)}
+                                        </div>
                                       </button>
                                     )}
                                     {/* Threads accumulate — six of them called "hello"

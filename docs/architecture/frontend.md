@@ -157,7 +157,10 @@ validates them again.
 
 Past conversations are listed by day (Today, Yesterday, Last 7 days, Older), each with
 when it last moved and what it holds ("1 built · 2 answers", counted by `GET /api/chat`
-from each message's type). The first thirty come with the panel and older ones on "Show
+from each message's type). Before that, where the task stands, from its last line
+(`src/lib/task-state.ts`): Working, Needs your answer, Needs your yes, A check failed,
+Didn't finish or Stopped, in the attention or critical colour; a done one says nothing.
+The first thirty come with the panel and older ones on "Show
 older"; once there are more than five, a search asks the server over every thread by name.
 A thread can be renamed in the list; that name is kept (`named_by_owner`, 0126), and Luke's
 replies no longer rename it.

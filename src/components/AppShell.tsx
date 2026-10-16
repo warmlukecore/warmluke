@@ -54,6 +54,7 @@ import StoreStrip from "@/components/StoreStrip";
 import StoreSwitcher from "@/components/StoreSwitcher";
 import Overview from "@/components/Overview";
 import { AlertsPanel } from "@/components/Alerts";
+import { TodayBrief } from "@/components/TodayBrief";
 import { alertShown, describeAlert, type Alert } from "@/lib/alerts";
 import StoreRecordDetail, { type DetailRow } from "@/components/StoreRecordDetail";
 import StorePicker, { addStoreSections } from "@/components/StorePicker";
@@ -4857,6 +4858,7 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                       if (m) setSelectedModuleId(m.id);
                     }}
                     onInspect={(table, row) => setInspecting({ table, row })}
+                    brief={<TodayBrief projectId={projectId} alerts={alerts} waiting={waiting} />}
                     noticed={
                       <AlertsPanel
                         alerts={alerts}

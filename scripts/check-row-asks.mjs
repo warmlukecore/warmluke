@@ -214,6 +214,25 @@ try {
   const waiting = await whatsWaiting(owner.db, proj.id);
   const card = waiting.asks_to_change_rows.find((a) => a.what === asked.summary);
   check("what waits reads it back as one", card?.rows === 3 && card?.section === "Blanks" && card?.asked_by === "Luke");
+  // The Overview's brief, for Luke and their own AI too (lib/brief): a build today and its check.
+  const { data: thread } = await admin
+    .from("conversations")
+    .insert({ project_id: proj.id, title: "Reorder list" })
+    .select("id")
+    .single();
+  await admin.from("messages").insert({
+    conversation_id: thread.id,
+    role: "assistant",
+    content: "Built 1 change.",
+    payload: { type: "build", status: "built", sent: [0], tested: { ok: false, said: "", problems: [] } },
+  });
+  const brief = await whatsWaiting(owner.db, proj.id);
+  check(
+    "a build today is read back under the owner's own rights, with its check",
+    brief.built_today.length === 1 &&
+      brief.built_today[0].what === "Reorder list" &&
+      brief.built_today[0].check === "failed"
+  );
 
   console.log("\nthe owner's yes");
   const blocked = await decide(staff, { projectId: proj.id, batch: asked.batch, decision: "approve" });

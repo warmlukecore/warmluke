@@ -11,6 +11,7 @@ import { start } from "workflow/api";
 import { lukeTurn } from "@/workflows/luke-turn";
 import { TITLE_MAX } from "@/lib/types";
 import type { ProjectRow, TurnEvent } from "@/lib/types";
+import { taskStateOf, type LastLine } from "@/lib/task-state";
 
 export const runtime = "nodejs";
 
@@ -48,7 +49,7 @@ export async function GET(req: Request) {
   let list = client
     .from("conversations")
     .select(
-      "id, title, created_at, updated_at, asked_by, created_by, messages(ptype:payload->>type, pstatus:payload->>status)"
+      "id, title, created_at, updated_at, asked_by, created_by, messages(role, created_at, ptype:payload->>type, pstatus:payload->>status, pkind:payload->>kind, ptested:payload->tested->>ok)"
     )
     .eq("project_id", projectId);
   // ponytail: paged by updated_at alone; two threads moved in the same microsecond could straddle a page.
@@ -67,7 +68,12 @@ export async function GET(req: Request) {
     : { data: [] };
   const nameOf = new Map(((named ?? []) as Array<{ user_id: string; name: string }>).map((n) => [n.user_id, n.name]));
   const threads = page.map(({ messages, created_by, ...t }) => {
-    const kinds = (messages ?? []) as Array<{ ptype: string | null; pstatus: string | null }>;
+    const kinds = (messages ?? []) as Array<LastLine & { created_at: string }>;
+    // Where it stands, from its last line (lib/task-state).
+    const last = kinds.reduce<(typeof kinds)[number] | null>(
+      (a, m) => (!a || m.created_at > a.created_at ? m : a),
+      null
+    );
     return {
       ...t,
       mine: !created_by || created_by === auth.userId,
@@ -75,6 +81,7 @@ export async function GET(req: Request) {
       // A build the server recorded, or a receipt the panel wrote before it did.
       built: kinds.filter((k) => k.ptype === "applied" || (k.ptype === "build" && k.pstatus === "built")).length,
       answers: kinds.filter((k) => k.ptype === "answer").length,
+      state: taskStateOf(last),
     };
   });
 

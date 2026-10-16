@@ -9,6 +9,7 @@ export { COLUMN_TYPES, type ColumnType } from "./capabilities";
 import type { ColumnType, ExprOp } from "./capabilities";
 import type { DesignChecks } from "./review-types";
 import type { ScreenShown } from "./screen";
+import type { TaskState } from "@/lib/task-state";
 
 export interface SchemaColumn {
   field: string;
@@ -525,6 +526,8 @@ export interface ThreadSummary {
   asked_by?: string | null;
   /** Someone else on the team whose thread it is (0146); none for your own. */
   by?: string | null;
+  /** Where its task stands, from its last line (lib/task-state); null when that says nothing. */
+  state?: TaskState | null;
 }
 
 /** A follow-up the owner could send next, offered once a build lands. */

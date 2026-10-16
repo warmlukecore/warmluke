@@ -27,6 +27,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { tool, type Tool } from "ai";
 import { z } from "zod";
 import { findSection } from "@/lib/section-ref";
+import { readBrief } from "@/lib/brief";
 import { designOf, readSectionRows, sectionsOf, type SectionRef } from "@/lib/section-read";
 import { STORE_TABLES, canCarryOwnFields, isStoreTable, ownColumns, withOwnFields } from "@/lib/store-read";
 import { coerce } from "@/lib/record-write";
@@ -263,7 +264,7 @@ export async function proposeRowChange(db: SupabaseClient, projectId: string, as
 
 /** Everything waiting on the owner in one app, as the bell shows it. */
 export async function whatsWaiting(db: SupabaseClient, projectId: string) {
-  const [asks, shop, designs, alerts, mods, followUps, checkIns] = await Promise.all([
+  const [asks, shop, designs, alerts, mods, followUps, checkIns, today] = await Promise.all([
     db
       .from("row_approvals")
       .select("id, module_id, kind, batch, action, row_label, summary, asked_via, asked_at")
@@ -295,6 +296,7 @@ export async function whatsWaiting(db: SupabaseClient, projectId: string) {
     db.from("modules").select("id, nav_label").eq("project_id", projectId),
     db.rpc("abo_follow_ups", { p_project: projectId }),
     db.rpc("abo_problem_check_ins", { p_project: projectId }),
+    readBrief(db, projectId),
   ]);
   const name = new Map((mods.data ?? []).map((m) => [m.id as string, m.nav_label as string]));
   const rowAsks = groupAsks((asks.data ?? []) as AskRow[]);
@@ -328,6 +330,12 @@ export async function whatsWaiting(db: SupabaseClient, projectId: string) {
         since: c.built_at,
       })),
     ],
+    // The Overview's brief (lib/brief): what was built in the last day, and whether its check passed.
+    built_today: today.builds.map((b) => ({
+      what: b.what,
+      check: b.ok === null ? "not tested" : b.ok ? "passed" : "failed",
+    })),
+    watching: today.watching,
     note: "Only the owner approves, in Warmluke: you can say what waits and what it would do, never approve it.",
   };
 }

@@ -915,8 +915,17 @@ test("past conversations are grouped by day, found by name, and say what each ho
     // before yesterday until two in the morning, and failed a run then.
     const midnight = new Date(now).setHours(0, 0, 0, 0);
     await thread("Top buyer this month", now - (midnight - 12 * H));
-    await thread("Returns desk", 3 * 24 * H);
-    await thread("Stock alerts", 4 * 24 * H);
+    // Where each stands, from its last line (lib/task-state).
+    await thread("Returns desk", 3 * 24 * H, [{ type: "blueprint", message: "A returns board" }]);
+    await thread("Stock alerts", 4 * 24 * H, [
+      {
+        type: "build",
+        status: "built",
+        message: "Built 1 change",
+        sent: [0],
+        tested: { ok: false, said: "", problems: [] },
+      },
+    ]);
     await thread("Supplier list", 10 * 24 * H);
     await thread("Greeting", 12 * 24 * H);
     // Thirty more, older still: past the first page of thirty.
@@ -947,6 +956,13 @@ test("past conversations are grouped by day, found by name, and say what each ho
     await expect(today.getByText("1 built · 1 answer")).toBeVisible();
     await expect(panel.getByRole("group", { name: "Yesterday" }).getByText("Top buyer this month")).toBeVisible();
     await expect(panel.getByRole("group", { name: "Older" }).getByText("Greeting")).toBeVisible();
+    // Where each stands, said before when: one waits for their yes, one's check failed, a done one says nothing.
+    await expect(panel.getByRole("button", { name: /^Returns desk/ })).toContainText("Needs your yes");
+    await expect(panel.getByRole("button", { name: /^Stock alerts/ })).toContainText("A check failed");
+    await expect(panel.getByRole("button", { name: /^Unpaid COD orders/ })).not.toContainText("Done");
+    await panel.screenshot({
+      path: `${process.env.LOOK_DIR ?? "test-results"}/history-states-${test.info().project.name}.png`,
+    });
     // More than a screenful, so they can be found by name.
     const search = panel.getByRole("searchbox", { name: "Search conversations" });
     await search.fill("stock");
