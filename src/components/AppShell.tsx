@@ -2688,6 +2688,15 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       .then(({ data }) => setMayBuild(data?.can_build === true));
   }, [projectId, userId, seatTick]);
 
+  // Their website, read once on its own (lib/site-read, 0223); again only when they ask, in Settings.
+  const siteAsked = useRef(false);
+  useEffect(() => {
+    if (!project || !isOwner || project.site_read_at || siteAsked.current) return;
+    siteAsked.current = true;
+    // A query is only sent once something waits on it; nothing is done with the answer.
+    void apiFetch("/api/site-read", { projectId: project.id, first: true });
+  }, [project, isOwner]);
+
   // A member opening the app is what the owner's "last active" reads (0140);
   // the database writes it at most once in five minutes.
   useEffect(() => {

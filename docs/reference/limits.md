@@ -34,7 +34,7 @@ above saying what tells the reader it cut.
 | `src/app/api/mcp/route.ts` | `SHOW_WAITING` | What waits on the owner, per kind, newest first | Luke (count beside it) |
 | `src/app/api/mcp/route.ts` | `limit + 1` | Build history pages; the extra row says there is more | Luke |
 | `src/app/api/mcp/route.ts` | `500` | Values a filter on a section of their own can offer, read from 500 rows. The biggest own section was 11 rows (12 Oct) | not yet |
-| `src/app/api/row-action/route.ts` | `500` | A batch of Luke's row-change asks decided at once; a batch holds at most `ASK_MAX` (500), so none is left | by design |
+| `src/lib/row-decide.ts` | `500` | A batch of Luke's row-change asks decided at once; a batch holds at most `ASK_MAX` (500), so none is left | by design |
 | `src/components/AppShell.tsx` | `500` | The link picker's rows of their own section (loadLinkOptions), and the rows a scanned code matches | not yet: search as typed once a section passes 500 |
 | `src/components/AppShell.tsx` | `limit` | A section read for a design card or a written screen, the size asked | by design (a preview) |
 | `src/components/ChatPanel.tsx` | `10` | Their AI's requests this week, shown in the chat | by design |
@@ -44,7 +44,6 @@ above saying what tells the reader it cut.
 | `src/lib/app-actions.ts` | `ASK_MAX` | Row approvals waiting, listed to Luke | Luke |
 | `src/lib/app-actions.ts` | `20` | Store changes, AI requests and alerts waiting, listed to Luke | Luke |
 | `src/lib/client-guide.ts` | `5` | Apps listed in their AI's guide | by design |
-| `src/lib/client-guide.ts` | `12` | Merchant notes in their AI's guide | by design |
 | `src/lib/client-guide.ts` | `8` | Merchant problems in their AI's guide | by design |
 | `src/lib/code-rules.ts` | `JOB_BATCH` | Queued rule jobs claimed at a time; batches go on until the worker's time is spent | scales |
 | `src/lib/design-view.ts` | `SAMPLE` | Sample rows a design is checked against | by design |

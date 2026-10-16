@@ -316,6 +316,8 @@ export interface ProjectRow {
    * worth putting underneath it.
    */
   currency_set_by_user?: boolean;
+  /** When their website was last read (0223, lib/site-read); null: never. */
+  site_read_at?: string | null;
   created_at: string;
 }
 

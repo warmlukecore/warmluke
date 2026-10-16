@@ -47,8 +47,12 @@ fails when:
 - **How it waits:** in 0183's `row_approvals` as one batch, through `abo_ask_rows`, with the
   server's own sentence and what each row held. The database records whether Luke or their
   AI asked; the caller does not say.
-- **On the owner's yes** (`/api/row-action` with `batch`): each row is settled on its own,
+- **On the owner's yes** (`/api/row-action` with `batch`, `lib/row-decide`): each row is settled on its own,
   through the one write door under the owner's rights.
+- **A standing yes** (0223, `lib/luke-may`): a section the owner switched on in Settings → Luke
+  is settled at once through the same steps, for Luke's `change_rows` while the owner is the one
+  talking to him. A teammate's turn and their own AI's `propose_row_change` still wait;
+  `whats_waiting` names the sections.
   - A change lands only where the row still holds what was seen.
   - A button is worked out again from the row as it is then.
   - What did not land is said.

@@ -215,6 +215,22 @@ read as one (`factLine`), so Luke checks it before leaning on it. `check-memory`
 What is known is read on every turn whether or not the memory model is set (only learning
 costs a call), so what the owner said themselves (their team and restock time, 0222,
 `lib/team-facts`) reaches Luke in a fresh chat without being asked again.
+Their website is a fourth source (0223, `lib/site-read`): the home page and the store's
+refund and shipping policies, read once on its own when the owner gave a website, again from
+Settings → General, at most every two minutes. No model reads it: each line is the site's own
+sentence about returns, delivery time, cash on delivery or free shipping (kind policy), and
+the home page's description (what they sell), read as "(from their website)". A line on a topic
+the owner already spoke to is refused by the topic index, so theirs stands. The read is fenced:
+http(s) on the usual ports, every address a name resolves to public (checked as the socket
+connects), three redirects each checked again, eight seconds and a megabyte a page, HTML only.
+Their own AI reads the same lines in `how_to_help`, standing ones first (`notesFor`).
+
+A standing yes (0223, `lib/luke-may`): in Settings → Luke the owner lets Luke change a
+section's rows without asking. Luke's `change_rows` then settles its own ask at once through
+`lib/row-decide`, the steps the owner's Approve takes, and says done. Only while the owner is
+the one talking to him: `luke_grants` is the owner's alone under RLS, so a teammate's turn
+sees none and its ask waits, and their own AI's `propose_row_change` never uses one. The same
+tab lists what Luke may do and whether he asks first; `whats_waiting` names the sections.
 
 The same call keeps what HURTS them (0201): at most one problem a turn, in their words, with what
 it costs them when they said it, in `merchant_problems` with the conversation it was said in.

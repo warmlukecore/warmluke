@@ -56,14 +56,15 @@ export const STANDING: ReadonlySet<FactKind> = new Set([
   "goal",
   "constraint",
 ]);
-/** Who said it: the owner, their store's data, or a guess. */
-export type FactSource = "owner" | "data" | "inferred";
+/** Who said it: the owner, their store's data, a guess, or their own website (0223, lib/site-read). */
+export type FactSource = "owner" | "data" | "inferred" | "website";
 /** One thing known about the business. */
 export type Fact = { text: string; kind: FactKind; topic: string | null; source: FactSource };
 const SAID: Record<FactSource, string> = {
   owner: "",
   data: " (seen in their data)",
   inferred: " (a guess: not confirmed)",
+  website: " (from their website)",
 };
 const NOTES_A_TURN = 3;
 const NOTE_MAX = 160;
@@ -105,7 +106,7 @@ export async function notesFor(db: SupabaseClient, projectId: string): Promise<s
       text: String(row.note ?? ""),
       kind: (FACT_KINDS as readonly string[]).includes(String(row.kind)) ? (row.kind as FactKind) : "fact",
       topic: typeof row.topic === "string" && row.topic ? row.topic : null,
-      source: row.source === "data" || row.source === "inferred" ? row.source : "owner",
+      source: row.source === "data" || row.source === "inferred" || row.source === "website" ? row.source : "owner",
     } satisfies Fact;
   });
   const standing = facts.filter((f) => STANDING.has(f.kind)).slice(0, STANDING_LINES);

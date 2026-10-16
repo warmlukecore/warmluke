@@ -22,6 +22,7 @@ import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { REAL_WORK, SIMPLER_WAYS } from "@/lib/reviewers";
 import { skillsFor } from "@/lib/learning";
+import { notesFor } from "@/lib/memory";
 import { whatCanChange, whatNeverChanges } from "@/lib/store-actions";
 import { storeSignals } from "@/lib/store-read";
 import { asksFromStore } from "@/lib/suggest";
@@ -121,19 +122,15 @@ export async function readApps(db: SupabaseClient): Promise<AppPart[]> {
     .limit(5);
   return Promise.all(
     (projects ?? []).map(async (p) => {
-      const [{ data: mods }, skills, { data: notes }, { data: hurts }] = await Promise.all([
+      const [{ data: mods }, skills, notes, { data: hurts }] = await Promise.all([
         db
           .from("modules")
           .select("nav_label, source_table")
           .eq("project_id", p.id)
           .order("sort_order", { ascending: true }),
         skillsFor(db, p.id as string),
-        db
-          .from("merchant_notes")
-          .select("note")
-          .eq("project_id", p.id)
-          .order("created_at", { ascending: false })
-          .limit(12),
+        // As Luke reads it (lib/memory): what the work stands on first, the team, their policies, their website.
+        notesFor(db, p.id as string),
         // Before 0201 this errs, and nothing is said of what hurts.
         db
           .from("merchant_problems")
@@ -147,7 +144,7 @@ export async function readApps(db: SupabaseClient): Promise<AppPart[]> {
         name: p.name as string,
         sections: (mods ?? []).map((m) => ({ name: m.nav_label as string, store: !!m.source_table })),
         learned: skills.map((s) => `${s.title}${s.when_to_use ? ` (${s.when_to_use})` : ""}`),
-        known: (notes ?? []).map((n) => n.note as string),
+        known: notes,
         hurts: (hurts ?? []) as Array<{ problem: string; cost: string | null; status: string }>,
       };
     })

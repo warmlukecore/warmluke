@@ -20,6 +20,8 @@ import { Switch } from "@/components/ui/Switch";
 import { Group } from "@/components/ui/Group";
 import { ConnectionsSettings } from "@/components/ConnectionsSettings";
 import { TeamFacts } from "@/components/TeamFacts";
+import { SiteFacts } from "@/components/SiteFacts";
+import { LukeMay } from "@/components/LukeMay";
 import { button, field, hint, iconButton, iconButtonCritical, label, note } from "@/components/ui/controls";
 import { Check, Copy, ExternalLink, Link2, Trash2, UserPlus } from "lucide-react";
 import ConnectShopify from "@/components/ConnectShopify";
@@ -33,7 +35,7 @@ import { sees, setSees, type Access } from "@/lib/sharing";
 import { Tabs } from "@/components/ui/Tabs";
 import { AlertSettings } from "@/components/Alerts";
 
-type Tab = "general" | "store" | "connections" | "alerts" | "ai" | "people";
+type Tab = "general" | "store" | "connections" | "alerts" | "luke" | "ai" | "people";
 
 /** Common choices; any valid code can still be typed in. */
 const LOCALES = [
@@ -418,6 +420,7 @@ export default function ProjectSettings({
     { id: "store", text: "Store" },
     { id: "connections", text: "Connections" },
     { id: "alerts", text: "Alerts" },
+    { id: "luke", text: "Luke" },
     { id: "ai", text: "Your own AI" },
     { id: "people", text: "People", count: seats?.length },
   ];
@@ -431,7 +434,7 @@ export default function ProjectSettings({
       footer={
         // The store and people act at once; only the name, currency and
         // AI setting wait for Save.
-        tab === "store" || tab === "connections" || tab === "alerts" || tab === "people" ? (
+        tab === "store" || tab === "connections" || tab === "alerts" || tab === "luke" || tab === "people" ? (
           <>
             <span className="text-xs text-fg-muted">{dirty ? "Unsaved changes on General or Your own AI" : ""}</span>
             <button onClick={onClose} className={`${button("secondary")} ml-auto`}>
@@ -538,6 +541,13 @@ export default function ProjectSettings({
             description="Who does what, and how long a restock takes. Luke reads it on every reply, and Running low warns you in time."
           >
             <TeamFacts projectId={project.id} />
+          </Group>
+
+          <Group
+            title="What your website says"
+            description="Your returns, delivery and what you sell, read from your store’s own pages in their words. Luke answers by them."
+          >
+            <SiteFacts projectId={project.id} readAt={project.site_read_at ?? null} />
           </Group>
 
           <Group title="Delete this project" danger>
@@ -750,6 +760,8 @@ export default function ProjectSettings({
         ))}
 
       {tab === "alerts" && <AlertSettings projectId={project.id} />}
+
+      {tab === "luke" && <LukeMay projectId={project.id} />}
 
       {tab === "ai" && (
         <Group

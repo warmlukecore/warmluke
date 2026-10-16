@@ -270,6 +270,10 @@ Settings → General's "Your team and how you work", `TeamFacts`, `lib/team-fact
 The team answers become lines of what Luke knows that the work stands on (merchant_notes,
 kind team or lead_time), and the restock time a number on the project that Running low reads.
 Their own AI is not asked about here (9 Oct): the app offers it under "Use your own AI".
+Settings → General also shows "What your website says" (`SiteFacts`, 0223): the lines read
+off their store's pages, each under its topic, when it was read, and "Read it again". Settings
+→ Luke (`LukeMay`) lists what Luke may do in the app (on, asks you first, off, needs a
+connection) and holds the standing yes, one switch a section whose rows can hold their values.
 After "Open Warmluke", a new owner's app opens on the first conversation with Luke (0200):
 `AppShell` reads `profiles.met_luke_at` and, while it is empty, shows `ChatPanel` alone and
 edge to edge (`meeting`: no frame, pane corners or dividers, the box at the foot as a chat

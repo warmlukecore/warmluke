@@ -28,6 +28,8 @@ import { tool, type Tool } from "ai";
 import { z } from "zod";
 import { findSection } from "@/lib/section-ref";
 import { readBrief } from "@/lib/brief";
+import { grantedSections, hasGrant } from "@/lib/luke-may";
+import { decide } from "@/lib/row-decide";
 import { designOf, readSectionRows, sectionsOf, type SectionRef } from "@/lib/section-read";
 import { STORE_TABLES, canCarryOwnFields, isStoreTable, ownColumns, withOwnFields } from "@/lib/store-read";
 import { coerce } from "@/lib/record-write";
@@ -64,6 +66,17 @@ export type ChangeAsked =
       left_alone: number;
       batch: string;
       where: string;
+    }
+  | {
+      /** Made at once: the owner let Luke change this section's rows without asking (0223, lib/luke-may). */
+      done: true;
+      summary: string;
+      changed: number;
+      /** Rows changed since they were read, left as they now are. */
+      stale: number;
+      failed: number;
+      left_alone: number;
+      why: string;
     };
 
 const shown = (v: unknown) => (v === null || v === "" || v === undefined ? "empty" : `“${String(v).slice(0, 40)}”`);
@@ -178,9 +191,17 @@ async function rowsFor(
 /**
  * Asks the owner to change rows of one section: fields set to values, or
  * one of the section's buttons pressed, on the rows named. The ask waits
- * in the owner's bell; nothing changes until they say yes.
+ * in the owner's bell; nothing changes until they say yes. With
+ * `standing` (Luke's own ask, never their AI's), a section the owner let
+ * Luke change without asking is changed at once, as their yes would,
+ * when the owner is the one asking (lib/luke-may).
  */
-export async function proposeRowChange(db: SupabaseClient, projectId: string, ask: ChangeAsk): Promise<ChangeAsked> {
+export async function proposeRowChange(
+  db: SupabaseClient,
+  projectId: string,
+  ask: ChangeAsk,
+  opts: { standing?: boolean } = {}
+): Promise<ChangeAsked> {
   const sections = await sectionsOf(db, projectId);
   const wanted = typeof ask.section === "string" ? ask.section.trim() : "";
   const section =
@@ -251,6 +272,22 @@ export async function proposeRowChange(db: SupabaseClient, projectId: string, as
   });
   if (error) return { error: error.message };
   const out = data as { batch: string; asked: number; already_waiting: number };
+  if (opts.standing && (await hasGrant(db, projectId, section.id))) {
+    // Settled as the owner's own yes settles it; refused (a teammate's chat), it waits like any ask.
+    const made = await decide(db, { batch: out.batch, decision: "approve" }).catch(() => null);
+    if (made?.status === 200) {
+      const t = made.body as { done?: number; stale?: number; failed?: number };
+      return {
+        done: true,
+        summary,
+        changed: t.done ?? 0,
+        stale: t.stale ?? 0,
+        failed: t.failed ?? 0,
+        left_alone: leftAlone,
+        why: `They let you change rows in “${section.nav_label}” without asking (Settings → Luke), so it is done, not waiting.`,
+      };
+    }
+  }
   return {
     waiting: true,
     summary,
@@ -264,7 +301,7 @@ export async function proposeRowChange(db: SupabaseClient, projectId: string, as
 
 /** Everything waiting on the owner in one app, as the bell shows it. */
 export async function whatsWaiting(db: SupabaseClient, projectId: string) {
-  const [asks, shop, designs, alerts, mods, followUps, checkIns, today] = await Promise.all([
+  const [asks, shop, designs, alerts, mods, followUps, checkIns, today, granted] = await Promise.all([
     db
       .from("row_approvals")
       .select("id, module_id, kind, batch, action, row_label, summary, asked_via, asked_at")
@@ -297,6 +334,7 @@ export async function whatsWaiting(db: SupabaseClient, projectId: string) {
     db.rpc("abo_follow_ups", { p_project: projectId }),
     db.rpc("abo_problem_check_ins", { p_project: projectId }),
     readBrief(db, projectId),
+    grantedSections(db, projectId),
   ]);
   const name = new Map((mods.data ?? []).map((m) => [m.id as string, m.nav_label as string]));
   const rowAsks = groupAsks((asks.data ?? []) as AskRow[]);
@@ -336,6 +374,8 @@ export async function whatsWaiting(db: SupabaseClient, projectId: string) {
       check: b.ok === null ? "not tested" : b.ok ? "passed" : "failed",
     })),
     watching: today.watching,
+    // The owner's standing yes (lib/luke-may): Luke changes these sections' rows without asking; never their AI.
+    luke_changes_rows_without_asking_in: granted.map((id) => name.get(id)).filter(Boolean),
     note: "Only the owner approves, in Warmluke: you can say what waits and what it would do, never approve it.",
   };
 }
@@ -349,7 +389,7 @@ type Heard = { tool: string; about: string; args: unknown; result?: unknown };
  * a store change asked for.
  */
 /** What Luke is told of changing values in their rows, beside the tools that do it. */
-export const CHANGE_ROWS = `CHANGING VALUES IN THEIR ROWS. When they ask for values in rows to change, read the rows with read_section (each row's id), then ask with change_rows; it waits in their bell for one click, so say so. Never tell them to edit it themselves, never build a rule or a section to change values once, and never set a store field this way (that is propose_store_action). Before you say anything is or is not waiting for them, read whats_waiting.`;
+export const CHANGE_ROWS = `CHANGING VALUES IN THEIR ROWS. When they ask for values in rows to change, read the rows with read_section (each row's id), then ask with change_rows; it waits in their bell for one click, so say so, unless change_rows says it is done (they let you change that section without asking): then say what changed. Never tell them to edit it themselves, never build a rule or a section to change values once, and never set a store field this way (that is propose_store_action). Before you say anything is or is not waiting for them, read whats_waiting.`;
 
 export function appActionTools(
   ctx: { db: SupabaseClient; projectId: string },
@@ -366,7 +406,7 @@ export function appActionTools(
   return {
     change_rows: tool({
       description:
-        "Ask the owner to change rows in one of their sections: fields set to values, or one of the section's own row buttons pressed. Name the rows by the ids read_section gives, or every row whose field is a value, or rows holding words (at most 500). Only fields of their own can be set, never the store's (a store change is propose_store_action). It waits in their bell with the sentence Warmluke writes from the change; nothing changes until they approve. Use it whenever they ask for values in rows to change; never ask them to type it themselves, and never build a rule or a section to change values once.",
+        "Ask the owner to change rows in one of their sections: fields set to values, or one of the section's own row buttons pressed. Name the rows by the ids read_section gives, or every row whose field is a value, or rows holding words (at most 500). Only fields of their own can be set, never the store's (a store change is propose_store_action). It waits in their bell with the sentence Warmluke writes from the change; nothing changes until they approve, unless they let you change that section without asking, when it is made at once and says done. Use it whenever they ask for values in rows to change; never ask them to type it themselves, and never build a rule or a section to change values once.",
       inputSchema: z.object({
         section: z.string().describe("The section's name, as they call it."),
         ids: z.array(z.string()).max(ASK_MAX).optional().describe("Row ids from read_section."),
@@ -380,7 +420,7 @@ export function appActionTools(
         button: z.string().optional().describe("One of the section's row buttons, by its label."),
       }),
       execute: async (args) => {
-        const out = await proposeRowChange(ctx.db, ctx.projectId, args as ChangeAsk);
+        const out = await proposeRowChange(ctx.db, ctx.projectId, args as ChangeAsk, { standing: true });
         if ("waiting" in out) {
           try {
             hear?.proposed?.(out.summary);
@@ -388,7 +428,7 @@ export function appActionTools(
             // As above.
           }
         }
-        return told("change_rows", "waiting" in out ? out.summary : `a change to ${args.section}`, args, out);
+        return told("change_rows", "summary" in out ? out.summary : `a change to ${args.section}`, args, out);
       },
     }),
     whats_waiting: tool({

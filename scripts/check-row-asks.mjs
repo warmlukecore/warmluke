@@ -16,6 +16,7 @@
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { proposeRowChange, whatsWaiting } from "../src/lib/app-actions.ts";
+import { setGrant } from "../src/lib/luke-may.ts";
 
 const env = Object.fromEntries(
   readFileSync(new URL(`../${process.env.ENV_FILE ?? ".env.local"}`, import.meta.url), "utf8")
@@ -272,6 +273,51 @@ try {
   if (no.json.declined !== 1 || Number(c.data.qty) !== 5) console.log("     →", JSON.stringify(no.json), c.data);
   const left = await whatsWaiting(owner.db, proj.id);
   check("and nothing waits after", left.asks_to_change_rows.length === 0);
+
+  console.log("\na standing yes (0223, lib/luke-may)");
+  const notTheirs = await staff.db.from("luke_grants").insert({ project_id: proj.id, module_id: mod.id });
+  check("a teammate cannot give Luke a standing yes", !!notTheirs.error);
+  check("the owner can", (await setGrant(owner.db, proj.id, mod.id, true)) === null);
+  const qtyOf = async () => (await admin.from("records").select("data").eq("id", id("POX-C")).single()).data.data.qty;
+  const atOnce = await proposeRowChange(
+    owner.db,
+    proj.id,
+    { section: "Blanks", ids: [id("POX-C")], set: { qty: 99 } },
+    { standing: true }
+  );
+  check(
+    "Luke's ask, the owner talking to him, is made at once",
+    atOnce.done === true && atOnce.changed === 1 && (await qtyOf()) === 99
+  );
+  const granted = await whatsWaiting(owner.db, proj.id);
+  check(
+    "what waits says where Luke needs no yes",
+    granted.luke_changes_rows_without_asking_in.join() === "Blanks" && granted.asks_to_change_rows.length === 0
+  );
+  const viaTheirAI = await proposeRowChange(owner.db, proj.id, {
+    section: "Blanks",
+    ids: [id("POX-C")],
+    set: { qty: 98 },
+  });
+  check("an ask through their own AI's door still waits", viaTheirAI.waiting === true && (await qtyOf()) === 99);
+  await decide(owner, { projectId: proj.id, batch: viaTheirAI.batch, decision: "decline" });
+  const teammates = await proposeRowChange(
+    staff.db,
+    proj.id,
+    { section: "Blanks", ids: [id("POX-C")], set: { qty: 97 } },
+    { standing: true }
+  );
+  check("a teammate talking to Luke: it waits for the owner", teammates.waiting === true && (await qtyOf()) === 99);
+  await decide(owner, { projectId: proj.id, batch: teammates.batch, decision: "decline" });
+  check("taken back", (await setGrant(owner.db, proj.id, mod.id, false)) === null);
+  const again = await proposeRowChange(
+    owner.db,
+    proj.id,
+    { section: "Blanks", ids: [id("POX-C")], set: { qty: 96 } },
+    { standing: true }
+  );
+  check("and Luke asks again", again.waiting === true && (await qtyOf()) === 99);
+  await decide(owner, { projectId: proj.id, batch: again.batch, decision: "decline" });
 } finally {
   if (projectId) await admin.from("projects").delete().eq("id", projectId);
   for (const p of [owner, staff, stranger]) await admin.auth.admin.deleteUser(p.id);

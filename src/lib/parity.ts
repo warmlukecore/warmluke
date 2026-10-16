@@ -138,6 +138,11 @@ export const DOORS: Door[] = [
   { door: "* /api/feedback", does: "thumbs on Luke's replies", why: "their verdict on Luke's own replies" },
   { door: "* /api/luke-notes", does: "see and strike what Luke knows", why: "their control over Luke's memory" },
   { door: "* /api/luke-skills", does: "see and strike what Luke learned", why: "their control over Luke's memory" },
+  {
+    door: "POST /api/site-read",
+    does: "have Luke read their website and policies again",
+    why: "their control over Luke's memory; read once on its own, and their AI reads what it learned",
+  },
   { door: "GET /api/models", does: "pick Luke's model", why: OWNER },
   { door: "rpc abo_meet_luke_again", does: "meet Luke again (tester)", why: PLUMBING },
   { door: "* /api/mcp", does: "their own AI itself", why: "their own AI itself" },
