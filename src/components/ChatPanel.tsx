@@ -2311,7 +2311,7 @@ function ModelPicker({
  * while there is nothing learned.
  */
 function KnownNotes({ projectId }: { projectId: string }) {
-  const [notes, setNotes] = useState<Array<{ id: string; note: string }>>([]);
+  const [notes, setNotes] = useState<Array<{ id: string; note: string; source?: string; created_at?: string }>>([]);
   const [problems, setProblems] = useState<Array<{ id: string; problem: string; cost: string | null; status: string }>>(
     []
   );
@@ -2325,7 +2325,9 @@ function KnownNotes({ projectId }: { projectId: string }) {
     let live = true;
     apiFetch(`/api/luke-notes?projectId=${encodeURIComponent(projectId)}`, null, "GET").then(({ ok, data }) => {
       if (!live || !ok) return;
-      const list = Array.isArray(data.notes) ? (data.notes as Array<{ id: string; note: string }>) : [];
+      const list = Array.isArray(data.notes)
+        ? (data.notes as Array<{ id: string; note: string; source?: string; created_at?: string }>)
+        : [];
       setNotes(list.filter((n) => !struck.current.has(n.id)));
       const hurts = Array.isArray(data.problems) ? (data.problems as typeof problems) : [];
       setProblems(hurts.filter((h) => !struck.current.has(h.id)));
@@ -2394,7 +2396,13 @@ function KnownNotes({ projectId }: { projectId: string }) {
           <ul className="space-y-0.5">
             {notes.map((n) => (
               <li key={n.id} className="flex items-start gap-1.5">
-                <span className="min-w-0 flex-1">{n.note}</span>
+                <span className="min-w-0 flex-1">
+                  {n.note}
+                  {/* Where it came from, where that matters (0220, 0223): a guess is let go after a month. */}
+                  {n.source === "inferred" && <span className="text-fg-faint"> · a guess</span>}
+                  {n.source === "website" && <span className="text-fg-faint"> · from your website</span>}
+                  {n.source === "data" && <span className="text-fg-faint"> · seen in your data</span>}
+                </span>
                 <button
                   type="button"
                   onClick={() => strike(n.id)}

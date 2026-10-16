@@ -77,7 +77,30 @@ export const STANDING: ReadonlySet<FactKind> = new Set([
 /** Who said it: the owner, their store's data, a guess, or their own website (0223, lib/site-read). */
 export type FactSource = "owner" | "data" | "inferred" | "website";
 /** One thing known about the business. */
-export type Fact = { text: string; kind: FactKind; topic: string | null; source: FactSource };
+export type Fact = {
+  text: string;
+  kind: FactKind;
+  topic: string | null;
+  source: FactSource;
+  /** When it was said or last confirmed (the row's created_at: saying it again replaces it). */
+  at?: string | null;
+};
+
+/** A guess not confirmed in a month, and a figure seen in their data two months ago, are let go (16 Oct). */
+export const GUESS_DAYS = 30;
+export const SEEN_DAYS = 60;
+/** Past half a year, a line is read with its age, so Luke checks it before leaning on it. */
+export const OLD_DAYS = 180;
+const ageInDays = (f: Fact, now: number) => (f.at ? (now - Date.parse(f.at)) / 86_400_000 : 0);
+
+/** The facts still worth reading: what the owner said and their website stay; old guesses and stale observations go. */
+export function freshFacts(facts: Fact[], now = Date.now()): Fact[] {
+  return facts.filter(
+    (f) =>
+      !(f.source === "inferred" && ageInDays(f, now) > GUESS_DAYS) &&
+      !(f.source === "data" && ageInDays(f, now) > SEEN_DAYS)
+  );
+}
 const SAID: Record<FactSource, string> = {
   owner: "",
   data: " (seen in their data)",
@@ -89,11 +112,13 @@ const NOTE_MAX = 160;
 const ID_LIKE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 /** A fact as the model reads it: its kind and topic first, a guess said as one. */
-export function factLine(f: Fact): string {
+export function factLine(f: Fact, now = Date.now()): string {
   const kind = f.kind === "fact" ? "" : f.kind.replace("_", " ");
   // A topic that already says its kind ("lead time: blanks") is not said twice.
   const head = (f.topic?.startsWith(kind) ? [f.topic] : [kind, f.topic]).filter(Boolean).join(": ");
-  return `${head ? `[${head}] ` : ""}${f.text}${SAID[f.source]}`;
+  const days = ageInDays(f, now);
+  const old = days > OLD_DAYS ? ` (said ${Math.floor(days / 30)} months ago: check it still holds)` : "";
+  return `${head ? `[${head}] ` : ""}${f.text}${SAID[f.source]}${old}`;
 }
 
 /** Of the other lines, how many that do not bear on the message still come along: the newest, for continuity. */
@@ -107,9 +132,10 @@ export const ALSO_NEWEST = 2;
  * RTO and a packing one does not carry the ads history. With nothing asked
  * (their own AI's guide), the newest of the rest, as before. Newest first in.
  */
-export function pickFacts(facts: Fact[], about?: string): { lines: Fact[]; bearing: Fact[] } {
-  const standing = facts.filter((f) => STANDING.has(f.kind)).slice(0, STANDING_LINES);
-  const rest = facts.filter((f) => !STANDING.has(f.kind));
+export function pickFacts(facts: Fact[], about?: string, now = Date.now()): { lines: Fact[]; bearing: Fact[] } {
+  const fresh = freshFacts(facts, now);
+  const standing = fresh.filter((f) => STANDING.has(f.kind)).slice(0, STANDING_LINES);
+  const rest = fresh.filter((f) => !STANDING.has(f.kind));
   const asked = about ? wordsOf(about) : null;
   if (!asked?.size) return { lines: [...standing, ...rest.slice(0, KNOWN_LINES)], bearing: [] };
   const bearing = rest
@@ -136,13 +162,20 @@ export async function factsFor(
   projectId: string,
   about?: string
 ): Promise<{ lines: string[]; bearing: string[] }> {
-  const { data, error } = await db
+  const own = await db
     .from("merchant_notes")
-    .select("note, kind, topic, source")
+    .select("note, kind, topic, source, created_at")
     .eq("project_id", projectId)
     .order("created_at", { ascending: false })
     // limit: the table keeps forty of each (0220); all of both, then cut below.
     .limit(80);
+  // A teammate reads none of the owner's lines, only what the work stands on (0227); [] on a database before it.
+  const { data, error }: { data: unknown[] | null; error: unknown } =
+    !own.error && !own.data?.length
+      ? await db
+          .rpc("abo_shared_facts", { p_project: projectId })
+          .then((r) => ({ data: (r.data as unknown[] | null) ?? [], error: null }))
+      : own;
   if (error) {
     const { data: old } = await db
       .from("merchant_notes")
@@ -153,8 +186,9 @@ export async function factsFor(
     return { lines: (old ?? []).map((r) => String((r as { note: unknown }).note)).filter(Boolean), bearing: [] };
   }
   const facts = (data ?? []).map((r) => {
-    const row = r as { note: unknown; kind: unknown; topic: unknown; source: unknown };
+    const row = r as { note: unknown; kind: unknown; topic: unknown; source: unknown; created_at?: unknown };
     return {
+      at: typeof row.created_at === "string" ? row.created_at : null,
       text: String(row.note ?? ""),
       kind: (FACT_KINDS as readonly string[]).includes(String(row.kind)) ? (row.kind as FactKind) : "fact",
       topic: typeof row.topic === "string" && row.topic ? row.topic : null,
@@ -165,7 +199,10 @@ export async function factsFor(
     facts.filter((f) => f.text),
     about
   );
-  return { lines: picked.lines.map(factLine), bearing: picked.bearing.map((f) => f.topic ?? f.text.slice(0, 40)) };
+  return {
+    lines: picked.lines.map((f) => factLine(f)),
+    bearing: picked.bearing.map((f) => f.topic ?? f.text.slice(0, 40)),
+  };
 }
 
 /** The lines alone (their own AI's guide, the checks). */

@@ -215,7 +215,13 @@ keep asking (`lib/repeat-ask`, 16 Oct: like their asks on at least two other day
 time or more, by the words shared) adds a line telling Luke to answer it first and then offer
 once to keep it as a saved view or watch it; the answer that offered carries
 `offered_repeat`, so the topic is not offered again, and nothing is built unless they say yes.
-No model is asked to notice. The trigger keeps
+No model is asked to notice. What goes stale is let go as it is read (`freshFacts`, 16 Oct): a
+guess not confirmed in a month, a figure seen in their data two months ago; what the owner
+said and their website stay, and a line past half a year is read with its age ("said 13 months
+ago: check it still holds"). Scope (0227): a teammate's turn reads the lines the work stands
+on (who does what, hours, lead times, thresholds, policies, constraints, what they sell)
+through `abo_shared_facts`, never the owner's goals, preferences or other chat facts, and still
+neither lists nor strikes them. The trigger keeps
 forty of each, so who packs or how long blanks take never falls out as chat goes on. The topic is
 a short stable key ("lead time: blanks"): the learner writes a correction with the line's own
 topic, and `learn` retires the old line before keeping the new one (one line a topic, by a unique

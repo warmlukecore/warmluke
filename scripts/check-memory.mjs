@@ -21,6 +21,7 @@ import {
   parseProblems,
   pickFacts,
   KNOWN_LINES,
+  freshFacts,
 } from "../src/lib/memory.ts";
 
 const fails = [];
@@ -120,6 +121,26 @@ console.log("\nwhat a turn reads: what the work stands on, then what bears on th
   );
 }
 
+console.log("\nwhat goes stale (16 Oct)");
+{
+  const NOW = Date.parse("2026-10-16T10:00:00Z");
+  const ago = (days) => new Date(NOW - days * 86_400_000).toISOString();
+  const f = (source, days, kind = "fact") => ({ text: `${source} ${days}`, kind, topic: null, source, at: ago(days) });
+  const kept = freshFacts(
+    [f("inferred", 10), f("inferred", 40), f("data", 50), f("data", 70), f("owner", 400), f("website", 400)],
+    NOW
+  ).map((x) => x.text);
+  check("a guess not confirmed in a month is let go", kept.includes("inferred 10") && !kept.includes("inferred 40"));
+  check("and a figure seen in their data two months ago", kept.includes("data 50") && !kept.includes("data 70"));
+  check("what the owner said, and their website, stay", kept.includes("owner 400") && kept.includes("website 400"));
+  check(
+    "an old line is read with its age",
+    /said 13 months ago: check it still holds/.test(factLine(f("owner", 400, "team"), NOW))
+  );
+  check("a recent one as it was", factLine(f("owner", 10, "team"), NOW) === "[team] owner 10");
+  check("and an old guess is not picked at all", !pickFacts([f("inferred", 45, "fact")], undefined, NOW).lines.length);
+}
+
 console.log("\nwhat hurts them, read back (0201)");
 const hurt = parseProblems(
   '{"notes":[],"problems":[{"problem":"COD calls eat the morning","cost":"two hours a day"},{"problem":"a second"}]}'
@@ -170,6 +191,7 @@ const owner = createClient(url, anonKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 const project = await throwawayProject(admin, me.user.id, "what luke knows");
+let staffId = null;
 
 try {
   console.log("\nkept to the project");
@@ -331,8 +353,44 @@ try {
     .select("id", { count: "exact", head: true })
     .eq("project_id", project.id);
   check("twenty are kept", problemsKept === 20);
+
+  console.log("\nwhat the team may know (0227)");
+  await owner.from("merchant_notes").insert([
+    { project_id: project.id, note: "Packing and shipping: Ravi", kind: "team", topic: "team: packing" },
+    { project_id: project.id, note: "Returns within 7 days", kind: "policy", topic: "policy: returns" },
+    { project_id: project.id, note: "Wants to sell the business next year", kind: "goal", topic: "goal: exit" },
+    { project_id: project.id, note: "Likes answers in Hinglish", kind: "preference", topic: "language" },
+  ]);
+  const stamp = Date.now();
+  const email = `mem-staff-${stamp}@warmluke.test`;
+  const password = `pw_${stamp}_aA1!`;
+  const { data: made } = await admin.auth.admin.createUser({ email, password, email_confirm: true });
+  staffId = made.user.id;
+  const staffAnon = createClient(url, anonKey, { auth: { persistSession: false } });
+  const { data: staffIn } = await staffAnon.auth.signInWithPassword({ email, password });
+  const staff = createClient(url, anonKey, {
+    global: { headers: { Authorization: `Bearer ${staffIn.session.access_token}` } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data: seat } = await owner
+    .from("project_members")
+    .insert({ project_id: project.id })
+    .select("token")
+    .single();
+  await staff.rpc("abo_join", { p_token: seat.token });
+  const teamReads = await notesFor(staff, project.id);
+  check(
+    "a teammate's Luke reads who does what and the policies",
+    teamReads.some((l) => l.includes("Packing and shipping: Ravi")) &&
+      teamReads.some((l) => l.includes("Returns within 7 days"))
+  );
+  check("never the owner's goals or preferences", !teamReads.some((l) => /sell the business|Hinglish/.test(l)));
+  const { data: listed } = await staff.from("merchant_notes").select("id").eq("project_id", project.id);
+  check("and still neither lists nor strikes the owner's lines", (listed ?? []).length === 0);
+  check("a stranger reads none of it", (await notesFor(stranger, project.id)).length === 0);
 } finally {
   await project.remove();
+  if (staffId) await admin.auth.admin.deleteUser(staffId);
 }
 
 console.log(

@@ -22,7 +22,7 @@ export async function GET(req: Request) {
   const [{ data, error }, hurts] = await Promise.all([
     auth.client
       .from("merchant_notes")
-      .select("id, note, created_at")
+      .select("id, note, source, created_at")
       .eq("project_id", projectId)
       .order("created_at", { ascending: false })
       .limit(40),
