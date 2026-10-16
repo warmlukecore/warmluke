@@ -41,6 +41,11 @@ const STEPS: Record<string, Step> = {
     next: () => "Check the campaign's link, its tagging and the stock it sends to; its budget is yours to change",
     handledBy: "ads",
   },
+  ads_low_stock: {
+    next: (f) =>
+      `Reorder what it sells${Number(f.lead_days) > 0 ? ` (a restock takes ${days(Number(f.lead_days))})` : ""}, or move its spend to what is in stock; its budget is yours to change`,
+    handledBy: "ads",
+  },
 };
 
 /** The next step for an alert, or null when its kind has none. */

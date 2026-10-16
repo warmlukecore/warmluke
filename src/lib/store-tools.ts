@@ -638,6 +638,41 @@ Filters on any column (eq, neq, gt, gte, lt, lte, contains, starts_with, in, is_
       };
     },
   },
+  {
+    // Ads beside the stock they sell (0229): the sprint's cross-domain investigation.
+    name: "ads_stock",
+    about: (a) => `ad campaigns beside the stock they sell over ${Number(a.days) || 7} days`,
+    description: `Whether ad campaigns are spending on stock that is running out. Each campaign that spent in the last N days (7), with what its own orders bought: orders whose last visit named it (UTM campaign = its name or id), never what the ad shows, and beside each variant the stock on hand, its pace over the sales window, the days it lasts and whether that is within the cover (the owner's restock time, or cover_days if asked). spend_on_it is the campaign's spend in proportion to the share of what it sold that is running out. A campaign no order names has no products: say what it sells is not known from the store, never guess it from its name. Use it for "are my ads selling stock I'm out of", "should I pause ads on low stock", spend against stock. Say the windows and the cover used; ad budgets and stock stay the owner's to change: suggest, never change. Read-only.`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        days: { type: "number", description: "The ad spend and orders window, 1 to 60 days (7)." },
+        sales_days: { type: "number", description: "The window a variant's pace is read over, 7 to 180 days (28)." },
+        cover_days: {
+          type: "number",
+          description: "Running out means lasting this many days or fewer (the owner's restock time, else 14).",
+        },
+      },
+    },
+    run: async (args, { db, store }) => {
+      if (hiddenColumns("inventory_levels")?.has("available")) {
+        return {
+          error: "Stock on hand is not shown to this account. Say so; Warmluke can turn it on. Do not guess it.",
+        };
+      }
+      const { data, error } = await db.rpc("abo_ads_stock", {
+        p_store: store.id,
+        p_days: Number(args.days) || 7,
+        p_sales_days: Number(args.sales_days) || 28,
+        p_cover: Number(args.cover_days) || null,
+      });
+      if (error) return { error: error.message };
+      const out = data as { campaigns?: unknown[] };
+      return out?.campaigns?.length
+        ? out
+        : { ...out, said: "No ad spend in this window: connect an ad account, or widen the window." };
+    },
+  },
 ];
 
 /** Each tool whose answer holds a list's rows, cut to what the account is shown of them (0192). */

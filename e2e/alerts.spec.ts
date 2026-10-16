@@ -199,7 +199,13 @@ test("with a courier and an ad account connected, RTO and ads are offered to wat
     await rto.click();
     await expect(rto).toHaveAttribute("aria-checked", "true");
     await expect(page.getByText("Tell me when RTO rises by")).toBeVisible();
-    await expect(page.getByText("Give it its numbers to start.")).toBeVisible();
+    await expect(page.getByText("Give it its numbers to start.").first()).toBeVisible();
+    // Ads beside the stock they sell (0229): offered with the ad account, its own numbers.
+    const onStock = page.getByRole("switch", { name: "Ads on stock running out" });
+    await expect(onStock).toBeVisible();
+    await onStock.click();
+    await expect(onStock).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByText("On stock that lasts")).toBeVisible();
     await page.getByRole("dialog").screenshot({
       path: `${process.env.LOOK_DIR ?? "test-results"}/alerts-rto-ads-${test.info().project.name}.png`,
     });
@@ -208,7 +214,7 @@ test("with a courier and an ad account connected, RTO and ads are offered to wat
       .from("alert_settings")
       .delete()
       .eq("project_id", shop.projectId)
-      .in("kind", ["rto_rising", "ads_no_sales"]);
+      .in("kind", ["rto_rising", "ads_no_sales", "ads_low_stock"]);
     for (const c of made ?? []) await shop.admin.from("store_connections").delete().eq("id", c.id);
   }
 });

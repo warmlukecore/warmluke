@@ -43,6 +43,18 @@ const SAMPLE = {
   dispatch_late: { count: 2, hours: 48, oldest_hours: 70, orders: ["#1008", "#1011"] },
   returns_spike: { product: "Linen shirt", this_week: 4, per_week: 0.5 },
   return_reason: { reason: "Too small", count: 3, days: 14, products: ["Linen shirt"], notes: ["Runs a size small"] },
+  ads_low_stock: {
+    campaign: "Diwali",
+    spend: 4500,
+    currency: "INR",
+    days: 7,
+    share: 0.8,
+    lead_days: 12,
+    products: [
+      { product: "Linen shirt", variant: "M", available: 3, days_left: 2 },
+      { product: "Linen shirt", variant: "L", available: 0, days_left: 0 },
+    ],
+  },
 };
 
 console.log("every kind the database watches for has its words");
@@ -105,6 +117,18 @@ check(
   /with about 1 sold in the last 14 days/.test(
     describeAlert({ kind: "low_stock", facts: { ...SAMPLE.low_stock, per_day: 0.1, sales_days: 14 } }).ask
   )
+);
+
+const ads = describeAlert({ kind: "ads_low_stock", facts: SAMPLE.ads_low_stock });
+check(
+  "a campaign on stock running out says what it spent and what is short",
+  ads.title === "Diwali: INR 4,500 in 7 days on stock running out" &&
+    ads.detail ===
+      "80% of what its orders bought · Linen shirt · M (3 left, about 2 days), Linen shirt · L (out of stock)"
+);
+check(
+  "and Luke is asked for a suggestion, the budget kept the owner's",
+  ads.ask.includes("a restock takes 12 days") && ads.ask.includes("I will change the budget myself")
 );
 
 console.log("\na kind the app does not know yet still shows");

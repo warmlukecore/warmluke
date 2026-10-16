@@ -59,9 +59,10 @@ const NAMES = [
   "query_store",
   "rto_cohorts",
   "stock_cover",
+  "ads_stock",
 ];
 check(
-  "the ten reading tools, in the order clients are shown them",
+  "the eleven reading tools, in the order clients are shown them",
   JSON.stringify(STORE_TOOLS.map((t) => t.name)) === JSON.stringify(NAMES)
 );
 check(

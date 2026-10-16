@@ -261,6 +261,45 @@ ALERT_WORDS.ads_no_sales = {
   ],
 };
 
+// Ads on stock running out (0229): what the campaign's own orders bought, each with what is left.
+const runningOut = (f: Facts) =>
+  (
+    (f.raw("products") as
+      | Array<{ product?: string; variant?: string | null; available?: number; days_left?: number | null }>
+      | undefined) ?? []
+  )
+    .filter((p) => p?.product)
+    .map(
+      (p) =>
+        `${[p.product, p.variant].filter(Boolean).join(" · ")} (${
+          Number(p.available) <= 0
+            ? "out of stock"
+            : `${p.available} left, ${Number(p.days_left) >= 1 ? `about ${plural(Number(p.days_left), "day")}` : "out today"}`
+        })`
+    );
+const shareSaid = (f: Facts) => `${Math.round(f.num("share") * 100)}% of what its orders bought`;
+ALERT_WORDS.ads_low_stock = {
+  reads: [["inventory_levels", "available"]],
+  icon: PackageMinus,
+  name: "Ads on stock running out",
+  about: "A campaign still spending while what its own orders buy is about to run out.",
+  title: (f) =>
+    `${f.str("campaign") || "A campaign"}: ${spent(f, "spend")} in ${plural(f.num("days"), "day")} on stock running out`,
+  detail: (f) => [f.num("share") > 0 ? shareSaid(f) : "", runningOut(f).join(", ")].filter(Boolean).join(" · "),
+  ask: (f) =>
+    `${f.str("campaign") ? `The campaign ${f.str("campaign")}` : "A campaign"} spent ${spent(f, "spend")} in the last ${plural(
+      f.num("days"),
+      "day"
+    )}, and ${shareSaid(f)} is running out${runningOut(f).length ? `: ${runningOut(f).join(", ")}` : ""}${
+      f.num("lead_days") > 0 ? `; a restock takes ${plural(f.num("lead_days"), "day")}` : ""
+    }. Should I slow it, or point it at what is in stock until the restock? I will change the budget myself.`,
+  settings: [
+    { key: "days", before: "Looking at ad spend over the last", after: "days" },
+    { key: "spend", before: "Once a campaign has spent", after: "or more" },
+    { key: "days_left", before: "On stock that lasts", after: "days or fewer" },
+  ],
+};
+
 /**
  * One of their own (0164): a rule Luke wrote from their words. Its
  * title is theirs; the fields it shows say which row.

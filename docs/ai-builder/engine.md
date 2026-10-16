@@ -488,7 +488,12 @@ variant's stock lasts at the pace it sold over a stated window (28 days), soones
 cancelled orders and archived or untracked lines left out; beside the owner's restock time,
 whether it runs out first and the day to reorder by, none guessed without one; with no stock
 history kept, a variant out of stock now or quiet in its last week after selling earlier has
-its pace said to be a floor (`check-stock-cover`). The tools run at most three lookups before its reply, on the first attempt only, each read
+its pace said to be a floor (`check-stock-cover`). `ads_stock` (`abo_ads_stock`, 0229): each ad campaign
+that spent in a window (7 days) beside what its own orders bought, matched as
+`store_campaign_results` matches them (the order's UTM campaign is its name or id), never from
+what the ad shows, and each of those variants' stock, pace and days left against the owner's
+restock time (else 14 days, or a cover asked for); a campaign no order names is said to sell
+nothing known (`check-ads-stock`). The tools run at most three lookups before its reply, on the first attempt only, each read
 with the caller's own client. `search_store` rows carry what the merchant keeps beside
 them (`yours`, by section name) when a section holds any, and a list's ties are broken by
 what its rows say, so the same store reads the same way every time. Every lookup is

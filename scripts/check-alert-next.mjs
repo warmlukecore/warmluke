@@ -16,7 +16,15 @@ const check = (name, cond) => {
 };
 
 console.log("the next step");
-const KINDS = ["low_stock", "dispatch_late", "returns_spike", "return_reason", "rto_rising", "ads_no_sales"];
+const KINDS = [
+  "low_stock",
+  "dispatch_late",
+  "returns_spike",
+  "return_reason",
+  "rto_rising",
+  "ads_no_sales",
+  "ads_low_stock",
+];
 check(
   "every kind Luke watches has one",
   KINDS.every((k) => (nextOf({ kind: k }) ?? "").length > 10)
@@ -28,6 +36,11 @@ check(
 );
 check("and asked for when not", /say how long a restock takes/.test(nextOf({ kind: "low_stock", facts: {} })));
 check("an ad's budget stays the owner's", /yours to change/.test(nextOf({ kind: "ads_no_sales" })));
+check(
+  "and on stock running out, with the restock time when said",
+  nextOf({ kind: "ads_low_stock", facts: { lead_days: 12 } }) ===
+    "Reorder what it sells (a restock takes 12 days), or move its spend to what is in stock; its budget is yours to change"
+);
 
 console.log("\nwhose job it is");
 const team = { packing: "Ravi", customers: "Me", ads: "", restocking: "Sunita" };
