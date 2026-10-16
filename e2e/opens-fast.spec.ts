@@ -93,7 +93,7 @@ test("the first chat is usable at once while the store, the website and Luke are
       .update({ status: "done" })
       .eq("store_id", shop.storeId)
       .eq("resource", "customers");
-    await shop.admin.from("profiles").update({ met_luke_at: new Date().toISOString() }).eq("user_id", shop.userId);
     if (had) await shop.admin.from("profiles").upsert(had);
+    else await shop.admin.from("profiles").delete().eq("user_id", shop.userId);
   }
 });
