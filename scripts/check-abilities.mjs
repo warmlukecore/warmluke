@@ -195,6 +195,21 @@ console.log("\na repair sees what the lookups returned");
     Array.from({ length: 50 }, (_, i) => ({ about: `lookup ${i}`, result: { rows: "x".repeat(900) } }))
   );
   check("and it is cut to size, saying so", big.length <= 12_200 && big.includes("cut to fit"));
+  // A refusal a fresh look could settle lets the repair look again (16 Oct).
+  const { needsFreshRead, sameReply } = await import("../src/lib/engine.ts");
+  check(
+    "a name that is not there asks for a fresh read",
+    needsFreshRead([
+      'UI_CHANGE can only reference existing fields — "reason" doesn\'t exist yet. Use FIELD_ADD to add it.',
+    ]) &&
+      needsFreshRead(['Orders has no field "gift_note"']) &&
+      needsFreshRead(['"refunds_x" is not one of the store\'s lists'])
+  );
+  check("a shape to fix does not", !needsFreshRead(["Unexpected end of JSON: a } is missing"]) && !needsFreshRead([]));
+  check(
+    "the same reply, its spacing aside, is the same",
+    sameReply('{"a": 1}', '{"a":1}\n') && !sameReply('{"a":1}', '{"a":2}')
+  );
 }
 
 console.log("\nan outside AI reads the same");

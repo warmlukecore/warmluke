@@ -383,6 +383,18 @@ export type TurnState = {
   found?: Array<{ about: string; result: unknown }>;
 };
 
+/**
+ * A refusal a fresh look could settle (16 Oct, the sprint's "a relevant
+ * fresh read instead of repeating an identical rejected plan"): a name the
+ * reply used that is not there. The repair after it may look again.
+ */
+const READ_AGAIN =
+  /doesn't exist|does not exist|has no field|unknown (field|column|section)|not a column|not one of the store's lists|not a field|no such/i;
+export const needsFreshRead = (errors: string[]): boolean => errors.some((e) => READ_AGAIN.test(e));
+
+/** The same reply as one already refused, its spacing set aside. */
+export const sameReply = (a: string, b: string): boolean => a.replace(/\s+/g, "") === b.replace(/\s+/g, "");
+
 /** How much of what the lookups returned rides along with a repair. */
 const FOUND_CHARS = 12_000;
 
@@ -1141,6 +1153,13 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
   // turn's one send-back was spent: the checks are what "done" means.
   let checkSent = resume?.checkSent ?? false;
   let lastErrors = "";
+  // The reply last refused, and how many times in a row it came back the
+  // same: once is told to take another way, twice ends the turn, rather than
+  // spending the attempts left on it.
+  let lastRefused: string | null = null;
+  let sameAgain = 0;
+  // The last refusal was a name not there: the repair may look again.
+  let readAgain = false;
   // A design that came back from a repair as an answer saying nothing was
   // built is sent back once, rather than shown as "Here's the build:".
   let lastWasDesign = false;
@@ -1282,7 +1301,8 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
     if (attempt === 0 && givenDesign) raw = givenDesign;
     else {
       tell({ step: "model", attempt: attempt + 1, of: lastAttempt() + 1 });
-      // Tools on the first attempt only: a repair fixes the reply's shape,
+      // Tools on the first attempt, and on a repair whose refusal a fresh look
+      // could settle (readAgain); otherwise a repair fixes the reply's shape,
       // and what was looked up is already written into the reply it fixes.
       const roomy = cutAtLimit;
       cutAtLimit = false;
@@ -1295,7 +1315,7 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
               signal,
               // The one they picked wins on both roads; otherwise each road's own.
               model: model ?? (road === "talk" ? talkModel() : undefined),
-              lookups: attempt === 0 && tools ? { tools } : undefined,
+              lookups: (attempt === 0 || readAgain) && tools ? { tools } : undefined,
               // A turn is several calls on one prefix (lookups, repairs, a redo):
               // the thread so far is written to the cache once and read after.
               cacheTurns: true,
@@ -1578,7 +1598,20 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
       console.warn(`[validator] attempt ${attempt + 1} rejected: ${parsed.errors.join(" | ")}`);
     }
     onlyAsking = false;
+    // The same reply as the one just refused: told once to take another way, ended the second time.
+    const repeated = lastRefused !== null && sameReply(raw, lastRefused);
+    lastRefused = raw;
+    sameAgain = repeated ? sameAgain + 1 : 0;
+    if (sameAgain >= 2) break;
+    readAgain = needsFreshRead(parsed.errors);
     if (attempt >= lastAttempt()) break;
+    const another = repeated
+      ? `\n\nThis is the same reply that was just refused. Do not send it again: take another way. ${
+          tools || agent ? "Look the rows up again with your tools" : "Read again what your lookups returned below"
+        }, or leave out the part that fails and say so in "unmet".`
+      : readAgain && tools && !agent
+        ? "\n\nA name you used is not there: you may look the rows up again with your tools before you fix it."
+        : "";
     attemptTurns.push(
       { role: "assistant", content: raw },
       {
@@ -1589,7 +1622,7 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
           agent
             ? "Fix every one of these in your draft with your tools, try it, then finish. If a module name is already taken, target the existing module or choose another name."
             : "Fix every one of these and reply again with the corrected JSON only. Do not apologise or explain — just the corrected reply. If a module name is already taken, either target the existing module instead of creating a new one, or choose a different name."
-        }${foundBlock(found)}`,
+        }${another}${foundBlock(found)}`,
       }
     );
   }

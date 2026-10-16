@@ -164,6 +164,16 @@ try {
   t = await turn();
   check("is asked for the design once, and builds it", t.ok && t.reply.type === "blueprint" && t.repairs === 2);
   check("told it dropped the design", /answer with no design/.test(lastUser(sent[2])));
+
+  console.log("\nthe same refused reply, sent again (16 Oct)");
+  sent = [];
+  script = [{ text: WRONG }, { text: WRONG }, { text: WRONG }, { text: SOUND }];
+  t = await turn();
+  check(
+    "told the second time to take another way, not to send it again",
+    /same reply that was just refused/.test(lastUser(sent[2]))
+  );
+  check("and a third time the same ends the turn: no attempt spent on it again", !t.ok && sent.length === 3);
 } finally {
   globalThis.fetch = real;
   await project.remove();

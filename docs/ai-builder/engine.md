@@ -649,8 +649,13 @@ reason), and the next attempt then has the deep room (`generate`'s `roomy`); a b
 string left open is named where it opened, and never called a cut-off. Words written
 before or after one whole JSON reply are left, not sent back (`readJson` reads the first
 whole object). A repair that answers with no design, after a design that needed fixing, is
-asked once for the design itself. When attempts run out the owner reads that Luke could not
-finish and nothing was changed (`UNFINISHED` in `turn-run.ts`), never the validator's words.
+asked once for the design itself. A refusal a fresh look could settle (a name used that is
+not there: `needsFreshRead`, 16 Oct) gives the next repair the store's tools again, where
+before only the first attempt had them; the same reply as the one just refused (`sameReply`)
+is told once to take another way (look again, or leave out what fails and say so in
+`unmet`), and a second time ends the turn rather than spending the attempts left on it.
+When attempts run out the owner reads that Luke could not finish and nothing was changed
+(`UNFINISHED` in `turn-run.ts`), never the validator's words, with Try again beside it.
 `check-repair-honest` holds it, with the model stood in for. Rejected output
 is not persisted as conversation history. One reply is not sent back: a question answered
 in prose rather than JSON is that answer, taken as it is (`isQuestion`), since a resend
