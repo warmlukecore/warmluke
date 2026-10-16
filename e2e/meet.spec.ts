@@ -122,8 +122,14 @@ test("the first conversation is Luke's alone, and the store opens on their yes t
   try {
     await page.goto(`/app/${shop.projectId}`);
     const luke = page.getByRole("complementary", { name: "Luke" });
-    // Nothing to type into before he has spoken: typed into, it raced his hello into a second thread.
-    await expect(page.getByPlaceholder("Luke is saying hello…")).toBeDisabled({ timeout: 30_000 });
+    // They may type before he has spoken (16 Oct), but nothing is sent until he has:
+    // sent, it raced his hello into a second thread.
+    const early = page.getByPlaceholder("Luke is saying hello… you can start typing");
+    await expect(early).toBeEditable({ timeout: 30_000 });
+    await early.fill("hi");
+    await expect(luke.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+    await early.press("Enter");
+    await early.fill("");
     // Their AI writes in its own thread while he is about to say hello: its
     // live echo opened that thread over him, and he never spoke (CI, 14 Oct).
     // A second for the page's live channel to be joined, inside the hold above.

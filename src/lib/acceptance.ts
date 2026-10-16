@@ -74,7 +74,7 @@ export const CRITICAL: readonly Critical[] = [
     id: "onboarding-chat",
     says: "The first chat opens without waiting on the store's import",
     checks: [],
-    e2e: ["e2e/meet.spec.ts"],
+    e2e: ["e2e/opens-fast.spec.ts", "e2e/meet.spec.ts"],
     cases: ["m-informed", "m-discovery"],
   },
   {

@@ -270,6 +270,12 @@ Settings → General's "Your team and how you work", `TeamFacts`, `lib/team-fact
 The team answers become lines of what Luke knows that the work stands on (merchant_notes,
 kind team or lead_time), and the restock time a number on the project that Running low reads.
 Their own AI is not asked about here (9 Oct): the app offers it under "Use your own AI".
+The first meeting's composer takes typing at once, before Luke's hello (16 Oct): what is
+typed is sent only once he has spoken, so it never races his hello into a second thread.
+`e2e/opens-fast.spec.ts` measures the first screen while the store is still importing, the
+website read is held and his hello has not come: "Go to store" and the composer are usable
+in under a second on a warm page (the sprint's target is two), and the number is printed
+and kept on the run.
 Settings → General also shows "What your website says" (`SiteFacts`, 0223): the lines read
 off their store's pages, each under its topic, when it was read, and "Read it again". Settings
 → Luke (`LukeMay`) lists what Luke may do in the app (on, asks you first, off, needs a

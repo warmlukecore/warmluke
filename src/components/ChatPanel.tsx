@@ -3472,9 +3472,14 @@ export default function ChatPanel({
     return () => clearInterval(t);
   }, [busy, steps.length]);
 
+  // The first meeting before his hello (16 Oct): they may type at once, as the
+  // sprint asks of a chat that opens without waiting; what they typed is sent
+  // once he has spoken, so it never races his hello into a second thread.
+  const helloPending = !!meeting && !messages.some((m) => m.role !== "user");
+
   function send(text?: string) {
     const content = (text ?? input).trim();
-    if (!content || busy) return;
+    if (!content || busy || helloPending) return;
     setInput("");
     // Back to one row once the words have gone.
     if (inputRef.current) inputRef.current.style.height = "auto";
@@ -5532,7 +5537,6 @@ export default function ChatPanel({
                         // The first conversation: Luke speaks first. Typed into
                         // before his first words, it raced his opener into a
                         // second thread (9 Oct); an error line opens it again.
-                        disabled={!!meeting && !messages.some((m) => m.role !== "user")}
                         onChange={(e) => {
                           setInput(e.target.value);
                           setStrokes((n) => n + 1);
@@ -5555,14 +5559,14 @@ export default function ChatPanel({
                           meeting
                             ? messages.some((m) => m.role !== "user")
                               ? "Reply to Luke, in your own words"
-                              : "Luke is saying hello…"
+                              : "Luke is saying hello… you can start typing"
                             : LUKE_COPY.placeholder
                         }
                         className="max-h-40 flex-1 resize-none bg-transparent py-0.5 text-[13px] leading-6 text-fg outline-none placeholder:text-fg-faint"
                       />
                       <button
                         onClick={() => (canStop ? onStop() : send())}
-                        disabled={stopping || (busy && !canStop ? true : !canStop && !input.trim())}
+                        disabled={stopping || (busy && !canStop ? true : !canStop && (!input.trim() || helloPending))}
                         aria-label={stopping ? "Stopping" : canStop ? "Stop" : "Send"}
                         title={stopping ? "Stopping…" : canStop ? "Stop" : busy ? "Building…" : "Send"}
                         className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary transition-all duration-150 hover:bg-primary-hover active:scale-95 disabled:bg-line-strong disabled:text-surface"
