@@ -570,6 +570,37 @@ Filters on any column (eq, neq, gt, gte, lt, lte, contains, starts_with, in, is_
       }
     },
   },
+  {
+    // RTO as comparable cohorts (0225): the sprint's first investigation, counted in the database.
+    name: "rto_cohorts",
+    about: (a) => `RTO by ${typeof a.by === "string" ? a.by.replace("_", " ") : "courier"}`,
+    description: `Whether RTO (returned to origin) went up or down, and where: the courier shipments sent in the last N days beside those sent in the N days before, over every shipment, never a page. Each rate is counted over the shipments that settled (delivered or returned) and said so; what is still moving and what has gone quiet (no word in three weeks) are counted apart, since a recent cohort is not finished. Broken down by courier, payment (COD or prepaid), the order's state, NDR reason, or provider; a group with fewer settled shipments than min_settled gets no rate, only its counts (too_few). Use it for any RTO question; say the window, the denominator, what is still moving, and that a change is observed, not a proven cause. Needs a courier connected; with no shipments it says so. Read-only.`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        days: { type: "number", description: "The window, 3 to 90 days (14). The cohort before is as long." },
+        by: {
+          type: "string",
+          enum: ["courier", "payment", "state", "ndr_reason", "provider"],
+          description: "What to break it down by (courier).",
+        },
+        min_settled: { type: "number", description: "Settled shipments a group needs before its rate is said (20)." },
+      },
+    },
+    run: async (args, { db, store }) => {
+      const { data, error } = await db.rpc("abo_rto_cohorts", {
+        p_store: store.id,
+        p_days: Number(args.days) || 14,
+        p_by: typeof args.by === "string" ? args.by : "courier",
+        p_min: Number(args.min_settled) || 20,
+      });
+      if (error) return { error: error.message };
+      const out = data as { now?: { shipped?: number } };
+      return out?.now?.shipped
+        ? out
+        : { ...out, said: "No courier shipments in this window: connect a courier, or widen the window." };
+    },
+  },
 ];
 
 /** Each tool whose answer holds a list's rows, cut to what the account is shown of them (0192). */

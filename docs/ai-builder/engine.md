@@ -459,7 +459,13 @@ arithmetic over a page of rows. The measures and dimensions are declared once
 `query_store` (`abo_store_query`, 0217): the same exactness over any list the store has (ad
 spend, campaign results, payments, tickets, messages), its columns read off the list's own
 view and never written into the SQL as given, its values quoted, read as the caller with ten
-seconds at most; `check-store-query` holds it to totals, filters, paging and refusals. The tools run at most three lookups before its reply, on the first attempt only, each read
+seconds at most; `check-store-query` holds it to totals, filters, paging and refusals.
+`rto_cohorts` (`abo_rto_cohorts`, 0225, 16 Oct): RTO as comparable cohorts, the courier
+shipments sent in the last N days beside the N before, each rate over the shipments that
+settled (delivered or returned) and said so, what is still moving and what went quiet (three
+weeks without word) counted apart, broken down by courier, payment, the order's state, NDR
+reason or provider, and no rate for a group under its minimum of settled shipments; read as
+the caller (`check-rto-cohorts`). The tools run at most three lookups before its reply, on the first attempt only, each read
 with the caller's own client. `search_store` rows carry what the merchant keeps beside
 them (`yours`, by section name) when a section holds any, and a list's ties are broken by
 what its rows say, so the same store reads the same way every time. Every lookup is
