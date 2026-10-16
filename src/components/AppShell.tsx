@@ -37,7 +37,7 @@ import { hasScope } from "@/lib/shopify-resources";
 import ChatPanel, { type BuildRecord, type ChatMessage, type InrRate, nextChatId } from "@/components/ChatPanel";
 import type { OfferedModel } from "@/lib/luke-models";
 import { undoableFrom } from "@/lib/undo";
-import { asError, engineError, fixPrompt, type FixAction } from "@/lib/errors";
+import { asError, engineError, fixPrompt, retryFix, type FixAction } from "@/lib/errors";
 import VersionHistory from "@/components/VersionHistory";
 import AutomationsPanel from "@/components/AutomationsPanel";
 import { FormatProvider } from "@/lib/format";
@@ -946,11 +946,18 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
                     answering: true,
                   }
             );
+          } else if (kind === "stopped") {
+            rebuilt.push({ id: m.id, role: "system", text: "Stopped." });
           } else {
+            // What they asked, sent again by one click: never retyped (16 Oct).
+            const what = q.message ?? "Luke could not answer this.";
+            const asked = [...rebuilt].reverse().find((r) => r.role === "user")?.text ?? "";
+            const again = retryFix(asked, (p as { failed?: string }).failed);
             rebuilt.push({
               id: m.id,
               role: "system",
-              text: kind === "stopped" ? "Stopped." : (q.message ?? "Luke could not answer this. Ask again."),
+              text: what,
+              ...(again ? { error: { kind: "system" as const, what, fix: [again] } } : {}),
             });
           }
           continue;
@@ -2959,13 +2966,16 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
         }
 
         if (!ok || data.error) {
+          const failed = asError((data.error as string) ?? "Luke could not be reached.");
+          // One click sends it again; never where a second try cannot help (the model's account or key).
+          const again = retryFix(text, data.failed as string | undefined);
           setChatMessages((prev) => [
             ...prev,
             {
               id: nextChatId(),
               role: "system",
               text: `${(data.error as string) ?? "Luke could not be reached."}`,
-              error: asError((data.error as string) ?? "Luke could not be reached."),
+              error: again ? { ...failed, fix: [again] } : failed,
             },
           ]);
           return;
@@ -2982,8 +2992,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
               error: {
                 kind: "system",
                 what: (data.hint as string) ?? "Luke's reply did not pass the checks.",
-                why: "Nothing was changed. Asking again usually works — it is a new answer each time.",
+                why: "Nothing was changed. Try again sends it once more, with what went wrong; there is nothing to retype.",
                 details: ((data.errors as string[] | undefined) ?? []).slice(0, 6),
+                fix: [retryFix(text, null, (data.errors as string[] | undefined) ?? [])].filter((f) => f !== null),
               },
             },
           ]);
@@ -3799,6 +3810,9 @@ export default function AppShell({ projectId, ownerEmail }: { projectId: string;
       if (action.type === "ask_luke") {
         await loadModules();
         setChatMessages((prev) => [...prev, { id: nextChatId(), role: "system", text: "Asking Luke to correct it…" }]);
+        await runPrompt(action.prompt, { silent: true });
+      } else if (action.type === "ask_again") {
+        setChatMessages((prev) => [...prev, { id: nextChatId(), role: "system", text: "Trying again…" }]);
         await runPrompt(action.prompt, { silent: true });
       } else if (action.type === "retry" && selectedModuleId) {
         await loadModuleData(selectedModuleId);

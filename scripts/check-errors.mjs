@@ -4,7 +4,7 @@
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-errors.mjs
 
-import { asError, engineError, fixPrompt, nearest } from "../src/lib/errors.ts";
+import { asError, engineError, fixPrompt, nearest, retryFix } from "../src/lib/errors.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -55,6 +55,26 @@ check(
 check("a string becomes a system error", asError("nope").what === "nope");
 check("an AppError passes through untouched", asError(e) === e);
 check("nothing at all gets the fallback", asError(undefined, "fallback").what === "fallback");
+
+console.log("\na turn Luke could not finish is tried again by one click, never retyped");
+const again = retryFix("make a returns tool", null, ['plans[0]: no field "order"', "rule: unknown op"]);
+check("a Try again way out", again?.label === "Try again" && again.action.type === "ask_again");
+check(
+  "the same words, with what failed, for another road",
+  again.action.prompt.startsWith("make a returns tool\n\n(Asked again. The last try failed its own checks: plans[0]") &&
+    again.action.prompt.includes("Take another way")
+);
+check("nothing failed, the words alone", retryFix("make a returns tool").action.prompt === "make a returns tool");
+check(
+  "tried again twice, the note is not doubled",
+  retryFix(again.action.prompt, null, ["x"]).action.prompt.match(/Asked again/g).length === 1
+);
+check("a busy model: try again", retryFix("hi", "busy") !== null);
+check(
+  "never where a second try cannot help: the account, the key, the setup",
+  ["billing", "auth", "unset"].every((k) => retryFix("hi", k) === null)
+);
+check("nothing asked, nothing to send again", retryFix("   ") === null);
 
 console.log(fails.length === 0 ? "\nan error knows its way out" : `\n${fails.length} FAILED`);
 process.exit(fails.length === 0 ? 0 : 1);

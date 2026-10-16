@@ -409,7 +409,10 @@ For each turn, the engine reads:
   "try again" means it (`answeredTurns`); once an answer has come after it, it is left out. A
   turn that fails because the model was not there (`ModelError`: an empty account, a refused
   key) tells the owner that sentence, not "ask again, in other words", and keeps its kind as
-  `payload.failed` for the console;
+  `payload.failed` for the console. A turn that did not finish carries "Try again"
+  (`retryFix`, 16 Oct), live and after a reload: one click sends the same words once more,
+  with what failed its checks, so the next try takes another way and nothing is retyped; it
+  is not offered where a second try cannot help (the model's account, key or setup);
 - connected-store facts and bounded data snapshots.
 
 A store-backed section's table is read a page at a time from the whole list

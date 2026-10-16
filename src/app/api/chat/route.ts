@@ -559,7 +559,7 @@ export async function POST(req: Request) {
         // Kept as what it was when the model was not there, for the console (0165).
         const failed = modelErrorKindOf(why);
         if (!halt.signal.aborted) await settle({ type: "unanswered", message: why, ...(failed ? { failed } : {}) });
-        return { error: why, conversationId: thread };
+        return { error: why, conversationId: thread, ...(failed ? { failed } : {}) };
       } finally {
         clearInterval(stopWatch);
         if (refundable) await client.rpc("abo_refund_turn", { p_spend: refundable });

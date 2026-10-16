@@ -35,7 +35,9 @@ export type FixAction =
    * answers with a corrected design, which waits for a yes.
    */
   | { type: "ask_luke"; prompt: string }
-  | { type: "retry" };
+  | { type: "retry" }
+  /** The same request to Luke once more, with what went wrong the last time (retryFix). */
+  | { type: "ask_again"; prompt: string };
 
 export type Fix = {
   label: string;
@@ -66,6 +68,36 @@ export function asError(e: unknown, fallback = "That didn't work."): AppError {
   if (e && typeof e === "object" && "kind" in e && "what" in e) return e as AppError;
   const message = e instanceof Error ? e.message : typeof e === "string" ? e : fallback;
   return { kind: "system", what: message || fallback };
+}
+
+/** Kinds a second try cannot change: the model account, its key, its setup (lib/ai ModelErrorKind). */
+const NO_SECOND_TRY = new Set(["billing", "auth", "unset"]);
+const ASKED_AGAIN = /\n\n\(Asked again\.[\s\S]*$/;
+
+/**
+ * "Try again" on a turn Luke could not finish (16 Oct): the same request
+ * sent once more by one click, never retyped or said another way, and
+ * what failed goes with it so the next try takes another road. None where
+ * a second try cannot help. Bounded by the owner: one click, one try.
+ */
+export function retryFix(asked: string, failed?: string | null, errors: string[] = []): Fix | null {
+  const text = asked.replace(ASKED_AGAIN, "").trim();
+  if (!text || (failed && NO_SECOND_TRY.has(failed))) return null;
+  const why = errors
+    .map((e) => e.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .join("; ")
+    .slice(0, 300);
+  return {
+    label: "Try again",
+    action: {
+      type: "ask_again",
+      prompt: why
+        ? `${text}\n\n(Asked again. The last try failed its own checks: ${why}. Take another way to the same result.)`
+        : text,
+    },
+  };
 }
 
 /** A design or rule that did not fit, with Luke on the end of it. */

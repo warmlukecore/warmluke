@@ -285,7 +285,7 @@ export async function settleAnswer(
 export const stepError = (e: unknown) => (e instanceof ModelError ? new FatalError(e.message) : e);
 
 export const UNFINISHED =
-  "Luke couldn't finish this one: it kept failing its own checks, so nothing was changed. Ask again; if it fails a second time, say it another way.";
+  "Luke couldn't finish this one: it kept failing its own checks, so nothing was changed. Try again sends it once more, with what went wrong; there is nothing to retype.";
 
 export async function finishTurn(
   client: SupabaseClient,
@@ -335,7 +335,7 @@ export async function finishTurn(
         conversationId: job.conversationId,
         repairs: turn.repairs,
         errors: turn.errors,
-        hint: `The assistant tried ${turn.repairs + 1} times and its plan still failed its own checks, so nothing was changed. Ask again; if it fails again, say it another way.`,
+        hint: `Luke tried ${turn.repairs + 1} times and its plan still failed its own checks, so nothing was changed.`,
       },
     };
   }
