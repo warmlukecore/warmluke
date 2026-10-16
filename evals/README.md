@@ -15,7 +15,13 @@ as the panel builds it (`POST /api/apply`), and what is left in the app is grade
 - `runs/<YYYYMMDD-HHMM>-<label>.json`: one run each (UTC minute). `runs/index.json` lists
   them; `runs/all.ts` imports them for the console page. The harness writes all three; none
   is edited by hand.
-- `scripts/eval-luke.mjs`: the harness. `scripts/check-eval-harness.mjs`: its logic, tested
+- `acceptance/`: the sprint's acceptance (16 Oct). `scripts/acceptance.mjs --label <name>` runs
+  every check the ten critical scenarios stand on (`src/lib/acceptance.ts`), and with
+  `--max-usd` every case three times on a fresh store (`eval-luke --repeat 3`, in two halves),
+  then writes `acceptance/<name>.md`: the checks, 68 of 75 runs as the bar, every critical
+  case on every run, p50 and p95 by kind, and the failed runs. `owner-session.md` is the
+  owner's 30 minutes with no developer, and how a failure is captured.
+- `scripts/eval-luke.mjs`: the harness (`--repeat 1-3`: each case that many times). `scripts/check-eval-harness.mjs`: its logic, tested
   without a model, a server or a database (pure tier, in CI).
 - `src/lib/eval-report.ts`: what a run is, and how a pass, a sign, a score out of 10 and the
   summary are counted, for the harness and the page alike.

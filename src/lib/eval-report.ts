@@ -65,6 +65,8 @@ export type CaseResult = {
   cost: number;
   /** Milliseconds Luke took, all turns together. */
   ms: number;
+  /** Which run of the case this was, when it was run more than once (--repeat). */
+  repeat?: number;
   transcript?: Line[];
   /** Each of Luke's turns as its trace had it (gone with the case's project once the case ends). */
   trace?: TurnTrace[];

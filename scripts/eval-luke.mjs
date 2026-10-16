@@ -19,7 +19,7 @@
 //
 //   ENV_FILE=.env.check.local APP_URL=http://localhost:3101 \
 //   EVAL_SIM_MODEL=claude-haiku-4-5 EVAL_GRADE_MODEL=claude-haiku-4-5 \
-//   node scripts/eval-luke.mjs --label before --max-usd 1.5 [--set smoke|real|full-a|full-b|full | --cases a,b] [--design-model <name>]
+//   node scripts/eval-luke.mjs --label before --max-usd 1.5 [--set smoke|real|full-a|full-b|full | --cases a,b] [--design-model <name>] [--repeat 1-3]
 //
 // Run from the repository's root. The check project only (CHECK_PROJECT=1):
 // each case makes a throwaway project with the seeded shop in it, and
@@ -80,6 +80,8 @@ export function parseArgs(argv) {
   const only = value("--cases");
   const set = value("--set") ?? null;
   const designModel = value("--design-model") ?? null;
+  // Each case this many times, each on a fresh store (the sprint's 25 × 3, 16 Oct).
+  const repeat = value("--repeat") === undefined ? 1 : Number(value("--repeat"));
   if (!label || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(label)) {
     return { error: "--label is required: lowercase letters, digits and dashes (before, after-prompt-fix)" };
   }
@@ -90,13 +92,14 @@ export function parseArgs(argv) {
   }
   if (set !== null && !SETS.includes(set)) return { error: `--set is one of ${SETS.join(", ")}` };
   if (set !== null && only) return { error: "--set or --cases, not both" };
+  if (!(Number.isInteger(repeat) && repeat >= 1 && repeat <= 3)) return { error: "--repeat is 1, 2 or 3" };
   const cases = only
     ? only
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean)
     : null;
-  return { label, maxUsd, cases, set, designModel };
+  return { label, maxUsd, cases, set, designModel, repeat };
 }
 
 // ── Cases ───────────────────────────────────────────────────────────
@@ -1554,17 +1557,19 @@ async function main() {
   let failed = null;
   const unfinished = [];
   try {
-    for (const c of cases) {
-      const r = await runCase(c);
-      done.push(r);
-      inFlight = null;
-      console.log(
-        `${casePassed(r) ? "pass" : "FAIL"}  ${c.id.padEnd(20)} ${String(r.score10).padStart(4)}/10  ${r.turns} turn${r.turns === 1 ? "" : "s"}, ${r.built ? "built" : "not built"}, ${usd(r.cost)}, ${Math.round(r.ms / 1000)}s   spent ${usd(meter.spent)} of $${args.maxUsd}`
-      );
-      for (const x of r.checks) if (!x.ok) console.log(`      check: ${x.name}: ${x.detail}`);
-      for (const x of r.criteria) if (!x.met) console.log(`      unmet: ${x.text}`);
-      for (const x of r.must_not) if (x.hit) console.log(`      hit:   ${x.text}`);
-    }
+    for (const c of cases)
+      for (let n = 1; n <= args.repeat; n++) {
+        const r = await runCase(c);
+        if (args.repeat > 1) r.repeat = n;
+        done.push(r);
+        inFlight = null;
+        console.log(
+          `${casePassed(r) ? "pass" : "FAIL"}  ${c.id.padEnd(20)} ${String(r.score10).padStart(4)}/10  ${r.turns} turn${r.turns === 1 ? "" : "s"}, ${r.built ? "built" : "not built"}, ${usd(r.cost)}, ${Math.round(r.ms / 1000)}s   spent ${usd(meter.spent)} of $${args.maxUsd}`
+        );
+        for (const x of r.checks) if (!x.ok) console.log(`      check: ${x.name}: ${x.detail}`);
+        for (const x of r.criteria) if (!x.met) console.log(`      unmet: ${x.text}`);
+        for (const x of r.must_not) if (x.hit) console.log(`      hit:   ${x.text}`);
+      }
   } catch (e) {
     if (e instanceof CapReached) stopped = e.message;
     else failed = e;
@@ -1586,7 +1591,7 @@ async function main() {
     grade_model: gradeModel,
     cap: args.maxUsd,
     spent: Math.round(meter.spent * 1e4) / 1e4,
-    partial: done.length < cases.length,
+    partial: done.length < cases.length * args.repeat,
     cases: done,
     ...(unfinished.length ? { unfinished } : {}),
     summary: summarise(done),

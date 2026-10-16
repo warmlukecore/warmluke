@@ -450,6 +450,12 @@ check(
 console.log("\nthe arguments");
 check("a label is needed", !!parseArgs(["--max-usd", "1"]).error);
 check("and a cap, inside the budget", !!parseArgs(["--label", "x", "--max-usd", "11"]).error);
+check("each case once unless asked", parseArgs(["--label", "x", "--max-usd", "1"]).repeat === 1);
+check(
+  "up to three times each, for acceptance",
+  parseArgs(["--label", "x", "--max-usd", "1", "--repeat", "3"]).repeat === 3
+);
+check("and no more", !!parseArgs(["--label", "x", "--max-usd", "1", "--repeat", "4"]).error);
 const parsed = parseArgs(["--label", "before", "--max-usd", "1.5", "--cases", "rto-new, low-stock"]);
 check(
   "read as given",
