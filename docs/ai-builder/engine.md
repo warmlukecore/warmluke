@@ -651,7 +651,8 @@ before or after one whole JSON reply are left, not sent back (`readJson` reads t
 whole object). A repair that answers with no design, after a design that needed fixing, is
 asked once for the design itself. A refusal a fresh look could settle (a name used that is
 not there: `needsFreshRead`, 16 Oct) gives the next repair the store's tools again, where
-before only the first attempt had them; the same reply as the one just refused (`sameReply`)
+before only the first attempt had them (the tools alone, with no words of their own, so a repair
+reads as it was recorded); the same reply as the one just refused (`sameReply`)
 is told once to take another way (look again, or leave out what fails and say so in
 `unmet`), and a second time ends the turn rather than spending the attempts left on it.
 When attempts run out the owner reads that Luke could not finish and nothing was changed

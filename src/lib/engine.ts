@@ -1599,6 +1599,8 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
     }
     onlyAsking = false;
     // The same reply as the one just refused: told once to take another way, ended the second time.
+    // A refusal a fresh look could settle gets the tools on its repair, and no words of its own:
+    // the tools are there to see, and the repair reads as recorded (model-tape keys on the conversation).
     const repeated = lastRefused !== null && sameReply(raw, lastRefused);
     lastRefused = raw;
     sameAgain = repeated ? sameAgain + 1 : 0;
@@ -1609,9 +1611,7 @@ async function turnShown(input: TurnInput): Promise<TurnResult> {
       ? `\n\nThis is the same reply that was just refused. Do not send it again: take another way. ${
           tools || agent ? "Look the rows up again with your tools" : "Read again what your lookups returned below"
         }, or leave out the part that fails and say so in "unmet".`
-      : readAgain && tools && !agent
-        ? "\n\nA name you used is not there: you may look the rows up again with your tools before you fix it."
-        : "";
+      : "";
     attemptTurns.push(
       { role: "assistant", content: raw },
       {
