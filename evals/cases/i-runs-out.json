@@ -1,0 +1,24 @@
+{
+  "id": "i-runs-out",
+  "title": "What runs out before the restock",
+  "language": "english",
+  "kind": "question",
+  "shop": "ethnic",
+  "persona": "Ethnic wear founder who reorders from a workshop that takes two weeks; wants to know what to reorder today.",
+  "before": [],
+  "opening": "What will run out before I can restock?",
+  "facts": {
+    "how long a restock takes": "14 days, as told to Luke",
+    "per size or per product": "per size"
+  },
+  "success": [
+    "names the sizes that run out first with how many days each lasts, against the 14 days a restock takes",
+    "says the sales window the pace was read over",
+    "leaves the reorder to the owner, with a suggestion of what to reorder first"
+  ],
+  "must_not": ["says stock was changed or a purchase order was placed"],
+  "max_turns": 2,
+  "expect": {
+    "answer": "ethnic-runs-out"
+  }
+}

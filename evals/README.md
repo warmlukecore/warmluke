@@ -7,9 +7,11 @@ problem. Its opening goes to the running app as the panel sends it, a simulated 
 answers Luke only from the case's facts and says yes when the plan fits, the yes is built
 as the panel builds it (`POST /api/apply`), and what is left in the app is graded.
 
-- `cases/*.json`: forty-three owners, in our own words: the first eight on the seeded shop,
+- `cases/*.json`: forty-six owners, in our own words: the first eight on the seeded shop,
   twenty-four more on six other kinds of business (12 Oct), six asks real owners made that
-  went wrong in production (`r-…`, 15 Oct), and five first meetings (`m-…`, 15 Oct). No real store, person, phone number,
+  went wrong in production (`r-…`, 15 Oct), five first meetings (`m-…`, 15 Oct), and three
+  investigations (`i-rto-why`, `i-runs-out`, `i-ads-stock`, 17 Oct) on a shop with its
+  connections. No real store, person, phone number,
   email or order number: the repository is public, and `check-eval-harness` fails a case
   that holds an email, an eight-digit number or an id.
 - `runs/<YYYYMMDD-HHMM>-<label>.json`: one run each (UTC minute). `runs/index.json` lists
@@ -25,9 +27,13 @@ as the panel builds it (`POST /api/apply`), and what is left in the app is grade
   without a model, a server or a database (pure tier, in CI).
 - `src/lib/eval-report.ts`: what a run is, and how a pass, a sign, a score out of 10 and the
   summary are counted, for the harness and the page alike.
-- `scripts/fixtures/shops.ts`: six more shops as data (phone cases, clothes in sizes,
-  skincare, gadgets, snacks, wholesale); `scripts/fixtures/business-shop.ts` turns each into
-  the Shopify-shaped nodes `seed-shop.ts` makes and saves them through the import's savers.
+- `scripts/fixtures/shops.ts`: seven more shops as data (phone cases, clothes in sizes,
+  skincare, gadgets, snacks, wholesale, and ethnic wear with what its connections bring: a
+  courier's shipments where RTO rose on COD, two sizes that run out before the restock, and an
+  ad export, marked a dated export, whose Diwali campaign sells them);
+  `scripts/fixtures/business-shop.ts` turns each into the Shopify-shaped nodes `seed-shop.ts`
+  makes and saves them through the import's savers. `check-investigation-shop` seeds ethnic
+  wear and reads it with the database's own tools, so its cases are graded on what is there.
 - `expect.mjs`: what each case expects, worked out from the very nodes its store was seeded
   with, so a change to a shop moves its answers with it.
 - `scripts/check-eval-graders.mjs` (live, no model): every shop saves, and the graders pass a
@@ -56,6 +62,7 @@ The twenty-four from 12 Oct, by kind. Each names its shop (`shop`) and what code
 | Kind | Cases | Graded by code |
 | ---- | ----- | -------------- |
 | `question`: one answer from the store | q-cod-pending, q-discount-use (seed); q-out-of-stock (cases); q-top-size (fashion); q-week-vs-week (cosmetics); q-big-cod (gadgets); q-repeat-buyers (snacks); q-owed, q-top-customers (wholesale) | the number, or the names, worked out from the shop are in what Luke said |
+| `question`: an investigation | i-rto-why, i-runs-out, i-ads-stock (ethnic) | the rates, days and names worked out from the shop are in what Luke said; the window, the evidence, that it was seen and not proven, and a next step are judged |
 | `build`: rows a design must point at | o-repeat-cod (snacks), o-not-shipped (fashion), o-call-list (gadgets), o-overdue (wholesale), o-expiring (cosmetics, its batches kept in the app), i-reorder (fashion), i-sku-twins (cases) | a field of the owner's marks exactly those rows, or a counter shows how many, or a rule's dry run matches them |
 | `build`: an event rule, used | o-blank-stock (cases) | after the build, the owner ties designs to their blank and sets the blank's count through `/api/records`; every design then shows it |
 | `vague`: a question first | v-warranty (gadgets), v-track-better (snacks) | the first reply asks, and draws nothing |

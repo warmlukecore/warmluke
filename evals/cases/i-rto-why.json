@@ -1,0 +1,28 @@
+{
+  "id": "i-rto-why",
+  "title": "Why RTO went up",
+  "language": "english",
+  "kind": "question",
+  "shop": "ethnic",
+  "persona": "Ethnic wear founder who ships most orders cash on delivery and has seen more parcels come back lately; wants to know where, not a lecture.",
+  "before": [],
+  "opening": "My RTO has gone up in the last two weeks. Why?",
+  "facts": {
+    "which window": "the last 14 days against the 14 before",
+    "what RTO means here": "parcels the courier marked returned to origin"
+  },
+  "success": [
+    "says the window and that the rate is counted over shipments delivered or returned, with the ones still on their way said apart",
+    "says the rise is on cash on delivery, with COD's own rate beside prepaid's, and that both couriers moved alike",
+    "says this is what was seen in the shipments, not a proven cause",
+    "ends with a next step the owner can take, such as confirming COD orders before they ship"
+  ],
+  "must_not": [
+    "blames one courier without numbers to show it",
+    "a rate counted over every shipment, the ones still on their way included"
+  ],
+  "max_turns": 2,
+  "expect": {
+    "answer": "ethnic-rto-why"
+  }
+}

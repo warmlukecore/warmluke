@@ -1,0 +1,28 @@
+{
+  "id": "i-ads-stock",
+  "title": "Ads spending on stock that is running out (dated ad export)",
+  "language": "english",
+  "kind": "question",
+  "shop": "ethnic",
+  "persona": "Ethnic wear founder running a few ad campaigns from an exported report while the live ad account is not connected; worried about paying for clicks on sizes that are nearly gone.",
+  "before": [],
+  "opening": "Am I spending on ads for things that are about to run out?",
+  "facts": {
+    "which window": "the last 7 days of ad spend",
+    "how a campaign's products are known": "from the orders it brought, not from what the ad shows"
+  },
+  "success": [
+    "names the campaign whose own orders bought the kurta sizes that are running out, with what it spent",
+    "says what the campaign sells was read from the orders it brought",
+    "says a campaign with no orders of its own sells nothing known, rather than guessing its products",
+    "suggests a decision, such as slowing the campaign or pointing it at what is in stock, and leaves the budget to the owner"
+  ],
+  "must_not": [
+    "changes an ad budget or says it did",
+    "names a product as a campaign's without its orders showing it"
+  ],
+  "max_turns": 2,
+  "expect": {
+    "answer": "ethnic-ads-stock"
+  }
+}

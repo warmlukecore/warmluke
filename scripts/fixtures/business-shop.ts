@@ -7,7 +7,8 @@
 // nodes seed-shop makes, and saved through each resource's own saver, as
 // an import would. Only the lists a business case reads are filled
 // (products, customers, orders and what follows from them, stock, one
-// location); the rest are empty.
+// location); the rest are empty. A shop may also bring what its connections
+// would: a courier's shipments, an ad account's days, a restock time.
 //
 // Built by arithmetic from the day it is seeded, so every seeding of the
 // same day is the same shop, and what a case expects is worked out from
@@ -61,7 +62,26 @@ export type BusinessShop = {
     shipped: "DELIVERED" | "IN_TRANSIT" | null;
     cancelled?: true;
     code?: string;
+    /** The campaign its last visit's ad link named (utm_campaign): how an ad campaign's own orders are found. */
+    campaign?: string;
   }>;
+  /**
+   * A courier's shipments in batches sent the same day (courier_shipments,
+   * 0204), not tied to orders: `rto` of the `n` came back, `moving` are not
+   * settled yet, the rest were delivered. How RTO is read (0225).
+   */
+  shipments?: Array<{
+    courier: string;
+    payment: "COD" | "Prepaid";
+    daysBack: number;
+    n: number;
+    rto: number;
+    moving?: number;
+  }>;
+  /** An ad account's days from a dated export (the live account not connected): `perDay` spent for the last `days`. */
+  ads?: Array<{ id: string; name: string; perDay: number; days: number }>;
+  /** How long a restock takes, as the owner said it (projects.restock_days, 0222). */
+  restockDays?: number;
   /** A return on one line of an order. */
   returns?: Array<{ order: number; line: number; reason: string; daysBack: number; open?: true }>;
 };
@@ -187,7 +207,11 @@ export function shopNodes(shop: BusinessShop, now = Date.now()): Record<Resource
       shippingAddress: { city: c?.city ?? "Pune", provinceCode: null, countryCode: "IN", phone: c?.phone ?? null },
       phone: c?.phone ?? null,
       sourceName: "web",
-      customerJourneySummary: { lastVisit: null },
+      customerJourneySummary: {
+        lastVisit: o.campaign
+          ? { source: "Facebook", utmParameters: { source: "facebook", medium: "paid", campaign: o.campaign } }
+          : null,
+      },
       lineItems: {
         nodes: o.lines.map(([v, qty], li) => ({
           id: lineId(oi, li),
@@ -346,5 +370,77 @@ export async function seedBusiness(db: SupabaseClient, storeId: string, shop: Bu
   const nodes = shopNodes(shop, now);
   for (let pass = 0; pass < 2; pass++) {
     for (const r of RESOURCES) await SHOPIFY_RESOURCES[r].save(db, storeId, nodes[r]);
+  }
+  await seedConnections(db, storeId, shop, now);
+}
+
+/**
+ * What a shop's connections bring, as their workers write it: a courier's
+ * shipments and an ad account's days, each under a connection of its own,
+ * and the restock time the owner gave. The ad account is marked a dated
+ * export (the sprint's stand-in while a live account is not connected).
+ */
+async function seedConnections(db: SupabaseClient, storeId: string, shop: BusinessShop, now: number) {
+  if (!shop.shipments?.length && !shop.ads?.length && !shop.restockDays) return;
+  const { data: store } = await db.from("stores").select("project_id, projects(owner_id)").eq("id", storeId).single();
+  const projectId = store!.project_id as string;
+  const owner = (store!.projects as unknown as { owner_id: string }).owner_id;
+  const noon = Math.floor(now / 86_400_000) * 86_400_000 + 6.5 * 3_600_000;
+  const at = (daysBack: number) => new Date(noon - daysBack * 86_400_000).toISOString();
+  const connect = async (provider: string, account_ref: string) => {
+    const { data, error } = await db
+      .from("store_connections")
+      .insert({
+        project_id: projectId,
+        store_id: storeId,
+        provider,
+        account_ref,
+        status: "connected",
+        connected_by: owner,
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(`could not connect ${provider}: ${error.message}`);
+    return data.id as string;
+  };
+  if (shop.restockDays) await db.from("projects").update({ restock_days: shop.restockDays }).eq("id", projectId);
+  if (shop.shipments?.length) {
+    const connection_id = await connect("shiprocket", "eval-courier");
+    const rows = shop.shipments.flatMap((b) =>
+      Array.from({ length: b.n }, (_, i) => ({
+        project_id: projectId,
+        store_id: storeId,
+        connection_id,
+        provider: "shiprocket",
+        shipment_ref: `${b.courier}-${b.payment}-${b.daysBack}-${i}`,
+        courier: b.courier,
+        payment_mode: b.payment === "COD" ? "COD" : "prepaid",
+        rto: i < b.rto,
+        shipped_at: at(b.daysBack),
+        delivered_at: i >= b.rto && i < b.n - (b.moving ?? 0) ? at(b.daysBack - 2) : null,
+        status_at: at(Math.max(0, b.daysBack - 2)),
+      }))
+    );
+    const { error } = await db.from("courier_shipments").insert(rows);
+    if (error) throw new Error(`could not write the shipments: ${error.message}`);
+  }
+  if (shop.ads?.length) {
+    const day = (daysBack: number) => new Date(noon - daysBack * 86_400_000).toISOString().slice(0, 10);
+    const connection_id = await connect("meta_ads", `dated export, ${day(0)}`);
+    const rows = shop.ads.flatMap((a) =>
+      Array.from({ length: a.days }, (_, d) => ({
+        project_id: projectId,
+        store_id: storeId,
+        connection_id,
+        provider: "meta_ads",
+        campaign_id: a.id,
+        campaign_name: a.name,
+        day: day(d),
+        spend: a.perDay,
+        currency: SEED_CURRENCY,
+      }))
+    );
+    const { error } = await db.from("ad_spend").insert(rows);
+    if (error) throw new Error(`could not write the ad days: ${error.message}`);
   }
 }

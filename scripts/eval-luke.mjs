@@ -1263,7 +1263,7 @@ async function main() {
         }))
       );
       // What it expects, from the very nodes just seeded.
-      const expected = expectationFor(c, viewOf(nodes, nowMs));
+      const expected = expectationFor(c, viewOf(nodes, nowMs, shop === "seed" ? {} : SHOPS[shop]));
 
       // As AppShell's buildNow sends it: the plans, and the thread to write the build into.
       const build = async (plans, thread) => {

@@ -509,7 +509,7 @@ const NOW = Date.UTC(2026, 9, 12, 6);
 const views = { seed: viewOf(seedNodes(NOW), NOW) };
 for (const [name, shop] of Object.entries(SHOPS)) {
   const nodes = shopNodes(shop, NOW);
-  views[name] = viewOf(nodes, NOW);
+  views[name] = viewOf(nodes, NOW, shop);
   check(
     `${name}: every list a store has, its orders and its stock`,
     RESOURCES.every((r) => Array.isArray(nodes[r])) &&
@@ -540,6 +540,26 @@ for (const { case: c } of cases) {
     (!x.exercise || x.exercise.then.labels.length > 0);
   check(`${c.id}: what it expects is worked out from its shop`, fine);
 }
+// The investigations' shop (the sprint's Days 9–11) says what its cases are graded on.
+const rtoWhy = EXPECT["ethnic-rto-why"](views.ethnic).answer;
+check(
+  "ethnic: RTO rose from 10% to 30% over settled shipments, all of it on COD at 50%",
+  rtoWhy[0].any[0] === 30 && rtoWhy[1].any[0] === 10 && rtoWhy[3].any[0] === 50
+);
+const runsOut = EXPECT["ethnic-runs-out"](views.ethnic).answer;
+check(
+  "ethnic: two kurta sizes run out before the 14-day restock, in 8 and 12 days",
+  runsOut[0].names.join() === "Kurta" &&
+    runsOut
+      .slice(1)
+      .map((a) => a.any[0])
+      .toSorted((a, b) => a - b)
+      .join() === "8,12"
+);
+check(
+  "ethnic: the Diwali campaign's own orders are what buys them",
+  EXPECT["ethnic-ads-stock"](views.ethnic).answer[0].names[0] === "Diwali"
+);
 check(
   "a window ignored would show: the top size over all time is not the month's",
   (() => {

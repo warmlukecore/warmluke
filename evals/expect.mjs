@@ -17,8 +17,12 @@
 const money = (set) => Number(set?.shopMoney?.amount ?? 0);
 const DAY = 86_400_000;
 
-/** A seeded shop's nodes as rows a case can count, with each order's age in days. */
-export function viewOf(nodes, now) {
+/**
+ * A seeded shop's nodes as rows a case can count, with each order's age in
+ * days; `shop` brings what its connections would (shipments, ad days, the
+ * restock time), as business-shop.ts seeds them.
+ */
+export function viewOf(nodes, now, shop = {}) {
   const noon = Math.floor(now / DAY) * DAY + 6.5 * 3_600_000;
   const customers = new Map((nodes.customers ?? []).map((c) => [c.id, c]));
   const typeOf = new Map((nodes.products ?? []).map((p) => [p.id, p.productType]));
@@ -38,6 +42,7 @@ export function viewOf(nodes, now) {
       goods: subtotal - discount,
       discount,
       codes: o.discountCodes ?? [],
+      campaign: o.customerJourneySummary?.lastVisit?.utmParameters?.campaign ?? null,
       customer: c ? { id: c.id, name: c.displayName, phone: c.phone } : null,
       lines: o.lineItems.nodes.map((l) => ({
         title: l.title,
@@ -67,7 +72,14 @@ export function viewOf(nodes, now) {
       available: stock.get(v.id) ?? 0,
     }))
   );
-  return { orders, variants, customers: [...customers.values()] };
+  return {
+    orders,
+    variants,
+    customers: [...customers.values()],
+    shipments: shop.shipments ?? [],
+    ads: shop.ads ?? [],
+    restockDays: shop.restockDays ?? null,
+  };
 }
 
 const sum = (rows, f) => rows.reduce((n, r) => n + f(r), 0);
@@ -82,6 +94,22 @@ const effectOn = (tables, field, values) => ({
   count: values.length,
   labels: values,
 });
+
+/** RTO over the settled shipments sent `from`–`to` days back, as abo_rto_cohorts counts it, in one decimal. */
+const rtoRate = (batches, from, to) => {
+  const in_ = batches.filter((b) => b.daysBack >= from && b.daysBack <= to);
+  const settled = sum(in_, (b) => b.n - (b.moving ?? 0));
+  return Math.round((1000 * sum(in_, (b) => b.rto)) / settled) / 10;
+};
+/** Each variant's days of stock at its pace over the last 28 days, as abo_stock_cover counts them. */
+const daysLeft = (v) => {
+  const sold = new Map();
+  for (const o of v.orders.filter((o) => live(o) && o.daysBack <= 27))
+    for (const l of o.lines) sold.set(l.sku, (sold.get(l.sku) ?? 0) + l.qty);
+  return v.variants
+    .filter((x) => sold.get(x.sku) > 0)
+    .map((x) => ({ ...x, left: Math.floor(x.available / (sold.get(x.sku) / 28)) }));
+};
 
 export const EXPECT = {
   // ── Store questions ────────────────────────────────────────
@@ -118,6 +146,48 @@ export const EXPECT = {
       answer: [
         { label: `size ${size}`, re: `\\b(${size}|${word})\\b` },
         { label: `${n} tees in size ${size}`, any: [n] },
+      ],
+    };
+  },
+  // ── Investigations (the sprint's Days 9–11) ────────────────
+  "ethnic-rto-why": (v) => {
+    const cod = v.shipments.filter((b) => b.payment === "COD");
+    return {
+      answer: [
+        { label: "RTO over the last 14 days", any: [rtoRate(v.shipments, 0, 13)] },
+        { label: "against the 14 days before", any: [rtoRate(v.shipments, 14, 27)] },
+        { label: "COD is where it rose", names: ["COD"] },
+        { label: "COD's own rate", any: [rtoRate(cod, 0, 13)] },
+      ],
+    };
+  },
+  "ethnic-runs-out": (v) => {
+    const short = daysLeft(v).filter((x) => x.left < v.restockDays);
+    return {
+      answer: [
+        { label: "the product running out", names: [...new Set(short.map((x) => x.type))] },
+        ...short.map((x) => ({ label: `${x.product} ${x.variant}: ${x.left} days`, any: [x.left] })),
+      ],
+    };
+  },
+  "ethnic-ads-stock": (v) => {
+    const short = new Set(
+      daysLeft(v)
+        .filter((x) => x.left < v.restockDays)
+        .map((x) => x.sku)
+    );
+    const ad = v.ads.find((a) =>
+      v.orders.some(
+        (o) =>
+          live(o) &&
+          [a.name.toLowerCase(), a.id].includes(String(o.campaign ?? "").toLowerCase()) &&
+          o.lines.some((l) => short.has(l.sku))
+      )
+    );
+    return {
+      answer: [
+        { label: "the campaign spending on stock running out", names: [ad.name] },
+        { label: "what it sells that is running out", names: ["Kurta"] },
       ],
     };
   },

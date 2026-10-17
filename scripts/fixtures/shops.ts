@@ -1,4 +1,4 @@
-// Six kinds of business for the Luke evals, each a few lines of data that
+// Seven kinds of business for the Luke evals, each a few lines of data that
 // business-shop.ts turns into a Shopify-shaped shop (evals/README.md).
 //
 // Each one is built for its cases. Windows are kept clear of rows: no order
@@ -351,4 +351,138 @@ const wholesale: BusinessShop = {
   ],
 };
 
-export const SHOPS: Record<string, BusinessShop> = { cases, fashion, cosmetics, gadgets, snacks, wholesale };
+/**
+ * Ethnic wear with its connections (the sprint's investigations, Days 9–11):
+ * a courier's shipments where RTO rose from 10% to 30% over the last two
+ * weeks, all of it on COD (50% against prepaid's 10%) and on both couriers
+ * alike; two kurta sizes that run out before the 14-day restock; and an ad
+ * export where the Diwali campaign's own orders buy exactly those sizes,
+ * Retarget's buy a dupatta with plenty left, and Brand awareness has none.
+ */
+const ethnic: BusinessShop = {
+  name: "ethnic",
+  products: [
+    {
+      title: "Cotton Kurta Set",
+      type: "Kurta",
+      vendor: "Rangsutra",
+      variants: [
+        { title: "S", price: 1299, cost: 520, stock: 3, sku: "ETH-KRT-S" },
+        { title: "M", price: 1299, cost: 520, stock: 40, sku: "ETH-KRT-M" },
+        { title: "L", price: 1299, cost: 520, stock: 2, sku: "ETH-KRT-L" },
+      ],
+    },
+    { title: "Printed Dupatta", type: "Dupatta", vendor: "Rangsutra", variants: one(499, 160, 120, "ETH-DUP") },
+    { title: "Silk Saree", type: "Saree", vendor: "Kanchi Looms", variants: one(4999, 2400, 15, "ETH-SAR") },
+  ],
+  customers: [
+    person("Meera Iyer", 61, "Chennai", "600001"),
+    person("Sana Qureshi", 62, "Lucknow", "226001"),
+    person("Pooja Bansal", 63, "Indore", "452001"),
+    person("Nisha Thomas", 64, "Kochi", "682001"),
+  ],
+  orders: [
+    // Diwali's own orders this week, named three ways: its name, in lower case, and its id.
+    {
+      daysBack: 1,
+      customer: 0,
+      lines: [
+        [0, 1],
+        [2, 1],
+      ],
+      pay: "PENDING",
+      gateway: COD,
+      shipped: null,
+      campaign: "Diwali",
+    },
+    { daysBack: 2, customer: 1, lines: [[0, 2]], pay: "PENDING", gateway: COD, shipped: null, campaign: "Diwali" },
+    {
+      daysBack: 3,
+      customer: 2,
+      lines: [[2, 2]],
+      pay: "PAID",
+      gateway: CARD,
+      shipped: "IN_TRANSIT",
+      campaign: "diwali",
+    },
+    {
+      daysBack: 4,
+      customer: 3,
+      lines: [[1, 1]],
+      pay: "PAID",
+      gateway: CARD,
+      shipped: "IN_TRANSIT",
+      campaign: "120201",
+    },
+    {
+      daysBack: 5,
+      customer: 0,
+      lines: [
+        [0, 1],
+        [2, 1],
+      ],
+      pay: "PENDING",
+      gateway: COD,
+      shipped: "IN_TRANSIT",
+      campaign: "Diwali",
+    },
+    // Cancelled: not one of Diwali's sales.
+    {
+      daysBack: 3,
+      customer: 1,
+      lines: [[0, 5]],
+      pay: "PENDING",
+      gateway: COD,
+      shipped: null,
+      cancelled: true,
+      campaign: "Diwali",
+    },
+    // Retarget sells the dupatta.
+    { daysBack: 2, customer: 2, lines: [[3, 3]], pay: "PAID", gateway: CARD, shipped: null, campaign: "Retarget" },
+    {
+      daysBack: 4,
+      customer: 3,
+      lines: [[3, 2]],
+      pay: "PENDING",
+      gateway: COD,
+      shipped: "IN_TRANSIT",
+      campaign: "Retarget",
+    },
+    // Earlier sales with no campaign: the pace each size sells at.
+    { daysBack: 10, customer: 0, lines: [[0, 3]], pay: "PAID", gateway: CARD, shipped: "DELIVERED" },
+    { daysBack: 11, customer: 1, lines: [[2, 3]], pay: "PAID", gateway: CARD, shipped: "DELIVERED" },
+    {
+      daysBack: 18,
+      customer: 2,
+      lines: [
+        [1, 1],
+        [3, 5],
+      ],
+      pay: "PAID",
+      gateway: CARD,
+      shipped: "DELIVERED",
+    },
+    { daysBack: 20, customer: 3, lines: [[4, 2]], pay: "PAID", gateway: CARD, shipped: "DELIVERED" },
+    { daysBack: 24, customer: 0, lines: [[4, 2]], pay: "PAID", gateway: CARD, shipped: "DELIVERED" },
+  ],
+  // Sent in the last two weeks: COD 10 of 20 settled back, prepaid 2 of 20; five COD still moving.
+  // The two weeks before: 4 of 40 back. Each courier carries half of each, so payment is what moved.
+  shipments: [
+    { courier: "Delhivery", payment: "COD", daysBack: 5, n: 13, rto: 5, moving: 3 },
+    { courier: "Bluedart", payment: "COD", daysBack: 6, n: 12, rto: 5, moving: 2 },
+    { courier: "Delhivery", payment: "Prepaid", daysBack: 9, n: 10, rto: 1 },
+    { courier: "Bluedart", payment: "Prepaid", daysBack: 10, n: 10, rto: 1 },
+    { courier: "Delhivery", payment: "COD", daysBack: 18, n: 10, rto: 1 },
+    { courier: "Bluedart", payment: "COD", daysBack: 19, n: 10, rto: 1 },
+    { courier: "Delhivery", payment: "Prepaid", daysBack: 21, n: 10, rto: 1 },
+    { courier: "Bluedart", payment: "Prepaid", daysBack: 23, n: 10, rto: 1 },
+  ],
+  ads: [
+    { id: "120201", name: "Diwali", perDay: 1500, days: 7 },
+    { id: "120202", name: "Retarget", perDay: 500, days: 7 },
+    { id: "120203", name: "Brand awareness", perDay: 300, days: 7 },
+  ],
+  restockDays: 14,
+};
+
+export const SHOPS: Record<string, BusinessShop> = { cases, fashion, cosmetics, gadgets, snacks, wholesale, ethnic };
