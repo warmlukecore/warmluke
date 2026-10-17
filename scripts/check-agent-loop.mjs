@@ -14,7 +14,7 @@
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-agent-loop.mjs
 import { agentContract, agentReply, draftOf, freeOn, guideTopics, ownerJargon, runAgent } from "../src/lib/agent.ts";
 import { buildSystemPrompt, foldOf, parseReply } from "../src/lib/ai.ts";
-import { EARLIER_LINES, earlierDigest, withEarlier } from "../src/lib/turn-run.ts";
+import { EARLIER_LINES, HISTORY_LIMIT, earlierDigest, historyOf, withEarlier } from "../src/lib/turn-run.ts";
 import { proposalOf } from "../src/lib/plan.ts";
 import { jsonSchema, tool } from "ai";
 
@@ -341,6 +341,33 @@ console.log("\nwhat is cut is said (no silent limits, 12 Oct)");
     /first 40 messages are not here/.test(told[0].content) &&
       told[0].content.includes("Only flagged orders, one table") &&
       told[0].content.endsWith("Now this")
+  );
+  // The sprint's twenty-turn correction test (Days 3–5), as a turn reads a thread: the newest
+  // HISTORY_LIMIT messages whole, the ones before a line each.
+  const thread = Array.from({ length: 20 }, (_, t) => [
+    {
+      role: "user",
+      content: "",
+      said: t === 2 ? "No, Ravi doesn't pack any more, Sunita does" : `ask ${t + 1}`,
+      ptype: null,
+    },
+    { role: "assistant", content: `reply ${t + 1}`, said: null, ptype: "answer" },
+  ]).flat();
+  const read = thread.slice(-HISTORY_LIMIT);
+  const cut = thread.length - read.length;
+  const sent = withEarlier(
+    historyOf(read.map((r) => ({ role: r.role, content: r.said ?? r.content, ptype: r.ptype, said: r.said }))),
+    cut,
+    earlierDigest(thread.slice(0, cut))
+  );
+  const all = sent.map((m) => m.content).join("\n");
+  check(
+    "twenty turns: the correction in the third still reaches the model, in their words",
+    cut === 10 && all.includes("Ravi doesn't pack any more, Sunita does")
+  );
+  check(
+    "with the first ask and the latest turns whole, oldest first",
+    all.includes("ask 1”") && all.indexOf("ask 19") < all.indexOf("ask 20") && sent.at(-1).content === "reply 20"
   );
   const big = foldOf(Array.from({ length: 4000 }, (_, i) => ({ order: i, note: "x".repeat(20) })));
   check(
