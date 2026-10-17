@@ -151,6 +151,10 @@ check(
   rto.rate === 30 && rto.rate_before === 10 && rto.rto === 12 && rto.settled === 40 && rto.moving === 5
 );
 check("the worst courier named first", rto.couriers?.[0]?.courier === "Delhivery" && rto.couriers[0].rto === 10);
+check(
+  "and what Luke found looking into it, by payment and by state, kept with it (0230)",
+  Array.isArray(rto.by_payment?.groups) && rto.by_payment.groups.length > 0 && Array.isArray(rto.by_state?.groups)
+);
 check("a rise under the owner's points is quiet, and what was open closes", r.quiet === "none");
 check("too few settled to compare says nothing", r.few === "none");
 

@@ -64,6 +64,17 @@ export function whoOf(kind: string, team: Partial<Record<Role, string>> | null):
 type Cohort = { name: string; rto: number; settled: number; rate: number | null; change: number | null };
 
 /**
+ * What Luke found looking into an alert, as its watch recorded it when it
+ * noticed (0230: RTO by payment and by state, kept in its facts); null for
+ * a kind whose facts are already its evidence, or one recorded before 0230.
+ */
+export function foundOf(a: { kind: string; facts?: Record<string, unknown> | null }): string | null {
+  const f = a.facts ?? {};
+  if (a.kind !== "rto_rising" || !f.by_payment) return null;
+  return lookedIntoRto(f.by_payment as { groups?: Cohort[] }, f.by_state as { groups?: Cohort[] } | null);
+}
+
+/**
  * What Luke found looking into RTO (abo_rto_cohorts, 0225), in a line: the
  * groups by payment and by state with the most coming back, each with its
  * counts and how much it moved. Only groups with enough settled shipments.

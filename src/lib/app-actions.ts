@@ -29,7 +29,7 @@ import { z } from "zod";
 import { findSection } from "@/lib/section-ref";
 import { readBrief } from "@/lib/brief";
 import { grantedSections, hasGrant } from "@/lib/luke-may";
-import { nextOf, whoOf } from "@/lib/alert-next";
+import { foundOf, nextOf, whoOf } from "@/lib/alert-next";
 import { loadTeam } from "@/lib/team-facts";
 import { decide } from "@/lib/row-decide";
 import { designOf, readSectionRows, sectionsOf, type SectionRef } from "@/lib/section-read";
@@ -366,6 +366,8 @@ export async function whatsWaiting(db: SupabaseClient, projectId: string) {
       since: a.opened_at,
       next_step: nextOf({ kind: a.kind as string, facts: (a.facts ?? {}) as Record<string, unknown> }),
       who: whoOf(a.kind as string, team),
+      // What Luke found looking into it, as its watch recorded it (0230).
+      found: foundOf({ kind: a.kind as string, facts: (a.facts ?? {}) as Record<string, unknown> }),
     })),
     // The bell's own questions: a build nobody has used (0190), a problem a week after its fix (0201).
     questions_for_the_owner: [

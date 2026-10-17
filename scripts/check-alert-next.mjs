@@ -7,7 +7,7 @@
 // with their counts and leaves out the ones too small to say.
 //
 //   node --experimental-strip-types --import ./scripts/ts-hook.mjs scripts/check-alert-next.mjs
-import { lookedIntoRto, nextOf, whoOf } from "../src/lib/alert-next.ts";
+import { foundOf, lookedIntoRto, nextOf, whoOf } from "../src/lib/alert-next.ts";
 
 const fails = [];
 const check = (name, cond) => {
@@ -74,6 +74,16 @@ check(
 check("a group too small to say is left out", !line.includes("Goa"));
 check("and so is one with no name", !line.includes("Unknown"));
 check("nothing settled enough, said so", /too few shipments settled/.test(lookedIntoRto({ groups: [] }, null)));
+
+console.log("\nwhat the watch recorded (0230)");
+check(
+  "read from the alert's own facts, as it was found",
+  foundOf({ kind: "rto_rising", facts: { by_payment: payment, by_state: state } }) === line
+);
+check(
+  "none recorded, nothing said, never a guess",
+  foundOf({ kind: "rto_rising", facts: { rate: 30 } }) === null && foundOf({ kind: "low_stock", facts: {} }) === null
+);
 
 console.log(fails.length ? `\n${fails.length} FAILED` : "\nan alert says what to do next, and whose it is");
 process.exit(fails.length ? 1 : 0);

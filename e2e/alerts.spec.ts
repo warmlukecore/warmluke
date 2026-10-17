@@ -218,3 +218,49 @@ test("with a courier and an ad account connected, RTO and ads are offered to wat
     for (const c of made ?? []) await shop.admin.from("store_connections").delete().eq("id", c.id);
   }
 });
+
+test("what Luke found looking into RTO is there when the app opens, as the watch recorded it", async ({
+  signedIn: page,
+  shop,
+}) => {
+  // Recorded by the watch as it noticed (0230), with the browser closed: nothing is read on opening.
+  const { data: made, error } = await shop.admin
+    .from("alerts")
+    .insert({
+      project_id: shop.projectId,
+      store_id: shop.storeId,
+      kind: "rto_rising",
+      subject: "rto",
+      severity: "attention",
+      facts: {
+        rate: 30,
+        rate_before: 10,
+        rto: 12,
+        settled: 40,
+        moving: 5,
+        days: 14,
+        couriers: [],
+        by_payment: { groups: [{ name: "COD", rto: 21, settled: 50, rate: 42, change: 30 }] },
+        by_state: { groups: [{ name: "Bihar", rto: 12, settled: 22, rate: 54.5, change: null }] },
+      },
+    })
+    .select("id")
+    .single();
+  expect(error).toBeNull();
+  let calls = 0;
+  await page.route("**/rest/v1/rpc/abo_rto_cohorts*", (r) => {
+    calls += 1;
+    return r.fallback();
+  });
+  try {
+    await page.goto(`/app/${shop.projectId}`);
+    const card = page.locator("section").filter({ hasText: "What Luke noticed" });
+    await expect(card.getByText("RTO at 30% over the last 14 days")).toBeVisible({ timeout: 30_000 });
+    await expect(
+      card.getByText("Luke looked into it: Bihar 54.5% (12 of 22) · COD 42% (21 of 50), up 30 points")
+    ).toBeVisible();
+    expect(calls).toBe(0);
+  } finally {
+    await shop.admin.from("alerts").delete().eq("id", made!.id);
+  }
+});
