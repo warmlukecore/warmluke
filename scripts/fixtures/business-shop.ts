@@ -28,7 +28,7 @@ import type {
   GqlReturningOrder,
   GqlStock,
 } from "@/lib/shopify-import";
-import { SEED_CURRENCY } from "./seed-shop";
+import { SEED_CURRENCY, SEED_TIMEZONE } from "./seed-shop";
 
 export type Pay = "PAID" | "PENDING" | "REFUNDED" | "PARTIALLY_REFUNDED";
 
@@ -425,7 +425,9 @@ async function seedConnections(db: SupabaseClient, storeId: string, shop: Busine
     if (error) throw new Error(`could not write the shipments: ${error.message}`);
   }
   if (shop.ads?.length) {
-    const day = (daysBack: number) => new Date(noon - daysBack * 86_400_000).toISOString().slice(0, 10);
+    // The ad account's own calendar day, as the store counts it: from 18:30 UTC India is already on the next.
+    const day = (daysBack: number) =>
+      new Intl.DateTimeFormat("en-CA", { timeZone: SEED_TIMEZONE }).format(new Date(now - daysBack * 86_400_000));
     const connection_id = await connect("meta_ads", `dated export, ${day(0)}`);
     const rows = shop.ads.flatMap((a) =>
       Array.from({ length: a.days }, (_, d) => ({
