@@ -73,6 +73,7 @@ import { Logo } from "@/components/ui/Logo";
 import { StorePreview } from "@/components/StorePreview";
 import { FIGURES, FOLLOW_UP, LOW, LOW_STOCK, Spell, lastSync, money, spell, variantName } from "@/lib/sample-store";
 import { ago } from "@/lib/when";
+import { CONNECTORS as APP_CONNECTORS, type ConnectorId } from "@/lib/connectors";
 
 export const metadata = {
   title: "Warmluke: one place for your ecommerce business",
@@ -156,31 +157,31 @@ function Section({
 }
 
 /**
- * What is plugged in, and what the team sets up alongside it.
+ * What is plugged in: the store and what Luke builds at the centre, then
+ * what an owner connects in Settings with their own login, read from the
+ * app's own list (lib/connectors) so the page never says more, or less,
+ * than the app does. Only one the app says is ready counts.
  *
- * Named on purpose, and short on purpose. An earlier version listed
- * all twenty and it read as a roadmap published to competitors and
- * as a list of twenty things not built. A handful people recognise,
- * then "and many more", says the same thing about reach without
- * promising each one by name.
- *
- * `ready` is the line that has to stay honest: exactly two of these
- * are connected in the app today. The rest are set up by the team,
- * and say so wherever they appear, never "connected".
+ * Named on purpose, and short on purpose (the owner's choice, 18 Oct): a
+ * handful people recognise by name, then how many more, counted from
+ * that list, so a new connection moves the number on its own.
  */
-const CONNECTORS: Array<{ name: string; ready: boolean; logo?: string }> = [
-  { name: "Shopify", ready: true, logo: "/logos/shopify.svg" },
-  { name: "Internal tools Luke builds", ready: true },
-  { name: "Meta Ads", ready: false, logo: "/logos/meta.svg" },
-  { name: "Google Ads", ready: false, logo: "/logos/google.svg" },
-  { name: "WhatsApp", ready: false, logo: "/logos/whatsapp.svg" },
-  { name: "Instagram", ready: false, logo: "/logos/instagram.svg" },
+const CONNECTABLE = APP_CONNECTORS.filter((c) => c.ready === true);
+const FEATURED: ConnectorId[] = ["meta_ads", "google_ads", "whatsapp", "shiprocket", "razorpay", "klaviyo", "hubspot"];
+const CONNECTORS: Array<{ name: string; core: boolean; logo?: string }> = [
+  { name: "Shopify", core: true, logo: "/logos/shopify.svg" },
+  { name: "Internal tools Luke builds", core: true },
+  ...FEATURED.flatMap((id) =>
+    CONNECTABLE.filter((c) => c.id === id).map((c) => ({ name: c.label, core: false, logo: c.logo.src }))
+  ),
 ];
+/** Of what an owner can connect, how many the page does not name. */
+const MORE = CONNECTABLE.length - CONNECTORS.filter((c) => !c.core).length;
 
 const logoOf = (name: string) => CONNECTORS.find((c) => c.name === name)?.logo;
 
 /** The few that fit above a headline without crowding it. */
-const HERO_CONNECTORS = [CONNECTORS[0], ...CONNECTORS.filter((c) => !c.ready).slice(0, 3)];
+const HERO_CONNECTORS = [CONNECTORS[0], ...CONNECTORS.filter((c) => !c.core).slice(0, 3)];
 
 /**
  * Each assistant in something close to its own colour.
@@ -402,12 +403,12 @@ function onRing(i: number, n: number, turn = 0): React.CSSProperties {
 }
 
 /** A logo on a white tile; what Luke builds, which has no logo, as blocks. */
-function Planet({ name, ready }: { name: string; ready: boolean }) {
+function Planet({ name, core }: { name: string; core: boolean }) {
   const logo = logoOf(name);
   return (
     <div
       className={`relative flex h-12 w-12 items-center justify-center rounded-2xl border bg-white shadow-[0_10px_30px_-12px_rgb(0_0_0/0.3)] sm:h-14 sm:w-14 ${
-        ready ? "border-emerald-200" : "border-hair"
+        core ? "border-emerald-200" : "border-hair"
       }`}
     >
       {logo ? (
@@ -416,7 +417,7 @@ function Planet({ name, ready }: { name: string; ready: boolean }) {
       ) : (
         <Blocks className="h-6 w-6 text-accent" strokeWidth={1.75} />
       )}
-      {ready && <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />}
+      {core && <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />}
     </div>
   );
 }
@@ -438,7 +439,7 @@ function Ring({
       {names.map((c, i) => (
         <div key={c.name} className="absolute -translate-x-1/2 -translate-y-1/2" style={onRing(i, names.length, turn)}>
           <div className="orbit-back">
-            <Planet name={c.name} ready={c.ready} />
+            <Planet name={c.name} core={c.core} />
           </div>
         </div>
       ))}
@@ -447,9 +448,9 @@ function Ring({
 }
 
 /**
- * Warmluke in the middle and what it connects to going round it: what
- * the app itself connects on the inner ring, what the team sets up on
- * the dashed outer one. A picture of the list beside it, so hidden from
+ * Warmluke in the middle and what it connects to going round it: the
+ * store and what Luke builds on the inner ring, what an owner connects in
+ * Settings on the outer one. A picture of the list beside it, so hidden from
  * a screen reader, which reads the list.
  */
 function Hub() {
@@ -457,8 +458,8 @@ function Hub() {
     <div aria-hidden="true" className="relative mx-auto aspect-square w-full max-w-[20rem] sm:max-w-[24rem]">
       <div className="absolute inset-[7%] rounded-full border border-dashed border-neutral-300" />
       <div className="absolute inset-[28%] rounded-full border border-hair bg-white/60" />
-      <Ring names={CONNECTORS.filter((c) => !c.ready)} inset="7%" seconds={120} turn={45} />
-      <Ring names={CONNECTORS.filter((c) => c.ready)} inset="28%" seconds={80} turn={-90} />
+      <Ring names={CONNECTORS.filter((c) => !c.core)} inset="7%" seconds={120} turn={45} />
+      <Ring names={CONNECTORS.filter((c) => c.core)} inset="28%" seconds={80} turn={-90} />
       <div className="absolute top-1/2 left-1/2 flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-3xl border border-hair bg-white shadow-[0_2px_12px_-2px_rgb(0_0_0/0.12)]">
         <Logo className="h-8" />
       </div>
@@ -702,7 +703,7 @@ export default async function Landing({
             className="rise mb-6 flex max-w-full flex-wrap items-center justify-center gap-x-2.5 gap-y-1.5 rounded-full border border-hair bg-white/80 py-1 pr-3 pl-1 text-xs text-quiet shadow-[0_1px_2px_rgb(0_0_0/0.04)] backdrop-blur"
             style={{ "--rise-from": "10px", "--rise-for": "0.5s" } as React.CSSProperties}
           >
-            {HERO_CONNECTORS.filter((c) => c.ready).map((c) => (
+            {HERO_CONNECTORS.filter((c) => c.core).map((c) => (
               <span
                 key={c.name}
                 className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 font-medium text-emerald-800"
@@ -713,16 +714,16 @@ export default async function Landing({
               </span>
             ))}
             <span className="flex items-center gap-2">
-              {HERO_CONNECTORS.filter((c) => !c.ready).map((c) => (
+              {HERO_CONNECTORS.filter((c) => !c.core).map((c) => (
                 // Not decoration: each logo carries its own data-cta,
                 // which the tracker stores verbatim, so after a month
                 // the clicks say which service merchants ask for.
                 <a
                   key={c.name}
-                  href="#book"
+                  href="#integrations"
                   data-cta={`connector_${c.name.toLowerCase().replace(/\s+/g, "_")}`}
-                  title={`Need ${c.name}? Our team sets it up. Ask for early access and tell us.`}
-                  aria-label={`${c.name}, set up by our team`}
+                  title={`${c.name}: connect it in Settings with your own login.`}
+                  aria-label={`${c.name}, connected in Settings`}
                   className="opacity-80 transition-opacity hover:opacity-100"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element -- a small SVG, nothing to optimise */}
@@ -730,14 +731,13 @@ export default async function Landing({
                 </a>
               ))}
             </span>
-            {/* No number: a count invites "which twenty?". */}
+            {/* Counted from the app's own list: every one can be connected in Settings today. */}
             <a
               href="#integrations"
               data-cta="connectors_more"
               className="whitespace-nowrap transition-colors hover:text-ink"
             >
-              <span className="sm:hidden">with our team</span>
-              <span className="hidden sm:inline">and more, set up by our team</span>
+              +{CONNECTABLE.length - (HERO_CONNECTORS.length - 1)} more
             </a>
           </div>
 
@@ -968,43 +968,19 @@ export default async function Landing({
               Warmluke brings that context together so Luke can understand the whole picture, not one dashboard at a
               time.
             </p>
-            <dl className="mt-8 space-y-6">
-              {[
-                { ready: true, head: "Connected in the app" },
-                { ready: false, head: "Set up by our team" },
-              ].map((g) => (
-                <div key={g.head}>
-                  <dt
-                    className={`flex items-center gap-2 text-sm font-medium ${
-                      g.ready ? "text-emerald-700" : "text-neutral-500"
-                    }`}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className={
-                        g.ready
-                          ? "h-2 w-2 rounded-full bg-emerald-500"
-                          : "h-2.5 w-2.5 rounded-full border border-dashed border-neutral-400"
-                      }
-                    />
-                    {g.head}
-                  </dt>
-                  <dd className="mt-1.5 text-ink">
-                    {CONNECTORS.filter((c) => c.ready === g.ready)
-                      .map((c) => c.name)
-                      .join(", ")}
-                  </dd>
-                  {!g.ready && (
-                    <dd className="mt-2 max-w-md text-sm text-quiet">
-                      Our team connects your ad accounts and WhatsApp, and sets up the reporting against your orders.
-                    </dd>
-                  )}
-                </div>
-              ))}
+            <dl className="mt-8">
+              <dt className="flex items-center gap-2 text-sm font-medium text-emerald-700">
+                <span aria-hidden="true" className="h-2 w-2 rounded-full bg-emerald-500" />
+                Connected in the app
+              </dt>
+              <dd className="mt-1.5 text-ink">{CONNECTORS.map((c) => c.name).join(", ")}</dd>
+              <dd className="mt-2 max-w-md text-sm text-quiet">
+                And {MORE} more, from couriers to email and support, each connected from Settings with your own login.
+              </dd>
             </dl>
             <p className="mt-6 text-sm text-neutral-400">
-              Whatever a growing business runs on: payments, shipping, accounting, marketplaces, the spreadsheet your
-              team actually lives in.{" "}
+              Whatever else a growing business runs on: accounting, marketplaces, the spreadsheet your team actually
+              lives in.{" "}
               <a
                 href="#book"
                 data-cta="connectors_ask"

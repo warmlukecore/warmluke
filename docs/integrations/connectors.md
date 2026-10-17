@@ -105,6 +105,11 @@ campaign) once there is spend to divide by.
   Ads developer token). With that missing, the connector shows as "coming soon" rather
   than failing at the end of a login.
 
+The landing page (`src/app/page.tsx`) reads the same list: a handful of providers by name
+(`FEATURED`) and how many more can be connected, counted from the entries that are `ready`,
+so a new provider moves the page's number without anyone editing it, and the page never
+names one the app cannot connect.
+
 Each provider's code lives in `src/lib/connectors/<provider>.ts`:
 
 - `login` or the OAuth exchange: proves the credential and returns `account_ref` and label;
